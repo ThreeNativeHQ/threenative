@@ -133,7 +133,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     await this.#scene.load(ctx);
     this.#scene.enter(ctx);
     this.#loop = new FixedStepLoop({
-      onRender: () => this.#renderer?.render(threeScene, camera),
+      onRender: () => {
+        this.#renderer?.render(threeScene, camera);
+        this.#scene?.render(ctx);
+      },
       onUpdate: (dt) => {
         this.#input?.tick();
         this.#scene?.update(ctx, dt);

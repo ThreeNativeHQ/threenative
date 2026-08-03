@@ -127,6 +127,27 @@ jobs:
           await browser.close();
           NODE
 
+  benchmark:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tsx scripts/count-loc.ts --check
+      - run: pnpm --filter abyss-vanilla build
+      - run: pnpm --filter abyss-framework build
+      - run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:browser
+      - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+
   build:
     needs: test
     runs-on: ubuntu-latest

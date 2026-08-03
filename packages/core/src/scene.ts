@@ -15,6 +15,8 @@ export abstract class Scene<
   exit(_ctx: Ctx<TState, TPhysics>): void {}
 
   update(_ctx: Ctx<TState, TPhysics>, _dt: number): void {}
+
+  render(_ctx: Ctx<TState, TPhysics>): void {}
 }
 
 export type SceneConstructor<

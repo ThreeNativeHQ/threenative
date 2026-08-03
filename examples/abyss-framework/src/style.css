@@ -28,4 +28,33 @@ canvas {
   padding: 0.5rem 0.75rem;
   background: rgb(6 16 24 / 80%);
   border: 1px solid #2b728e;
+  line-height: 1.7;
+}
+
+#veil {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(4 8 13 / 70%);
+}
+
+#veil[hidden] {
+  display: none;
+}
+
+#card {
+  max-width: 32rem;
+  padding: 2rem;
+  color: #d9f5ff;
+  background: rgb(13 28 38 / 94%);
+  border: 1px solid #2b728e;
+}
+
+button {
+  padding: 0.75rem 1rem;
+  color: #061018;
+  background: #6fe8ff;
+  border: 0;
+  cursor: pointer;
 }

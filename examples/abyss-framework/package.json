@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,6 +15,8 @@
     "three": "catalog:"
   },
   "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
     "vite": "catalog:"
   }
 }

@@ -81,6 +81,12 @@ importers:
         specifier: 'catalog:'
         version: 0.185.1
     devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
       vite:
         specifier: 'catalog:'
         version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(tsx@4.23.5)

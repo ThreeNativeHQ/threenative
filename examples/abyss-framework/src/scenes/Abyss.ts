@@ -1,0 +1,349 @@
+import { type Ctx, Scene } from "@threenative/core";
+import {
+  Fn,
+  If,
+  cos,
+  deltaTime,
+  float,
+  hash,
+  instanceIndex,
+  instancedArray,
+  mix,
+  sin,
+  time,
+  uniform,
+  uv,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+import * as THREE from "three/webgpu";
+import { createLighting } from "../render/lighting.js";
+import { type PostStack, createPostProcessing } from "../render/postprocessing.js";
+
+export type AbyssState = {
+  elapsed: number;
+  energy: number;
+  hull: number;
+  playerX: number;
+  score: number;
+  status: "attract" | "over" | "play";
+};
+
+type AbyssCtx = Ctx<AbyssState>;
+type RawComputeRenderer = { compute(node: unknown): void };
+type Pearl = { drift: THREE.Vector2; mesh: THREE.Mesh };
+type Hunter = { mesh: THREE.Mesh; speed: number; spin: number };
+
+const PLANKTON = 90_000;
+const VIEW = 520;
+
+function element<T extends HTMLElement>(id: string): T | null {
+  return document.getElementById(id) as T | null;
+}
+
+function clock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+export class Abyss extends Scene<AbyssState> {
+  #frame: ((ctx: AbyssCtx, dt: number) => void) | undefined;
+  #post: PostStack | undefined;
+  #startCleanup: (() => void) | undefined;
+
+  override enter(ctx: AbyssCtx): void {
+    const camera = ctx.camera as THREE.PerspectiveCamera;
+    camera.fov = 52;
+    camera.near = 1;
+    camera.far = 4_000;
+    camera.position.set(0, 0, 1_200);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    ctx.scene.background = new THREE.Color(0x04080d);
+    ctx.add(createLighting());
+
+    const raw = ctx.renderer.raw as RawComputeRenderer;
+    const field = { d: 320, h: VIEW * 2, w: VIEW * 2 };
+    const layout = () => {
+      const aspect = globalThis.innerWidth / Math.max(globalThis.innerHeight, 1);
+      field.w = VIEW * 2 * aspect;
+      field.h = VIEW * 2;
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+      ctx.renderer.setSize(globalThis.innerWidth, globalThis.innerHeight);
+    };
+    globalThis.addEventListener("resize", layout);
+    layout();
+
+    /* ------------------------------------------------------- plankton (GPU) */
+
+    const positions = instancedArray(PLANKTON, "vec3");
+    const velocities = instancedArray(PLANKTON, "vec3");
+    const uLamp = uniform(new THREE.Vector3());
+    const uField = uniform(new THREE.Vector3(field.w, field.h, field.d));
+    const uReach = uniform(210);
+    const uPull = uniform(150);
+
+    const rimSpawn = Fn(() => {
+      const a = hash(instanceIndex).mul(6.2831853).add(time.mul(1.7));
+      const r = hash(instanceIndex.add(31)).mul(0.35).add(0.62);
+      return vec3(
+        cos(a).mul(uField.x.mul(0.5).mul(r)),
+        sin(a).mul(uField.y.mul(0.5).mul(r)),
+        hash(instanceIndex.add(97)).sub(0.5).mul(uField.z),
+      );
+    });
+
+    const computeInit = Fn(() => {
+      positions
+        .element(instanceIndex)
+        .assign(
+          vec3(
+            hash(instanceIndex).sub(0.5).mul(uField.x),
+            hash(instanceIndex.add(11)).sub(0.5).mul(uField.y),
+            hash(instanceIndex.add(23)).sub(0.5).mul(uField.z),
+          ),
+        );
+      velocities.element(instanceIndex).assign(vec3(0));
+    })().compute(PLANKTON);
+
+    const computeUpdate = Fn(() => {
+      const pos = positions.element(instanceIndex);
+      const vel = velocities.element(instanceIndex);
+      const dt = deltaTime.min(1 / 30);
+      const toLamp = uLamp.sub(pos);
+      const dist = toLamp.length().max(0.001);
+      const dir = toLamp.div(dist);
+      const acc = vec3(
+        sin(pos.y.mul(0.011).add(time.mul(0.47))),
+        cos(pos.x.mul(0.009).sub(time.mul(0.41))),
+        sin(pos.z.mul(0.021).add(time.mul(0.33))),
+      )
+        .mul(26)
+        .toVar();
+
+      If(dist.lessThan(uReach), () => {
+        const pull = float(1).sub(dist.div(uReach));
+        acc.addAssign(dir.mul(pull.mul(uPull)));
+        acc.addAssign(vec3(dir.y.negate(), dir.x, 0).mul(pull.mul(230)));
+      });
+
+      vel.assign(vel.add(acc.mul(dt)).mul(0.984));
+      const speed = vel.length();
+      If(speed.greaterThan(240), () => {
+        vel.assign(vel.mul(float(240).div(speed)));
+      });
+      pos.addAssign(vel.mul(dt));
+      If(dist.lessThan(26), () => {
+        pos.assign(rimSpawn());
+        vel.assign(vec3(0));
+      });
+      const half = uField.mul(0.5);
+      pos.assign(pos.add(half).div(uField).fract().mul(uField).sub(half));
+    })().compute(PLANKTON);
+
+    const plankton = new THREE.Sprite(
+      new THREE.SpriteNodeMaterial({
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      }),
+    );
+    const planktonMaterial = plankton.material;
+    const speed = velocities.toAttribute().length();
+    const falloff = float(1).sub(uv().sub(0.5).length().mul(2)).max(0).pow(2.6);
+    planktonMaterial.positionNode = positions.toAttribute();
+    planktonMaterial.scaleNode = vec2(7);
+    planktonMaterial.colorNode = vec4(
+      mix(vec3(0.09, 0.38, 0.78), vec3(0.52, 0.94, 1), speed.mul(0.007).clamp(0, 1)),
+      falloff.mul(0.65),
+    );
+    plankton.count = PLANKTON;
+    plankton.frustumCulled = false;
+    ctx.add(plankton);
+
+    /* ------------------------------------------------------- entities (CPU) */
+
+    const glowMaterial = (hex: number, intensity = 1) => {
+      const material = new THREE.MeshBasicNodeMaterial({ toneMapped: false });
+      material.color = new THREE.Color(hex).multiplyScalar(intensity);
+      return material;
+    };
+    const lure = new THREE.Mesh(new THREE.SphereGeometry(11, 24, 16), glowMaterial(0xffd27a, 2.2));
+    ctx.add(lure);
+
+    const halo = new THREE.Sprite(
+      new THREE.SpriteNodeMaterial({
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      }),
+    );
+    halo.material.colorNode = vec4(
+      vec3(1, 0.78, 0.42),
+      float(1).sub(uv().sub(0.5).length().mul(2)).max(0).pow(3).mul(0.85),
+    );
+    halo.scale.setScalar(170);
+    ctx.add(halo);
+
+    const pearls: Pearl[] = [];
+    const pearlGeometry = new THREE.SphereGeometry(9, 20, 14);
+    const pearlMaterial = glowMaterial(0x6fe8ff, 2.6);
+    for (let index = 0; index < 6; index += 1) {
+      const mesh = new THREE.Mesh(pearlGeometry, pearlMaterial);
+      ctx.add(mesh);
+      pearls.push({ drift: new THREE.Vector2(), mesh });
+    }
+
+    const hunters: Hunter[] = [];
+    const hunterGeometry = new THREE.IcosahedronGeometry(15, 0);
+    const hunterMaterial = glowMaterial(0x8a6bff, 2);
+    const spawnHunter = () => {
+      const mesh = new THREE.Mesh(hunterGeometry, hunterMaterial);
+      const angle = Math.random() * Math.PI * 2;
+      mesh.position.set(Math.cos(angle) * field.w * 0.55, Math.sin(angle) * field.h * 0.55, 0);
+      ctx.add(mesh);
+      hunters.push({ mesh, speed: 96 + Math.random() * 40, spin: Math.random() * 2 - 1 });
+    };
+    const placePearl = (pearl: Pearl, index: number) => {
+      if (index === 0) {
+        pearl.mesh.position.set(125, 0, 0);
+      } else {
+        pearl.mesh.position.set(
+          (Math.random() - 0.5) * field.w * 0.86,
+          (Math.random() - 0.5) * field.h * 0.86,
+          0,
+        );
+      }
+      pearl.drift.set((Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40);
+    };
+
+    if (ctx.renderer.kind === "webgpu") {
+      this.#post = createPostProcessing(
+        ctx.renderer.raw as THREE.WebGPURenderer,
+        ctx.scene,
+        camera,
+      );
+    }
+    if (typeof raw.compute === "function") raw.compute(computeInit);
+
+    let status: AbyssState["status"] = "attract";
+    let score = 0;
+    let hull = 100;
+    let energy = 100;
+    let elapsed = 0;
+    let nextHunter = 6;
+    let best = 0;
+    const target = new THREE.Vector2();
+    const temporary = new THREE.Vector3();
+
+    const setHud = () => {
+      element<HTMLSpanElement>("time")?.replaceChildren(clock(elapsed));
+      element<HTMLSpanElement>("status")?.replaceChildren(status);
+      element<HTMLSpanElement>("energy")?.replaceChildren(String(Math.round(energy)));
+      element<HTMLSpanElement>("hull")?.replaceChildren(String(Math.max(0, Math.round(hull))));
+    };
+    const start = () => {
+      status = "play";
+      score = 0;
+      hull = 100;
+      energy = 100;
+      elapsed = 0;
+      nextHunter = 6;
+      lure.position.set(0, 0, 0);
+      target.set(0, 0);
+      for (const hunter of hunters) hunter.mesh.removeFromParent();
+      hunters.length = 0;
+      spawnHunter();
+      pearls.forEach(placePearl);
+      element("veil")?.setAttribute("hidden", "true");
+      ctx.state.set({ elapsed, energy, hull, playerX: 0, score, status });
+    };
+    const startButton = element<HTMLButtonElement>("startBtn");
+    startButton?.addEventListener("click", start);
+    this.#startCleanup = () => {
+      startButton?.removeEventListener("click", start);
+      globalThis.removeEventListener("resize", layout);
+    };
+    pearls.forEach(placePearl);
+
+    this.#frame = (frameCtx, dt) => {
+      const now = performance.now();
+      const move = frameCtx.input.vector("move");
+      const pulse = frameCtx.input.pressed("pulse") && energy > 1;
+      if (status === "play") {
+        elapsed += dt;
+        const speed = 560 * dt;
+        target.x = THREE.MathUtils.clamp(target.x + move.x * speed, -field.w / 2, field.w / 2);
+        target.y = THREE.MathUtils.clamp(target.y + move.y * speed, -field.h / 2, field.h / 2);
+        energy = THREE.MathUtils.clamp(energy + (pulse ? -24 : 13) * dt, 0, 100);
+        if (
+          pulse &&
+          score === 0 &&
+          lure.position.distanceTo(pearls[0]?.mesh.position ?? lure.position) < 170
+        ) {
+          score = 1;
+          energy = Math.min(100, energy + 6);
+          if (pearls[0] !== undefined) placePearl(pearls[0], 0);
+        }
+        if (elapsed > nextHunter && hunters.length < 12) {
+          nextHunter += 10;
+          spawnHunter();
+        }
+      } else {
+        target.set(Math.cos(now / 3_400) * field.w * 0.3, Math.sin(now / 2_600) * field.h * 0.28);
+      }
+
+      const ease = 1 - 0.002 ** dt;
+      lure.position.x += (target.x - lure.position.x) * ease;
+      lure.position.y += (target.y - lure.position.y) * ease;
+      lure.scale.setScalar(1 + (pulse ? 0.18 : 0));
+      halo.position.copy(lure.position);
+      halo.scale.setScalar(150 + (pulse ? 220 : 0));
+      uLamp.value.copy(lure.position);
+      uReach.value = 200 + (pulse ? 300 : 0);
+      uPull.value = 150 + (pulse ? 620 : 0);
+
+      for (const pearl of pearls) {
+        pearl.mesh.position.x += pearl.drift.x * dt;
+        pearl.mesh.position.y += pearl.drift.y * dt;
+        if (Math.abs(pearl.mesh.position.x) > field.w / 2) pearl.drift.x *= -1;
+        if (Math.abs(pearl.mesh.position.y) > field.h / 2) pearl.drift.y *= -1;
+        pearl.mesh.rotation.y += dt * 1.4;
+      }
+      for (const hunter of hunters) {
+        temporary.subVectors(lure.position, hunter.mesh.position);
+        const distance = Math.max(temporary.length(), 0.001);
+        temporary.divideScalar(distance).multiplyScalar(hunter.speed * dt);
+        hunter.mesh.position.add(temporary);
+        hunter.mesh.rotation.x += dt * hunter.spin;
+        hunter.mesh.rotation.z += dt * hunter.spin * 0.7;
+        if (status === "play" && distance < 30) hull -= 46 * dt;
+      }
+      if (hull <= 0 && status === "play") {
+        hull = 0;
+        status = "over";
+        best = Math.max(best, score);
+        element("veil")?.removeAttribute("hidden");
+      }
+      if (typeof raw.compute === "function") raw.compute(computeUpdate);
+      ctx.state.set({ elapsed, energy, hull, playerX: lure.position.x, score, status });
+      setHud();
+    };
+  }
+
+  override update(ctx: AbyssCtx, dt: number): void {
+    this.#frame?.(ctx, dt);
+  }
+
+  override render(_ctx: AbyssCtx): void {
+    this.#post?.render();
+  }
+
+  override exit(_ctx: AbyssCtx): void {
+    this.#startCleanup?.();
+    this.#post = undefined;
+    this.#frame = undefined;
+    this.#startCleanup = undefined;
+  }
+}

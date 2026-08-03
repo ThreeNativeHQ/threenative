@@ -565,3 +565,17 @@ is to ship `playtest` and `asset-mcp` as standalone tools for vanilla Three.js a
 there — a real product, and v1's own final recommendation:
 
 > Keeps the moat, deletes the treadmill.
+
+### PRD-005 benchmark status — VOID, 2026-08-02
+
+The frozen vanilla control and a hand-ported framework Abyss scene are now published,
+with a deterministic LOC classifier, sealed prompt, equal-proof protocol, and blind
+scoring harness wired into CI. The generated comparison records vanilla winning the
+total-line row (410 control lines versus 412 lines in the framework Abyss port).
+
+The actual AI head-to-head is **VOID**, recorded in
+`docs/benchmark/RESULTS-2026-08-02.md`: no three-repeat run, blind human score, or
+authoritative provider usage event was available in this repository execution. A void
+is not a quality or cost loss, so §12's abandon action is not claimed. The next valid
+result must retain the sealed prompt hash and complete all six repeats before declaring
+win or loss.

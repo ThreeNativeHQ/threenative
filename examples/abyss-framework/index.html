@@ -4,14 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" />
-    <title>Abyss Framework</title>
+    <title>Abyss — framework port</title>
   </head>
   <body>
     <main id="app">
       <div id="hud" aria-live="polite">
-        Score: <span id="score">0</span> · Player: <span id="player-x">-2</span>
+        <div>Abyss · <span id="status">attract</span></div>
+        <div>Score: <span id="score">0</span> · Position: <span id="player-x">0.00</span></div>
+        <div>Time: <span id="time">0.0</span> · Lamp: <span id="energy">100</span> · Hull: <span id="hull">100</span></div>
       </div>
     </main>
+    <div id="veil">
+      <div id="card">
+        <p>Use Arrow keys or WASD to steer the lamp.</p>
+        <p>Hold Space while moving right to pull in the first pearl.</p>
+        <button id="startBtn" type="button">Begin the dive</button>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

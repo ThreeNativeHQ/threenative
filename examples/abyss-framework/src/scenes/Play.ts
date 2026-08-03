@@ -16,7 +16,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
   #pickupMesh: Mesh | undefined;
   #unsubscribe: (() => void) | undefined;
 
-  enter(ctx: GameCtx): void {
+  override enter(ctx: GameCtx): void {
     ctx.camera.position.set(0, 3, 9);
     ctx.camera.lookAt(0, 1, 0);
 
@@ -56,12 +56,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  override update(ctx: GameCtx, dt: number): void {
     this.#player?.update(ctx, dt);
     ctx.state.set({ playerX: this.#player?.mesh.position.x ?? -2 });
   }
 
-  exit(_ctx: GameCtx): void {
+  override exit(_ctx: GameCtx): void {
     this.#unsubscribe?.();
     this.#pickup?.dispose();
     this.#player?.dispose();
