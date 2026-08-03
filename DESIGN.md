@@ -44,6 +44,7 @@ Every item here is something the previous attempt built, and something that help
 | An editor | Not in v1. The Studio dogfood found Share and Export did literally nothing. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces; that was the business model, inverted. |
 | A recipe/preset/genre system | 0 of 7 presets ever reproduced their genre. H1–H4 of the recipe benchmark: all fail. |
+| A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). An ECS is gameplay architecture, and gameplay is the model's job. It also inverts §3's floor: it pays off *only* if the model adopts it. The part worth keeping — introspection — is PRD-006, at 1% of the cost. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |
 
 > An LLM's greatest strength is writing code in languages already in its weights.
 > Its greatest weakness is discovering bespoke API surfaces.
