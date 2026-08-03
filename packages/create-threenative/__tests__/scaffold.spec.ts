@@ -11,6 +11,8 @@ const STARTER_PATHS = [
   "threenative.config.ts",
   "index.html",
   "tailwind.config.ts",
+  "tsconfig.json",
+  "src/style.css",
   "src/main.ts",
   "src/scenes/Boot.ts",
   "src/scenes/Play.ts",

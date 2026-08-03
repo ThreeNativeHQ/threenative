@@ -42,8 +42,13 @@ const FRAMEWORK_IMPORT_OR_SHAPE = [
   /^\s*#\w+/,
 ] as const;
 
+// Note: src/ui/ is deliberately absent. Neither arm's UI is counted — the
+// vanilla arm's equivalent lives in index.html and style.css, which this
+// classifier does not read either. Counting one and not the other would tilt
+// the comparison; changing that is a benchmark decision, not a classifier fix.
+// See docs/benchmark/PROTOCOL.md.
 const FRAMEWORK_PORT_FILES = [
-  "main.ts",
+  "main.tsx",
   "render/lighting.ts",
   "render/postprocessing.ts",
   "scenes/Abyss.ts",
