@@ -772,8 +772,8 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
     ...(isRecord(value.reachability) ? { reachability: validateReachabilityAssertion(value.reachability, scenarioPath) } : {}),
     ...(Array.isArray(value.resources) ? { resources: value.resources.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
     ...(Array.isArray(value.settled) ? { settled: value.settled.map(validateSettledAssertion).filter((item): item is IPlaytestSettledAssertion => item !== undefined) } : {}),
-    ...(Array.isArray(value.states) ? { states: value.states.map(validateStateAssertion).filter((item): item is IPlaytestStateAssertion => item !== undefined) } : {}),
-    ...(Array.isArray(value.tags) ? { tags: value.tags.map(validateTagCountAssertion).filter((item): item is IPlaytestTagCountAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
+    ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map(validateVisibilityAssertion).filter((item): item is IPlaytestVisibilityAssertion => item !== undefined) } : {}),
     ...(Array.isArray(value.visual) ? { visual: value.visual.map(validateVisualAssertion).filter((item): item is IPlaytestVisualAssertion => item !== undefined) } : {}),
   };
@@ -943,21 +943,92 @@ function isSafeProjectRelativePng(value: unknown): value is string {
   return !value.split(/[\\/]/).includes("..");
 }
 
-function validateStateAssertion(value: unknown): IPlaytestStateAssertion | undefined {
-  if (!isRecord(value) || typeof value.entity !== "string" || typeof value.equals !== "string") {
-    return undefined;
-  }
-  return { entity: value.entity, equals: value.equals };
+// Typed field accessors (DESIGN.md §8).
+//
+// The distinction these exist to enforce: a key that is ABSENT is fine and yields
+// undefined; a key that is PRESENT but wrong-typed throws. Collapsing those two
+// cases into a single `undefined` is what let a malformed assertion disappear and
+// leave the scenario reporting green with nothing asserted.
+//
+// `optionalX` returning undefined only for an absent key kills that bug class by
+// construction, so it cannot be reintroduced one careless `...(cond ? {} : {})` at
+// a time.
+
+function describeValue(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  if (typeof value === "string") return `the string ${JSON.stringify(value)}`;
+  return `${typeof value} ${JSON.stringify(value) ?? String(value)}`;
 }
 
-function validateTagCountAssertion(value: unknown): IPlaytestTagCountAssertion | undefined {
-  if (!isRecord(value) || typeof value.tag !== "string") {
-    return undefined;
+function requireRecord(value: unknown, scenarioPath: string, objectPath: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must be an object, received ${describeValue(value)}.`);
   }
+  return value;
+}
+
+function requireString(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): string {
+  const raw = value[key];
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a non-empty string, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+function optionalString(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): string | undefined {
+  if (value[key] === undefined) return undefined;
+  return requireString(value, key, scenarioPath, objectPath);
+}
+
+function optionalBoolean(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): boolean | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "boolean") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a boolean, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+function optionalNumber(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a finite number, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+function optionalNonNegativeInteger(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a non-negative integer, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+/** Spread helper: omits an absent key, keeps a validated one. */
+function present<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
+}
+
+function validateStateAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestStateAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["entity", "equals"], scenarioPath, objectPath);
   return {
-    ...(typeof value.count === "number" && Number.isInteger(value.count) && value.count >= 0 ? { count: value.count } : {}),
-    ...(typeof value.gte === "number" && Number.isInteger(value.gte) && value.gte >= 0 ? { gte: value.gte } : {}),
-    tag: value.tag,
+    entity: requireString(record, "entity", scenarioPath, objectPath),
+    equals: requireString(record, "equals", scenarioPath, objectPath),
+  };
+}
+
+function validateTagCountAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestTagCountAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["count", "gte", "tag"], scenarioPath, objectPath);
+  return {
+    ...present("count", optionalNonNegativeInteger(record, "count", scenarioPath, objectPath)),
+    ...present("gte", optionalNonNegativeInteger(record, "gte", scenarioPath, objectPath)),
+    tag: requireString(record, "tag", scenarioPath, objectPath),
   };
 }
 
