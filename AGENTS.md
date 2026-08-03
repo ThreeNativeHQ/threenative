@@ -6,6 +6,10 @@ Instructions for any AI agent here. Nested `AGENTS.md` files add package rules; 
 `AGENTS.md` beside it. Edit `AGENTS.md`, then run `pnpm sync:agents`. CI runs `--check` and
 fails on drift, so a hand-edited `CLAUDE.md` will be reverted.
 
+## Our main mantra
+
+- Build a system that builds itself. Whenever you build some piece of this system, remember to playtest it and verify that it works as expected. If it doesn't, fix it before moving on.
+
 ## What this is
 
 An application framework for Three.js games. WebGPU by default, Godot-shaped conventions,
@@ -24,7 +28,7 @@ maps the rest, and labels which docs are proposals rather than commitments.
    option nobody requested. This is the 20-line rule applied to your own diff.
 3. **Surgical changes.** Touch only what you must, and clean up only your own mess.
    Unrelated tidying belongs in its own change.
-4. **Goal-driven execution.** Turn the task into success criteria that can be *run*, then
+4. **Goal-driven execution.** Turn the task into success criteria that can be _run_, then
    loop until they pass. Criteria beat instructions: `pnpm test` green and a playtest
    scenario asserting the behaviour is a goal; "make it work" is not.
 
