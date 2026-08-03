@@ -1,6 +1,6 @@
 # Spike 0a — rendering on device
 
-**Status:** unstarted. **Charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
+**Status:** unresolved after execution; no device render observed. **Charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
 **Background:** [`../architecture/NATIVE-RUNTIME.md`](../architecture/NATIVE-RUNTIME.md) —
 the path and the physics verdict. This document is only the executable plan for 0a.
 
@@ -92,4 +92,48 @@ as the result — do not leave the charter claiming a promise the spike just del
 
 ## 6. Result
 
-Unstarted.
+**Unresolved / FAIL — 2026-08-02 23:40 PDT.** No running Android device render was
+observed. The experiment stopped before a React Native app could be built or launched.
+
+### Criteria
+
+1. **FAIL (unobserved):** `WebGPURenderer` was never constructed on a device. The
+   prescribed emulator did not boot, and `react-native-webgpu` plus React Native were
+   not available in the workspace or local pnpm store.
+2. **FAIL (unobserved):** No cube frame, screenshot, or rotation was observed.
+3. **FAIL (unmeasured):** No device render ran, so no frame-rate measurement exists.
+4. **FAIL (unobserved):** No device run reached the point where the shimmed render path
+   could be exercised.
+
+### Shim inventory
+
+None — 0 lines. No throwaway app or shim source was written.
+
+### Versions observed
+
+- `three`: repository catalog and lockfile pin `0.185.1`; the installed package reports
+  `0.185.1`, independently verified by `packages/core/node_modules/three`.
+- `react-native-webgpu`: absent from `node_modules` and the local pnpm store; no version
+  available.
+- React Native and Expo: absent from `node_modules` and the local pnpm store; no versions
+  available.
+- Android emulator: `36.6.11.0` (`build_id 15507667`); AVD `threenative_api35`, Pixel 6,
+  Android `35`, `google_apis/x86_64` system image.
+- ADB: `1.0.41`, platform-tools `37.0.0-14910828`.
+
+### Exact blockers and classification
+
+- **Missing mobile dependencies — fixable setup blocker.** `react-native-webgpu`, React
+  Native, and Expo were not available locally. Installing or otherwise supplying those
+  dependencies is required to create the throwaway app; no external install was attempted.
+- **No runnable device — fixable environment blocker.** The prescribed command,
+  `/home/joao/Android/Sdk/emulator/emulator -avd threenative_api35 -gpu host`, exited 1
+  with `VK_ERROR_INCOMPATIBLE_DRIVER` and `A snapshot operation for 'threenative_api35'
+  is pending and timeout has expired`. The safe `-no-snapshot` and
+  `-no-snapshot-load -no-snapshot-save -no-snapstorage -no-window` variants produced the
+  same result. ADB also failed before device enumeration with
+  `could not install *smartsocket* listener: Operation not permitted`.
+
+These blockers are environmental/setup failures, not structural evidence against
+`three/webgpu` or the React Native adapter. No charter amendment is proposed because no
+Three.js render path was observed.

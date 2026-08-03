@@ -2,6 +2,8 @@ export const version = "0.1.0";
 
 export { createAssetLoader } from "./assets.js";
 export type { AssetLoader, AssetLoaderOptions } from "./assets.js";
+export { AnimationPlayer } from "./animation.js";
+export type { AnimationPlayOptions, AnimationPlayerOptions } from "./animation.js";
 export { defineGame } from "./game.js";
 export type {
   Game,

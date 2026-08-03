@@ -24,7 +24,8 @@ const STARTER_PATHS = [
   "src/ui/Menu.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  "tests/play.playtest.ts",
+  "playtest/boot-to-play.json",
+  "playtests/play.playtest.json",
 ];
 
 describe("create-threenative", () => {
@@ -71,6 +72,16 @@ describe("create-threenative", () => {
       install: false,
       target: "my-game",
       template: "minimal",
+    });
+  });
+
+  it("should accept a local playtest package for scaffold smoke tests", () => {
+    expect(
+      parseArgs(["my-game", "--no-install", "--playtest-package", "/tmp/playtest.tgz"]),
+    ).toEqual({
+      install: false,
+      packageSources: { "@threenative/playtest": "/tmp/playtest.tgz" },
+      target: "my-game",
     });
   });
 });

@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/playtest.ts"],
   format: ["esm"],
   target: "es2022",
   dts: true,
@@ -9,4 +9,5 @@ export default defineConfig({
   clean: true,
   splitting: false,
   treeshake: true,
+  noExternal: ["@threenative/playtest"],
 });

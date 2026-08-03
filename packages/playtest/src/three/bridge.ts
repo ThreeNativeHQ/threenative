@@ -5,6 +5,7 @@ import {
   assertJsonSafe,
   type IPlaytestBridgeHost,
   type IPlaytestBridgeV1,
+  type IPlaytestGameplayObservation,
   type IPlaytestSetupRequest,
   type JsonValue,
 } from "../protocol.js";
@@ -23,6 +24,8 @@ export interface IThreePlaytestBridgeOptions {
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<void> | void;
+  gameplay?: () => IPlaytestGameplayObservation;
+  gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
   renderer: ThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
@@ -41,7 +44,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
   const registry = new ThreePlaytestEntityRegistry();
   syncEntities(registry, options.entities);
   let tick = 0;
-  const capabilities = [
+  const capabilities = () => [
     "camera.observe",
     "entity.bounds",
     "entity.observe",
@@ -49,6 +52,9 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.fixedStep === undefined ? [] : ["runtime.fixedStep"]),
     ...(options.resources === undefined ? [] : ["runtime.resources"]),
     ...(options.diagnostics === undefined ? [] : ["runtime.diagnostics"]),
+    ...(options.gameplay === undefined ? [] : ["runtime.animation", "runtime.state"]),
+    ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
+    ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
   ];
   const bridge: IPlaytestBridgeV1 = {
     ...(options.fixedStep === undefined
@@ -64,7 +70,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         }),
     applySetup: async (request) => applySetup(registry, options.resources, request),
     describe: () => ({
-      capabilities,
+      capabilities: capabilities(),
       limits: PLAYTEST_PROTOCOL_LIMITS,
       name: "@threenative/playtest/three",
       protocolVersion: PLAYTEST_PROTOCOL_VERSION,
@@ -72,16 +78,19 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ready: () => ({ ready: true }),
     sample: (request) => {
       syncEntities(registry, options.entities);
-      return sampleThreeObservations({
+      const snapshot = sampleThreeObservations({
         camera: options.camera,
         clockMode: options.fixedStep === undefined ? "render-frame" : "fixed-step",
         diagnostics: options.diagnostics,
+        gameplay: options.gameplay,
         registry,
         renderer: options.renderer,
         resources: options.resources === undefined ? undefined : () => options.resources!.read(),
         scene: options.scene,
         tick: options.fixedStep === undefined ? undefined : tick,
       }, request);
+      assertJsonSafe(snapshot);
+      return snapshot;
     },
   };
   host[PLAYTEST_BRIDGE_GLOBAL] = bridge;

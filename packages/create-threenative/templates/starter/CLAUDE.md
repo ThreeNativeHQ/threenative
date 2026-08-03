@@ -19,7 +19,8 @@ Rewrite or delete any of it.
 
 ```sh
 pnpm dev      # vite dev server
-pnpm build    # production build — also the test gate
+pnpm build    # production build
+pnpm test     # build, start the dev server, and run the committed playtest
 ```
 
 ## The layout
@@ -32,7 +33,8 @@ src/
   render/               lighting, postprocessing, materials — YOURS, plain Three.js
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
-tests/play.playtest.ts  one scenario, green on the scaffold
+playtests/play.playtest.json  one scenario, run by pnpm test
+playtest/boot-to-play.json  Boot-to-Play jump proof for the standalone runner
 threenative.config.ts   renderer + plugins. No visual options, by design.
 ```
 
@@ -94,7 +96,7 @@ guessing from pixels.
 
 ## Playtests
 
-`tests/play.playtest.ts` drives a real browser through the game. Steps count frames, not
+`playtests/play.playtest.json` drives a real browser through the game. Steps count frames, not
 milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
 instead of racing it.
 

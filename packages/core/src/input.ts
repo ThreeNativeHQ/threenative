@@ -1,6 +1,7 @@
 import { Vector2 } from "three";
 
 export interface InputAction {
+  readonly buttons?: readonly number[];
   readonly down?: readonly string[];
   readonly left?: readonly string[];
   readonly pointer?: boolean;
@@ -47,6 +48,9 @@ export class InputMap {
   #pointerButtons = 0;
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
+  #previousPressed = new Map<string, boolean>();
+  #justPressed = new Set<string>();
+  #justReleased = new Set<string>();
   #pointerTarget: EventTarget;
   #listeners: Array<[EventTarget, string, EventListener]> = [];
 
@@ -108,8 +112,16 @@ export class InputMap {
       this.#isHeld(binding.right) ||
       this.#isHeld(binding.up) ||
       (binding.pointer === true && this.#pointerDown) ||
-      this.#gamepadButtons.some(Boolean)
+      (binding.buttons?.some((button) => this.#gamepadButtons[button] === true) ?? false)
     );
+  }
+
+  justPressed(name: string): boolean {
+    return this.#justPressed.has(name);
+  }
+
+  justReleased(name: string): boolean {
+    return this.#justReleased.has(name);
   }
 
   tick(): void {
@@ -123,6 +135,15 @@ export class InputMap {
     this.#gamepadButtons = gamepad?.buttons.map((button) => button.pressed) ?? [];
     this.raw.gamepad.axes = this.#gamepadAxes;
     this.raw.gamepad.buttons = this.#gamepadButtons;
+    this.#justPressed.clear();
+    this.#justReleased.clear();
+    for (const name of Object.keys(this.#bindings)) {
+      const current = this.pressed(name);
+      const previous = this.#previousPressed.get(name) ?? false;
+      if (current && !previous) this.#justPressed.add(name);
+      if (!current && previous) this.#justReleased.add(name);
+      this.#previousPressed.set(name, current);
+    }
   }
 
   clear(): void {
@@ -131,6 +152,9 @@ export class InputMap {
     this.#pointerButtons = 0;
     this.raw.pointer.buttons = 0;
     this.raw.pointer.down = false;
+    this.#previousPressed.clear();
+    this.#justPressed.clear();
+    this.#justReleased.clear();
   }
 
   dispose(): void {

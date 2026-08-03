@@ -1,0 +1,16 @@
+{
+  "name": "framework-camera",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "press": "Enter", "holdTicks": 1, "release": true },
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 60, "release": true }
+  ],
+  "assert": {
+    "camera": { "entity": "camera.main", "follows": "player", "targetInViewport": true },
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true }
+  }
+}

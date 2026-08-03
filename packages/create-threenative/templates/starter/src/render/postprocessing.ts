@@ -1,8 +1,19 @@
-// Generated for you. This is ordinary Three.js — edit or delete it freely.
-// ThreeNative does not read this file.
-import { ACESFilmicToneMapping } from "three";
-
-export function setupPost(renderer: { toneMapping?: number; toneMappingExposure?: number }): void {
+// Generated for you: ordinary Three.js; ThreeNative does not read this file.
+import { ACESFilmicToneMapping, type Camera, type Scene } from "three";
+import { pass } from "three/tsl";
+import { RenderPipeline, type WebGPURenderer } from "three/webgpu";
+export function setupPost(renderer: WebGPURenderer, scene: Scene, camera: Camera): void {
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  if (renderer.isWebGPURenderer !== true) return;
+  const pipeline = new RenderPipeline(renderer, pass(scene, camera));
+  const originalRender = renderer.render.bind(renderer);
+  const pipelineRender = () => {
+    renderer.render = originalRender;
+    try {
+      pipeline.render();
+    } finally {
+      renderer.render = pipelineRender;
+    }
+  };
+  renderer.render = pipelineRender;
 }

@@ -1,0 +1,28 @@
+{
+  "acceptanceId": "PRD-011-starter-look",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    }
+  },
+  "inputDelivery": "deterministic",
+  "name": "starter-look",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "label": "settled-look",
+      "screenshot": "starter-look",
+      "waitFrames": 60
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 30
+}

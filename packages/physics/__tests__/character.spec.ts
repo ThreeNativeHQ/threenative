@@ -36,6 +36,137 @@ afterEach(() => {
 });
 
 describe("CharacterBody3D", () => {
+  it("should accumulate gravity into velocity when airborne", async () => {
+    const { ctx, plugin } = await setup();
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.y = 4;
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+
+    for (let step = 0; step < 10; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.velocity.y).toBeLessThan(0);
+    character.dispose();
+  });
+
+  it("should zero downward velocity when grounded", async () => {
+    const { ctx, plugin } = await setup();
+    fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+
+    for (let step = 0; step < 30; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.grounded).toBe(true);
+    expect(character.velocity.y).toBe(0);
+    character.dispose();
+  });
+
+  it("should carry a grounded rider with a moving kinematic platform", async () => {
+    const { ctx, plugin } = await setup();
+    const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
+    platformMesh.position.y = -0.1;
+    const platform = new RigidBody3D({
+      mesh: platformMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(platformMesh),
+      type: "kinematic",
+    });
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      platformMesh.position.x += 0.02;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.grounded).toBe(true);
+    expect(mesh.position.x).toBeGreaterThan(1.5);
+    character.dispose();
+    platform.dispose();
+  });
+
+  it("should apply the motion reported by its ground collider", async () => {
+    const { ctx, plugin } = await setup();
+    fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+
+    for (let step = 0; step < 30; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    ctx.physics.kinematicMotion = () => ({ x: 1.5, y: 0, z: 0 });
+    character.moveAndSlide(1 / 60);
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(character.grounded).toBe(true);
+    expect(mesh.position.x).toBeGreaterThan(1.4);
+    character.dispose();
+  });
+
+  it("should not carry a rider that is not grounded on the platform", async () => {
+    const { ctx, plugin } = await setup();
+    const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
+    platformMesh.position.y = -0.1;
+    const platform = new RigidBody3D({
+      mesh: platformMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(platformMesh),
+      type: "kinematic",
+    });
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+
+    for (let step = 0; step < 30; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    character.velocity.y = 5;
+    platformMesh.position.x += 1;
+    character.moveAndSlide(1 / 60);
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(mesh.position.x).toBeLessThan(0.2);
+    character.dispose();
+    platform.dispose();
+  });
+
   it("should climb a 0.3-unit step without stopping", async () => {
     const { ctx, plugin } = await setup();
     fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);

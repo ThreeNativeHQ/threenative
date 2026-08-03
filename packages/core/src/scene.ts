@@ -37,5 +37,6 @@ export interface Ctx<
   readonly input: InputMap;
   readonly assets: AssetLoader;
   readonly state: GameStore<TState>;
+  readonly goto: (name: string) => Promise<void>;
   physics: TPhysics;
 }

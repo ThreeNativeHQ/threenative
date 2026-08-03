@@ -64,10 +64,12 @@ export interface GameConfig<
   readonly container?: HTMLElement;
   readonly input?: InputBindings;
   readonly initialState?: TState;
+  readonly maxSteps?: number;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
   readonly renderer?: RendererOptions;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
+  readonly step?: number;
   readonly start: string;
   readonly stateFlushMs?: number;
 }
@@ -115,6 +117,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     return this.#state;
   }
 
+  #goto(name: string, ctx: Ctx<TState, TPhysics>): Promise<void> {
+    const SceneType = this.#config.scenes[name];
+    if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
+
+    this.#scene?.exit(ctx);
+    this.#entities?.clear();
+    const scene = new SceneType();
+    this.#scene = scene;
+    const loaded = scene.load(ctx);
+    if (loaded === undefined) {
+      scene.enter(ctx);
+      return Promise.resolve();
+    }
+    return Promise.resolve(loaded).then(() => scene.enter(ctx));
+  }
+
   async start(): Promise<void> {
     if (this.#started) return;
     const SceneType = this.#config.scenes[this.#config.start];
@@ -147,6 +165,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       assets,
       camera,
       entities,
+      goto: (name) => this.#goto(name, ctx),
       input: this.#input,
       physics: undefined as TPhysics,
       renderer: this.#renderer,
@@ -158,6 +177,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#cleanup.push(installDevTools(entities));
     this.#scene = new SceneType();
     const loop = new FixedStepLoop({
+      maxSteps: this.#config.maxSteps,
       onRender: () => {
         this.#renderer?.render(threeScene, camera);
         this.#scene?.render(ctx);
@@ -169,11 +189,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
           if (typeof plugin !== "function") plugin.update?.(ctx, dt);
         }
       },
+      step: this.#config.step,
     });
     this.#loop = loop;
     const runtime: GamePluginRuntime = { fixedStep: (ticks) => loop.advance(ticks) };
     for (const plugin of this.#config.plugins ?? []) {
-      const cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
+      const cleanup =
+        typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
       if (cleanup !== undefined) this.#cleanup.push(cleanup);
     }
     await this.#scene.load(ctx);

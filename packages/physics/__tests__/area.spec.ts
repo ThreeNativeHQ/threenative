@@ -43,6 +43,29 @@ describe("Area3D", () => {
     area.dispose();
   });
 
+  it("should retain entered contacts for a playtest drain", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({
+      entity: "coin.3",
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(2, 2, 2),
+    });
+    const body = new RigidBody3D({
+      mesh: new Mesh(new BoxGeometry(1, 1, 1)),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(area.drainContacts()).toEqual([
+      expect.objectContaining({ area, body, entity: "coin.3", started: true }),
+    ]);
+    expect(area.drainContacts()).toEqual([]);
+    body.dispose();
+    area.dispose();
+  });
+
   it("should fire bodyExited when the body leaves", async () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });

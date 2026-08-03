@@ -48,6 +48,28 @@ export interface IPlaytestEntityObservation {
   visible?: boolean;
 }
 
+export interface IPlaytestAnimationObservation {
+  advancedFrames: number;
+  clip: string;
+}
+
+export interface IPlaytestContactObservation {
+  entity: string;
+  kind: string;
+  with: string;
+}
+
+export interface IPlaytestTagObservation {
+  count: number;
+}
+
+export interface IPlaytestGameplayObservation {
+  animation: Record<string, IPlaytestAnimationObservation>;
+  contacts?: IPlaytestContactObservation[];
+  states: Record<string, string>;
+  tags?: Record<string, IPlaytestTagObservation>;
+}
+
 export interface IPlaytestObservationSnapshot {
   clock: {
     mode: PlaytestClockMode;
@@ -56,6 +78,7 @@ export interface IPlaytestObservationSnapshot {
   };
   diagnostics?: JsonValue[];
   entities?: IPlaytestEntityObservation[];
+  gameplay?: IPlaytestGameplayObservation;
   resources?: Record<string, JsonValue>;
 }
 

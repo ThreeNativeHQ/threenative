@@ -10,6 +10,7 @@ import {
   type IPlaytestAssertionResult,
   type IPlaytestDiagnostic,
   type IPlaytestObservationSnapshot,
+  type IPlaytestPathAssertion,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestReport,
   type IPlaytestScenario,
@@ -57,7 +58,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     const consoleEntries: Array<{ text: string; type: string }> = [];
     const networkEntries: Array<{ method: string; url: string }> = [];
     page.on("console", (entry) => consoleEntries.push({ text: entry.text(), type: entry.type() }));
-    page.on("pageerror", (error) => consoleEntries.push({ text: error.message, type: "pageerror" }));
+    page.on("pageerror", (error) => consoleEntries.push({ text: error.stack || error.message, type: "pageerror" }));
     page.on("requestfailed", (request) => networkEntries.push({ method: request.method(), url: request.url() }));
     await page.goto(config.url, { timeout: config.timeoutMs, waitUntil: "domcontentloaded" });
     const bridge = await connectPlaytestBridge(page, scenario);
@@ -65,26 +66,52 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       await bridge.applySetup(setupRequest(scenario));
     }
     await waitFrames(page, scenario.warmupFrames);
+    const runtimeReady = await page.evaluate(() =>
+      document.readyState !== "loading" && document.querySelector("canvas") !== null,
+    ).catch(() => false);
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
     const beforeSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    const pathEntity = scenario.assert?.movement?.pathLength === undefined
+      ? undefined
+      : scenario.assert.movement.entity ?? scenario.subject;
+    const pathPositions = beforeSnapshot === undefined || pathEntity === undefined
+      ? []
+      : [entityPosition(beforeSnapshot, pathEntity)].filter((position): position is PlaytestVec3 => position !== undefined);
+    const hudAssertions = scenario.assert?.hud ?? [];
+    const beforeHud = await sampleHud(page, hudAssertions);
     if (scenario.artifacts?.screenshots === "before-after") {
       await page.screenshot({ path: join(config.artifactDirectory, "before.png") });
     }
     for (const step of scenario.steps) {
-      await runStep(page, bridge, step);
+      await runStep(page, bridge, step, pathEntity, pathPositions);
       if (step.screenshot !== undefined) {
         await page.screenshot({ path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
     const afterSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    if (afterSnapshot !== undefined && pathEntity !== undefined) {
+      const position = entityPosition(afterSnapshot, pathEntity);
+      if (position !== undefined) pathPositions.push(position);
+    }
+    const afterHud = await sampleHud(page, hudAssertions);
     if (scenario.artifacts?.screenshots !== false) {
       await page.screenshot({ path: join(config.artifactDirectory, "after.png") });
     }
     if (config.trace) {
       await context.tracing.stop({ path: join(config.artifactDirectory, "trace.zip") });
     }
-    const report = buildReport(config, scenario, beforeSnapshot, afterSnapshot, consoleEntries, networkEntries);
+    const report = buildReport(
+      config,
+      scenario,
+      beforeSnapshot,
+      afterSnapshot,
+      consoleEntries,
+      networkEntries,
+      accumulatedPathLength(pathPositions),
+      pairObservations(beforeHud, afterHud),
+      runtimeReady,
+    );
     await context.close();
     return report;
   } catch (error) {
@@ -99,13 +126,16 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   }
 }
 
-function buildReport(
+export function buildReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
   beforeSnapshot: IPlaytestObservationSnapshot | undefined,
   afterSnapshot: IPlaytestObservationSnapshot | undefined,
   consoleEntries: Array<{ text: string; type: string }>,
   networkEntries: Array<{ method: string; url: string }>,
+  pathLength: number | undefined = undefined,
+  hud: Record<string, { after?: unknown; before?: unknown }> = {},
+  runtimeReady = true,
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
@@ -117,6 +147,14 @@ function buildReport(
     : subtract(afterPosition, beforePosition);
   const distance = movementDelta === undefined ? 0 : length(movementDelta);
   const diagnostics: IPlaytestDiagnostic[] = [];
+  if (runtimeReady === false && scenario.assert?.diagnostics?.runtimeReady === true) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_RUNTIME_NOT_READY",
+      message: "The page did not expose a ready canvas after the warmup window.",
+      severity: "error",
+      suggestion: "Fix runtime startup so the page reaches DOM-ready state and creates a canvas before the playtest assertion.",
+    });
+  }
   const base: IPlaytestReport = {
     ...(afterPosition === undefined ? {} : { after: { frame: scenario.steps.length, position: afterPosition, ...(afterRotation === undefined ? {} : { rotation: afterRotation }), tick: afterSnapshot?.clock.tick ?? 0 } }),
     ...(beforePosition === undefined ? {} : { before: { frame: 0, position: beforePosition, ...(beforeRotation === undefined ? {} : { rotation: beforeRotation }), tick: beforeSnapshot?.clock.tick ?? 0 } }),
@@ -126,11 +164,15 @@ function buildReport(
     expectMoved: scenario.assert?.movement?.minDistance !== undefined,
     frames: scenario.steps.reduce((total, step) => total + (step.holdFrames ?? step.waitFrames ?? step.holdTicks ?? step.waitTicks ?? 1), 0),
     ...(movementDelta === undefined ? {} : { movementDelta }),
+    ...(pathLength === undefined ? {} : { pathLength }),
     observations: {
       console: consoleEntries,
-      hud: {},
+      hud,
       network: networkEntries,
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
+      ...(afterSnapshot?.gameplay === undefined
+        ? {}
+        : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario),
     },
   };
@@ -211,7 +253,13 @@ function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {
   };
 }
 
-async function runStep(page: Page, bridge: IPlaytestBridgeClient | undefined, step: IPlaytestScenario["steps"][number]): Promise<void> {
+async function runStep(
+  page: Page,
+  bridge: IPlaytestBridgeClient | undefined,
+  step: IPlaytestScenario["steps"][number],
+  pathEntity: string | undefined,
+  pathPositions: PlaytestVec3[],
+): Promise<void> {
   if (step.pointerPosition !== undefined) {
     await page.mouse.move(step.pointerPosition.x, step.pointerPosition.y);
   }
@@ -221,13 +269,36 @@ async function runStep(page: Page, bridge: IPlaytestBridgeClient | undefined, st
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
   if (ticks > 0 && bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-    await bridge.advance(ticks);
+    for (let index = 0; index < ticks; index += 1) {
+      await bridge.advance(1);
+      await samplePathPosition(bridge, pathEntity, pathPositions);
+    }
   } else {
     await waitFrames(page, Math.max(frames, ticks, 1));
+    await samplePathPosition(bridge, pathEntity, pathPositions);
   }
   if (step.press !== undefined && step.release) {
     await page.keyboard.up(step.press);
   }
+}
+
+async function samplePathPosition(
+  bridge: IPlaytestBridgeClient | undefined,
+  entity: string | undefined,
+  positions: PlaytestVec3[],
+): Promise<void> {
+  if (bridge === undefined || entity === undefined) return;
+  const snapshot = await bridge.sample({ entities: [entity] });
+  const position = entityPosition(snapshot, entity);
+  if (position !== undefined) positions.push(position);
+}
+
+function accumulatedPathLength(positions: readonly PlaytestVec3[]): number | undefined {
+  if (positions.length < 2) return undefined;
+  return positions.slice(1).reduce(
+    (total, position, index) => total + length(subtract(position, positions[index] ?? position)),
+    0,
+  );
 }
 
 async function waitFrames(page: Page, frames: number): Promise<void> {
@@ -261,6 +332,38 @@ function observedResourceIds(scenario: IPlaytestScenario): string[] {
     ...(scenario.assert?.resources ?? []).map(({ id }) => id),
     ...(scenario.setup?.resources ?? []).map(({ id }) => id),
   ])];
+}
+
+async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {
+  if (assertions.length === 0) return {};
+  return page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path }) => {
+    const element = path === undefined
+      ? document.getElementById(id)
+      : (() => {
+          try {
+            return document.querySelector(path);
+          } catch {
+            return null;
+          }
+        })();
+    if (element === null) return [];
+    const text = element.textContent?.trim() ?? "";
+    const rawValue = element.getAttribute("data-value");
+    const value = rawValue === null ? undefined : Number.isFinite(Number(rawValue)) ? Number(rawValue) : rawValue;
+    const snapshot = value === undefined ? text : value;
+    return [[id, path === undefined ? snapshot : { [path]: snapshot }] as const];
+  })), assertions.map(({ id, path }) => ({ id, ...(path === undefined ? {} : { path }) })));
+}
+
+function pairObservations(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Record<string, { after?: unknown; before?: unknown }> {
+  const ids = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return Object.fromEntries([...ids].map((id) => [id, {
+    ...(before[id] === undefined ? {} : { before: before[id] }),
+    ...(after[id] === undefined ? {} : { after: after[id] }),
+  }]));
 }
 
 function entityPosition(snapshot: IPlaytestObservationSnapshot | undefined, id: string): PlaytestVec3 | undefined {

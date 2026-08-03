@@ -1,7 +1,11 @@
-export type EntitySnapshot = Record<string, Record<string, unknown>>;
+export type EntitySnapshot = Record<string, Record<string, unknown> & { tags?: string[] }>;
 
 export interface Debuggable {
   debug(): Record<string, unknown>;
+}
+
+interface TaggedEntity {
+  tags?: unknown;
 }
 
 export function autoFields(entity: object): Record<string, unknown> {
@@ -44,7 +48,14 @@ export class Registry {
     const result: EntitySnapshot = {};
     for (const [name, entity] of this.#named) {
       const debug = (entity as Partial<Debuggable>).debug;
-      result[name] = typeof debug === "function" ? debug.call(entity) : autoFields(entity);
+      const fields = typeof debug === "function" ? debug.call(entity) : autoFields(entity);
+      const tags = (entity as TaggedEntity).tags;
+      result[name] = {
+        ...fields,
+        ...(Array.isArray(tags) && tags.every((tag) => typeof tag === "string")
+          ? { tags: [...tags] }
+          : {}),
+      };
     }
     return result;
   }

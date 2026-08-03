@@ -253,20 +253,23 @@ A scene is a class with three optional methods. That is the entire lifecycle.
 import { Scene, type Ctx } from '@threenative/core';
 import { setupLighting } from '../render/lighting';       // generated, yours
 import { setupPost } from '../render/postprocessing';     // generated, yours
+import { follow } from '../camera/follow';                // generated, yours
 
 export class Play extends Scene {
   async load(ctx: Ctx) { this.hero = await ctx.assets.model('hero.glb'); }
 
   enter(ctx: Ctx) {
     setupLighting(ctx.scene);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera.raw);
+    setupPost(ctx.renderer.raw, ctx.scene, ctx.camera);
     ctx.add(this.hero);
-    ctx.camera.follow(this.hero, { distance: 12, damping: 0.1 });
   }
 
   update(ctx: Ctx, dt: number) {
     const move = ctx.input.vector('move');      // identical on key, pad, and touch
-    this.hero.body.applyImpulse(move.multiplyScalar(40 * dt));
+    if (ctx.input.justPressed('jump') && this.hero.body.grounded) this.hero.body.velocity.y = 8;
+    this.hero.body.velocity.x = move.x * 5;
+    this.hero.body.moveAndSlide(dt);
+    follow(ctx.camera, this.hero.mesh, dt, { distance: 12, damping: 0.1 });
     ctx.state.set({ hull: this.hull });         // UI reads this; see §6b
   }
 }

@@ -18,7 +18,8 @@ any of it.
 
 ```sh
 pnpm dev      # vite dev server
-pnpm build    # production build — also the test gate
+pnpm build    # production build
+pnpm test     # build, start the dev server, and run the committed playtest
 ```
 
 ## The layout
@@ -30,7 +31,7 @@ src/
   entities/Player.ts    a plain class, not an ECS
   render/               lighting, postprocessing, materials — YOURS, plain Three.js
   state.ts              the state shape the HUD reads
-tests/play.playtest.ts  one scenario, green on the scaffold
+playtests/play.playtest.json  one scenario, run by pnpm test
 threenative.config.ts   renderer + plugins. No visual options, by design.
 ```
 
@@ -83,7 +84,7 @@ assertions. That is how a scenario checks game state instead of guessing from pi
 
 ## Playtests
 
-`tests/play.playtest.ts` drives a real browser through the game. Steps count frames, not
+`playtests/play.playtest.json` drives a real browser through the game. Steps count frames, not
 milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
 instead of racing it.
 

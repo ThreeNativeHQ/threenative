@@ -24,6 +24,7 @@ const BROWSER_CAPABILITIES = [
   "browser.network",
   "browser.screenshot",
   "browser.trace",
+  "runtime.ui",
 ] as const;
 
 export class PlaytestBridgeError extends Error {
@@ -39,10 +40,21 @@ export interface IPlaytestBridgeClient {
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
-export async function connectPlaytestBridge(page: Page, scenario: IPlaytestScenario): Promise<IPlaytestBridgeClient | undefined> {
+export async function connectPlaytestBridge(
+  page: Page,
+  scenario: IPlaytestScenario,
+  timeoutMs = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+): Promise<IPlaytestBridgeClient | undefined> {
   const required = requiredPlaytestCapabilities(scenario);
-  const semanticRequired = required.filter((capability) => !capability.startsWith("browser."));
-  const exists = await page.evaluate((globalName) => globalName in globalThis, PLAYTEST_BRIDGE_GLOBAL);
+  const semanticRequired = required.filter(
+    (capability) => !capability.startsWith("browser.")
+      && capability !== "runtime.ui"
+      && (capability !== "runtime.diagnostics" || scenario.assert?.diagnostics?.noRuntimeDiagnostics === true),
+  );
+  const exists = await page
+    .waitForFunction((globalName) => globalName in globalThis, PLAYTEST_BRIDGE_GLOBAL, { timeout: timeoutMs })
+    .then(() => true)
+    .catch(() => false);
   if (!exists) {
     if (semanticRequired.length === 0) {
       return undefined;

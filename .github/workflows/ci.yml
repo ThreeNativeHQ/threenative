@@ -64,6 +64,7 @@ jobs:
       - run: pnpm test
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:browser
+      - run: pnpm test:playtest
 
   scaffold-smoke:
     needs: test
@@ -84,20 +85,24 @@ jobs:
           mkdir -p "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/ui build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/ui pack --pack-destination "$RUNNER_TEMP/threenative-packages"
       - name: Generate starter scaffold
         run: |
           target="$RUNNER_TEMP/threenative-starter"
           core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --core-package "$core_package" --physics-package "$physics_package" --ui-package "$ui_package"
+            --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
           pnpm --dir "$target" install
-          pnpm --dir "$target" build
+          pnpm exec playwright install --with-deps chromium
+          pnpm --dir "$target" test
           test -f "$target/src/render/lighting.ts"
           test -f "$target/src/ui/Hud.tsx"
           ! grep -R "@threenative/" "$target/src/render"
@@ -110,7 +115,7 @@ jobs:
           import { chromium } from "@playwright/test";
 
           const browser = await chromium.launch({
-            args: ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+            args: ["--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
           });
           const page = await browser.newPage();
           const errors = [];

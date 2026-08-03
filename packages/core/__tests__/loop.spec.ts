@@ -12,6 +12,16 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(60);
   });
 
+  it("should honor a configured step", () => {
+    let updates = 0;
+    const loop = new FixedStepLoop({ onUpdate: () => updates++, step: 1 / 30 });
+
+    loop.stepFrame(0);
+    for (let frame = 1; frame <= 60; frame++) loop.stepFrame((frame * 1_000) / 60);
+
+    expect(updates).toBe(30);
+  });
+
   it("should clamp catch-up to 5 steps after a long stall", () => {
     let updates = 0;
     const loop = new FixedStepLoop({ onUpdate: () => updates++ });

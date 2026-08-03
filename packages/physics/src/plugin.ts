@@ -14,6 +14,9 @@ export interface PhysicsContext {
   readonly world: RAPIER.World;
   readonly eventQueue: RAPIER.EventQueue;
   add(body: PhysicsBody3D): void;
+  kinematicMotion?(
+    colliderHandle: number,
+  ): { readonly x: number; readonly y: number; readonly z: number } | undefined;
   remove(body: PhysicsBody3D): void;
   addArea(area: Area3D): void;
   removeArea(area: Area3D): void;
@@ -33,6 +36,10 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
   const bodies = new Set<PhysicsBody3D>();
   const bodiesByCollider = new Map<number, PhysicsBody3D>();
   const areas = new Map<number, Area3D>();
+  const kinematicMotions = new Map<
+    number,
+    { readonly x: number; readonly y: number; readonly z: number }
+  >();
 
   return {
     setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>) => {
@@ -45,6 +52,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
           bodiesByCollider.set(body.collider.handle, body);
         },
         addArea: (area) => areas.set(area.collider.handle, area),
+        kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
         eventQueue,
         remove: (body) => {
           bodies.delete(body);
@@ -59,10 +67,19 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
     update: (ctx, dt) => {
       const physics = context ?? ctx.physics;
       physics.world.timestep = dt;
+      kinematicMotions.clear();
       for (const body of bodies) {
-        if (body instanceof CharacterBody3D) body.step();
-        else body.syncToPhysics();
+        if (body instanceof RigidBody3D && body.type === "kinematic") {
+          const before = body.body.translation();
+          body.syncToPhysics();
+          kinematicMotions.set(body.collider.handle, {
+            x: body.mesh.position.x - before.x,
+            y: body.mesh.position.y - before.y,
+            z: body.mesh.position.z - before.z,
+          });
+        } else if (body instanceof RigidBody3D) body.syncToPhysics();
       }
+      for (const body of bodies) if (body instanceof CharacterBody3D) body.step();
       physics.world.step(physics.eventQueue);
       for (const body of bodies) body.syncFromPhysics();
       physics.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
@@ -100,6 +117,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         );
         area.reconcileIntersections(current);
       }
+      kinematicMotions.clear();
     },
     dispose: () => {
       for (const area of areas.values()) area.dispose();
@@ -110,6 +128,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
       bodies.clear();
       bodiesByCollider.clear();
       areas.clear();
+      kinematicMotions.clear();
     },
   };
 }

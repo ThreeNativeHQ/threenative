@@ -1,16 +1,19 @@
 import type { Ctx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
+import { BoxGeometry, type Material, Mesh } from "three";
 import type { GameState } from "../state.js";
 
 type GameCtx = Ctx<GameState, PhysicsContext>;
 
 export class Player {
-  readonly mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6), new MeshNormalMaterial());
+  readonly mesh: Mesh;
   readonly body: CharacterBody3D;
+  #verticalVelocity = 0;
 
-  constructor(ctx: GameCtx) {
+  constructor(ctx: GameCtx, material: Material) {
+    this.mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6), material);
     this.mesh.position.set(-2, 0.5, 0);
+    this.mesh.castShadow = true;
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
@@ -22,7 +25,13 @@ export class Player {
 
   update(ctx: GameCtx, dt: number): void {
     const move = ctx.input.vector("move");
-    this.body.move({ x: move.x * dt * 2, y: 0, z: move.y * dt * 2 });
+    if (ctx.input.justPressed("jump") && this.body.grounded) this.#verticalVelocity = 5;
+    this.#verticalVelocity -= 9.81 * dt;
+    this.body.move({
+      x: move.x * dt * 2,
+      y: this.#verticalVelocity * dt,
+      z: move.y * dt * 2,
+    });
   }
 
   debug(): Record<string, unknown> {

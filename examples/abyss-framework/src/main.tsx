@@ -1,4 +1,5 @@
 import { defineGame } from "@threenative/core";
+import { playtest } from "@threenative/core/playtest";
 import "./style.css";
 import { createRoot } from "react-dom/client";
 import { Abyss, type AbyssState } from "./scenes/Abyss.js";
@@ -17,7 +18,17 @@ const game = defineGame<AbyssState>({
     score: 0,
     status: "attract",
   },
-  input: { pulse: { down: ["Space"], pointer: true } },
+  input: {
+    move: {
+      down: ["KeyS", "ArrowDown"],
+      left: ["KeyA", "ArrowLeft"],
+      right: ["KeyD", "ArrowRight"],
+      up: ["KeyW", "ArrowUp"],
+    },
+    pulse: { down: ["Space"], pointer: true },
+    start: { down: ["Enter"] },
+  },
+  plugins: [playtest()],
   renderer: { preferWebGPU: true },
   scenes: { play: Abyss },
   start: "play",

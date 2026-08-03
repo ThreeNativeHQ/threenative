@@ -59,6 +59,13 @@ describe("Registry", () => {
     expect(registry.snapshot()).toEqual({ player: { position: [1, 2, 3] } });
   });
 
+  it("includes entity tags in the snapshot", () => {
+    const registry = new Registry();
+    registry.add("coin.3", { tags: ["coin"] });
+
+    expect(registry.snapshot()).toEqual({ "coin.3": { tags: ["coin"] } });
+  });
+
   it("empties the registry when a scene exits", async () => {
     let sceneRegistry: Registry | undefined;
     class RegisteredScene extends Scene<Record<string, unknown>> {

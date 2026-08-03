@@ -75,10 +75,11 @@ export class FixedStepLoop {
 
   advance(ticks: number): number {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
-    if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
+    if (!Number.isInteger(ticks) || ticks <= 0)
+      throw new Error("advance ticks must be a positive integer.");
     for (let index = 0; index < ticks; index += 1) {
-      this.#accumulator = 0;
-      this.stepFrame((this.#lastTime ?? 0) + this.step * 1_000);
+      this.#lastTime = (this.#lastTime ?? 0) + this.step * 1_000;
+      this.#onUpdate(this.step);
     }
     return ticks;
   }

@@ -4,8 +4,17 @@ import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
 export type AreaHandler = (body: PhysicsBody3D) => void;
+const MAX_CONTACT_LOG = 1_000;
+
+export interface AreaContact {
+  readonly area: Area3D;
+  readonly body: PhysicsBody3D;
+  readonly entity?: string;
+  readonly started: boolean;
+}
 
 export interface Area3DOptions {
+  readonly entity?: string;
   readonly physics?: PhysicsContext;
   readonly world?: RAPIER.World;
   readonly shape: RAPIER.ColliderDesc;
@@ -13,11 +22,13 @@ export interface Area3DOptions {
 }
 
 export class Area3D {
+  readonly entity: string | undefined;
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
   #entered = new Map<number, PhysicsBody3D>();
+  #contacts: AreaContact[] = [];
   #listeners: Record<AreaEvent, Set<AreaHandler>> = {
     bodyEntered: new Set(),
     bodyExited: new Set(),
@@ -29,6 +40,7 @@ export class Area3D {
     if (world === undefined) throw new Error("Area3D requires a physics context or world.");
     this.#world = world;
     this.#physics = options.physics;
+    this.entity = options.entity;
     const position = options.position ?? { x: 0, y: 0, z: 0 };
     this.body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
@@ -52,13 +64,23 @@ export class Area3D {
     if (started) {
       if (this.#entered.has(handle)) return;
       this.#entered.set(handle, body);
+      this.#contacts.push({ area: this, body, entity: this.entity, started: true });
+      if (this.#contacts.length > MAX_CONTACT_LOG) this.#contacts.shift();
       for (const handler of this.#listeners.bodyEntered) handler(body);
       return;
     }
     const entered = this.#entered.get(handle);
     if (entered === undefined) return;
     this.#entered.delete(handle);
+    this.#contacts.push({ area: this, body: entered, entity: this.entity, started: false });
+    if (this.#contacts.length > MAX_CONTACT_LOG) this.#contacts.shift();
     for (const handler of this.#listeners.bodyExited) handler(entered);
+  }
+
+  drainContacts(): AreaContact[] {
+    const contacts = this.#contacts;
+    this.#contacts = [];
+    return contacts;
   }
 
   reconcileIntersections(current: ReadonlyMap<number, PhysicsBody3D>): void {

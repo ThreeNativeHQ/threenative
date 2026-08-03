@@ -1,5 +1,5 @@
 export { Area3D } from "./Area3D.js";
-export type { Area3DOptions, AreaEvent, AreaHandler } from "./Area3D.js";
+export type { Area3DOptions, AreaContact, AreaEvent, AreaHandler } from "./Area3D.js";
 export { CharacterBody3D } from "./CharacterBody3D.js";
 export type { CharacterBody3DOptions } from "./CharacterBody3D.js";
 export { CollisionShape3D } from "./CollisionShape3D.js";

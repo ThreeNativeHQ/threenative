@@ -860,7 +860,7 @@ export function evaluateRichPlaytestAssertions(input: {
   if (scenarioAssertions.movement?.reachesPositionWithin !== undefined) {
     const expectation = scenarioAssertions.movement.reachesPositionWithin;
     const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
-    const closestDistance = minimumResolvedDistance(
+    const resolvedDistance = minimumResolvedDistance(
       input.report.effectLog,
       input.report.observations?.effectLogSeries,
       entity,
@@ -868,6 +868,11 @@ export function evaluateRichPlaytestAssertions(input: {
       input.report.before?.position,
       expectation.atStep,
     );
+    const finalDistance = expectation.atStep === undefined && input.report.after?.position !== undefined
+      ? vectorDistance(input.report.after.position, expectation.position)
+      : undefined;
+    const candidates = [resolvedDistance, finalDistance].filter((value): value is number => value !== undefined);
+    const closestDistance = candidates.length === 0 ? undefined : Math.min(...candidates);
     const pass = closestDistance !== undefined && closestDistance <= expectation.maxDistance;
     assertions.push({
       details: { closestDistance: closestDistance ?? null, entity, ...expectation },
@@ -958,10 +963,13 @@ export function evaluateRichPlaytestAssertions(input: {
       ? mergeEffectLogs(input.report.effectLog, input.report.observations?.effectLogSeries)
       : [];
     const effectCount = countMatchingEntries(effectEvidence, tokens);
+    const runtimeCount = assertion.atStep === undefined
+      ? countRuntimeContacts(input.report.observations?.runtimeObservations, entity, assertion.with, assertion.kind)
+      : 0;
     const physicsDebugCount = assertion.kind === undefined || assertion.kind === "contact"
       ? countPhysicsDebugContacts(input.report.observations, entity, assertion.with, selectedSample?.snapshot)
       : 0;
-    const count = effectCount + physicsDebugCount;
+    const count = effectCount + physicsDebugCount + runtimeCount;
     const minCount = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
     const pass = stepAvailable && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
     assertions.push({ details: { atStep: assertion.atStep, count, entity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: `contact.${entity}`, pass });
@@ -1051,13 +1059,28 @@ export function evaluateRichPlaytestAssertions(input: {
   }
   for (const assertion of scenarioAssertions.animation ?? []) {
     const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
+    const runtime = runtimeAnimationObservations(input.report.observations?.runtimeObservations);
+    if (runtime !== undefined) {
+      const observed = isRecord(runtime[entity]) ? runtime[entity] : undefined;
+      const clip = typeof observed?.clip === "string" ? observed.clip : undefined;
+      const advancedFrames = typeof observed?.advancedFrames === "number" ? observed.advancedFrames : undefined;
+      const pass = observed !== undefined
+        && (assertion.clip === undefined || clip === assertion.clip)
+        && (assertion.entered !== true || clip !== undefined)
+        && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
+      assertions.push({ details: { advancedFrames, clip, entity, expected: assertion }, id: `animation.${entity}`, pass });
+      if (!pass) {
+        diagnostics.push({
+          code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+          message: `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
+          severity: "error",
+          suggestion: "Check model animation clip wiring and runtime animation playback state.",
+        });
+      }
+      continue;
+    }
     const tokens = [entity, assertion.clip].filter((item): item is string => item !== undefined);
     const count = countMatchingEntries(input.report.effectLog, tokens);
-    // The kind is "proves animation evidence appeared in the effect log", so a
-    // bare { entity, clip } needs at least one entry. It used to compute
-    // minCount = 0 and pass `0 >= 0` against an absent effect log. `entered` is a
-    // "require entering" switch, not a negation, so it never lowers the floor.
-    // `advancedFrames: 5` was likewise only requiring one entry; it means five.
     const minCount = Math.max(1, assertion.advancedFrames ?? 1);
     const pass = count >= minCount;
     assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames }, id: `animation.${entity}`, pass });
@@ -1266,6 +1289,22 @@ function gameplayObservations(value: unknown): Record<string, unknown> | undefin
   }
   const gameplay = value.gameplay;
   return isRecord(gameplay) ? gameplay : undefined;
+}
+
+function countRuntimeContacts(observations: unknown, entity: string, withEntity: string | undefined, kind: string | undefined): number {
+  const gameplay = gameplayObservations(observations);
+  if (!Array.isArray(gameplay?.contacts)) return 0;
+  return gameplay.contacts.filter((contact) => {
+    if (!isRecord(contact)) return false;
+    return contact.entity === entity
+      && (withEntity === undefined || contact.with === withEntity)
+      && (kind === undefined || contact.kind === kind);
+  }).length;
+}
+
+function runtimeAnimationObservations(value: unknown): Record<string, unknown> | undefined {
+  const gameplay = gameplayObservations(value);
+  return isRecord(gameplay?.animation) ? gameplay.animation : undefined;
 }
 
 function evaluatePathAssertion(
@@ -1907,7 +1946,7 @@ function runtimeDiagnosticsSnapshot(value: unknown): unknown {
 }
 
 function consoleErrors(entries: Array<{ type: string }>): Array<{ type: string }> {
-  return entries.filter((entry) => entry.type === "error" || entry.type === "assert");
+  return entries.filter((entry) => entry.type === "error" || entry.type === "assert" || entry.type === "pageerror");
 }
 
 function readPath(value: unknown, path: string | undefined): unknown {

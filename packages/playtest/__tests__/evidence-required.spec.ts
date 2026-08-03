@@ -117,6 +117,19 @@ test("movement.maxDistance still fails for an entity that moved too far", async 
   expect(evaluated.assertions.find(({ id }) => id === "movement.maxDistance")?.pass).toBe(false);
 });
 
+test("movement.reachesPositionWithin considers the final observed position", async () => {
+  const evaluated = await evaluate(
+    { movement: { entity: "player", reachesPositionWithin: { maxDistance: 0.25, position: [9, 0, 0] } } },
+    {
+      after: { frame: 1, position: [8.9, 0, 0], tick: 1 },
+      before: { frame: 0, position: [0, 0, 0], tick: 0 },
+      effectLog: { entries: [{ kind: "service", payload: { result: { entity: "player", resolved: [0, 0, 0] } }, service: "character.move" }] },
+    },
+  );
+
+  expect(evaluated.assertions.find(({ id }) => id === "movement.reachesPosition")?.pass).toBe(true);
+});
+
 test("an animation assertion requires matching evidence rather than defaulting to satisfied", async () => {
   // `minCount` was 0 unless `entered` or `advancedFrames` was set, so a bare
   // { entity, clip } assertion evaluated `0 >= 0` and passed with no effect log.
@@ -142,6 +155,22 @@ test("an animation assertion passes once its evidence is present", async () => {
   };
 
   const evaluated = await evaluate({ animation: [{ entity: "player", clip: "run", advancedFrames: 5 }] }, { effectLog });
+
+  expect(evaluated.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
+});
+
+test("an animation assertion reads the runtime animation channel", async () => {
+  const evaluated = await evaluate(
+    { animation: [{ entity: "player", clip: "run", advancedFrames: 5 }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: {
+          gameplay: { animation: { player: { advancedFrames: 8, clip: "run" } }, states: {} },
+        },
+      } as IPlaytestObservations,
+    },
+  );
 
   expect(evaluated.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
 });
@@ -175,4 +204,24 @@ test("a tag assertion with a floor still evaluates normally", async () => {
   );
 
   expect(evaluated.assertions.find(({ id }) => id === "tags.coin")?.pass).toBe(true);
+});
+
+test("a contact assertion reads the runtime contact channel", async () => {
+  const evaluated = await evaluate(
+    { contacts: [{ entity: "fox", with: "coin.3", kind: "trigger", minCount: 1 }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: {
+          gameplay: {
+            animation: {},
+            contacts: [{ entity: "fox", kind: "trigger", with: "coin.3" }],
+            states: {},
+          },
+        },
+      } as IPlaytestObservations,
+    },
+  );
+
+  expect(evaluated.assertions.find(({ id }) => id === "contact.fox")?.pass).toBe(true);
 });

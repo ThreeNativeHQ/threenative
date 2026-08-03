@@ -15,6 +15,8 @@ export interface CharacterBody3DOptions {
     readonly includeDynamicBodies?: boolean;
   };
   readonly snapToGround?: number;
+  readonly gravity?: number;
+  readonly maxFallSpeed?: number;
 }
 
 export class CharacterBody3D {
@@ -22,10 +24,15 @@ export class CharacterBody3D {
   readonly collider: RAPIER.Collider;
   readonly controller: RAPIER.KinematicCharacterController;
   readonly mesh: Mesh;
+  readonly velocity: Vector3;
+  gravity: number;
+  maxFallSpeed: number;
   grounded = false;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
   #desired = { x: 0, y: 0, z: 0 };
+  #sliding = false;
+  #groundCollider: number | undefined;
   #disposed = false;
 
   constructor(options: CharacterBody3DOptions) {
@@ -35,6 +42,9 @@ export class CharacterBody3D {
     this.#world = world;
     this.#physics = options.physics;
     this.mesh = options.mesh;
+    this.velocity = this.mesh.position.clone().set(0, 0, 0);
+    this.gravity = options.gravity ?? -9.81;
+    this.maxFallSpeed = options.maxFallSpeed ?? 50;
     const description = RAPIER.RigidBodyDesc.kinematicPositionBased()
       .setTranslation(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z)
       .setRotation({
@@ -63,13 +73,35 @@ export class CharacterBody3D {
 
   move(desiredTranslation: Pick<Vector3, "x" | "y" | "z">): void {
     this.#desired = { x: desiredTranslation.x, y: desiredTranslation.y, z: desiredTranslation.z };
+    this.#sliding = false;
+  }
+
+  moveAndSlide(dt: number): void {
+    if (!Number.isFinite(dt) || dt < 0)
+      throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");
+    this.velocity.y = Math.max(this.velocity.y + this.gravity * dt, -this.maxFallSpeed);
+    this.#desired = {
+      x: this.velocity.x * dt,
+      y: this.velocity.y * dt,
+      z: this.velocity.z * dt,
+    };
+    this.#sliding = true;
   }
 
   step(): void {
     if (this.#disposed || !this.body.isValid()) return;
+    const carry =
+      this.#sliding && this.grounded && this.velocity.y <= 0 && this.#groundCollider !== undefined
+        ? this.#physics?.kinematicMotion?.(this.#groundCollider)
+        : undefined;
+    const desired = {
+      x: this.#desired.x + (carry?.x ?? 0),
+      y: this.#desired.y + (carry?.y ?? 0),
+      z: this.#desired.z + (carry?.z ?? 0),
+    };
     this.controller.computeColliderMovement(
       this.collider,
-      this.#desired,
+      desired,
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
     );
     const movement = this.controller.computedMovement();
@@ -80,7 +112,20 @@ export class CharacterBody3D {
       z: current.z + movement.z,
     });
     this.grounded = this.controller.computedGrounded();
+    this.#groundCollider = this.grounded ? this.#findGroundCollider() : undefined;
+    if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
     this.#desired = { x: 0, y: 0, z: 0 };
+    this.#sliding = false;
+  }
+
+  #findGroundCollider(): number | undefined {
+    for (let index = 0; index < this.controller.numComputedCollisions(); index += 1) {
+      const collision = this.controller.computedCollision(index);
+      if (collision === null || collision.collider === null) continue;
+      if ((collision.normal1.y ?? Number.NEGATIVE_INFINITY) >= 0.5)
+        return collision.collider.handle;
+    }
+    return undefined;
   }
 
   syncFromPhysics(): void {

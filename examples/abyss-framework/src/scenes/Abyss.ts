@@ -262,6 +262,7 @@ export class Abyss extends Scene<AbyssState> {
     };
     ctx.entities.add("player", {
       debug: () => ({ hull, position: lure.position.toArray(), score }),
+      mesh: lure,
     });
 
     const publish = (pulsing: boolean) => {
@@ -306,6 +307,8 @@ export class Abyss extends Scene<AbyssState> {
       const now = performance.now();
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
+
+      if (status !== "play" && frameCtx.input.pressed("start")) start();
 
       // Last device to move wins, the way the vanilla build switches between
       // pointAt() and the WASD branch.

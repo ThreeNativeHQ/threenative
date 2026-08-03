@@ -1,16 +1,20 @@
 import type { Ctx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
+import { BoxGeometry, Mesh, MeshStandardMaterial } from "three";
 import type { GameState } from "../state.js";
 
 type GameCtx = Ctx<GameState, PhysicsContext>;
 
 export class Player {
-  readonly mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6), new MeshNormalMaterial());
+  readonly mesh = new Mesh(
+    new BoxGeometry(0.6, 1, 0.6),
+    new MeshStandardMaterial({ color: 0x6fe8ff, roughness: 0.42, metalness: 0.22 }),
+  );
   readonly body: CharacterBody3D;
 
   constructor(ctx: GameCtx) {
     this.mesh.position.set(-2, 0.5, 0);
+    this.mesh.castShadow = true;
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },

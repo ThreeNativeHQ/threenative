@@ -17,6 +17,7 @@ export interface IThreeObservationInput {
   renderer: ThreePlaytestRenderer;
   resources?: () => Record<string, JsonValue>;
   scene: Scene;
+  gameplay?: () => IPlaytestObservationSnapshot["gameplay"];
   tick?: number;
 }
 
@@ -37,6 +38,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     },
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics() }),
     entities,
+    ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
     ...(input.resources === undefined ? {} : { resources: input.resources() }),
   };
 }

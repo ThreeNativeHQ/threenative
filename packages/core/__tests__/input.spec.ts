@@ -28,4 +28,50 @@ describe("InputMap", () => {
     expect(input.vector("move").toArray()).toEqual([0, 0]);
     input.dispose();
   });
+
+  it("should report justPressed and justReleased on one transition frame", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ jump: { down: ["Space"] } }, target);
+
+    target.dispatchEvent(keyEvent("keydown", "Space"));
+    input.tick();
+    expect(input.justPressed("jump")).toBe(true);
+    expect(input.justReleased("jump")).toBe(false);
+
+    input.tick();
+    input.tick();
+    expect(input.justPressed("jump")).toBe(false);
+
+    target.dispatchEvent(keyEvent("keyup", "Space"));
+    input.tick();
+    expect(input.justReleased("jump")).toBe(true);
+    input.tick();
+    expect(input.justReleased("jump")).toBe(false);
+    input.dispose();
+  });
+
+  it("should not report a bound action when an unbound gamepad button is down", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        getGamepads: () => [
+          {
+            axes: [],
+            buttons: [{ pressed: false }, { pressed: true }],
+          } as unknown as Gamepad,
+        ],
+      },
+    });
+    const input = new InputMap({ jump: { buttons: [0] } }, new EventTarget());
+
+    try {
+      input.tick();
+      expect(input.pressed("jump")).toBe(false);
+    } finally {
+      input.dispose();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
 });

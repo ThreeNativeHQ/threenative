@@ -81,6 +81,47 @@ test("fixed-step and resource providers advertise only installed capabilities", 
   installation.dispose();
 });
 
+test("gameplay providers advertise and return animation and state channels together", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    gameplay: () => ({
+      animation: { fox: { advancedFrames: 12, clip: "run" } },
+      states: { fox: "run" },
+    }),
+    renderer,
+    scene: new Scene(),
+  });
+
+  expect((await installation.bridge.describe()).capabilities).toEqual([
+    "camera.observe",
+    "entity.bounds",
+    "entity.observe",
+    "entity.setup",
+    "runtime.animation",
+    "runtime.state",
+  ]);
+  expect((await installation.bridge.sample({})).gameplay).toEqual({
+    animation: { fox: { advancedFrames: 12, clip: "run" } },
+    states: { fox: "run" },
+  });
+  installation.dispose();
+});
+
+test("gameplay channels stay absent when no provider supplies them", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+  });
+
+  const description = await installation.bridge.describe();
+  const snapshot = await installation.bridge.sample({});
+  expect(description.capabilities).not.toContain("runtime.animation");
+  expect(description.capabilities).not.toContain("runtime.state");
+  expect(snapshot.gameplay).toBeUndefined();
+  installation.dispose();
+});
+
 // The observation half of the adapter decides `visible`, which camera and
 // visibility assertions rest on. An entity behind the camera that still reported
 // visible:true would turn every visibility assertion into a vacuous pass.

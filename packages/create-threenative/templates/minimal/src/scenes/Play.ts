@@ -1,6 +1,6 @@
 import { type Ctx, Scene } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
+import { BoxGeometry, Mesh, MeshStandardMaterial } from "three";
 import { Player } from "../entities/Player.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -15,12 +15,16 @@ export class Play extends Scene<GameState, PhysicsContext> {
   #unsubscribe: (() => void) | undefined;
 
   enter(ctx: GameCtx): void {
-    setupLighting(ctx.scene);
+    setupLighting(ctx.scene, ctx.renderer.raw as { shadowMap: { enabled: boolean } });
     setupPost(ctx.renderer.raw as { toneMapping?: number; toneMappingExposure?: number });
     ctx.camera.position.set(0, 3, 9);
     ctx.camera.lookAt(0, 1, 0);
-    const floor = new Mesh(new BoxGeometry(10, 0.2, 4), new MeshNormalMaterial());
+    const floor = new Mesh(
+      new BoxGeometry(10, 0.2, 4),
+      new MeshStandardMaterial({ color: 0x12384a, roughness: 0.78, metalness: 0.12 }),
+    );
     floor.position.y = -0.1;
+    floor.receiveShadow = true;
     ctx.add(floor);
     this.#floor = new RigidBody3D({
       mesh: floor,

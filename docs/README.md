@@ -38,7 +38,7 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 
 ## Spikes
 
-- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — `CHARTER.md` §7 Phase 0a, unstarted
+- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — `CHARTER.md` §7 Phase 0a, unresolved after execution
 
 A spike is not a PRD. It buys an answer, ships nothing, and is deleted after its result is
 recorded here.

@@ -1,6 +1,7 @@
 import { type Ctx, Scene } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
+import { BoxGeometry, Mesh } from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
 import { setupLighting } from "../render/lighting.js";
@@ -18,14 +19,15 @@ export class Play extends Scene<GameState, PhysicsContext> {
   #unsubscribe: (() => void) | undefined;
 
   enter(ctx: GameCtx): void {
-    setupLighting(ctx.scene);
-    setupPost(ctx.renderer.raw as { toneMapping?: number; toneMappingExposure?: number });
+    setupLighting(ctx.scene, ctx.renderer.raw as { shadowMap: { enabled: boolean } });
+    setupPost(ctx.renderer.raw as WebGPURenderer, ctx.scene, ctx.camera);
     ctx.camera.position.set(0, 3, 9);
     ctx.camera.lookAt(0, 1, 0);
 
     const materials = createMaterials();
     const floorMesh = new Mesh(new BoxGeometry(10, 0.2, 4), materials.floor);
     floorMesh.position.y = -0.1;
+    floorMesh.receiveShadow = true;
     ctx.add(floorMesh);
     this.#floor = new RigidBody3D({
       mesh: floorMesh,
@@ -33,8 +35,8 @@ export class Play extends Scene<GameState, PhysicsContext> {
       shape: CollisionShape3D.fromMesh(floorMesh),
       type: "fixed",
     });
-    this.#crate = new Crate(ctx, -1, 4, -1.5);
-    this.#player = new Player(ctx);
+    this.#crate = new Crate(ctx, -1, 4, -1.5, materials.crate);
+    this.#player = new Player(ctx, materials.player);
     ctx.entities.add("player", this.#player);
     this.#pickup = new Area3D({
       physics: ctx.physics,

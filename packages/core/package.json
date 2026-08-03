@@ -13,6 +13,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./playtest": {
+      "types": "./dist/playtest.d.ts",
+      "import": "./dist/playtest.js"
+    },
     "./*": {
       "types": "./dist/*.d.ts",
       "import": "./dist/*.js"
@@ -31,6 +35,7 @@
   },
   "devDependencies": {
     "@types/three": "0.185.3",
+    "@threenative/playtest": "workspace:*",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"

@@ -1,0 +1,16 @@
+{
+  "name": "boot-to-play-jump",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 2,
+  "steps": [{ "kind": "input", "press": "Space", "holdFrames": 10, "release": true }],
+  "subject": "player",
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": { "axis": "+y", "min": 0.1 }
+    }
+  }
+}
