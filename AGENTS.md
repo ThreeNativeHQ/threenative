@@ -1,12 +1,10 @@
 # AGENTS.md — ThreeNative
 
-Instructions for any AI agent working in this repository. Nested `AGENTS.md` files add
-package-specific rules; the closest one to the file you are editing wins.
+Instructions for any AI agent here. Nested `AGENTS.md` files add package rules; closest wins.
 
-**Every `CLAUDE.md` in this repo is generated.** It is the `AGENTS.md` beside it under a
-generated banner, written by `scripts/sync-agent-docs.ts`. Edit `AGENTS.md`, then run
-`pnpm sync:agents`. CI runs `--check` and fails on drift, so a hand-edited `CLAUDE.md` will
-be reverted.
+**Every `CLAUDE.md` in this repo is generated** by `scripts/sync-agent-docs.ts` from the
+`AGENTS.md` beside it. Edit `AGENTS.md`, then run `pnpm sync:agents`. CI runs `--check` and
+fails on drift, so a hand-edited `CLAUDE.md` will be reverted.
 
 ## What this is
 
@@ -103,21 +101,38 @@ scripts/                      budgets, LOC classifier, blind scoring
 
 ## When you add a feature
 
-1. Check `CHARTER.md` for whether it is on the "what it is not" list (§2). An IR, a scene
-   format, an editor, a preset system, a code-first ECS, and a bespoke CLI vocabulary are
-   all closed questions, decided against with evidence.
+1. Check `CHARTER.md` §2's "what it is not" list. An IR, a scene format, an editor, a preset
+   system, a code-first ECS and a bespoke CLI vocabulary are closed questions, decided
+   against with evidence.
 2. Check the 20-line rule. Most "framework features" are user-space code.
 3. Put visual behaviour in `packages/create-threenative/templates/`, not in a package.
 4. Add the test with the change, in the same commit.
 5. Run `pnpm budgets`. If a cap moved the wrong way, cut something.
 
-## Verification honesty
+## Verification honesty, and how you prove it
 
-The most dangerous failure in this repo is a check that reports green while asserting
-nothing — v1's playtest harness had 19 validators that returned `undefined` on a
-wrong-typed value and 13 `.filter()` calls that dropped them silently. A scenario asserting
-nothing reported pass.
-
-The rule everywhere: **fail closed.** Malformed input throws, a missing observation fails,
-and an empty assertion set is a failure, never a pass. Applies to your own reporting too —
+The most dangerous failure here is a check that reports green while asserting nothing —
+v1's harness had 19 validators returning `undefined` on a wrong-typed value and 13
+`.filter()` calls dropping them silently, so a scenario asserting nothing reported pass.
+The rule everywhere is **fail closed**: malformed input throws, a missing observation
+fails, an empty assertion set is a failure. It applies to your own reporting too —
 "unverified" is an acceptable answer, "verified" without a run is not.
+
+`pnpm test` proves the units. **A playtest scenario proves the game**, by driving the real
+build in a browser and asserting what happened. Any change with runtime behaviour gets one,
+re-run on every later change to that behaviour — this is what rule 4 loops against.
+
+```sh
+pnpm --filter @threenative/playtest build          # the CLI is built, not checked in
+node packages/playtest/dist/runner/cli.js init     # writes playtests/smoke.playtest.json
+node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
+  --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-arg --enable-unsafe-webgpu
+```
+
+In a scaffolded project the same CLI is `npx @threenative/playtest`. Working today:
+`diagnostics`, console, network, screenshot and trace assertions, against any URL, with no
+adapter. Semantic ones (`movement`, `camera`, `visibility`) need
+`installThreePlaytestBridge` in the app under test — nothing in this repo installs it yet,
+and PRD-007 wires it into `defineGame` but is **not shipped**. Until then a semantic
+scenario fails `TN_PLAYTEST_BRIDGE_MISSING`; that is the harness being right. Install the
+bridge or narrow the scenario, never delete the assertion to get green.

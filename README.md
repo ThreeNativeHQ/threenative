@@ -44,10 +44,8 @@ The runnable examples are `examples/abyss-vanilla/` (frozen control) and
 
 ## Docs
 
-`CHARTER.md` is the only binding document. [`docs/README.md`](docs/README.md) maps
-everything else: PRDs and verification (shipped work), `docs/strategy/` (positioning,
-roadmap, business model, metrics), `docs/architecture/` (entity model, Three.js
-constraints, native runtime, agent interface), and `docs/product/` (performance budgets,
-asset pipeline, store policy). Start with
-[`docs/strategy/CONFLICTS.md`](docs/strategy/CONFLICTS.md) — it lists the eight places
-where the strategy contradicts `CHARTER.md` and what to do about each.
+[`CHARTER.md`](CHARTER.md) is the only binding document, and
+[`docs/README.md`](docs/README.md) maps everything else — PRDs, verification, strategy,
+architecture, product — labelling which parts are proposals. Start with
+[`docs/strategy/CONFLICTS.md`](docs/strategy/CONFLICTS.md): the eight places where the
+strategy contradicts `CHARTER.md`, and what to do about each.

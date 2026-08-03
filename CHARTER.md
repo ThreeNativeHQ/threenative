@@ -568,15 +568,12 @@ there — a real product, and v1's own final recommendation:
 
 ### PRD-005 benchmark status — VOID, 2026-08-02
 
-The frozen vanilla control and a hand-ported framework Abyss scene are now published,
-with a deterministic LOC classifier, sealed prompt, equal-proof protocol, and blind
-scoring harness wired into CI. The generated comparison records vanilla winning the
-total-line row. The live numbers are generated into the root README between the
-`benchmark:loc` markers by `scripts/count-loc.ts`; never restate them by hand here.
+The apparatus is published and wired into CI: frozen vanilla control, hand-ported
+framework arm, deterministic LOC classifier, sealed prompt, blind scoring. The static LOC
+comparison says **vanilla wins**; the live numbers are generated into the root README
+between the `benchmark:loc` markers, never restated by hand.
 
-The actual AI head-to-head is **VOID**, recorded in
-`docs/benchmark/RESULTS-2026-08-02.md`: no three-repeat run, blind human score, or
-authoritative provider usage event was available in this repository execution. A void
-is not a quality or cost loss, so §12's abandon action is not claimed. The next valid
-result must retain the sealed prompt hash and complete all six repeats before declaring
-win or loss.
+The AI head-to-head itself is **VOID** — see `docs/benchmark/RESULTS-2026-08-02.md` for
+what was and was not run. A void is neither a win nor a loss, so §12's abandon action is
+not claimed. The next valid result keeps the sealed prompt hash and completes all six
+repeats before either is declared.

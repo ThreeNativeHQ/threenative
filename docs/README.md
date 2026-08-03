@@ -1,9 +1,9 @@
 # Docs map
 
-`CHARTER.md` at the repo root is the **only binding document**. Everything under
-`docs/` either implements it (PRDs, verification) or explores what comes after it
-(strategy, architecture, product). When a doc here disagrees with `CHARTER.md`,
-`CHARTER.md` wins until it is amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
+[`CHARTER.md`](../CHARTER.md) at the repo root is the **only binding document**. Everything
+under `docs/` either implements it (PRDs, verification) or explores what comes after it
+(strategy, architecture, product). When a doc here disagrees, `CHARTER.md` wins until it is
+amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 
 | Folder | Holds | Status of contents |
 |---|---|---|
@@ -35,8 +35,5 @@
 - [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
-## Markdown budget
-
-`pnpm budgets` fails CI above 5,000 markdown lines repo-wide and above 10 files in
-`docs/PRDs/`. Adding a doc here spends budget that PRDs also draw from. Delete before
-you add.
+`pnpm budgets` fails CI above 5,000 markdown lines repo-wide and 10 files in `docs/PRDs/`.
+Adding a doc here spends budget PRDs also draw from — delete before you add.
