@@ -19,12 +19,17 @@
     "./package.json": "./package.json"
   },
   "sideEffects": false,
+  "dependencies": {
+    "three": "catalog:",
+    "zustand": "catalog:"
+  },
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build"
   },
   "devDependencies": {
+    "@types/three": "0.185.3",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"
