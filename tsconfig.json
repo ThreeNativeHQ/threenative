@@ -2,7 +2,14 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "allowJs": false
+    "allowJs": false,
+    "baseUrl": ".",
+    "paths": {
+      "@threenative/core": ["packages/core/src/index.ts"],
+      "@threenative/physics": ["packages/physics/src/index.ts"],
+      "@threenative/playtest": ["packages/playtest/src/index.ts"],
+      "@threenative/ui": ["packages/ui/src/index.ts"]
+    }
   },
   "include": [
     "scripts/**/*.ts",

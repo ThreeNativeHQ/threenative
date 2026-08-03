@@ -52,6 +52,7 @@ export interface Game<
 > {
   readonly ctx: Ctx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
+  readonly state: GameStore<TState>;
   start(): Promise<void>;
   stop(): void;
 }
@@ -62,13 +63,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #scene: Scene<TState, TPhysics> | undefined;
   #renderer: RendererLike | undefined;
   #input: InputMap | undefined;
-  #state: GameStore<TState> | undefined;
+  #state: GameStore<TState>;
   #loop: FixedStepLoop | undefined;
   #cleanup: Array<() => void> = [];
   #started = false;
 
   constructor(config: GameConfig<TState, TPhysics>) {
     this.#config = config;
+    this.#state = createGameStore(
+      this.#config.initialState ?? ({} as TState),
+      this.#config.stateFlushMs,
+    );
   }
 
   get ctx(): Ctx<TState, TPhysics> | undefined {
@@ -77,6 +82,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
 
   get scene(): Scene<TState, TPhysics> | undefined {
     return this.#scene;
+  }
+
+  get state(): GameStore<TState> {
+    return this.#state;
   }
 
   async start(): Promise<void> {
@@ -98,10 +107,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
 
     const inputTarget = typeof window === "undefined" ? canvas : window;
     this.#input = new InputMap(this.#config.input, inputTarget, canvas);
-    this.#state = createGameStore(
-      this.#config.initialState ?? ({} as TState),
-      this.#config.stateFlushMs,
-    );
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
@@ -150,11 +155,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     }
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
     this.#input?.dispose();
-    this.#state?.stop();
+    this.#state.stop();
     this.#renderer?.dispose();
     this.#renderer = undefined;
     this.#input = undefined;
-    this.#state = undefined;
     this.#scene = undefined;
     this.#ctx = undefined;
     this.#loop = undefined;

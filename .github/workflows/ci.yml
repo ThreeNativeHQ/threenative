@@ -65,6 +65,68 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:browser
 
+  scaffold-smoke:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter create-threenative build
+      - name: Pack local framework packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/ui build
+          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/ui pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+      - name: Generate starter scaffold
+        run: |
+          target="$RUNNER_TEMP/threenative-starter"
+          core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
+            --core-package "$core_package" --physics-package "$physics_package" --ui-package "$ui_package"
+          pnpm --dir "$target" install
+          pnpm --dir "$target" build
+          test -f "$target/src/render/lighting.ts"
+          test -f "$target/src/ui/Hud.tsx"
+          ! grep -R "@threenative/" "$target/src/render"
+          ! grep -R "catalog:" "$target/package.json"
+          pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:4175/ >/dev/null && break; sleep 1; done
+          SCAFFOLD_URL=http://127.0.0.1:4175 node --input-type=module - <<'NODE'
+          import { chromium } from "@playwright/test";
+
+          const browser = await chromium.launch({
+            args: ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+          });
+          const page = await browser.newPage();
+          const errors = [];
+          page.on("pageerror", (error) => errors.push(error.message));
+          await page.goto(process.env.SCAFFOLD_URL);
+          await page.waitForSelector("canvas");
+          await page.keyboard.down("ArrowRight");
+          await page.waitForTimeout(3_000);
+          await page.keyboard.up("ArrowRight");
+          const text = await page.locator("body").innerText();
+          if (!text.includes("\n1\n") || errors.length > 0) {
+            throw new Error(`Scaffold smoke failed: ${JSON.stringify({ text, errors })}`);
+          }
+          await browser.close();
+          NODE
+
   build:
     needs: test
     runs-on: ubuntu-latest

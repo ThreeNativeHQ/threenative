@@ -1,9 +1,12 @@
 {
-  "name": "@threenative/physics",
+  "name": "create-threenative",
   "version": "0.1.0",
-  "description": "Thin Rapier physics bindings for ThreeNative games.",
+  "description": "Scaffold a readable ThreeNative game project.",
   "type": "module",
-  "files": ["dist"],
+  "files": ["dist", "templates"],
+  "bin": {
+    "create-threenative": "./dist/index.js"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,22 +18,14 @@
     "./package.json": "./package.json"
   },
   "sideEffects": false,
-  "dependencies": {
-    "@dimforge/rapier3d-compat": "catalog:"
-  },
-  "peerDependencies": {
-    "@threenative/core": ">=0.1.0 <0.2.0"
-  },
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build"
   },
   "devDependencies": {
-    "@types/three": "0.185.3",
-    "@threenative/core": "workspace:*",
+    "@types/node": "20.19.43",
     "publint": "0.3.22",
-    "three": "catalog:",
     "tsup": "8.5.1",
     "typescript": "catalog:"
   }

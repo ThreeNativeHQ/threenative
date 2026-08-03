@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@threenative/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.tsx", "src/**/*.ts"]
+}

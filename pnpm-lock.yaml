@@ -9,6 +9,24 @@ catalogs:
     '@dimforge/rapier3d-compat':
       specifier: 0.19.3
       version: 0.19.3
+    '@types/react':
+      specifier: 19.2.0
+      version: 19.2.0
+    '@types/react-dom':
+      specifier: 19.2.0
+      version: 19.2.0
+    '@types/react-test-renderer':
+      specifier: 19.1.0
+      version: 19.1.0
+    react:
+      specifier: 19.2.0
+      version: 19.2.0
+    react-dom:
+      specifier: 19.2.0
+      version: 19.2.0
+    react-test-renderer:
+      specifier: 19.2.0
+      version: 19.2.0
     three:
       specifier: 0.185.1
       version: 0.185.1
@@ -87,11 +105,26 @@ importers:
         version: 0.185.1
       zustand:
         specifier: 'catalog:'
-        version: 5.0.14
+        version: 5.0.14(@types/react@19.2.0)(react@19.2.0)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/create-threenative:
+    devDependencies:
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
       publint:
         specifier: 0.3.22
         version: 0.3.22
@@ -107,10 +140,10 @@ importers:
       '@dimforge/rapier3d-compat':
         specifier: 'catalog:'
         version: 0.19.3
+    devDependencies:
       '@threenative/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
@@ -141,6 +174,39 @@ importers:
       three:
         specifier: 'catalog:'
         version: 0.185.1
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/ui:
+    devDependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.0
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.0(@types/react@19.2.0)
+      '@types/react-test-renderer':
+        specifier: 'catalog:'
+        version: 19.1.0
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
+      react:
+        specifier: 'catalog:'
+        version: 19.2.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.0(react@19.2.0)
+      react-test-renderer:
+        specifier: 'catalog:'
+        version: 19.2.0(react@19.2.0)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
@@ -808,6 +874,17 @@ packages:
   '@types/pngjs@6.0.5':
     resolution: {integrity: sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ==}
 
+  '@types/react-dom@19.2.0':
+    resolution: {integrity: sha512-brtBs0MnE9SMx7px208g39lRmC5uHZs96caOJfTjFcYSLHNamvaSMfJNagChVNkup2SdtOxKX1FDBkRSJe1ZAg==}
+    peerDependencies:
+      '@types/react': ^19.2.0
+
+  '@types/react-test-renderer@19.1.0':
+    resolution: {integrity: sha512-XD0WZrHqjNrxA/MaR9O22w/RNidWR9YZmBdRGI7wcnWGrv/3dA8wKCJ8m63Sn+tLJhcjmuhOi629N66W6kgWzQ==}
+
+  '@types/react@19.2.0':
+    resolution: {integrity: sha512-1LOH8xovvsKsCBq1wnT4ntDUdCJKmnEakhsuoUSy6ExlHCkGP2hqnatagYTgFk6oeL0VU31u7SNjunPN+GchtA==}
+
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
 
@@ -893,6 +970,9 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+
+  csstype@3.2.3:
+    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1146,6 +1226,23 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  react-dom@19.2.0:
+    resolution: {integrity: sha512-UlbRu4cAiGaIewkPyiRGJk0imDN2T3JjieT6spoL2UeSf5od4n5LB/mQ4ejmxhCFT1tYe8IvaFulzynWovsEFQ==}
+    peerDependencies:
+      react: ^19.2.0
+
+  react-is@19.2.8:
+    resolution: {integrity: sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==}
+
+  react-test-renderer@19.2.0:
+    resolution: {integrity: sha512-zLCFMHFE9vy/w3AxO0zNxy6aAupnCuLSVOJYDe/Tp+ayGI1f2PLQsFVPANSD42gdSbmYx5oN+1VWDhcXtq7hAQ==}
+    peerDependencies:
+      react: ^19.2.0
+
+  react@19.2.0:
+    resolution: {integrity: sha512-tmbWg6W31tQLeB5cdIBOicJDJRR2KzXsV7uSK9iNfLWQ5bIZfxuPEHp7M8wiHyHnn0DD1i7w3Zmin0FtkrwoCQ==}
+    engines: {node: '>=0.10.0'}
+
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
@@ -1167,6 +1264,9 @@ packages:
   sade@1.8.1:
     resolution: {integrity: sha512-xal3CZX1Xlo/k4ApwCFrHVACi9fBqJ7V+mwhBsuf/1IOKbBy098Fex+Wa/5QMubw09pSZ/u8EY8PWgevJsXp1A==}
     engines: {node: '>=6'}
+
+  scheduler@0.27.0:
+    resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
 
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
@@ -1783,6 +1883,18 @@ snapshots:
     dependencies:
       '@types/node': 20.19.43
 
+  '@types/react-dom@19.2.0(@types/react@19.2.0)':
+    dependencies:
+      '@types/react': 19.2.0
+
+  '@types/react-test-renderer@19.1.0':
+    dependencies:
+      '@types/react': 19.2.0
+
+  '@types/react@19.2.0':
+    dependencies:
+      csstype: 3.2.3
+
   '@types/stats.js@0.17.4': {}
 
   '@types/three@0.185.3':
@@ -1867,6 +1979,8 @@ snapshots:
   consola@3.4.2: {}
 
   convert-source-map@2.0.0: {}
+
+  csstype@3.2.3: {}
 
   debug@4.4.3:
     dependencies:
@@ -2103,6 +2217,21 @@ snapshots:
       picocolors: 1.1.1
       sade: 1.8.1
 
+  react-dom@19.2.0(react@19.2.0):
+    dependencies:
+      react: 19.2.0
+      scheduler: 0.27.0
+
+  react-is@19.2.8: {}
+
+  react-test-renderer@19.2.0(react@19.2.0):
+    dependencies:
+      react: 19.2.0
+      react-is: 19.2.8
+      scheduler: 0.27.0
+
+  react@19.2.0: {}
+
   readdirp@4.1.2: {}
 
   resolve-from@5.0.0: {}
@@ -2163,6 +2292,8 @@ snapshots:
   sade@1.8.1:
     dependencies:
       mri: 1.2.0
+
+  scheduler@0.27.0: {}
 
   siginfo@2.0.0: {}
 
@@ -2310,4 +2441,7 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  zustand@5.0.14: {}
+  zustand@5.0.14(@types/react@19.2.0)(react@19.2.0):
+    optionalDependencies:
+      '@types/react': 19.2.0
+      react: 19.2.0

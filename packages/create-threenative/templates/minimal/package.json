@@ -1,0 +1,19 @@
+{
+  "name": "__PROJECT_NAME__",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vite build"
+  },
+  "dependencies": {
+    "@threenative/core": "0.1.0",
+    "@threenative/physics": "0.1.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  }
+}
