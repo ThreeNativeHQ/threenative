@@ -571,7 +571,8 @@ there — a real product, and v1's own final recommendation:
 The frozen vanilla control and a hand-ported framework Abyss scene are now published,
 with a deterministic LOC classifier, sealed prompt, equal-proof protocol, and blind
 scoring harness wired into CI. The generated comparison records vanilla winning the
-total-line row (410 control lines versus 412 lines in the framework Abyss port).
+total-line row. The live numbers are generated into the root README between the
+`benchmark:loc` markers by `scripts/count-loc.ts`; never restate them by hand here.
 
 The actual AI head-to-head is **VOID**, recorded in
 `docs/benchmark/RESULTS-2026-08-02.md`: no three-repeat run, blind human score, or

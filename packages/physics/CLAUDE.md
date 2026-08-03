@@ -45,6 +45,6 @@ the user reaches `body` directly.
 ## Native path
 
 `@threenative/physics-native` (JSI binding to Rapier's Rust) is the planned mobile answer;
-WASM Rapier is not viable on Hermes or Android JSC. See `DESIGN.md` §7 and
+WASM Rapier is not viable on Hermes or Android JSC. See `CHARTER.md` §7 and
 `docs/architecture/NATIVE-RUNTIME.md`. It does not exist yet — do not import it or write
 code that assumes it.

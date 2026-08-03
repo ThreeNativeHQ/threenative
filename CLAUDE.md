@@ -16,9 +16,21 @@ An application framework for Three.js games. WebGPU by default, Godot-shaped con
 React/Tailwind for UI, vanilla `three` on every surface underneath. **The framework ships
 the plumbing. The user's agent ships the gameplay.**
 
-`DESIGN.md` is the only binding document. If anything here contradicts it, `DESIGN.md`
-wins — say so instead of quietly following this file. `docs/README.md` maps the rest, and
-labels which docs are proposals rather than commitments.
+`CHARTER.md` at the repo root is the only binding document. If anything here contradicts
+it, `CHARTER.md` wins — say so instead of quietly following this file. `docs/README.md`
+maps the rest, and labels which docs are proposals rather than commitments.
+
+## How you work
+
+1. **Think before coding.** State assumptions explicitly. If the request is ambiguous, ask
+   rather than guess — a silent interpretation costs more than a question.
+2. **Simplicity first.** Nothing beyond what was asked. No speculative abstraction, no
+   option nobody requested. This is the 20-line rule applied to your own diff.
+3. **Surgical changes.** Touch only what you must, and clean up only your own mess.
+   Unrelated tidying belongs in its own change.
+4. **Goal-driven execution.** Turn the task into success criteria that can be *run*, then
+   loop until they pass. Criteria beat instructions: `pnpm test` green and a playtest
+   scenario asserting the behaviour is a goal; "make it work" is not.
 
 ## Commands
 
@@ -39,7 +51,7 @@ next. Run `pnpm typecheck && pnpm lint && pnpm test` before claiming a change is
 
 ## Rules that get a change rejected
 
-These come from `DESIGN.md` §11 and from the 790k-line v1 that died of ignoring them.
+These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignoring them.
 
 1. **The 20-line rule.** If a competent developer could write it in under 20 lines, it does
    not go in the framework. Write it in the example or the template instead.
@@ -96,7 +108,7 @@ scripts/                      budgets, LOC classifier, blind scoring
 
 ## When you add a feature
 
-1. Check `DESIGN.md` for whether it is on the "what it is not" list (§2). An IR, a scene
+1. Check `CHARTER.md` for whether it is on the "what it is not" list (§2). An IR, a scene
    format, an editor, a preset system, a code-first ECS, and a bespoke CLI vocabulary are
    all closed questions, decided against with evidence.
 2. Check the 20-line rule. Most "framework features" are user-space code.
