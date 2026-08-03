@@ -4,20 +4,28 @@ import type { InputMap } from "./input.js";
 import type { RendererLike } from "./renderer.js";
 import type { GameStore } from "./state.js";
 
-export abstract class Scene<TState extends Record<string, unknown> = Record<string, unknown>> {
-  load(_ctx: Ctx<TState>): void | Promise<void> {}
+export abstract class Scene<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> {
+  load(_ctx: Ctx<TState, TPhysics>): void | Promise<void> {}
 
-  enter(_ctx: Ctx<TState>): void {}
+  enter(_ctx: Ctx<TState, TPhysics>): void {}
 
-  exit(_ctx: Ctx<TState>): void {}
+  exit(_ctx: Ctx<TState, TPhysics>): void {}
 
-  update(_ctx: Ctx<TState>, _dt: number): void {}
+  update(_ctx: Ctx<TState, TPhysics>, _dt: number): void {}
 }
 
-export type SceneConstructor<TState extends Record<string, unknown> = Record<string, unknown>> =
-  new () => Scene<TState>;
+export type SceneConstructor<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> = new () => Scene<TState, TPhysics>;
 
-export interface Ctx<TState extends Record<string, unknown> = Record<string, unknown>> {
+export interface Ctx<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> {
   readonly renderer: RendererLike;
   readonly scene: ThreeScene;
   readonly camera: Camera;
@@ -25,5 +33,5 @@ export interface Ctx<TState extends Record<string, unknown> = Record<string, unk
   readonly input: InputMap;
   readonly assets: AssetLoader;
   readonly state: GameStore<TState>;
-  readonly physics: undefined;
+  physics: TPhysics;
 }

@@ -6,35 +6,60 @@ import { type RendererLike, type RendererOptions, createRenderer } from "./rende
 import type { Ctx, Scene, SceneConstructor } from "./scene.js";
 import { type GameStore, createGameStore } from "./state.js";
 
-export type GamePlugin<TState extends Record<string, unknown> = Record<string, unknown>> = (
-  ctx: Ctx<TState>,
-) => undefined | (() => void);
+export type PluginCleanup = () => void;
 
-export interface GameConfig<TState extends Record<string, unknown> = Record<string, unknown>> {
+export type GamePluginFunction<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> = (ctx: Ctx<TState, TPhysics>) => undefined | PluginCleanup;
+
+export interface GamePluginHooks<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> {
+  setup?(
+    ctx: Ctx<TState, TPhysics>,
+  ): undefined | PluginCleanup | Promise<undefined | PluginCleanup>;
+  update?(ctx: Ctx<TState, TPhysics>, dt: number): void;
+  dispose?(ctx: Ctx<TState, TPhysics>): void;
+}
+
+export type GamePlugin<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> = GamePluginFunction<TState, TPhysics> | GamePluginHooks<TState, TPhysics>;
+
+export interface GameConfig<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> {
   readonly assets?: AssetLoaderOptions;
   readonly canvas?: HTMLCanvasElement;
   readonly container?: HTMLElement;
   readonly input?: InputBindings;
   readonly initialState?: TState;
-  readonly plugins?: readonly GamePlugin<TState>[];
+  readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
   readonly renderer?: RendererOptions;
-  readonly scenes: Record<string, SceneConstructor<TState>>;
+  readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   readonly start: string;
   readonly stateFlushMs?: number;
 }
 
-export interface Game<TState extends Record<string, unknown> = Record<string, unknown>> {
-  readonly ctx: Ctx<TState> | undefined;
-  readonly scene: Scene<TState> | undefined;
+export interface Game<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> {
+  readonly ctx: Ctx<TState, TPhysics> | undefined;
+  readonly scene: Scene<TState, TPhysics> | undefined;
   start(): Promise<void>;
   stop(): void;
 }
 
-class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
-  #config: GameConfig<TState>;
-  #ctx: Ctx<TState> | undefined;
-  #scene: Scene<TState> | undefined;
+class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game<TState, TPhysics> {
+  #config: GameConfig<TState, TPhysics>;
+  #ctx: Ctx<TState, TPhysics> | undefined;
+  #scene: Scene<TState, TPhysics> | undefined;
   #renderer: RendererLike | undefined;
   #input: InputMap | undefined;
   #state: GameStore<TState> | undefined;
@@ -42,15 +67,15 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
   #cleanup: Array<() => void> = [];
   #started = false;
 
-  constructor(config: GameConfig<TState>) {
+  constructor(config: GameConfig<TState, TPhysics>) {
     this.#config = config;
   }
 
-  get ctx(): Ctx<TState> | undefined {
+  get ctx(): Ctx<TState, TPhysics> | undefined {
     return this.#ctx;
   }
 
-  get scene(): Scene<TState> | undefined {
+  get scene(): Scene<TState, TPhysics> | undefined {
     return this.#scene;
   }
 
@@ -81,7 +106,7 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
     const threeScene = new ThreeScene();
     const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
     const assets = createAssetLoader(this.#config.assets);
-    const ctx: Ctx<TState> = {
+    const ctx: Ctx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
         return object;
@@ -89,7 +114,7 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
       assets,
       camera,
       input: this.#input,
-      physics: undefined,
+      physics: undefined as TPhysics,
       renderer: this.#renderer,
       scene: threeScene,
       state: this.#state,
@@ -97,7 +122,7 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
     this.#ctx = ctx;
     this.#scene = new SceneType();
     for (const plugin of this.#config.plugins ?? []) {
-      const cleanup = plugin(ctx);
+      const cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx);
       if (cleanup !== undefined) this.#cleanup.push(cleanup);
     }
     await this.#scene.load(ctx);
@@ -107,6 +132,9 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
       onUpdate: (dt) => {
         this.#input?.tick();
         this.#scene?.update(ctx, dt);
+        for (const plugin of this.#config.plugins ?? []) {
+          if (typeof plugin !== "function") plugin.update?.(ctx, dt);
+        }
       },
     });
     this.#started = true;
@@ -117,6 +145,9 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
     if (!this.#started) return;
     this.#loop?.stop();
     if (this.#ctx !== undefined) this.#scene?.exit(this.#ctx);
+    for (const plugin of this.#config.plugins ?? []) {
+      if (typeof plugin !== "function" && this.#ctx !== undefined) plugin.dispose?.(this.#ctx);
+    }
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
     this.#input?.dispose();
     this.#state?.stop();
@@ -131,8 +162,8 @@ class GameImpl<TState extends Record<string, unknown>> implements Game<TState> {
   }
 }
 
-export function defineGame<TState extends Record<string, unknown>>(
-  config: GameConfig<TState>,
-): Game<TState> {
-  return new GameImpl(config);
+export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>(
+  config: GameConfig<TState, TPhysics>,
+): Game<TState, TPhysics> {
+  return new GameImpl<TState, TPhysics>(config);
 }

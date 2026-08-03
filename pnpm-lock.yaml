@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@dimforge/rapier3d-compat':
+      specifier: 0.19.3
+      version: 0.19.3
     three:
       specifier: 0.185.1
       version: 0.185.1
@@ -53,6 +56,9 @@ importers:
       '@threenative/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
       three:
         specifier: 'catalog:'
         version: 0.185.1
@@ -89,6 +95,31 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/physics:
+    dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: 'catalog:'
+        version: 0.19.3
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1
       tsup:
         specifier: 8.5.1
         version: 8.5.1(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
@@ -174,6 +205,9 @@ packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@dimforge/rapier3d-compat@0.19.3':
+    resolution: {integrity: sha512-mMVdSj1PRTT108s9Swbu2GQOmHbn8kbJANRV5xfczL3s0T4vkgZAuoMRgvBzQcHanpKusbC0ZJj6z3mC3aj3vg==}
 
   '@emnapi/core@2.0.0-alpha.3':
     resolution: {integrity: sha512-AZypUeJ/yByuxyS7BlSNRDOMLMlROYtjYdIAuBmJssVz1UJDSeYxLrdizhXCFYhedC5bqd/ASy8EuNXbVVXp9g==}
@@ -1388,6 +1422,8 @@ snapshots:
     optional: true
 
   '@dimforge/rapier3d-compat@0.12.0': {}
+
+  '@dimforge/rapier3d-compat@0.19.3': {}
 
   '@emnapi/core@2.0.0-alpha.3':
     dependencies:
