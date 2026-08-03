@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 /*
- * Declared explicitly. Tailwind 4's automatic source detection silently found
- * nothing here — it emitted the @theme variables and zero utilities, so every
- * class name was an inert string with no error anywhere to explain it.
+ * Sources declared explicitly rather than left to automatic detection. When
+ * Tailwind finds no sources it still builds successfully — it emits the @theme
+ * variables and zero utilities, so every class name in src/ui/ becomes an inert
+ * string with no error anywhere to explain it. Being explicit makes that
+ * failure impossible rather than merely unlikely.
  */
 @source "../index.html";
 @source "./";
