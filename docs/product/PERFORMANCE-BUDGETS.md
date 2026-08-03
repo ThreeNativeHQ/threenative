@@ -25,7 +25,7 @@ applies as well: options in the framework are reached only through the options, 
 everything unanticipated becomes unreachable.
 
 Budgets are **test assertions**, and the repo already works this way — `scripts/check-budgets.ts`
-enforces LOC, package and markdown caps in CI and fails the build. Frame budgets are the
+enforces LOC and package caps in CI and fails the build. Frame budgets are the
 same idea pointed at the game:
 
 ```ts

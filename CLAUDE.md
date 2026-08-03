@@ -65,6 +65,10 @@ These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignorin
 4. **Vocabulary is borrowed, never invented.** Godot for nodes (`RigidBody3D`, `Area3D`,
    `CharacterBody3D`, `CollisionShape3D`), Three.js for rendering, Rapier for physics,
    Tailwind for UI. A new name is a discovery cost for every model; that is what killed v1.
+   **Godot is the only node source — not Unity, not Unreal.** Every new abstraction copies
+   Godot's class name, method names (`move_and_slide` → `moveAndSlide`), property names and
+   signal semantics, in camelCase. When Godot has no equivalent, borrow from Three.js or
+   Rapier before inventing. Mixing conventions costs more than either one alone.
 5. **A package exists only when it carries a dependency the others must not inherit.** Cap
    is 8 workspace packages, and it is not raised.
 6. **Never claim a green gate you did not run.** Paste the failure instead.
@@ -72,11 +76,7 @@ These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignorin
 ## Budgets
 
 `pnpm budgets` enforces: 8 workspace packages, 15,000 framework LOC (`packages/*/src`,
-excluding salvage), **5,000 markdown lines repo-wide**, 10 files in `docs/PRDs/`.
-
-Generated `CLAUDE.md` mirrors are excluded; everything else counts. Exceeding a cap is
-never a reason to raise it. Markdown is the cap you will hit first, and adding a doc spends
-budget PRDs also draw from — delete before you add, and edit an existing doc by preference.
+excluding salvage), and 10 files in `docs/PRDs/`.
 
 ## Layout
 

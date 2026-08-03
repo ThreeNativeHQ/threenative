@@ -201,7 +201,7 @@ exactly as it did before this PRD.
 **Implementation:**
 - [ ] Jobs: `install → typecheck → lint → test → build → budgets`
 - [ ] `check-budgets.ts` enforces §10: ≤8 workspace packages, ≤15,000 LOC across
-      `packages/*/src` excluding salvage, ≤5,000 markdown lines, ≤10 files in
+      `packages/*/src` excluding salvage, ≤10 files in
       `docs/PRDs/`
 - [ ] Budget failure prints which cap was exceeded and by how much
 

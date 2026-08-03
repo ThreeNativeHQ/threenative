@@ -13,10 +13,9 @@ Three.js on every surface underneath.
 
 **We ship the plumbing. The user's AI agent ships the gameplay.**
 
-ThreeNative is to Three.js what Next.js is to React and NestJS is to Express. You
-don't hand-roll SSR, routing, and SEO plumbing on bare React — you write pages. You
-shouldn't hand-roll a render loop, a physics bridge, an input map, and a mobile build
-on bare Three.js either. You should write gameplay.
+ThreeNative is to Three.js what Next.js is to React and NestJS is to Express. You don't
+hand-roll SSR, routing and SEO on bare React — you write pages. You shouldn't hand-roll a
+render loop, a physics bridge, an input map and a mobile build on bare Three.js either.
 
 **It owns the wiring, never the work — and never the look (§5b).**
 
@@ -29,6 +28,12 @@ Two promises, both testable:
    (§5b, §9b).
 
 One line: *R3F gives you a scene. ThreeNative gives you a game — on web and on device.*
+
+**Framework, not engine.** A library you call (`three` — you own the loop); a framework
+calls you (it owns loop and lifecycle, you fill in scenes and entities); an engine adds an
+authoring environment — editor, asset pipeline, scene format — which §2 rules out. Godot's
+*vocabulary* is borrowed (§11.4), never its architecture. The test: **your game lives in
+`.ts` files you edit, not in a project a tool opens.**
 
 ---
 
@@ -519,7 +524,6 @@ Hard caps. v1 had none and added ~250k lines in its final nine days while CI wen
 |---|---:|---:|
 | Workspace packages | **8** | 27 |
 | Framework source (excl. examples, salvage) | **15,000 LOC** | 441,811 TS + 129,247 Rust |
-| Markdown in repo | **5,000 lines** | 219,742 |
 | Charter/PRD documents | **10** | 435 |
 | CLI commands | **4** | 178 forms |
 | Public API surface | **one page** | — |

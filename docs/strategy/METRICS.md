@@ -46,7 +46,6 @@ instead of measuring it.
 |---|---|---|
 | Framework LOC vs 15k cap | `pnpm budgets` | ~1,600 |
 | Packages vs cap of 8 | `pnpm budgets` | 7 — see [CONFLICTS.md](CONFLICTS.md) |
-| Markdown lines vs 5k cap | `pnpm budgets` | 2,758 before this folder |
 | Vanilla vs framework LOC | `pnpm tsx scripts/count-loc.ts` | vanilla wins, 410 vs 412 |
 | CI | GitHub Actions | must be green; §11.6 |
 

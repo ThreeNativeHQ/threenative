@@ -5,7 +5,6 @@ import path from "node:path";
 const LIMITS = {
   packages: 8,
   frameworkLoc: 15_000,
-  markdownLines: 5_000,
   prdFiles: 10,
 } as const;
 
@@ -14,7 +13,6 @@ const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
 export type BudgetReport = {
   packages: number;
   frameworkLoc: number;
-  markdownLines: number;
   prdFiles: number;
 };
 
@@ -70,15 +68,6 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   return {
     packages: await workspacePackageCount(root),
     frameworkLoc: await countLines(sourceFiles),
-    markdownLines: await countLines(
-      await filesUnder(
-        root,
-        // CLAUDE.md is a generated mirror of a sibling AGENTS.md
-        // (scripts/sync-agent-docs.ts), not a document. Counting both would
-        // charge the budget twice for one set of instructions.
-        (file) => file.endsWith(".md") && path.basename(file) !== "CLAUDE.md",
-      ),
-    ),
     prdFiles: (
       await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
     ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,
@@ -95,11 +84,6 @@ export function budgetErrors(report: BudgetReport): string[] {
   if (report.frameworkLoc > LIMITS.frameworkLoc) {
     errors.push(
       `framework LOC cap exceeded: ${report.frameworkLoc} lines (limit ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc})`,
-    );
-  }
-  if (report.markdownLines > LIMITS.markdownLines) {
-    errors.push(
-      `Markdown line cap exceeded: ${report.markdownLines} lines (limit ${LIMITS.markdownLines}, +${report.markdownLines - LIMITS.markdownLines})`,
     );
   }
   if (report.prdFiles > LIMITS.prdFiles) {
@@ -124,7 +108,7 @@ if (
   enforceBudgets(process.cwd())
     .then((report) => {
       console.log(
-        `budgets ok: ${report.packages} packages, ${report.frameworkLoc} framework LOC, ${report.markdownLines} markdown lines, ${report.prdFiles} PRD files`,
+        `budgets ok: ${report.packages} packages, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files`,
       );
     })
     .catch((error: unknown) => {

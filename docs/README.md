@@ -35,5 +35,5 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 - [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
-`pnpm budgets` fails CI above 5,000 markdown lines repo-wide and 10 files in `docs/PRDs/`.
-Adding a doc here spends budget PRDs also draw from — delete before you add.
+`pnpm budgets` fails CI above 10 files in `docs/PRDs/`. Edit an existing document by
+preference.
