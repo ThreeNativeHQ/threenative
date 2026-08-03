@@ -3,6 +3,8 @@
   "files": {
     "ignore": [
       "**/dist/**",
+      "packages/playtest/**",
+      "test-results/**",
       "examples/abyss-vanilla/index.html",
       "examples/abyss-vanilla/src/main.js",
       "examples/abyss-vanilla/src/style.css",

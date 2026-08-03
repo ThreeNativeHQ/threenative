@@ -708,7 +708,13 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
             ...(typeof camera.within === "number" && Number.isFinite(camera.within) ? { within: camera.within } : {}),
           },
         }),
-    ...(Array.isArray(value.components) ? { components: value.components.map(validateComponentAssertion).filter((item): item is IPlaytestComponentAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.components)
+      ? {
+          components: value.components.map((entry, index) =>
+            validateComponentAssertion(entry, scenarioPath, `assert.components[${index}]`),
+          ),
+        }
+      : {}),
     ...(Array.isArray(value.contacts) ? { contacts: value.contacts.map(validateContactAssertion).filter((item): item is IPlaytestContactAssertion => item !== undefined) } : {}),
     ...(diagnostics === undefined
       ? {}
@@ -768,10 +774,22 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
           },
     }),
     ...(Array.isArray(value.occluded) ? { occluded: value.occluded.map(validateOccludedAssertion).filter((item): item is IPlaytestOccludedAssertion => item !== undefined) } : {}),
-    ...(Array.isArray(value.overlayNodes) ? { overlayNodes: value.overlayNodes.map(validateOverlayNodeAssertion).filter((item): item is IPlaytestOverlayNodeAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.overlayNodes)
+      ? {
+          overlayNodes: value.overlayNodes.map((entry, index) =>
+            validateOverlayNodeAssertion(entry, scenarioPath, `assert.overlayNodes[${index}]`),
+          ),
+        }
+      : {}),
     ...(isRecord(value.reachability) ? { reachability: validateReachabilityAssertion(value.reachability, scenarioPath) } : {}),
     ...(Array.isArray(value.resources) ? { resources: value.resources.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
-    ...(Array.isArray(value.settled) ? { settled: value.settled.map(validateSettledAssertion).filter((item): item is IPlaytestSettledAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.settled)
+      ? {
+          settled: value.settled.map((entry, index) =>
+            validateSettledAssertion(entry, scenarioPath, `assert.settled[${index}]`),
+          ),
+        }
+      : {}),
     ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map(validateVisibilityAssertion).filter((item): item is IPlaytestVisibilityAssertion => item !== undefined) } : {}),
@@ -977,6 +995,19 @@ function requireRecord(value: unknown, scenarioPath: string, objectPath: string)
     throw invalidScenario(scenarioPath, `'${objectPath}' must be an object, received ${describeValue(value)}.`);
   }
   return value;
+}
+
+function requireArray(
+  value: Record<string, unknown>,
+  key: string,
+  scenarioPath: string,
+  objectPath: string,
+): unknown[] {
+  const raw = value[key];
+  if (!Array.isArray(raw)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be an array, received ${describeValue(raw)}.`);
+  }
+  return raw;
 }
 
 function requireString(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): string {

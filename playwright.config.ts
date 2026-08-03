@@ -12,11 +12,7 @@ export default defineConfig({
     headless: true,
     screenshot: "only-on-failure",
     launchOptions: {
-      args: [
-        "--disable-gpu",
-        "--disable-gpu-sandbox",
-        "--use-angle=swiftshader",
-      ],
+      args: ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
     },
   },
   webServer: {
