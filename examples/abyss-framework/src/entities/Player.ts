@@ -25,6 +25,10 @@ export class Player {
     this.body.move({ x: move.x * dt * 2, y: 0, z: move.y * dt * 2 });
   }
 
+  debug(): Record<string, unknown> {
+    return { grounded: this.body.grounded, position: this.mesh.position.toArray() };
+  }
+
   dispose(): void {
     this.body.dispose();
     this.mesh.removeFromParent();

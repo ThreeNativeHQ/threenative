@@ -77,10 +77,25 @@ importers:
       '@threenative/physics':
         specifier: workspace:*
         version: link:../../packages/physics
+      '@threenative/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: 'catalog:'
+        version: 19.2.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.0(react@19.2.0)
       three:
         specifier: 'catalog:'
         version: 0.185.1
     devDependencies:
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.0
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.0(@types/react@19.2.0)
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3

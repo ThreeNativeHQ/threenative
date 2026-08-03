@@ -1,5 +1,6 @@
 import type { Camera, Object3D, Scene as ThreeScene } from "three";
 import type { AssetLoader } from "./assets.js";
+import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
 import type { RendererLike } from "./renderer.js";
 import type { GameStore } from "./state.js";
@@ -31,6 +32,7 @@ export interface Ctx<
   readonly renderer: RendererLike;
   readonly scene: ThreeScene;
   readonly camera: Camera;
+  readonly entities: Registry;
   readonly add: (object: Object3D) => Object3D;
   readonly input: InputMap;
   readonly assets: AssetLoader;

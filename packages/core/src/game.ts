@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Scene as ThreeScene } from "three";
 import { type AssetLoader, type AssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
 import { FixedStepLoop } from "./loop.js";
 import { type RendererLike, type RendererOptions, createRenderer } from "./renderer.js";
@@ -7,6 +8,26 @@ import type { Ctx, Scene, SceneConstructor } from "./scene.js";
 import { type GameStore, createGameStore } from "./state.js";
 
 export type PluginCleanup = () => void;
+
+interface DevTools {
+  snapshot(): EntitySnapshot;
+}
+
+declare global {
+  interface Window {
+    __THREENATIVE__?: DevTools;
+  }
+}
+
+function installDevTools(entities: Registry): PluginCleanup {
+  const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+  if (!isDev || typeof window === "undefined") return () => undefined;
+  const devTools: DevTools = { snapshot: () => entities.snapshot() };
+  window.__THREENATIVE__ = devTools;
+  return () => {
+    if (window.__THREENATIVE__ === devTools) window.__THREENATIVE__ = undefined;
+  };
+}
 
 export type GamePluginFunction<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -66,6 +87,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #state: GameStore<TState>;
   #loop: FixedStepLoop | undefined;
   #cleanup: Array<() => void> = [];
+  #entities: Registry | undefined;
   #started = false;
 
   constructor(config: GameConfig<TState, TPhysics>) {
@@ -111,6 +133,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     const threeScene = new ThreeScene();
     const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
     const assets = createAssetLoader(this.#config.assets);
+    const entities = new Registry();
     const ctx: Ctx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
@@ -118,6 +141,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       },
       assets,
       camera,
+      entities,
       input: this.#input,
       physics: undefined as TPhysics,
       renderer: this.#renderer,
@@ -125,6 +149,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       state: this.#state,
     };
     this.#ctx = ctx;
+    this.#entities = entities;
+    this.#cleanup.push(installDevTools(entities));
     this.#scene = new SceneType();
     for (const plugin of this.#config.plugins ?? []) {
       const cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx);
@@ -153,6 +179,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     if (!this.#started) return;
     this.#loop?.stop();
     if (this.#ctx !== undefined) this.#scene?.exit(this.#ctx);
+    this.#entities?.clear();
+    this.#entities = undefined;
     for (const plugin of this.#config.plugins ?? []) {
       if (typeof plugin !== "function" && this.#ctx !== undefined) plugin.dispose?.(this.#ctx);
     }

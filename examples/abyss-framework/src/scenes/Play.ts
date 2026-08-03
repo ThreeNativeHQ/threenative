@@ -42,6 +42,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
 
     this.#crate = new Crate(ctx, -1, 4, -1.5);
     this.#player = new Player(ctx);
+    ctx.entities.add("player", this.#player);
     this.#pickup = new Area3D({
       physics: ctx.physics,
       position: { x: 1.5, y: 0.5, z: 0 },
@@ -61,9 +62,10 @@ export class Play extends Scene<GameState, PhysicsContext> {
     ctx.state.set({ playerX: this.#player?.mesh.position.x ?? -2 });
   }
 
-  override exit(_ctx: GameCtx): void {
+  override exit(ctx: GameCtx): void {
     this.#unsubscribe?.();
     this.#pickup?.dispose();
+    ctx.entities.remove("player");
     this.#player?.dispose();
     this.#crate?.dispose();
     this.#step?.dispose();

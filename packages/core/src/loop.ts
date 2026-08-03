@@ -75,7 +75,12 @@ export class FixedStepLoop {
 
   #frame(time: number): void {
     if (!this.#running) return;
-    this.stepFrame(time);
-    this.#frameHandle = this.#requestFrame((nextTime) => this.#frame(nextTime));
+    try {
+      this.stepFrame(time);
+    } finally {
+      if (this.#running) {
+        this.#frameHandle = this.#requestFrame((nextTime) => this.#frame(nextTime));
+      }
+    }
   }
 }

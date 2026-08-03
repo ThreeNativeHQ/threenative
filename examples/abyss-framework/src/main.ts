@@ -1,5 +1,7 @@
 import { defineGame } from "@threenative/core";
 import "./style.css";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { Abyss, type AbyssState } from "./scenes/Abyss.js";
 
 const score = document.querySelector<HTMLSpanElement>("#score");
@@ -31,3 +33,12 @@ const game = defineGame<AbyssState>({
 });
 
 void game.start();
+
+if (import.meta.env.DEV) {
+  const debugRoot = document.getElementById("debug-root");
+  if (debugRoot !== null) {
+    void import("./ui/App.js").then(({ App }) => {
+      createRoot(debugRoot).render(createElement(App));
+    });
+  }
+}

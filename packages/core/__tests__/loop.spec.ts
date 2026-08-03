@@ -22,4 +22,23 @@ describe("FixedStepLoop", () => {
     expect(catchUp).toBe(5);
     expect(updates).toBe(5);
   });
+
+  it("should schedule the next frame when rendering throws", () => {
+    const callbacks: Array<(time: number) => void> = [];
+    const loop = new FixedStepLoop({
+      onRender: () => {
+        throw new Error("renderer failed");
+      },
+      onUpdate: () => undefined,
+      requestFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    loop.start(0);
+    expect(() => callbacks.shift()?.(16)).toThrow("renderer failed");
+    expect(loop.running).toBe(true);
+    expect(callbacks).toHaveLength(1);
+  });
 });

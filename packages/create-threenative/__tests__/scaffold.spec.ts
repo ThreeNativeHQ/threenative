@@ -39,6 +39,12 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      await expect(
+        readFile(path.join(result.target, "src/entities/Player.ts"), "utf8"),
+      ).resolves.toContain("debug()");
+      await expect(
+        readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
+      ).resolves.toContain('ctx.entities.add("player"');
       const renderFiles = await Promise.all(
         ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
           readFile(path.join(result.target, "src/render", file), "utf8"),

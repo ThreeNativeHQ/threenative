@@ -13,6 +13,8 @@ export type {
 } from "./game.js";
 export { FixedStepLoop } from "./loop.js";
 export type { FixedStepLoopOptions } from "./loop.js";
+export { autoFields, Registry } from "./entities.js";
+export type { Debuggable, EntitySnapshot } from "./entities.js";
 export { input, InputMap } from "./input.js";
 export type { InputAction, InputBindings, RawInputState } from "./input.js";
 export { createRenderer } from "./renderer.js";

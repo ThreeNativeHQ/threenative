@@ -236,6 +236,9 @@ export class Abyss extends Scene<AbyssState> {
     let best = 0;
     const target = new THREE.Vector2();
     const temporary = new THREE.Vector3();
+    ctx.entities.add("player", {
+      debug: () => ({ hull, position: lure.position.toArray(), score }),
+    });
 
     const setHud = () => {
       element<HTMLSpanElement>("time")?.replaceChildren(clock(elapsed));
@@ -340,8 +343,9 @@ export class Abyss extends Scene<AbyssState> {
     this.#post?.render();
   }
 
-  override exit(_ctx: AbyssCtx): void {
+  override exit(ctx: AbyssCtx): void {
     this.#startCleanup?.();
+    ctx.entities.remove("player");
     this.#post = undefined;
     this.#frame = undefined;
     this.#startCleanup = undefined;
