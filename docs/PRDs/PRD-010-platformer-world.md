@@ -3,7 +3,7 @@
 **Complexity: 7 → HIGH mode** (10+ files +3, new system +2, multi-package +2)
 
 **Depends on:** PRD-007, PRD-008, PRD-009. **Blocks:** nothing — this closes the slice.
-**Design authority:** `DESIGN.md` §2 (no scene format, no preset system), §6b; `AGENTS.md`
+**Charter authority:** `CHARTER.md` §2 (no scene format, no preset system), §6b; `AGENTS.md`
 rules 1, 3, 5.
 
 ## 1. Context
@@ -14,7 +14,7 @@ gives it a character; nothing gives it a level.
 
 **Files analyzed:** `packages/physics/src/Area3D.ts`, `packages/ui/src/{index.ts,
 useGameState.ts}`, `packages/core/src/{entities.ts,state.ts}`,
-`examples/abyss-framework/src/scenes/Abyss.ts`, `DESIGN.md` §2, §6b.
+`examples/abyss-framework/src/scenes/Abyss.ts`, `CHARTER.md` §2, §6b.
 
 **Current behavior:**
 
@@ -40,7 +40,7 @@ useGameState.ts}`, `packages/core/src/{entities.ts,state.ts}`,
     `assert.tags {tag:'coin', count: 0}` can prove a level was cleared.
 - Enemies are example code: a `Patrol` behavior over waypoints and a `Chase` behavior with
   a line-of-sight radius. **No navmesh, no A\*** — the reference image needs neither, and
-  `DESIGN.md`'s "not on the roadmap" list exists to stop exactly that.
+  `CHARTER.md`'s "not on the roadmap" list exists to stop exactly that.
 - HUD stays in `examples/platformer/src/ui/` as Tailwind components reading `useGameState`.
   Rule 3: anything a screenshot shows never enters a package.
 

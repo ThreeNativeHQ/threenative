@@ -1,6 +1,6 @@
 # Metrics
 
-**Status:** proposal, 2026-08-02. **Design authority:** `DESIGN.md` §12.
+**Status:** proposal, 2026-08-02. **Charter authority:** `CHARTER.md` §12.
 
 ## The north star
 
@@ -32,7 +32,7 @@ measurable but means nothing.
 
 ## The one measurement that outranks all of these
 
-`DESIGN.md` §12 criterion 3: **one game played by a stranger for five minutes, with a
+`CHARTER.md` §12 criterion 3: **one game played by a stranger for five minutes, with a
 transcript.**
 
 v1 spent seven weeks unable to answer whether it was working, because its decisive
@@ -50,6 +50,6 @@ instead of measuring it.
 | Vanilla vs framework LOC | `pnpm tsx scripts/count-loc.ts` | vanilla wins, 410 vs 412 |
 | CI | GitHub Actions | must be green; §11.6 |
 
-The LOC comparison currently says **vanilla wins**. Per `DESIGN.md` §3's kill switch that
+The LOC comparison currently says **vanilla wins**. Per `CHARTER.md` §3's kill switch that
 is a live finding, not a footnote — and it belongs on this list precisely because it is
 the metric most tempting to stop reporting.

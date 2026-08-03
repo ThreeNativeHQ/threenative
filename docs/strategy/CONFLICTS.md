@@ -1,13 +1,13 @@
-# Where the strategy contradicts DESIGN.md
+# Where the strategy contradicts CHARTER.md
 
-**Status:** open decisions, 2026-08-02. **Design authority:** `DESIGN.md` §2, §5b, §9a, §10, §11.
+**Status:** open decisions, 2026-08-02. **Charter authority:** `CHARTER.md` §2, §5b, §9a, §10, §11.
 
 The product strategy in `docs/strategy/` was written from the outside in — market
-first. `DESIGN.md` was written from the inside out — founding constraint first. They
+first. `CHARTER.md` was written from the inside out — founding constraint first. They
 collide in eight places. Each row below is a decision someone has to make; none is
 made here.
 
-| # | Strategy wants | `DESIGN.md` says | Proposed resolution |
+| # | Strategy wants | `CHARTER.md` says | Proposed resolution |
 |---|---|---|---|
 | 1 | ThreeNative Studio: a local dashboard with inspector, profiler, asset browser | §2: "An editor — not in v1. The Studio dogfood found Share and Export did literally nothing." | **Defer.** What ships today is `DebugOverlay` + `window.__THREENATIVE__.snapshot()`. Studio starts only after §12 criterion 3 (a stranger plays a game for five minutes). |
 | 2 | `threenative doctor` as the acquisition funnel | §10: **4 CLI commands, ever** (`dev`, `build`, `test`, `ship`) | Ship it as `threenative test --doctor`, or as a mode of the existing `threenative-playtest` bin. A fifth top-level command is a cap breach. |
@@ -28,7 +28,7 @@ examples/: abyss-vanilla, abyss-framework                    = 2
                                                        total = 7 of 8
 ```
 
-`DESIGN.md` §9a still plans `physics-native` and `native`. Those are packages 8 and 9 —
+`CHARTER.md` §9a still plans `physics-native` and `native`. Those are packages 8 and 9 —
 **the cap breaks before the mobile promise ships**, and it breaks because examples are
 counted. Three options, none taken yet:
 
@@ -44,6 +44,6 @@ honest fix. **Decide before Phase 0b, not during it.**
 ## The one thing strategy and design already agree on
 
 Both say the durable value is *after* "make it playable": maintainable → portable →
-performant → shippable. `DESIGN.md` §3 calls it "what vanilla structurally cannot do."
+performant → shippable. `CHARTER.md` §3 calls it "what vanilla structurally cannot do."
 The strategy calls it stages 2–6. Same claim, and it is the only claim that survives
 both documents intact.

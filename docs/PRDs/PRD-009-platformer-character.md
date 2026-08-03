@@ -3,7 +3,7 @@
 **Complexity: 8 → HIGH mode** (10+ files +3, new system +2, complex state +2, multi-package +2)
 
 **Depends on:** PRD-007, PRD-008. **Blocks:** PRD-010.
-**Design authority:** `DESIGN.md` §5b, §6, §11; `AGENTS.md` rules 1, 3, 4.
+**Charter authority:** `CHARTER.md` §5b, §6, §11; `AGENTS.md` rules 1, 3, 4.
 
 ## 1. Context
 
@@ -12,7 +12,7 @@
 behind it. All four are absent; two are **documented as present**.
 
 **Files analyzed:** `packages/physics/src/CharacterBody3D.ts`,
-`packages/core/src/{assets.ts,game.ts,scene.ts}`, `DESIGN.md` §6,
+`packages/core/src/{assets.ts,game.ts,scene.ts}`, `CHARTER.md` §6,
 `packages/core/AGENTS.md`, `templates/starter/src/entities/Player.ts`.
 
 **Current behavior:**
@@ -22,20 +22,20 @@ behind it. All four are absent; two are **documented as present**.
 | Gravity, jump arc, terminal velocity | caller's job; `move()` takes a per-frame translation zeroed each `step()` | `CharacterBody3D.ts:64-80` |
 | Velocity state | none | no `linearVelocity` accessor |
 | Skinned animation | **zero support** — no `AnimationMixer` in `packages/` | grep: 0 hits |
-| Follow camera | **absent**, yet `DESIGN.md:262` prints `ctx.camera.follow(hero, …)` | `Ctx.camera` is a bare `PerspectiveCamera` |
+| Follow camera | **absent**, yet `CHARTER.md:262` prints `ctx.camera.follow(hero, …)` | `Ctx.camera` is a bare `PerspectiveCamera` |
 | Moving-platform carry | not wired | the rider is not transported |
 
 ### Two doc conflicts to resolve before Phase 1
 
-1. `DESIGN.md` §6 shows `ctx.camera.follow()`. `core/AGENTS.md` says *"`ctx.camera` is a
+1. `CHARTER.md` §6 shows `ctx.camera.follow()`. `core/AGENTS.md` says *"`ctx.camera` is a
    real camera… no wrapper may be introduced"*, and `AGENTS.md` rule 3 bans **camera
    framing** from package code. **Proposed:** the rig ships as generated source in
    `src/camera/follow.ts` (a damped follow is under 20 lines — rule 1); `ctx.camera` stays
-   raw; `DESIGN.md` §6 is amended to show that call.
-2. `DESIGN.md` §6 shows `hero.body.applyImpulse(...)` on a character. Rapier kinematic
+   raw; `CHARTER.md` §6 is amended to show that call.
+2. `CHARTER.md` §6 shows `hero.body.applyImpulse(...)` on a character. Rapier kinematic
    character controllers take no impulses. **Proposed:** amend §6 to `hero.velocity.y = JUMP`.
 
-**Both amendments need sign-off first.** A PRD that silently contradicts `DESIGN.md` is
+**Both amendments need sign-off first.** A PRD that silently contradicts `CHARTER.md` is
 how v1 drifted.
 
 ## 2. Solution
@@ -143,6 +143,6 @@ grep -rn "moveAndSlide\|AnimationPlayer" packages examples --include=*.ts | grep
       stops advancing.
 - [ ] The camera keeps the fox in the viewport for the whole run (`assert.camera`).
 - [ ] Standing still on a moving platform transports the fox.
-- [ ] `DESIGN.md` §6 no longer documents an API that does not exist.
+- [ ] `CHARTER.md` §6 no longer documents an API that does not exist.
 - [ ] `scripts/count-loc.ts` shows no framework row losing to vanilla.
 - [ ] Every gate observed red once, recorded in `docs/verification/PRD-009.md`.

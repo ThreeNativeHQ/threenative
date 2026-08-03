@@ -6,7 +6,7 @@ Read `/AGENTS.md` first. This file only covers what is different here.
 
 It is the benchmark's vanilla arm: a real game in plain `three/webgpu`. **Do not edit it**
 to fix a comparison, tidy the code, or match a framework change. Changing the control
-invalidates every result measured against it, and `DESIGN.md` §3 makes that comparison the
+invalidates every result measured against it, and `CHARTER.md` §3 makes that comparison the
 kill switch for the whole framework.
 
 It is excluded from Biome for the same reason. If it genuinely must change, that is a

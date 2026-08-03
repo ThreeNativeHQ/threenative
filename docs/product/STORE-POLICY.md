@@ -40,7 +40,7 @@ build architecture.
 
 Creators own their app identity, ratings, revenue and customer relationship. That removes
 the largest objection a serious developer has to any hosted game platform, and it aligns
-with `DESIGN.md`'s stance elsewhere: no royalties, no revenue share, no lock-in, you own
+with `CHARTER.md`'s stance elsewhere: no royalties, no revenue share, no lock-in, you own
 the code.
 
 ## What it means for Cloud

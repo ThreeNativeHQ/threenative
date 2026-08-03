@@ -3,7 +3,7 @@
 **Complexity: 5 → MEDIUM mode** (1-5 files +1, complex state +2, multi-package +2)
 
 **Depends on:** PRD-007. **Blocks:** PRD-009, PRD-010.
-**Design authority:** `DESIGN.md` §6; `packages/core/AGENTS.md` (the closed list).
+**Charter authority:** `CHARTER.md` §6; `packages/core/AGENTS.md` (the closed list).
 
 ## 1. Context
 

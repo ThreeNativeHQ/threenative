@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** proposal, 2026-08-02. **Design authority:** `DESIGN.md` §7, §12.
+**Status:** proposal, 2026-08-02. **Charter authority:** `CHARTER.md` §7, §12.
 
 Phases are gated, not scheduled. A phase does not start because the previous one ran
 out of tasks; it starts because the previous one's gate passed.
@@ -18,7 +18,7 @@ Six PRDs merged, verified in `docs/verification/`:
 | 005 | Deterministic LOC classifier, sealed prompt, blind scoring protocol | — |
 | 006 | `ctx.entities` registry, `DebugOverlay`, dev-only global | `core`, `ui` |
 
-**Not shipped and load-bearing:** the mobile spikes. `DESIGN.md` §7 resolves the
+**Not shipped and load-bearing:** the mobile spikes. `CHARTER.md` §7 resolves the
 *research* question (WASM Rapier is not viable; build the JSI binding) but neither
 spike has run.
 
@@ -42,7 +42,7 @@ high-end Android. Background/resume · rotation policy · audio interruption · 
 gamepad · device loss · memory after repeated level loads · React UI under load ·
 asset-load failure · 30/60/120 Hz.
 
-**Gate to exit:** `DESIGN.md` §12 criteria 1, 2 and 4 — Phase 0 runs on a phone, the
+**Gate to exit:** `CHARTER.md` §12 criteria 1, 2 and 4 — Phase 0 runs on a phone, the
 Abyss port is ≤400 lines and does not look worse than vanilla, framework source under
 15,000 LOC.
 
@@ -59,14 +59,14 @@ Abyss port is ≤400 lines and does not look worse than vanilla, framework sourc
   paths that break under Metro, oversized textures, draw-call counts, duplicate meshes
   and materials, missing disposal, unsupported loaders, version skew.
 - Three excellent templates. Templates matter more than packages — they define what
-  "good by default" means, and per `DESIGN.md` §9b **the scaffold is the documentation.**
+  "good by default" means, and per `CHARTER.md` §9b **the scaffold is the documentation.**
 
 **Gate to exit:** an existing third-party Three.js game runs `test --doctor`, follows
 the report, and boots on a phone.
 
 ## Phase 3 — local Studio
 
-**Gate to start:** `DESIGN.md` §12 criterion 3 — one game played by a stranger for five
+**Gate to start:** `CHARTER.md` §12 criterion 3 — one game played by a stranger for five
 minutes, with a transcript. v1 never did this once.
 
 Grows out of what exists rather than replacing it: entity inspector (from

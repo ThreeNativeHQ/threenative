@@ -3,7 +3,7 @@
 **Complexity: 7 → HIGH mode** (10+ files +3, new system +2, multi-package +2)
 
 **Depends on:** PRD-002, PRD-006. **Blocks:** PRD-008, PRD-009, PRD-010.
-**Design authority:** `DESIGN.md` §8, §12.3; `AGENTS.md` "Verification honesty".
+**Charter authority:** `CHARTER.md` §8, §12.3; `AGENTS.md` "Verification honesty".
 
 ## 1. Context
 

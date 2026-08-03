@@ -3,8 +3,8 @@
 **Complexity: 3 → LOW mode**
 (2-5 files +1, new system from scratch +2)
 
-**Depends on:** PRD-002. **Blocks:** the `playtest` lift (`DESIGN.md` §8).
-**Design authority:** `DESIGN.md` §2 (no ECS), §5 (20-line rule), §8 (scenario
+**Depends on:** PRD-002. **Blocks:** the `playtest` lift (`CHARTER.md` §8).
+**Charter authority:** `CHARTER.md` §2 (no ECS), §5 (20-line rule), §8 (scenario
 `states` contract), §11.1, §11.5.
 
 ---
@@ -16,10 +16,10 @@ transforms, and Rapier bodies — but it is **not addressable**. Nothing can enu
 it, and nothing can resolve a name to it.
 
 This is the one thing an ECS gives that plain classes do not, and it is why the ECS
-question keeps reopening. `DESIGN.md` §2 rejects the ECS; this PRD is the 1%-cost
+question keeps reopening. `CHARTER.md` §2 rejects the ECS; this PRD is the 1%-cost
 substitute that closes the same gap.
 
-**Files analyzed:** `DESIGN.md` §2, §6, §6b, §8; `docs/PRDs/PRD-002-core.md` (§4
+**Files analyzed:** `CHARTER.md` §2, §6, §6b, §8; `docs/PRDs/PRD-002-core.md` (§4
 `Ctx` shape); `examples/abyss-vanilla/src/main.js` (entity state held as closure
 locals — the shape that is invisible today).
 
@@ -32,7 +32,7 @@ what are their values." Three consumers need that answer:
 | Dev overlay | live table of entity values | does not exist |
 | The model, mid-debug | one console call, not a breakpoint hunt | `console.log` per field |
 
-The first is not a nice-to-have. `DESIGN.md` §8 commits to lifting a harness whose
+The first is not a nice-to-have. `CHARTER.md` §8 commits to lifting a harness whose
 assertion format is:
 
 ```json

@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  // One package, three dependency tiers, per DESIGN.md §9a: modularity comes from
+  // One package, three dependency tiers, per CHARTER.md §9a: modularity comes from
   // subpath exports, not from more package.json files.
   //   .        zero dependencies
   //   ./three  needs three

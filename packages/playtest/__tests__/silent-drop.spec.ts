@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 
 import { PlaytestScenarioError, loadPlaytestScenario } from "../src/index.js";
 
-// DESIGN.md §8. A wrong-typed assertion value used to be dropped on the floor:
+// CHARTER.md §8. A wrong-typed assertion value used to be dropped on the floor:
 // the validator returned undefined and the caller filtered it out. The scenario
 // then ran with zero assertions of that kind and reported green. A harness that
 // silently asserts nothing is worse than no harness, because it is trusted.

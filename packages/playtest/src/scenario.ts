@@ -972,7 +972,7 @@ function isSafeProjectRelativePng(value: unknown): value is string {
   return !value.split(/[\\/]/).includes("..");
 }
 
-// Typed field accessors (DESIGN.md §8).
+// Typed field accessors (CHARTER.md §8).
 //
 // The distinction these exist to enforce: a key that is ABSENT is fine and yields
 // undefined; a key that is PRESENT but wrong-typed throws. Collapsing those two
@@ -1255,7 +1255,7 @@ function hasKey(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-// DESIGN.md §8, the per-key variant. `rejectUnknownKeys` catches a misspelled key,
+// CHARTER.md §8, the per-key variant. `rejectUnknownKeys` catches a misspelled key,
 // but a KNOWN key holding a wrong-typed value used to survive it and then get
 // dropped by the `typeof x === "number" ? { x } : {}` spreads in validateAssertions.
 // The assertion object stayed, minus the check the author wrote, and the scenario

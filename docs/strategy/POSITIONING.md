@@ -1,7 +1,7 @@
 # Positioning
 
 **Status:** proposal, 2026-08-02. Not binding. See [CONFLICTS.md](CONFLICTS.md).
-**Design authority:** `DESIGN.md` §1, §2, §3.
+**Charter authority:** `CHARTER.md` §1, §2, §3.
 
 ## The one-line claim
 
@@ -39,7 +39,7 @@ repo. Treat as directional, not as data.)*
 6. Keep it operational   ┘
 ```
 
-This restates `DESIGN.md` §3 criterion 3 — *"ships to iOS; still works after the 20th
+This restates `CHARTER.md` §3 criterion 3 — *"ships to iOS; still works after the 20th
 change; has proof it isn't broken"* — in market terms. Stages 2 and 4 are already
 partly real in this repo: `ctx.entities` (PRD-006) makes state addressable,
 `@threenative/playtest` makes "it isn't broken" checkable.
@@ -50,7 +50,7 @@ partly real in this repo: `ctx.entities` (PRD-006) makes state addressable,
 |---|---|---|
 | **Runtime** | Open-source engine and framework: `@threenative/core`, `physics`, `ui`, `playtest`, `create-threenative` | **Yes** — 5 packages, ~1,600 LOC |
 | **Studio** | Local-first creation, inspection, testing | **Barely** — `DebugOverlay`, `window.__THREENATIVE__.snapshot()`. Full Studio is deferred (CONFLICTS #1) |
-| **Cloud** | Builds, device testing, releases, operations | **No.** Gated on `DESIGN.md` §7 Phase 0 running on a physical phone |
+| **Cloud** | Builds, device testing, releases, operations | **No.** Gated on `CHARTER.md` §7 Phase 0 running on a physical phone |
 
 Runtime stays permissively licensed and fully usable offline. That is what makes the
 paid layer credible rather than extractive.
@@ -71,7 +71,7 @@ Their job to be done:
 > deployment myself."
 
 They read code, use Git, tolerate an early product, and pay for build and deploy
-productivity. They are also the only audience for which `DESIGN.md` §3's *"the framework
+productivity. They are also the only audience for which `CHARTER.md` §3's *"the framework
 must win even when the AI ignores it"* is a selling point rather than a curiosity.
 
 **Secondary, later: AI-first creators.** Same project on disk, simpler surface. The

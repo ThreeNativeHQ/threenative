@@ -4,7 +4,7 @@
 (6-10 files +2, new module +2, external library integration +1)
 
 **Depends on:** PRD-002. **Blocks:** PRD-004, 005.
-**Design authority:** `DESIGN.md` §5, §7, §11.1, §11.4, §11.5.
+**Charter authority:** `CHARTER.md` §5, §7, §11.1, §11.4, §11.5.
 
 ---
 
@@ -13,13 +13,13 @@
 **Problem:** Binding Rapier to a Three.js scene graph is the same 150 lines in every
 game: create a world, step it at a fixed rate, and copy body transforms onto meshes.
 
-**Files analyzed:** `DESIGN.md` §5 (the API sketch and the 20-line rule);
+**Files analyzed:** `CHARTER.md` §5 (the API sketch and the 20-line rule);
 `packages/core/src/game.ts` (the fixed-timestep loop this must hook into).
 
 **Current behavior:** none. `ctx.physics` is `undefined` after PRD-002.
 
 **Incumbent census:** none in this repo. Externally, `@react-three/rapier` occupies the
-same niche for R3F — noted in `DESIGN.md` §4 as a real strength of the road not taken.
+same niche for R3F — noted in `CHARTER.md` §4 as a real strength of the road not taken.
 This package is its non-React equivalent.
 
 ---

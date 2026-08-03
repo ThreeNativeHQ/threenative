@@ -4,7 +4,7 @@
 (6-10 files +2, new system from scratch +2, multi-package +2)
 
 **Depends on:** PRD-001, 002, 003, 004.
-**Design authority:** `DESIGN.md` §3 (win condition + kill switch), §5b, §12.
+**Charter authority:** `CHARTER.md` §3 (win condition + kill switch), §5b, §12.
 
 ---
 
@@ -22,7 +22,7 @@ And its decisive experiment was specified three times and **never run**.
 
 This PRD builds the apparatus that runs it, and makes losing a legitimate outcome.
 
-**Files analyzed:** `DESIGN.md` §3, §12; `examples/abyss-vanilla/src/main.js` (the
+**Files analyzed:** `CHARTER.md` §3, §12; `examples/abyss-vanilla/src/main.js` (the
 frozen ~400-line control); v1's `mcp-and-value-proposition-2026-07-25.md` (14x / 8.27x
 measurement) and `OFF-RECIPE-EFFICIENCY-RERUN.md` (the quality scores above).
 
@@ -192,7 +192,7 @@ flowchart LR
 **Files:**
 - `docs/benchmark/RESULTS-<date>.md` — NEW
 - `README.md` — **EDIT**: headline verdict, win or lose
-- `DESIGN.md` — **EDIT**: §12 outcome recorded
+- `CHARTER.md` — **EDIT**: §12 outcome recorded
 
 **Implementation:**
 - [ ] 3 repeats per arm, both arms same agent and same model
@@ -217,7 +217,7 @@ Consumer-scoped, and deliberately able to fail.
       turns CI red independently.
 - [ ] `docs/benchmark/RESULTS-<date>.md` exists, cites a prompt hash, records 3 repeats
       per arm, and reports blind quality scores collected before costs.
-- [ ] The result is published whichever way it goes, and `DESIGN.md` §12 is updated to
+- [ ] The result is published whichever way it goes, and `CHARTER.md` §12 is updated to
       match.
 
 **This PRD succeeds when the experiment RUNS, not when ThreeNative wins.**

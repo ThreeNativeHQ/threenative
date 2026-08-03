@@ -1,6 +1,6 @@
-# ThreeNative — Design
+# ThreeNative — Charter
 
-**Status:** draft, 2026-08-02. Nothing here is committed until §7 resolves.
+**Status:** binding, 2026-08-02. §7 is resolved; everything here holds until amended here.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -520,7 +520,7 @@ Hard caps. v1 had none and added ~250k lines in its final nine days while CI wen
 | Workspace packages | **8** | 27 |
 | Framework source (excl. examples, salvage) | **15,000 LOC** | 441,811 TS + 129,247 Rust |
 | Markdown in repo | **5,000 lines** | 219,742 |
-| Design/PRD documents | **10** | 435 |
+| Charter/PRD documents | **10** | 435 |
 | CLI commands | **4** | 178 forms |
 | Public API surface | **one page** | — |
 
@@ -545,7 +545,7 @@ v1 spent seven weeks unable to answer whether it was working, because the decisi
 experiment (`sustained-iteration-benchmark-2026-07-31.md`) was specified three times
 and **never run**.
 
-**v1 succeeds if, and only if:**
+**ThreeNative succeeds if, and only if:**
 
 1. Phase 0 runs on a physical phone.
 2. The ThreeNative port of Abyss is no longer than 400 lines, still reads as ordinary
@@ -554,7 +554,7 @@ and **never run**.
    once did this — it was the open acceptance item at abandonment.
 4. Framework source is under 15,000 LOC when 1–3 are true.
 
-**v1 fails, and is abandoned, if:**
+**ThreeNative fails, and is abandoned, if:**
 
 - Phase 0 cannot run on a device and no JSI path is viable within two weeks; or
 - The Abyss port is longer than vanilla, or visibly worse; or

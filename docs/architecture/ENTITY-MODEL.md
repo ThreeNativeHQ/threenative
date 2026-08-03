@@ -1,6 +1,6 @@
 # Entity model — the ECS question, closed
 
-**Status:** decided and shipped. **Design authority:** `DESIGN.md` §2, §11.1.
+**Status:** decided and shipped. **Charter authority:** `CHARTER.md` §2, §11.1.
 **Implements:** `docs/PRDs/PRD-006-entity-registry.md`.
 
 ## The decision
@@ -34,7 +34,7 @@ export class Player {
 ```
 
 No component registration, no system ordering, no archetypes, no query DSL. A model
-already knows how to write this file. That is the entire argument — `DESIGN.md` §2's
+already knows how to write this file. That is the entire argument — `CHARTER.md` §2's
 founding constraint: *models are worst at discovering novel API surfaces.*
 
 ## What we kept from ECS, and only that
@@ -68,7 +68,7 @@ dev-only and stripped from `dist/`.
 
 | Level | Shape | Status |
 |---|---|---|
-| 1. Prefabs and behaviours (`definePrefab`, `chasePlayer()`) | Declarative genre vocabulary | **Rejected.** `DESIGN.md` §2: 0 of 7 presets ever reproduced their genre. Prefabs are template *code*, in `src/entities/` |
+| 1. Prefabs and behaviours (`definePrefab`, `chasePlayer()`) | Declarative genre vocabulary | **Rejected.** `CHARTER.md` §2: 0 of 7 presets ever reproduced their genre. Prefabs are template *code*, in `src/entities/` |
 | 2. Plain classes + named registry | `new Player(ctx)`, `ctx.entities.add(...)` | **Shipped.** The default and only taught surface |
 | 3. Queries and systems (`game.query(Transform, Health)`) | Opt-in data-oriented processing | **Not built.** No demand has been measured; §11.1's 20-line rule blocks speculative construction |
 
@@ -89,7 +89,7 @@ rendering optimizations (batching, instancing) or a native physics step possible
 without changing the game's conceptual model — which is the actual payoff people reach
 for ECS to get.
 
-What we do **not** do is build the extraction pipeline before a game needs it. `DESIGN.md`
+What we do **not** do is build the extraction pipeline before a game needs it. `CHARTER.md`
 §11.2's kill switch applies: an abstraction that costs more code than vanilla gets
 deleted, no matter how much work it took.
 

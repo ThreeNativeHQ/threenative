@@ -4,7 +4,7 @@
 (10+ files +3, new system from scratch +2, multi-package +2)
 
 **Depends on:** PRD-001, 002, 003. **Blocks:** PRD-005.
-**Design authority:** `DESIGN.md` §1, §5b, §6b, §9b, §11.3.
+**Charter authority:** `CHARTER.md` §1, §5b, §6b, §9b, §11.3.
 
 ---
 
@@ -15,7 +15,7 @@
 generated files, not by framework code. If this PRD is weak, ThreeNative is a worse
 vanilla Three.js.
 
-**Files analyzed:** `DESIGN.md` §5b (the ownership boundary), §9b (the target tree),
+**Files analyzed:** `CHARTER.md` §5b (the ownership boundary), §9b (the target tree),
 §6b (React/Tailwind UI and the 60fps problem); `examples/abyss-vanilla/src/style.css`
 (a working reference for HUD styling under a dark game canvas).
 
@@ -29,7 +29,7 @@ write a Three.js game from scratch"* — which is precisely the control in PRD-0
 ## 2. Solution
 
 **Approach:**
-- `pnpm create threenative my-game` writes the tree in `DESIGN.md` §9b and nothing more.
+- `pnpm create threenative my-game` writes the tree in `CHARTER.md` §9b and nothing more.
 - **`src/render/` is generated source, not framework config.** `lighting.ts`,
   `postprocessing.ts`, `materials.ts` are ordinary `three/webgpu` code in the user's
   repo. This is the entire mechanism by which "looks good by default" coexists with
@@ -119,7 +119,7 @@ flowchart TB
 
 | Test file | Test name | Assertion | Negative control (observe red) |
 |---|---|---|---|
-| `create-threenative/__tests__/scaffold.spec.ts` | `should produce a tree matching DESIGN §9b` | every path in §9b exists | delete `src/render/lighting.ts` from the template → fails |
+| `create-threenative/__tests__/scaffold.spec.ts` | `should produce a tree matching CHARTER §9b` | every path in §9b exists | delete `src/render/lighting.ts` from the template → fails |
 | CI `scaffold-smoke` | `should boot a generated project headlessly` | Playwright reaches a non-black frame in <5s | template `main.ts` missing `.start()` → black frame, fails |
 
 **Revert check:** delete the `scaffold-smoke` job → Ledger #1 has no non-test caller → phase FAILS.
@@ -207,7 +207,7 @@ indistinguishable arenas while all 6 automated metrics passed them.
 **Implementation:**
 - [ ] Scenario: press W for 1s → player displaced > 1 unit; touch pickup → score > 0;
       no console errors; non-black frame
-- [ ] Uses the salvaged `@threenative/playtest` (`DESIGN.md` §8) **after** its validator
+- [ ] Uses the salvaged `@threenative/playtest` (`CHARTER.md` §8) **after** its validator
       fix lands — a scenario that silently drops assertions is worse than none
 
 **Tests required:**

@@ -9,7 +9,7 @@ type DevWindow = Window & {
 const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
 
 /*
- * Styled inline rather than with Tailwind classes. DESIGN.md §6b mandates
+ * Styled inline rather than with Tailwind classes. CHARTER.md §6b mandates
  * Tailwind for the game's own HUD, which the scaffold wires up; but this
  * overlay ships inside the package and lands in consumers that may have no
  * Tailwind at all, where class names are inert strings. Inline styles need no

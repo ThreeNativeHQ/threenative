@@ -4,17 +4,17 @@
 (10+ files +3, new system from scratch +2, complex state/loop logic +2)
 
 **Depends on:** PRD-001. **Blocks:** PRD-003, 004, 005.
-**Design authority:** `DESIGN.md` §3, §5, §5b, §6, §6b, §11.
+**Charter authority:** `CHARTER.md` §3, §5, §5b, §6, §6b, §11.
 
 ---
 
 ## 1. Context
 
-**Problem:** ~42% of every Three.js game is identical plumbing (`DESIGN.md` §3: ~170
+**Problem:** ~42% of every Three.js game is identical plumbing (`CHARTER.md` §3: ~170
 of Abyss's ~400 lines). `core` is that 170 lines, written once, so an AI agent spends
 its budget on gameplay instead.
 
-**Files analyzed:** `DESIGN.md`; `examples/abyss-vanilla/src/main.js` — the control,
+**Files analyzed:** `CHARTER.md`; `examples/abyss-vanilla/src/main.js` — the control,
 and the precise specification of what `core` must absorb.
 
 **Current behavior:** every game hand-writes renderer init, WebGPU capability guard,

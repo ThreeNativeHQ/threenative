@@ -104,7 +104,7 @@ export function budgetErrors(report: BudgetReport): string[] {
   }
   if (report.prdFiles > LIMITS.prdFiles) {
     errors.push(
-      `DESIGN/PRD document cap exceeded: ${report.prdFiles} files (limit ${LIMITS.prdFiles}, +${report.prdFiles - LIMITS.prdFiles})`,
+      `CHARTER/PRD document cap exceeded: ${report.prdFiles} files (limit ${LIMITS.prdFiles}, +${report.prdFiles - LIMITS.prdFiles})`,
     );
   }
   return errors;

@@ -1,7 +1,7 @@
 # Native runtime
 
-**Status:** research resolved, implementation unstarted. **Design authority:**
-`DESIGN.md` §6b, §7.
+**Status:** research resolved, implementation unstarted. **Charter authority:**
+`CHARTER.md` §6b, §7.
 
 ## The path
 

@@ -9,7 +9,7 @@ fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, as
 loading, the throttled state store, and the entity registry that makes a running game
 inspectable.
 
-That list is closed. Adding to it needs a PRD and a line in `DESIGN.md`.
+That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`.
 
 ## What must never enter this package
 

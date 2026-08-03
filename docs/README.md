@@ -1,9 +1,9 @@
 # Docs map
 
-`DESIGN.md` at the repo root is the **only binding document**. Everything under
+`CHARTER.md` at the repo root is the **only binding document**. Everything under
 `docs/` either implements it (PRDs, verification) or explores what comes after it
-(strategy, architecture, product). When a doc here disagrees with `DESIGN.md`,
-`DESIGN.md` wins until it is amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
+(strategy, architecture, product). When a doc here disagrees with `CHARTER.md`,
+`CHARTER.md` wins until it is amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 
 | Folder | Holds | Status of contents |
 |---|---|---|
@@ -20,7 +20,7 @@
 - [strategy/ROADMAP.md](strategy/ROADMAP.md) — phases against what is already shipped
 - [strategy/BUSINESS-MODEL.md](strategy/BUSINESS-MODEL.md) — open core, pricing hypotheses, revenue order
 - [strategy/METRICS.md](strategy/METRICS.md) — north star and the metrics that are not vanity
-- [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `DESIGN.md`
+- [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `CHARTER.md`
 
 ## Architecture
 

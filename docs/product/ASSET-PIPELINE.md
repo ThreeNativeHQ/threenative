@@ -1,6 +1,6 @@
 # Asset pipeline — deferred, with a trigger
 
-**Status:** deferred, 2026-08-02. **Design authority:** `DESIGN.md` §10 (15k LOC cap),
+**Status:** deferred, 2026-08-02. **Charter authority:** `CHARTER.md` §10 (15k LOC cap),
 §11.1, §11.5 (a package exists only when it carries a dependency the others must not
 inherit).
 
@@ -28,7 +28,7 @@ device to prove which optimizations actually matter.
 
 Both must be true:
 
-1. `DESIGN.md` §12 criterion 3 is met — a stranger has played a ThreeNative game for five
+1. `CHARTER.md` §12 criterion 3 is met — a stranger has played a ThreeNative game for five
    minutes.
 2. A reference game fails a device performance budget **for asset reasons**, measured, not
    assumed.
@@ -72,7 +72,7 @@ Collider       missing         !
 
 Not in `@threenative/core`. It is build-time, it carries heavy Node-only dependencies, and
 §11.5 makes that a separate release lane — the shape `asset-mcp` already has in
-`DESIGN.md` §8 (published, MIT, its own lane, 32 tools verified). Reuse that lane rather
+`CHARTER.md` §8 (published, MIT, its own lane, 32 tools verified). Reuse that lane rather
 than opening a new package against a cap that is already at 7 of 8.
 
 ## The longer-term reason to care

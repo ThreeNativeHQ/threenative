@@ -4,16 +4,16 @@
 (10+ files +3, new system from scratch +2, multi-package +2)
 
 **Depends on:** nothing. **Blocks:** PRD-002, 003, 004, 005.
-**Design authority:** `DESIGN.md` §9a, §9c, §10, §11.
+**Charter authority:** `CHARTER.md` §9a, §9c, §10, §11.
 
 ---
 
 ## 1. Context
 
 **Problem:** There is no repository. Every other PRD needs a workspace whose
-toolchain enforces `DESIGN.md`'s budgets mechanically rather than by intention.
+toolchain enforces `CHARTER.md`'s budgets mechanically rather than by intention.
 
-**Files analyzed:** `DESIGN.md`; `package.json`, `vite.config.js`, `src/main.js`
+**Files analyzed:** `CHARTER.md`; `package.json`, `vite.config.js`, `src/main.js`
 (the existing vanilla Abyss control, which becomes `examples/abyss-vanilla/` in
 PRD-005).
 
@@ -36,7 +36,7 @@ build moves to `examples/abyss-vanilla/`. Nothing else is incumbent.
 - Every package built by `tsup` to ESM only; `tsc --noEmit` for typecheck.
 - Vitest for unit tests, Biome for lint+format, Changesets for release.
 - **Budget enforcement is a CI gate, not a guideline** — a script fails the build when
-  `DESIGN.md` §10 caps are exceeded.
+  `CHARTER.md` §10 caps are exceeded.
 
 **Key decisions:**
 - [ ] `catalog:` over per-package version strings — TSL churns between three releases;
