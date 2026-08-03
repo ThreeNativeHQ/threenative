@@ -1,0 +1,1961 @@
+import type { IPlaytestReport } from "./report.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion } from "./scenario.js";
+import type { PlaytestCapability } from "./capabilities.js";
+
+type Vec3 = [number, number, number];
+
+export interface IPlaytestAssertionSchemaField {
+  description: string;
+  name: string;
+  required?: boolean;
+  type: string;
+}
+
+export interface IPlaytestAssertionSchemaEntry {
+  cardinality: "array" | "object";
+  description: string;
+  example: unknown;
+  fields: IPlaytestAssertionSchemaField[];
+  kind: keyof NonNullable<IPlaytestScenario["assert"]>;
+  requiredCapabilities: readonly PlaytestCapability[];
+  resultIdPrefix: string;
+  triviality: "not-applicable" | "reject-initial-value";
+}
+
+export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
+  {
+    description: "Checks every consecutive platform against a measured static movement-envelope fit; it does not simulate traversal, walls, ceilings, run-up, or air control.",
+    example: { reachability: { artifact: "artifacts/character-envelope/player.json", entities: ["platform.a", "platform.b"] } },
+    fields: [
+      { description: "Project-relative character envelope artifact emitted by tn character envelope.", name: "artifact", required: true, type: "string" },
+      { description: "Ordered platform entity ids forming the critical path.", name: "entities", required: true, type: "string[] (minimum 2)" },
+    ],
+    cardinality: "object",
+    kind: "reachability",
+    requiredCapabilities: ["entity.observe"],
+    resultIdPrefix: "reachability.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves aerodynamic force telemetry and signed control-surface delivery for a flight entity.",
+    example: { aerodynamics: [{ controls: [{ sign: "negative", surface: "elevator" }], entity: "aircraft", minForceSamples: 4 }] },
+    fields: [
+      { description: "Aerodynamic entity id.", name: "entity", required: true, type: "string" },
+      { description: "Minimum physics-debug samples containing finite aerodynamic force vectors.", name: "minForceSamples", type: "positive integer" },
+      { description: "Signed surface values required in physics.aerodynamics.setInputs calls.", name: "controls", type: "Array<{ surface: string, sign: 'negative' | 'positive', minAbs?: number }>" },
+      { description: "Signed net aerodynamic torque, optionally relative to another labeled step.", name: "torques", type: "Array<{ label: string, relativeToLabel?: string, axis: 'x' | 'y' | 'z', sign: 'negative' | 'positive', minAbs?: number }>" },
+    ],
+    cardinality: "array",
+    kind: "aerodynamics",
+    requiredCapabilities: ["runtime.fixedStep", "runtime.physics"],
+    resultIdPrefix: "aerodynamics.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves screenshot change, populated regions, and sustained projected entity visibility.",
+    example: { visual: [{ frameDiff: { baselineImage: "artifacts/baseline.png", minChangedPixelRatio: 0.01 }, entityVisible: { entity: "board.e4", minProjectedPixels: 20, throughoutFrames: true } }] },
+    fields: [
+      { description: "Before/after or baseline-image changed-pixel ratio bounds.", name: "frameDiff", type: "{ baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number }" },
+      { description: "Pixel region that must remain populated and may require dark-pixel occupancy.", name: "region", type: "{ x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number }" },
+      { description: "Entity projected-pixel floor, optionally across all captured samples.", name: "entityVisible", type: "{ entity: string, minProjectedPixels: number, throughoutFrames?: boolean }" },
+    ],
+    cardinality: "array",
+    kind: "visual",
+    requiredCapabilities: ["browser.screenshot"],
+    resultIdPrefix: "visual.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves the subject moved, reached a minimum velocity, or changed rotation during held input.",
+    example: { movement: { entity: "player", minDistance: 0.5, minVelocity: 0.01, rotationChanged: true } },
+    fields: [
+      { description: "Entity id to measure. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Require distance to a fixed world position to decrease by at least min.", name: "closesDistanceToPosition", type: "{ position: [number, number, number], min: number }" },
+      { description: "Maximum yaw error from resolved movement direction.", name: "facesMovementWithinDegrees", type: "number" },
+      { description: "Expected movement axis: x, y, or z.", name: "axis", type: "string" },
+      { description: "Minimum signed movement on a specific axis, for example { axis: '+y', min: 0.2 }.", name: "minAxisDelta", type: "{ axis: string, min: number }" },
+      { description: "Minimum signed resolved character.move displacement on a specific axis, for example { axis: '+y', min: 0.2 }.", name: "minResolvedAxisDelta", type: "{ axis: string, min: number }" },
+      { description: "Maximum final pitch/roll tilt from world up, in degrees; yaw is ignored.", name: "maxTiltDegrees", type: "number in [0, 180]" },
+      { description: "Minimum distance moved over the scenario.", name: "minDistance", type: "number" },
+      { description: "Maximum distance allowed; use for blocked-movement proof.", name: "maxDistance", type: "number" },
+      { description: "Minimum distance per frame.", name: "minVelocity", type: "number" },
+      { description: "Minimum accumulated path length; use with minDistance to catch movement that cancels out.", name: "pathLength", type: "number" },
+      { description: "Require the final facing to differ from another entity by at least minDegrees.", name: "notFacing", type: "{ entity: string, minDegrees: number }" },
+      { description: "Require the final facing to differ from a fixed world position by at least minDegrees.", name: "notFacingPosition", type: "{ position: [number, number, number], minDegrees: number }" },
+      { description: "Require a resolved character position to come within maxDistance of a fixed world position, optionally within one labeled step.", name: "reachesPositionWithin", type: "{ position: [number, number, number], maxDistance: number, atStep?: string }" },
+      { description: "Require any observed rotation delta.", name: "rotationChanged", type: "boolean" },
+    ],
+    cardinality: "object",
+    kind: "movement",
+    requiredCapabilities: ["entity.observe"],
+    resultIdPrefix: "movement.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves a camera follows an entity or keeps a target in view.",
+    example: { camera: { entity: "camera.main", follows: "player", within: 10, targetInViewport: true } },
+    fields: [
+      { description: "Camera entity id.", name: "entity", type: "string" },
+      { description: "Entity the camera should follow.", name: "follows", type: "string" },
+      { description: "Maximum allowed separation.", name: "within", type: "number" },
+      { description: "Require the target to be visible in the viewport.", name: "targetInViewport", type: "boolean" },
+    ],
+    cardinality: "object",
+    kind: "camera",
+    requiredCapabilities: ["camera.observe", "entity.observe"],
+    resultIdPrefix: "camera",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves a live entity component value after the scenario or at named steps.",
+    example: { components: [{ component: "Camera", entity: "camera.main", path: "fovY", equals: 22, changed: true }] },
+    fields: [
+      { description: "Entity id carrying the component.", name: "entity", required: true, type: "string" },
+      { description: "Component name as emitted in the runtime world.", name: "component", required: true, type: "string" },
+      { description: "Optional dot path inside the component snapshot.", name: "path", type: "string" },
+      { description: "Exact expected value.", name: "equals", type: "json" },
+      { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
+      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals: json }>" },
+      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+    ],
+    cardinality: "array",
+    kind: "components",
+    requiredCapabilities: ["runtime.components"],
+    resultIdPrefix: "component.",
+    triviality: "reject-initial-value",
+  },
+  {
+    description: "Proves resource state after the scenario through equals, gte, textIncludes, or changed checks.",
+    example: { resources: [{ id: "GameState", path: "score", gte: 1, changed: true }] },
+    fields: [
+      { description: "Resource id.", name: "id", required: true, type: "string" },
+      { description: "Optional dot path inside the resource snapshot.", name: "path", type: "string" },
+      { description: "Exact expected value.", name: "equals", type: "json" },
+      { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
+      { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
+      { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
+      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
+      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+    ],
+    cardinality: "array",
+    kind: "resources",
+    requiredCapabilities: ["runtime.resources"],
+    resultIdPrefix: "resource.",
+    triviality: "reject-initial-value",
+  },
+  {
+    description: "Proves the final count of entities carrying a bounded runtime tag.",
+    example: { tags: [{ tag: "coin", count: 10 }] },
+    fields: [
+      { description: "Entity tag to count.", name: "tag", required: true, type: "string" },
+      { description: "Exact expected entity count.", name: "count", type: "non-negative integer" },
+      { description: "Minimum expected entity count.", name: "gte", type: "non-negative integer" },
+    ],
+    cardinality: "array",
+    kind: "tags",
+    requiredCapabilities: ["runtime.tags"],
+    resultIdPrefix: "tags.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves an entity's final runtime-owned state-machine state.",
+    example: { states: [{ entity: "guard", equals: "chase" }] },
+    fields: [
+      { description: "Entity carrying the StateMachine component.", name: "entity", required: true, type: "string" },
+      { description: "Expected current state name.", name: "equals", required: true, type: "string" },
+    ],
+    cardinality: "array",
+    kind: "states",
+    requiredCapabilities: ["runtime.state"],
+    resultIdPrefix: "states.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves retained UI/HUD text or values after the scenario.",
+    example: { hud: [{ id: "score-label", textIncludes: "Score" }] },
+    fields: [
+      { description: "UI node id.", name: "id", required: true, type: "string" },
+      { description: "Optional dot path inside the UI snapshot.", name: "path", type: "string" },
+      { description: "Exact expected value.", name: "equals", type: "json" },
+      { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
+      { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
+      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+    ],
+    cardinality: "array",
+    kind: "hud",
+    requiredCapabilities: ["runtime.ui"],
+    resultIdPrefix: "hud.",
+    triviality: "reject-initial-value",
+  },
+  {
+    description: "Proves DOM state inside a same-origin webview overlay iframe.",
+    example: { overlayNodes: [{ attribute: "data-aiming", equals: "true", overlayId: "game-ui", selector: "[data-testid=fps-crosshair]", visible: false }] },
+    fields: [
+      { description: "Declared overlay id.", name: "overlayId", required: true, type: "string" },
+      { description: "CSS selector inside the overlay document.", name: "selector", required: true, type: "string" },
+      { description: "Optional attribute to read instead of text content.", name: "attribute", type: "string" },
+      { description: "Exact expected attribute or text value.", name: "equals", type: "json" },
+      { description: "Substring expected in text content.", name: "textIncludes", type: "string" },
+      { description: "Expected computed visibility.", name: "visible", type: "boolean" },
+    ],
+    cardinality: "array",
+    kind: "overlayNodes",
+    requiredCapabilities: ["browser.dom"],
+    resultIdPrefix: "overlayNode.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves console, network, runtime, and readiness diagnostics stayed clean.",
+    example: { diagnostics: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true } },
+    fields: [
+      { description: "Fail on captured console errors.", name: "noConsoleErrors", type: "boolean" },
+      { description: "Fail on captured network errors.", name: "noNetworkErrors", type: "boolean" },
+      { description: "Fail on runtime diagnostics.", name: "noRuntimeDiagnostics", type: "boolean" },
+      { description: "Required bounded justification when noRuntimeDiagnostics is false.", name: "runtimeDiagnosticsOptOutReason", type: "non-empty string" },
+      { description: "Require runtime readiness.", name: "runtimeReady", type: "boolean" },
+    ],
+    cardinality: "object",
+    kind: "diagnostics",
+    requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
+    resultIdPrefix: "diagnostics",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves projected entity visibility in the viewport.",
+    example: { visibility: [{ entity: "player", minProjectedPixels: 1200, maxOffscreenRatio: 0.05 }] },
+    fields: [
+      { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Minimum projected pixel area.", name: "minProjectedPixels", type: "number" },
+      { description: "Maximum allowed offscreen ratio.", name: "maxOffscreenRatio", type: "number" },
+    ],
+    cardinality: "array",
+    kind: "visibility",
+    requiredCapabilities: ["entity.bounds"],
+    resultIdPrefix: "visibility.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves contact or trigger evidence appeared in the effect log.",
+    example: { contacts: [{ entity: "player", with: "pickup", kind: "trigger", minCount: 1 }] },
+    fields: [
+      { description: "Retained step label to inspect instead of the full observation history.", name: "atStep", type: "string" },
+      { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Other entity or tag token expected in the contact evidence.", name: "with", type: "string" },
+      { description: "Contact kind token, such as contact or trigger.", name: "kind", type: "string" },
+      { description: "Minimum number of matching observations.", name: "minCount", type: "number" },
+      { description: "Maximum number of matching observations; use zero to prove separation.", name: "maxCount", type: "non-negative integer" },
+      { description: "Targets on which the contact assertion is required.", name: "requiredOn", type: "Array<'web' | 'desktop' | 'bevy'>" },
+    ],
+    cardinality: "array",
+    kind: "contacts",
+    requiredCapabilities: ["runtime.contacts"],
+    resultIdPrefix: "contact.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves matching physics bodies are asleep in a retained physics-debug sample.",
+    example: { settled: [{ atStep: "fall-and-settle", entity: "enemy.default/0/", minBodies: 15 }] },
+    fields: [
+      { description: "Exact entity id or stable entity-id prefix.", name: "entity", required: true, type: "string" },
+      { description: "Optional labeled step whose physics-debug sample must be used.", name: "atStep", type: "string" },
+      { description: "Minimum number of matching bodies required.", name: "minBodies", type: "positive integer" },
+      { description: "Optional earlier labeled step whose matching body positions are compared.", name: "compareToStep", type: "string" },
+      { description: "Minimum mean body-position distance from compareToStep, in metres.", name: "minMeanPoseDistance", type: "positive number" },
+      { description: "Targets on which the settled assertion is required.", name: "requiredOn", type: "Array<'web' | 'desktop' | 'bevy'>" },
+    ],
+    cardinality: "array",
+    kind: "settled",
+    triviality: "not-applicable",
+    requiredCapabilities: ["runtime.physics"],
+    resultIdPrefix: "settled.",
+  },
+  {
+    description: "Proves rendered scene geometry occludes the segment between an origin entity and target.",
+    example: { occluded: [{ entity: "listener", target: "emitter" }] },
+    fields: [
+      { description: "Optional origin/listener entity token expected in the raycast request.", name: "entity", type: "string" },
+      { description: "Optional target/emitter entity token expected in the raycast request.", name: "target", type: "string" },
+    ],
+    cardinality: "array",
+    kind: "occluded",
+    requiredCapabilities: ["runtime.physics"],
+    resultIdPrefix: "occluded.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves animation evidence appeared in the effect log.",
+    example: { animation: [{ entity: "player", clip: "run", entered: true, advancedFrames: 5 }] },
+    fields: [
+      { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Animation clip id or name.", name: "clip", type: "string" },
+      { description: "Require entering the animation state.", name: "entered", type: "boolean" },
+      { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
+    ],
+    cardinality: "array",
+    kind: "animation",
+    requiredCapabilities: ["runtime.animation"],
+    resultIdPrefix: "animation.",
+    triviality: "not-applicable",
+  },
+] as const;
+
+export interface IPlaytestSetupSchemaEntry {
+  description: string;
+  kind: keyof NonNullable<IPlaytestScenario["setup"]>;
+  requiredCapabilities: readonly PlaytestCapability[];
+}
+
+export const PLAYTEST_SETUP_REGISTRY: readonly IPlaytestSetupSchemaEntry[] = [
+  {
+    description: "Applies bounded transforms to registered entities before input.",
+    kind: "entities",
+    requiredCapabilities: ["entity.setup"],
+  },
+  {
+    description: "Writes bounded JSON-safe application state before input.",
+    kind: "resources",
+    requiredCapabilities: ["runtime.resources"],
+  },
+] as const;
+
+export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): PlaytestCapability[] {
+  const required = new Set<PlaytestCapability>();
+  if (scenario.steps.some((step) => step.kind !== "wait" && (step.press !== undefined || step.pointerPosition !== undefined))) {
+    required.add("browser.input");
+  }
+  if (scenario.artifacts?.screenshots !== false) {
+    required.add("browser.screenshot");
+  }
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    if (scenario.assert?.[entry.kind] !== undefined) {
+      entry.requiredCapabilities.forEach((capability) => required.add(capability));
+    }
+  }
+  for (const entry of PLAYTEST_SETUP_REGISTRY) {
+    if (scenario.setup?.[entry.kind] !== undefined) {
+      entry.requiredCapabilities.forEach((capability) => required.add(capability));
+    }
+  }
+  return [...required].sort();
+}
+
+export interface IPlaytestDiagnostic {
+  artifactPath?: string;
+  code: string;
+  exportName?: string;
+  gate?: "waived-headless";
+  message: string;
+  modulePath?: string;
+  observedRuntimePath?: string;
+  path?: string;
+  resourceId?: string;
+  severity: "error" | "warning";
+  sourcePath?: string;
+  suggestion?: string;
+  systemId?: string;
+}
+
+export interface IPlaytestAssertionResult {
+  details?: Record<string, unknown>;
+  id: string;
+  pass: boolean;
+}
+
+export interface IPlaytestObservations {
+  animation?: unknown;
+  components?: Record<string, Record<string, { after?: unknown; before?: unknown }>>;
+  componentSeries?: Array<{ label: string; snapshots: Record<string, Record<string, unknown>>; tick: number }>;
+  console: Array<{ text: string; type: string }>;
+  contacts?: unknown;
+  debugColliderCount?: number;
+  effectLog?: unknown;
+  effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
+  entityTransforms?: Record<string, { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }>;
+  hud: Record<string, { after?: unknown; before?: unknown }>;
+  overlayNodes?: Record<string, { after?: unknown; before?: unknown }>;
+  network: Array<{ method: string; url: string }>;
+  physicsDebug?: unknown;
+  physicsDebugSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
+  resources: Record<string, { after?: unknown; before?: unknown }>;
+  resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
+  runtimeObservations?: unknown;
+  runtimeDiagnostics?: unknown;
+  visibility?: Record<string, unknown>;
+  visual?: {
+    changedPixelRatio?: number;
+    comparisonSource?: string;
+    nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
+    runtimeDiagnosticsSeries?: unknown[];
+  };
+}
+
+export function evaluateRichPlaytestAssertions(input: {
+  report: IPlaytestReport;
+  scenario: IPlaytestScenario;
+}): { assertions: IPlaytestAssertionResult[]; diagnostics: IPlaytestDiagnostic[] } {
+  const assertions: IPlaytestAssertionResult[] = [];
+  const diagnostics: IPlaytestDiagnostic[] = [];
+  const scenarioAssertions = input.scenario.assert ?? {};
+  if (scenarioAssertions.reachability !== undefined) {
+    const { entities, envelope } = scenarioAssertions.reachability;
+    for (let index = 0; index < entities.length - 1; index += 1) {
+      const fromId = entities[index]!;
+      const toId = entities[index + 1]!;
+      const from = input.report.observations?.entityTransforms?.[fromId];
+      const to = input.report.observations?.entityTransforms?.[toId];
+      const rise = from?.position === undefined || to?.position === undefined ? undefined : platformTop(to) - platformTop(from);
+      const horizontalDelta = from?.position === undefined || to?.position === undefined
+        ? undefined
+        : [to.position[0] - from.position[0], to.position[2] - from.position[2]] as const;
+      const centerGap = horizontalDelta === undefined ? undefined : Math.hypot(...horizontalDelta);
+      const direction = horizontalDelta === undefined || centerGap === 0
+        ? undefined
+        : [horizontalDelta[0] / centerGap!, horizontalDelta[1] / centerGap!] as const;
+      const edgeGap = centerGap === undefined || direction === undefined
+        ? centerGap
+        : Math.max(0, centerGap - horizontalRadius(from, direction) - horizontalRadius(to, direction));
+      const horizontalLimit = envelope === undefined || rise === undefined ? undefined : movementEnvelopeHorizontalLimit(envelope, rise);
+      const pass = horizontalLimit !== undefined && edgeGap !== undefined && edgeGap <= horizontalLimit;
+      assertions.push({
+        details: { constraint: "static-movement-envelope-fit", edgeGap: edgeGap ?? null, envelope: envelope ?? null, from: fromId, horizontalLimit: horizontalLimit ?? null, rise: rise ?? null, to: toId },
+        id: `reachability.${index}.${fromId}.${toId}`,
+        pass,
+      });
+      if (!pass) diagnostics.push({
+        code: "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
+        message: `Static platform fit '${fromId}' to '${toId}' is outside the measured character envelope.`,
+        path: `/assert/reachability/entities/${index + 1}`,
+        severity: "error",
+        ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
+        suggestion: "Reduce the platform rise or edge-to-edge gap, regenerate the envelope after changing movement, then use a traversal playtest to prove walls, ceilings, run-up, and air control.",
+      });
+    }
+  }
+  for (const assertion of scenarioAssertions.overlayNodes ?? []) {
+    const id = overlayNodeObservationKey(assertion.overlayId, assertion.selector);
+    if (input.scenario.target !== "web") {
+      assertions.push({ details: { reason: "target-unsupported", target: input.scenario.target }, id: `overlayNode.${id}`, pass: false });
+      diagnostics.push(assertionNotEvaluatedDiagnostic(`overlayNode.${id}`, `target '${input.scenario.target}' cannot evaluate same-origin overlay DOM state`));
+      continue;
+    }
+    const snapshot = input.report.observations?.overlayNodes?.[id]?.after;
+    const observed = isRecord(snapshot) ? snapshot : {};
+    const value = assertion.attribute === undefined ? observed.text : observed.attribute;
+    const checks = [
+      ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(value, assertion.equals)] : []),
+      ...(assertion.textIncludes === undefined ? [] : [String(value ?? "").includes(assertion.textIncludes)]),
+      ...(assertion.visible === undefined ? [] : [observed.visible === assertion.visible]),
+    ];
+    const pass = checks.length > 0 && checks.every(Boolean);
+    assertions.push({ details: { expected: assertion, observed }, id: `overlayNode.${id}`, pass });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_OVERLAY_NODE_ASSERTION_FAILED",
+      message: `Overlay '${assertion.overlayId}' node '${assertion.selector}' did not satisfy the DOM assertion.`,
+      severity: "error",
+      suggestion: "Inspect observations.json/overlayNodes and verify the overlay subscription, selector, attribute, and computed style.",
+    });
+  }
+  const hasVisualSamples = input.report.observations?.visual !== undefined;
+  if ((scenarioAssertions.visual?.length ?? 0) > 0 && !hasVisualSamples) {
+    for (const [index] of scenarioAssertions.visual!.entries()) {
+      assertions.push({ id: `visual.${index}`, pass: false, details: { reason: "target-unsupported", target: input.scenario.target } });
+      diagnostics.push(assertionNotEvaluatedDiagnostic(`visual.${index}`, `target '${input.scenario.target}' does not expose visual assertion samples`));
+    }
+  }
+  for (const [index, visual] of (hasVisualSamples ? scenarioAssertions.visual ?? [] : []).entries()) {
+    if (visual.frameDiff !== undefined) {
+      const ratio = input.report.observations?.visual?.changedPixelRatio;
+      const pass = ratio !== undefined
+        && (visual.frameDiff.minChangedPixelRatio === undefined || ratio >= visual.frameDiff.minChangedPixelRatio)
+        && (visual.frameDiff.maxChangedPixelRatio === undefined || ratio <= visual.frameDiff.maxChangedPixelRatio);
+      assertions.push({ id: `visual.${index}.frameDiff`, pass, details: { after: pass, changedPixelRatio: ratio, comparisonSource: input.report.observations?.visual?.comparisonSource, expected: { equals: true }, ...visual.frameDiff } });
+      if (!pass) diagnostics.push({ code: "TN_PLAYTEST_FRAME_DIFF_FAILED", message: `Screenshot changed-pixel ratio ${ratio ?? "unavailable"} was outside the asserted range.`, severity: "error", suggestion: "Check whether the expected visual change rendered and whether the thresholds match the scenario." });
+    }
+    if (visual.region !== undefined) {
+      const observed = input.report.observations?.visual?.nonblankRegions?.find((region) => region.x === visual.region?.x && region.y === visual.region.y && region.width === visual.region.width && region.height === visual.region.height);
+      const minimum = visual.region.minNonblankPixelRatio ?? 0.002;
+      const pass = observed !== undefined && observed.nonblankPixelRatio >= minimum;
+      assertions.push({ id: `visual.${index}.region`, pass, details: { after: pass, expected: { equals: true }, minimum, observed: observed?.nonblankPixelRatio } });
+      if (!pass) diagnostics.push({ code: "TN_PLAYTEST_REGION_BLANK", message: `Screenshot region at (${visual.region.x}, ${visual.region.y}) did not meet nonblank ratio ${minimum}.`, severity: "error", suggestion: "Check camera framing and whether expected geometry renders in the asserted region." });
+      if (visual.region.minDarkPixelRatio !== undefined) {
+        const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio >= visual.region.minDarkPixelRatio;
+        assertions.push({
+          id: `visual.${index}.region.darkPixels`,
+          pass: darkPass,
+          details: {
+            maximumLuminance: visual.region.maxLuminance ?? 0.25,
+            minimumDarkPixelRatio: visual.region.minDarkPixelRatio,
+            observedDarkPixelRatio: observed?.darkPixelRatio,
+          },
+        });
+        if (!darkPass) diagnostics.push({
+          code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+          message: `Screenshot region at (${visual.region.x}, ${visual.region.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, below required ratio ${visual.region.minDarkPixelRatio}.`,
+          severity: "error",
+          suggestion: "Check whether the expected foreground silhouette occupies the asserted raster region.",
+        });
+      }
+    }
+    if (visual.entityVisible !== undefined) {
+      const samples = input.report.observations?.visual?.runtimeDiagnosticsSeries ?? [input.report.observations?.runtimeDiagnostics];
+      const selected = visual.entityVisible.throughoutFrames === true ? samples : samples.slice(-1);
+      const projected = selected.map((sample) => projectedPixelsForEntity(runtimeDiagnosticsSnapshot(sample), visual.entityVisible!.entity, input.scenario.viewport));
+      const pass = projected.length > 0 && projected.every((pixels) => pixels !== undefined && pixels >= visual.entityVisible!.minProjectedPixels);
+      assertions.push({ id: `visual.${index}.entityVisible`, pass, details: { entity: visual.entityVisible.entity, projectedPixels: projected } });
+      if (!pass) diagnostics.push({ code: "TN_PLAYTEST_ENTITY_VISIBILITY_DROPPED", message: `Entity '${visual.entityVisible.entity}' dropped below ${visual.entityVisible.minProjectedPixels} projected pixels.`, severity: "error", suggestion: "Check per-frame visibility, camera clipping, scale, and renderer state." });
+    }
+  }
+  for (const assertion of scenarioAssertions.resources ?? []) {
+    if (hasFinalPathExpectation(assertion)) {
+      const result = evaluatePathAssertion("resource", assertion, input.report.observations?.resources[assertion.id], {
+        effectLog: input.report.effectLog ?? input.report.observations?.effectLog,
+        movedDistance: input.report.distance,
+        scenarioSourcePath: input.scenario.sourcePath,
+      });
+      assertions.push(result.assertion);
+      if (result.diagnostic !== undefined) {
+        diagnostics.push({ ...result.diagnostic, code: result.diagnostic.code || "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED" });
+      }
+    }
+    if (assertion.throughoutSteps === true) {
+      const samples = (input.report.observations?.resourceSeries ?? []).map((sample) => ({
+        label: sample.label,
+        value: readPath(sample.snapshots[assertion.id], assertion.path),
+      }));
+      const pass = samples.length === input.scenario.steps.length && samples.every((sample) => pathValuePass(assertion, sample.value));
+      assertions.push({ details: { samples }, id: `resource.${assertion.id}.${assertion.path ?? "value"}.throughoutSteps`, pass });
+      if (!pass) diagnostics.push({
+        code: "TN_PLAYTEST_RESOURCE_TRANSITION_ASSERTION_FAILED",
+        message: `Resource '${assertion.id}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`} did not satisfy the assertion after every scenario step.`,
+        observedRuntimePath: "observations.json/resourceSeries",
+        severity: "error",
+        suggestion: "Inspect the labeled resource samples and fix the transient gameplay-state transition.",
+      });
+    }
+    if ((assertion.atSteps?.length ?? 0) > 0) {
+      const samples = assertion.atSteps!.map((expected) => {
+        const sample = (input.report.observations?.resourceSeries ?? []).find((candidate) => candidate.label === expected.label);
+        const value = readPath(sample?.snapshots[assertion.id], assertion.path);
+        const pass = sample !== undefined
+          && (!Object.hasOwn(expected, "equals") || jsonEqual(value, expected.equals))
+          && (expected.textIncludes === undefined || String(textValue(value)).includes(expected.textIncludes));
+        return { expected, pass, value };
+      });
+      const pass = samples.every((sample) => sample.pass);
+      assertions.push({ details: { samples }, id: `resource.${assertion.id}.${assertion.path ?? "value"}.atSteps`, pass });
+      if (!pass) diagnostics.push({
+        code: "TN_PLAYTEST_RESOURCE_TRANSITION_ASSERTION_FAILED",
+        message: `Resource '${assertion.id}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`} did not match the expected labeled-step transition.`,
+        observedRuntimePath: "observations.json/resourceSeries",
+        severity: "error",
+        suggestion: "Inspect the failed and restored labeled samples and fix the retry transition.",
+      });
+    }
+  }
+  for (const assertion of scenarioAssertions.components ?? []) {
+    const observed = input.report.observations?.components?.[assertion.entity]?.[assertion.component];
+    const before = readPath(observed?.before, assertion.path);
+    const after = readPath(observed?.after, assertion.path);
+    if (hasFinalComponentExpectation(assertion)) {
+      const valueChecks = [
+        ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(after, assertion.equals)] : []),
+        ...(assertion.gte === undefined ? [] : [typeof after === "number" && after >= assertion.gte]),
+      ];
+      const checks = [
+        ...valueChecks,
+        ...(assertion.changed === undefined ? [] : [(assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after))]),
+      ];
+      const trivial = rejectsTrivialAssertion("components")
+        && valueChecks.length > 0
+        && before !== undefined
+        && componentValueChecks(assertion, before).every(Boolean);
+      const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || assertion.allowTrivial === true);
+      assertions.push({
+        details: {
+          after,
+          before,
+          component: assertion.component,
+          entity: assertion.entity,
+          expected: assertion,
+          trivial,
+          ...(trivial && assertion.allowTrivial === true ? { trivialityOptOut: true } : {}),
+        },
+        id: `component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`,
+        pass,
+      });
+      if (!pass) diagnostics.push(trivial && assertion.allowTrivial !== true
+        ? trivialAssertionDiagnostic(`component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`, assertion.path, before, input.scenario.sourcePath)
+        : componentAssertionDiagnostic(assertion, before, after));
+    }
+    if ((assertion.atSteps?.length ?? 0) > 0) {
+      const samples = assertion.atSteps!.map((expected) => {
+        const sample = (input.report.observations?.componentSeries ?? []).find((candidate) => candidate.label === expected.label);
+        const value = readPath(sample?.snapshots[assertion.entity]?.[assertion.component], assertion.path);
+        return { expected, pass: sample !== undefined && Object.hasOwn(expected, "equals") && jsonEqual(value, expected.equals), value };
+      });
+      const pass = samples.every((sample) => sample.pass);
+      assertions.push({ details: { samples }, id: `component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}.atSteps`, pass });
+      if (!pass) diagnostics.push({
+        code: "TN_PLAYTEST_COMPONENT_TRANSITION_ASSERTION_FAILED",
+        message: `Component '${assertion.component}' on entity '${assertion.entity}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`} did not match the expected labeled-step transition.`,
+        observedRuntimePath: "observations.json/componentSeries",
+        severity: "error",
+        suggestion: "Inspect the labeled component samples and fix the runtime component transition.",
+      });
+    }
+  }
+  for (const [index, assertion] of (scenarioAssertions.aerodynamics ?? []).entries()) {
+    const forceSamples = aerodynamicForceSampleCount(input.report.observations?.physicsDebugSeries, assertion.entity);
+    const controlsSupported = input.scenario.target === "web";
+    const controls = (assertion.controls ?? []).map((control) => ({
+      ...control,
+      observed: aerodynamicControlValues(
+        input.report.effectLog ?? input.report.observations?.effectLog,
+        input.report.observations?.effectLogSeries,
+        assertion.entity,
+        control.surface,
+      ),
+      ...(controlsSupported ? {} : { skipped: true, reason: "native-service-log-unavailable" }),
+    }));
+    const torques = (assertion.torques ?? []).map((torque) => {
+      const value = aerodynamicTorqueAtLabel(input.report.observations?.physicsDebugSeries, assertion.entity, torque.label)?.[axisIndex(torque.axis)];
+      const relative = torque.relativeToLabel === undefined
+        ? undefined
+        : aerodynamicTorqueAtLabel(input.report.observations?.physicsDebugSeries, assertion.entity, torque.relativeToLabel)?.[axisIndex(torque.axis)];
+      return { ...torque, observed: value === undefined || (torque.relativeToLabel !== undefined && relative === undefined) ? undefined : value - (relative ?? 0) };
+    });
+    const forcePass = assertion.minForceSamples === undefined || forceSamples >= assertion.minForceSamples;
+    const controlsPass = controlsSupported
+      ? controls.every((control) => control.observed.some((value) => Math.abs(value) >= (control.minAbs ?? 0.01) && (control.sign === "positive" ? value > 0 : value < 0)))
+      : torques.length > 0;
+    const torquesPass = torques.every((torque) => torque.observed !== undefined
+      && Math.abs(torque.observed) >= (torque.minAbs ?? 0.01)
+      && (torque.sign === "positive" ? torque.observed > 0 : torque.observed < 0));
+    const pass = forcePass && controlsPass && torquesPass && (assertion.minForceSamples !== undefined || controls.length > 0 || torques.length > 0);
+    assertions.push({ details: { controls, forceSamples, minimumForceSamples: assertion.minForceSamples, torques }, id: `aerodynamics.${index}`, pass });
+    if (!pass) {
+      diagnostics.push({
+        artifactPath: assertion.minForceSamples !== undefined ? "observations.json" : "effect-log.json",
+        code: "TN_PLAYTEST_AERODYNAMICS_ASSERTION_FAILED",
+        message: `Aerodynamic proof for '${assertion.entity}' did not observe the required finite force samples and signed control values.`,
+        observedRuntimePath: "observations.json/physicsDebugSeries/artifact/primitives[category=aero] | effect-log.json/entries[service=physics.aerodynamics.setInputs]",
+        severity: "error",
+        suggestion: "Check AerodynamicBody metadata, physics debug capture, input-axis bindings, and surface sign mapping.",
+      });
+    }
+  }
+  for (const assertion of scenarioAssertions.hud ?? []) {
+    const result = evaluatePathAssertion("hud", assertion, input.report.observations?.hud[assertion.id], {});
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) {
+      diagnostics.push({ ...result.diagnostic, code: result.diagnostic.code || "TN_PLAYTEST_HUD_ASSERTION_FAILED" });
+    }
+  }
+  for (const assertion of scenarioAssertions.tags ?? []) {
+    const result = evaluateTagCountAssertion(assertion, input.report.observations?.runtimeObservations);
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) {
+      diagnostics.push(result.diagnostic);
+    }
+  }
+  for (const assertion of scenarioAssertions.states ?? []) {
+    const result = evaluateStateAssertion(assertion, input.report.observations?.runtimeObservations);
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) {
+      diagnostics.push(result.diagnostic);
+    }
+  }
+  {
+    const diagnosticsPolicy = {
+      ...scenarioAssertions.diagnostics,
+      noRuntimeDiagnostics: scenarioAssertions.diagnostics?.noRuntimeDiagnostics ?? true,
+    };
+    const policyDiagnostics = evaluateDiagnosticsPolicy(input.report, diagnosticsPolicy);
+    diagnostics.push(...policyDiagnostics);
+    if (scenarioAssertions.diagnostics !== undefined || policyDiagnostics.length > 0) {
+      assertions.push({
+        details: {
+          consoleErrors: consoleErrors(input.report.observations?.console ?? []).length,
+          networkErrors: input.report.observations?.network.length ?? 0,
+          runtimeDiagnostics: runtimeDiagnostics(input.report.observations?.runtimeDiagnostics).length,
+        },
+        id: "diagnostics",
+        pass: policyDiagnostics.length === 0,
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.minVelocity !== undefined) {
+    const velocity = input.report.frames <= 0 ? 0 : input.report.distance / input.report.frames;
+    const pass = velocity >= scenarioAssertions.movement.minVelocity;
+    assertions.push({ details: { minVelocity: scenarioAssertions.movement.minVelocity, velocity }, id: "movement.velocity", pass });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_VELOCITY_ASSERTION_FAILED",
+        message: `Entity '${input.report.entity}' velocity ${velocity.toFixed(6)} was below required ${scenarioAssertions.movement.minVelocity}.`,
+        severity: "error",
+        suggestion: "Check input force/speed tuning and whether the scenario holds input long enough.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.minDistance !== undefined) {
+    const pass = input.report.distance >= scenarioAssertions.movement.minDistance;
+    assertions.push({
+      details: { distance: input.report.distance, minimum: scenarioAssertions.movement.minDistance },
+      id: "movement.distance",
+      pass,
+    });
+    if (!pass && !input.report.diagnostics.some((diagnostic) => diagnostic.code === "TN_PLAYTEST_INPUT_NO_EFFECT")) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+        message: `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' moved ${input.report.distance.toFixed(6)}, below required ${scenarioAssertions.movement.minDistance}.`,
+        severity: "error",
+        suggestion: "Check input bindings, collision response, and whether the scenario holds input long enough.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.maxDistance !== undefined) {
+    const pass = input.report.distance <= scenarioAssertions.movement.maxDistance;
+    assertions.push({ details: { distance: input.report.distance, maximum: scenarioAssertions.movement.maxDistance }, id: "movement.maxDistance", pass });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+        message: `Entity '${input.report.entity}' moved ${input.report.distance.toFixed(6)}, above allowed ${scenarioAssertions.movement.maxDistance}.`,
+        severity: "error",
+        suggestion: "Check bounds/blocked-cell handling and ensure the scenario drives the intended blocked direction.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.pathLength !== undefined) {
+    const pathLength = input.report.pathLength ?? input.report.distance;
+    const pass = pathLength >= scenarioAssertions.movement.pathLength;
+    assertions.push({ details: { minimum: scenarioAssertions.movement.pathLength, pathLength }, id: "movement.pathLength", pass });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_PATH_LENGTH_ASSERTION_FAILED",
+        message: `Entity '${input.report.entity}' accumulated path length ${pathLength.toFixed(6)}, below required ${scenarioAssertions.movement.pathLength}.`,
+        severity: "error",
+        suggestion: "Use pathLength with minDistance to distinguish actual traversal from a route that returns to its starting point.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.minAxisDelta !== undefined) {
+    const expectation = parseMovementAxisExpectation(scenarioAssertions.movement.minAxisDelta.axis);
+    let rawDelta: number | undefined;
+    if (expectation !== undefined && input.report.movementDelta !== undefined) {
+      rawDelta = input.report.movementDelta[axisIndex(expectation.axis)];
+    }
+    const signedDelta = rawDelta === undefined || expectation === undefined ? undefined : rawDelta * (expectation.sign ?? 1);
+    const pass = signedDelta !== undefined && signedDelta >= scenarioAssertions.movement.minAxisDelta.min;
+    assertions.push({
+      details: {
+        axis: scenarioAssertions.movement.minAxisDelta.axis,
+        min: scenarioAssertions.movement.minAxisDelta.min,
+        rawDelta: rawDelta ?? null,
+        signedDelta: signedDelta ?? null,
+      },
+      id: "movement.axisDelta",
+      pass,
+    });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_AXIS_DELTA_ASSERTION_FAILED",
+        message: `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' did not move ${scenarioAssertions.movement.minAxisDelta.min} units on ${scenarioAssertions.movement.minAxisDelta.axis}.`,
+        severity: "error",
+        suggestion: "Check route setup, collision response, and whether the scenario ends on the expected vertical surface.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.minResolvedAxisDelta !== undefined) {
+    const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
+    const expectation = parseMovementAxisExpectation(scenarioAssertions.movement.minResolvedAxisDelta.axis);
+    const resolved = expectation === undefined ? undefined : maxResolvedAxisDelta(input.report.effectLog, entity, expectation, input.report.before?.position);
+    const pass = resolved !== undefined && resolved >= scenarioAssertions.movement.minResolvedAxisDelta.min;
+    assertions.push({
+      details: {
+        axis: scenarioAssertions.movement.minResolvedAxisDelta.axis,
+        entity,
+        min: scenarioAssertions.movement.minResolvedAxisDelta.min,
+        signedDelta: resolved ?? null,
+      },
+      id: "movement.resolvedAxisDelta",
+      pass,
+    });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_RESOLVED_AXIS_DELTA_ASSERTION_FAILED",
+        message: `Entity '${entity}' did not resolve ${scenarioAssertions.movement.minResolvedAxisDelta.min} units on ${scenarioAssertions.movement.minResolvedAxisDelta.axis}.`,
+        severity: "error",
+        suggestion: "Check character.move effect-log entries, route setup, collision response, and whether the scenario reaches the expected slope or step surface.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.rotationChanged === true) {
+    const rotation = rotationDelta(input.report.effectLog, scenarioAssertions.movement.entity ?? input.report.entity);
+    const pass = rotation !== undefined && rotation > 0.0001;
+    assertions.push({ details: { rotationDelta: rotation ?? null }, id: "movement.rotation", pass });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_ROTATION_ASSERTION_FAILED",
+        message: `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' did not expose a changed rotation during the playtest.`,
+        severity: "error",
+        suggestion: "Check turn/yaw script output and ensure Transform rotation changes are emitted.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.maxTiltDegrees !== undefined) {
+    const entity = scenarioAssertions.movement.entity ?? input.report.entity;
+    const tilt = tiltDegrees(input.report.after?.rotation) ?? finalTiltDegrees(input.report.effectLog, entity);
+    const pass = tilt !== undefined && tilt <= scenarioAssertions.movement.maxTiltDegrees;
+    assertions.push({
+      details: { entity, maxTiltDegrees: scenarioAssertions.movement.maxTiltDegrees, tiltDegrees: tilt ?? null },
+      id: "movement.tilt",
+      pass,
+    });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_TILT_ASSERTION_FAILED",
+        message: `Entity '${entity}' final tilt ${tilt === undefined ? "was unavailable" : `${tilt.toFixed(3)} degrees`} and must not exceed ${scenarioAssertions.movement.maxTiltDegrees} degrees.`,
+        severity: "error",
+        suggestion: "Inspect the final Transform rotation and fix suspension, grounding, collision response, or recovery before accepting the playtest.",
+      });
+    }
+  }
+  if (scenarioAssertions.movement?.closesDistanceToPosition !== undefined) {
+    const expectation = scenarioAssertions.movement.closesDistanceToPosition;
+    const before = input.report.before?.position;
+    const after = input.report.after?.position;
+    const decrease = before === undefined || after === undefined
+      ? undefined
+      : vectorDistance(before, expectation.position) - vectorDistance(after, expectation.position);
+    const pass = decrease !== undefined && decrease >= expectation.min;
+    assertions.push({
+      details: { decrease: decrease ?? null, position: expectation.position, required: expectation.min },
+      id: "movement.closesDistance",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_DISTANCE_CLOSURE_ASSERTION_FAILED",
+      message: `Entity did not close distance to the expected position by ${expectation.min}.`,
+      severity: "error",
+      suggestion: "Inspect pursue target ownership and character.move resolved positions.",
+    });
+  }
+  if (scenarioAssertions.movement?.reachesPositionWithin !== undefined) {
+    const expectation = scenarioAssertions.movement.reachesPositionWithin;
+    const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
+    const closestDistance = minimumResolvedDistance(
+      input.report.effectLog,
+      input.report.observations?.effectLogSeries,
+      entity,
+      expectation.position,
+      input.report.before?.position,
+      expectation.atStep,
+    );
+    const pass = closestDistance !== undefined && closestDistance <= expectation.maxDistance;
+    assertions.push({
+      details: { closestDistance: closestDistance ?? null, entity, ...expectation },
+      id: "movement.reachesPosition",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED",
+      message: `Entity '${entity}' did not come within ${expectation.maxDistance} units of the expected position.`,
+      severity: "error",
+      suggestion: "Inspect character.move resolved positions and the owned last-known-position target.",
+    });
+  }
+  if (scenarioAssertions.movement?.facesMovementWithinDegrees !== undefined) {
+    const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
+    const evidence = movementFacingEvidence(input.report.effectLog, entity);
+    const pass = evidence.sampleCount > 0
+      && evidence.maxErrorDegrees <= scenarioAssertions.movement.facesMovementWithinDegrees;
+    assertions.push({
+      details: { entity, ...evidence, threshold: scenarioAssertions.movement.facesMovementWithinDegrees },
+      id: "movement.facing",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_MOVEMENT_FACING_ASSERTION_FAILED",
+      message: `Entity '${entity}' did not face resolved movement within ${scenarioAssertions.movement.facesMovementWithinDegrees} degrees.`,
+      severity: "error",
+      suggestion: "Inspect character.move direction and Transform yaw effects; slew facing before allowing translation.",
+    });
+  }
+  if (scenarioAssertions.movement?.notFacing !== undefined) {
+    const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
+    const angleDegrees = finalFacingAngleToEntity(input.report.effectLog, entity, scenarioAssertions.movement.notFacing.entity);
+    const pass = angleDegrees !== undefined && angleDegrees >= scenarioAssertions.movement.notFacing.minDegrees;
+    assertions.push({
+      details: { angleDegrees: angleDegrees ?? null, entity, target: scenarioAssertions.movement.notFacing.entity },
+      id: "movement.notFacing",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_NOT_FACING_ASSERTION_FAILED",
+      message: `Entity '${entity}' remained pointed at '${scenarioAssertions.movement.notFacing.entity}' during movement.`,
+      severity: "error",
+      suggestion: "Drive patrol yaw from movement direction rather than the target entity.",
+    });
+  }
+  if (scenarioAssertions.movement?.notFacingPosition !== undefined) {
+    const entity = scenarioAssertions.movement.entity ?? input.scenario.subject ?? input.report.entity;
+    const expectation = scenarioAssertions.movement.notFacingPosition;
+    const angleDegrees = finalFacingAngleToPosition(input.report.effectLog, entity, expectation.position);
+    const pass = angleDegrees !== undefined && angleDegrees >= expectation.minDegrees;
+    assertions.push({
+      details: { angleDegrees: angleDegrees ?? null, entity, position: expectation.position },
+      id: "movement.notFacingPosition",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_NOT_FACING_POSITION_ASSERTION_FAILED",
+      message: `Entity '${entity}' remained pointed at the excluded world position during movement.`,
+      severity: "error",
+      suggestion: "Drive patrol yaw from movement direction rather than the observed target position.",
+    });
+  }
+  for (const assertion of scenarioAssertions.visibility ?? []) {
+    const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
+    const result = evaluateVisibilityAssertion(entity, assertion.minProjectedPixels, assertion.maxOffscreenRatio, input.scenario.viewport, input.report.observations?.runtimeDiagnostics);
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) {
+      diagnostics.push(result.diagnostic);
+    }
+  }
+  for (const assertion of scenarioAssertions.contacts ?? []) {
+    const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
+    if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
+      assertions.push({
+        details: { entity, requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
+        id: `contact.${entity}`,
+        pass: true,
+      });
+      continue;
+    }
+    const tokens = [entity, assertion.with, assertion.kind].filter((item): item is string => item !== undefined);
+    const selectedSample = assertion.atStep === undefined
+      ? undefined
+      : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.atStep);
+    const stepAvailable = assertion.atStep === undefined || selectedSample !== undefined;
+    const effectEvidence = assertion.atStep === undefined
+      ? mergeEffectLogs(input.report.effectLog, input.report.observations?.effectLogSeries)
+      : [];
+    const effectCount = countMatchingEntries(effectEvidence, tokens);
+    const physicsDebugCount = assertion.kind === undefined || assertion.kind === "contact"
+      ? countPhysicsDebugContacts(input.report.observations, entity, assertion.with, selectedSample?.snapshot)
+      : 0;
+    const count = effectCount + physicsDebugCount;
+    const minCount = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
+    const pass = stepAvailable && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
+    assertions.push({ details: { atStep: assertion.atStep, count, entity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: `contact.${entity}`, pass });
+    if (!pass) {
+      const partial = summarizeMatchingEntries(effectEvidence, [entity, assertion.with].filter((item): item is string => item !== undefined));
+      const hasPhysicsDebugEvidence = input.report.observations?.physicsDebug !== undefined
+        || (input.report.observations?.physicsDebugSeries?.length ?? 0) > 0;
+      diagnostics.push({
+        artifactPath: partial !== undefined || !hasPhysicsDebugEvidence ? "effect-log.json" : "observations.json",
+        code: !stepAvailable
+          ? "TN_PLAYTEST_CONTACT_STEP_NOT_OBSERVED"
+          : assertion.maxCount !== undefined && count > assertion.maxCount
+          ? "TN_PLAYTEST_CONTACT_COUNT_EXCEEDED"
+          : "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
+        message: !stepAvailable
+          ? `Contact assertion step '${assertion.atStep}' was not retained.`
+          : assertion.maxCount !== undefined && count > assertion.maxCount
+          ? `Contact/trigger for '${entity}' was observed ${count} time(s), above allowed ${assertion.maxCount}.`
+          : `Expected contact/trigger for '${entity}' was not observed ${minCount} time(s).`,
+        observedRuntimePath: `observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=${entity}] | effect-log.json/entries[kind=service|event,entity=${entity}]`,
+        path: `${input.scenario.sourcePath ?? "playtest"}/assert/contacts/${entity}`,
+        severity: "error",
+        ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
+        ...(partial?.systemId === undefined ? {} : { systemId: partial.systemId, sourcePath: partial.sourcePath }),
+        suggestion: !stepAvailable
+          ? "Add a scenario step with the requested label or correct assert.contacts[].atStep."
+          : partial === undefined
+          ? "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+          : `effect-log.json contains ${partial.entryCount} related runtime entr${partial.entryCount === 1 ? "y" : "ies"} from ${partial.systems}, but none satisfied the contact assertion. Check collider/trigger metadata, contact filters, and route timing in the listed system(s).`,
+      });
+    }
+  }
+  for (const assertion of scenarioAssertions.settled ?? []) {
+    if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
+      assertions.push({
+        details: { entity: assertion.entity, requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
+        id: `settled.${assertion.entity}`,
+        pass: true,
+      });
+      continue;
+    }
+    const snapshot = assertion.atStep === undefined
+      ? input.report.observations?.physicsDebugSeries?.at(-1)?.snapshot ?? input.report.observations?.physicsDebug
+      : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.atStep)?.snapshot;
+    const bodies = physicsDebugSleepStates(snapshot, assertion.entity);
+    const minimum = assertion.minBodies ?? 1;
+    const sleeping = bodies.filter((body) => body.sleeping).length;
+    const comparisonSnapshot = assertion.compareToStep === undefined
+      ? undefined
+      : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.compareToStep)?.snapshot;
+    const poseDistance = assertion.compareToStep === undefined
+      ? undefined
+      : physicsDebugMeanPoseDistance(snapshot, comparisonSnapshot, assertion.entity);
+    const posePass = assertion.minMeanPoseDistance === undefined
+      || (poseDistance !== undefined && poseDistance.sharedBodies >= minimum && poseDistance.mean >= assertion.minMeanPoseDistance);
+    const pass = bodies.length >= minimum && sleeping === bodies.length && posePass;
+    assertions.push({
+      details: { atStep: assertion.atStep, bodies: bodies.length, compareToStep: assertion.compareToStep, entity: assertion.entity, minimum, poseDistance, sleeping },
+      id: `settled.${assertion.entity}`,
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      artifactPath: "observations.json",
+      code: !posePass ? "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT" : "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
+      message: !posePass
+        ? `Expected mean settled-pose distance for '${assertion.entity}' to reach ${assertion.minMeanPoseDistance}m from step '${assertion.compareToStep}'; observed ${poseDistance?.mean ?? "unavailable"}m across ${poseDistance?.sharedBodies ?? 0} bodies.`
+        : `Expected at least ${minimum} physics bod${minimum === 1 ? "y" : "ies"} matching '${assertion.entity}' to be asleep; observed ${sleeping} of ${bodies.length}.`,
+      observedRuntimePath: "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
+      path: `${input.scenario.sourcePath ?? "playtest"}/assert/settled/${assertion.entity}`,
+      severity: "error",
+      ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
+      suggestion: "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake.",
+    });
+  }
+  for (const assertion of scenarioAssertions.occluded ?? []) {
+    const matches = matchingOccludedRaycasts(input.report.effectLog, assertion.entity, assertion.target);
+    const pass = matches > 0;
+    assertions.push({ details: { count: matches, entity: assertion.entity, target: assertion.target }, id: `occluded.${assertion.entity ?? "ray"}`, pass });
+    if (!pass) diagnostics.push({
+      artifactPath: "effect-log.json",
+      code: "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
+      message: "Expected a render scene-ray query or physics raycast result with hit=true, but no matching occlusion evidence was observed.",
+      observedRuntimePath: "effect-log.json/entries[service=render.sceneRayQuery|physics.raycast]/payload/result/hit",
+      severity: "error",
+      suggestion: "Check the listener/emitter entity ids and rendered occluder geometry, then inspect effect-log.json for the scene-query request and hit result.",
+    });
+  }
+  for (const assertion of scenarioAssertions.animation ?? []) {
+    const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
+    const tokens = [entity, assertion.clip].filter((item): item is string => item !== undefined);
+    const count = countMatchingEntries(input.report.effectLog, tokens);
+    const minCount = assertion.entered === true || assertion.advancedFrames !== undefined ? 1 : 0;
+    const pass = count >= minCount;
+    assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames }, id: `animation.${entity}`, pass });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+        message: `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
+        severity: "error",
+        suggestion: "Check model animation clip wiring and runtime animation playback state.",
+      });
+    }
+  }
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    if (scenarioAssertions[entry.kind] === undefined
+      || assertions.some((assertion) => assertion.id.startsWith(entry.resultIdPrefix))
+      || assertionEvaluatedByBaseProbe(entry.kind, input.report)) {
+      continue;
+    }
+    const id = `assert.${entry.kind}`;
+    assertions.push({ details: { reason: "registered-without-evaluator" }, id, pass: false });
+    diagnostics.push(assertionNotEvaluatedDiagnostic(id, "the registered assertion produced no evaluator result"));
+  }
+  if (assertions.length === 0) {
+    const id = "scenario.assertions";
+    assertions.push({ details: { reason: "no-evaluated-assertions" }, id, pass: false });
+    diagnostics.push({
+      code: "TN_PLAYTEST_SCENARIO_NO_ASSERTIONS",
+      message: `Scenario '${input.scenario.name}' completed without evaluating any assertions.`,
+      severity: "error",
+      ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
+      suggestion: "Declare a supported assertion and ensure its evaluator observes a result before treating the scenario as proof.",
+    });
+  }
+  return { assertions, diagnostics };
+}
+
+function horizontalRadius(
+  transform: { halfExtents?: Vec3; scale?: Vec3 } | undefined,
+  direction: readonly [number, number],
+): number {
+  const halfExtents = transform?.halfExtents
+    ?? (transform?.scale === undefined ? undefined : transform.scale.map((value) => Math.abs(value) * 0.5) as Vec3);
+  return halfExtents === undefined
+    ? 0
+    : Math.abs(direction[0]) * Math.abs(halfExtents[0]) + Math.abs(direction[1]) * Math.abs(halfExtents[2]);
+}
+
+function platformTop(transform: { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }): number {
+  const halfHeight = transform.halfExtents?.[1] ?? (transform.scale === undefined ? 0 : Math.abs(transform.scale[1]) * 0.5);
+  return (transform.position?.[1] ?? 0) + halfHeight;
+}
+
+function movementEnvelopeHorizontalLimit(
+  envelope: { fallDistanceToGround: number; forwardReach: number; maxRise: number },
+  rise: number,
+): number | undefined {
+  if (rise > envelope.maxRise) return undefined;
+  const dropFromApex = envelope.maxRise - rise;
+  if (dropFromApex > envelope.fallDistanceToGround) return undefined;
+  if (envelope.maxRise === 0) return rise === 0 ? envelope.forwardReach : undefined;
+  return envelope.forwardReach * (1 + Math.sqrt(dropFromApex / envelope.maxRise));
+}
+
+function countPhysicsDebugContacts(
+  observations: IPlaytestObservations | undefined,
+  entity: string,
+  withEntity: string | undefined,
+  selectedSnapshot?: unknown,
+): number {
+  const snapshots = selectedSnapshot === undefined
+    ? [
+        observations?.physicsDebug,
+        ...(observations?.physicsDebugSeries ?? []).map((sample) => sample.snapshot),
+      ]
+    : [selectedSnapshot];
+  let count = 0;
+  for (const snapshot of snapshots) {
+    if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) continue;
+    count += snapshot.artifact.primitives.filter((primitive) => {
+      if (!isRecord(primitive) || primitive.category !== "contact" || typeof primitive.id !== "string") return false;
+      return primitive.id.includes(entity) && (withEntity === undefined || primitive.id.includes(withEntity));
+    }).length;
+  }
+  return count;
+}
+
+function physicsDebugSleepStates(snapshot: unknown, entity: string): Array<{ entity: string; sleeping: boolean }> {
+  if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) return [];
+  return snapshot.artifact.primitives.flatMap((primitive) => {
+    if (!isRecord(primitive)
+      || primitive.category !== "sleep"
+      || typeof primitive.entity !== "string"
+      || (primitive.entity !== entity && !primitive.entity.startsWith(entity))
+      || typeof primitive.value !== "number") return [];
+    return [{ entity: primitive.entity, sleeping: primitive.value >= 1 }];
+  });
+}
+
+function physicsDebugMeanPoseDistance(
+  snapshot: unknown,
+  comparisonSnapshot: unknown,
+  entity: string,
+): { mean: number; sharedBodies: number } | undefined {
+  const positions = physicsDebugBodyPositions(snapshot, entity);
+  const comparison = physicsDebugBodyPositions(comparisonSnapshot, entity);
+  const distances = [...positions.entries()].flatMap(([id, position]) => {
+    const other = comparison.get(id);
+    return other === undefined
+      ? []
+      : [Math.hypot(position[0] - other[0], position[1] - other[1], position[2] - other[2])];
+  });
+  if (distances.length === 0) return undefined;
+  return {
+    mean: distances.reduce((sum, distance) => sum + distance, 0) / distances.length,
+    sharedBodies: distances.length,
+  };
+}
+
+function physicsDebugBodyPositions(snapshot: unknown, entity: string): Map<string, [number, number, number]> {
+  const positions = new Map<string, [number, number, number]>();
+  if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) return positions;
+  for (const primitive of snapshot.artifact.primitives) {
+    if (!isRecord(primitive)
+      || primitive.category !== "center-of-mass"
+      || typeof primitive.entity !== "string"
+      || (primitive.entity !== entity && !primitive.entity.startsWith(entity))
+      || !finiteVector(primitive.position)) continue;
+    positions.set(primitive.entity, primitive.position as [number, number, number]);
+  }
+  return positions;
+}
+
+function assertionEvaluatedByBaseProbe(
+  kind: keyof NonNullable<IPlaytestScenario["assert"]>,
+  report: IPlaytestReport,
+): boolean {
+  if (kind === "movement") return report.expectMoved || report.expectAxis !== undefined;
+  if (kind === "camera") return report.follow !== undefined;
+  return false;
+}
+
+function assertionNotEvaluatedDiagnostic(id: string, reason: string): IPlaytestDiagnostic {
+  return {
+    code: "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+    message: `Declared assertion '${id}' was not evaluated: ${reason}.`,
+    severity: "error",
+    suggestion: "Run this assertion on a supported target or add its evaluator before treating the scenario as proof.",
+  };
+}
+
+export function overlayNodeObservationKey(overlayId: string, selector: string): string {
+  return `${overlayId}:${selector}`;
+}
+
+function evaluateTagCountAssertion(
+  assertion: IPlaytestTagCountAssertion,
+  observations: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const gameplay = gameplayObservations(observations);
+  const tags = isRecord(gameplay?.tags) ? gameplay.tags : undefined;
+  const candidate = tags?.[assertion.tag];
+  const summary = isRecord(candidate) ? candidate : undefined;
+  const count = typeof summary?.count === "number" ? summary.count : undefined;
+  const pass = count !== undefined
+    && (assertion.count === undefined || count === assertion.count)
+    && (assertion.gte === undefined || count >= assertion.gte);
+  const result = { details: { count: count ?? null, expected: assertion, tag: assertion.tag }, id: `tags.${assertion.tag}`, pass };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_TAG_COUNT_ASSERTION_FAILED",
+          message: `Tag '${assertion.tag}' count ${count === undefined ? "was unavailable" : count} did not satisfy the expected count.`,
+          severity: "error",
+          suggestion: "Ensure the runtime entity tags are authored and inspect runtimeObservations.gameplay.tags in the playtest artifact.",
+        },
+      };
+}
+
+function evaluateStateAssertion(
+  assertion: IPlaytestStateAssertion,
+  observations: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const gameplay = gameplayObservations(observations);
+  const states = isRecord(gameplay?.states) ? gameplay.states : undefined;
+  const observed = typeof states?.[assertion.entity] === "string" ? states[assertion.entity] : undefined;
+  const pass = observed === assertion.equals;
+  const result = { details: { entity: assertion.entity, expected: assertion.equals, observed: observed ?? null }, id: `states.${assertion.entity}`, pass };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+          message: `Entity '${assertion.entity}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
+          severity: "error",
+          suggestion: "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
+        },
+      };
+}
+
+function gameplayObservations(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const gameplay = value.gameplay;
+  return isRecord(gameplay) ? gameplay : undefined;
+}
+
+function evaluatePathAssertion(
+  kind: "hud" | "resource",
+  assertion: IPlaytestPathAssertion,
+  observed: { after?: unknown; before?: unknown } | undefined,
+  context: { effectLog?: unknown; movedDistance?: number; scenarioSourcePath?: string },
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const before = readPath(observed?.before, assertion.path);
+  const after = readPath(observed?.after, assertion.path);
+  const valueChecksBefore: boolean[] = [];
+  const valueChecksAfter: boolean[] = [];
+  if (Object.hasOwn(assertion, "equals")) {
+    valueChecksBefore.push(jsonEqual(before, assertion.equals));
+    valueChecksAfter.push(jsonEqual(after, assertion.equals));
+  }
+  if (assertion.gte !== undefined) {
+    valueChecksBefore.push(typeof before === "number" && before >= assertion.gte);
+    valueChecksAfter.push(typeof after === "number" && after >= assertion.gte);
+  }
+  if (assertion.textIncludes !== undefined) {
+    valueChecksBefore.push(String(textValue(before)).includes(assertion.textIncludes));
+    valueChecksAfter.push(String(textValue(after)).includes(assertion.textIncludes));
+  }
+  const trivial = rejectsTrivialAssertion(kind === "hud" ? "hud" : "resources")
+    && valueChecksBefore.length > 0
+    && before !== undefined
+    && valueChecksBefore.every(Boolean);
+  const checks = [...valueChecksAfter];
+  if (assertion.changed !== undefined) {
+    checks.push(assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after));
+  }
+  const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || assertion.allowTrivial === true);
+  const result = {
+    details: {
+      after,
+      before,
+      expected: expectedPathAssertion(assertion),
+      id: assertion.id,
+      path: assertion.path,
+      trivial,
+      ...(trivial && assertion.allowTrivial === true ? { trivialityOptOut: true } : {}),
+    },
+    id: `${kind}.${assertion.id}${assertion.path === undefined ? "" : `.${assertion.path}`}`,
+    pass,
+  };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: trivial && assertion.allowTrivial !== true
+          ? trivialAssertionDiagnostic(`${kind}.${assertion.id}`, assertion.path, before, context.scenarioSourcePath)
+          : pathAssertionDiagnostic(kind, assertion, before, after, context),
+      };
+}
+
+function rejectsTrivialAssertion(kind: keyof NonNullable<IPlaytestScenario["assert"]>): boolean {
+  return PLAYTEST_ASSERTION_REGISTRY.find((entry) => entry.kind === kind)?.triviality === "reject-initial-value";
+}
+
+function componentValueChecks(assertion: IPlaytestComponentAssertion, value: unknown): boolean[] {
+  const resolved = value;
+  return [
+    ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(resolved, assertion.equals)] : []),
+    ...(assertion.gte === undefined ? [] : [typeof resolved === "number" && resolved >= assertion.gte]),
+  ];
+}
+
+function trivialAssertionDiagnostic(id: string, path: string | undefined, before: unknown, sourcePath: string | undefined): IPlaytestDiagnostic {
+  return {
+    code: "TN_PLAYTEST_ASSERTION_TRIVIAL",
+    message: `Assertion '${id}'${path === undefined ? "" : ` at path '${path}'`} was already satisfied before the scenario ran (value ${JSON.stringify(before)}).`,
+    path,
+    severity: "error",
+    ...(sourcePath === undefined ? {} : { sourcePath }),
+    suggestion: "Drive the asserted value from a failing initial state, assert changed:true, or set allowTrivial:true with a documented held-invariant reason.",
+  };
+}
+
+function hasFinalPathExpectation(assertion: IPlaytestPathAssertion): boolean {
+  return Object.hasOwn(assertion, "equals")
+    || assertion.gte !== undefined
+    || assertion.textIncludes !== undefined
+    || assertion.changed !== undefined;
+}
+
+function hasFinalComponentExpectation(assertion: IPlaytestComponentAssertion): boolean {
+  return Object.hasOwn(assertion, "equals")
+    || assertion.gte !== undefined
+    || assertion.changed !== undefined;
+}
+
+function componentAssertionDiagnostic(assertion: IPlaytestComponentAssertion, before: unknown, after: unknown): IPlaytestDiagnostic {
+  return {
+    code: "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+    message: `Component '${assertion.component}' on entity '${assertion.entity}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`} did not satisfy the assertion.`,
+    observedRuntimePath: `observations.json/components/${assertion.entity}/${assertion.component}`,
+    severity: "error",
+    suggestion: `Expected ${JSON.stringify(assertion)}, observed before=${JSON.stringify(before)} after=${JSON.stringify(after)}. Check the owning script and runtime component synchronization.`,
+  };
+}
+
+function pathValuePass(assertion: IPlaytestPathAssertion, value: unknown): boolean {
+  const checks: boolean[] = [];
+  if (Object.hasOwn(assertion, "equals")) checks.push(jsonEqual(value, assertion.equals));
+  if (assertion.gte !== undefined) checks.push(typeof value === "number" && value >= assertion.gte);
+  if (assertion.textIncludes !== undefined) checks.push(String(textValue(value)).includes(assertion.textIncludes));
+  return checks.length > 0 && checks.every(Boolean);
+}
+
+function aerodynamicForceSampleCount(series: IPlaytestObservations["physicsDebugSeries"], entity: string): number {
+  return (series ?? []).filter(({ snapshot }) => {
+    if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) return false;
+    return snapshot.artifact.primitives.some((primitive) => isRecord(primitive)
+      && primitive.category === "aero"
+      && primitive.entity === entity
+      && typeof primitive.value === "number"
+      && Number.isFinite(primitive.value)
+      && finiteVector(primitive.from)
+      && finiteVector(primitive.to));
+  }).length;
+}
+
+function aerodynamicControlValues(
+  effectLog: unknown,
+  series: IPlaytestObservations["effectLogSeries"],
+  entity: string,
+  surface: string,
+): number[] {
+  const logs = [effectLog, ...(series ?? []).map((sample) => sample.snapshot)];
+  return logs.flatMap((log) => !isRecord(log) || !Array.isArray(log.entries) ? [] : log.entries.flatMap((entry) => {
+    if (!isRecord(entry) || entry.service !== "physics.aerodynamics.setInputs" || !isRecord(entry.payload)) return [];
+    const request = record(entry.payload.request);
+    const inputs = record(request?.inputs);
+    const surfaces = record(inputs?.surfaces);
+    const value = surfaces?.[surface];
+    return request?.entity === entity && typeof value === "number" && Number.isFinite(value) ? [value] : [];
+  }));
+}
+
+function aerodynamicTorqueAtLabel(series: IPlaytestObservations["physicsDebugSeries"], entity: string, label: string): Vec3 | undefined {
+  const snapshot = (series ?? []).find((sample) => sample.label === label)?.snapshot;
+  if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) return undefined;
+  const primitives = snapshot.artifact.primitives.filter(isRecord);
+  const bodyPosition = primitives.find((primitive) => primitive.id === `sleep:${entity}`)?.position;
+  if (!finiteVector(bodyPosition)) return undefined;
+  const origin = bodyPosition as Vec3;
+  const torque: Vec3 = [0, 0, 0];
+  let samples = 0;
+  for (const primitive of primitives) {
+    if (primitive.category !== "aero" || primitive.entity !== entity || !finiteVector(primitive.from) || !finiteVector(primitive.to)) continue;
+    const from = primitive.from as Vec3;
+    const to = primitive.to as Vec3;
+    const momentArm: Vec3 = [from[0] - origin[0], from[1] - origin[1], from[2] - origin[2]];
+    const force: Vec3 = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+    const cross: Vec3 = [
+      momentArm[1] * force[2] - momentArm[2] * force[1],
+      momentArm[2] * force[0] - momentArm[0] * force[2],
+      momentArm[0] * force[1] - momentArm[1] * force[0],
+    ];
+    torque[0] += cross[0];
+    torque[1] += cross[1];
+    torque[2] += cross[2];
+    samples += 1;
+  }
+  return samples === 0 || !torque.every(Number.isFinite) ? undefined : torque;
+}
+
+function finiteVector(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item));
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function expectedPathAssertion(assertion: IPlaytestPathAssertion): Record<string, unknown> {
+  return {
+    ...(assertion.atSteps === undefined ? {} : { atSteps: assertion.atSteps }),
+    ...(Object.hasOwn(assertion, "equals") ? { equals: assertion.equals } : {}),
+    ...(assertion.gte === undefined ? {} : { gte: assertion.gte }),
+    ...(assertion.textIncludes === undefined ? {} : { textIncludes: assertion.textIncludes }),
+    ...(assertion.throughoutSteps === undefined ? {} : { throughoutSteps: assertion.throughoutSteps }),
+    ...(assertion.changed === undefined ? {} : { changed: assertion.changed }),
+    ...(assertion.allowTrivial === undefined ? {} : { allowTrivial: assertion.allowTrivial }),
+  };
+}
+
+function unchangedPathValue(before: unknown, after: unknown): boolean {
+  return before !== undefined && after !== undefined && jsonEqual(before, after);
+}
+
+function pathAssertionDiagnostic(
+  kind: "hud" | "resource",
+  assertion: IPlaytestPathAssertion,
+  before: unknown,
+  after: unknown,
+  context: { effectLog?: unknown; movedDistance?: number; scenarioSourcePath?: string },
+): IPlaytestDiagnostic {
+  const unchanged = unchangedPathValue(before, after);
+  if (kind === "resource" && unchanged && (context.movedDistance ?? 0) > 0.01) {
+    const summary = summarizeResourceEffectLog(context.effectLog, assertion.id, assertion.path);
+    return {
+      code: "TN_PLAYTEST_RESOURCE_STATE_STAGNATED",
+      message: `Resource '${assertion.id}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`} did not change after the scenario moved the subject ${formatNumber(context.movedDistance ?? 0)} units.`,
+      artifactPath: "effect-log.json",
+      observedRuntimePath: `effect-log.json/entries[kind=resource,resource=${assertion.id}]`,
+      path: assertion.path === undefined ? `${context.scenarioSourcePath ?? "playtest"}/assert/resources/${assertion.id}` : `${context.scenarioSourcePath ?? "playtest"}/assert/resources/${assertion.id}/${assertion.path}`,
+      resourceId: assertion.id,
+      severity: "error",
+      ...(context.scenarioSourcePath === undefined ? {} : { sourcePath: context.scenarioSourcePath }),
+      ...(summary?.systemId === undefined ? {} : { systemId: summary.systemId, sourcePath: summary.sourcePath }),
+      suggestion: summary === undefined
+        ? "The scenario movement path executed but the asserted resource never changed. Capture effect-log.json, then check pickup/contact predicates, route coordinates, resource write declarations, and stale duplicate systems before rerunning."
+        : `The scenario movement path executed and effect-log.json shows ${summary.entryCount} '${assertion.id}' resource snapshot(s) from ${summary.systems}; observed values stayed ${summary.distinctValues}. Check pickup/contact predicates, route coordinates, resource write declarations, and stale duplicate systems in the listed system(s).`,
+    };
+  }
+  return {
+    code: "",
+    message: `${kind === "hud" ? "HUD" : "Resource"} assertion failed for '${assertion.id}'${assertion.path === undefined ? "" : ` path '${assertion.path}'`}.`,
+    severity: "error",
+    suggestion: unchanged
+      ? `${kind === "hud" ? "Observed HUD value" : "Observed resource value"} did not change during the scenario. Inspect effect-log.json for the owning system's resource writes, run tn build --project . --json for undeclared writes, and check whether duplicate/stale systems or route/collision setup prevented the state transition.`
+      : kind === "hud" ? "Check UI binding IDs and whether the backing resource changes during the scenario." : "Check resource IDs, script writes, and assertion path spelling.",
+  };
+}
+
+function summarizeResourceEffectLog(effectLog: unknown, resourceId: string, path: string | undefined): { distinctValues: string; entryCount: number; sourcePath?: string; systemId?: string; systems: string } | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return undefined;
+  }
+  const entries = effectLog.entries
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.kind === "resource" && entry.resource === resourceId);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  const systems = new Set<string>();
+  const values = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry.system === "string") {
+      systems.add(entry.system);
+    }
+    values.add(shortJson(readPath(entry.value, path)));
+  }
+  return {
+    distinctValues: Array.from(values).slice(0, 3).join(", "),
+    entryCount: entries.length,
+    ...([...(systems)].at(0) === undefined ? {} : { sourcePath: sourcePathForSystem([...(systems)][0] as string), systemId: [...(systems)][0] as string }),
+    systems: systems.size === 0 ? "unknown systems" : Array.from(systems).slice(0, 5).join(", "),
+  };
+}
+
+function sourcePathForSystem(systemId: string): string {
+  return `content/systems/${systemId}.systems.json`;
+}
+
+function shortJson(value: unknown): string {
+  const text = JSON.stringify(value);
+  if (text === undefined) {
+    return "undefined";
+  }
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+}
+
+function evaluateDiagnosticsPolicy(
+  report: IPlaytestReport,
+  policy: NonNullable<IPlaytestScenario["assert"]>["diagnostics"],
+): IPlaytestDiagnostic[] {
+  const diagnostics: IPlaytestDiagnostic[] = [];
+  if (policy?.runtimeReady === true && report.diagnostics.some((diagnostic) => diagnostic.code === "TN_PLAYTEST_RUNTIME_NOT_READY")) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      message: "Runtime did not reach ready state while diagnostics policy required it.",
+      severity: "error",
+      suggestion: "Inspect runtime diagnostics and bundle validation output before replaying the scenario.",
+    });
+  }
+  const capturedConsoleErrors = consoleErrors(report.observations?.console ?? []);
+  if (policy?.noConsoleErrors === true && capturedConsoleErrors.length > 0) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_CONSOLE_ERROR",
+      message: `${capturedConsoleErrors.length} browser console error(s) were captured during playtest.`,
+      severity: "error",
+      suggestion: "Open console.json in the playtest artifact directory and fix the first runtime error.",
+    });
+  }
+  if (policy?.noNetworkErrors === true && (report.observations?.network.length ?? 0) > 0) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_NETWORK_ERROR",
+      message: `${report.observations?.network.length ?? 0} failed network request(s) were captured during playtest.`,
+      severity: "error",
+      suggestion: "Open network.json in the playtest artifact directory and fix missing asset or bundle paths.",
+    });
+  }
+  const runtimeErrors = runtimeDiagnostics(report.observations?.runtimeDiagnostics);
+  if (policy?.noRuntimeDiagnostics === true && runtimeErrors.length > 0) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      message: `${runtimeErrors.length} runtime diagnostic error(s) were captured during playtest.`,
+      severity: "error",
+      suggestion: "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path.",
+    });
+  }
+  return diagnostics;
+}
+
+function evaluateVisibilityAssertion(
+  entity: string,
+  minProjectedPixels: number | undefined,
+  maxOffscreenRatio: number | undefined,
+  viewport: { height: number; width: number },
+  runtimeDiagnosticsValue: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const diagnosticsSnapshot = runtimeDiagnosticsSnapshot(runtimeDiagnosticsValue);
+  const rendered = renderedEntity(diagnosticsSnapshot, entity);
+  const supportsProjectedBounds = renderedEntitiesAreReported(diagnosticsSnapshot);
+  if (!supportsProjectedBounds && hasNativeReadinessSamples(diagnosticsSnapshot)) {
+    return {
+      assertion: {
+        details: {
+          entity,
+          maxOffscreenRatio,
+          minProjectedPixels,
+          reason: "native-projected-bounds-unavailable",
+          skipped: true,
+        },
+        id: `visibility.${entity}`,
+        pass: true,
+      },
+    };
+  }
+  const bounds = isRecord(rendered?.projectedBounds) ? rendered.projectedBounds : undefined;
+  const min = Array.isArray(bounds?.min) ? bounds.min : undefined;
+  const max = Array.isArray(bounds?.max) ? bounds.max : undefined;
+  const projectedPixels = min === undefined || max === undefined
+    ? undefined
+    : Math.max(0, ((Number(max[0]) - Number(min[0])) / 2) * viewport.width) * Math.max(0, ((Number(max[1]) - Number(min[1])) / 2) * viewport.height);
+  const offscreenRatio = min === undefined || max === undefined ? undefined : projectedOffscreenRatio([Number(min[0]), Number(min[1])], [Number(max[0]), Number(max[1])]);
+  const pass = rendered !== undefined
+    && bounds !== undefined
+    && (minProjectedPixels === undefined || (projectedPixels ?? 0) >= minProjectedPixels)
+    && (maxOffscreenRatio === undefined || (offscreenRatio ?? 1) <= maxOffscreenRatio);
+  const assertion = { details: { entity, maxOffscreenRatio, minProjectedPixels, offscreenRatio, projectedPixels }, id: `visibility.${entity}`, pass };
+  return pass
+    ? { assertion }
+    : {
+        assertion,
+        diagnostic: {
+          code: "TN_PLAYTEST_VISIBILITY_FAILED",
+          message: `Entity '${entity}' did not satisfy projected visibility assertions.`,
+          severity: "error",
+          suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
+        },
+      };
+}
+
+function projectedPixelsForEntity(snapshot: unknown, entity: string, viewport: { height: number; width: number }): number | undefined {
+  const rendered = renderedEntity(snapshot, entity);
+  const bounds = isRecord(rendered?.projectedBounds) ? rendered.projectedBounds : undefined;
+  const min = Array.isArray(bounds?.min) ? bounds.min : undefined;
+  const max = Array.isArray(bounds?.max) ? bounds.max : undefined;
+  return min === undefined || max === undefined
+    ? undefined
+    : Math.max(0, ((Number(max[0]) - Number(min[0])) / 2) * viewport.width) * Math.max(0, ((Number(max[1]) - Number(min[1])) / 2) * viewport.height);
+}
+
+function countMatchingEntries(effectLog: unknown, tokens: readonly string[]): number {
+  if (tokens.length === 0 || !isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return 0;
+  }
+  return effectLog.entries.filter((entry) => {
+    const text = JSON.stringify(entry);
+    return tokens.every((token) => text.includes(token));
+  }).length;
+}
+
+function mergeEffectLogs(effectLog: unknown, series: IPlaytestObservations["effectLogSeries"]): { entries: unknown[] } {
+  return {
+    entries: [effectLog, ...(series ?? []).map((sample) => sample.snapshot)]
+      .flatMap((log) => isRecord(log) && Array.isArray(log.entries) ? log.entries : []),
+  };
+}
+
+function matchingOccludedRaycasts(effectLog: unknown, entity: string | undefined, target: string | undefined): number {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) return 0;
+  return effectLog.entries.filter((entry) => {
+    if (!isRecord(entry) || (entry.service !== "render.sceneRayQuery" && entry.service !== "physics.raycast") || !isRecord(entry.payload) || !isRecord(entry.payload.result) || entry.payload.result.hit !== true) return false;
+    const request = JSON.stringify(entry.payload.request ?? null);
+    return (entity === undefined || request.includes(entity)) && (target === undefined || request.includes(target));
+  }).length;
+}
+
+function summarizeMatchingEntries(effectLog: unknown, tokens: readonly string[]): { entryCount: number; sourcePath?: string; systemId?: string; systems: string } | undefined {
+  if (tokens.length === 0 || !isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return undefined;
+  }
+  const entries = effectLog.entries
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => {
+      const text = JSON.stringify(entry);
+      return tokens.every((token) => text.includes(token));
+    });
+  if (entries.length === 0) {
+    return undefined;
+  }
+  const systems = new Set(entries.map((entry) => typeof entry.system === "string" ? entry.system : undefined).filter((item): item is string => item !== undefined));
+  const firstSystem = [...systems][0];
+  return {
+    entryCount: entries.length,
+    ...(firstSystem === undefined ? {} : { sourcePath: sourcePathForSystem(firstSystem), systemId: firstSystem }),
+    systems: systems.size === 0 ? "unknown systems" : [...systems].slice(0, 5).join(", "),
+  };
+}
+
+function rotationDelta(effectLog: unknown, entityId: string): number | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return undefined;
+  }
+  const rotations = effectLog.entries
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.kind === "patch" && entry.command === "setComponent" && entry.component === "Transform" && entry.entity === entityId)
+    .map((entry) => readRotation(entry.value))
+    .filter((item): item is Vec3 => item !== undefined);
+  const first = rotations[0];
+  const last = rotations[rotations.length - 1];
+  return first === undefined || last === undefined ? undefined : vectorDistance(first, last);
+}
+
+function finalTiltDegrees(effectLog: unknown, entityId: string): number | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) return undefined;
+  const rotation = effectLog.entries
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.kind === "patch" && entry.command === "setComponent" && entry.component === "Transform" && entry.entity === entityId)
+    .map((entry) => isRecord(entry.value) ? entry.value.rotation : undefined)
+    .filter((value): value is unknown[] => Array.isArray(value) && value.length >= 4)
+    .at(-1);
+  return tiltDegrees(rotation);
+}
+
+function tiltDegrees(rotation: readonly unknown[] | undefined): number | undefined {
+  if (rotation === undefined) return undefined;
+  const quaternion = rotation.slice(0, 4).map((value) => typeof value === "number" && Number.isFinite(value) ? value : Number.NaN);
+  if (!quaternion.every(Number.isFinite)) return undefined;
+  const [x, y, z, w] = quaternion as [number, number, number, number];
+  const length = Math.hypot(x, y, z, w);
+  if (length <= Number.EPSILON) return undefined;
+  const upDot = 1 - 2 * ((x / length) ** 2 + (z / length) ** 2);
+  return Math.acos(Math.max(-1, Math.min(1, upDot))) * 180 / Math.PI;
+}
+
+function movementFacingEvidence(effectLog: unknown, entityId: string): { maxErrorDegrees: number; sampleCount: number } {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return { maxErrorDegrees: Number.POSITIVE_INFINITY, sampleCount: 0 };
+  }
+  let yaw: number | undefined;
+  const errors: number[] = [];
+  for (const entry of effectLog.entries) {
+    if (!isRecord(entry)) continue;
+    if (entry.kind === "patch" && entry.command === "setComponent" && entry.component === "Transform" && entry.entity === entityId) {
+      yaw = yawFromTransform(entry.value) ?? yaw;
+      continue;
+    }
+    if (entry.kind !== "service" || entry.service !== "character.move" || yaw === undefined || !isRecord(entry.payload)) continue;
+    const request = isRecord(entry.payload.request) ? entry.payload.request : undefined;
+    const options = isRecord(request?.options) ? request.options : undefined;
+    const direction = Array.isArray(options?.direction) ? options.direction : undefined;
+    if (request?.entity !== entityId || direction === undefined || typeof direction[0] !== "number" || typeof direction[1] !== "number") continue;
+    const heading = Math.atan2(direction[0], direction[1]);
+    errors.push(Math.abs(wrappedAngle(heading - yaw)) * 180 / Math.PI);
+  }
+  return {
+    maxErrorDegrees: errors.length === 0 ? Number.POSITIVE_INFINITY : Math.max(...errors),
+    sampleCount: errors.length,
+  };
+}
+
+function finalFacingAngleToEntity(effectLog: unknown, entityId: string, targetId: string): number | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) return undefined;
+  let subject: { position: Vec3; yaw: number } | undefined;
+  let target: Vec3 | undefined;
+  for (const entry of effectLog.entries) {
+    if (!isRecord(entry)) continue;
+    if (entry.kind === "service" && entry.service === "character.move" && isRecord(entry.payload)) {
+      const result = isRecord(entry.payload.result) ? entry.payload.result : undefined;
+      if (result?.entity === targetId) target = readVec3(result.resolved) ?? target;
+      continue;
+    }
+    if (entry.kind !== "patch" || entry.command !== "setComponent" || entry.component !== "Transform") continue;
+    if (entry.entity === entityId) {
+      const position = isRecord(entry.value) ? readVec3(entry.value.position) : undefined;
+      const yaw = yawFromTransform(entry.value);
+      if (position !== undefined && yaw !== undefined) subject = { position, yaw };
+    } else if (entry.entity === targetId && isRecord(entry.value)) {
+      target = readVec3(entry.value.position) ?? target;
+    }
+  }
+  if (subject === undefined || target === undefined) return undefined;
+  const heading = Math.atan2(target[0] - subject.position[0], target[2] - subject.position[2]);
+  return Math.abs(wrappedAngle(heading - subject.yaw)) * 180 / Math.PI;
+}
+
+function finalFacingAngleToPosition(effectLog: unknown, entityId: string, target: readonly [number, number, number]): number | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) return undefined;
+  let subject: { position: Vec3; yaw: number } | undefined;
+  for (const entry of effectLog.entries) {
+    if (!isRecord(entry) || entry.kind !== "patch" || entry.command !== "setComponent" || entry.component !== "Transform" || entry.entity !== entityId) continue;
+    const position = isRecord(entry.value) ? readVec3(entry.value.position) : undefined;
+    const yaw = yawFromTransform(entry.value);
+    if (position !== undefined && yaw !== undefined) subject = { position, yaw };
+  }
+  if (subject === undefined) return undefined;
+  const heading = Math.atan2(target[0] - subject.position[0], target[2] - subject.position[2]);
+  return Math.abs(wrappedAngle(heading - subject.yaw)) * 180 / Math.PI;
+}
+
+function yawFromTransform(value: unknown): number | undefined {
+  if (!isRecord(value) || !Array.isArray(value.rotation) || value.rotation.length < 4) return undefined;
+  const y = value.rotation[1];
+  const w = value.rotation[3];
+  return typeof y === "number" && Number.isFinite(y) && typeof w === "number" && Number.isFinite(w)
+    ? 2 * Math.atan2(y, w)
+    : undefined;
+}
+
+function wrappedAngle(value: number): number {
+  return Math.atan2(Math.sin(value), Math.cos(value));
+}
+
+function maxResolvedAxisDelta(
+  effectLog: unknown,
+  entityId: string,
+  expectation: { axis: MovementAxis; sign?: 1 | -1 },
+  baseline: Vec3 | undefined,
+): number | undefined {
+  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
+    return undefined;
+  }
+  const index = axisIndex(expectation.axis);
+  const resolvedValues = effectLog.entries
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.kind === "service" && entry.service === "character.move")
+    .map((entry) => {
+      const payload = isRecord(entry.payload) ? entry.payload : undefined;
+      const result = isRecord(payload?.result) ? payload.result : undefined;
+      return result?.entity === entityId ? readVec3(result.resolved) : undefined;
+    })
+    .filter((item): item is Vec3 => item !== undefined);
+  const first = baseline ?? resolvedValues[0];
+  if (first === undefined || resolvedValues.length === 0) {
+    return undefined;
+  }
+  const sign = expectation.sign ?? 1;
+  return Math.max(...resolvedValues.map((value) => (value[index] - first[index]) * sign));
+}
+
+function minimumResolvedDistance(
+  effectLog: unknown,
+  effectLogSeries: unknown,
+  entityId: string,
+  target: Vec3,
+  baseline: Vec3 | undefined,
+  atStep: string | undefined,
+): number | undefined {
+  const logs = [
+    ...(atStep === undefined ? [effectLog] : []),
+    ...(Array.isArray(effectLogSeries)
+      ? effectLogSeries
+        .filter((item) => atStep === undefined || (isRecord(item) && item.label === atStep))
+        .map((item) => isRecord(item) ? item.snapshot : undefined)
+      : []),
+  ];
+  const positions = logs
+    .flatMap((log) => isRecord(log) && Array.isArray(log.entries) ? log.entries : [])
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .filter((entry) => entry.kind === "service" && entry.service === "character.move")
+    .map((entry) => {
+      const payload = isRecord(entry.payload) ? entry.payload : undefined;
+      const result = isRecord(payload?.result) ? payload.result : undefined;
+      return result?.entity === entityId ? readVec3(result.resolved) : undefined;
+    })
+    .filter((item): item is Vec3 => item !== undefined);
+  if (baseline !== undefined && atStep === undefined) positions.unshift(baseline);
+  return positions.length === 0
+    ? undefined
+    : Math.min(...positions.map((position) => vectorDistance(position, target)));
+}
+
+function renderedEntity(runtimeDiagnosticsValue: unknown, entity: string): Record<string, unknown> | undefined {
+  if (!renderedEntitiesAreReported(runtimeDiagnosticsValue)) {
+    return undefined;
+  }
+  return runtimeDiagnosticsValue.scene.renderedEntities.find((item): item is Record<string, unknown> => isRecord(item) && item.id === entity);
+}
+
+function renderedEntitiesAreReported(runtimeDiagnosticsValue: unknown): runtimeDiagnosticsValue is { scene: { renderedEntities: unknown[] } } {
+  return isRecord(runtimeDiagnosticsValue) && isRecord(runtimeDiagnosticsValue.scene) && Array.isArray(runtimeDiagnosticsValue.scene.renderedEntities);
+}
+
+function hasNativeReadinessSamples(runtimeDiagnosticsValue: unknown): boolean {
+  return isRecord(runtimeDiagnosticsValue) && Array.isArray(runtimeDiagnosticsValue.readiness);
+}
+
+function projectedOffscreenRatio(min: [number, number], max: [number, number]): number {
+  const width = Math.max(0, max[0] - min[0]);
+  const height = Math.max(0, max[1] - min[1]);
+  const area = width * height;
+  if (area === 0) {
+    return 1;
+  }
+  const visibleWidth = Math.max(0, Math.min(max[0], 1) - Math.max(min[0], -1));
+  const visibleHeight = Math.max(0, Math.min(max[1], 1) - Math.max(min[1], -1));
+  return 1 - Math.max(0, visibleWidth * visibleHeight) / area;
+}
+
+function runtimeDiagnostics(value: unknown): unknown[] {
+  const snapshot = runtimeDiagnosticsSnapshot(value);
+  if (snapshot !== value) {
+    return runtimeDiagnostics(snapshot);
+  }
+  if (!isRecord(snapshot)) {
+    return [];
+  }
+  const recentRuntimeErrors = Array.isArray(snapshot.recentRuntimeErrors) ? snapshot.recentRuntimeErrors : [];
+  const resourceFailures = isRecord(snapshot.assets) && Array.isArray(snapshot.assets.resourceFailures) ? snapshot.assets.resourceFailures : [];
+  return [...recentRuntimeErrors, ...resourceFailures];
+}
+
+function runtimeDiagnosticsSnapshot(value: unknown): unknown {
+  if (isRecord(value) && isRecord(value.diagnostics)) {
+    return value.diagnostics;
+  }
+  return value;
+}
+
+function consoleErrors(entries: Array<{ type: string }>): Array<{ type: string }> {
+  return entries.filter((entry) => entry.type === "error" || entry.type === "assert");
+}
+
+function readPath(value: unknown, path: string | undefined): unknown {
+  if (path === undefined || path.length === 0) {
+    return value;
+  }
+  return path.split(".").reduce<unknown>((current, part) => {
+    if (Array.isArray(current) && /^(0|[1-9]\d*)$/u.test(part)) {
+      return current[Number(part)];
+    }
+    if (!isRecord(current)) {
+      return undefined;
+    }
+    return current[part];
+  }, value);
+}
+
+type MovementAxis = "x" | "y" | "z";
+
+function parseMovementAxisExpectation(value: string): { axis: MovementAxis; sign?: 1 | -1 } | undefined {
+  if (value === "x" || value === "y" || value === "z") {
+    return { axis: value };
+  }
+  const match = /^([+-])([xyz])$/.exec(value);
+  if (match === null) {
+    return undefined;
+  }
+  return { axis: match[2] as MovementAxis, sign: match[1] === "-" ? -1 : 1 };
+}
+
+function axisIndex(axis: MovementAxis): 0 | 1 | 2 {
+  return axis === "x" ? 0 : axis === "y" ? 1 : 2;
+}
+
+function textValue(value: unknown): unknown {
+  if (isRecord(value)) {
+    return value.text ?? value.label ?? value.valueText ?? value.value;
+  }
+  return value;
+}
+
+function readRotation(value: unknown): Vec3 | undefined {
+  if (!isRecord(value) || !Array.isArray(value.rotation) || value.rotation.length < 3) {
+    return undefined;
+  }
+  const rotation = value.rotation.slice(0, 3).map((item) => typeof item === "number" && Number.isFinite(item) ? item : Number.NaN);
+  return rotation.every(Number.isFinite) ? rotation as Vec3 : undefined;
+}
+
+function readVec3(value: unknown): Vec3 | undefined {
+  if (!Array.isArray(value) || value.length < 3) {
+    return undefined;
+  }
+  const vector = value.slice(0, 3).map((item) => typeof item === "number" && Number.isFinite(item) ? item : Number.NaN);
+  return vector.every(Number.isFinite) ? vector as Vec3 : undefined;
+}
+
+function vectorDistance(left: Vec3, right: Vec3): number {
+  const dx = right[0] - left[0];
+  const dy = right[1] - left[1];
+  const dz = right[2] - left[2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3);
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
