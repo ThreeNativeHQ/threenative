@@ -8,10 +8,10 @@ import {
   type IPlaytestSetupRequest,
   type JsonValue,
 } from "../protocol.js";
-import type { Camera, Scene, WebGLRenderer } from "three";
+import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
-import { sampleThreeObservations } from "./observations.js";
+import { sampleThreeObservations, type ThreePlaytestRenderer } from "./observations.js";
 
 export interface IThreePlaytestResources {
   read(): Record<string, JsonValue>;
@@ -21,9 +21,9 @@ export interface IThreePlaytestResources {
 export interface IThreePlaytestBridgeOptions {
   camera: Camera;
   diagnostics?: () => JsonValue[];
-  entities?: readonly IThreePlaytestEntity[];
+  entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<void> | void;
-  renderer: WebGLRenderer;
+  renderer: ThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
 }
@@ -32,13 +32,14 @@ export interface IThreePlaytestBridgeInstallation {
   bridge: IPlaytestBridgeV1;
   dispose(): void;
   registerEntity(entry: IThreePlaytestEntity): void;
+  syncEntities(): void;
 }
 
 export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions): IThreePlaytestBridgeInstallation {
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
-  options.entities?.forEach((entry) => registry.register(entry));
+  syncEntities(registry, options.entities);
   let tick = 0;
   const capabilities = [
     "camera.observe",
@@ -69,16 +70,19 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       protocolVersion: PLAYTEST_PROTOCOL_VERSION,
     }),
     ready: () => ({ ready: true }),
-    sample: (request) => sampleThreeObservations({
-      camera: options.camera,
-      clockMode: options.fixedStep === undefined ? "render-frame" : "fixed-step",
-      diagnostics: options.diagnostics,
-      registry,
-      renderer: options.renderer,
-      resources: options.resources === undefined ? undefined : () => options.resources!.read(),
-      scene: options.scene,
-      tick: options.fixedStep === undefined ? undefined : tick,
-    }, request),
+    sample: (request) => {
+      syncEntities(registry, options.entities);
+      return sampleThreeObservations({
+        camera: options.camera,
+        clockMode: options.fixedStep === undefined ? "render-frame" : "fixed-step",
+        diagnostics: options.diagnostics,
+        registry,
+        renderer: options.renderer,
+        resources: options.resources === undefined ? undefined : () => options.resources!.read(),
+        scene: options.scene,
+        tick: options.fixedStep === undefined ? undefined : tick,
+      }, request);
+    },
   };
   host[PLAYTEST_BRIDGE_GLOBAL] = bridge;
   return {
@@ -89,7 +93,16 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       else host[PLAYTEST_BRIDGE_GLOBAL] = previous;
     },
     registerEntity: (entry) => registry.register(entry),
+    syncEntities: () => syncEntities(registry, options.entities),
   };
+}
+
+function syncEntities(
+  registry: ThreePlaytestEntityRegistry,
+  entities: IThreePlaytestBridgeOptions["entities"],
+): void {
+  if (entities === undefined) return;
+  registry.replace(typeof entities === "function" ? entities() : entities);
 }
 
 function applySetup(

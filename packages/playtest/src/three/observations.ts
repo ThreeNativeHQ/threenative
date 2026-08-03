@@ -5,7 +5,7 @@ import type {
   JsonValue,
   PlaytestClockMode,
 } from "../protocol.js";
-import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type Scene, type WebGLRenderer } from "three";
+import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 
 import type { ThreePlaytestEntityRegistry } from "./entities.js";
 
@@ -14,10 +14,14 @@ export interface IThreeObservationInput {
   clockMode: PlaytestClockMode;
   diagnostics?: () => JsonValue[];
   registry: ThreePlaytestEntityRegistry;
-  renderer: WebGLRenderer;
+  renderer: ThreePlaytestRenderer;
   resources?: () => Record<string, JsonValue>;
   scene: Scene;
   tick?: number;
+}
+
+export interface ThreePlaytestRenderer {
+  getDrawingBufferSize(target: Vector2): Vector2;
 }
 
 export function sampleThreeObservations(input: IThreeObservationInput, request: IPlaytestSampleRequest): IPlaytestObservationSnapshot {

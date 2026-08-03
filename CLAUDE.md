@@ -114,6 +114,7 @@ scripts/                      budgets, LOC classifier, blind scoring
 3. Put visual behaviour in `packages/create-threenative/templates/`, not in a package.
 4. Add the test with the change, in the same commit.
 5. Run `pnpm budgets`. If a cap moved the wrong way, cut something.
+6. Whenever you finish a PRD, move it to `docs/PRDs/done/`.
 
 ## Verification honesty, and how you prove it
 

@@ -1,6 +1,7 @@
 {
   "name": "@threenative/core",
   "version": "0.1.0",
+  "private": true,
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
   "files": ["dist"],

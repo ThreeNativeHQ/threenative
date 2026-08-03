@@ -41,4 +41,15 @@ describe("FixedStepLoop", () => {
     expect(loop.running).toBe(true);
     expect(callbacks).toHaveLength(1);
   });
+
+  it("should advance fixed ticks only while the loop is running", () => {
+    let updates = 0;
+    const loop = new FixedStepLoop({ onUpdate: () => updates++ });
+
+    expect(() => loop.advance(1)).toThrow("Cannot advance a stopped loop.");
+    loop.start(0);
+
+    expect(loop.advance(3)).toBe(3);
+    expect(updates).toBe(3);
+  });
 });

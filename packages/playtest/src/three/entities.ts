@@ -25,6 +25,11 @@ export class ThreePlaytestEntityRegistry {
     return this.#entries.get(id);
   }
 
+  replace(entries: readonly IThreePlaytestEntity[]): void {
+    this.#entries.clear();
+    entries.forEach((entry) => this.register(entry));
+  }
+
   select(ids?: readonly string[]): Required<IThreePlaytestEntity>[] {
     if (ids === undefined) return [...this.#entries.values()];
     return ids.flatMap((id) => {

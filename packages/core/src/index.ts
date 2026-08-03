@@ -9,6 +9,7 @@ export type {
   GamePlugin,
   GamePluginFunction,
   GamePluginHooks,
+  GamePluginRuntime,
   PluginCleanup,
 } from "./game.js";
 export { FixedStepLoop } from "./loop.js";

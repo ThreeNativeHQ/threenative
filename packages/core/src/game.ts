@@ -9,6 +9,10 @@ import { type GameStore, createGameStore } from "./state.js";
 
 export type PluginCleanup = () => void;
 
+export interface GamePluginRuntime {
+  fixedStep(ticks: number): number;
+}
+
 interface DevTools {
   snapshot(): EntitySnapshot;
 }
@@ -40,6 +44,7 @@ export interface GamePluginHooks<
 > {
   setup?(
     ctx: Ctx<TState, TPhysics>,
+    runtime?: GamePluginRuntime,
   ): undefined | PluginCleanup | Promise<undefined | PluginCleanup>;
   update?(ctx: Ctx<TState, TPhysics>, dt: number): void;
   dispose?(ctx: Ctx<TState, TPhysics>): void;
@@ -152,13 +157,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#entities = entities;
     this.#cleanup.push(installDevTools(entities));
     this.#scene = new SceneType();
-    for (const plugin of this.#config.plugins ?? []) {
-      const cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx);
-      if (cleanup !== undefined) this.#cleanup.push(cleanup);
-    }
-    await this.#scene.load(ctx);
-    this.#scene.enter(ctx);
-    this.#loop = new FixedStepLoop({
+    const loop = new FixedStepLoop({
       onRender: () => {
         this.#renderer?.render(threeScene, camera);
         this.#scene?.render(ctx);
@@ -171,8 +170,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         }
       },
     });
+    this.#loop = loop;
+    const runtime: GamePluginRuntime = { fixedStep: (ticks) => loop.advance(ticks) };
+    for (const plugin of this.#config.plugins ?? []) {
+      const cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
+      if (cleanup !== undefined) this.#cleanup.push(cleanup);
+    }
+    await this.#scene.load(ctx);
+    this.#scene.enter(ctx);
     this.#started = true;
-    this.#loop.start();
+    loop.start();
   }
 
   stop(): void {

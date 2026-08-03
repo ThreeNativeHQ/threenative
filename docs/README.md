@@ -13,6 +13,7 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
 | `architecture/` | Shape of things not yet built | **Proposal**, except where it records shipped behaviour |
 | `product/` | Constraints that will bind the product later | Mixed — store policy is external fact, the rest is proposal |
+| `spikes/` | Throwaway de-risking experiments and their results | Not binding, not shipped. Results amend `CHARTER.md` |
 
 ## Strategy
 
@@ -35,5 +36,12 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 - [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
-`pnpm budgets` fails CI above 10 files in `docs/PRDs/`. Edit an existing document by
-preference.
+## Spikes
+
+- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — `CHARTER.md` §7 Phase 0a, unstarted
+
+A spike is not a PRD. It buys an answer, ships nothing, and is deleted after its result is
+recorded here.
+
+`pnpm budgets` fails CI above 10 files in `docs/PRDs/` — files only, so `docs/PRDs/done/`
+does not count against the cap. Edit an existing document by preference.
