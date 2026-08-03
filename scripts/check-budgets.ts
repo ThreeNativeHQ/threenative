@@ -70,7 +70,15 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   return {
     packages: await workspacePackageCount(root),
     frameworkLoc: await countLines(sourceFiles),
-    markdownLines: await countLines(await filesUnder(root, (file) => file.endsWith(".md"))),
+    markdownLines: await countLines(
+      await filesUnder(
+        root,
+        // CLAUDE.md is a generated mirror of a sibling AGENTS.md
+        // (scripts/sync-agent-docs.ts), not a document. Counting both would
+        // charge the budget twice for one set of instructions.
+        (file) => file.endsWith(".md") && path.basename(file) !== "CLAUDE.md",
+      ),
+    ),
     prdFiles: (
       await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
     ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,

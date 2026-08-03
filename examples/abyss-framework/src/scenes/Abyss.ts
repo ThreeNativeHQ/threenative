@@ -22,13 +22,20 @@ import { createLighting } from "../render/lighting.js";
 import { type PostStack, createPostProcessing } from "../render/postprocessing.js";
 
 export type AbyssState = {
+  best: number;
   elapsed: number;
   energy: number;
+  fps: number;
   hull: number;
+  hunters: number;
   playerX: number;
+  pulsing: boolean;
   score: number;
   status: "attract" | "over" | "play";
 };
+
+/** React asks for a run by dispatching this; the scene owns what starting means. */
+export const START_EVENT = "abyss:start";
 
 type AbyssCtx = Ctx<AbyssState>;
 type RawComputeRenderer = { compute(node: unknown): void };
@@ -37,26 +44,27 @@ type Hunter = { mesh: THREE.Mesh; speed: number; spin: number };
 
 const PLANKTON = 90_000;
 const VIEW = 520;
-
-function element<T extends HTMLElement>(id: string): T | null {
-  return document.getElementById(id) as T | null;
-}
-
-function clock(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
-}
+const CAMERA_DISTANCE = 6_000;
 
 export class Abyss extends Scene<AbyssState> {
   #frame: ((ctx: AbyssCtx, dt: number) => void) | undefined;
   #post: PostStack | undefined;
   #startCleanup: (() => void) | undefined;
+  #fps = 0;
+  #lastRender: number | undefined;
 
   override enter(ctx: AbyssCtx): void {
+    // The core owns a PerspectiveCamera, but Abyss is framed orthographically:
+    // VIEW is a half-height in world units, not a field of view. Standing well
+    // back with a narrow fov makes the projection near enough to parallel that
+    // the 320-unit-deep plankton box no longer splays at the edges, and puts
+    // the visible half-height at exactly VIEW so the toroidal wrap seam lands
+    // off-screen instead of inside the frame.
     const camera = ctx.camera as THREE.PerspectiveCamera;
-    camera.fov = 52;
-    camera.near = 1;
-    camera.far = 4_000;
-    camera.position.set(0, 0, 1_200);
+    camera.position.set(0, 0, CAMERA_DISTANCE);
+    camera.fov = (2 * Math.atan(VIEW / CAMERA_DISTANCE) * 180) / Math.PI;
+    camera.near = CAMERA_DISTANCE - 1_000;
+    camera.far = CAMERA_DISTANCE + 1_000;
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
     ctx.scene.background = new THREE.Color(0x04080d);
@@ -236,15 +244,39 @@ export class Abyss extends Scene<AbyssState> {
     let best = 0;
     const target = new THREE.Vector2();
     const temporary = new THREE.Vector3();
+    // Seeded from the live pointer, not from NaN: an unequal first comparison
+    // would hand steering to a pointer that has never moved, whose default
+    // (0, 0) maps to the top-left corner of the field.
+    const lastPointer = ctx.input.raw.pointer.position.clone();
+    let usingPointer = false;
+
+    // Screen pixel -> world units on the z = 0 plane, so the lure lands under
+    // the cursor the way it does in the vanilla build.
+    const pointToWorld = (pointer: THREE.Vector2) => {
+      const halfHeight = Math.tan((camera.fov * Math.PI) / 360) * camera.position.z;
+      const halfWidth = halfHeight * camera.aspect;
+      return {
+        x: ((pointer.x / Math.max(globalThis.innerWidth, 1)) * 2 - 1) * halfWidth,
+        y: -((pointer.y / Math.max(globalThis.innerHeight, 1)) * 2 - 1) * halfHeight,
+      };
+    };
     ctx.entities.add("player", {
       debug: () => ({ hull, position: lure.position.toArray(), score }),
     });
 
-    const setHud = () => {
-      element<HTMLSpanElement>("time")?.replaceChildren(clock(elapsed));
-      element<HTMLSpanElement>("status")?.replaceChildren(status);
-      element<HTMLSpanElement>("energy")?.replaceChildren(String(Math.round(energy)));
-      element<HTMLSpanElement>("hull")?.replaceChildren(String(Math.max(0, Math.round(hull))));
+    const publish = (pulsing: boolean) => {
+      ctx.state.set({
+        best,
+        elapsed,
+        energy,
+        fps: this.#fps,
+        hull,
+        hunters: hunters.length,
+        playerX: lure.position.x,
+        pulsing,
+        score,
+        status,
+      });
     };
     const start = () => {
       status = "play";
@@ -259,13 +291,13 @@ export class Abyss extends Scene<AbyssState> {
       hunters.length = 0;
       spawnHunter();
       pearls.forEach(placePearl);
-      element("veil")?.setAttribute("hidden", "true");
-      ctx.state.set({ elapsed, energy, hull, playerX: 0, score, status });
+      publish(false);
+      // React renders on a 10Hz throttle; flush so the veil clears immediately.
+      ctx.state.flush();
     };
-    const startButton = element<HTMLButtonElement>("startBtn");
-    startButton?.addEventListener("click", start);
+    globalThis.addEventListener(START_EVENT, start);
     this.#startCleanup = () => {
-      startButton?.removeEventListener("click", start);
+      globalThis.removeEventListener(START_EVENT, start);
       globalThis.removeEventListener("resize", layout);
     };
     pearls.forEach(placePearl);
@@ -274,11 +306,28 @@ export class Abyss extends Scene<AbyssState> {
       const now = performance.now();
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
+
+      // Last device to move wins, the way the vanilla build switches between
+      // pointAt() and the WASD branch.
+      const pointer = frameCtx.input.raw.pointer.position;
+      if (!lastPointer.equals(pointer)) {
+        lastPointer.copy(pointer);
+        usingPointer = true;
+      }
+      if (move.lengthSq() > 0) usingPointer = false;
+
       if (status === "play") {
         elapsed += dt;
         const speed = 560 * dt;
-        target.x = THREE.MathUtils.clamp(target.x + move.x * speed, -field.w / 2, field.w / 2);
-        target.y = THREE.MathUtils.clamp(target.y + move.y * speed, -field.h / 2, field.h / 2);
+        if (usingPointer) {
+          const world = pointToWorld(pointer);
+          target.set(world.x, world.y);
+        } else {
+          target.x += move.x * speed;
+          target.y += move.y * speed;
+        }
+        target.x = THREE.MathUtils.clamp(target.x, -field.w / 2, field.w / 2);
+        target.y = THREE.MathUtils.clamp(target.y, -field.h / 2, field.h / 2);
         energy = THREE.MathUtils.clamp(energy + (pulse ? -24 : 13) * dt, 0, 100);
         if (
           pulse &&
@@ -327,11 +376,9 @@ export class Abyss extends Scene<AbyssState> {
         hull = 0;
         status = "over";
         best = Math.max(best, score);
-        element("veil")?.removeAttribute("hidden");
       }
       if (typeof raw.compute === "function") raw.compute(computeUpdate);
-      ctx.state.set({ elapsed, energy, hull, playerX: lure.position.x, score, status });
-      setHud();
+      publish(pulse);
     };
   }
 
@@ -340,6 +387,14 @@ export class Abyss extends Scene<AbyssState> {
   }
 
   override render(_ctx: AbyssCtx): void {
+    // Sampled here, not in update(): the loop is fixed-step, so update() runs
+    // at a constant 1/60 regardless of what the GPU is actually managing.
+    const now = performance.now();
+    if (this.#lastRender !== undefined) {
+      const frameMs = now - this.#lastRender;
+      if (frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
+    }
+    this.#lastRender = now;
     this.#post?.render();
   }
 

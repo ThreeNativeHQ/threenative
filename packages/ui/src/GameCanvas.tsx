@@ -22,6 +22,14 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
       .then(() => {
         const canvas = game.ctx?.renderer.domElement;
         if (!cancelled && canvas !== undefined && host.current !== null) {
+          // The core creates a bare canvas and appends it to <body>. Left
+          // unstyled it keeps the 300x150 intrinsic size and, being the last
+          // body child, paints over everything. Mounting it here means it
+          // fills the host and inherits the host's place in the stack.
+          canvas.style.display = "block";
+          canvas.style.width = "100%";
+          canvas.style.height = "100%";
+          canvas.style.touchAction = "none";
           host.current.replaceChildren(canvas);
         }
       })

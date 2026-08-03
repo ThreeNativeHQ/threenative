@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 export type DebugSnapshot = Record<string, Record<string, unknown>>;
 
@@ -7,6 +7,38 @@ type DevWindow = Window & {
 };
 
 const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+
+/*
+ * Styled inline rather than with Tailwind classes. DESIGN.md §6b mandates
+ * Tailwind for the game's own HUD, which the scaffold wires up; but this
+ * overlay ships inside the package and lands in consumers that may have no
+ * Tailwind at all, where class names are inert strings. Inline styles need no
+ * build step, no CSS import, and no consumer config. GameCanvas already does
+ * the same.
+ */
+const panelStyle: CSSProperties = {
+  background: "rgb(2 6 23 / 90%)",
+  boxShadow: "0 10px 15px -3px rgb(0 0 0 / 30%)",
+  color: "#cffafe",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: "12px",
+  lineHeight: 1.5,
+  maxWidth: "24rem",
+  padding: "12px",
+  pointerEvents: "none",
+  position: "fixed",
+  right: "16px",
+  top: "16px",
+  zIndex: 50,
+};
+
+// Fixed layout plus break-all: snapshot values are arbitrary JSON and would
+// otherwise push the table past the panel edge.
+const tableStyle: CSSProperties = { tableLayout: "fixed", width: "100%" };
+const headerCellStyle: CSSProperties = { paddingRight: "16px", textAlign: "left" };
+const cellStyle: CSSProperties = { paddingRight: "16px" };
+const lastCellStyle: CSSProperties = { textAlign: "left" };
+const valueCellStyle: CSSProperties = { overflowWrap: "anywhere", wordBreak: "break-all" };
 
 function readSnapshot(): DebugSnapshot {
   return (globalThis.window as DevWindow | undefined)?.__THREENATIVE__?.snapshot() ?? {};
@@ -41,23 +73,23 @@ export function DebugOverlay() {
   return (
     <aside
       aria-label="ThreeNative entity debug overlay"
-      className="pointer-events-none fixed right-4 top-4 z-50 max-w-sm bg-slate-950/90 p-3 font-mono text-xs text-cyan-100 shadow-lg"
       data-threenative-debug-overlay="true"
+      style={panelStyle}
     >
-      <table>
+      <table style={tableStyle}>
         <thead>
           <tr>
-            <th className="pr-4 text-left">entity</th>
-            <th className="pr-4 text-left">key</th>
-            <th className="text-left">value</th>
+            <th style={headerCellStyle}>entity</th>
+            <th style={headerCellStyle}>key</th>
+            <th style={lastCellStyle}>value</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(({ entity, key, value }) => (
             <tr key={`${entity}.${key}`}>
-              <td className="pr-4">{entity}</td>
-              <td className="pr-4">{key}</td>
-              <td>{displayValue(value)}</td>
+              <td style={cellStyle}>{entity}</td>
+              <td style={cellStyle}>{key}</td>
+              <td style={valueCellStyle}>{displayValue(value)}</td>
             </tr>
           ))}
         </tbody>

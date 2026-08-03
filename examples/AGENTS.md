@@ -1,0 +1,42 @@
+# AGENTS.md — examples
+
+Read `/AGENTS.md` first. This file only covers what is different here.
+
+## `abyss-vanilla/` is a frozen control
+
+It is the benchmark's vanilla arm: a real game in plain `three/webgpu`. **Do not edit it**
+to fix a comparison, tidy the code, or match a framework change. Changing the control
+invalidates every result measured against it, and `DESIGN.md` §3 makes that comparison the
+kill switch for the whole framework.
+
+It is excluded from Biome for the same reason. If it genuinely must change, that is a
+benchmark decision — see `docs/benchmark/PROTOCOL.md` — and the sealed prompt hash and
+dated results have to be re-derived.
+
+## `abyss-framework/` is the framework arm
+
+The same game, ported. It must stay honest: ordinary Three.js in the scene code, visual
+setup in `src/render/`, no shortcuts the framework's users would not have.
+
+If the framework arm ends up longer than the vanilla arm, that is a real result, not a bug
+to hide. The README table publishes both columns and CI recomputes them.
+
+## The LOC table is generated
+
+`pnpm tsx scripts/count-loc.ts` regenerates the block between the `benchmark:loc` markers
+in the root README. CI runs the same classifier with `--check`, so hand-edited numbers fail
+the build. Never write those numbers by hand.
+
+Plumbing versus game classification is the classifier's call, not yours — if a line lands in
+the wrong bucket, fix the classifier and say so.
+
+## Running
+
+```sh
+pnpm --filter abyss-framework dev
+pnpm --filter abyss-vanilla dev
+pnpm test:browser                  # Playwright, boots abyss-vanilla on :4173
+```
+
+Examples are excluded from the root vitest run and from the framework LOC budget. Browser
+proof goes through Playwright or a playtest scenario.

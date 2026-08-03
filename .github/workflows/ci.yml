@@ -182,3 +182,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm budgets
+      - run: pnpm sync:agents --check

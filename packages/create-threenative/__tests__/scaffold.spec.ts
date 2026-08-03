@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { createProject, parseArgs } from "../src/index.js";
 
 const STARTER_PATHS = [
+  "AGENTS.md",
+  "CLAUDE.md",
   "package.json",
   "threenative.config.ts",
   "index.html",
@@ -39,6 +41,12 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
+      expect(agents).toContain("my-game");
+      expect(agents).not.toContain("__PROJECT_NAME__");
+      await expect(readFile(path.join(result.target, "CLAUDE.md"), "utf8")).resolves.toContain(
+        "Generated mirror of AGENTS.md",
+      );
       await expect(
         readFile(path.join(result.target, "src/entities/Player.ts"), "utf8"),
       ).resolves.toContain("debug()");

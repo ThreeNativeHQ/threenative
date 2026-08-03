@@ -14,7 +14,8 @@
     "test": "pnpm -r --if-present run test && vitest run",
     "test:browser": "playwright test --config=playwright.config.ts",
     "lint": "biome check .",
-    "budgets": "tsx scripts/check-budgets.ts"
+    "budgets": "tsx scripts/check-budgets.ts",
+    "sync:agents": "tsx scripts/sync-agent-docs.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
