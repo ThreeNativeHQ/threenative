@@ -566,7 +566,12 @@ export function evaluateRichPlaytestAssertions(input: {
       ];
       const checks = [
         ...valueChecks,
-        ...(assertion.changed === undefined ? [] : [(assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after))]),
+        // Same absent-value trap as evaluatePathAssertion: a component that was
+        // never observed must not satisfy "this value did not change".
+        ...(assertion.changed === undefined
+          ? []
+          : [(before !== undefined || after !== undefined)
+            && (assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after))]),
       ];
       const trivial = rejectsTrivialAssertion("components")
         && valueChecks.length > 0
@@ -717,14 +722,23 @@ export function evaluateRichPlaytestAssertions(input: {
     }
   }
   if (scenarioAssertions.movement?.maxDistance !== undefined) {
-    const pass = input.report.distance <= scenarioAssertions.movement.maxDistance;
-    assertions.push({ details: { distance: input.report.distance, maximum: scenarioAssertions.movement.maxDistance }, id: "movement.maxDistance", pass });
+    // `distance` falls back to 0 when the entity is absent from the snapshot, so
+    // an unobserved entity looked exactly like a stationary one. This is the
+    // blocked-movement proof: the assertion whose whole job is to show something
+    // did NOT move must not be satisfiable by measuring nothing.
+    const observed = input.report.before !== undefined && input.report.after !== undefined;
+    const pass = observed && input.report.distance <= scenarioAssertions.movement.maxDistance;
+    assertions.push({ details: { distance: input.report.distance, maximum: scenarioAssertions.movement.maxDistance, observed }, id: "movement.maxDistance", pass });
     if (!pass) {
       diagnostics.push({
         code: "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
-        message: `Entity '${input.report.entity}' moved ${input.report.distance.toFixed(6)}, above allowed ${scenarioAssertions.movement.maxDistance}.`,
+        message: observed
+          ? `Entity '${input.report.entity}' moved ${input.report.distance.toFixed(6)}, above allowed ${scenarioAssertions.movement.maxDistance}.`
+          : `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' was never observed, so its movement could not be bounded.`,
         severity: "error",
-        suggestion: "Check bounds/blocked-cell handling and ensure the scenario drives the intended blocked direction.",
+        suggestion: observed
+          ? "Check bounds/blocked-cell handling and ensure the scenario drives the intended blocked direction."
+          : "Register the entity with the playtest bridge under the id the assertion names.",
       });
     }
   }
@@ -1039,7 +1053,12 @@ export function evaluateRichPlaytestAssertions(input: {
     const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
     const tokens = [entity, assertion.clip].filter((item): item is string => item !== undefined);
     const count = countMatchingEntries(input.report.effectLog, tokens);
-    const minCount = assertion.entered === true || assertion.advancedFrames !== undefined ? 1 : 0;
+    // The kind is "proves animation evidence appeared in the effect log", so a
+    // bare { entity, clip } needs at least one entry. It used to compute
+    // minCount = 0 and pass `0 >= 0` against an absent effect log. `entered` is a
+    // "require entering" switch, not a negation, so it never lowers the floor.
+    // `advancedFrames: 5` was likewise only requiring one entry; it means five.
+    const minCount = Math.max(1, assertion.advancedFrames ?? 1);
     const pass = count >= minCount;
     assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames }, id: `animation.${entity}`, pass });
     if (!pass) {
@@ -1277,7 +1296,12 @@ function evaluatePathAssertion(
     && valueChecksBefore.every(Boolean);
   const checks = [...valueChecksAfter];
   if (assertion.changed !== undefined) {
-    checks.push(assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after));
+    // jsonEqual(undefined, undefined) is true, because JSON.stringify(undefined)
+    // is undefined on both sides. Without the observed guard, `changed: false`
+    // was satisfied by a value that never existed — and since observations.hud is
+    // always {}, that made every hud changed:false assertion green.
+    const observed = before !== undefined || after !== undefined;
+    checks.push(observed && (assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after)));
   }
   const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || assertion.allowTrivial === true);
   const result = {

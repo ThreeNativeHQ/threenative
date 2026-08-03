@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>playtest fixture</title>
+  </head>
+  <body>
+    <canvas id="view" width="640" height="360"></canvas>
+    <script>
+      // A deliberately tiny stand-in for a real game. It implements the v1 bridge
+      // protocol by hand so the end-to-end test exercises the runner, the bridge
+      // client, and the assertion evaluator without dragging in a GPU or three.js.
+      //
+      // `?mode=` selects which kind of application the runner is pointed at. Each
+      // mode exists to pin one verdict: `good` must report pass, every other mode
+      // must report fail. A mode that reports the wrong verdict is a harness bug,
+      // not a fixture bug.
+      const params = new URLSearchParams(location.search);
+      const mode = params.get("mode") ?? "good";
+
+      // Lets a test observe a browser launch flag that reached this page.
+      if (params.get("report") === "ua") {
+        console.log(`playtest-ua:${navigator.userAgent}`);
+      }
+
+      const player = { x: 0, y: 0, z: 0 };
+      const camera = { x: 0, y: 2, z: -6 };
+      let held = false;
+      let tick = 0;
+
+      addEventListener("keydown", (event) => {
+        if (event.code === "KeyW") held = true;
+      });
+      addEventListener("keyup", (event) => {
+        if (event.code === "KeyW") held = false;
+      });
+
+      function step() {
+        // `broken` is the regression under test: input arrives and is ignored, so
+        // the player never moves. `drift` moves without input, which must not be
+        // mistaken for a working control scheme.
+        if (mode === "drift" || (held && mode !== "broken")) {
+          player.z += 0.05;
+        }
+        camera.z = player.z - 6;
+        tick += 1;
+      }
+
+      requestAnimationFrame(function frame() {
+        step();
+        requestAnimationFrame(frame);
+      });
+
+      function observe(id) {
+        const source = id === "camera" ? camera : player;
+        return {
+          bounds: { height: 40, width: 40, x: 300, y: 160 },
+          id,
+          transform: {
+            position: [source.x, source.y, source.z],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          visible: true,
+        };
+      }
+
+      const bridge = {
+        applySetup: async (request) => {
+          for (const entry of request.entities ?? []) {
+            if (entry.entity !== "player") throw new Error(`Unknown entity '${entry.entity}'.`);
+            if (entry.transform.position) {
+              [player.x, player.y, player.z] = entry.transform.position;
+            }
+          }
+        },
+        describe: () => ({
+          capabilities: ["camera.observe", "entity.bounds", "entity.observe", "entity.setup"],
+          limits: {
+            maxEntitiesPerSample: 100,
+            maxEventsPerDrain: 1000,
+            maxPayloadBytes: 1000000,
+            operationTimeoutMs: 5000,
+          },
+          name: "fixture",
+          protocolVersion: mode === "wrong-protocol" ? 2 : 1,
+        }),
+        ready: () =>
+          mode === "not-ready"
+            ? { ready: false, reason: "scene still loading" }
+            : { ready: true },
+        sample: (request) => ({
+          clock: { mode: "render-frame", timeMs: tick * 16 },
+          // `silent-drop` answers every sample with zero entities. The runner has
+          // no observation to judge, and must fail rather than report a green run
+          // it never actually measured.
+          entities: mode === "silent-drop" ? [] : (request.entities ?? []).map(observe),
+          resources: {},
+        }),
+      };
+
+      if (mode !== "no-bridge") {
+        globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = bridge;
+      }
+    </script>
+  </body>
+</html>

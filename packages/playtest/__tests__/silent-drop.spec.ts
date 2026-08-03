@@ -81,9 +81,14 @@ test("still accepts a valid assertion unchanged", async () => {
 test("an absent optional key stays absent rather than throwing", async () => {
   // The other half of the absent-vs-wrong-typed distinction. If optionalX threw on
   // absence too, every scenario that omits an optional key would break.
-  const directory = await writeScenario({ tags: [{ tag: "enemy" }] });
+  //
+  // `gte` is now pinned here because a tag assertion carrying neither `count` nor
+  // `gte` is rejected at load time — boundless, it passed on a count of zero (see
+  // evidence-required.spec.ts). `count` is still the absent optional key under
+  // test, so what this case proves is unchanged.
+  const directory = await writeScenario({ tags: [{ tag: "enemy", gte: 1 }] });
 
   const parsed = await loadPlaytestScenario(directory, "scenario.json");
 
-  expect(parsed.assert?.tags).toEqual([{ tag: "enemy" }]);
+  expect(parsed.assert?.tags).toEqual([{ tag: "enemy", gte: 1 }]);
 });

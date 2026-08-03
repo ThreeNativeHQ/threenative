@@ -40,7 +40,10 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
   await mkdir(config.artifactDirectory, { recursive: true });
   const server = config.server === undefined ? undefined : startManagedServer(config);
-  const browser = await chromium.launch({ headless: config.headless });
+  const browser = await chromium.launch({
+    ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
+    headless: config.headless,
+  });
   let page: Page | undefined;
   try {
     if (server !== undefined) {
@@ -178,13 +181,33 @@ function failureReport(config: IStandalonePlaytestConfig, scenario: IPlaytestSce
   } as IStandalonePlaytestReport;
 }
 
+// Every key here is optional in the scenario, and the payload crosses assertJsonSafe
+// on the way to the page. An explicit `undefined` is not JSON-safe, so spreading a
+// partially-specified transform verbatim aborted the whole run before it started.
+// Absent keys must stay absent.
 function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {
   return {
-    entities: scenario.setup?.entities?.map(({ entity, position, rotation, scale }) => ({
-      entity,
-      transform: { position, rotation, scale },
-    })),
-    resources: scenario.setup?.resources?.map(({ id, path, value }) => ({ id, path, value: value as never })),
+    ...(scenario.setup?.entities === undefined
+      ? {}
+      : {
+          entities: scenario.setup.entities.map(({ entity, position, rotation, scale }) => ({
+            entity,
+            transform: {
+              ...(position === undefined ? {} : { position }),
+              ...(rotation === undefined ? {} : { rotation }),
+              ...(scale === undefined ? {} : { scale }),
+            },
+          })),
+        }),
+    ...(scenario.setup?.resources === undefined
+      ? {}
+      : {
+          resources: scenario.setup.resources.map(({ id, path, value }) => ({
+            id,
+            ...(path === undefined ? {} : { path }),
+            value: value as never,
+          })),
+        }),
   };
 }
 

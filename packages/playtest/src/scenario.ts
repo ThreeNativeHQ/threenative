@@ -1099,9 +1099,20 @@ function validateStateAssertion(value: unknown, scenarioPath: string, objectPath
 function validateTagCountAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestTagCountAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["count", "gte", "tag"], scenarioPath, objectPath);
+  const count = optionalNonNegativeInteger(record, "count", scenarioPath, objectPath);
+  const gte = optionalNonNegativeInteger(record, "gte", scenarioPath, objectPath);
+  // Without a bound the evaluator degrades to "a numeric count exists", which is
+  // satisfied by a count of zero — the opposite of what `tags: [{ tag: "coin" }]`
+  // was written to prove. Reject it at load time, where the author sees it.
+  if (count === undefined && gte === undefined) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must declare 'count' or 'gte'; a tag assertion with neither passes on a count of zero.`,
+    );
+  }
   return {
-    ...present("count", optionalNonNegativeInteger(record, "count", scenarioPath, objectPath)),
-    ...present("gte", optionalNonNegativeInteger(record, "gte", scenarioPath, objectPath)),
+    ...present("count", count),
+    ...present("gte", gte),
     tag: requireString(record, "tag", scenarioPath, objectPath),
   };
 }
@@ -1244,6 +1255,48 @@ function hasKey(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+// DESIGN.md §8, the per-key variant. `rejectUnknownKeys` catches a misspelled key,
+// but a KNOWN key holding a wrong-typed value used to survive it and then get
+// dropped by the `typeof x === "number" ? { x } : {}` spreads in validateAssertions.
+// The assertion object stayed, minus the check the author wrote, and the scenario
+// reported green having proved nothing. `"minDistance": "0.5"` was a silent pass.
+//
+// The registry already declares every field's type, so the check lives here once
+// instead of in each spread. Composite types (objects, arrays, json) are still
+// validated by their own validators; only the scalar contract is enforced here.
+const ASSERTION_FIELD_TYPE_CHECKS: Readonly<Record<string, (value: unknown) => boolean>> = {
+  "boolean": (value) => typeof value === "boolean",
+  "non-empty string": isNonEmptyString,
+  "non-negative integer": (value) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+  "number": (value) => typeof value === "number" && Number.isFinite(value),
+  "number in [0, 180]": (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 180,
+  "positive integer": (value) => typeof value === "number" && Number.isInteger(value) && value > 0,
+  "positive number": (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
+  "string": isNonEmptyString,
+};
+
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function rejectWrongTypedFields(
+  fields: readonly { name: string; type: string }[],
+  value: Record<string, unknown>,
+  scenarioPath: string,
+  objectPath: string,
+): void {
+  for (const field of fields) {
+    const check = ASSERTION_FIELD_TYPE_CHECKS[field.type];
+    if (check === undefined || value[field.name] === undefined) continue;
+    if (!check(value[field.name])) {
+      throw invalidScenario(
+        scenarioPath,
+        `'${objectPath}.${field.name}' must be ${field.type}, received ${describeValue(value[field.name])}.`,
+      );
+    }
+  }
+}
+
 function rejectUnknownKeys(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
@@ -1273,6 +1326,7 @@ function validateAssertionKeys(value: Record<string, unknown>, scenarioPath: str
       }
       const suffix = Array.isArray(assertionValue) ? `[${index}]` : "";
       rejectUnknownKeys(item, entry.fields.map((field) => field.name), scenarioPath, `assert.${entry.kind}${suffix}`);
+      rejectWrongTypedFields(entry.fields, item, scenarioPath, `assert.${entry.kind}${suffix}`);
       validateNestedAssertionKeys(entry.kind, item, scenarioPath, suffix);
     });
   }

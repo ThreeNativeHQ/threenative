@@ -8,6 +8,7 @@ export interface IPlaytestServerConfig {
 
 export interface IStandalonePlaytestConfig {
   artifactDirectory: string;
+  browserArgs?: readonly string[];
   headless: boolean;
   projectPath: string;
   scenarioPath: string;
@@ -25,8 +26,10 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   const url = readFlag(argv, "--url") ?? "http://127.0.0.1:5173";
   const projectPath = resolve(cwd, readFlag(argv, "--project") ?? ".");
   const serverCommand = readFlag(argv, "--server-command");
+  const browserArgs = readRepeatedFlag(argv, "--browser-arg");
   return {
     artifactDirectory: resolve(projectPath, readFlag(argv, "--artifacts") ?? "artifacts/playtest"),
+    ...(browserArgs.length === 0 ? {} : { browserArgs }),
     headless: !argv.includes("--headed"),
     projectPath,
     scenarioPath,
@@ -42,6 +45,28 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
 function readFlag(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name);
   return index === -1 ? undefined : argv[index + 1];
+}
+
+// Playtest's own flags, so a missing value cannot silently swallow the next one.
+// A browser arg is itself dash-prefixed, so "starts with --" is not usable as the
+// separator here; the reserved names are.
+const PLAYTEST_FLAGS = new Set([
+  "--artifacts", "--browser-arg", "--headed", "--project", "--scenario",
+  "--server-command", "--server-timeout", "--timeout", "--trace", "--url",
+]);
+
+// Repeatable, because a WebGPU target needs several flags at once and there is no
+// other way to reach chromium.launch from the CLI. An application that will not
+// start under the default flags cannot be playtested at all.
+function readRepeatedFlag(argv: readonly string[], name: string): string[] {
+  return argv.flatMap((value, index) => {
+    if (value !== name) return [];
+    const next = argv[index + 1];
+    if (next === undefined || PLAYTEST_FLAGS.has(next)) {
+      throw new Error(`Flag '${name}' requires a value, for example ${name} --enable-unsafe-webgpu.`);
+    }
+    return [next];
+  });
 }
 
 function positional(argv: readonly string[]): string | undefined {

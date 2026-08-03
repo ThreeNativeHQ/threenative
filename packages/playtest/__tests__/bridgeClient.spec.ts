@@ -21,6 +21,27 @@ test("standalone args support existing-server and managed-server flows", () => {
   expect(managed.server?.timeoutMs).toBe(20_000);
 });
 
+test("browser args are repeatable and absent when unused", () => {
+  // A WebGPU target needs several chromium flags at once, so one flag per
+  // occurrence rather than a delimited string.
+  const withArgs = parseStandalonePlaytestArgs([
+    "--scenario", "playtests/move.json",
+    "--browser-arg", "--enable-unsafe-webgpu",
+    "--browser-arg", "--enable-features=Vulkan",
+  ], "/project");
+  expect(withArgs.browserArgs).toEqual(["--enable-unsafe-webgpu", "--enable-features=Vulkan"]);
+
+  expect(parseStandalonePlaytestArgs(["playtests/move.json"], "/project").browserArgs).toBe(undefined);
+});
+
+test("a browser arg with no value fails instead of swallowing the next flag", () => {
+  // `--browser-arg --headed` would otherwise consume `--headed` as the value and
+  // silently drop the mode the author asked for.
+  expect(
+    () => parseStandalonePlaytestArgs(["playtests/move.json", "--browser-arg", "--headed"], "/project"),
+  ).toThrow(/requires a value/u);
+});
+
 test("standalone args fail with a concrete first command", () => {
   expect(
     () => parseStandalonePlaytestArgs([], "/project"),
