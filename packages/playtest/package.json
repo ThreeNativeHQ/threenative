@@ -1,0 +1,39 @@
+{
+  "name": "@threenative/playtest",
+  "version": "0.1.0",
+  "description": "Scenario-driven playtest harness for Three.js games. Runs on plain Three.js with zero ThreeNative dependencies.",
+  "type": "module",
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./three": { "types": "./dist/three/index.d.ts", "import": "./dist/three/index.js" },
+    "./runner": { "types": "./dist/runner/index.d.ts", "import": "./dist/runner/index.js" },
+    "./package.json": "./package.json"
+  },
+  "bin": { "threenative-playtest": "./dist/runner/cli.js" },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.60.0 <2",
+    "three": ">=0.185.0 <0.186.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": true },
+    "three": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "playwright": "1.62.1",
+    "publint": "0.3.22",
+    "three": "catalog:",
+    "tsup": "8.5.1",
+    "typescript": "catalog:"
+  }
+}
