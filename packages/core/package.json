@@ -1,0 +1,32 @@
+{
+  "name": "@threenative/core",
+  "version": "0.1.0",
+  "description": "The small vanilla Three.js game runtime foundation.",
+  "type": "module",
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build"
+  },
+  "devDependencies": {
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:"
+  }
+}

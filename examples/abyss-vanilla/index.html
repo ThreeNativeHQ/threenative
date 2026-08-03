@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ABYSS — Three.js WebGPU</title>
+<link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+
+<div class="hud off" id="hud">
+  <div class="tl">
+    <div class="label">sector 7 · depth <span id="depth">4180</span> m</div>
+    <div class="readout" id="scoreOut">0</div>
+    <div class="label" style="margin-top:6px">pearls recovered</div>
+    <div class="meters">
+      <div class="meter">
+        <div class="label"><span>lamp</span><b id="energyPct">100</b></div>
+        <div class="bar energy"><i id="energyBar" style="width:100%"></i></div>
+      </div>
+      <div class="meter">
+        <div class="label"><span>hull</span><b id="hullPct">100</b></div>
+        <div class="bar" id="hullWrap"><i id="hullBar" style="width:100%"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tr">
+    <div class="label">dive time</div>
+    <div class="readout cool" id="timeOut">0:00</div>
+    <div class="stat">
+      <div><b id="agentCount">0</b> plankton · gpu compute</div>
+      <div><b id="hunterCount">0</b> hunters tracking</div>
+      <div><b id="fps">0</b> fps</div>
+    </div>
+  </div>
+
+  <div class="bl"><div class="label">three.js WebGPURenderer · TSL compute · bloom</div></div>
+  <div class="br"><div class="label" id="hint">hold to pulse the lamp</div></div>
+</div>
+
+<div class="veil" id="veil">
+  <div class="card" id="card">
+    <div class="eyebrow">Three.js r185 · WebGPURenderer · <span id="agentBoast">0</span> GPU-simulated particles</div>
+    <h1>Abyss</h1>
+    <p class="lede">
+      You are an anglerfish lure in the midnight zone. Your lamp stirs a cloud of
+      <em>bioluminescent plankton</em> — every one of them simulated in a TSL compute shader.
+      Gather the <em>pearls</em> they cluster around. Avoid the <span class="bad">hunters</span>,
+      because a bright lamp tells them exactly where you are.
+    </p>
+    <div class="keys">
+      <kbd>move</kbd><span>mouse, touch, or WASD / arrows</span>
+      <kbd>pulse</kbd><span>hold click or space — draws pearls in, burns lamp energy</span>
+      <kbd>survive</kbd><span>a new hunter joins every ten seconds</span>
+    </div>
+    <button id="startBtn" type="button">Begin the dive</button>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

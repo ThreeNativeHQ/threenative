@@ -797,48 +797,59 @@ function validateReachabilityAssertion(value: Record<string, unknown>, scenarioP
   };
 }
 
-function validateSettledAssertion(value: unknown): IPlaytestSettledAssertion | undefined {
-  if (!isRecord(value) || typeof value.entity !== "string" || value.entity.trim() === "") return undefined;
-  const requiredOn = Array.isArray(value.requiredOn)
-    ? value.requiredOn.filter((target): target is PlaytestTarget => target === "web" || target === "desktop" || target === "bevy")
-    : undefined;
+function validateSettledAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSettledAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "compareToStep", "entity", "minBodies", "minMeanPoseDistance", "requiredOn"], scenarioPath, objectPath);
   return {
-    ...(typeof value.atStep === "string" ? { atStep: value.atStep } : {}),
-    ...(typeof value.compareToStep === "string" ? { compareToStep: value.compareToStep } : {}),
-    entity: value.entity,
-    ...(typeof value.minBodies === "number" && Number.isInteger(value.minBodies) && value.minBodies > 0 ? { minBodies: value.minBodies } : {}),
-    ...(typeof value.minMeanPoseDistance === "number" && Number.isFinite(value.minMeanPoseDistance) && value.minMeanPoseDistance > 0 ? { minMeanPoseDistance: value.minMeanPoseDistance } : {}),
-    ...(requiredOn === undefined ? {} : { requiredOn }),
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
+    ...present("compareToStep", optionalString(record, "compareToStep", scenarioPath, objectPath)),
+    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("minBodies", optionalPositiveInteger(record, "minBodies", scenarioPath, objectPath)),
+    ...present("minMeanPoseDistance", optionalPositiveNumber(record, "minMeanPoseDistance", scenarioPath, objectPath)),
+    ...present("requiredOn", optionalTargetArray(record, "requiredOn", scenarioPath, objectPath)),
   };
 }
 
-function validateOverlayNodeAssertion(value: unknown): IPlaytestOverlayNodeAssertion | undefined {
-  if (!isRecord(value) || typeof value.overlayId !== "string" || typeof value.selector !== "string") return undefined;
+function validateOverlayNodeAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestOverlayNodeAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["attribute", "equals", "overlayId", "selector", "textIncludes", "visible"], scenarioPath, objectPath);
   return {
-    ...(typeof value.attribute === "string" ? { attribute: value.attribute } : {}),
-    ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
-    overlayId: value.overlayId,
-    selector: value.selector,
-    ...(typeof value.textIncludes === "string" ? { textIncludes: value.textIncludes } : {}),
-    ...(typeof value.visible === "boolean" ? { visible: value.visible } : {}),
+    ...present("attribute", optionalString(record, "attribute", scenarioPath, objectPath)),
+    // `equals` is deliberately untyped: an overlay node may be compared against any
+    // JSON value, so presence is the only check that can be made here.
+    ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
+    overlayId: requireString(record, "overlayId", scenarioPath, objectPath),
+    selector: requireString(record, "selector", scenarioPath, objectPath),
+    ...present("textIncludes", optionalString(record, "textIncludes", scenarioPath, objectPath)),
+    ...present("visible", optionalBoolean(record, "visible", scenarioPath, objectPath)),
   };
 }
 
-function validateComponentAssertion(value: unknown): IPlaytestComponentAssertion | undefined {
-  if (!isRecord(value) || typeof value.entity !== "string" || typeof value.component !== "string") {
-    return undefined;
-  }
+function validateComponentAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestComponentAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "atSteps", "changed", "component", "entity", "equals", "gte", "path"], scenarioPath, objectPath);
   return {
-    ...(Array.isArray(value.atSteps) ? { atSteps: value.atSteps.flatMap((step) => isRecord(step) && typeof step.label === "string"
-      ? [{ ...(hasKey(step, "equals") ? { equals: step.equals } : {}), label: step.label }]
-      : []) } : {}),
-    ...(typeof value.changed === "boolean" ? { changed: value.changed } : {}),
-    component: value.component,
-    entity: value.entity,
-    ...(typeof value.allowTrivial === "boolean" ? { allowTrivial: value.allowTrivial } : {}),
-    ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
-    ...(typeof value.gte === "number" && Number.isFinite(value.gte) ? { gte: value.gte } : {}),
-    ...(typeof value.path === "string" ? { path: value.path } : {}),
+    ...(record.atSteps === undefined
+      ? {}
+      : {
+        atSteps: requireArray(record, "atSteps", scenarioPath, objectPath).map((step, index) => {
+          const stepPath = `${objectPath}.atSteps[${index}]`;
+          const stepRecord = requireRecord(step, scenarioPath, stepPath);
+          rejectUnknownKeys(stepRecord, ["equals", "label"], scenarioPath, stepPath);
+          return {
+            ...(hasKey(stepRecord, "equals") ? { equals: stepRecord.equals } : {}),
+            label: requireString(stepRecord, "label", scenarioPath, stepPath),
+          };
+        }),
+      }),
+    ...present("changed", optionalBoolean(record, "changed", scenarioPath, objectPath)),
+    component: requireString(record, "component", scenarioPath, objectPath),
+    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("allowTrivial", optionalBoolean(record, "allowTrivial", scenarioPath, objectPath)),
+    // As above: any JSON value is a legal comparison target.
+    ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
+    ...present("gte", optionalNumber(record, "gte", scenarioPath, objectPath)),
+    ...present("path", optionalString(record, "path", scenarioPath, objectPath)),
   };
 }
 
@@ -1006,6 +1017,38 @@ function optionalNonNegativeInteger(value: Record<string, unknown>, key: string,
     throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a non-negative integer, received ${describeValue(raw)}.`);
   }
   return raw;
+}
+
+function optionalPositiveInteger(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a positive integer, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+function optionalPositiveNumber(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a positive number, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+function optionalTargetArray(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): PlaytestTarget[] | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be an array of targets, received ${describeValue(raw)}.`);
+  }
+  return raw.map((target, index) => {
+    if (target !== "web" && target !== "desktop" && target !== "bevy") {
+      throw invalidScenario(scenarioPath, `'${objectPath}.${key}[${index}]' must be one of web, desktop, bevy; received ${describeValue(target)}.`);
+    }
+    return target;
+  });
 }
 
 /** Spread helper: omits an absent key, keeps a validated one. */
