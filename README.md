@@ -39,8 +39,10 @@ pnpm test
 pnpm test:browser
 ```
 
-The runnable examples are `examples/abyss-vanilla/` (frozen control) and
-`examples/abyss-framework/` (framework Abyss port and physics proof scene).
+The runnable examples are `examples/abyss-vanilla/` (frozen control),
+`examples/abyss-framework/` (framework Abyss port and physics proof scene) and
+`examples/platformer/` (a 3D platformer built to `examples/REFERENCE.png` — character
+controller, level from data, collectibles, enemies, HUD, seven playtest scenarios).
 
 ## Docs
 

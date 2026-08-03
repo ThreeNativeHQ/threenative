@@ -1,0 +1,15 @@
+{
+  "name": "platformer-enemy",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "subject": "fox",
+  "steps": [{ "kind": "wait", "waitTicks": 150, "release": false }],
+  "assert": {
+    "contacts": [{ "entity": "fox", "minCount": 1, "with": "mushroom.1" }],
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "hud": [{ "equals": 2, "id": "hearts" }],
+    "movement": { "entity": "mushroom.1", "maxDistance": 4, "pathLength": 3 }
+  }
+}
