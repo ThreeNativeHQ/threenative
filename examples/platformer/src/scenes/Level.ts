@@ -50,10 +50,12 @@ export class Level extends Scene<GameState, PhysicsContext> {
     this.#off.push(() => globalThis.removeEventListener("resize", layout));
     layout();
 
+    setupPost(ctx.renderer.raw as Parameters<typeof setupPost>[0], ctx.scene, camera);
+
     const materials = createMaterials();
     this.#sky = ctx.add(createSky(ctx.scene, materials)) as Group;
     this.#sun = ctx.add(
-      createLighting(ctx.renderer.raw as { shadowMap: { enabled: boolean } }),
+      createLighting(ctx.renderer.raw as Parameters<typeof createLighting>[0]),
     ) as Group;
 
     const level = spawn(ctx, LEVEL_1, materials);

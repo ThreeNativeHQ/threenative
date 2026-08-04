@@ -19,7 +19,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
   #unsubscribe: (() => void) | undefined;
 
   enter(ctx: GameCtx): void {
-    setupLighting(ctx.scene, ctx.renderer.raw as { shadowMap: { enabled: boolean } });
+    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer.raw as WebGPURenderer, ctx.scene, ctx.camera);
     ctx.camera.position.set(0, 3, 9);
     ctx.camera.lookAt(0, 1, 0);

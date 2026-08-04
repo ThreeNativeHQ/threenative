@@ -28,7 +28,7 @@ src/
   main.ts               defineGame(...) + React mount
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/             Player.ts, Crate.ts — plain classes, not an ECS
-  render/               lighting, postprocessing, materials — YOURS, plain Three.js
+  render/               lighting, post, materials, shapes, camera — YOURS, plain Three.js
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
 playtests/play.playtest.json  one scenario, run by pnpm test
@@ -64,9 +64,34 @@ default — `pnpm add miniplex` if a game genuinely needs it.
 
 ## Visuals
 
-Edit `src/render/lighting.ts`, `postprocessing.ts`, and `materials.ts` directly. They are a
-starting point, not a constraint, and they import nothing from `@threenative/*`. Do not look
-for a config option to change the look — deliberately, there is none.
+Edit everything in `src/render/` directly. It is a starting point, not a constraint, and it
+imports nothing from `@threenative/*`. Do not look for a config option to change the look —
+deliberately, there is none.
+
+What is already there, so you do not rebuild it:
+
+- `shapes.ts` — `roundedBox`, `block`, `ball`, `tube`, `spike`, `makeRandom`. **Build props
+  out of these, not raw `BoxGeometry`.** A sharp box reads as Minecraft; the same box with
+  a 0.14 corner radius reads as a toy, and that is most of the difference between a scene
+  that looks designed and one that looks like a test harness.
+- `lighting.ts` — key, sky/ground bounce, **rim**, ambient, with soft shadows and a
+  `normalBias` tuned for rounded geometry. The rim is what stops silhouettes reading as
+  flat cut-outs; do not delete it while "simplifying".
+- `camera.ts` — `createSpringArm`, a frame-rate-independent follow camera.
+- `postprocessing.ts` — ACES tone mapping and the WebGPU render pipeline.
+
+Three traps, all of which cost real debugging time before they were written down:
+
+1. **`CanvasTexture` samples black under `WebGPURenderer`.** Procedurally painting a canvas
+   and using it as a `map` produces a black surface, silently. Get variety from alternating
+   material colours across a run of meshes instead — that is what `makeRandom` is for.
+2. **`flatShading` fights `roundedBox`,** which welds its seams precisely so normals
+   interpolate across them. Do not set both.
+3. **Import a render module and then call it.** `setupPost` and `setupLighting` are inert
+   if `Play.ts` only imports them, and nothing in typecheck, lint, or a playtest will fail.
+
+Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never the look —
+so when you change something visual, actually look at it before reporting it done.
 
 ## UI
 

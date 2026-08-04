@@ -19,6 +19,8 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/materials.ts",
+  "src/render/shapes.ts",
+  "src/render/camera.ts",
   "src/entities/Player.ts",
   "src/ui/Hud.tsx",
   "src/ui/Menu.tsx",

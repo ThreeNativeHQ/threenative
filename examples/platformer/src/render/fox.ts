@@ -142,16 +142,20 @@ export function createFoxRig(materials: Materials): FoxRig {
   }
   body.add(head);
 
-  // The brush: five spheres, banded orange-cream-orange with a cream tip.
+  // The brush: six spheres along a curve, each overlapping the next by more
+  // than half its radius. Spaced any wider they stop reading as one tail and
+  // start reading as a caterpillar — the fur is only cream at the very tip,
+  // because banding the middle breaks the mass into beads too.
   const tail = new Group();
   tail.name = "tail";
   tail.position.set(0, -0.04, -0.22);
   const bands: readonly [number, number, number, boolean][] = [
-    [0.04, 0.1, 0.17, false],
-    [0.16, 0.28, 0.2, false],
-    [0.32, 0.46, 0.195, true],
-    [0.5, 0.62, 0.17, false],
-    [0.66, 0.74, 0.14, true],
+    [0, 0.06, 0.15, false],
+    [0.09, 0.17, 0.185, false],
+    [0.2, 0.28, 0.205, false],
+    [0.32, 0.38, 0.2, false],
+    [0.44, 0.46, 0.175, true],
+    [0.55, 0.52, 0.135, true],
   ];
   for (const [y, z, radius, cream] of bands) {
     const segment = new Mesh(

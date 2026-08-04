@@ -4,12 +4,13 @@
 import {
   BackSide,
   BoxGeometry,
-  CanvasTexture,
+  BufferAttribute,
   Color,
   ConeGeometry,
   CylinderGeometry,
   Fog,
   Group,
+  MathUtils,
   Mesh,
   MeshBasicMaterial,
   type Scene,
@@ -22,21 +23,40 @@ export const SKY_HIGH = new Color(0x1f7fd0);
 export const SKY_LOW = new Color(0xbfe6fb);
 
 const DOME_RADIUS = 700;
+const SKY_ZENITH = new Color(0x1668b8);
+const SKY_MID = new Color(0x6cb8ee);
 
-function gradientTexture(): CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 2;
-  canvas.height = 256;
-  const context = canvas.getContext("2d");
-  if (context === null) throw new Error("Sky gradient needs a 2D canvas context.");
-  const gradient = context.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0, "#1668b8");
-  gradient.addColorStop(0.38, `#${SKY_HIGH.getHexString()}`);
-  gradient.addColorStop(0.72, "#6cb8ee");
-  gradient.addColorStop(1, `#${SKY_LOW.getHexString()}`);
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 2, 256);
-  return new CanvasTexture(canvas);
+/**
+ * The gradient is baked into the dome's vertex colours rather than sampled
+ * from a texture: a `CanvasTexture` samples black under `WebGPURenderer`, and
+ * a 32x20 sphere has plenty of rings to carry a smooth vertical ramp.
+ */
+function gradientDome(): Mesh {
+  const geometry = new SphereGeometry(DOME_RADIUS, 32, 20);
+  const position = geometry.attributes.position;
+  if (position === undefined) throw new Error("Sky dome lost its position attribute.");
+
+  const colours = new Float32Array(position.count * 3);
+  const colour = new Color();
+  for (let index = 0; index < position.count; index += 1) {
+    const height = MathUtils.clamp(position.getY(index) / DOME_RADIUS / 2 + 0.5, 0, 1);
+    colour.copy(SKY_LOW).lerp(SKY_MID, MathUtils.smoothstep(height, 0.42, 0.62));
+    colour.lerp(SKY_HIGH, MathUtils.smoothstep(height, 0.58, 0.86));
+    colour.lerp(SKY_ZENITH, MathUtils.smoothstep(height, 0.84, 1));
+    colours[index * 3] = colour.r;
+    colours[index * 3 + 1] = colour.g;
+    colours[index * 3 + 2] = colour.b;
+  }
+  geometry.setAttribute("color", new BufferAttribute(colours, 3));
+
+  const dome = new Mesh(
+    geometry,
+    new MeshBasicMaterial({ fog: false, side: BackSide, vertexColors: true }),
+  );
+  // The camera sits inside the dome, so its bounding sphere straddles the near
+  // plane; culling it is a coin flip we do not need to take.
+  dome.frustumCulled = false;
+  return dome;
 }
 
 /** One cumulus: a pile of unlit spheres, flat-bottomed the way clouds read. */
@@ -69,9 +89,15 @@ function cloud(scale: number, seed: number): Group {
 /** A far-off floating island: grass cap, layered rock, a tree or two. */
 function distantIsland(materials: Materials, width: number, treed: boolean): Group {
   const island = new Group();
-  const rock = new Mesh(new CylinderGeometry(width * 0.5, width * 0.34, width * 0.5, 7), materials.rock);
+  const rock = new Mesh(
+    new CylinderGeometry(width * 0.5, width * 0.34, width * 0.5, 7),
+    materials.rock,
+  );
   rock.position.y = -width * 0.25;
-  const cap = new Mesh(new CylinderGeometry(width * 0.54, width * 0.5, width * 0.16, 7), materials.grass);
+  const cap = new Mesh(
+    new CylinderGeometry(width * 0.54, width * 0.5, width * 0.16, 7),
+    materials.grass,
+  );
   const spike = new Mesh(new ConeGeometry(width * 0.32, width * 1.1, 6), materials.rockDark);
   spike.rotation.x = Math.PI;
   spike.position.y = -width * 0.95;
@@ -155,7 +181,10 @@ function waterfall(materials: Materials, width: number, height: number): Group {
   sheet.position.y = -height / 2;
   fall.add(sheet);
   for (const [index, offset] of [-0.35, 0, 0.4].entries()) {
-    const plume = new Mesh(new SphereGeometry(width * (0.5 + index * 0.12), 10, 8), materials.water);
+    const plume = new Mesh(
+      new SphereGeometry(width * (0.5 + index * 0.12), 10, 8),
+      materials.water,
+    );
     plume.position.set(width * offset, -height, 0.2);
     plume.scale.set(1, 0.55, 0.7);
     fall.add(plume);
@@ -172,11 +201,7 @@ export function createSky(scene: Scene, materials: Materials): Group {
   scene.fog = new Fog(0xaedcf5, 70, 400);
 
   const sky = new Group();
-  const dome = new Mesh(
-    new SphereGeometry(DOME_RADIUS, 24, 16),
-    new MeshBasicMaterial({ fog: false, map: gradientTexture(), side: BackSide }),
-  );
-  sky.add(dome);
+  sky.add(gradientDome());
 
   // Fixed placements, never Math.random: the same sky every run keeps a
   // screenshot diff meaningful.

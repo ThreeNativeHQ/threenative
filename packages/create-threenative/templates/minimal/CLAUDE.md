@@ -64,6 +64,21 @@ Edit `src/render/lighting.ts`, `postprocessing.ts`, and `materials.ts` directly.
 starting point, not a constraint, and they import nothing from `@threenative/*`. There is no
 config option for the look, deliberately.
 
+`lighting.ts` ships key, bounce, **rim** and ambient with soft shadows. The rim is what
+stops silhouettes reading as flat cut-outs against the background; do not delete it while
+"simplifying".
+
+Two traps worth knowing before you spend an afternoon on either:
+
+1. **`CanvasTexture` samples black under `WebGPURenderer`.** Painting a canvas and using it
+   as a `map` silently produces a black surface. Vary material colours across meshes
+   instead. (The `starter` template ships a `shapes.ts` with rounded primitives and a
+   seeded RNG for exactly this; copy it in if you want it.)
+2. **Import a render module and then call it.** `setupPost` is inert if `Play.ts` only
+   imports it, and no gate here will fail.
+
+Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never the look.
+
 ## HUD
 
 This template has no React. `main.ts` subscribes a plugin to the store and writes to a DOM
