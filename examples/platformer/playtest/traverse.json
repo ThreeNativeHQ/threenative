@@ -1,0 +1,16 @@
+{
+  "name": "platformer-traverse",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "fox",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 300, "release": true },
+    { "kind": "wait", "waitTicks": 200, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": { "entity": "fox", "minAxisDelta": { "axis": "+x", "min": 26 } }
+  }
+}

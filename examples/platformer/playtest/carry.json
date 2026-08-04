@@ -1,0 +1,19 @@
+{
+  "name": "platformer-carry",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "fox",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 260, "release": true },
+    { "kind": "wait", "waitTicks": 200, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "fox",
+      "reachesPositionWithin": { "position": [32.4, 0.75, 0], "maxDistance": 2.5 }
+    }
+  }
+}

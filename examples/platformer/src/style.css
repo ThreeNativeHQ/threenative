@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/*
+ * Sources declared explicitly rather than left to automatic detection. When
+ * Tailwind finds no sources it still builds successfully — it emits the @theme
+ * variables and zero utilities, so every class name in src/ui/ becomes an inert
+ * string with no error anywhere to explain it.
+ */
+@source "../index.html";
+@source "./";
+
+/*
+ * The HUD palette, named after the game rather than the colour. Nothing in
+ * @threenative/* reads this file.
+ */
+@theme {
+  --color-sky: #9ddcf5;
+  --color-shade: #10243a;
+  --color-heart: #ff4d5a;
+  --color-coin: #ffc93c;
+  --color-gemstone: #39b7f0;
+  --color-fur: #f1932c;
+  --color-jump: #35c15f;
+
+  --font-sans:
+    ui-rounded, "SF Pro Rounded", "Segoe UI", Nunito, system-ui, -apple-system, sans-serif;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-sky);
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

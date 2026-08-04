@@ -1,0 +1,19 @@
+{
+  "name": "platformer-jump",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "fox",
+  "steps": [
+    { "kind": "input", "press": "Space", "holdTicks": 4, "release": true },
+    { "kind": "wait", "waitTicks": 60, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "peakRise", "gte": 1.5, "changed": true }
+    ]
+  }
+}
