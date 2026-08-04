@@ -111,6 +111,27 @@ describe("starter visual floor", () => {
     }
   });
 
+  it("should tell the user's agent to budget effort for the look", async () => {
+    // The only thing in this project that can judge the look is a person
+    // reading a screenshot. Every automated gate passes on grey boxes, so if
+    // the generated instructions do not say "go look at it", the agent
+    // optimises what it can measure and ships grey boxes. This assertion
+    // exists because that instruction is load-bearing, not decorative.
+    for (const root of [starter, minimal]) {
+      const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
+      expect(agents).toContain("Budget real time for the look");
+      expect(agents).toContain("blind to how the game looks");
+      // How to get eyes on it at all — headless WebGPU renders nothing, and an
+      // agent that does not know that reads a blank canvas as a scene bug.
+      expect(agents).toContain("headless Chromium usually cannot render WebGPU");
+      expect(agents).toMatch(/Claude in Chrome|browser tool/);
+      // AGENTS.md is the source; CLAUDE.md is generated from it by pnpm
+      // sync:agents, so it has to carry the same instruction.
+      const mirror = await readFile(path.join(root, "CLAUDE.md"), "utf8");
+      expect(mirror).toContain("Budget real time for the look");
+    }
+  });
+
   it("should declare Tailwind sources so HUD classes cannot silently do nothing", async () => {
     // With no sources, Tailwind still builds — it emits the theme and zero
     // utilities, and every class in src/ui/ becomes an inert string.

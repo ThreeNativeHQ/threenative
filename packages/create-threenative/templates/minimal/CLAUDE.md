@@ -106,3 +106,51 @@ instead of racing it.
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. Add the assertion that would catch a feature's
 absence, and run it before reporting the feature works.
+
+## Budget real time for the look
+
+Read this as an instruction about **where your effort goes**, not as a style tip.
+
+Every automated gate here — `typecheck`, `lint`, `pnpm test`, every playtest scenario — is
+blind to how the game looks. All of them pass on a game that is grey boxes on a black
+screen. If you let the gates define "done", that is what you will ship, and the gates will
+tell you that you succeeded.
+
+**A feature is not done when its assertion passes. It is done when you have looked at it
+and it reads well.** Plan for roughly as much work on presentation as on mechanics.
+
+When you add anything a player sees, do all of these before calling it done:
+
+1. **Look at it.** Boot the game, get it on screen, screenshot, open the screenshot.
+   Reading your own diff is not looking at it.
+2. **Silhouette first.** Can you tell what it is from its outline? Break up long straight
+   edges. A shape that reads at a glance beats a detailed shape that does not.
+3. **Give it depth.** Something bright behind it, something dark under it. Contact shadows
+   and the rim light make a prop sit in the world instead of floating on it.
+4. **Make it move.** Idle bob, squash on impact, a particle on pickup. A few frames of
+   motion is the cheapest quality-per-line in the project.
+5. **Finish the HUD.** Spacing, hierarchy, a transition on numbers that change.
+
+### How to actually look at it
+
+Run `pnpm dev`, then get eyes on it. In rough order of preference:
+
+1. **Browser automation against the user's real Chrome**, if available — Claude in Chrome
+   or an equivalent MCP browser tool. Best option by far: real GPU, so WebGPU works, and
+   you can navigate, press keys, screenshot and read the console in one loop. Drive the
+   game, do not just load the menu.
+2. **Headed Chromium via Playwright**, under a virtual display if there is no screen
+   (`xvfb-run -a -s "-screen 0 1600x900x24"`), with
+   `--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist`.
+3. **Ask the user to look**, saying specifically what to check.
+
+What does *not* work: **headless Chromium usually cannot render WebGPU.** The page loads,
+the DOM HUD paints, and the 3D canvas comes out blank — which looks exactly like a bug in
+your scene and is not. Look for `Instance dropped in popErrorScope` in the console.
+
+If a screenshot comes back black, suspect the capture before you rewrite the scene.
+
+### When you think you are done
+
+Ask honestly: *would a player screenshot this?* If not, you are not finished — and no
+command here is going to tell you that.
