@@ -137,52 +137,6 @@ importers:
         specifier: 2.3.3
         version: 2.3.3(rollup@4.62.4)(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
 
-  examples/platformer:
-    dependencies:
-      '@threenative/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@threenative/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@threenative/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      react:
-        specifier: 'catalog:'
-        version: 19.2.0
-      react-dom:
-        specifier: 'catalog:'
-        version: 19.2.0(react@19.2.0)
-      three:
-        specifier: 'catalog:'
-        version: 0.185.1
-    devDependencies:
-      '@tailwindcss/vite':
-        specifier: 'catalog:'
-        version: 4.3.3(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
-      '@types/react':
-        specifier: 'catalog:'
-        version: 19.2.0
-      '@types/react-dom':
-        specifier: 'catalog:'
-        version: 19.2.0(@types/react@19.2.0)
-      '@types/three':
-        specifier: 0.185.3
-        version: 0.185.3
-      '@vitejs/plugin-react':
-        specifier: 'catalog:'
-        version: 6.0.5(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
-      tailwindcss:
-        specifier: 'catalog:'
-        version: 4.3.3
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
-      vite:
-        specifier: 'catalog:'
-        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
-
   packages/core:
     dependencies:
       three:

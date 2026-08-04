@@ -16,9 +16,15 @@ An application framework for Three.js games. WebGPU by default, Godot-shaped con
 React/Tailwind for UI, vanilla `three` on every surface underneath. **The framework ships
 the plumbing. The user's agent ships the gameplay.**
 
-`CHARTER.md` at the repo root is the only binding document. If anything here contradicts
-it, `CHARTER.md` wins — say so instead of quietly following this file. `docs/README.md`
-maps the rest, and labels which docs are proposals rather than commitments.
+`docs/architecture/CHARTER.md` is the only binding document, and it wins if anything here
+contradicts it — say so instead of quietly following this file. **Do not read it by
+default.** Everything it binds that applies to ordinary work is already restated below.
+Open it only when you are changing what the framework *is*: adding or removing a package,
+moving a budget, or reopening a closed question. `docs/README.md` maps the rest, and labels
+which docs are proposals rather than commitments.
+
+Work in `examples/` — anything a screenshot shows — needs neither file. See
+`examples/AGENTS.md`.
 
 ## How you work
 

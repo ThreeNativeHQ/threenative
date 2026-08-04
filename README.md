@@ -39,14 +39,12 @@ pnpm test
 pnpm test:browser
 ```
 
-The runnable examples are `examples/abyss-vanilla/` (frozen control),
-`examples/abyss-framework/` (framework Abyss port and physics proof scene) and
-`examples/platformer/` (a 3D platformer built to `examples/REFERENCE.png` — character
-controller, level from data, collectibles, enemies, HUD, seven playtest scenarios).
+The runnable examples are `examples/abyss-vanilla/` (frozen control) and
+`examples/abyss-framework/` (framework Abyss port and physics proof scene).
 
 ## Docs
 
-[`CHARTER.md`](CHARTER.md) is the only binding document, and
+[`CHARTER.md`](docs/architecture/CHARTER.md) is the only binding document, and
 [`docs/README.md`](docs/README.md) maps everything else — PRDs, verification, strategy,
 architecture, product — labelling which parts are proposals. Start with
 [`docs/strategy/CONFLICTS.md`](docs/strategy/CONFLICTS.md): the eight places where the

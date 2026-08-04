@@ -1,6 +1,6 @@
 # Docs map
 
-[`CHARTER.md`](../CHARTER.md) at the repo root is the **only binding document**. Everything
+[`CHARTER.md`](architecture/CHARTER.md) is the **only binding document**. Everything
 under `docs/` either implements it (PRDs, verification) or explores what comes after it
 (strategy, architecture, product). When a doc here disagrees, `CHARTER.md` wins until it is
 amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
