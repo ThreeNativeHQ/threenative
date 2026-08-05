@@ -210,4 +210,39 @@ describe("CharacterBody3D", () => {
     expect(mesh.position.x).toBeLessThan(0);
     character.dispose();
   });
+
+  it("should clear the filter predicate after step() and land on a one-way platform", async () => {
+    const { ctx, plugin } = await setup();
+    fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);
+    const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
+    platformMesh.position.y = 2;
+    const platform = new RigidBody3D({
+      mesh: platformMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(platformMesh),
+      type: "fixed",
+    });
+    platform.collider.setCollisionGroups((2 << 16) | 0xffff);
+
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      oneWayGroups: 2,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      mesh,
+    });
+    character.velocity.y = 8;
+
+    for (let step = 0; step < 120; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.grounded).toBe(true);
+    expect(mesh.position.y).toBeGreaterThan(2.3);
+    character.dispose();
+    platform.dispose();
+  });
 });

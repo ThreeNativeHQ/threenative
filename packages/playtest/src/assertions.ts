@@ -1243,7 +1243,7 @@ function evaluateTagCountAssertion(
   const tags = isRecord(gameplay?.tags) ? gameplay.tags : undefined;
   const candidate = tags?.[assertion.tag];
   const summary = isRecord(candidate) ? candidate : undefined;
-  const count = typeof summary?.count === "number" ? summary.count : undefined;
+  const count = typeof summary?.count === "number" ? summary.count : tags === undefined ? undefined : 0;
   const pass = count !== undefined
     && (assertion.count === undefined || count === assertion.count)
     && (assertion.gte === undefined || count >= assertion.gte);

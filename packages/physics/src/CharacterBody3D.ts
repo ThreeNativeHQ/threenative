@@ -17,6 +17,8 @@ export interface CharacterBody3DOptions {
   readonly snapToGround?: number;
   readonly gravity?: number;
   readonly maxFallSpeed?: number;
+  /** Collider membership bits to ignore while moving upward. */
+  readonly oneWayGroups?: number;
 }
 
 export class CharacterBody3D {
@@ -27,6 +29,7 @@ export class CharacterBody3D {
   readonly velocity: Vector3;
   gravity: number;
   maxFallSpeed: number;
+  readonly oneWayGroups: number;
   grounded = false;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
@@ -45,6 +48,7 @@ export class CharacterBody3D {
     this.velocity = this.mesh.position.clone().set(0, 0, 0);
     this.gravity = options.gravity ?? -9.81;
     this.maxFallSpeed = options.maxFallSpeed ?? 50;
+    this.oneWayGroups = options.oneWayGroups ?? 0;
     const description = RAPIER.RigidBodyDesc.kinematicPositionBased()
       .setTranslation(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z)
       .setRotation({
@@ -99,10 +103,19 @@ export class CharacterBody3D {
       y: this.#desired.y + (carry?.y ?? 0),
       z: this.#desired.z + (carry?.z ?? 0),
     };
+    const groups = this.oneWayGroups > 0xffff ? this.oneWayGroups >>> 16 : this.oneWayGroups;
+    const filterGroups =
+      this.velocity.y > 0 && groups !== 0 ? (0xffff << 16) | (0xffff ^ groups) : undefined;
+    const filterPredicate =
+      this.velocity.y > 0 && groups !== 0
+        ? (collider: RAPIER.Collider) => ((collider.collisionGroups() >>> 16) & groups) === 0
+        : undefined;
     this.controller.computeColliderMovement(
       this.collider,
       desired,
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      filterGroups,
+      filterPredicate,
     );
     const movement = this.controller.computedMovement();
     const current = this.body.translation();

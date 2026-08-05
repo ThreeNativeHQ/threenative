@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type ScaffoldTemplate = "minimal" | "starter";
+export type ScaffoldTemplate = "minimal" | "platformer" | "starter";
 
 export interface ScaffoldOptions {
   install?: boolean;
@@ -24,7 +24,7 @@ export interface ScaffoldResult {
   template: ScaffoldTemplate;
 }
 
-const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = ["minimal", "starter"];
+const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = ["minimal", "starter", "platformer"];
 
 function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
@@ -99,7 +99,7 @@ export async function createProject(
 ): Promise<ScaffoldResult> {
   const template = options.template ?? "starter";
   if (!TEMPLATE_NAMES.includes(template)) {
-    throw new Error(`Unknown template '${template}'. Choose minimal or starter.`);
+    throw new Error(`Unknown template '${template}'. Choose minimal, starter, or platformer.`);
   }
   const target = path.resolve(cwd, options.target);
   const targetExists = await isEmpty(target).catch(() => false);
@@ -131,7 +131,7 @@ export function parseArgs(argv: readonly string[]): ScaffoldOptions {
     throw new Error("Missing target directory. Usage: pnpm create threenative my-game");
   const template = readFlag(argv, "--template") as ScaffoldTemplate | undefined;
   if (template !== undefined && !TEMPLATE_NAMES.includes(template)) {
-    throw new Error(`Unknown template '${template}'. Choose minimal or starter.`);
+    throw new Error(`Unknown template '${template}'. Choose minimal, starter, or platformer.`);
   }
   const packageSources: Record<string, string> = {};
   for (const [name, flag] of [

@@ -206,6 +206,26 @@ test("a tag assertion with a floor still evaluates normally", async () => {
   expect(evaluated.assertions.find(({ id }) => id === "tags.coin")?.pass).toBe(true);
 });
 
+test("a zero tag count passes when the runtime channel contains no matching tag", async () => {
+  const evaluated = await evaluate(
+    { tags: [{ tag: "patrol", count: 0 }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: { gameplay: { tags: { player: { count: 1 } } } },
+      } as IPlaytestObservations,
+    },
+  );
+
+  expect(evaluated.assertions.find(({ id }) => id === "tags.patrol")?.pass).toBe(true);
+});
+
+test("a zero tag count still fails when the runtime tag channel is unavailable", async () => {
+  const evaluated = await evaluate({ tags: [{ tag: "patrol", count: 0 }] });
+
+  expect(evaluated.assertions.find(({ id }) => id === "tags.patrol")?.pass).toBe(false);
+});
+
 test("a contact assertion reads the runtime contact channel", async () => {
   const evaluated = await evaluate(
     { contacts: [{ entity: "fox", with: "coin.3", kind: "trigger", minCount: 1 }] },
