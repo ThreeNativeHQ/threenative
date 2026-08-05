@@ -10,6 +10,6 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
-    "hud": [{ "id": "score", "path": "#root", "textIncludes": "1" }]
+    "resources": [{ "id": "GameState", "path": "score", "gte": 1, "changed": true }]
   }
 }

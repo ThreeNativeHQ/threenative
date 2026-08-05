@@ -18,7 +18,10 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
-    "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 0.2 } },
+    "resources": [
+      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "coyoteJumps", "gte": 1, "changed": true }
+    ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }
 }

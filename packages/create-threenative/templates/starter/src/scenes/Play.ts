@@ -90,7 +90,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
       this.#springArm?.snap(player.mesh.position);
     }
     this.#springArm?.follow(player.mesh.position, dt);
-    ctx.state.set({ playerX: player.mesh.position.x });
+    const debug = player.debug();
+    ctx.state.set({
+      coyoteJumps: debug.coyoteJumps,
+      jumps: debug.jumps,
+      playerX: player.mesh.position.x,
+    });
   }
 
   exit(ctx: GameCtx): void {

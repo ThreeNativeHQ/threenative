@@ -60,7 +60,7 @@ export class Player {
     this.#jumpBuffer = 0;
   }
 
-  debug(): Record<string, unknown> {
+  debug(): { coyoteJumps: number; grounded: boolean; jumps: number; position: number[] } {
     return {
       coyoteJumps: this.#coyoteJumps,
       grounded: this.body.grounded,
