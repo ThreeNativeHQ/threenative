@@ -185,6 +185,14 @@ describe("template contracts", () => {
     expect(menu).toContain("game.resume()");
   });
 
+  it("should decay the platformer coyote timer every update", async () => {
+    const character = await readFile(
+      path.join(templateRoot, "platformer/src/entities/Character.ts"),
+      "utf8",
+    );
+    expect(character).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
+  });
+
   it("should set matched sky background and fog, and reject an incomplete gradient", async () => {
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
     expect(sky).toContain("scene.background = top");
