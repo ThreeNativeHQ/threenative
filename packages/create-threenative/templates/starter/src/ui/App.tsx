@@ -12,7 +12,7 @@ export function App({ game }: { game: Game<GameState, PhysicsContext> }) {
     <main className="relative h-screen w-screen overflow-hidden bg-ink">
       <GameCanvas className="absolute inset-0" game={game} />
       <Hud game={game} />
-      <Menu />
+      <Menu game={game} />
       <DebugOverlay />
     </main>
   );

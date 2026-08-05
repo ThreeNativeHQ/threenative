@@ -31,6 +31,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     ctx.camera.lookAt(0, 1, 0);
 
     const materials = createMaterials();
+    const levelX = ctx.random.range(-1, 1);
     const floorMesh = new Mesh(new BoxGeometry(10, 0.2, 4), materials.floor);
     floorMesh.position.y = -0.1;
     floorMesh.receiveShadow = true;
@@ -41,8 +42,9 @@ export class Play extends Scene<GameState, PhysicsContext> {
       shape: CollisionShape3D.fromMesh(floorMesh),
       type: "fixed",
     });
-    this.#crate = new Crate(ctx, -1, 4, -1.5, materials.crate);
+    this.#crate = new Crate(ctx, levelX, 4, -1.5, materials.crate);
     this.#player = new Player(ctx, materials.player);
+    ctx.state.set({ levelX });
     ctx.entities.add("player", this.#player);
     this.#pickup = new Area3D({
       physics: ctx.physics,

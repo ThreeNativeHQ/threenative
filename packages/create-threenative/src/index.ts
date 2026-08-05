@@ -25,6 +25,7 @@ export interface ScaffoldResult {
 }
 
 const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = ["minimal", "starter", "platformer"];
+const TEXT_FILE_EXTENSIONS = new Set([".css", ".html", ".json", ".md", ".svg", ".ts", ".tsx"]);
 
 function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
@@ -54,6 +55,7 @@ async function renderTemplate(directory: string, projectName: string): Promise<v
       await renderTemplate(source, projectName);
       continue;
     }
+    if (!TEXT_FILE_EXTENSIONS.has(path.extname(entry.name))) continue;
     const content = await readFile(source, "utf8");
     await writeFile(source, content.replaceAll("__PROJECT_NAME__", projectName));
   }

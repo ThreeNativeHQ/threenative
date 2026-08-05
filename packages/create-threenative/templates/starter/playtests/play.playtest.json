@@ -9,7 +9,7 @@
     { "kind": "wait", "waitFrames": 30, "release": true }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "hud": [{ "id": "score", "path": "#root", "textIncludes": "1" }]
   }
 }

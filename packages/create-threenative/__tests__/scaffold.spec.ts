@@ -28,6 +28,7 @@ const STARTER_PATHS = [
   "src/state.ts",
   "playtest/boot-to-play.json",
   "playtests/play.playtest.json",
+  "public/pickup.ogg",
 ];
 
 const PLATFORMER_PATHS = [
@@ -72,6 +73,8 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      const pickupAudio = await readFile(path.join(result.target, "public/pickup.ogg"));
+      expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
       const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
       expect(agents).toContain("my-game");
       expect(agents).not.toContain("__PROJECT_NAME__");

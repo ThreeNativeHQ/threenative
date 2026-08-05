@@ -15,6 +15,7 @@ const game = defineGame<GameState, PhysicsContext>({
   input: { jump: { buttons: [0], down: ["Space"] } },
   plugins: [rapier(), playtest()],
   scenes: { boot: Boot, play: Play },
+  seed: 90210,
   start: "boot",
 });
 

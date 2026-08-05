@@ -52,6 +52,11 @@ describe("Scheduler", () => {
         ctx.every(() => calls++);
         navigate = ctx.goto;
       }
+
+      override exit(ctx: Parameters<Scene["exit"]>[0]): void {
+        ctx.after(0, () => calls++);
+        ctx.every(() => calls++);
+      }
     }
 
     class Second extends Scene {}

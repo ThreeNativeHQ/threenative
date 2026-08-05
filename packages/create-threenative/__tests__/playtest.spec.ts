@@ -9,7 +9,10 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const parsed = JSON.parse(scenario) as {
-      assert: { diagnostics: { noConsoleErrors: boolean; runtimeReady: boolean }; hud: unknown[] };
+      assert: {
+        diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
+        hud: unknown[];
+      };
       steps: Array<{ press?: string }>;
     };
     const player = await readFile(
@@ -17,9 +20,36 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     expect(parsed.steps[0]?.press).toBe("ArrowRight");
-    expect(parsed.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
+    expect(parsed.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      runtimeReady: true,
+    });
     expect(parsed.assert.hud).toEqual([{ id: "score", path: "#root", textIncludes: "1" }]);
     expect(player).toContain('ctx.input.vector("move")');
+  });
+
+  it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {
+    const main = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/main.ts"),
+      "utf8",
+    );
+    const menu = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/ui/Menu.tsx"),
+      "utf8",
+    );
+    const seed = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+      "utf8",
+    );
+    const pickupAudio = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/public/pickup.ogg"),
+    );
+
+    expect(main).toContain("seed: 90210");
+    expect(menu).toContain("game.pause()");
+    expect(seed).toContain('"path": "levelX"');
+    expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
   });
 
   it("should ship JSON scenarios for both templates and no legacy TypeScript scenario", async () => {

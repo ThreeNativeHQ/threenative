@@ -130,8 +130,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     const SceneType = this.#config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
-    this.#scheduler?.clear();
     this.#scene?.exit(ctx);
+    this.#scheduler?.clear();
     this.#entities?.clear();
     const scene = new SceneType();
     this.#scene = scene;
@@ -238,8 +238,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   stop(): void {
     if (!this.#started) return;
     this.#loop?.stop();
-    this.#scheduler?.clear();
     if (this.#ctx !== undefined) this.#scene?.exit(this.#ctx);
+    this.#scheduler?.clear();
     this.#entities?.clear();
     this.#entities = undefined;
     for (const plugin of this.#config.plugins ?? []) {

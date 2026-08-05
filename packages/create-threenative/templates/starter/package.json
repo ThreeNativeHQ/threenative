@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
+    "@types/three": "0.185.3",
     "@vitejs/plugin-react": "6.0.5",
     "@threenative/playtest": "0.1.0",
     "@types/react": "19.2.0",

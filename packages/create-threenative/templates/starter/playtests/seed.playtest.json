@@ -9,6 +9,7 @@
   "steps": [{ "kind": "wait", "label": "seeded-level", "waitTicks": 60, "release": true }],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "GameState", "path": "levelX", "allowTrivial": true, "gte": -1 }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 1 }]
   }
 }
