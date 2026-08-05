@@ -73,7 +73,7 @@ export class Patrol {
       this.#direction = 1;
     } else this.mesh.position.x = next;
     this.mesh.rotation.y = this.#direction > 0 ? 0 : Math.PI;
-    this.area.body.setTranslation(this.mesh.position, true);
+    this.area.setPosition(this.mesh.position);
   }
 
   debug(): Record<string, unknown> {

@@ -25,6 +25,16 @@ afterEach(() => {
 });
 
 describe("Area3D", () => {
+  it("should move its sensor through the Area3D surface", async () => {
+    const { ctx } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
+
+    area.setPosition({ x: 3, y: 4, z: 5 });
+
+    expect(area.body.translation()).toEqual({ x: 3, y: 4, z: 5 });
+    area.dispose();
+  });
+
   it("should fire bodyEntered exactly once while a body remains inside", async () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });

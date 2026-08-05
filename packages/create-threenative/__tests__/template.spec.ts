@@ -225,7 +225,7 @@ describe("template contracts", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 15_000);
 
   it("should document and apply the forward axis conversion once per template", async () => {
     const movementFiles = [

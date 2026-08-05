@@ -58,6 +58,11 @@ export class Area3D {
     return () => this.#listeners[event].delete(handler);
   }
 
+  setPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
+    if (this.#disposed || !this.body.isValid()) return;
+    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+  }
+
   handleCollision(body: PhysicsBody3D, started: boolean): void {
     if (this.#disposed) return;
     const handle = body.body.handle;
