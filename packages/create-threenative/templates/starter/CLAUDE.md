@@ -30,7 +30,7 @@ src/
   main.ts               defineGame(...) + React mount
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/             Player.ts, Crate.ts — plain classes, not an ECS
-  render/               lighting, post, materials, shapes, camera — YOURS, plain Three.js
+  render/               lighting, post, materials, shapes, camera, sky — YOURS, plain Three.js
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
 playtests/play.playtest.json  one scenario, run by pnpm test
@@ -60,6 +60,16 @@ appear in the imports of an existing file, it probably does not exist.
 
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
 Every node has `dispose()`, and `exit()` must dispose what `enter()` created.
+
+`CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity`; the player keeps
+the coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
+
+## Assets and animation
+
+`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
+`.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
+and update the `AnimationPlayer` beside the entity that owns the loaded model. This starter
+does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.

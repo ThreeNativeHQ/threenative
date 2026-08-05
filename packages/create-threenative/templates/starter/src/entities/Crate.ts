@@ -1,6 +1,7 @@
 import type { Ctx } from "@threenative/core";
 import { CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, type Material, Mesh } from "three";
+import { type Material, Mesh } from "three";
+import { roundedBox } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
 export class Crate {
@@ -14,7 +15,7 @@ export class Crate {
     z: number,
     material: Material,
   ) {
-    this.mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+    this.mesh = new Mesh(roundedBox(1, 1, 1), material);
     this.mesh.position.set(x, y, z);
     this.mesh.castShadow = true;
     ctx.add(this.mesh);

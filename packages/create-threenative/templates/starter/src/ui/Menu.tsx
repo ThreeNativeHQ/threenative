@@ -21,6 +21,7 @@ export function Menu({ game }: { game: Game<GameState, PhysicsContext> }) {
       <span>WASD / arrows to move · collect the pickup</span>
       <button
         className="pointer-events-auto border border-line px-2 py-1 text-text hover:border-lume"
+        aria-pressed={paused}
         onClick={togglePause}
         onKeyDown={handleKeyDown}
         type="button"

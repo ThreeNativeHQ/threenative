@@ -1,0 +1,24 @@
+{
+  "name": "starter-coyote-and-buffer",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "leave-ledge",
+      "press": "ArrowRight",
+      "holdTicks": 210,
+      "release": true
+    },
+    { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "jump-arc", "waitTicks": 18, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 0.2 } },
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

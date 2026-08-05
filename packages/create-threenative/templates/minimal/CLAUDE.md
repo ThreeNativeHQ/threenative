@@ -58,6 +58,17 @@ probably does not exist.
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
 Every node has `dispose()`, and `exit()` must dispose what `enter()` created.
 
+`CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity`; keep coyote time
+and the jump buffer in `src/entities/Player.ts` so the two templates teach the same motion
+API.
+
+## Assets and animation
+
+`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
+`.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
+and update the `AnimationPlayer` beside the entity that owns the loaded model. This minimal
+template does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
+
 ## Visuals
 
 Edit `src/render/lighting.ts`, `postprocessing.ts`, and `materials.ts` directly. They are a
