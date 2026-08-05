@@ -26,4 +26,12 @@ Observed framework behavior included jump rise `2.039660692214966`, coyote jump 
 
 | API or surface | What blocked the build | Workaround | Evidence |
 | --- | --- | --- | --- |
-| None | No framework API blocked the platformer template. | None. | All 10 consumer scenarios passed. |
+| `CharacterBody3D.object` | A `Group`-based character could not use the old `mesh: Mesh` option. | Use `object: Object3D`; the platformer character keeps its visual parts under a `Group`. | Closed by `1cd1df76`; fresh `/tmp/tn-prd017-platformer-2026-08-05/my-game` consumer passed typecheck and all 10 browser scenarios. |
+| `RigidBody3D.object` | The platform collision body required the old mesh-only option. | Pass the platform `Mesh` as `object`. | Closed by `1cd1df76`; `src/level/Platform.ts` compiled and the fresh consumer passed all 10 scenarios. |
+| `CharacterBody3D.teleport()` | Respawn reached into raw Rapier translation state. | Call `body.teleport(point)` from `Checkpoints`. | Closed by `1cd1df76`; `respawn` passed with `respawns=12`, target distance `0.0907`, and zero diagnostics. |
+| Minimal scaffold type declarations | A clean minimal scaffold lacked `@types/three` before its first typecheck. | Ship `@types/three` in the minimal template and smoke-test a generated project. | Closed by `1cd1df76`; scaffold smoke passed in the repository suite with no source edits. |
+| Forward input axis | `input.vector("move").y` was not documented at the template call site. | Map the one input line to world-space `-z` and assert it in `forward.playtest.json`. | Closed by `1cd1df76`; fresh starter consumer measured `-3.7333` z delta over 60 ticks with zero diagnostics. |
+
+The patrol sensor move was also kept behind the `Area3D` surface while closing the template
+Rapier scan; `5e95807` added `Area3D.setPosition()` and its unit assertion. The fresh
+platformer `patrol` scenario passed with path length `27.36`.
