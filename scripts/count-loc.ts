@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { extname, join, relative, resolve } from "node:path";
 
 export type LocKind = "plumbing" | "game";
 export type BenchmarkArm = "vanilla" | "framework";
@@ -13,6 +13,8 @@ export interface LocCount {
 }
 
 export type LineClassifier = (line: string, lineNumber: number) => LocKind;
+
+export const PLATFORMER_LOC_LIMIT = 1_850;
 
 const README_START = "<!-- benchmark:loc:start -->";
 const README_END = "<!-- benchmark:loc:end -->";
@@ -53,6 +55,8 @@ const FRAMEWORK_PORT_FILES = [
   "render/postprocessing.ts",
   "scenes/Abyss.ts",
 ] as const;
+
+const PLATFORMER_SOURCE_EXTENSIONS = new Set([".css", ".ts", ".tsx"]);
 
 function sourceLines(source: string): string[] {
   const withoutFinalNewline = source.endsWith("\n") ? source.slice(0, -1) : source;
@@ -115,6 +119,32 @@ export function collectLoc(rootDirectory = process.cwd()): LocCount[] {
   return rows;
 }
 
+function collectPlatformerSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return collectPlatformerSourceFiles(path);
+    return PLATFORMER_SOURCE_EXTENSIONS.has(extname(entry.name)) ? [path] : [];
+  });
+}
+
+export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): number {
+  const sourceRoot = join(
+    resolve(rootDirectory),
+    "packages/create-threenative/templates/platformer/src",
+  );
+  return collectPlatformerSourceFiles(sourceRoot).reduce(
+    (total, path) => total + sourceLines(readFileSync(path, "utf8")).length,
+    0,
+  );
+}
+
+export function assertPlatformerTemplateLoc(rootDirectory = process.cwd()): number {
+  const total = countPlatformerTemplateLoc(rootDirectory);
+  if (total >= PLATFORMER_LOC_LIMIT)
+    throw new Error(`platformer template LOC ${total} must stay below ${PLATFORMER_LOC_LIMIT}.`);
+  return total;
+}
+
 function summary(rows: readonly LocCount[], arm: BenchmarkArm): LocCount {
   const selected = rows.filter((row) => row.arm === arm);
   return {
@@ -173,5 +203,10 @@ export function updateReadme(rootDirectory = process.cwd(), check = false): void
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  updateReadme(process.cwd(), process.argv.includes("--check"));
+  const root = process.cwd();
+  updateReadme(root, process.argv.includes("--check"));
+  const platformerLoc = assertPlatformerTemplateLoc(root);
+  process.stdout.write(
+    `platformer template LOC: ${platformerLoc} (limit ${PLATFORMER_LOC_LIMIT})\n`,
+  );
 }

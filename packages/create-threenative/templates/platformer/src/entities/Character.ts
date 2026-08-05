@@ -8,17 +8,40 @@ import type { GameState } from "../state.js";
 type GameCtx = Ctx<GameState, PhysicsContext>;
 
 // Gameplay tuning belongs here. These are intentionally not defineGame options.
-const GRAVITY = -28;
-const RUN_SPEED = 6.2;
-const GROUND_ACCEL = 58;
-const AIR_ACCEL = 24;
-const JUMP_SPEED = 11;
-const COYOTE_TIME = 0.12;
-const JUMP_BUFFER = 0.14;
-const DASH_SPEED = 17;
-const DASH_TIME = 0.18;
-const DASH_COOLDOWN = 0.55;
-const STOMP_BOUNCE = 9;
+export interface CheckpointFeel {
+  readonly blinkRate: number;
+  readonly hurtHorizontalSpeed: number;
+  readonly hurtVerticalSpeed: number;
+  readonly invulnerabilityTime: number;
+}
+
+export interface PatrolFeel {
+  readonly patrolSpeed: number;
+  readonly stompFallSpeed: number;
+  readonly stompHeight: number;
+}
+
+export const PLATFORMER_FEEL = {
+  airAcceleration: 24,
+  blinkRate: 18,
+  coyoteTime: 0.12,
+  dashCooldown: 0.55,
+  dashSpeed: 17,
+  dashTime: 0.18,
+  gravity: -28,
+  groundAcceleration: 58,
+  hurtHorizontalSpeed: 4.5,
+  hurtVerticalSpeed: 5.5,
+  invulnerabilityTime: 1.2,
+  jumpBuffer: 0.14,
+  jumpSpeed: 11,
+  maxFallSpeed: 32,
+  patrolSpeed: 1.6,
+  runSpeed: 6.2,
+  stompBounce: 9,
+  stompFallSpeed: -0.5,
+  stompHeight: 0.3,
+} as const;
 
 export type CharacterState = "dash" | "fall" | "hurt" | "idle" | "jump" | "run";
 
@@ -51,8 +74,8 @@ export class Character {
     this.mesh.add(this.visual);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.35, minWidth: 0.2 },
-      gravity: GRAVITY,
-      maxFallSpeed: 32,
+      gravity: PLATFORMER_FEEL.gravity,
+      maxFallSpeed: PLATFORMER_FEEL.maxFallSpeed,
       mesh: this.mesh,
       oneWayGroups: ONE_WAY_GROUP,
       physics: ctx.physics,
@@ -71,10 +94,10 @@ export class Character {
     const wants = new Vector3(move.x, 0, -move.y);
     if (wants.lengthSq() > 1) wants.normalize();
     if (this.body.grounded) {
-      this.#coyote = COYOTE_TIME;
+      this.#coyote = PLATFORMER_FEEL.coyoteTime;
       this.#airJumpUsed = false;
     }
-    if (ctx.input.justPressed("jump")) this.#buffered = JUMP_BUFFER;
+    if (ctx.input.justPressed("jump")) this.#buffered = PLATFORMER_FEEL.jumpBuffer;
     if (ctx.input.justPressed("dash") && this.#dashCooldown <= 0 && this.#dashTimer <= 0)
       this.#startDash(wants);
 
@@ -88,7 +111,7 @@ export class Character {
   }
 
   bounce(): void {
-    this.body.velocity.y = STOMP_BOUNCE;
+    this.body.velocity.y = PLATFORMER_FEEL.stompBounce;
     this.#coyote = 0;
     this.#buffered = 0;
   }
@@ -120,7 +143,7 @@ export class Character {
   #tryJump(): void {
     if (this.#buffered <= 0) return;
     if (this.#coyote > 0) {
-      this.body.velocity.y = JUMP_SPEED;
+      this.body.velocity.y = PLATFORMER_FEEL.jumpSpeed;
       this.#buffered = 0;
       this.#coyote = 0;
       this.coyoteJumps += 1;
@@ -128,7 +151,7 @@ export class Character {
       return;
     }
     if (!this.#airJumpUsed) {
-      this.body.velocity.y = JUMP_SPEED;
+      this.body.velocity.y = PLATFORMER_FEEL.jumpSpeed;
       this.#buffered = 0;
       this.#airJumpUsed = true;
       this.jumps += 1;
@@ -141,23 +164,33 @@ export class Character {
         ? wants
         : new Vector3(Math.sin(this.#facing), 0, Math.cos(this.#facing)),
     );
-    this.#dashTimer = DASH_TIME;
-    this.#dashCooldown = DASH_COOLDOWN;
+    this.#dashTimer = PLATFORMER_FEEL.dashTime;
+    this.#dashCooldown = PLATFORMER_FEEL.dashCooldown;
     this.dashes += 1;
   }
 
   #driveDash(): void {
     this.body.velocity.set(
-      this.#dashDirection.x * DASH_SPEED,
+      this.#dashDirection.x * PLATFORMER_FEEL.dashSpeed,
       0,
-      this.#dashDirection.z * DASH_SPEED,
+      this.#dashDirection.z * PLATFORMER_FEEL.dashSpeed,
     );
   }
 
   #driveWalk(wants: Vector3, dt: number): void {
-    const acceleration = this.body.grounded ? GROUND_ACCEL : AIR_ACCEL;
-    this.body.velocity.x = approach(this.body.velocity.x, wants.x * RUN_SPEED, acceleration * dt);
-    this.body.velocity.z = approach(this.body.velocity.z, wants.z * RUN_SPEED, acceleration * dt);
+    const acceleration = this.body.grounded
+      ? PLATFORMER_FEEL.groundAcceleration
+      : PLATFORMER_FEEL.airAcceleration;
+    this.body.velocity.x = approach(
+      this.body.velocity.x,
+      wants.x * PLATFORMER_FEEL.runSpeed,
+      acceleration * dt,
+    );
+    this.body.velocity.z = approach(
+      this.body.velocity.z,
+      wants.z * PLATFORMER_FEEL.runSpeed,
+      acceleration * dt,
+    );
   }
 
   #face(dt: number): void {

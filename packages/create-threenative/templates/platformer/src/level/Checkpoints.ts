@@ -4,6 +4,12 @@ type CharacterBody3D = {
 };
 type Vector3 = { x: number; y: number; z: number; clone(): Vector3; copy(value: Vector3): Vector3 };
 type Object3D = { position: Vector3; visible: boolean };
+type CheckpointFeel = {
+  readonly blinkRate: number;
+  readonly hurtHorizontalSpeed: number;
+  readonly hurtVerticalSpeed: number;
+  readonly invulnerabilityTime: number;
+};
 
 export interface RespawnTarget {
   readonly body: CharacterBody3D;
@@ -19,14 +25,16 @@ export class Checkpoints {
   currentIndex = 0;
   respawns = 0;
   #invulnerable = 0;
+  #feel: CheckpointFeel;
 
-  constructor(points: readonly Vector3[], maxHearts = 3) {
+  constructor(points: readonly Vector3[], maxHearts: number, feel: CheckpointFeel) {
     if (points.length === 0) throw new Error("Checkpoints requires at least one checkpoint.");
     if (!Number.isInteger(maxHearts) || maxHearts <= 0)
       throw new Error("Checkpoints requires a positive heart count.");
     this.points = points.map((point) => point.clone());
     this.maxHearts = maxHearts;
     this.hearts = maxHearts;
+    this.#feel = feel;
   }
 
   get invulnerable(): boolean {
@@ -37,7 +45,7 @@ export class Checkpoints {
     if (!Number.isFinite(dt) || dt < 0) throw new Error("Checkpoints.update requires a valid dt.");
     this.#invulnerable = Math.max(0, this.#invulnerable - dt);
     target.visual.visible =
-      this.#invulnerable <= 0 || Math.floor(this.#invulnerable * 18) % 2 === 0;
+      this.#invulnerable <= 0 || Math.floor(this.#invulnerable * this.#feel.blinkRate) % 2 === 0;
   }
 
   pass(position: Vector3): void {
@@ -51,9 +59,13 @@ export class Checkpoints {
   hurt(target: RespawnTarget, fromX: number): boolean {
     if (this.#invulnerable > 0) return false;
     this.hearts -= 1;
-    this.#invulnerable = 1.2;
+    this.#invulnerable = this.#feel.invulnerabilityTime;
     const away = Math.sign(target.mesh.position.x - fromX) || -1;
-    target.body.velocity.set(away * 4.5, 5.5, 0);
+    target.body.velocity.set(
+      away * this.#feel.hurtHorizontalSpeed,
+      this.#feel.hurtVerticalSpeed,
+      0,
+    );
     if (this.hearts <= 0) {
       this.hearts = this.maxHearts;
       this.respawn(target);
@@ -67,7 +79,7 @@ export class Checkpoints {
     target.body.velocity.set(0, 0, 0);
     target.body.body.setTranslation({ x: point.x, y: point.y, z: point.z }, true);
     target.mesh.position.copy(point);
-    this.#invulnerable = 1.2;
+    this.#invulnerable = this.#feel.invulnerabilityTime;
     this.respawns += 1;
   }
 }

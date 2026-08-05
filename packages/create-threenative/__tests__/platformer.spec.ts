@@ -20,13 +20,20 @@ function target(): Target {
   } as unknown as Target;
 }
 
+const feel = {
+  blinkRate: 18,
+  hurtHorizontalSpeed: 4.5,
+  hurtVerticalSpeed: 5.5,
+  invulnerabilityTime: 1.2,
+};
+
 describe("platformer checkpoints", () => {
   it("rejects an empty checkpoint list", () => {
-    expect(() => new Checkpoints(checkpoints([]))).toThrow("at least one checkpoint");
+    expect(() => new Checkpoints(checkpoints([]), 3, feel)).toThrow("at least one checkpoint");
   });
 
   it("decrements hearts once during the invulnerability window", () => {
-    const state = new Checkpoints(checkpoints([point(0)]));
+    const state = new Checkpoints(checkpoints([point(0)]), 3, feel);
     const player = target();
 
     expect(state.hurt(player, 0)).toBe(true);
@@ -39,7 +46,7 @@ describe("platformer checkpoints", () => {
   });
 
   it("advances through ordered checkpoints only", () => {
-    const state = new Checkpoints(checkpoints([point(0), point(14), point(25)]));
+    const state = new Checkpoints(checkpoints([point(0), point(14), point(25)]), 3, feel);
 
     state.pass(point(15));
     expect(state.currentIndex).toBe(1);

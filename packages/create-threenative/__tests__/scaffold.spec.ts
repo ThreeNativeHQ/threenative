@@ -120,7 +120,7 @@ describe("create-threenative", () => {
       }
       await expect(
         readFile(path.join(result.target, "src/entities/Character.ts"), "utf8"),
-      ).resolves.toContain("JUMP_SPEED");
+      ).resolves.toContain("PLATFORMER_FEEL");
       await expect(
         readFile(path.join(result.target, "src/scenes/Level.ts"), "utf8"),
       ).resolves.toContain('ctx.entities.add("player"');

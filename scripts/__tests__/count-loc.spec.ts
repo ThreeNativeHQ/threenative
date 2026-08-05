@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyVanillaLine, collectLoc, countLines, renderLocTable } from "../count-loc.js";
+import {
+  PLATFORMER_LOC_LIMIT,
+  classifyVanillaLine,
+  collectLoc,
+  countLines,
+  countPlatformerTemplateLoc,
+  renderLocTable,
+} from "../count-loc.js";
 
 describe("count-loc", () => {
   it("classifies a known fixture exactly", () => {
@@ -28,5 +35,9 @@ describe("count-loc", () => {
     expect(table).toContain("Plumbing LOC");
     expect(table).toContain("Vanilla wins?");
     expect(table).toContain("Static result:");
+  });
+
+  it("keeps the platformer template below the fox-game control", () => {
+    expect(countPlatformerTemplateLoc()).toBeLessThan(PLATFORMER_LOC_LIMIT);
   });
 });

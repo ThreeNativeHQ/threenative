@@ -6,6 +6,11 @@ import type { GameState } from "../state.js";
 import type { Character } from "./Character.js";
 
 type GameCtx = Ctx<GameState, PhysicsContext>;
+type PatrolFeel = {
+  readonly patrolSpeed: number;
+  readonly stompFallSpeed: number;
+  readonly stompHeight: number;
+};
 
 export class Patrol {
   readonly mesh: Group;
@@ -15,7 +20,7 @@ export class Patrol {
   #from: Vector3;
   #to: Vector3;
   #direction = 1;
-  #speed: number;
+  #feel: PatrolFeel;
   #unsubscribe: () => void;
 
   constructor(
@@ -25,11 +30,11 @@ export class Patrol {
     to: Vector3,
     onStomp: () => void,
     onTouch: (fromX: number) => void,
-    speed = 1.6,
+    feel: PatrolFeel,
   ) {
     this.#from = from.clone();
     this.#to = to.clone();
-    this.#speed = speed;
+    this.#feel = feel;
     this.mesh = new Group();
     const body = new Mesh(new SphereGeometry(0.46, 12, 8), toon(palette.enemy));
     body.scale.y = 0.72;
@@ -46,7 +51,8 @@ export class Patrol {
     this.#unsubscribe = this.area.on("bodyEntered", (body) => {
       if (this.defeated || body !== player.body) return;
       const stomped =
-        player.mesh.position.y > this.mesh.position.y + 0.3 && player.body.velocity.y < -0.5;
+        player.mesh.position.y > this.mesh.position.y + this.#feel.stompHeight &&
+        player.body.velocity.y < this.#feel.stompFallSpeed;
       if (stomped) {
         this.defeated = true;
         this.mesh.visible = false;
@@ -58,7 +64,7 @@ export class Patrol {
 
   update(dt: number): void {
     if (this.defeated) return;
-    const next = this.mesh.position.x + this.#direction * this.#speed * dt;
+    const next = this.mesh.position.x + this.#direction * this.#feel.patrolSpeed * dt;
     if (next >= this.#to.x) {
       this.mesh.position.x = this.#to.x;
       this.#direction = -1;

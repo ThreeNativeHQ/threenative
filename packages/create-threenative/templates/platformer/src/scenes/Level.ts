@@ -1,7 +1,7 @@
 import { type Ctx, Scene } from "@threenative/core";
 import type { PhysicsContext } from "@threenative/physics";
 import { type PerspectiveCamera, Vector3 } from "three";
-import { Character } from "../entities/Character.js";
+import { Character, PLATFORMER_FEEL } from "../entities/Character.js";
 import { Patrol } from "../entities/Patrol.js";
 import { Pickup, coinArc } from "../entities/Pickup.js";
 import { Checkpoints } from "../level/Checkpoints.js";
@@ -19,11 +19,11 @@ export class Level extends Scene<GameState, PhysicsContext> {
   #platforms: PlatformNode[] = [];
   #patrols: Array<{ id: string; value: Patrol }> = [];
   #pickups: Array<{ id: string; value: Pickup }> = [];
-  #checkpoints = new Checkpoints([
-    new Vector3(0, 0.75, 0),
-    new Vector3(14, 0.75, 0),
-    new Vector3(25, 0.75, 0),
-  ]);
+  #checkpoints = new Checkpoints(
+    [new Vector3(0, 0.75, 0), new Vector3(14, 0.75, 0), new Vector3(25, 0.75, 0)],
+    3,
+    PLATFORMER_FEEL,
+  );
   #coins = 0;
   #defeated = 0;
   #cameraAnchor = new Vector3();
@@ -63,6 +63,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
         this.#defeated += 1;
       },
       (fromX) => this.#checkpoints.hurt(character, fromX),
+      PLATFORMER_FEEL,
     );
     this.#patrols = [{ id: "patrol", value: patrol }];
     ctx.entities.add("patrol", patrol);
