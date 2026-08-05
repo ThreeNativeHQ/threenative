@@ -15,6 +15,13 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 | `product/` | Constraints that will bind the product later | Mixed — store policy is external fact, the rest is proposal |
 | `spikes/` | Throwaway de-risking experiments and their results | Not binding, not shipped. Results amend `CHARTER.md` |
 
+Genre sweeps live under [`benchmark/sweeps/`](benchmark/sweeps/). Each archived run keeps
+the built `src/`, `playtests/`, `package.json`, sealed `sweep.json` manifest, and framework
+declarations used by the measurer. A matching
+[`verification/SWEEP-TEMPLATE.md`](verification/SWEEP-TEMPLATE.md) ledger is required for
+each run and records the brief hash, reach rate, used and unused exports, and every API that
+blocked the build.
+
 ## Strategy
 
 - [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse

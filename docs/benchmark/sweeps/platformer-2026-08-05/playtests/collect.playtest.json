@@ -1,0 +1,17 @@
+{
+  "name": "platformer-collect",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 52, "release": true },
+    { "kind": "wait", "waitTicks": 16, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "GameState", "path": "coins", "gte": 3, "changed": true }],
+    "tags": [{ "tag": "coin", "count": 2 }]
+  }
+}

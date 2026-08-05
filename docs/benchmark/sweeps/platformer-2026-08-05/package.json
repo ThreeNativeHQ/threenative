@@ -1,0 +1,33 @@
+{
+  "name": "my-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "pretest": "playwright install chromium",
+    "test": "vite build && pnpm run test:playtest",
+    "test:playtest": "threenative-playtest --scenario playtests/jump.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/coyote.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/buffer.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/dash.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/patrol.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/collect.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/stomp.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/stomp-rise.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/respawn.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/oneway.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "file:/tmp/tn-sweep-platformer-2026-08-05-packages/threenative-core-0.1.0.tgz",
+    "@threenative/physics": "file:/tmp/tn-sweep-platformer-2026-08-05-packages/threenative-physics-0.1.0.tgz",
+    "@threenative/ui": "file:/tmp/tn-sweep-platformer-2026-08-05-packages/threenative-ui-0.1.0.tgz",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-react": "6.0.5",
+    "@types/three": "0.185.3",
+    "@threenative/playtest": "file:/tmp/tn-sweep-platformer-2026-08-05-packages/threenative-playtest-0.1.0.tgz",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "playwright": "1.62.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  }
+}

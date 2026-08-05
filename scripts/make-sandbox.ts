@@ -11,6 +11,7 @@
  * workspace, which is the whole thing we are removing.
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,14 +19,141 @@ import { fileURLToPath } from "node:url";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGES = ["core", "physics", "ui", "playtest"] as const;
 
+export interface SweepManifest {
+  readonly genre: string;
+  readonly briefHash: string;
+  readonly template: string;
+  readonly date: string;
+  readonly frameworkVersion: string;
+  readonly sourceLines: number;
+}
+
+interface GenreInput {
+  readonly brief: string;
+  readonly briefHash: string;
+  readonly reference: string;
+}
+
+export interface SandboxOptions {
+  readonly bare?: boolean;
+  readonly genre: string;
+  readonly out?: string;
+  readonly packageTarballs?: Partial<Record<(typeof PACKAGES)[number], string>>;
+  readonly prepare?: boolean;
+  readonly repo?: string;
+  readonly template?: string;
+}
+
+export interface SandboxResult {
+  readonly manifest: SweepManifest;
+  readonly out: string;
+}
+
 function run(command: string, args: string[], cwd: string): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
-function readFlag(name: string, fallback: string): string {
+export function readFlag(name: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(name);
-  const value = index === -1 ? undefined : process.argv[index + 1];
-  return value ?? fallback;
+  if (index === -1) return fallback;
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${name}.`);
+  return value;
+}
+
+function isFile(file: string): boolean {
+  return fs.existsSync(file) && fs.statSync(file).isFile();
+}
+
+function isDirectory(directory: string): boolean {
+  return fs.existsSync(directory) && fs.statSync(directory).isDirectory();
+}
+
+function assertGenreName(genre: string): void {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(genre))
+    throw new Error(`Invalid genre '${genre}'; use a lowercase genre slug.`);
+}
+
+export function resolveGenre(repo: string, genre: string): GenreInput {
+  assertGenreName(genre);
+  const directory = path.join(repo, "docs", "benchmark", "genres", genre);
+  const brief = path.join(directory, "brief.md");
+  if (!isFile(brief)) throw new Error(`Genre '${genre}' is missing its required brief: ${brief}`);
+  const reference = path.join(directory, "reference.png");
+  if (!isFile(reference))
+    throw new Error(`Genre '${genre}' is missing its required reference image: ${reference}`);
+  const briefHash = createHash("sha256").update(fs.readFileSync(brief)).digest("hex");
+  return { brief, briefHash, reference };
+}
+
+export function readManifest(file: string): SweepManifest {
+  const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<SweepManifest>;
+  const required = [
+    "genre",
+    "briefHash",
+    "template",
+    "date",
+    "frameworkVersion",
+    "sourceLines",
+  ] as const;
+  for (const key of required) {
+    if (value[key] === undefined || value[key] === "")
+      throw new Error(`Invalid sweep manifest '${file}': missing ${key}.`);
+  }
+  if (typeof value.sourceLines !== "number" || value.sourceLines < 0)
+    throw new Error(`Invalid sweep manifest '${file}': sourceLines must be non-negative.`);
+  return value as SweepManifest;
+}
+
+function sameRun(left: SweepManifest, right: SweepManifest): boolean {
+  return (
+    left.genre === right.genre && left.briefHash === right.briefHash && left.date === right.date
+  );
+}
+
+export function isArchived(manifest: SweepManifest, repo = REPO): boolean {
+  if (!isDirectory(path.join(repo, "docs", "benchmark", "sweeps"))) return false;
+  for (const entry of fs.readdirSync(path.join(repo, "docs", "benchmark", "sweeps"), {
+    withFileTypes: true,
+  })) {
+    if (!entry.isDirectory()) continue;
+    const manifestFile = path.join(repo, "docs", "benchmark", "sweeps", entry.name, "sweep.json");
+    if (!isFile(manifestFile)) continue;
+    try {
+      if (sameRun(readManifest(manifestFile), manifest)) return true;
+    } catch {
+      // An unrelated malformed archive cannot authorize wiping this run.
+    }
+  }
+  return false;
+}
+
+function assertCanWipe(out: string, repo: string): void {
+  if (!fs.existsSync(out)) return;
+  if (!isDirectory(out)) throw new Error(`Sandbox target '${out}' is not a directory.`);
+  const manifestFile = path.join(out, "sweep.json");
+  if (!isFile(manifestFile)) return;
+  let manifest: SweepManifest;
+  try {
+    manifest = readManifest(manifestFile);
+  } catch (error) {
+    throw new Error(
+      `Refusing to wipe '${out}': it contains an invalid sweep.json. Archive it or remove it manually. ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!isArchived(manifest, repo))
+    throw new Error(
+      `Refusing to wipe unarchived sandbox '${out}'. Run pnpm sweep:archive before starting another sweep.`,
+    );
+}
+
+function frameworkVersion(repo: string): string {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof packageJson.version !== "string" || packageJson.version.length === 0)
+    throw new Error("Root package.json has no framework version.");
+  return packageJson.version;
 }
 
 /**
@@ -33,7 +161,7 @@ function readFlag(name: string, fallback: string): string {
  * sourcemaps with `sourcesContent`, so the original TypeScript rides along inside dist. A
  * published package leaks exactly the same way, so this reports reality rather than hiding it.
  */
-function sourceLines(root: string): number {
+export function sourceLines(root: string): number {
   const packages = path.join(root, "node_modules", "@threenative");
   if (!fs.existsSync(packages)) return 0;
   let total = 0;
@@ -51,33 +179,42 @@ function sourceLines(root: string): number {
   return total;
 }
 
-function main(): void {
-  const out = path.resolve(REPO, readFlag("--out", "../threenative-sandbox"));
-  const template = readFlag("--template", "starter");
+export function makeSandbox(options: SandboxOptions): SandboxResult {
+  const repo = path.resolve(options.repo ?? REPO);
+  const out = path.resolve(repo, options.out ?? "../threenative-sandbox");
+  const genre = options.genre;
+  const template = options.template ?? "starter";
+  const input = resolveGenre(repo, genre);
 
-  if (out.startsWith(`${REPO}${path.sep}`)) {
+  if (out === repo || out.startsWith(`${repo}${path.sep}`)) {
     throw new Error(
       `Sandbox must live outside the repo, got ${out}. Inside it, the agent inherits every AGENTS.md up to the root plus the pnpm workspace — the bloat this removes.`,
     );
   }
+  assertCanWipe(out, repo);
   // The scaffolder refuses a non-empty target, so the tarballs stage in a sibling.
   const staging = `${out}-packages`;
   for (const dir of [out, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(staging, { recursive: true });
 
-  run("pnpm", ["--filter", "./packages/**", "build"], REPO);
-
   const tarballs: Record<string, string> = {};
-  for (const name of [...PACKAGES, "create-threenative"]) {
-    run(
-      "pnpm",
-      ["--filter", `./packages/${name}`, "exec", "pnpm", "pack", "--pack-destination", staging],
-      REPO,
-    );
-  }
-  for (const file of fs.readdirSync(staging)) {
-    const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
-    if (owner !== undefined) tarballs[owner] = path.join(staging, file);
+  if (options.prepare ?? true) {
+    run("pnpm", ["--filter", "./packages/**", "build"], repo);
+    for (const name of [...PACKAGES, "create-threenative"]) {
+      run(
+        "pnpm",
+        ["--filter", `./packages/${name}`, "exec", "pnpm", "pack", "--pack-destination", staging],
+        repo,
+      );
+    }
+    for (const file of fs.readdirSync(staging)) {
+      const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
+      if (owner !== undefined) tarballs[owner] = path.join(staging, file);
+    }
+  } else {
+    for (const name of PACKAGES) {
+      tarballs[name] = options.packageTarballs?.[name] ?? path.join(staging, `${name}.tgz`);
+    }
   }
 
   const missing = PACKAGES.filter((name) => tarballs[name] === undefined);
@@ -86,7 +223,7 @@ function main(): void {
 
   const scaffold = [
     "node",
-    path.join(REPO, "packages/create-threenative/dist/index.js"),
+    path.join(repo, "packages/create-threenative/dist/index.js"),
     "<target>",
     "--template",
     template,
@@ -94,27 +231,45 @@ function main(): void {
   ];
 
   // --bare leaves the scaffolding to the agent, so the run starts the way a user's does.
-  const bare = process.argv.includes("--bare");
+  const bare = options.bare ?? false;
   let next: string;
   if (bare) {
     fs.mkdirSync(out, { recursive: true });
-    const reference = path.resolve(REPO, readFlag("--reference", "examples/REFERENCE.png"));
-    if (fs.existsSync(reference))
-      fs.copyFileSync(reference, path.join(out, path.basename(reference)));
+    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
+    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
     // The scaffold invocation is 400 characters of tarball paths. Nobody types that.
     const script = path.join(out, "scaffold.sh");
     fs.writeFileSync(
       script,
-      `#!/bin/sh\nset -e\n${scaffold.join(" ").replace("<target>", '"${1:-game}"')}\n`,
+      [
+        "#!/bin/sh",
+        "set -e",
+        scaffold.join(" ").replace("<target>", '"${1:-game}"'),
+        'cp brief.md "${1:-game}/brief.md"',
+        'cp reference.png "${1:-game}/reference.png"',
+        'cp sweep.json "${1:-game}/sweep.json"',
+        "",
+      ].join("\n"),
     );
     fs.chmodSync(script, 0o755);
     next = "./scaffold.sh my-game";
   } else {
-    run(scaffold[0] as string, [...scaffold.slice(1, 2), out, ...scaffold.slice(3)], REPO);
+    run(scaffold[0] as string, [...scaffold.slice(1, 2), out, ...scaffold.slice(3)], repo);
+    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
+    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
     next = `cd ${out} && pnpm dev`;
   }
 
   const leaked = sourceLines(out);
+  const manifest: SweepManifest = {
+    genre,
+    briefHash: input.briefHash,
+    template,
+    date: new Date().toISOString(),
+    frameworkVersion: frameworkVersion(repo),
+    sourceLines: leaked,
+  };
+  fs.writeFileSync(path.join(out, "sweep.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   process.stdout.write(
     [
       "",
@@ -134,6 +289,18 @@ function main(): void {
       "",
     ].join("\n"),
   );
+  return { manifest, out };
 }
 
-main();
+function main(): void {
+  const genre = readFlag("--genre");
+  if (genre === undefined) throw new Error("Missing --genre. Use pnpm sandbox --genre <genre>.");
+  makeSandbox({
+    bare: process.argv.includes("--bare"),
+    genre,
+    out: readFlag("--out", "../threenative-sandbox"),
+    template: readFlag("--template", "starter"),
+  });
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) main();

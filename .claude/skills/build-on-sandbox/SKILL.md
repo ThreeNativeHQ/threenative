@@ -5,8 +5,8 @@ description: Point at a reference screenshot and build a game that matches it, i
 
 # build-on-sandbox
 
-The user gives one reference image. You build a game that looks like it, in a sandbox where
-the framework is a dependency rather than a repository.
+The user gives a genre and one reference image. You build a game that looks like it, in a
+sandbox where the framework is a dependency rather than a repository.
 
 ## Why the sandbox
 
@@ -23,11 +23,13 @@ preference; it is the difference between the two outcomes.
 1. **Build the sandbox** from the repo root:
 
    ```sh
-   pnpm sandbox --bare --reference <the user's image>
+   pnpm sandbox --bare --genre <genre>
    ```
 
-   Wipes and recreates `../threenative-sandbox` with the image and `scaffold.sh`. It refuses
-   any `--out` inside this repo, because inside it the `AGENTS.md` chain comes back.
+   Wipes and recreates `../threenative-sandbox` with the sealed `brief.md`, its
+   `reference.png`, and `scaffold.sh`. It refuses an unknown genre, a missing brief or
+   reference image, and any `--out` inside this repo. It also refuses to wipe a prior
+   sandbox until `pnpm sweep:archive` has preserved it.
 
 2. **Scaffold**, from the sandbox directory:
 
@@ -42,8 +44,19 @@ preference; it is the difference between the two outcomes.
 4. **Build the game**, then loop until it matches: run `pnpm dev`, drive it in the browser,
    screenshot, compare against the reference, fix the largest visual gap, repeat.
 
-5. **Report the numbers** when done: at which tool call you first wrote game code, and
-   whether the result matches. That comparison is the point of the exercise.
+5. **Archive and measure** the completed build from the repo root:
+
+   ```sh
+   pnpm sweep:archive
+   pnpm sweep:measure docs/benchmark/sweeps/<genre>-<date>
+   ```
+
+   Copy the JSON result into a dated `docs/verification/sweep-<genre>-<date>.md` ledger,
+   including every framework API that blocked the build and the workaround used.
+
+6. **Report the visual result**: at which tool call you first wrote game code, whether the
+   result matches, and the committed ledger path. The comparison and the friction record
+   are the point of the exercise.
 
 ## Rules
 

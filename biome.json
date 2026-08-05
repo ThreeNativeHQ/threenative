@@ -8,7 +8,8 @@
       "examples/abyss-vanilla/index.html",
       "examples/abyss-vanilla/src/main.js",
       "examples/abyss-vanilla/src/style.css",
-      "examples/abyss-vanilla/vite.config.js"
+      "examples/abyss-vanilla/vite.config.js",
+      "docs/benchmark/sweeps/**/framework-types/**"
     ]
   },
   "formatter": {
