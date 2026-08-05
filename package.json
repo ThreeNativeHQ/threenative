@@ -19,7 +19,8 @@
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
-    "sweep:measure": "tsx scripts/measure-sandbox.ts"
+    "sweep:measure": "tsx scripts/measure-sandbox.ts",
+    "sweep:delta": "tsx scripts/sweep-delta.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

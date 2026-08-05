@@ -1,6 +1,7 @@
 # Genre sweep ledger — `<genre>` — `<date>`
 
 Genre: `<genre>`
+Round: `<1 or 2>`
 Brief SHA-256: `<sha256>`
 Template: `<template or none>`
 Archive: `docs/benchmark/sweeps/<genre>-<date>`
@@ -15,6 +16,11 @@ Unused exports: `<comma-separated names or None>`
 Measurement command: `pnpm sweep:measure docs/benchmark/sweeps/<genre>-<date>`
 First game-code tool call: `<number>`
 Visual result: `<pass or fail, with the largest remaining difference>`
+
+Round 1 is the baseline. A round-2 ledger must use the same genre and brief hash so
+`pnpm sweep:delta <round-1-archive> <round-2-archive>` can compare it. The command refuses
+different genres, different briefs, and the same archive, then carries repeated friction rows
+into the delta record.
 
 ## Friction ledger
 

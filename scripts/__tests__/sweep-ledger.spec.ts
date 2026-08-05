@@ -7,6 +7,7 @@ import { measureSandbox } from "../measure-sandbox";
 const LEDGER_DIRECTORY = path.join(process.cwd(), "docs", "verification");
 const REQUIRED_FIELDS = [
   "Genre",
+  "Round",
   "Brief SHA-256",
   "Template",
   "Archive",
@@ -44,6 +45,8 @@ function tableCells(line: string): string[] {
 
 function validateLedger(markdown: string, filename = "sweep.md"): void {
   for (const label of REQUIRED_FIELDS) field(markdown, label);
+  const round = field(markdown, "Round");
+  if (!/^[1-9]\d*$/.test(round)) throw new Error(`${filename}: Round must be a positive integer.`);
   const heading = markdown.indexOf("## Friction ledger");
   if (heading < 0) throw new Error(`${filename}: missing friction ledger.`);
   const rows = markdown
@@ -76,6 +79,7 @@ describe("sweep ledgers", () => {
   it("should fail a ledger with an unfilled required field", () => {
     const valid = [
       "Genre: fixture",
+      "Round: 1",
       "Brief SHA-256: abc",
       "Template: none",
       "Archive: docs/benchmark/sweeps/fixture",
@@ -98,6 +102,58 @@ describe("sweep ledgers", () => {
     expect(() => validateLedger(valid.replace("Reach rate: 0", "Reach rate: "))).toThrow(
       /Reach rate/,
     );
+  });
+
+  it("should fail a ledger with no round marker", () => {
+    const valid = [
+      "Genre: fixture",
+      "Round: 1",
+      "Brief SHA-256: abc",
+      "Template: none",
+      "Archive: docs/benchmark/sweeps/fixture",
+      "Framework version: 0.1.0",
+      "User source LOC: 1",
+      "Source files: 1",
+      "Framework files: 0",
+      "Three-only files: 1",
+      "Reach rate: 0",
+      "Used exports: None",
+      "Unused exports: FixtureExport",
+      "Measurement command: pnpm sweep:measure docs/benchmark/sweeps/fixture",
+      "First game-code tool call: 1",
+      "Visual result: pass; fixture",
+      "## Friction ledger",
+      "| API or surface | What blocked the build | Workaround | Evidence |",
+      "| --- | --- | --- | --- |",
+      "| None | No blocker | None | fixture |",
+    ].join("\n");
+    expect(() => validateLedger(valid.replace("Round: 1", "Round: "))).toThrow(/Round/);
+  });
+
+  it("should fail a ledger with a non-positive round", () => {
+    const valid = [
+      "Genre: fixture",
+      "Round: 1",
+      "Brief SHA-256: abc",
+      "Template: none",
+      "Archive: docs/benchmark/sweeps/fixture",
+      "Framework version: 0.1.0",
+      "User source LOC: 1",
+      "Source files: 1",
+      "Framework files: 0",
+      "Three-only files: 1",
+      "Reach rate: 0",
+      "Used exports: None",
+      "Unused exports: FixtureExport",
+      "Measurement command: pnpm sweep:measure docs/benchmark/sweeps/fixture",
+      "First game-code tool call: 1",
+      "Visual result: pass; fixture",
+      "## Friction ledger",
+      "| API or surface | What blocked the build | Workaround | Evidence |",
+      "| --- | --- | --- | --- |",
+      "| None | No blocker | None | fixture |",
+    ].join("\n");
+    expect(() => validateLedger(valid.replace("Round: 1", "Round: 0"))).toThrow(/positive integer/);
   });
 
   it("should validate both recorded sweeps and match their archived measurements", async () => {

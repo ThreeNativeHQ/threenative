@@ -1,6 +1,7 @@
 # Genre sweep ledger — platformer — 2026-08-05
 
 Genre: platformer
+Round: 1
 Brief SHA-256: 8a7ee799256676d10fc7d22966e3e4fa93ed54c888fc91fd0f34fc3520ddd9fa
 Template: platformer
 Archive: docs/benchmark/sweeps/platformer-2026-08-05

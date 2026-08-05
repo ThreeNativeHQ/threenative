@@ -20,7 +20,11 @@ the built `src/`, `playtests/`, `package.json`, sealed `sweep.json` manifest, an
 declarations used by the measurer. A matching
 [`verification/SWEEP-TEMPLATE.md`](verification/SWEEP-TEMPLATE.md) ledger is required for
 each run and records the brief hash, reach rate, used and unused exports, and every API that
-blocked the build.
+blocked the build. The `Round` field distinguishes a baseline from a re-measure. Compare two
+archives with `pnpm sweep:delta <round-1-archive> <round-2-archive>`; it refuses mismatched
+genres, brief hashes, and self-comparisons, then reports reach-rate movement, exports newly
+reached, exports still untouched, and repeated friction rows. The delta record is only valid
+after its numbers are recomputed from the two archived sweeps.
 
 ## Strategy
 
