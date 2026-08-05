@@ -157,4 +157,27 @@ describe("sweep delta", () => {
     });
     expect(() => compareSweeps(archive, after, root)).toThrow(/Round/);
   });
+
+  it("matches the committed delta record to recomputed archives", async () => {
+    const record = await readFile(
+      path.join(process.cwd(), "docs", "benchmark", "DELTA-2026-08-05.md"),
+      "utf8",
+    );
+    const jsonBlocks = [...record.matchAll(/~~~json\n([\s\S]*?)\n~~~/g)].map((match) =>
+      JSON.parse(match[1] as string),
+    );
+    expect(jsonBlocks).toHaveLength(2);
+    expect(jsonBlocks[0]).toEqual(
+      compareSweeps(
+        "docs/benchmark/sweeps/platformer-2026-08-05",
+        "docs/benchmark/sweeps/platformer-2026-08-05-2",
+      ),
+    );
+    expect(jsonBlocks[1]).toEqual(
+      compareSweeps(
+        "docs/benchmark/sweeps/topdown-action-2026-08-05",
+        "docs/benchmark/sweeps/topdown-action-2026-08-05-2",
+      ),
+    );
+  });
 });

@@ -25,6 +25,8 @@ archives with `pnpm sweep:delta <round-1-archive> <round-2-archive>`; it refuses
 genres, brief hashes, and self-comparisons, then reports reach-rate movement, exports newly
 reached, exports still untouched, and repeated friction rows. The delta record is only valid
 after its numbers are recomputed from the two archived sweeps.
+The current caller census and recomputed round-2 comparison are recorded in
+[`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md).
 
 ## Strategy
 

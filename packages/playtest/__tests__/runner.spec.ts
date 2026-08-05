@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { loadPlaytestScenario, type IPlaytestScenario } from "../src/index.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { buildReport } from "../src/runner/runner.js";
+import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -115,4 +116,11 @@ test("runtimeReady fails when the page never exposes a canvas", () => {
   expect(result.pass).toBe(false);
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_NOT_READY");
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
+});
+
+test("frame-timed steps stay on the live browser loop", () => {
+  expect(playtestStepHoldTicks({ holdFrames: 5, press: "KeyW", release: true }, 0)).toBe(0);
+  expect(playtestStepWaitTicks({ release: true, waitFrames: 5 })).toBe(0);
+  expect(playtestStepHoldTicks({ holdTicks: 5, press: "KeyW", release: true }, 0)).toBe(5);
+  expect(playtestStepWaitTicks({ release: true, waitTicks: 5 })).toBe(5);
 });

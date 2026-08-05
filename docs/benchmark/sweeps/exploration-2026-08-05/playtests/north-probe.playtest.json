@@ -1,0 +1,20 @@
+{
+  "name": "north-probe",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 15,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "enter-moss-archive", "press": "ArrowUp", "holdTicks": 120, "release": true },
+    { "kind": "input", "label": "inspect-archive-stone", "press": "KeyE", "holdTicks": 2, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "area", "equals": "north" },
+      { "id": "GameState", "path": "inspections", "equals": 1 },
+      { "id": "GameState", "path": "inspectedPoints", "textIncludes": "north.archive" }
+    ]
+  }
+}

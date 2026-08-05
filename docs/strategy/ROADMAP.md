@@ -36,7 +36,7 @@ spike has run.
    valid result must keep the sealed prompt hash and complete all six repeats.
 4. **Four reference-game sweep subjects** from one codebase: `platformer`,
    `topdown-action`, `endless-runner`, and `exploration`. The first two have archived
-   baseline sweeps; PRD-018 owns the round-2 re-measure and the two remaining archives.
+   baseline sweeps; PRD-018 now has round-2 ledgers and archives for all four subjects.
    Each must survive the device matrix below before this item is complete.
 
 **Device matrix, per reference game:** web · iOS · low-end Android · mid Android ·

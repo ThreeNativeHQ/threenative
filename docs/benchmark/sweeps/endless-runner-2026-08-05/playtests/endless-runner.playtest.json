@@ -1,0 +1,29 @@
+{
+  "name": "endless-runner-lane-collection",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "change-to-right-lane", "press": "ArrowRight", "holdFrames": 1, "release": true },
+    { "kind": "wait", "label": "collect-first-signal", "waitFrames": 45, "release": true },
+    { "kind": "wait", "label": "run-forward", "waitFrames": 100, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": { "axis": "-z", "min": 5 },
+      "minDistance": 5,
+      "pathLength": 5
+    },
+    "resources": [
+      { "id": "GameState", "path": "distance", "changed": true },
+      { "id": "GameState", "path": "collected", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "speed", "changed": true },
+      { "id": "GameState", "path": "lane", "equals": 2, "changed": true }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

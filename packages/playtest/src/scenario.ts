@@ -679,11 +679,12 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
 }
 
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
-  return step.press === undefined ? 0 : Math.max(1, step.holdTicks ?? step.holdFrames ?? fallback);
+  if (step.press === undefined || step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
+  return Math.max(1, step.holdTicks ?? fallback);
 }
 
 export function playtestStepWaitTicks(step: IPlaytestStep): number {
-  return Math.max(0, step.waitTicks ?? step.waitFrames ?? 0);
+  return step.waitFrames === undefined ? Math.max(0, step.waitTicks ?? 0) : 0;
 }
 
 function validateAssertions(value: Record<string, unknown>, scenarioPath: string): IPlaytestScenarioAssertions {

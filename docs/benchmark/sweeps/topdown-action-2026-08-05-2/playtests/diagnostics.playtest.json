@@ -1,0 +1,12 @@
+{
+  "name": "diagnostics",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "steps": [{ "kind": "wait", "waitTicks": 18 }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "noRuntimeDiagnostics": true, "runtimeReady": true },
+    "world": { "seed": 90210 }
+  }
+}
