@@ -35,16 +35,17 @@ export class Player {
   }
 
   update(ctx: GameCtx, dt: number): void {
+    const grounded = this.body.grounded;
     this.#coyoteTime = Math.max(0, this.#coyoteTime - dt);
     this.#jumpBuffer = Math.max(0, this.#jumpBuffer - dt);
-    if (this.body.grounded) this.#coyoteTime = COYOTE_TIME;
+    if (grounded) this.#coyoteTime = COYOTE_TIME;
     if (ctx.input.justPressed("jump")) this.#jumpBuffer = JUMP_BUFFER;
     if (this.#jumpBuffer > 0 && this.#coyoteTime > 0) {
       this.body.velocity.y = JUMP_SPEED;
       this.#jumpBuffer = 0;
       this.#coyoteTime = 0;
       this.#jumps += 1;
-      this.#coyoteJumps += 1;
+      if (!grounded) this.#coyoteJumps += 1;
     }
     const move = ctx.input.vector("move");
     this.body.velocity.x = move.x * MOVE_SPEED;

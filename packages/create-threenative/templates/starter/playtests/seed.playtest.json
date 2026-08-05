@@ -9,7 +9,10 @@
   "steps": [{ "kind": "wait", "label": "seeded-level", "waitTicks": 60, "release": true }],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "GameState", "path": "levelX", "allowTrivial": true, "gte": -1 }],
+    "resources": [
+      { "id": "GameState", "path": "levelX", "allowTrivial": true, "equals": -0.6056551518850029 }
+    ],
+    "world": { "seed": 90210 },
     "visibility": [{ "entity": "player", "minProjectedPixels": 1 }]
   }
 }

@@ -24,6 +24,20 @@
       "within": 10.5
     },
     "movement": { "entity": "player", "minDistance": 4 },
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }],
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.01 } },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.95,
+          "minDarkPixelRatio": 0.2,
+          "maxLuminance": 0.25
+        }
+      }
+    ]
   }
 }

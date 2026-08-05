@@ -21,6 +21,8 @@ const STARTER_PATHS = [
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
+  "src/render/sky.ts",
+  "src/entities/Crate.ts",
   "src/entities/Player.ts",
   "src/ui/Hud.tsx",
   "src/ui/Menu.tsx",
@@ -28,6 +30,12 @@ const STARTER_PATHS = [
   "src/state.ts",
   "playtest/boot-to-play.json",
   "playtests/play.playtest.json",
+  "playtests/coyote.playtest.json",
+  "playtests/buffer.playtest.json",
+  "playtests/look.playtest.json",
+  "playtests/pause.playtest.json",
+  "playtests/respawn.playtest.json",
+  "playtests/seed.playtest.json",
   "public/pickup.ogg",
 ];
 

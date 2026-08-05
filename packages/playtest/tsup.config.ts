@@ -14,5 +14,5 @@ export default defineConfig({
   clean: true,
   splitting: false,
   treeshake: true,
-  external: ["three", "playwright"],
+  external: ["three", "playwright", "pngjs"],
 });

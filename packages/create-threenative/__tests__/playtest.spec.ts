@@ -11,7 +11,7 @@ describe("starter playtest proof", () => {
     const parsed = JSON.parse(scenario) as {
       assert: {
         diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
-        hud: unknown[];
+        resources: unknown[];
       };
       steps: Array<{ press?: string }>;
     };
@@ -25,7 +25,9 @@ describe("starter playtest proof", () => {
       noNetworkErrors: true,
       runtimeReady: true,
     });
-    expect(parsed.assert.hud).toEqual([{ id: "score", path: "#root", textIncludes: "1" }]);
+    expect(parsed.assert.resources).toEqual([
+      { id: "GameState", path: "score", gte: 1, changed: true },
+    ]);
     expect(player).toContain('ctx.input.vector("move")');
   });
 

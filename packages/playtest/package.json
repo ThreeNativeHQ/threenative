@@ -21,6 +21,9 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build"
   },
+  "dependencies": {
+    "pngjs": "catalog:"
+  },
   "peerDependencies": {
     "playwright": ">=1.60.0 <2",
     "three": ">=0.185.0 <0.186.0"
@@ -30,6 +33,7 @@
     "three": { "optional": true }
   },
   "devDependencies": {
+    "@types/pngjs": "catalog:",
     "@types/three": "0.185.3",
     "playwright": "1.62.1",
     "publint": "0.3.22",

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { PNG } from "pngjs";
 import {
   evaluateRichPlaytestAssertions,
   loadPlaytestScenario,
@@ -10,6 +11,7 @@ import {
   type IPlaytestAssertionResult,
   type IPlaytestDiagnostic,
   type IPlaytestObservationSnapshot,
+  type IPlaytestObservations,
   type IPlaytestPathAssertion,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestReport,
@@ -71,6 +73,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     ).catch(() => false);
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
+    const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const beforeSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
@@ -80,9 +83,11 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       : [entityPosition(beforeSnapshot, pathEntity)].filter((position): position is PlaytestVec3 => position !== undefined);
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
-    if (scenario.artifacts?.screenshots === "before-after") {
-      await page.screenshot({ path: join(config.artifactDirectory, "before.png") });
-    }
+    const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
+      ? await page.screenshot(scenario.artifacts?.screenshots === "before-after"
+        ? { path: join(config.artifactDirectory, "before.png") }
+        : undefined)
+      : undefined;
     for (const step of scenario.steps) {
       await runStep(page, bridge, step, pathEntity, pathPositions);
       if (step.screenshot !== undefined) {
@@ -95,9 +100,12 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       if (position !== undefined) pathPositions.push(position);
     }
     const afterHud = await sampleHud(page, hudAssertions);
-    if (scenario.artifacts?.screenshots !== false) {
-      await page.screenshot({ path: join(config.artifactDirectory, "after.png") });
-    }
+    const afterScreenshot = scenario.artifacts?.screenshots !== false || wantsVisual
+      ? await page.screenshot(scenario.artifacts?.screenshots === false
+        ? undefined
+        : { path: join(config.artifactDirectory, "after.png") })
+      : undefined;
+    const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario);
     if (config.trace) {
       await context.tracing.stop({ path: join(config.artifactDirectory, "trace.zip") });
     }
@@ -111,6 +119,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       accumulatedPathLength(pathPositions),
       pairObservations(beforeHud, afterHud),
       runtimeReady,
+      visual,
     );
     await context.close();
     return report;
@@ -136,6 +145,7 @@ export function buildReport(
   pathLength: number | undefined = undefined,
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
   runtimeReady = true,
+  visual: IPlaytestObservations["visual"] = undefined,
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
@@ -174,6 +184,7 @@ export function buildReport(
         ? {}
         : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario),
+      ...(visual === undefined ? {} : { visual }),
     },
   };
   if (scenario.assert?.camera !== undefined) {
@@ -202,6 +213,63 @@ export function buildReport(
     target: scenario.target,
     url: config.url,
   };
+}
+
+function screenshotObservations(
+  before: Buffer | undefined,
+  after: Buffer | undefined,
+  scenario: IPlaytestScenario,
+): IPlaytestObservations["visual"] | undefined {
+  if (after === undefined) return undefined;
+  const afterPng = PNG.sync.read(after);
+  const beforePng = before === undefined ? undefined : PNG.sync.read(before);
+  const sameSize = beforePng !== undefined && beforePng.width === afterPng.width && beforePng.height === afterPng.height;
+  let changedPixelRatio: number | undefined;
+  if (sameSize && beforePng !== undefined) {
+    let changed = 0;
+    const pixels = afterPng.width * afterPng.height;
+    for (let offset = 0; offset < afterPng.data.length; offset += 4) {
+      const difference = Math.max(
+        Math.abs(afterPng.data[offset]! - beforePng.data[offset]!),
+        Math.abs(afterPng.data[offset + 1]! - beforePng.data[offset + 1]!),
+        Math.abs(afterPng.data[offset + 2]! - beforePng.data[offset + 2]!),
+      );
+      if (difference > 8) changed += 1;
+    }
+    changedPixelRatio = changed / pixels;
+  }
+  const regions = (scenario.assert?.visual ?? [])
+    .flatMap(({ region }) => region === undefined ? [] : [region])
+    .map((region) => ({ ...region, ...regionMetrics(afterPng, region) }));
+  return {
+    ...(changedPixelRatio === undefined ? {} : { changedPixelRatio }),
+    ...(sameSize ? { comparisonSource: "before-after" } : {}),
+    ...(regions.length === 0 ? {} : { nonblankRegions: regions }),
+  };
+}
+
+function regionMetrics(
+  png: PNG,
+  region: { height: number; maxLuminance?: number; width: number; x: number; y: number },
+): { darkPixelRatio: number; nonblankPixelRatio: number } {
+  const x0 = Math.max(0, Math.floor(region.x));
+  const y0 = Math.max(0, Math.floor(region.y));
+  const x1 = Math.min(png.width, Math.ceil(region.x + region.width));
+  const y1 = Math.min(png.height, Math.ceil(region.y + region.height));
+  const pixels = Math.max(1, (x1 - x0) * (y1 - y0));
+  let dark = 0;
+  let nonblank = 0;
+  const maximumLuminance = region.maxLuminance ?? 0.25;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      const alpha = png.data[offset + 3]! / 255;
+      const luminance = (0.2126 * png.data[offset]! + 0.7152 * png.data[offset + 1]! + 0.0722 * png.data[offset + 2]!) / 255;
+      if (alpha > 0 && luminance > 0.01) nonblank += 1;
+      if (luminance <= maximumLuminance) dark += 1;
+    }
+  }
+  return { darkPixelRatio: dark / pixels, nonblankPixelRatio: nonblank / pixels };
 }
 
 function failureReport(config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, diagnostic: IPlaytestProtocolDiagnostic): IStandalonePlaytestReport {

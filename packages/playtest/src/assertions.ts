@@ -1,5 +1,5 @@
 import type { IPlaytestReport } from "./report.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion } from "./scenario.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -235,6 +235,16 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     kind: "visibility",
     requiredCapabilities: ["entity.bounds"],
     resultIdPrefix: "visibility.",
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves runtime world metadata exposed by the application bridge.",
+    example: { world: { seed: 90210 } },
+    fields: [{ description: "Expected configured deterministic seed, or null when unseeded.", name: "seed", required: true, type: "json" }],
+    cardinality: "object",
+    kind: "world",
+    requiredCapabilities: ["runtime.world"],
+    resultIdPrefix: "world.",
     triviality: "not-applicable",
   },
   {
@@ -554,6 +564,11 @@ export function evaluateRichPlaytestAssertions(input: {
         suggestion: "Inspect the failed and restored labeled samples and fix the retry transition.",
       });
     }
+  }
+  if (scenarioAssertions.world !== undefined) {
+    const result = evaluateWorldAssertion(scenarioAssertions.world, input.report.observations?.runtimeObservations);
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) diagnostics.push(result.diagnostic);
   }
   for (const assertion of scenarioAssertions.components ?? []) {
     const observed = input.report.observations?.components?.[assertion.entity]?.[assertion.component];
@@ -1279,6 +1294,29 @@ function evaluateStateAssertion(
           message: `Entity '${assertion.entity}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
           severity: "error",
           suggestion: "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
+        },
+      };
+}
+
+function evaluateWorldAssertion(
+  assertion: IPlaytestWorldAssertion,
+  observations: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const gameplay = gameplayObservations(observations);
+  const world = isRecord(gameplay?.world) ? gameplay.world : undefined;
+  const observed = world?.seed;
+  const pass = (typeof observed === "number" || observed === null) && observed === assertion.seed;
+  const result = { details: { expected: assertion.seed, observed: observed ?? null }, id: "world.seed", pass };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+          message: `Runtime world seed ${observed === undefined ? "was unavailable" : JSON.stringify(observed)} did not equal ${JSON.stringify(assertion.seed)}.`,
+          observedRuntimePath: "observations.json/runtimeObservations/gameplay/world/seed",
+          severity: "error",
+          suggestion: "Expose the configured world seed through the runtime bridge and rerun the scenario.",
         },
       };
 }

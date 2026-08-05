@@ -85,16 +85,21 @@ export class Play extends Scene<GameState, PhysicsContext> {
     const player = this.#player;
     if (player === undefined) return;
     player.update(ctx, dt);
+    let respawned = false;
     if (player.mesh.position.y < KILL_PLANE) {
       player.respawn();
       this.#springArm?.snap(player.mesh.position);
+      respawned = true;
     }
     this.#springArm?.follow(player.mesh.position, dt);
     const debug = player.debug();
+    const previous = ctx.state.getState();
     ctx.state.set({
       coyoteJumps: debug.coyoteJumps,
       jumps: debug.jumps,
+      peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
       playerX: player.mesh.position.x,
+      respawns: previous.respawns + (respawned ? 1 : 0),
     });
   }
 

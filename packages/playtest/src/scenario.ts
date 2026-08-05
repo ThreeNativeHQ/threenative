@@ -188,6 +188,10 @@ export interface IPlaytestReachabilityAssertion {
   envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
 }
 
+export interface IPlaytestWorldAssertion {
+  seed: number | null;
+}
+
 export interface IPlaytestScenarioAssertions {
   aerodynamics?: IPlaytestAerodynamicsAssertion[];
   animation?: IPlaytestAnimationAssertion[];
@@ -206,6 +210,7 @@ export interface IPlaytestScenarioAssertions {
   tags?: IPlaytestTagCountAssertion[];
   visibility?: IPlaytestVisibilityAssertion[];
   visual?: IPlaytestVisualAssertion[];
+  world?: IPlaytestWorldAssertion;
 }
 
 export interface IPlaytestParityConfig {
@@ -688,6 +693,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
+  const world = isRecord(value.world) ? value.world : undefined;
   if (diagnostics?.noRuntimeDiagnostics === false
     && (typeof diagnostics.runtimeDiagnosticsOptOutReason !== "string" || diagnostics.runtimeDiagnosticsOptOutReason.trim() === "")) {
     throw invalidScenario(
@@ -794,7 +800,15 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map(validateVisibilityAssertion).filter((item): item is IPlaytestVisibilityAssertion => item !== undefined) } : {}),
     ...(Array.isArray(value.visual) ? { visual: value.visual.map(validateVisualAssertion).filter((item): item is IPlaytestVisualAssertion => item !== undefined) } : {}),
+    ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
   };
+}
+
+function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestWorldAssertion {
+  if (!hasKey(value, "seed") || (value.seed !== null && (typeof value.seed !== "number" || !Number.isFinite(value.seed)))) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.world.seed' must be a finite number or null.");
+  }
+  return { seed: value.seed as number | null };
 }
 
 function validateReachabilityAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestReachabilityAssertion {

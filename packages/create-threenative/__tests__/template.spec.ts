@@ -23,10 +23,22 @@ async function sourceFiles(root: string): Promise<Array<[string, string]>> {
   return Promise.all(files.map(async (file) => [file, await readFile(file, "utf8")] as const));
 }
 
-function runtimeExports(source: string): string[] {
+function runtimeExports(source: string): Array<{ callable: boolean; name: string }> {
   return [
     ...source.matchAll(/export\s+(?:async\s+)?function\s+(\w+)|export\s+const\s+(\w+)/gu),
-  ].flatMap((match) => [match[1] ?? match[2]].filter((name): name is string => name !== undefined));
+  ].flatMap((match) => {
+    const name = match[1] ?? match[2];
+    return name === undefined ? [] : [{ callable: match[1] !== undefined, name }];
+  });
+}
+
+function callPattern(name: string): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`\\b${escaped}\\s*\\(`, "u");
+}
+
+function referencePattern(name: string): RegExp {
+  return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u");
 }
 
 describe("template contracts", () => {
@@ -59,9 +71,13 @@ describe("template contracts", () => {
       for (const [file, source] of sources.filter(([file]) =>
         file.includes(`${path.sep}render${path.sep}`),
       )) {
-        for (const name of runtimeExports(source)) {
+        for (const { callable, name } of runtimeExports(source)) {
           const caller = sources.some(
-            ([candidate, candidateSource]) => candidate !== file && candidateSource.includes(name),
+            ([candidate, candidateSource]) =>
+              candidate !== file &&
+              (callable ? callPattern(name) : referencePattern(name)).test(
+                candidateSource.replace(/^\s*import .*$/gmu, ""),
+              ),
           );
           expect(caller, `${template}/${path.basename(file)}:${name}`).toBe(true);
         }

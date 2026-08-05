@@ -8,9 +8,37 @@
   "steps": [
     {
       "kind": "input",
-      "label": "leave-ledge",
-      "press": "ArrowRight",
-      "holdTicks": 210,
+      "label": "leave-ledge-1",
+      "press": "ArrowLeft",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "leave-ledge-2",
+      "press": "ArrowLeft",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "leave-ledge-3",
+      "press": "ArrowLeft",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "leave-ledge-4",
+      "press": "ArrowLeft",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "leave-ledge-5",
+      "press": "ArrowLeft",
+      "holdTicks": 40,
       "release": true
     },
     { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },
@@ -19,8 +47,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "coyoteJumps", "gte": 1, "changed": true }
+      { "id": "GameState", "path": "jumps", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "coyoteJumps", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "peakRise", "gte": 0.5, "changed": true }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

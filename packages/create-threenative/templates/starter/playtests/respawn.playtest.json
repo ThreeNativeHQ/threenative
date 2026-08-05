@@ -19,8 +19,10 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "movement": {
       "entity": "player",
+      "pathLength": 4,
       "reachesPositionWithin": { "position": [-2, 0.5, 0], "maxDistance": 0.35 }
     },
+    "resources": [{ "id": "GameState", "path": "respawns", "gte": 1, "changed": true }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }
 }
