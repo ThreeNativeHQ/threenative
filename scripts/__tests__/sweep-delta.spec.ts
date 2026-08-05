@@ -176,8 +176,35 @@ describe("sweep delta", () => {
     expect(jsonBlocks[1]).toEqual(
       compareSweeps(
         "docs/benchmark/sweeps/topdown-action-2026-08-05",
-        "docs/benchmark/sweeps/topdown-action-2026-08-05-2",
+        "docs/benchmark/sweeps/topdown-action-2026-08-05-3",
       ),
     );
+
+    const censusStart = record.indexOf("## Caller census");
+    const negativeControlsStart = record.indexOf("## Negative controls", censusStart);
+    expect(censusStart).toBeGreaterThanOrEqual(0);
+    expect(negativeControlsStart).toBeGreaterThan(censusStart);
+    const census = record.slice(censusStart, negativeControlsStart);
+    expect(census).toContain("Subject: source written by the uninformed fresh top-down agent");
+    expect(census).toContain('rg -n "object:|teleport\\(|setPosition\\(|-move\\.y');
+    expect(census).toContain("| PRD-017 change | Verdict | Caller evidence |");
+    const verdictRows = census
+      .split("\n")
+      .filter(
+        (line) =>
+          line.startsWith("| ") &&
+          !line.startsWith("| ---") &&
+          !line.startsWith("| PRD-017 change"),
+      );
+    for (const change of [
+      "'object: Object3D' on 'CharacterBody3D' and 'RigidBody3D'",
+      "'CharacterBody3D.teleport()'",
+      "'@types/three' in the minimal scaffold",
+      "Documented input-axis conversion",
+      "Additional 'Area3D.setPosition()' patrol surface",
+      "Round-1 friction rows",
+    ]) {
+      expect(verdictRows.some((row) => row.startsWith(`| ${change} |`))).toBe(true);
+    }
   });
 });

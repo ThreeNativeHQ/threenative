@@ -36,6 +36,23 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
   expect({ ...parsed, sourcePath: undefined }).toEqual({ ...scenario, inputDelivery: "deterministic", sourcePath: undefined });
 });
 
+test("scenario loading rejects mixed frame and fixed timing", async () => {
+  for (const [index, step] of [
+    { holdTicks: 5, press: "KeyW", release: true, waitFrames: 5 },
+    { holdFrames: 5, press: "KeyW", release: true, waitTicks: 5 },
+  ].entries()) {
+    const directory = await mkdtemp(join(tmpdir(), `playtest-mixed-timing-${index}-`));
+    await writeFile(
+      join(directory, "scenario.json"),
+      JSON.stringify({ name: "mixed-timing", schemaVersion: 1, steps: [step] }),
+    );
+
+    await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+      diagnostic: { message: expect.stringMatching(/frame timing or fixed ticks/) },
+    });
+  }
+});
+
 test("schema version 1 parser keeps stable diagnostics", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
   await writeFile(join(directory, "scenario.json"), JSON.stringify({

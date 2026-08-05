@@ -662,6 +662,12 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (waitTicks !== undefined && waitFrames !== undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} must choose waitTicks or waitFrames, not both.`);
   }
+  if (
+    (holdTicks !== undefined || waitTicks !== undefined) &&
+    (holdFrames !== undefined || waitFrames !== undefined)
+  ) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must choose frame timing or fixed ticks, not both.`);
+  }
   return {
     ...(kind === undefined ? {} : { kind }),
     ...(holdFrames === undefined ? {} : { holdFrames }),
