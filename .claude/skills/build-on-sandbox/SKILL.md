@@ -49,8 +49,11 @@ preference; it is the difference between the two outcomes.
 
 - **Work only inside the sandbox.** Do not read `packages/`, `docs/`, `CHARTER.md`, or any
   `AGENTS.md` in the monorepo. Everything you need is the generated `AGENTS.md`, your own
-  `src/`, and the `.d.ts` files in `node_modules/@threenative/` — about 1,065 lines of
-  types, versus 6,983 lines of source you are deliberately not reading.
+  `src/`, and the `.d.ts` files in `node_modules/@threenative/` — about 1,065 lines of types.
+- **The implementation is not on disk.** The packages ship types plus bundled JS and no
+  sourcemaps, so there is nothing to spelunk — the same as a real install. If the types do
+  not answer a question, write plain Three.js instead and record that the types were not
+  enough. That is a finding about the framework, and it is worth more than a workaround.
 - **The framework is not the subject.** If an API blocks you, write plain Three.js instead
   and note what blocked you. A workaround in user space is a finding; contorting the game
   to flatter the framework destroys the measurement.

@@ -28,6 +28,29 @@ function readFlag(name: string, fallback: string): string {
   return value ?? fallback;
 }
 
+/**
+ * How much of the framework an agent in the sandbox can actually read. Not zero: tsup emits
+ * sourcemaps with `sourcesContent`, so the original TypeScript rides along inside dist. A
+ * published package leaks exactly the same way, so this reports reality rather than hiding it.
+ */
+function sourceLines(root: string): number {
+  const packages = path.join(root, "node_modules", "@threenative");
+  if (!fs.existsSync(packages)) return 0;
+  let total = 0;
+  for (const pkg of fs.readdirSync(packages)) {
+    const dist = path.join(packages, pkg, "dist");
+    if (!fs.existsSync(dist)) continue;
+    for (const file of fs.readdirSync(dist)) {
+      if (!file.endsWith(".map")) continue;
+      const map = JSON.parse(fs.readFileSync(path.join(dist, file), "utf8")) as {
+        sourcesContent?: (string | null)[];
+      };
+      for (const content of map.sourcesContent ?? []) total += content?.split("\n").length ?? 0;
+    }
+  }
+  return total;
+}
+
 function main(): void {
   const out = path.resolve(REPO, readFlag("--out", "../threenative-sandbox"));
   const template = readFlag("--template", "starter");
@@ -91,12 +114,16 @@ function main(): void {
     next = `cd ${out} && pnpm dev`;
   }
 
+  const leaked = sourceLines(out);
   process.stdout.write(
     [
       "",
       `${bare ? "bare sandbox ready" : "sandbox ready"}: ${out}`,
       "",
-      "  framework source on disk: none — packages ship dist, so only .d.ts is readable",
+      leaked === 0
+        ? "  framework source readable: 0 lines — dist is types plus bundled js"
+        : `  framework source readable: ${leaked} lines, via .js.map sourcesContent (a real
+    install leaks the same; set sourcemap: false in the tsup configs to close it)`,
       "  CHARTER.md, docs/, PRDs, budgets, LOC classifier: not present",
       `  AGENTS.md in scope: ${bare ? "0 until it scaffolds" : "1 (the generated one)"}`,
       "",

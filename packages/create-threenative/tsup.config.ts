@@ -5,7 +5,7 @@ export default defineConfig({
   format: ["esm"],
   target: "node20",
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   splitting: false,
   treeshake: true,
