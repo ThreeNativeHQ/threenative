@@ -213,6 +213,16 @@ describe("template contracts", () => {
     }
   });
 
+  it("should use the visible platform object for platform physics", async () => {
+    const platform = await readFile(
+      path.join(templateRoot, "platformer/src/level/Platform.ts"),
+      "utf8",
+    );
+    expect(platform).toContain("object: visual");
+    expect(platform).not.toContain("visible: false");
+    expect(platform).not.toContain("new Mesh(");
+  });
+
   it("should typecheck a minimal scaffold without manual installs", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-typecheck-"));
     try {

@@ -1,5 +1,5 @@
 import { CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshBasicMaterial, type Vector3 } from "three";
+import type { Object3D, Vector3 } from "three";
 import { platform as platformMesh } from "../render/terrain.js";
 import type { GameCtx } from "../scenes/Level.js";
 
@@ -8,8 +8,7 @@ export const ONE_WAY_GROUP = 2;
 
 export interface PlatformNode {
   readonly body: RigidBody3D;
-  readonly mesh: Mesh;
-  readonly visual: import("three").Object3D;
+  readonly visual: Object3D;
   dispose(): void;
 }
 
@@ -24,13 +23,8 @@ export function createPlatform(
   const visual = platformMesh(width, height, { depth, oneWay: options.oneWay, seed: options.seed });
   visual.position.set(at.x, at.y - height / 2, at.z);
   ctx.add(visual);
-  const mesh = new Mesh(
-    new BoxGeometry(width, height, depth),
-    new MeshBasicMaterial({ visible: false }),
-  );
-  mesh.position.set(at.x, at.y - height / 2, at.z);
   const body = new RigidBody3D({
-    object: mesh,
+    object: visual,
     physics: ctx.physics,
     shape: CollisionShape3D.box(width, height, depth),
     type: "fixed",
@@ -42,7 +36,6 @@ export function createPlatform(
       body.dispose();
       visual.removeFromParent();
     },
-    mesh,
     visual,
   };
 }
