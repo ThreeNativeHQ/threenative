@@ -29,7 +29,7 @@ describe("Area3D", () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
     const body = new RigidBody3D({
-      mesh: new Mesh(new BoxGeometry(1, 1, 1)),
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
       physics: ctx.physics,
       shape: CollisionShape3D.box(1, 1, 1),
     });
@@ -51,7 +51,7 @@ describe("Area3D", () => {
       shape: CollisionShape3D.box(2, 2, 2),
     });
     const body = new RigidBody3D({
-      mesh: new Mesh(new BoxGeometry(1, 1, 1)),
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
       physics: ctx.physics,
       shape: CollisionShape3D.box(1, 1, 1),
     });
@@ -70,7 +70,7 @@ describe("Area3D", () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
     const body = new RigidBody3D({
-      mesh: new Mesh(new BoxGeometry(1, 1, 1)),
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
       physics: ctx.physics,
       shape: CollisionShape3D.box(1, 1, 1),
     });
@@ -97,7 +97,7 @@ describe("Area3D", () => {
     const character = new CharacterBody3D({
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
     let entered = 0;
     area.on("bodyEntered", () => entered++);

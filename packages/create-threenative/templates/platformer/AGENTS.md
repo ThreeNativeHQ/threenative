@@ -25,3 +25,6 @@ pnpm typecheck
 Use Godot names for physics nodes: `CharacterBody3D`, `Area3D`, `RigidBody3D`, and
 `CollisionShape3D`. Dispose every node from `Level.exit()`. Feel belongs in the character,
 not in `defineGame` options.
+
+`input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
+`-move.y` conversion in the character movement code.

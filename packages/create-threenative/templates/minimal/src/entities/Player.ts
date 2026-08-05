@@ -26,7 +26,7 @@ export class Player {
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
-      mesh: this.mesh,
+      object: this.mesh,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
     });
@@ -46,7 +46,8 @@ export class Player {
     }
     const move = ctx.input.vector("move");
     this.body.velocity.x = move.x * MOVE_SPEED;
-    this.body.velocity.z = move.y * MOVE_SPEED;
+    // input.vector("move").y is +up; world-space forward is negative z.
+    this.body.velocity.z = -move.y * MOVE_SPEED;
     this.body.moveAndSlide(dt);
   }
 

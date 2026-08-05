@@ -23,7 +23,7 @@ describe("RigidBody3D", () => {
     const mesh = new Mesh(new BoxGeometry(1, 1, 1));
     mesh.position.y = 5;
     const body = new RigidBody3D({
-      mesh,
+      object: mesh,
       shape: CollisionShape3D.fromMesh(mesh),
       world: instance,
     });
@@ -43,7 +43,7 @@ describe("RigidBody3D", () => {
     const instance = world();
     const floorMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
     const floor = new RigidBody3D({
-      mesh: floorMesh,
+      object: floorMesh,
       shape: CollisionShape3D.fromMesh(floorMesh),
       type: "fixed",
       world: instance,
@@ -51,7 +51,7 @@ describe("RigidBody3D", () => {
     const crateMesh = new Mesh(new BoxGeometry(4, 4, 4));
     crateMesh.position.y = 8;
     const crate = new RigidBody3D({
-      mesh: crateMesh,
+      object: crateMesh,
       shape: CollisionShape3D.fromMesh(crateMesh),
       world: instance,
     });

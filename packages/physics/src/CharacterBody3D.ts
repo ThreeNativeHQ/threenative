@@ -1,9 +1,9 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
-import type { Mesh, Vector3 } from "three";
+import type { Object3D, Vector3 } from "three";
 import type { PhysicsContext } from "./plugin.js";
 
 export interface CharacterBody3DOptions {
-  readonly mesh: Mesh;
+  readonly object: Object3D;
   readonly physics?: PhysicsContext;
   readonly world?: RAPIER.World;
   readonly shape: RAPIER.ColliderDesc;
@@ -25,7 +25,7 @@ export class CharacterBody3D {
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly controller: RAPIER.KinematicCharacterController;
-  readonly mesh: Mesh;
+  readonly object: Object3D;
   readonly velocity: Vector3;
   gravity: number;
   maxFallSpeed: number;
@@ -44,18 +44,18 @@ export class CharacterBody3D {
       throw new Error("CharacterBody3D requires a physics context or world.");
     this.#world = world;
     this.#physics = options.physics;
-    this.mesh = options.mesh;
-    this.velocity = this.mesh.position.clone().set(0, 0, 0);
+    this.object = options.object;
+    this.velocity = this.object.position.clone().set(0, 0, 0);
     this.gravity = options.gravity ?? -9.81;
     this.maxFallSpeed = options.maxFallSpeed ?? 50;
     this.oneWayGroups = options.oneWayGroups ?? 0;
     const description = RAPIER.RigidBodyDesc.kinematicPositionBased()
-      .setTranslation(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z)
+      .setTranslation(this.object.position.x, this.object.position.y, this.object.position.z)
       .setRotation({
-        x: this.mesh.quaternion.x,
-        y: this.mesh.quaternion.y,
-        z: this.mesh.quaternion.z,
-        w: this.mesh.quaternion.w,
+        x: this.object.quaternion.x,
+        y: this.object.quaternion.y,
+        z: this.object.quaternion.z,
+        w: this.object.quaternion.w,
       });
     this.body = world.createRigidBody(description);
     this.body.userData = this;
@@ -90,6 +90,18 @@ export class CharacterBody3D {
       z: this.velocity.z * dt,
     };
     this.#sliding = true;
+  }
+
+  teleport(position: Pick<Vector3, "x" | "y" | "z">): void {
+    if (this.#disposed || !this.body.isValid())
+      throw new Error("CharacterBody3D.teleport cannot be used after dispose.");
+    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    this.velocity.set(0, 0, 0);
+    this.#desired = { x: 0, y: 0, z: 0 };
+    this.#sliding = false;
+    this.#groundCollider = undefined;
+    this.grounded = false;
+    this.syncFromPhysics();
   }
 
   step(): void {
@@ -145,8 +157,8 @@ export class CharacterBody3D {
     if (!this.body.isValid()) return;
     const translation = this.body.translation();
     const rotation = this.body.rotation();
-    this.mesh.position.set(translation.x, translation.y, translation.z);
-    this.mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    this.object.position.set(translation.x, translation.y, translation.z);
+    this.object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   }
 
   dispose(): void {

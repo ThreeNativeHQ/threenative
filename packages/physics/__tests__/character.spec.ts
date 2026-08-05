@@ -1,6 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Ctx } from "@threenative/core";
-import { BoxGeometry, Mesh } from "three";
+import { BoxGeometry, Group, Mesh, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
@@ -23,7 +23,7 @@ function fixedBody(ctx: PhysicsContext, geometry: BoxGeometry, x: number, y: num
   mesh.position.set(x, y, 0);
   mesh.rotation.z = rotation;
   return new RigidBody3D({
-    mesh,
+    object: mesh,
     physics: ctx,
     shape: CollisionShape3D.fromMesh(mesh),
     type: "fixed",
@@ -44,7 +44,7 @@ describe("CharacterBody3D", () => {
       gravity: -9.81,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 10; step += 1) {
@@ -65,7 +65,7 @@ describe("CharacterBody3D", () => {
       gravity: -9.81,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 30; step += 1) {
@@ -83,7 +83,7 @@ describe("CharacterBody3D", () => {
     const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
     platformMesh.position.y = -0.1;
     const platform = new RigidBody3D({
-      mesh: platformMesh,
+      object: platformMesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(platformMesh),
       type: "kinematic",
@@ -94,7 +94,7 @@ describe("CharacterBody3D", () => {
       gravity: -9.81,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 120; step += 1) {
@@ -118,7 +118,7 @@ describe("CharacterBody3D", () => {
       gravity: -9.81,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 30; step += 1) {
@@ -139,7 +139,7 @@ describe("CharacterBody3D", () => {
     const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
     platformMesh.position.y = -0.1;
     const platform = new RigidBody3D({
-      mesh: platformMesh,
+      object: platformMesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(platformMesh),
       type: "kinematic",
@@ -150,7 +150,7 @@ describe("CharacterBody3D", () => {
       gravity: -9.81,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 30; step += 1) {
@@ -177,7 +177,7 @@ describe("CharacterBody3D", () => {
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 120; step++) {
@@ -199,7 +199,7 @@ describe("CharacterBody3D", () => {
     const character = new CharacterBody3D({
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
 
     for (let step = 0; step < 120; step++) {
@@ -217,7 +217,7 @@ describe("CharacterBody3D", () => {
     const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
     platformMesh.position.y = 2;
     const platform = new RigidBody3D({
-      mesh: platformMesh,
+      object: platformMesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(platformMesh),
       type: "fixed",
@@ -231,7 +231,7 @@ describe("CharacterBody3D", () => {
       oneWayGroups: 2,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
-      mesh,
+      object: mesh,
     });
     character.velocity.y = 8;
 
@@ -244,5 +244,68 @@ describe("CharacterBody3D", () => {
     expect(mesh.position.y).toBeGreaterThan(2.3);
     character.dispose();
     platform.dispose();
+  });
+
+  it("should drive a Group as a character body", async () => {
+    const { ctx, plugin } = await setup();
+    const object = new Group();
+    const left = new Mesh(new BoxGeometry(0.4, 0.4, 0.4));
+    const right = new Mesh(new BoxGeometry(0.4, 0.4, 0.4));
+    left.position.x = -0.6;
+    right.position.x = 0.6;
+    object.add(left, right);
+    const character = new CharacterBody3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object,
+    });
+
+    character.move({ x: 1, y: 0, z: 0 });
+    plugin.update?.(ctx, 1 / 60);
+
+    const leftWorld = left.getWorldPosition(new Vector3());
+    const rightWorld = right.getWorldPosition(new Vector3());
+    expect(object.position.x).toBeCloseTo(1, 4);
+    expect(leftWorld.x).toBeCloseTo(object.position.x - 0.6, 4);
+    expect(rightWorld.x).toBeCloseTo(object.position.x + 0.6, 4);
+    character.dispose();
+  });
+
+  it("should keep CollisionShape3D.fromMesh taking a Mesh", () => {
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1));
+    expect(() => CollisionShape3D.fromMesh(mesh)).not.toThrow();
+  });
+
+  it("should place the body and zero its velocity when teleported", async () => {
+    const { ctx } = await setup();
+    const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    const character = new CharacterBody3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object,
+    });
+    character.velocity.set(4, -3, 2);
+    character.grounded = true;
+
+    character.teleport({ x: 3, y: 4, z: 5 });
+
+    expect(object.position.toArray()).toEqual([3, 4, 5]);
+    expect(character.velocity.lengthSq()).toBe(0);
+    expect(character.grounded).toBe(false);
+    character.dispose();
+  });
+
+  it("should throw when teleported after dispose", async () => {
+    const { ctx } = await setup();
+    const character = new CharacterBody3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object: new Mesh(new BoxGeometry(0.6, 1, 0.6)),
+    });
+    character.dispose();
+
+    expect(() => character.teleport({ x: 0, y: 0, z: 0 })).toThrow(
+      "CharacterBody3D.teleport cannot be used after dispose.",
+    );
   });
 });

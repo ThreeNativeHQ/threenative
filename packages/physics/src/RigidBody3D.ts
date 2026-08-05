@@ -1,11 +1,11 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
-import type { Mesh } from "three";
+import type { Object3D } from "three";
 import type { PhysicsContext } from "./plugin.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
 export interface RigidBody3DOptions {
-  readonly mesh: Mesh;
+  readonly object: Object3D;
   readonly physics?: PhysicsContext;
   readonly world?: RAPIER.World;
   readonly shape: RAPIER.ColliderDesc;
@@ -22,7 +22,7 @@ function bodyDescription(type: RigidBodyType): RAPIER.RigidBodyDesc {
 export class RigidBody3D {
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
-  readonly mesh: Mesh;
+  readonly object: Object3D;
   readonly type: RigidBodyType;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
@@ -33,15 +33,15 @@ export class RigidBody3D {
     if (world === undefined) throw new Error("RigidBody3D requires a physics context or world.");
     this.#world = world;
     this.#physics = options.physics;
-    this.mesh = options.mesh;
+    this.object = options.object;
     this.type = options.type ?? "dynamic";
     const description = bodyDescription(this.type)
-      .setTranslation(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z)
+      .setTranslation(this.object.position.x, this.object.position.y, this.object.position.z)
       .setRotation({
-        x: this.mesh.quaternion.x,
-        y: this.mesh.quaternion.y,
-        z: this.mesh.quaternion.z,
-        w: this.mesh.quaternion.w,
+        x: this.object.quaternion.x,
+        y: this.object.quaternion.y,
+        z: this.object.quaternion.z,
+        w: this.object.quaternion.w,
       });
     if (options.mass !== undefined) description.setAdditionalMass(options.mass);
     this.body = world.createRigidBody(description);
@@ -54,15 +54,15 @@ export class RigidBody3D {
   syncToPhysics(): void {
     if (!this.body.isValid() || !this.body.isKinematic()) return;
     this.body.setNextKinematicTranslation({
-      x: this.mesh.position.x,
-      y: this.mesh.position.y,
-      z: this.mesh.position.z,
+      x: this.object.position.x,
+      y: this.object.position.y,
+      z: this.object.position.z,
     });
     this.body.setNextKinematicRotation({
-      x: this.mesh.quaternion.x,
-      y: this.mesh.quaternion.y,
-      z: this.mesh.quaternion.z,
-      w: this.mesh.quaternion.w,
+      x: this.object.quaternion.x,
+      y: this.object.quaternion.y,
+      z: this.object.quaternion.z,
+      w: this.object.quaternion.w,
     });
   }
 
@@ -70,8 +70,8 @@ export class RigidBody3D {
     if (!this.body.isValid()) return;
     const translation = this.body.translation();
     const rotation = this.body.rotation();
-    this.mesh.position.set(translation.x, translation.y, translation.z);
-    this.mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    this.object.position.set(translation.x, translation.y, translation.z);
+    this.object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   }
 
   dispose(): void {

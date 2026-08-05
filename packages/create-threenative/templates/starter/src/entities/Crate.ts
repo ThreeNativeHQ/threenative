@@ -21,7 +21,7 @@ export class Crate {
     ctx.add(this.mesh);
     this.body = new RigidBody3D({
       mass: 8,
-      mesh: this.mesh,
+      object: this.mesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(this.mesh),
     });

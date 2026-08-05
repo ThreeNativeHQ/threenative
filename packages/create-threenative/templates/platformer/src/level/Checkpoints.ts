@@ -1,5 +1,5 @@
 type CharacterBody3D = {
-  body: { setTranslation(value: { x: number; y: number; z: number }, wakeUp: boolean): void };
+  teleport(position: { x: number; y: number; z: number }): void;
   velocity: { set(x: number, y: number, z: number): void };
 };
 type Vector3 = { x: number; y: number; z: number; clone(): Vector3; copy(value: Vector3): Vector3 };
@@ -76,9 +76,7 @@ export class Checkpoints {
   respawn(target: RespawnTarget): void {
     const point = this.points[this.currentIndex];
     if (point === undefined) throw new Error(`Missing checkpoint ${this.currentIndex}.`);
-    target.body.velocity.set(0, 0, 0);
-    target.body.body.setTranslation({ x: point.x, y: point.y, z: point.z }, true);
-    target.mesh.position.copy(point);
+    target.body.teleport(point);
     this.#invulnerable = this.#feel.invulnerabilityTime;
     this.respawns += 1;
   }

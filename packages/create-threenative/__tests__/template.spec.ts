@@ -1,9 +1,15 @@
-import { readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { createProject } from "../src/index.js";
 
 const templates = ["starter", "minimal"] as const;
+const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+const execFileAsync = promisify(execFile);
 
 async function filesUnder(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -39,6 +45,50 @@ function callPattern(name: string): RegExp {
 
 function referencePattern(name: string): RegExp {
   return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u");
+}
+
+async function linkDependency(target: string, name: string, source: string): Promise<void> {
+  const link = path.join(target, "node_modules", name);
+  await mkdir(path.dirname(link), { recursive: true });
+  await symlink(source, link, "dir");
+}
+
+async function findPnpmPackage(name: string): Promise<string> {
+  const encoded = name.replaceAll("/", "+");
+  const virtualStore = path.resolve("node_modules/.pnpm");
+  const entry = (await readdir(virtualStore)).find((file) => file.startsWith(`${encoded}@`));
+  if (entry === undefined) throw new Error(`Cannot find installed ${name} in the pnpm store.`);
+  return path.join(virtualStore, entry, "node_modules", name);
+}
+
+async function linkScaffoldDependencies(target: string): Promise<void> {
+  const packageJson = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+    devDependencies?: Record<string, string>;
+  };
+  await linkDependency(target, "@threenative/core", path.resolve("packages/core"));
+  await linkDependency(target, "@threenative/physics", path.resolve("packages/physics"));
+  await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
+  await linkDependency(target, "three", path.resolve("packages/core/node_modules/three"));
+  if (packageJson.devDependencies?.["@types/three"] !== undefined)
+    await linkDependency(
+      target,
+      "@types/three",
+      path.resolve("packages/core/node_modules/@types/three"),
+    );
+  await linkDependency(
+    target,
+    "@dimforge/rapier3d-compat",
+    path.resolve("packages/physics/node_modules/@dimforge/rapier3d-compat"),
+  );
+  await linkDependency(target, "zustand", path.resolve("packages/core/node_modules/zustand"));
+  await linkDependency(target, "typescript", path.resolve("packages/core/node_modules/typescript"));
+  await linkDependency(target, "vite", await findPnpmPackage("vite"));
+  await linkDependency(target, "@types/node", await findPnpmPackage("@types/node"));
+  await mkdir(path.join(target, "node_modules/.bin"), { recursive: true });
+  await symlink(
+    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    path.join(target, "node_modules/.bin/tsc"),
+  );
 }
 
 describe("template contracts", () => {
@@ -151,5 +201,51 @@ describe("template contracts", () => {
       expect(agents).toContain(".glb` in `public/");
       expect(agents).toContain("ctx.assets.model");
     }
+  });
+
+  it("should list @types/three in every template that runs tsc", async () => {
+    for (const template of typecheckTemplates) {
+      const packageJson = JSON.parse(
+        await readFile(path.join(templateRoot, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string>; scripts?: Record<string, string> };
+      if (packageJson.scripts?.typecheck === undefined) continue;
+      expect(packageJson.devDependencies?.["@types/three"], template).toBeDefined();
+    }
+  });
+
+  it("should typecheck a minimal scaffold without manual installs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-typecheck-"));
+    try {
+      const result = await createProject(
+        { install: false, target: "minimal", template: "minimal" },
+        root,
+      );
+      await linkScaffoldDependencies(result.target);
+      await execFileAsync("pnpm", ["typecheck"], { cwd: result.target });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should document and apply the forward axis conversion once per template", async () => {
+    const movementFiles = [
+      ["starter", "src/entities/Player.ts"],
+      ["minimal", "src/entities/Player.ts"],
+      ["platformer", "src/entities/Character.ts"],
+    ] as const;
+    for (const [template, relativePath] of movementFiles) {
+      const source = await readFile(path.join(templateRoot, template, relativePath), "utf8");
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(
+        source.split("\n").filter((line) => line.includes("-move.y")),
+        template,
+      ).toHaveLength(1);
+      expect(agents).toContain('input.vector("move").y` is +up');
+      expect(agents).toContain("`-move.y` conversion");
+    }
+    const forward = JSON.parse(
+      await readFile(path.join(templateRoot, "starter/playtests/forward.playtest.json"), "utf8"),
+    ) as { assert?: { movement?: { minAxisDelta?: { axis?: string; min?: number } } } };
+    expect(forward.assert?.movement?.minAxisDelta).toEqual({ axis: "-z", min: 0.5 });
   });
 });

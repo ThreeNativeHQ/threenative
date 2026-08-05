@@ -1,7 +1,8 @@
 import { defineGame } from "@threenative/core";
 import type { PhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
-import { type GameState, Play } from "./scenes/Play.js";
+import { Play } from "./scenes/Play.js";
+import type { GameState } from "./state.js";
 import "./style.css";
 
 const score = document.querySelector<HTMLSpanElement>("#score");

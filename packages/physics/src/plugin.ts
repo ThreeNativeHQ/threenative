@@ -73,9 +73,9 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
           const before = body.body.translation();
           body.syncToPhysics();
           kinematicMotions.set(body.collider.handle, {
-            x: body.mesh.position.x - before.x,
-            y: body.mesh.position.y - before.y,
-            z: body.mesh.position.z - before.z,
+            x: body.object.position.x - before.x,
+            y: body.object.position.y - before.y,
+            z: body.object.position.z - before.z,
           });
         } else if (body instanceof RigidBody3D) body.syncToPhysics();
       }

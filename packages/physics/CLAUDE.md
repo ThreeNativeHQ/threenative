@@ -26,7 +26,7 @@ The underlying objects stay reachable and must never be hidden:
 ```ts
 ctx.physics.world   // Rapier World
 crate.body          // Rapier RigidBody
-crate.mesh          // THREE.Mesh
+crate.object          // THREE.Object3D
 ```
 
 If a wrapper starts growing convenience methods that Rapier already provides, delete them —

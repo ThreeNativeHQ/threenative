@@ -14,7 +14,7 @@ export class Player {
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
-      mesh: this.mesh,
+      object: this.mesh,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
     });

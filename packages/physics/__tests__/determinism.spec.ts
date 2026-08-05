@@ -15,7 +15,7 @@ async function simulate(frameRate: number): Promise<number> {
   const mesh = new Mesh(new BoxGeometry(1, 1, 1));
   mesh.position.y = 5;
   const body = new RigidBody3D({
-    mesh,
+    object: mesh,
     physics: ctx.physics,
     shape: CollisionShape3D.box(1, 1, 1),
   });

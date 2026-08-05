@@ -1,6 +1,6 @@
 import type { Ctx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
-import { BufferGeometry, type Group, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { Group, Vector3 } from "three";
 import { ONE_WAY_GROUP } from "../level/Platform.js";
 import { type CharacterRig, animateCharacter, createCharacterRig } from "../render/rig.js";
 import type { GameState } from "../state.js";
@@ -46,7 +46,7 @@ export const PLATFORMER_FEEL = {
 export type CharacterState = "dash" | "fall" | "hurt" | "idle" | "jump" | "run";
 
 export class Character {
-  readonly mesh: Mesh;
+  readonly mesh: Group;
   readonly body: CharacterBody3D;
   readonly visual: Group;
   readonly tags = ["player"];
@@ -65,7 +65,7 @@ export class Character {
   #dashDirection = new Vector3(1, 0, 0);
 
   constructor(ctx: GameCtx, spawn: Vector3) {
-    this.mesh = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ visible: false }));
+    this.mesh = new Group();
     this.mesh.position.copy(spawn);
     ctx.add(this.mesh);
     this.#rig = createCharacterRig();
@@ -76,7 +76,7 @@ export class Character {
       autostep: { maxHeight: 0.35, minWidth: 0.2 },
       gravity: PLATFORMER_FEEL.gravity,
       maxFallSpeed: PLATFORMER_FEEL.maxFallSpeed,
-      mesh: this.mesh,
+      object: this.mesh,
       oneWayGroups: ONE_WAY_GROUP,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.35, 0.3),
@@ -117,9 +117,7 @@ export class Character {
   }
 
   respawn(position: Vector3): void {
-    this.body.velocity.set(0, 0, 0);
-    this.body.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
-    this.mesh.position.copy(position);
+    this.body.teleport(position);
     this.#dashTimer = 0;
     this.#dashCooldown = 0;
   }

@@ -30,7 +30,7 @@ export function createPlatform(
   );
   mesh.position.set(at.x, at.y - height / 2, at.z);
   const body = new RigidBody3D({
-    mesh,
+    object: mesh,
     physics: ctx.physics,
     shape: CollisionShape3D.box(width, height, depth),
     type: "fixed",

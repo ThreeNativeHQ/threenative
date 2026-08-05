@@ -59,6 +59,9 @@ appear in the imports of an existing file, it probably does not exist.
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
 Every node has `dispose()`, and `exit()` must dispose what `enter()` created.
 
+`input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
+`-move.y` conversion in the player movement code.
+
 `CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity`; the player keeps
 the coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
 

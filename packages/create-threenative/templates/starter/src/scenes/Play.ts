@@ -46,7 +46,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     floorMesh.receiveShadow = true;
     ctx.add(floorMesh);
     this.#floor = new RigidBody3D({
-      mesh: floorMesh,
+      object: floorMesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(floorMesh),
       type: "fixed",

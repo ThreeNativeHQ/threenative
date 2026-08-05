@@ -30,6 +30,7 @@ const STARTER_PATHS = [
   "src/state.ts",
   "playtest/boot-to-play.json",
   "playtests/play.playtest.json",
+  "playtests/forward.playtest.json",
   "playtests/coyote.playtest.json",
   "playtests/buffer.playtest.json",
   "playtests/look.playtest.json",
