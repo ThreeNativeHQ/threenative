@@ -41,6 +41,12 @@ modularity — a new package does not.
   (100ms default) so React never re-renders at 60Hz. Never flush per frame.
 - `Registry.snapshot()` prefers an entity's own `debug()` and falls back to `autoFields`.
   It is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
+- Scene-owned time lives behind `ctx.after`, `ctx.every`, and `ctx.tween`; `Scheduler` and
+  `ScheduleHandle` are the public supporting types, and transitions cancel it.
+- `AudioBus` is the package's audio sink; `AudioBusOptions` and `AudioPlayOptions` configure
+  listener and voice cleanup.
+- `ctx.random` is the seeded randomness surface reported by playtest; `createRandom` and
+  `Random` are its public types.
 
 ## Tests
 

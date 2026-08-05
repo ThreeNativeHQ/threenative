@@ -1,5 +1,7 @@
 export const version = "0.1.0";
 
+export { AudioBus } from "./audio.js";
+export type { AudioBusOptions, AudioPlayOptions } from "./audio.js";
 export { createAssetLoader } from "./assets.js";
 export type { AssetLoader, AssetLoaderOptions } from "./assets.js";
 export { AnimationPlayer } from "./animation.js";
@@ -16,6 +18,8 @@ export type {
 } from "./game.js";
 export { FixedStepLoop } from "./loop.js";
 export type { FixedStepLoopOptions } from "./loop.js";
+export { createRandom } from "./random.js";
+export type { Random } from "./random.js";
 export { autoFields, Registry } from "./entities.js";
 export type { Debuggable, EntitySnapshot } from "./entities.js";
 export { input, InputMap } from "./input.js";
@@ -24,5 +28,7 @@ export { createRenderer } from "./renderer.js";
 export type { RendererKind, RendererLike, RendererOptions } from "./renderer.js";
 export { Scene } from "./scene.js";
 export type { Ctx, SceneConstructor } from "./scene.js";
+export { Scheduler } from "./schedule.js";
+export type { ScheduleHandle } from "./schedule.js";
 export { createGameStore } from "./state.js";
 export type { GameStore, StatePatch } from "./state.js";

@@ -3,14 +3,17 @@ import { type AssetLoader, type AssetLoaderOptions, createAssetLoader } from "./
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
 import { FixedStepLoop } from "./loop.js";
+import { type Random, createRandom } from "./random.js";
 import { type RendererLike, type RendererOptions, createRenderer } from "./renderer.js";
 import type { Ctx, Scene, SceneConstructor } from "./scene.js";
+import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
 
 export type PluginCleanup = () => void;
 
 export interface GamePluginRuntime {
   fixedStep(ticks: number): number;
+  readonly seed: number | null;
 }
 
 interface DevTools {
@@ -68,6 +71,7 @@ export interface GameConfig<
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
   readonly renderer?: RendererOptions;
+  readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   readonly step?: number;
   readonly start: string;
@@ -82,6 +86,8 @@ export interface Game<
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
   start(): Promise<void>;
+  pause(): void;
+  resume(): void;
   stop(): void;
 }
 
@@ -95,6 +101,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #loop: FixedStepLoop | undefined;
   #cleanup: Array<() => void> = [];
   #entities: Registry | undefined;
+  #random: Random | undefined;
+  #scheduler: Scheduler | undefined;
+  #paused = false;
   #started = false;
 
   constructor(config: GameConfig<TState, TPhysics>) {
@@ -121,6 +130,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     const SceneType = this.#config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
+    this.#scheduler?.clear();
     this.#scene?.exit(ctx);
     this.#entities?.clear();
     const scene = new SceneType();
@@ -157,23 +167,31 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
     const assets = createAssetLoader(this.#config.assets);
     const entities = new Registry();
+    const random = createRandom(this.#config.seed);
+    const scheduler = new Scheduler();
     const ctx: Ctx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
         return object;
       },
       assets,
+      after: (delay, callback) => scheduler.after(delay, callback),
       camera,
       entities,
+      every: (callback) => scheduler.every(callback),
       goto: (name) => this.#goto(name, ctx),
       input: this.#input,
       physics: undefined as TPhysics,
+      random,
       renderer: this.#renderer,
       scene: threeScene,
       state: this.#state,
+      tween: (target, properties, duration) => scheduler.tween(target, properties, duration),
     };
     this.#ctx = ctx;
     this.#entities = entities;
+    this.#random = random;
+    this.#scheduler = scheduler;
     this.#cleanup.push(installDevTools(entities));
     this.#scene = new SceneType();
     const loop = new FixedStepLoop({
@@ -183,7 +201,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         this.#scene?.render(ctx);
       },
       onUpdate: (dt) => {
+        if (this.#paused) return;
         this.#input?.tick();
+        scheduler.tick(dt);
         this.#scene?.update(ctx, dt);
         for (const plugin of this.#config.plugins ?? []) {
           if (typeof plugin !== "function") plugin.update?.(ctx, dt);
@@ -192,7 +212,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       step: this.#config.step,
     });
     this.#loop = loop;
-    const runtime: GamePluginRuntime = { fixedStep: (ticks) => loop.advance(ticks) };
+    const runtime: GamePluginRuntime = {
+      fixedStep: (ticks) => loop.advance(ticks),
+      seed: this.#config.seed ?? null,
+    };
     for (const plugin of this.#config.plugins ?? []) {
       const cleanup =
         typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
@@ -204,9 +227,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     loop.start();
   }
 
+  pause(): void {
+    this.#paused = true;
+  }
+
+  resume(): void {
+    this.#paused = false;
+  }
+
   stop(): void {
     if (!this.#started) return;
     this.#loop?.stop();
+    this.#scheduler?.clear();
     if (this.#ctx !== undefined) this.#scene?.exit(this.#ctx);
     this.#entities?.clear();
     this.#entities = undefined;
@@ -222,6 +254,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#scene = undefined;
     this.#ctx = undefined;
     this.#loop = undefined;
+    this.#random = undefined;
+    this.#scheduler = undefined;
+    this.#paused = false;
     this.#started = false;
   }
 }

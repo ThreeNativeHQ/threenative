@@ -1,4 +1,6 @@
 import {
+  type IPlaytestBridgeDescription,
+  type IPlaytestBridgeV1,
   type IPlaytestContactObservation,
   type IPlaytestGameplayObservation,
   type JsonValue,
@@ -7,6 +9,7 @@ import {
 } from "@threenative/playtest";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
+import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { GamePluginHooks, GamePluginRuntime } from "./game.js";
 import type { Ctx } from "./scene.js";
@@ -21,17 +24,19 @@ export function playtest<
   return {
     setup: (ctx, runtime) => {
       const diagnostics: JsonValue[] = [];
+      const seed = runtime?.seed ?? null;
       const installation = installThreePlaytestBridge({
         camera: ctx.camera,
         diagnostics: () => [...diagnostics],
         entities: () => bridgeEntities(ctx),
         ...(runtime === undefined ? {} : { fixedStep: (ticks: number) => advance(runtime, ticks) }),
-        gameplay: () => gameplayObservations(ctx, contactHistory),
+        gameplay: () => gameplayObservations(ctx, contactHistory, seed),
         gameplayChannels: () => gameplayChannels(ctx),
         renderer: ctx.renderer.raw as { getDrawingBufferSize(target: Vector2): Vector2 },
         resources: stateResources(ctx),
         scene: ctx.scene,
       });
+      installRuntimeChannels(installation.bridge);
       dispose = installation.dispose;
       return () => {
         dispose?.();
@@ -39,6 +44,36 @@ export function playtest<
         contactHistory = [];
       };
     },
+  };
+}
+
+interface RuntimeObservation {
+  readonly audio: ReturnType<typeof audioRuntimeSnapshot>;
+  readonly world: { readonly seed: number | null };
+}
+
+type RuntimeGameplayObservation = IPlaytestGameplayObservation & RuntimeObservation;
+
+function installRuntimeChannels(bridge: IPlaytestBridgeV1): void {
+  const describe = bridge.describe;
+  bridge.describe = () =>
+    Promise.resolve(describe()).then((description) => addRuntimeCapabilities(description));
+}
+
+function addRuntimeCapabilities(
+  description: IPlaytestBridgeDescription,
+): IPlaytestBridgeDescription {
+  const capabilities = [...description.capabilities];
+  for (const capability of ["runtime.audio", "runtime.world"] as const) {
+    if (!capabilities.includes(capability)) capabilities.push(capability);
+  }
+  return { ...description, capabilities };
+}
+
+function runtimeObservation(seed: number | null): RuntimeObservation {
+  return {
+    audio: audioRuntimeSnapshot(),
+    world: { seed },
   };
 }
 
@@ -69,7 +104,8 @@ function entityObject(entity: object | undefined): ThreeObject3D | undefined {
 function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
   ctx: Ctx<TState, TPhysics>,
   contactHistory: IPlaytestContactObservation[],
-): IPlaytestGameplayObservation {
+  seed: number | null,
+): RuntimeGameplayObservation {
   const animation: IPlaytestGameplayObservation["animation"] = {};
   const states: IPlaytestGameplayObservation["states"] = {};
   const snapshot = ctx.entities.snapshot();
@@ -101,6 +137,7 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
     ...(contacts === undefined ? {} : { contacts }),
     states,
     ...(tags === undefined ? {} : { tags }),
+    ...runtimeObservation(seed),
   };
 }
 

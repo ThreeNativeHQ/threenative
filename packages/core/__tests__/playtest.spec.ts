@@ -71,12 +71,21 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.contacts",
         "runtime.tags",
+        "runtime.audio",
+        "runtime.world",
       ];
 
       expect(description.capabilities).toEqual(expected);
       expect(snapshot.entities?.map(({ id }) => id)).toEqual(["camera.main", "player"]);
       expect(snapshot.entities?.find(({ id }) => id === "camera.main")?.transform).toBeDefined();
-      expect(snapshot.gameplay).toEqual({ animation: {}, contacts: [], states: {}, tags: {} });
+      expect(snapshot.gameplay).toEqual({
+        animation: {},
+        audio: { queued: 0, voices: 0 },
+        contacts: [],
+        states: {},
+        tags: {},
+        world: { seed: null },
+      });
       expect(snapshot.resources).toEqual({ GameState: { score: 0 } });
       expect(drawingBufferReads).toBeGreaterThan(0);
     } finally {

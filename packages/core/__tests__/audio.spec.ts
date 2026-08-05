@@ -1,0 +1,114 @@
+import { AudioContext, PerspectiveCamera } from "three";
+import { describe, expect, it } from "vitest";
+import { AudioBus } from "../src/audio.js";
+
+interface FakeAudioParam {
+  value: number;
+  linearRampToValueAtTime(value: number): void;
+  setTargetAtTime(value: number): void;
+  setValueAtTime(value: number): void;
+}
+
+function parameter(value = 1): FakeAudioParam {
+  return {
+    value,
+    linearRampToValueAtTime(next) {
+      this.value = next;
+    },
+    setTargetAtTime(next) {
+      this.value = next;
+    },
+    setValueAtTime(next) {
+      this.value = next;
+    },
+  };
+}
+
+function audioContext(): void {
+  const context = {
+    createBufferSource: () => ({
+      connect: () => undefined,
+      detune: parameter(0),
+      disconnect: () => undefined,
+      loop: false,
+      loopEnd: 0,
+      loopStart: 0,
+      onended: null as (() => void) | null,
+      playbackRate: parameter(1),
+      start: () => undefined,
+      stop: () => undefined,
+    }),
+    createGain: () => ({
+      connect: () => undefined,
+      disconnect: () => undefined,
+      gain: parameter(),
+    }),
+    createPanner: () => ({
+      connect: () => undefined,
+      distanceModel: "inverse" as const,
+      disconnect: () => undefined,
+      maxDistance: 10_000,
+      panningModel: "HRTF" as const,
+      refDistance: 1,
+      rolloffFactor: 1,
+    }),
+    currentTime: 0,
+    destination: {},
+    resume: async () => undefined,
+  } as unknown as globalThis.AudioContext;
+  AudioContext.setContext(context);
+}
+
+const buffer = { duration: 1 } as AudioBuffer;
+
+describe("AudioBus", () => {
+  it("should queue playback before the first user gesture and flush after", async () => {
+    audioContext();
+    const gestures = new EventTarget();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: gestures });
+
+    bus.play(buffer);
+    expect(bus.queued).toBe(1);
+    expect(bus.voices).toBe(0);
+
+    gestures.dispatchEvent(new Event("keydown"));
+    await Promise.resolve();
+    expect(bus.queued).toBe(0);
+    expect(bus.voices).toBe(1);
+    bus.dispose();
+  });
+
+  it("should stop every voice on scene exit", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+    await bus.unlock();
+    bus.play(buffer);
+    bus.play(buffer, { loop: true });
+
+    expect(bus.voices).toBe(2);
+    bus.stop();
+    expect(bus.voices).toBe(0);
+    expect(bus.queued).toBe(0);
+    bus.dispose();
+  });
+
+  it("should re-parent the listener to the active camera", () => {
+    audioContext();
+    const first = new PerspectiveCamera();
+    const second = new PerspectiveCamera();
+    const bus = new AudioBus({ camera: first, gestureTarget: new EventTarget() });
+
+    expect(bus.listener.parent).toBe(first);
+    bus.setCamera(second);
+    expect(bus.listener.parent).toBe(second);
+    bus.dispose();
+  });
+
+  it("should throw on a null buffer", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+
+    expect(() => bus.play(null as unknown as AudioBuffer)).toThrow(/non-null/u);
+    bus.dispose();
+  });
+});

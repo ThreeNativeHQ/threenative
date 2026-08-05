@@ -1,4 +1,4 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { AudioBus, type Ctx, Scene } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Mesh } from "three";
 import type { WebGPURenderer } from "three/webgpu";
@@ -16,9 +16,15 @@ export class Play extends Scene<GameState, PhysicsContext> {
   #crate: Crate | undefined;
   #player: Player | undefined;
   #pickup: Area3D | undefined;
+  #audio: AudioBus | undefined;
+  #pickupAudio: Promise<AudioBuffer> | undefined;
   #unsubscribe: (() => void) | undefined;
 
   enter(ctx: GameCtx): void {
+    this.#audio = new AudioBus({ camera: ctx.camera });
+    const pickupAudio = ctx.assets.audio("pickup.ogg");
+    this.#pickupAudio = pickupAudio;
+    void pickupAudio.catch(() => undefined);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer.raw as WebGPURenderer, ctx.scene, ctx.camera);
     ctx.camera.position.set(0, 3, 9);
@@ -46,6 +52,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     this.#unsubscribe = this.#pickup.on("bodyEntered", (body) => {
       if (body !== this.#player?.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
+      void this.#pickupAudio?.then((buffer) => this.#audio?.play(buffer)).catch(() => undefined);
     });
   }
 
@@ -55,6 +62,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
   }
 
   exit(ctx: GameCtx): void {
+    this.#audio?.dispose();
     this.#unsubscribe?.();
     this.#pickup?.dispose();
     ctx.entities.remove("player");
@@ -66,5 +74,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     this.#player = undefined;
     this.#crate = undefined;
     this.#floor = undefined;
+    this.#audio = undefined;
+    this.#pickupAudio = undefined;
   }
 }

@@ -2,7 +2,9 @@ import type { Camera, Object3D, Scene as ThreeScene } from "three";
 import type { AssetLoader } from "./assets.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
+import type { Random } from "./random.js";
 import type { RendererLike } from "./renderer.js";
+import type { ScheduleHandle } from "./schedule.js";
 import type { GameStore } from "./state.js";
 
 export abstract class Scene<
@@ -36,7 +38,15 @@ export interface Ctx<
   readonly add: (object: Object3D) => Object3D;
   readonly input: InputMap;
   readonly assets: AssetLoader;
+  readonly after: (delay: number, callback: () => void) => ScheduleHandle;
+  readonly every: (callback: (dt: number) => void) => ScheduleHandle;
   readonly state: GameStore<TState>;
+  readonly tween: <T extends object>(
+    target: T,
+    properties: { [K in keyof T]?: number },
+    duration: number,
+  ) => Promise<void>;
+  readonly random: Random;
   readonly goto: (name: string) => Promise<void>;
   physics: TPhysics;
 }
