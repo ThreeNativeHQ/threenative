@@ -104,8 +104,13 @@ describe("sweep ledgers", () => {
     const files = (await readdir(LEDGER_DIRECTORY))
       .filter((file) => file.startsWith("sweep-") && file.endsWith(".md"))
       .sort();
-    expect(files).toHaveLength(2);
-    expect(files.map((file) => file.split("-")[1])).toEqual(["platformer", "topdown"]);
+    expect(files).toEqual(
+      expect.arrayContaining([
+        "sweep-platformer-2026-08-05.md",
+        "sweep-topdown-action-2026-08-05.md",
+      ]),
+    );
+    expect(files.length).toBeGreaterThanOrEqual(2);
 
     for (const file of files) {
       const markdown = await readFile(path.join(LEDGER_DIRECTORY, file), "utf8");

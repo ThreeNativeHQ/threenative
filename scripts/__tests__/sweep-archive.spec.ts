@@ -92,4 +92,21 @@ describe("sweep archive", () => {
       /missing src\//,
     );
   });
+
+  it("rejects a manifest that could escape the archive root", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "sweep.json"),
+      JSON.stringify({
+        genre: "../outside",
+        briefHash: "a".repeat(64),
+        template: "none",
+        date: "2099-01-02T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
+    );
+    expect(() => archiveSandbox(sandbox, root)).toThrow(/lowercase slug/);
+  });
 });

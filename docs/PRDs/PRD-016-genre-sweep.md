@@ -190,8 +190,10 @@ pnpm sandbox --genre topdown-action
 #   ... agent builds under .claude/skills/build-on-sandbox ...
 pnpm sweep:archive && pnpm sweep:measure docs/benchmark/sweeps/topdown-action-<date>
 
-# the wipe guard
-pnpm sandbox --genre platformer                 # expect: throw, previous sweep unarchived
+# the wipe guard: create a fresh target, then reuse it before archiving
+pnpm sandbox --bare --genre platformer --out ../threenative-unarchived-sweep
+# expect: throw, previous sweep unarchived
+pnpm sandbox --bare --genre platformer --out ../threenative-unarchived-sweep
 ```
 
 ## 6. Acceptance (consumer-scoped)

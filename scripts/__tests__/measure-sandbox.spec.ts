@@ -86,6 +86,26 @@ describe("sandbox measurement", () => {
     expect(measurement.usedExports).not.toContain("UnusedExport");
   });
 
+  it("scopes namespace imports to their framework package", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await installDeclarations(root);
+    const physicsDirectory = path.join(root, "node_modules", "@threenative", "physics", "dist");
+    await mkdir(physicsDirectory, { recursive: true });
+    await writeFile(
+      path.join(physicsDirectory, "index.d.ts"),
+      "export declare const PhysicsOnly: number;\n",
+    );
+    await writeFile(
+      path.join(root, "src", "main.ts"),
+      'import * as core from "@threenative/core";\nvoid core;\n',
+    );
+    const measurement = measureSandbox(root);
+    expect(measurement.usedExports).toContain("UsedExport");
+    expect(measurement.usedExports).not.toContain("PhysicsOnly");
+    expect(measurement.unusedExports).toContain("PhysicsOnly");
+  });
+
   it("throws when framework declarations are absent", async () => {
     const root = await fixtureRoot();
     await mkdir(path.join(root, "src"), { recursive: true });

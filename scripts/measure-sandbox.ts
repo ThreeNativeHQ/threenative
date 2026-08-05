@@ -37,22 +37,23 @@ function declarationFiles(directory: string): string[] {
   });
 }
 
-function frameworkDeclarations(root: string): string[] {
+function frameworkDeclarations(root: string): Map<string, Set<string>> {
   const candidates = [
     path.join(root, "node_modules", "@threenative"),
     path.join(root, "framework-types", "@threenative"),
   ];
   for (const candidate of candidates) {
     if (!isDirectory(candidate)) continue;
-    const files = fs.readdirSync(candidate, { withFileTypes: true }).flatMap((entry) => {
+    const modules = new Map<string, Set<string>>();
+    for (const entry of fs.readdirSync(candidate, { withFileTypes: true })) {
       const packageDirectory = path.join(candidate, entry.name);
-      if (!isDirectory(packageDirectory)) return [];
+      if (!isDirectory(packageDirectory)) continue;
       const declarationRoot = fs.existsSync(path.join(packageDirectory, "index.d.ts"))
         ? packageDirectory
         : isDirectory(path.join(packageDirectory, "dist"))
           ? path.join(packageDirectory, "dist")
           : packageDirectory;
-      return declarationFiles(packageDirectory).filter((file) => {
+      const files = declarationFiles(packageDirectory).filter((file) => {
         const relative = path.relative(declarationRoot, file);
         const basename = path.basename(file);
         return (
@@ -61,8 +62,17 @@ function frameworkDeclarations(root: string): string[] {
             !/^(?:game|protocol)-[A-Za-z0-9]+\.d\.ts$/.test(basename))
         );
       });
-    });
-    if (files.length > 0) return files;
+      for (const file of files) {
+        const relative = path.relative(declarationRoot, file).split(path.sep);
+        const basename = relative.pop() as string;
+        if (basename !== "index.d.ts") relative.push(basename.replace(/\.d\.ts$/, ""));
+        const moduleName = `@threenative/${entry.name}${relative.length > 0 ? `/${relative.join("/")}` : ""}`;
+        const exports = modules.get(moduleName) ?? new Set<string>();
+        for (const name of exportedNames(fs.readFileSync(file, "utf8"))) exports.add(name);
+        modules.set(moduleName, exports);
+      }
+    }
+    if (modules.size > 0) return modules;
   }
   throw new Error(
     `Cannot measure '${root}': missing node_modules/@threenative declarations. Archive the installed framework types with pnpm sweep:archive.`,
@@ -113,29 +123,39 @@ function importedNames(clause: string): { all: boolean; names: string[] } {
     .replace(/\{[^}]*\}/, "")
     .replace(/,\s*$/, "")
     .trim();
-  if (withoutNamed.startsWith("*")) return { all: true, names };
+  const namespaceClause = withoutNamed.replace(/^type\s+/, "").trim();
+  if (namespaceClause.startsWith("*")) return { all: true, names };
   if (withoutNamed.length > 0 && !withoutNamed.startsWith("type ")) names.push("default");
   return { all: false, names: names.filter((name) => /^[A-Za-z_$][\w$]*$/.test(name)) };
 }
 
-function usedExportNames(files: readonly string[], allExports: ReadonlySet<string>): Set<string> {
+function usedExportNames(
+  files: readonly string[],
+  frameworkModules: ReadonlyMap<string, ReadonlySet<string>>,
+): Set<string> {
   const used = new Set<string>();
-  let namespaceImport = false;
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
     const patterns = [
-      /\bimport\s+([^;]*?)\s+from\s*["']@threenative\/[^"']+["']/g,
-      /\bexport\s+(?:type\s+)?([^;]*?)\s+from\s*["']@threenative\/[^"']+["']/g,
+      /\bimport\s+([^;]*?)\s+from\s*["'](@threenative\/[^"']+)["']/g,
+      /\bexport\s+(?:type\s+)?([^;]*?)\s+from\s*["'](@threenative\/[^"']+)["']/g,
     ];
     for (const pattern of patterns) {
       for (const match of source.matchAll(pattern)) {
         const parsed = importedNames(match[1] as string);
-        if (parsed.all) namespaceImport = true;
-        for (const name of parsed.names) used.add(name);
+        const moduleName = match[2] as string;
+        const exports = frameworkModules.get(moduleName);
+        if (exports === undefined) continue;
+        if (parsed.all) {
+          for (const name of exports) used.add(`${moduleName}:${name}`);
+          continue;
+        }
+        for (const name of parsed.names) {
+          if (exports.has(name)) used.add(`${moduleName}:${name}`);
+        }
       }
     }
   }
-  if (namespaceImport) for (const name of allExports) used.add(name);
   return used;
 }
 
@@ -153,12 +173,11 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
   if (!isDirectory(sourceRoot)) throw new Error(`Cannot measure '${root}': missing src/.`);
   const files = sourceFiles(sourceRoot).sort();
   if (files.length === 0) throw new Error(`Cannot measure '${root}': src/ has no source files.`);
-  const declarations = frameworkDeclarations(root);
-  const allExports = new Set<string>();
-  for (const file of declarations) {
-    for (const name of exportedNames(fs.readFileSync(file, "utf8"))) allExports.add(name);
-  }
-  if (allExports.size === 0)
+  const frameworkModules = frameworkDeclarations(root);
+  const allExports = new Map<string, Set<string>>(
+    [...frameworkModules].map(([moduleName, names]) => [moduleName, new Set(names)]),
+  );
+  if ([...allExports.values()].every((names) => names.size === 0))
     throw new Error(`Cannot measure '${root}': framework declarations export no symbols.`);
 
   let userLoc = 0;
@@ -172,17 +191,23 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
     if (framework) frameworkFiles += 1;
     if (three && !framework) threeOnlyFiles += 1;
   }
-  const used = usedExportNames(files, allExports);
-  const usedExports = [...used].filter((name) => allExports.has(name)).sort();
-  const unusedExports = [...allExports].filter((name) => !used.has(name)).sort();
+  const used = usedExportNames(files, frameworkModules);
+  const usedExports = new Set<string>();
+  const unusedExports = new Set<string>();
+  for (const [moduleName, names] of allExports) {
+    for (const name of names) {
+      if (used.has(`${moduleName}:${name}`)) usedExports.add(name);
+      else unusedExports.add(name);
+    }
+  }
   return {
     userLoc,
     sourceFiles: files.length,
     frameworkFiles,
     threeOnlyFiles,
     reachRate: frameworkFiles / files.length,
-    usedExports,
-    unusedExports,
+    usedExports: [...usedExports].sort(),
+    unusedExports: [...unusedExports].sort(),
   };
 }
 

@@ -19,6 +19,12 @@ function archiveName(manifest: SweepManifest): string {
   return `${manifest.genre}-${date}`;
 }
 
+function assertArchiveDestination(root: string, destination: string): void {
+  const relative = path.relative(path.resolve(root), path.resolve(destination));
+  if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    throw new Error(`Refusing archive destination outside '${path.resolve(root)}': ${destination}`);
+}
+
 function nextArchive(root: string, base: string): string {
   const first = path.join(root, base);
   if (!fs.existsSync(first)) return first;
@@ -87,6 +93,7 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
   const archiveRoot = path.join(repo, "docs", "benchmark", "sweeps");
   fs.mkdirSync(archiveRoot, { recursive: true });
   const destination = nextArchive(archiveRoot, archiveName(manifest));
+  assertArchiveDestination(archiveRoot, destination);
   fs.mkdirSync(destination, { recursive: true });
   try {
     fs.cpSync(sourceRoot, path.join(destination, "src"), { recursive: true });

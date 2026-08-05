@@ -100,6 +100,13 @@ export function readManifest(file: string): SweepManifest {
     if (value[key] === undefined || value[key] === "")
       throw new Error(`Invalid sweep manifest '${file}': missing ${key}.`);
   }
+  if (typeof value.genre !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.genre))
+    throw new Error(`Invalid sweep manifest '${file}': genre must be a lowercase slug.`);
+  if (
+    typeof value.date !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value.date)
+  )
+    throw new Error(`Invalid sweep manifest '${file}': date must be an ISO timestamp.`);
   if (typeof value.sourceLines !== "number" || value.sourceLines < 0)
     throw new Error(`Invalid sweep manifest '${file}': sourceLines must be non-negative.`);
   return value as SweepManifest;
