@@ -9,6 +9,9 @@ const REQUIRED_FIELDS = [
   "Genre",
   "Round",
   "Brief SHA-256",
+  "Arm",
+  "Proof result",
+  "Proof SHA-256",
   "Template",
   "Archive",
   "Framework version",
@@ -45,6 +48,10 @@ function tableCells(line: string): string[] {
 
 function validateLedger(markdown: string, filename = "sweep.md"): void {
   for (const label of REQUIRED_FIELDS) field(markdown, label);
+  if (!["framework", "vanilla"].includes(field(markdown, "Arm")))
+    throw new Error(`${filename}: Arm must be framework or vanilla.`);
+  if (!/^\d+\/\d+/.test(field(markdown, "Proof result")))
+    throw new Error(`${filename}: Proof result must start with passed/total.`);
   const round = field(markdown, "Round");
   if (!/^[1-9]\d*$/.test(round)) throw new Error(`${filename}: Round must be a positive integer.`);
   const heading = markdown.indexOf("## Friction ledger");
@@ -81,6 +88,9 @@ describe("sweep ledgers", () => {
       "Genre: fixture",
       "Round: 1",
       "Brief SHA-256: abc",
+      "Arm: framework",
+      "Proof result: 1/1",
+      "Proof SHA-256: def",
       "Template: none",
       "Archive: docs/benchmark/sweeps/fixture",
       "Framework version: 0.1.0",
@@ -109,6 +119,9 @@ describe("sweep ledgers", () => {
       "Genre: fixture",
       "Round: 1",
       "Brief SHA-256: abc",
+      "Arm: framework",
+      "Proof result: 1/1",
+      "Proof SHA-256: def",
       "Template: none",
       "Archive: docs/benchmark/sweeps/fixture",
       "Framework version: 0.1.0",
@@ -135,6 +148,9 @@ describe("sweep ledgers", () => {
       "Genre: fixture",
       "Round: 1",
       "Brief SHA-256: abc",
+      "Arm: framework",
+      "Proof result: 1/1",
+      "Proof SHA-256: def",
       "Template: none",
       "Archive: docs/benchmark/sweeps/fixture",
       "Framework version: 0.1.0",

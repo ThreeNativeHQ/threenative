@@ -3,6 +3,9 @@
 Genre: `<genre>`
 Round: `<1 or 2>`
 Brief SHA-256: `<sha256>`
+Arm: `<framework or vanilla>`
+Proof result: `<passed>/<total>`
+Proof SHA-256: `<sha256>`
 Template: `<template or none>`
 Archive: `docs/benchmark/sweeps/<genre>-<date>`
 Framework version: `<version>`

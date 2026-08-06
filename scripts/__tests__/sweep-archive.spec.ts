@@ -31,8 +31,10 @@ async function writeSandbox(root: string, name = "sandbox"): Promise<string> {
   await writeFile(
     path.join(sandbox, "sweep.json"),
     JSON.stringify({
+      arm: "framework",
       genre: "fixture",
       briefHash: "a".repeat(64),
+      proofHash: "b".repeat(64),
       template: "none",
       date: "2099-01-02T00:00:00.000Z",
       frameworkVersion: "0.1.0",
@@ -99,8 +101,10 @@ describe("sweep archive", () => {
     await writeFile(
       path.join(sandbox, "sweep.json"),
       JSON.stringify({
+        arm: "framework",
         genre: "../outside",
         briefHash: "a".repeat(64),
+        proofHash: "b".repeat(64),
         template: "none",
         date: "2099-01-02T00:00:00.000Z",
         frameworkVersion: "0.1.0",

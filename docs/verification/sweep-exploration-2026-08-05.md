@@ -3,6 +3,9 @@
 Genre: exploration
 Round: 2
 Brief SHA-256: e0eb67ef4568bece73a2db7bccdd4d7a1c4f85b08d7575e8df98790353603f39
+Arm: framework
+Proof result: 0/0 (not run; archived before PRD-019)
+Proof SHA-256: 247110b609859c765de7dbb285c1609b57dc04c51cbec375735d004e5265a88a
 Template: starter
 Archive: docs/benchmark/sweeps/exploration-2026-08-05
 Framework version: 0.1.0

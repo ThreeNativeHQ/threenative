@@ -3,6 +3,9 @@
 Genre: topdown-action
 Round: 1
 Brief SHA-256: 053c4b8c58219b0e578b7526526566496d8ab16b916c86cebb539672b2f86b86
+Arm: framework
+Proof result: 0/0 (not run; archived before PRD-019)
+Proof SHA-256: a296532b09f44935ef5901bc5ff0ed3d1794797e33060e8770d18fc72dda8e24
 Template: starter (no topdown-action template)
 Archive: docs/benchmark/sweeps/topdown-action-2026-08-05
 Framework version: 0.1.0

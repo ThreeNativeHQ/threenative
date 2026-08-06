@@ -1,0 +1,72 @@
+{
+  "name": "exploration-brief-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 15,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "input", "label": "inspect-hub", "press": "KeyE", "holdFrames": 10, "release": true },
+    {
+      "kind": "input",
+      "label": "enter-north-area",
+      "press": "ArrowUp",
+      "holdFrames": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "inspect-north",
+      "press": "KeyE",
+      "holdFrames": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "return-to-hub",
+      "press": "ArrowDown",
+      "holdFrames": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "enter-south-area",
+      "press": "ArrowDown",
+      "holdFrames": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "inspect-south",
+      "press": "KeyE",
+      "holdFrames": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "return-to-hub",
+      "press": "ArrowUp",
+      "holdFrames": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "targetInViewport": true,
+      "within": 12
+    },
+    "movement": { "entity": "player", "minDistance": 4 },
+    "resources": [
+      { "id": "GameState", "path": "area", "equals": "hub" },
+      { "id": "GameState", "path": "inspections", "equals": 3, "changed": true },
+      { "id": "GameState", "path": "inspectedPoints", "textIncludes": "north.archive" },
+      { "id": "GameState", "path": "objectiveComplete", "equals": true, "changed": true },
+      { "id": "GameState", "path": "returns", "equals": 2 }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}
