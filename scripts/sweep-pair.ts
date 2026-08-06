@@ -48,6 +48,11 @@ interface StoredProofDiagnostic {
   readonly severity: "error" | "warning";
 }
 
+interface SealedProofExpectation {
+  readonly assertionIds: readonly string[];
+  readonly name: string;
+}
+
 export interface PairArmResult {
   readonly archive: string;
   readonly passed: number;
@@ -97,7 +102,191 @@ function isStoredProofDiagnostic(value: unknown): value is StoredProofDiagnostic
   );
 }
 
-function sealedScenarioNames(repo: string, genre: string): string[] {
+function recordField(
+  value: Record<string, unknown>,
+  key: string,
+  context: string,
+): Record<string, unknown> {
+  const field = value[key];
+  if (!isRecord(field))
+    throw new Error(`Cannot pair '${context}': sealed proof field '${key}' must be an object.`);
+  return field;
+}
+
+function recordArray(
+  value: Record<string, unknown>,
+  key: string,
+  context: string,
+): Record<string, unknown>[] {
+  const field = value[key];
+  if (!Array.isArray(field) || !field.every(isRecord))
+    throw new Error(
+      `Cannot pair '${context}': sealed proof field '${key}' must be an array of objects.`,
+    );
+  return field;
+}
+
+function stringField(value: Record<string, unknown>, key: string, context: string): string {
+  const field = value[key];
+  if (typeof field !== "string" || field.trim() === "")
+    throw new Error(
+      `Cannot pair '${context}': sealed proof field '${key}' must be a non-empty string.`,
+    );
+  return field;
+}
+
+function hasField(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function pathAssertionIds(
+  kind: "component" | "hud" | "resource",
+  assertion: Record<string, unknown>,
+  context: string,
+): string[] {
+  const id = stringField(assertion, "id", context);
+  const path = assertion.path === undefined ? "value" : stringField(assertion, "path", context);
+  const finalPath = assertion.path === undefined ? "" : `.${path}`;
+  const ids: string[] = [];
+  if (
+    hasField(assertion, "equals") ||
+    typeof assertion.gte === "number" ||
+    typeof assertion.textIncludes === "string" ||
+    typeof assertion.changed === "boolean"
+  )
+    ids.push(`${kind}.${id}${finalPath}`);
+  if (assertion.throughoutSteps === true) ids.push(`${kind}.${id}.${path}.throughoutSteps`);
+  if (Array.isArray(assertion.atSteps) && assertion.atSteps.length > 0)
+    ids.push(`${kind}.${id}.${path}.atSteps`);
+  return ids;
+}
+
+function sealedAssertionIds(scenario: Record<string, unknown>, context: string): string[] {
+  const assertions = recordField(scenario, "assert", context);
+  const subject = typeof scenario.subject === "string" ? scenario.subject : "";
+  const ids: string[] = [];
+  const add = (id: string): void => {
+    ids.push(id);
+  };
+
+  if (hasField(assertions, "reachability")) {
+    const reachability = recordField(assertions, "reachability", context);
+    const entities = reachability.entities;
+    if (
+      !Array.isArray(entities) ||
+      !entities.every((entity) => typeof entity === "string" && entity.trim() !== "")
+    )
+      throw new Error(`Cannot pair '${context}': reachability.entities must contain entity ids.`);
+    for (let index = 0; index < entities.length - 1; index += 1)
+      add(`reachability.${index}.${entities[index]}.${entities[index + 1]}`);
+  }
+  if (hasField(assertions, "overlayNodes")) {
+    for (const assertion of recordArray(assertions, "overlayNodes", context)) {
+      const overlayId = stringField(assertion, "overlayId", context);
+      const selector = stringField(assertion, "selector", context);
+      add(`overlayNode.${overlayId}:${selector}`);
+    }
+  }
+  if (hasField(assertions, "visual")) {
+    for (const [index, assertion] of recordArray(assertions, "visual", context).entries()) {
+      if (assertion.frameDiff !== undefined) add(`visual.${index}.frameDiff`);
+      const region = assertion.region;
+      if (region !== undefined) {
+        if (!isRecord(region))
+          throw new Error(`Cannot pair '${context}': visual.region must be an object.`);
+        add(`visual.${index}.region`);
+        if (region.minDarkPixelRatio !== undefined) add(`visual.${index}.region.darkPixels`);
+      }
+      if (assertion.entityVisible !== undefined) add(`visual.${index}.entityVisible`);
+    }
+  }
+  if (hasField(assertions, "resources")) {
+    for (const assertion of recordArray(assertions, "resources", context)) {
+      if (hasField(assertion, "anyOf")) {
+        stringField(assertion, "id", context);
+        add(`resource.${assertion.id}.anyOf`);
+      } else {
+        for (const id of pathAssertionIds("resource", assertion, context)) add(id);
+      }
+    }
+  }
+  if (hasField(assertions, "world")) add("world.seed");
+  if (hasField(assertions, "components")) {
+    for (const assertion of recordArray(assertions, "components", context)) {
+      const entity = stringField(assertion, "entity", context);
+      const component = stringField(assertion, "component", context);
+      const path = assertion.path === undefined ? "value" : stringField(assertion, "path", context);
+      if (
+        hasField(assertion, "equals") ||
+        typeof assertion.gte === "number" ||
+        typeof assertion.changed === "boolean"
+      )
+        add(`component.${entity}.${component}.${path}`);
+      if (Array.isArray(assertion.atSteps) && assertion.atSteps.length > 0)
+        add(`component.${entity}.${component}.${path}.atSteps`);
+    }
+  }
+  if (hasField(assertions, "aerodynamics")) {
+    for (const [index] of recordArray(assertions, "aerodynamics", context).entries())
+      add(`aerodynamics.${index}`);
+  }
+  if (hasField(assertions, "hud")) {
+    for (const assertion of recordArray(assertions, "hud", context))
+      for (const id of pathAssertionIds("hud", assertion, context)) add(id);
+  }
+  if (hasField(assertions, "tags")) {
+    for (const assertion of recordArray(assertions, "tags", context))
+      add(`tags.${stringField(assertion, "tag", context)}`);
+  }
+  if (hasField(assertions, "states")) {
+    for (const assertion of recordArray(assertions, "states", context))
+      add(`states.${stringField(assertion, "entity", context)}`);
+  }
+  if (hasField(assertions, "diagnostics")) add("diagnostics");
+  if (hasField(assertions, "movement")) {
+    const movement = recordField(assertions, "movement", context);
+    if (movement.minVelocity !== undefined) add("movement.velocity");
+    if (movement.minDistance !== undefined) add("movement.distance");
+    if (movement.maxDistance !== undefined) add("movement.maxDistance");
+    if (movement.pathLength !== undefined) add("movement.pathLength");
+    if (movement.minAxisDelta !== undefined) add("movement.axisDelta");
+    if (movement.minResolvedAxisDelta !== undefined) add("movement.resolvedAxisDelta");
+    if (movement.rotationChanged === true) add("movement.rotation");
+    if (movement.maxTiltDegrees !== undefined) add("movement.tilt");
+    if (movement.closesDistanceToPosition !== undefined) add("movement.closesDistance");
+    if (movement.reachesPositionWithin !== undefined) add("movement.reachesPosition");
+    if (movement.facesMovementWithinDegrees !== undefined) add("movement.facing");
+    if (movement.notFacing !== undefined) add("movement.notFacing");
+    if (movement.notFacingPosition !== undefined) add("movement.notFacingPosition");
+  }
+  if (hasField(assertions, "camera")) add("camera");
+  if (hasField(assertions, "visibility")) {
+    for (const assertion of recordArray(assertions, "visibility", context))
+      add(`visibility.${typeof assertion.entity === "string" ? assertion.entity : subject}`);
+  }
+  if (hasField(assertions, "contacts")) {
+    for (const assertion of recordArray(assertions, "contacts", context))
+      add(`contact.${typeof assertion.entity === "string" ? assertion.entity : subject}`);
+  }
+  if (hasField(assertions, "settled")) {
+    for (const assertion of recordArray(assertions, "settled", context))
+      add(`settled.${stringField(assertion, "entity", context)}`);
+  }
+  if (hasField(assertions, "occluded")) {
+    for (const assertion of recordArray(assertions, "occluded", context))
+      add(`occluded.${typeof assertion.entity === "string" ? assertion.entity : "ray"}`);
+  }
+  if (hasField(assertions, "animation")) {
+    for (const assertion of recordArray(assertions, "animation", context))
+      add(`animation.${typeof assertion.entity === "string" ? assertion.entity : subject}`);
+  }
+
+  if (ids.length === 0)
+    throw new Error(`Cannot pair '${context}': sealed proof has no evaluable assertion ids.`);
+  return ids;
+}
+
+function sealedProofExpectations(repo: string, genre: string): SealedProofExpectation[] {
   return sealedProofFiles(repo, genre).map((file: ProofFile) => {
     let value: unknown;
     try {
@@ -113,22 +302,39 @@ function sealedScenarioNames(repo: string, genre: string): string[] {
       (value as { name: string }).name.trim() === ""
     )
       throw new Error(`Cannot pair '${genre}': sealed proof '${file.relativePath}' has no name.`);
-    return (value as { name: string }).name;
+    const scenario = value as Record<string, unknown>;
+    const name = scenario.name as string;
+    return { assertionIds: sealedAssertionIds(scenario, file.relativePath), name };
   });
 }
 
 function requireScenarioSet(
   root: string,
   actual: readonly StoredProofScenario[],
-  expected: readonly string[],
+  expected: readonly SealedProofExpectation[],
 ): void {
   const names = actual.map(({ name }) => name);
+  const expectedNames = expected.map(({ name }) => name);
   if (new Set(names).size !== names.length)
     throw new Error(`Cannot pair '${root}': proof.json has duplicate scenario names.`);
-  if (names.length !== expected.length || names.some((name) => !expected.includes(name)))
+  if (names.length !== expectedNames.length || names.some((name) => !expectedNames.includes(name)))
     throw new Error(
       `Cannot pair '${root}': proof.json scenario names do not match the sealed proof set.`,
     );
+  for (const scenario of actual) {
+    const sealed = expected.find(({ name }) => name === scenario.name);
+    if (sealed === undefined) continue;
+    const actualIds = scenario.assertions.map(({ id }) => id);
+    if (
+      new Set(actualIds).size !== actualIds.length ||
+      new Set(sealed.assertionIds).size !== sealed.assertionIds.length ||
+      actualIds.length !== sealed.assertionIds.length ||
+      actualIds.some((id) => !sealed.assertionIds.includes(id))
+    )
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario '${scenario.name}' assertion ids do not match the sealed proof.`,
+      );
+  }
 }
 
 function resolveArchive(source: string): string {
@@ -444,7 +650,7 @@ export function pairSweeps(leftDirectory: string, rightDirectory: string, repo =
     throw new Error("Cannot pair sweeps with different proof hashes.");
   const leftProof = readProof(left, leftManifest);
   const rightProof = readProof(right, rightManifest);
-  const expectedScenarios = sealedScenarioNames(repo, leftManifest.genre);
+  const expectedScenarios = sealedProofExpectations(repo, leftManifest.genre);
   requireScenarioSet(left, leftProof.scenarios, expectedScenarios);
   requireScenarioSet(right, rightProof.scenarios, expectedScenarios);
   if (leftProof.scenarios.some(({ name }, index) => name !== rightProof.scenarios[index]?.name))

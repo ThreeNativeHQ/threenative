@@ -24,7 +24,10 @@ async function fixtureRoot(): Promise<string> {
       schemaVersion: 1,
       target: "web",
       steps: [{ waitFrames: 1 }],
-      assert: { movement: { entity: "player", minDistance: 1 } },
+      assert: {
+        movement: { entity: "player", minDistance: 1 },
+        visibility: [{ entity: "player", minProjectedPixels: 20 }],
+      },
     }),
   );
   return root;
@@ -97,7 +100,10 @@ async function writeArchive(
             {
               name: "fixture",
               verdict: "pass",
-              assertions: [{ id: "fixture.assertion", pass: true }],
+              assertions: [
+                { id: "movement.distance", pass: true },
+                { id: "visibility.player", pass: true },
+              ],
               diagnostics: [],
             },
           ],
@@ -257,6 +263,36 @@ describe("paired sweep", () => {
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/scenario/);
   });
 
+  it("rejects a proof that omits a sealed assertion", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios: [
+          {
+            name: "fixture",
+            verdict: "pass",
+            assertions: [{ id: "movement.distance", pass: true }],
+            diagnostics: [],
+          },
+        ],
+        passed: 1,
+        total: 1,
+      }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/assertion ids do not match/);
+  });
+
   it("rejects malformed scenarios and non-integer proof counts", async () => {
     const root = await fixtureRoot();
     const framework = await writeArchive(root, "framework", { arm: "framework" });
@@ -294,7 +330,10 @@ describe("paired sweep", () => {
         {
           name: "fixture",
           verdict: "pass",
-          assertions: [{ id: "fixture.assertion", pass: true }],
+          assertions: [
+            { id: "movement.distance", pass: true },
+            { id: "visibility.player", pass: true },
+          ],
           diagnostics: [{}],
         },
       ],
@@ -306,7 +345,7 @@ describe("paired sweep", () => {
 
   it.each([
     ["empty assertions", []],
-    ["pass-false assertion", [{ id: "fixture.assertion", pass: false }]],
+    ["pass-false assertion", [{ id: "movement.distance", pass: false }]],
   ])("rejects fabricated proof records with %s", async (_label, assertions) => {
     const root = await fixtureRoot();
     const framework = await writeArchive(root, "framework", { arm: "framework" });
@@ -349,7 +388,10 @@ describe("paired sweep", () => {
           {
             name: "fixture",
             verdict: "pass",
-            assertions: [{ id: "fixture.assertion", pass: true }],
+            assertions: [
+              { id: "movement.distance", pass: true },
+              { id: "visibility.player", pass: true },
+            ],
             diagnostics: [{ code: "TN_FAILURE", message: "runtime failed", severity: "error" }],
           },
         ],
@@ -379,7 +421,10 @@ describe("paired sweep", () => {
           {
             name: "fixture",
             verdict: "fail",
-            assertions: [{ id: "fixture.assertion", pass: true }],
+            assertions: [
+              { id: "movement.distance", pass: true },
+              { id: "visibility.player", pass: true },
+            ],
             diagnostics: [{ code: "TN_NOTE", message: "warning only", severity: "warning" }],
           },
         ],
