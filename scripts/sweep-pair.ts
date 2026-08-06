@@ -7,6 +7,7 @@ import {
   type SweepManifest,
   readManifest,
   sealedProofFiles,
+  sealedProofHash,
 } from "./make-sandbox.js";
 import { type SweepMeasurement, measureSandbox } from "./measure-sandbox.js";
 
@@ -648,6 +649,9 @@ export function pairSweeps(leftDirectory: string, rightDirectory: string, repo =
     throw new Error("Cannot pair sweeps with different brief hashes.");
   if (leftManifest.proofHash !== rightManifest.proofHash)
     throw new Error("Cannot pair sweeps with different proof hashes.");
+  const expectedProofHash = sealedProofHash(repo, leftManifest.genre);
+  if (leftManifest.proofHash !== expectedProofHash || rightManifest.proofHash !== expectedProofHash)
+    throw new Error("Cannot pair sweeps whose proof hash does not match the sealed proof set.");
   const leftProof = readProof(left, leftManifest);
   const rightProof = readProof(right, rightManifest);
   const expectedScenarios = sealedProofExpectations(repo, leftManifest.genre);

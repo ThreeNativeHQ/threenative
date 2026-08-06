@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { sealedProofHash } from "../make-sandbox";
 import { pairSweeps } from "../sweep-pair";
 
 const temporaryRoots: string[] = [];
@@ -70,7 +71,8 @@ async function writeArchive(
   }
   const genre = options.genre ?? "fixture";
   const briefHash = options.briefHash ?? "a".repeat(64);
-  const proofHash = options.proofHash ?? "b".repeat(64);
+  const proofHash =
+    options.proofHash ?? (genre === "fixture" ? sealedProofHash(root, genre) : "b".repeat(64));
   await writeFile(
     path.join(archive, "sweep.json"),
     `${JSON.stringify(
@@ -156,6 +158,19 @@ describe("paired sweep", () => {
     expect(() => pairSweeps(framework, vanillaGenre, root)).toThrow(/different genres/);
     expect(() => pairSweeps(framework, vanillaBrief, root)).toThrow(/different brief hashes/);
     expect(() => pairSweeps(framework, vanillaProof, root)).toThrow(/different proof hashes/);
+  });
+
+  it("rejects archives whose proof hash is not the sealed proof set", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", {
+      arm: "framework",
+      proofHash: "c".repeat(64),
+    });
+    const vanilla = await writeArchive(root, "vanilla", {
+      arm: "vanilla",
+      proofHash: "c".repeat(64),
+    });
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/sealed proof set/);
   });
 
   it("requires a proof observation on both sides", async () => {

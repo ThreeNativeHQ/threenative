@@ -1,5 +1,5 @@
 import type { IPlaytestReport } from "./report.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourcePathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -1421,7 +1421,7 @@ function evaluatePathAssertion(
 }
 
 function evaluateResourceAnyOfAssertion(
-  assertion: IPlaytestPathAssertion,
+  assertion: IPlaytestResourcePathAssertion,
   observed: { after?: unknown; before?: unknown } | undefined,
   context: { effectLog?: unknown; movedDistance?: number; scenarioSourcePath?: string },
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
