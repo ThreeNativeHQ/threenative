@@ -48,6 +48,15 @@ async function writeArchive(
       ? 'import { defineGame } from "@threenative/core";\nvoid defineGame;\n'
       : 'import { Scene } from "three";\nvoid Scene;\n',
   );
+  await writeFile(
+    path.join(archive, "package.json"),
+    JSON.stringify({
+      dependencies:
+        options.arm === "framework"
+          ? { "@threenative/core": "0.1.0" }
+          : { "@threenative/playtest": "0.1.0", three: "0.185.1" },
+    }),
+  );
   if (options.arm === "framework") {
     await mkdir(path.join(archive, "framework-types", "@threenative", "core"), { recursive: true });
     await writeFile(
@@ -147,6 +156,28 @@ describe("paired sweep", () => {
     const framework = await writeArchive(root, "framework", { arm: "framework" });
     const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla", proof: false });
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/missing proof.json/);
+  });
+
+  it("rejects a vanilla archive that declares framework dependencies", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    await writeFile(
+      path.join(vanilla, "package.json"),
+      JSON.stringify({ dependencies: { "@threenative/core": "0.1.0" } }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/forbidden framework dependency/);
+  });
+
+  it("rejects a vanilla archive that imports framework packages", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    await writeFile(
+      path.join(vanilla, "src", "main.ts"),
+      'import { RigidBody3D } from "@threenative/physics";\nvoid RigidBody3D;\n',
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/source import/);
   });
 
   it.each([

@@ -11,6 +11,13 @@ import { type SweepMeasurement, measureSandbox } from "./measure-sandbox.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const SOURCE_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".ts", ".tsx"]);
+const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+const VANILLA_BRIDGE_PACKAGE = "@threenative/playtest";
 
 interface StoredProof {
   readonly arm: SandboxArm;
@@ -145,9 +152,62 @@ function lineCount(source: string): number {
     : normalized.split("\n").length;
 }
 
+function packageNameFromImport(specifier: string): string {
+  const parts = specifier.split("/");
+  return parts[0]?.startsWith("@") ? parts.slice(0, 2).join("/") : (parts[0] ?? specifier);
+}
+
+function isAllowedVanillaPackage(name: string): boolean {
+  return !name.startsWith("@threenative/") || name === VANILLA_BRIDGE_PACKAGE;
+}
+
+function validateVanillaArchive(root: string, files: readonly string[]): void {
+  const packageFile = path.join(root, "package.json");
+  if (!isFile(packageFile))
+    throw new Error(`Cannot measure '${root}' as vanilla: missing package.json.`);
+  let packageJson: unknown;
+  try {
+    packageJson = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json is invalid JSON: ${String(error)}.`,
+    );
+  }
+  if (!isRecord(packageJson))
+    throw new Error(`Cannot measure '${root}' as vanilla: package.json must contain an object.`);
+  for (const section of DEPENDENCY_SECTIONS) {
+    const rawDependencies = packageJson[section];
+    if (rawDependencies === undefined) continue;
+    if (!isRecord(rawDependencies))
+      throw new Error(
+        `Cannot measure '${root}' as vanilla: package.json ${section} must be an object.`,
+      );
+    for (const name of Object.keys(rawDependencies)) {
+      if (!isAllowedVanillaPackage(name))
+        throw new Error(
+          `Cannot measure '${root}' as vanilla: package.json declares forbidden framework dependency '${name}'.`,
+        );
+    }
+  }
+  const importPattern =
+    /(?:\bfrom\s*|\bimport\s*\(|\brequire\s*\(\s*|\bimport\s*)["'](@threenative\/[^"']+)["']/g;
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1];
+      if (specifier === undefined || isAllowedVanillaPackage(packageNameFromImport(specifier)))
+        continue;
+      throw new Error(
+        `Cannot measure '${root}' as vanilla: source import '${specifier}' uses a forbidden framework package in '${file}'.`,
+      );
+    }
+  }
+}
+
 function measureVanilla(root: string): SweepMeasurement {
   const files = sourceFiles(path.join(root, "src")).sort();
   if (files.length === 0) throw new Error(`Cannot measure '${root}': src/ has no source files.`);
+  validateVanillaArchive(root, files);
   let userLoc = 0;
   let threeOnlyFiles = 0;
   for (const file of files) {
