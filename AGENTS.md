@@ -141,9 +141,9 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
 ```
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`. Working today:
-`diagnostics`, console, network, screenshot and trace assertions, against any URL, with no
-adapter. Semantic ones (`movement`, `camera`, `visibility`) need
-`installThreePlaytestBridge` in the app under test — nothing in this repo installs it yet,
-and PRD-007 wires it into `defineGame` but is **not shipped**. Until then a semantic
-scenario fails `TN_PLAYTEST_BRIDGE_MISSING`; that is the harness being right. Install the
-bridge or narrow the scenario, never delete the assertion to get green.
+`diagnostics`, console, network, screenshot and trace assertions work against any URL. The
+framework template installs the bridge with `playtest()` in `defineGame`; a plain Three.js
+project installs the same observation surface with `installThreePlaytestBridge` from
+`@threenative/playtest/three`. Semantic assertions (`movement`, `camera`, `visibility`) against
+a project with neither bridge fail `TN_PLAYTEST_BRIDGE_MISSING`; that is the harness being
+right. Install the bridge or narrow the scenario, never delete the assertion to get green.

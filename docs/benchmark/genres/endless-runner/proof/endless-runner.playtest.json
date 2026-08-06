@@ -1,0 +1,51 @@
+{
+  "name": "endless-runner-brief-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "change-lane",
+      "press": "ArrowRight",
+      "holdFrames": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jump-obstacle",
+      "press": "Space",
+      "holdFrames": 1,
+      "release": true
+    },
+    { "kind": "wait", "label": "run-forward", "waitFrames": 145, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": { "axis": "-z", "min": 5 },
+      "minDistance": 5,
+      "pathLength": 5
+    },
+    "resources": [
+      { "id": "state", "path": "distance", "changed": true },
+      { "id": "state", "path": "collected", "gte": 1, "changed": true },
+      { "id": "state", "path": "lane", "equals": 2, "changed": true },
+      { "id": "state", "path": "speed", "changed": true },
+      {
+        "id": "state",
+        "anyOf": [
+          { "path": "jumps", "gte": 1, "changed": true },
+          { "path": "peakRise", "gte": 0.5, "changed": true },
+          { "path": "slides", "gte": 1, "changed": true },
+          { "path": "peakSlide", "gte": 0.5, "changed": true }
+        ]
+      }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

@@ -89,7 +89,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         : undefined)
       : undefined;
     for (const step of scenario.steps) {
-      await runStep(page, bridge, step, pathEntity, pathPositions);
+      await runStep(page, bridge, step, scenario.viewport, pathEntity, pathPositions);
       if (step.screenshot !== undefined) {
         await page.screenshot({ path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
@@ -325,11 +325,15 @@ async function runStep(
   page: Page,
   bridge: IPlaytestBridgeClient | undefined,
   step: IPlaytestScenario["steps"][number],
+  viewport: IPlaytestScenario["viewport"],
   pathEntity: string | undefined,
   pathPositions: PlaytestVec3[],
 ): Promise<void> {
   if (step.pointerPosition !== undefined) {
-    await page.mouse.move(step.pointerPosition.x, step.pointerPosition.y);
+    await page.mouse.move(
+      step.pointerPosition.x * viewport.width,
+      step.pointerPosition.y * viewport.height,
+    );
   }
   if (step.press !== undefined) {
     await page.keyboard.down(step.press);

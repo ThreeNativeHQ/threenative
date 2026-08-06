@@ -27,12 +27,21 @@ async function writeSandbox(root: string, name = "sandbox"): Promise<string> {
   });
   await writeFile(path.join(sandbox, "src", "main.ts"), "export const ready = true;\n");
   await writeFile(path.join(sandbox, "playtests", "smoke.json"), "{}\n");
+  await mkdir(path.join(sandbox, "public"), { recursive: true });
+  await writeFile(
+    path.join(sandbox, "index.html"),
+    '<script type="module" src="/src/main.ts"></script>\n',
+  );
+  await writeFile(path.join(sandbox, "vite.config.ts"), "export default {};\n");
+  await writeFile(path.join(sandbox, "public", "favicon.svg"), "<svg />\n");
   await writeFile(path.join(sandbox, "package.json"), '{"name":"fixture"}\n');
   await writeFile(
     path.join(sandbox, "sweep.json"),
     JSON.stringify({
+      arm: "framework",
       genre: "fixture",
       briefHash: "a".repeat(64),
+      proofHash: "b".repeat(64),
       template: "none",
       date: "2099-01-02T00:00:00.000Z",
       frameworkVersion: "0.1.0",
@@ -56,6 +65,15 @@ describe("sweep archive", () => {
     await expect(readFile(path.join(archive, "playtests/smoke.json"), "utf8")).resolves.toBe(
       "{}\n",
     );
+    await expect(readFile(path.join(archive, "index.html"), "utf8")).resolves.toContain(
+      "/src/main.ts",
+    );
+    await expect(readFile(path.join(archive, "vite.config.ts"), "utf8")).resolves.toBe(
+      "export default {};\n",
+    );
+    await expect(readFile(path.join(archive, "public/favicon.svg"), "utf8")).resolves.toBe(
+      "<svg />\n",
+    );
     await expect(readFile(path.join(archive, "sweep.json"), "utf8")).resolves.toContain(
       '"genre":"fixture"',
     );
@@ -64,6 +82,40 @@ describe("sweep archive", () => {
     ).resolves.toContain("FixtureExport");
     await expect(access(path.join(archive, "node_modules"))).rejects.toThrow();
     await expect(access(path.join(archive, "dist.js"))).rejects.toThrow();
+  });
+
+  it("bundles local file dependencies and rewrites them relative to the archive", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    const tarball = path.join(root, "threenative-playtest.tgz");
+    await writeFile(tarball, "package tarball\n");
+    await writeFile(
+      path.join(sandbox, "package.json"),
+      JSON.stringify({
+        name: "fixture",
+        dependencies: { "@threenative/playtest": `file:${tarball}` },
+      }),
+    );
+    const archive = archiveSandbox(sandbox, root);
+    const packageJson = JSON.parse(await readFile(path.join(archive, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@threenative/playtest"]).toBe(
+      "file:./vendor/threenative-playtest/threenative-playtest.tgz",
+    );
+    await expect(
+      readFile(path.join(archive, "vendor/threenative-playtest/threenative-playtest.tgz"), "utf8"),
+    ).resolves.toBe("package tarball\n");
+  });
+
+  it("rejects a missing local file dependency instead of archiving a broken package", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "package.json"),
+      JSON.stringify({ dependencies: { fixture: "file:/tmp/does-not-exist.tgz" } }),
+    );
+    expect(() => archiveSandbox(sandbox, root)).toThrow(/file does not exist/);
   });
 
   it("does not overwrite the first archive when the same sweep is archived twice", async () => {
@@ -99,8 +151,10 @@ describe("sweep archive", () => {
     await writeFile(
       path.join(sandbox, "sweep.json"),
       JSON.stringify({
+        arm: "framework",
         genre: "../outside",
         briefHash: "a".repeat(64),
+        proofHash: "b".repeat(64),
         template: "none",
         date: "2099-01-02T00:00:00.000Z",
         frameworkVersion: "0.1.0",

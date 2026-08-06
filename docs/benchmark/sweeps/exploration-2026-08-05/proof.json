@@ -1,0 +1,160 @@
+{
+  "arm": "framework",
+  "genre": "exploration",
+  "passed": 0,
+  "proofHash": "0a99497b13cc6b4d8bc275fb8b250dce1ab8440daada700fa1767f03a5b06d57",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": {
+              "equals": "hub"
+            },
+            "id": "state",
+            "path": "area",
+            "trivial": false
+          },
+          "id": "resource.state.area",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "equals": 3,
+              "changed": true
+            },
+            "id": "state",
+            "path": "inspections",
+            "trivial": false
+          },
+          "id": "resource.state.inspections",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "textIncludes": "north.archive"
+            },
+            "id": "state",
+            "path": "inspectedPoints",
+            "trivial": false
+          },
+          "id": "resource.state.inspectedPoints",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "objectiveComplete",
+            "trivial": false
+          },
+          "id": "resource.state.objectiveComplete",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "equals": 2
+            },
+            "id": "state",
+            "path": "returns",
+            "trivial": false
+          },
+          "id": "resource.state.returns",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 1,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 0,
+            "minimum": 4
+          },
+          "id": "movement.distance",
+          "pass": false
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20
+          },
+          "id": "visibility.player",
+          "pass": false
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "target": "player"
+          },
+          "id": "camera",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'area'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'inspections'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'inspectedPoints'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'objectiveComplete'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'returns'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+          "message": "Entity 'player' moved 0.000000, below required 4.",
+          "severity": "error",
+          "suggestion": "Check input bindings, collision response, and whether the scenario holds input long enough."
+        },
+        {
+          "code": "TN_PLAYTEST_VISIBILITY_FAILED",
+          "message": "Entity 'player' did not satisfy projected visibility assertions.",
+          "severity": "error",
+          "suggestion": "Check camera framing, clipping range, entity scale, and viewport-specific layout."
+        },
+        {
+          "code": "TN_PLAYTEST_CAMERA_ASSERTION_FAILED",
+          "message": "Camera did not satisfy the declared follow or viewport assertion.",
+          "severity": "error",
+          "suggestion": "Check camera registration, follow distance, and target framing."
+        }
+      ],
+      "name": "exploration-brief-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 1
+}

@@ -25,6 +25,14 @@ archives with `pnpm sweep:delta <round-1-archive> <round-2-archive>`; it refuses
 genres, brief hashes, and self-comparisons, then reports reach-rate movement, exports newly
 reached, exports still untouched, and repeated friction rows. The delta record is only valid
 after its numbers are recomputed from the two archived sweeps.
+
+Each genre also owns a sealed, arm-neutral proof set under `benchmark/genres/<genre>/proof/`.
+Run it against either arm with `pnpm sweep:proof <sandbox-or-archive>`; the command verifies
+the manifest's `Proof SHA-256`, runs every scenario, and writes `proof.json`. Pair one completed
+framework archive with one completed vanilla archive using
+`pnpm sweep:pair <framework-archive> <vanilla-archive>`; the command refuses mismatched arms,
+genres, brief hashes, proof hashes, and missing proof results before reporting passed/total,
+source LOC, source files, and framework reach side by side.
 The current caller census and recomputed round-2 comparison are recorded in
 [`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md).
 

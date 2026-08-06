@@ -1,0 +1,38 @@
+{
+  "name": "topdown-action-brief-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "move-in-arena",
+      "press": "ArrowRight",
+      "holdTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim-and-fire",
+      "pointerPosition": { "x": 0.7, "y": 0.5 },
+      "press": "Space",
+      "holdTicks": 70,
+      "release": true
+    },
+    { "kind": "wait", "label": "win-condition", "waitTicks": 25 }
+  ],
+  "assert": {
+    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minDistance": 2 },
+    "resources": [
+      { "id": "state", "path": "score", "gte": 3, "changed": true },
+      { "id": "state", "path": "enemiesRemaining", "equals": 0, "changed": true },
+      { "id": "state", "path": "objective", "textIncludes": "SECURE", "changed": true }
+    ],
+    "states": [{ "entity": "mission", "equals": "won" }],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

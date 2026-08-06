@@ -11,6 +11,7 @@ import {
   loadPlaytestScenario,
   requiredPlaytestCapabilities,
 } from "../src/index.js";
+import type { IPlaytestResourceAssertion } from "../src/index.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
@@ -96,6 +97,60 @@ test("scenario loading rejects unknown assertion kinds instead of ignoring them"
   const error = caught as PlaytestScenarioError;
   expect(error.diagnostic.code).toBe("TN_PLAYTEST_SCENARIO_INVALID");
   expect(error.diagnostic.message).toMatch(/Unknown key 'unknownKind'/u);
+});
+
+test("scenario loading preserves a resource anyOf contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { resources: [{ id: "state", anyOf: [{ path: "jumps", gte: 1, changed: true }, { path: "peakRise", gte: 0.5, changed: true }] }] },
+    name: "resource-anyof",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.resources?.[0]).toEqual({
+    id: "state",
+    anyOf: [
+      { path: "jumps", gte: 1, changed: true },
+      { path: "peakRise", gte: 0.5, changed: true },
+    ],
+  });
+});
+
+test("resource assertion types reject mixed anyOf and normal path fields", () => {
+  const normal: IPlaytestResourceAssertion = { gte: 1, id: "state", path: "jumps" };
+  const alternatives: IPlaytestResourceAssertion = {
+    anyOf: [{ gte: 1, path: "jumps" }],
+    id: "state",
+  };
+  // @ts-expect-error anyOf is exclusive with normal path assertion fields.
+  const mixed: IPlaytestResourceAssertion = {
+    anyOf: [{ gte: 1, path: "jumps" }],
+    equals: 1,
+    id: "state",
+  };
+  expect(normal).toMatchObject({ id: "state", path: "jumps" });
+  expect(alternatives).toMatchObject({ id: "state", anyOf: expect.any(Array) });
+  expect(mixed).toMatchObject({ id: "state" });
+});
+
+test.each([
+  ["empty", []],
+  ["malformed", [{ path: "jumps" }]],
+])("scenario loading rejects a %s resource anyOf", async (_label, anyOf) => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-invalid-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { resources: [{ id: "state", anyOf }] },
+    name: "invalid-resource-anyof",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_SCENARIO_INVALID" },
+  });
 });
 
 test("every assertion and setup operation owns known capability metadata", () => {

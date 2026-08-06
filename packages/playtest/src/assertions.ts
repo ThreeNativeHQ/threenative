@@ -1,5 +1,5 @@
 import type { IPlaytestReport } from "./report.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -138,6 +138,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
       { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+      { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, textIncludes?: string, changed?: boolean }>" },
     ],
     cardinality: "array",
     kind: "resources",
@@ -519,6 +520,16 @@ export function evaluateRichPlaytestAssertions(input: {
     }
   }
   for (const assertion of scenarioAssertions.resources ?? []) {
+    if (assertion.anyOf !== undefined) {
+      const result = evaluateResourceAnyOfAssertion(assertion, input.report.observations?.resources[assertion.id], {
+        effectLog: input.report.effectLog ?? input.report.observations?.effectLog,
+        movedDistance: input.report.distance,
+        scenarioSourcePath: input.scenario.sourcePath,
+      });
+      assertions.push(result.assertion);
+      if (result.diagnostic !== undefined) diagnostics.push(result.diagnostic);
+      continue;
+    }
     if (hasFinalPathExpectation(assertion)) {
       const result = evaluatePathAssertion("resource", assertion, input.report.observations?.resources[assertion.id], {
         effectLog: input.report.effectLog ?? input.report.observations?.effectLog,
@@ -822,7 +833,12 @@ export function evaluateRichPlaytestAssertions(input: {
     }
   }
   if (scenarioAssertions.movement?.rotationChanged === true) {
-    const rotation = rotationDelta(input.report.effectLog, scenarioAssertions.movement.entity ?? input.report.entity);
+    const rotation = rotationDelta(
+      input.report.effectLog,
+      scenarioAssertions.movement.entity ?? input.report.entity,
+      input.report.before?.rotation,
+      input.report.after?.rotation,
+    );
     const pass = rotation !== undefined && rotation > 0.0001;
     assertions.push({ details: { rotationDelta: rotation ?? null }, id: "movement.rotation", pass });
     if (!pass) {
@@ -1404,6 +1420,42 @@ function evaluatePathAssertion(
       };
 }
 
+function evaluateResourceAnyOfAssertion(
+  assertion: IPlaytestResourceAnyOfAssertion,
+  observed: { after?: unknown; before?: unknown } | undefined,
+  context: { effectLog?: unknown; movedDistance?: number; scenarioSourcePath?: string },
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const alternatives = assertion.anyOf ?? [];
+  const evaluated = alternatives.map((alternative) => evaluatePathAssertion(
+    "resource",
+    { ...alternative, id: assertion.id } as IPlaytestPathAssertion,
+    observed,
+    context,
+  ));
+  const passing = evaluated.find(({ assertion: result }) => result.pass);
+  const result = {
+    details: {
+      alternatives: evaluated.map(({ assertion: alternative }) => alternative.details ?? {}),
+      id: assertion.id,
+      observed: observed ?? null,
+    },
+    id: `resource.${assertion.id}.anyOf`,
+    pass: passing !== undefined,
+  };
+  return passing === undefined
+    ? {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_RESOURCE_ANY_OF_ASSERTION_FAILED",
+          message: `No alternative path assertion for resource '${assertion.id}' passed.`,
+          observedRuntimePath: `observations.json/resources/${assertion.id}`,
+          severity: "error",
+          suggestion: "Check the shared action input and the resource paths exposed by the runtime bridge.",
+        },
+      }
+    : { assertion: result };
+}
+
 function rejectsTrivialAssertion(kind: keyof NonNullable<IPlaytestScenario["assert"]>): boolean {
   return PLAYTEST_ASSERTION_REGISTRY.find((entry) => entry.kind === kind)?.triviality === "reject-initial-value";
 }
@@ -1763,18 +1815,35 @@ function summarizeMatchingEntries(effectLog: unknown, tokens: readonly string[])
   };
 }
 
-function rotationDelta(effectLog: unknown, entityId: string): number | undefined {
-  if (!isRecord(effectLog) || !Array.isArray(effectLog.entries)) {
-    return undefined;
-  }
-  const rotations = effectLog.entries
+function rotationDelta(
+  effectLog: unknown,
+  entityId: string,
+  beforeRotation?: readonly [number, number, number, number],
+  afterRotation?: readonly [number, number, number, number],
+): number | undefined {
+  if (isRecord(effectLog) && Array.isArray(effectLog.entries)) {
+    const rotations = effectLog.entries
     .filter((entry): entry is Record<string, unknown> => isRecord(entry))
     .filter((entry) => entry.kind === "patch" && entry.command === "setComponent" && entry.component === "Transform" && entry.entity === entityId)
     .map((entry) => readRotation(entry.value))
     .filter((item): item is Vec3 => item !== undefined);
-  const first = rotations[0];
-  const last = rotations[rotations.length - 1];
-  return first === undefined || last === undefined ? undefined : vectorDistance(first, last);
+    const first = rotations[0];
+    const last = rotations[rotations.length - 1];
+    if (first !== undefined && last !== undefined) return vectorDistance(first, last);
+  }
+  return quaternionDelta(beforeRotation, afterRotation);
+}
+
+function quaternionDelta(
+  before: readonly [number, number, number, number] | undefined,
+  after: readonly [number, number, number, number] | undefined,
+): number | undefined {
+  if (before === undefined || after === undefined) return undefined;
+  const beforeLength = Math.hypot(...before);
+  const afterLength = Math.hypot(...after);
+  if (beforeLength <= Number.EPSILON || afterLength <= Number.EPSILON) return undefined;
+  const dot = Math.abs((before[0] * after[0] + before[1] * after[1] + before[2] * after[2] + before[3] * after[3]) / (beforeLength * afterLength));
+  return 2 * Math.acos(Math.max(-1, Math.min(1, dot)));
 }
 
 function finalTiltDegrees(effectLog: unknown, entityId: string): number | undefined {

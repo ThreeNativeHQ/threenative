@@ -18,10 +18,15 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGES = ["core", "physics", "ui", "playtest"] as const;
+const ARMS = ["framework", "vanilla"] as const;
+
+export type SandboxArm = (typeof ARMS)[number];
 
 export interface SweepManifest {
+  readonly arm: SandboxArm;
   readonly genre: string;
   readonly briefHash: string;
+  readonly proofHash: string;
   readonly template: string;
   readonly date: string;
   readonly frameworkVersion: string;
@@ -31,16 +36,24 @@ export interface SweepManifest {
 interface GenreInput {
   readonly brief: string;
   readonly briefHash: string;
+  readonly proofHash: string;
   readonly reference: string;
 }
 
+export interface ProofFile {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+}
+
 export interface SandboxOptions {
+  readonly arm?: SandboxArm;
   readonly bare?: boolean;
   readonly genre: string;
   readonly out?: string;
   readonly packageTarballs?: Partial<Record<(typeof PACKAGES)[number], string>>;
   readonly prepare?: boolean;
   readonly repo?: string;
+  readonly install?: boolean;
   readonly template?: string;
 }
 
@@ -74,6 +87,58 @@ function assertGenreName(genre: string): void {
     throw new Error(`Invalid genre '${genre}'; use a lowercase genre slug.`);
 }
 
+export function assertSandboxArm(arm: string): asserts arm is SandboxArm {
+  if (!ARMS.includes(arm as SandboxArm))
+    throw new Error(`Invalid sandbox arm '${arm}'; use framework or vanilla.`);
+}
+
+function proofDirectory(repo: string, genre: string): string {
+  return path.join(repo, "docs", "benchmark", "genres", genre, "proof");
+}
+
+function collectProofFiles(directory: string, root = directory): ProofFile[] {
+  if (!isDirectory(directory)) return [];
+  return fs
+    .readdirSync(directory, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((entry) => {
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return collectProofFiles(absolutePath, root);
+      if (!entry.isFile() || !entry.name.endsWith(".playtest.json")) return [];
+      return [
+        {
+          absolutePath,
+          relativePath: path.relative(root, absolutePath).split(path.sep).join("/"),
+        },
+      ];
+    });
+}
+
+export function sealedProofFiles(repo: string, genre: string): readonly ProofFile[] {
+  assertGenreName(genre);
+  const files = collectProofFiles(proofDirectory(repo, genre));
+  if (files.length === 0) throw new Error(`Genre '${genre}' has no sealed proof scenarios.`);
+  return files;
+}
+
+export function hashProofFiles(files: readonly ProofFile[]): string {
+  if (files.length === 0) throw new Error("Cannot hash an empty sealed proof set.");
+  const hash = createHash("sha256");
+  for (const file of [...files].sort((left, right) =>
+    left.relativePath.localeCompare(right.relativePath),
+  )) {
+    hash.update(file.relativePath);
+    hash.update("\0");
+    hash.update(fs.readFileSync(file.absolutePath));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+export function sealedProofHash(repo: string, genre: string): string {
+  return hashProofFiles(sealedProofFiles(repo, genre));
+}
+
 export function resolveGenre(repo: string, genre: string): GenreInput {
   assertGenreName(genre);
   const directory = path.join(repo, "docs", "benchmark", "genres", genre);
@@ -83,14 +148,17 @@ export function resolveGenre(repo: string, genre: string): GenreInput {
   if (!isFile(reference))
     throw new Error(`Genre '${genre}' is missing its required reference image: ${reference}`);
   const briefHash = createHash("sha256").update(fs.readFileSync(brief)).digest("hex");
-  return { brief, briefHash, reference };
+  const proofHash = sealedProofHash(repo, genre);
+  return { brief, briefHash, proofHash, reference };
 }
 
 export function readManifest(file: string): SweepManifest {
   const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<SweepManifest>;
   const required = [
+    "arm",
     "genre",
     "briefHash",
+    "proofHash",
     "template",
     "date",
     "frameworkVersion",
@@ -100,6 +168,13 @@ export function readManifest(file: string): SweepManifest {
     if (value[key] === undefined || value[key] === "")
       throw new Error(`Invalid sweep manifest '${file}': missing ${key}.`);
   }
+  for (const key of ["briefHash", "proofHash", "template", "frameworkVersion"] as const) {
+    if (typeof value[key] !== "string" || value[key].trim() === "")
+      throw new Error(`Invalid sweep manifest '${file}': ${key} must be a non-empty string.`);
+  }
+  if (typeof value.arm !== "string")
+    throw new Error(`Invalid sweep manifest '${file}': arm must be framework or vanilla.`);
+  assertSandboxArm(value.arm);
   if (typeof value.genre !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.genre))
     throw new Error(`Invalid sweep manifest '${file}': genre must be a lowercase slug.`);
   if (
@@ -107,14 +182,24 @@ export function readManifest(file: string): SweepManifest {
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value.date)
   )
     throw new Error(`Invalid sweep manifest '${file}': date must be an ISO timestamp.`);
-  if (typeof value.sourceLines !== "number" || value.sourceLines < 0)
-    throw new Error(`Invalid sweep manifest '${file}': sourceLines must be non-negative.`);
+  if (
+    typeof value.sourceLines !== "number" ||
+    !Number.isInteger(value.sourceLines) ||
+    value.sourceLines < 0
+  )
+    throw new Error(
+      `Invalid sweep manifest '${file}': sourceLines must be a non-negative integer.`,
+    );
   return value as SweepManifest;
 }
 
 function sameRun(left: SweepManifest, right: SweepManifest): boolean {
   return (
-    left.genre === right.genre && left.briefHash === right.briefHash && left.date === right.date
+    left.arm === right.arm &&
+    left.genre === right.genre &&
+    left.briefHash === right.briefHash &&
+    left.proofHash === right.proofHash &&
+    left.date === right.date
   );
 }
 
@@ -163,6 +248,80 @@ function frameworkVersion(repo: string): string {
   return packageJson.version;
 }
 
+function vanillaPackageJson(projectName: string, playtestTarball: string): string {
+  return `${JSON.stringify(
+    {
+      name: projectName,
+      private: true,
+      type: "module",
+      scripts: {
+        dev: "vite",
+        build: "vite build",
+        typecheck: "tsc --noEmit -p tsconfig.json",
+      },
+      dependencies: {
+        "@threenative/playtest": `file:${playtestTarball}`,
+        three: "0.185.1",
+      },
+      devDependencies: {
+        "@types/three": "0.185.3",
+        playwright: "1.62.1",
+        typescript: "5.9.3",
+        vite: "8.2.0",
+      },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function writeVanillaScaffold(out: string, playtestTarball: string): void {
+  const projectName = path
+    .basename(out)
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "-");
+  fs.mkdirSync(path.join(out, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(out, "package.json"),
+    vanillaPackageJson(projectName, playtestTarball),
+  );
+  fs.writeFileSync(
+    path.join(out, "index.html"),
+    `<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>${projectName}</title>\n  </head>\n  <body>\n    <main id="app"></main>\n    <script type="module" src="/src/main.ts"></script>\n  </body>\n</html>\n`,
+  );
+  fs.writeFileSync(
+    path.join(out, "vite.config.ts"),
+    'import { defineConfig } from "vite";\n\nexport default defineConfig({});\n',
+  );
+  fs.writeFileSync(
+    path.join(out, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2022",
+          lib: ["ES2022", "DOM", "DOM.Iterable"],
+          module: "ESNext",
+          moduleResolution: "bundler",
+          types: ["vite/client"],
+          strict: true,
+          noUncheckedIndexedAccess: true,
+          noEmit: true,
+          skipLibCheck: true,
+          verbatimModuleSyntax: true,
+          isolatedModules: true,
+        },
+        include: ["src/**/*.ts", "tests/**/*.ts", "*.ts"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  fs.writeFileSync(
+    path.join(out, "AGENTS.md"),
+    `# AGENTS.md — ${projectName}\n\nThis is the vanilla arm of the benchmark. Build the game described in \`brief.md\` and match \`reference.png\`. Use plain Three.js for rendering and gameplay.\n\nThe only ThreeNative package available is the observation bridge. Install it after your scene, camera, renderer, and entities exist. Tick-driven proof scenarios require all five provider hooks:\n\n\`\`\`ts\nimport { installThreePlaytestBridge } from "@threenative/playtest/three";\n\ninstallThreePlaytestBridge({\n  camera,\n  diagnostics: () => [],\n  entities,\n  fixedStep: (ticks) => {\n    for (let index = 0; index < ticks; index += 1) tick();\n  },\n  gameplay: () => ({\n    animation: { player: { clip: "idle", advancedFrames: 1 } },\n    states: { player: "idle", mission: "playing" },\n  }),\n  renderer,\n  resources: { read: () => ({ state: { ...state } }) },\n  scene,\n});\n\`\`\`\n\n\`fixedStep\` advances the simulation once per requested tick. \`diagnostics\` returns current runtime diagnostics. \`gameplay\` must return both \`animation\` and \`states\` records when the proof asks for runtime animation or state assertions. \`resources.read()\` must expose the generic resource id \`state\` with the current serializable game state. Do not edit or copy the sealed proof scenarios; the sweep runner supplies them at test time.\n`,
+  );
+}
+
 /**
  * How much of the framework an agent in the sandbox can actually read. Not zero: tsup emits
  * sourcemaps with `sourcesContent`, so the original TypeScript rides along inside dist. A
@@ -189,6 +348,8 @@ export function sourceLines(root: string): number {
 export function makeSandbox(options: SandboxOptions): SandboxResult {
   const repo = path.resolve(options.repo ?? REPO);
   const out = path.resolve(repo, options.out ?? "../threenative-sandbox");
+  const arm = options.arm ?? "framework";
+  assertSandboxArm(arm);
   const genre = options.genre;
   const template = options.template ?? "starter";
   const input = resolveGenre(repo, genre);
@@ -205,6 +366,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   fs.mkdirSync(staging, { recursive: true });
 
   const tarballs: Record<string, string> = {};
+  const requiredPackages = arm === "vanilla" ? (["playtest"] as const) : PACKAGES;
   if (options.prepare ?? true) {
     run("pnpm", ["--filter", "./packages/**", "build"], repo);
     for (const name of [...PACKAGES, "create-threenative"]) {
@@ -219,12 +381,12 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
       if (owner !== undefined) tarballs[owner] = path.join(staging, file);
     }
   } else {
-    for (const name of PACKAGES) {
+    for (const name of requiredPackages) {
       tarballs[name] = options.packageTarballs?.[name] ?? path.join(staging, `${name}.tgz`);
     }
   }
 
-  const missing = PACKAGES.filter((name) => tarballs[name] === undefined);
+  const missing = requiredPackages.filter((name) => tarballs[name] === undefined);
   if (missing.length > 0)
     throw new Error(`pnpm pack produced no tarball for: ${missing.join(", ")}`);
 
@@ -239,8 +401,17 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
 
   // --bare leaves the scaffolding to the agent, so the run starts the way a user's does.
   const bare = options.bare ?? false;
+  const install = options.install ?? true;
   let next: string;
-  if (bare) {
+  if (arm === "vanilla") {
+    fs.mkdirSync(out, { recursive: true });
+    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
+    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
+    writeVanillaScaffold(out, tarballs.playtest as string);
+    if (install && !bare)
+      run("pnpm", ["install", "--store-dir", path.join(out, ".pnpm-store")], out);
+    next = bare ? `cd ${out} && pnpm install && pnpm dev` : `cd ${out} && pnpm dev`;
+  } else if (bare) {
     fs.mkdirSync(out, { recursive: true });
     fs.copyFileSync(input.brief, path.join(out, "brief.md"));
     fs.copyFileSync(input.reference, path.join(out, "reference.png"));
@@ -261,7 +432,9 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     fs.chmodSync(script, 0o755);
     next = "./scaffold.sh my-game";
   } else {
-    run(scaffold[0] as string, [...scaffold.slice(1, 2), out, ...scaffold.slice(3)], repo);
+    const scaffoldArgs = [...scaffold.slice(1, 2), out, ...scaffold.slice(3)];
+    if (!install) scaffoldArgs.push("--no-install");
+    run(scaffold[0] as string, scaffoldArgs, repo);
     fs.copyFileSync(input.brief, path.join(out, "brief.md"));
     fs.copyFileSync(input.reference, path.join(out, "reference.png"));
     next = `cd ${out} && pnpm dev`;
@@ -269,8 +442,10 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
 
   const leaked = sourceLines(out);
   const manifest: SweepManifest = {
+    arm,
     genre,
     briefHash: input.briefHash,
+    proofHash: input.proofHash,
     template,
     date: new Date().toISOString(),
     frameworkVersion: frameworkVersion(repo),
@@ -280,7 +455,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   process.stdout.write(
     [
       "",
-      `${bare ? "bare sandbox ready" : "sandbox ready"}: ${out}`,
+      `${bare ? "bare sandbox ready" : "sandbox ready"} (${arm} arm): ${out}`,
       "",
       leaked === 0
         ? "  framework source readable: 0 lines — dist is types plus bundled js"
@@ -288,6 +463,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     install leaks the same; set sourcemap: false in the tsup configs to close it)`,
       "  CHARTER.md, docs/, PRDs, budgets, LOC classifier: not present",
       `  AGENTS.md in scope: ${bare ? "0 until it scaffolds" : "1 (the generated one)"}`,
+      `  sealed proof SHA-256: ${input.proofHash}`,
       "",
       `  run from ${out}:`,
       `  ${next}`,
@@ -303,6 +479,7 @@ function main(): void {
   const genre = readFlag("--genre");
   if (genre === undefined) throw new Error("Missing --genre. Use pnpm sandbox --genre <genre>.");
   makeSandbox({
+    arm: readFlag("--arm", "framework") as SandboxArm,
     bare: process.argv.includes("--bare"),
     genre,
     out: readFlag("--out", "../threenative-sandbox"),

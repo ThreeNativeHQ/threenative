@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-import { loadPlaytestScenario, type IPlaytestScenario } from "../src/index.js";
+import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { buildReport } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
@@ -63,6 +63,27 @@ test("runner carries a supplied HUD observation into the evaluated report", () =
     id: "hud.score.#root",
     pass: true,
   });
+  expect(result.pass).toBe(true);
+});
+
+test("rotationChanged falls back to before/after bridge quaternions", () => {
+  const currentScenario = scenario({ movement: { entity: "player", rotationChanged: true } });
+  const snapshot = (rotation: [number, number, number, number]): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick: 1 },
+    entities: [{ id: "player", transform: { position: [0, 0, 0], rotation } }],
+    resources: {},
+  });
+
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    snapshot([0, 0, 0, 1]),
+    snapshot([0, 0.3826834, 0, 0.9238795]),
+    [],
+    [],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.rotation", pass: true }));
   expect(result.pass).toBe(true);
 });
 

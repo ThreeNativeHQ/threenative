@@ -3,6 +3,9 @@
 Genre: endless-runner
 Round: 2
 Brief SHA-256: 21a0d1035d21b0520da448104271118570528cf5416d33e8ceed64efeb6326ec
+Arm: framework
+Proof result: 0/1
+Proof SHA-256: 4e985122c5fdd62a5b8d36c2acc7d1a6c7d0b49aa1583f47dbf721c5c46764db
 Template: starter
 Archive: docs/benchmark/sweeps/endless-runner-2026-08-05
 Framework version: 0.1.0

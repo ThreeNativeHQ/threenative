@@ -179,6 +179,37 @@ test("browser args reach the launched chromium", async () => {
   expect(report.pass).toBe(true);
 }, 60_000);
 
+test("normalized pointer coordinates reach the declared viewport position", async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-pointer-"));
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { movement: { entity: "player", maxDistance: 0.2 } },
+      name: "e2e-pointer",
+      schemaVersion: 1,
+      steps: [{ kind: "input", pointerPosition: { x: 0.7, y: 0.5 }, waitFrames: 1, release: true }],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 2,
+    }),
+  );
+
+  const report = await runStandalonePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    timeoutMs: 15_000,
+    trace: false,
+    url: `${origin}/?mode=good`,
+  });
+
+  expect(report.pass).toBe(true);
+  expect(report.observations?.console.map(({ text }) => text)).toContain("playtest-pointer:448,180");
+}, 60_000);
+
 test("setup positions the entity before the run so movement is measured from it", async () => {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-setup-"));
   await writeFile(

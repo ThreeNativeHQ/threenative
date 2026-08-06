@@ -28,6 +28,10 @@
       let held = false;
       let tick = 0;
 
+      addEventListener("pointermove", (event) => {
+        console.log(`playtest-pointer:${event.clientX},${event.clientY}`);
+      });
+
       addEventListener("keydown", (event) => {
         if (event.code === "KeyW") held = true;
       });

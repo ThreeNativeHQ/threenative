@@ -51,8 +51,10 @@ async function writeArchive(
   await writeFile(
     path.join(archive, "sweep.json"),
     JSON.stringify({
+      arm: "framework",
       genre,
       briefHash,
+      proofHash: "b".repeat(64),
       template: "none",
       date: `2099-01-0${options.round}T00:00:00.000Z`,
       frameworkVersion: "0.1.0",

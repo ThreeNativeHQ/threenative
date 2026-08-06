@@ -86,7 +86,7 @@ describe("playtest plugin", () => {
         tags: {},
         world: { seed: null },
       });
-      expect(snapshot.resources).toEqual({ GameState: { score: 0 } });
+      expect(snapshot.resources).toEqual({ GameState: { score: 0 }, state: { score: 0 } });
       expect(drawingBufferReads).toBeGreaterThan(0);
     } finally {
       game.stop();
