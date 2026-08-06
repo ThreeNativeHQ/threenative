@@ -4,7 +4,7 @@ Genre: platformer
 Round: 1
 Brief SHA-256: 8a7ee799256676d10fc7d22966e3e4fa93ed54c888fc91fd0f34fc3520ddd9fa
 Arm: framework
-Proof result: 0/0 (not run; archived before PRD-019)
+Proof result: 1/2
 Proof SHA-256: 1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7
 Template: platformer
 Archive: docs/benchmark/sweeps/platformer-2026-08-05

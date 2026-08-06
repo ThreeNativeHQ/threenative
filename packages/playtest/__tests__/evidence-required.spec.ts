@@ -61,6 +61,44 @@ test("'changed: false' fails when the value was never observed at all", async ()
   expect(evaluated.assertions.find(({ id }) => id === "hud.score-label")?.pass).toBe(false);
 });
 
+test("a resource anyOf passes one observed alternative under the same resource id", async () => {
+  const evaluated = await evaluate(
+    {
+      resources: [{
+        id: "state",
+        anyOf: [
+          { path: "jumps", gte: 1, changed: true },
+          { path: "peakRise", gte: 0.5, changed: true },
+        ],
+      }],
+    },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        resources: { state: { before: { jumps: 0, peakRise: 0 }, after: { jumps: 0, peakRise: 0.75 } } },
+      },
+    },
+  );
+
+  expect(evaluated.assertions).toContainEqual(expect.objectContaining({ id: "resource.state.anyOf", pass: true }));
+  expect(evaluated.diagnostics).toEqual([]);
+});
+
+test("a resource anyOf fails closed when no alternative passes", async () => {
+  const evaluated = await evaluate(
+    { resources: [{ id: "state", anyOf: [{ path: "jumps", gte: 1, changed: true }] }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        resources: { state: { before: { jumps: 0 }, after: { jumps: 0 } } },
+      },
+    },
+  );
+
+  expect(evaluated.assertions).toContainEqual(expect.objectContaining({ id: "resource.state.anyOf", pass: false }));
+  expect(evaluated.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RESOURCE_ANY_OF_ASSERTION_FAILED");
+});
+
 test("'changed: false' still passes for a value that exists and held steady", async () => {
   // Positive control for the guard above: failing closed must not mean failing
   // always. A held invariant is the entire point of changed:false.

@@ -98,6 +98,43 @@ test("scenario loading rejects unknown assertion kinds instead of ignoring them"
   expect(error.diagnostic.message).toMatch(/Unknown key 'unknownKind'/u);
 });
 
+test("scenario loading preserves a resource anyOf contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { resources: [{ id: "state", anyOf: [{ path: "jumps", gte: 1, changed: true }, { path: "peakRise", gte: 0.5, changed: true }] }] },
+    name: "resource-anyof",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.resources?.[0]).toEqual({
+    id: "state",
+    anyOf: [
+      { path: "jumps", gte: 1, changed: true },
+      { path: "peakRise", gte: 0.5, changed: true },
+    ],
+  });
+});
+
+test.each([
+  ["empty", []],
+  ["malformed", [{ path: "jumps" }]],
+])("scenario loading rejects a %s resource anyOf", async (_label, anyOf) => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-invalid-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { resources: [{ id: "state", anyOf }] },
+    name: "invalid-resource-anyof",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_SCENARIO_INVALID" },
+  });
+});
+
 test("every assertion and setup operation owns known capability metadata", () => {
   const known = new Set(PLAYTEST_CAPABILITY_REGISTRY.map(({ name }) => name));
   for (const entry of [...PLAYTEST_ASSERTION_REGISTRY, ...PLAYTEST_SETUP_REGISTRY]) {

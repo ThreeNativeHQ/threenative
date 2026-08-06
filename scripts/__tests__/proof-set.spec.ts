@@ -61,6 +61,10 @@ describe("sealed genre proof set", () => {
   });
 
   it("keeps the brief-critical action assertions in the sealed proofs", async () => {
+    expect(
+      sealedProofFiles(process.cwd(), "topdown-action").map(({ relativePath }) => relativePath),
+    ).toEqual(["topdown-action-pointer.playtest.json", "topdown-action.playtest.json"]);
+
     const endless = JSON.parse(
       await readFile(
         path.join(
@@ -69,10 +73,16 @@ describe("sealed genre proof set", () => {
         ),
         "utf8",
       ),
-    ) as { assert?: { resources?: Array<{ path?: string }> } };
-    expect(endless.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
-      expect.arrayContaining(["jumps", "peakRise"]),
-    );
+    ) as { assert?: { resources?: Array<{ anyOf?: Array<{ path?: string }> }> } };
+    const movementAlternatives = endless.assert?.resources?.find(
+      ({ anyOf }) => anyOf !== undefined,
+    )?.anyOf;
+    expect(movementAlternatives).toEqual([
+      { path: "jumps", gte: 1, changed: true },
+      { path: "peakRise", gte: 0.5, changed: true },
+      { path: "slides", gte: 1, changed: true },
+      { path: "peakSlide", gte: 0.5, changed: true },
+    ]);
 
     const topdown = JSON.parse(
       await readFile(
@@ -90,17 +100,45 @@ describe("sealed genre proof set", () => {
           entity?: string;
           entered?: boolean;
         }>;
-        movement?: { rotationChanged?: boolean };
+        movement?: { minDistance?: number; rotationChanged?: boolean };
         resources?: Array<{ path?: string }>;
       };
     };
-    expect(topdown.assert?.movement?.rotationChanged).toBe(true);
-    expect(topdown.assert?.animation).toEqual(
+    expect(topdown.assert?.movement?.minDistance).toBe(2);
+    expect(topdown.assert?.movement?.rotationChanged).toBeUndefined();
+    expect(topdown.assert?.animation).toBeUndefined();
+    expect(topdown.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
+      expect.arrayContaining(["score", "enemiesRemaining", "objective"]),
+    );
+
+    const pointer = JSON.parse(
+      await readFile(
+        path.join(
+          process.cwd(),
+          "docs/benchmark/genres/topdown-action/proof/topdown-action-pointer.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert?: {
+        animation?: unknown;
+        movement?: { rotationChanged?: boolean };
+        resources?: Array<{ path?: string }>;
+      };
+      steps?: Array<Record<string, unknown>>;
+    };
+    expect(pointer.steps).toHaveLength(1);
+    expect(pointer.steps?.[0]).toMatchObject({
+      pointerPosition: { x: 0.7, y: 0.5 },
+      press: "Space",
+    });
+    expect(pointer.assert?.movement?.rotationChanged).toBe(true);
+    expect(pointer.assert?.animation).toEqual(
       expect.arrayContaining([
         { advancedFrames: 1, clip: "attack", entity: "player", entered: true },
       ]),
     );
-    expect(topdown.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
+    expect(pointer.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
       expect.arrayContaining(["shots", "reload"]),
     );
   });

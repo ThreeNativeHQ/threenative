@@ -223,7 +223,7 @@ export function reportFromOutput(
     };
   } catch (error) {
     return {
-      assertions: [],
+      assertions: [{ id: "sweep-proof.output", pass: false }],
       diagnostics: [
         {
           code: "TN_SWEEP_PROOF_INVALID_OUTPUT",

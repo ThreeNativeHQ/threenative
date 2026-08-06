@@ -6,7 +6,6 @@ import { readManifest } from "../make-sandbox";
 import { measureSandbox } from "../measure-sandbox";
 
 const LEDGER_DIRECTORY = path.join(process.cwd(), "docs", "verification");
-const HISTORICAL_NOT_RUN = "0/0 (not run; archived before PRD-019)";
 const temporaryRoots: string[] = [];
 const REQUIRED_FIELDS = [
   "Genre",
@@ -54,10 +53,8 @@ function validateLedger(markdown: string, filename = "sweep.md"): void {
   if (!["framework", "vanilla"].includes(field(markdown, "Arm")))
     throw new Error(`${filename}: Arm must be framework or vanilla.`);
   const proofResult = field(markdown, "Proof result");
-  if (proofResult !== HISTORICAL_NOT_RUN && !/^\d+\/\d+$/.test(proofResult))
-    throw new Error(
-      `${filename}: Proof result must be passed/total or the explicit historical exception.`,
-    );
+  if (!/^\d+\/\d+$/.test(proofResult))
+    throw new Error(`${filename}: Proof result must be passed/total.`);
   const round = field(markdown, "Round");
   if (!/^[1-9]\d*$/.test(round)) throw new Error(`${filename}: Round must be a positive integer.`);
   const heading = markdown.indexOf("## Friction ledger");
@@ -82,7 +79,6 @@ function validateLedger(markdown: string, filename = "sweep.md"): void {
 
 async function validateCommittedProof(markdown: string, filename: string): Promise<void> {
   const proofResult = field(markdown, "Proof result");
-  if (proofResult === HISTORICAL_NOT_RUN) return;
   const archive = path.resolve(process.cwd(), field(markdown, "Archive"));
   const proofFile = path.join(archive, "proof.json");
   let proof: unknown;
@@ -96,6 +92,8 @@ async function validateCommittedProof(markdown: string, filename: string): Promi
   const value = proof as Record<string, unknown>;
   if (value.arm !== field(markdown, "Arm"))
     throw new Error(`${filename}: Arm does not match proof.json.`);
+  if (value.genre !== field(markdown, "Genre"))
+    throw new Error(`${filename}: Genre does not match proof.json.`);
   if (value.proofHash !== field(markdown, "Proof SHA-256"))
     throw new Error(`${filename}: Proof SHA-256 does not match proof.json.`);
   const passed = value.passed;
@@ -110,6 +108,59 @@ async function validateCommittedProof(markdown: string, filename: string): Promi
     passed > total
   )
     throw new Error(`${filename}: proof.json has an invalid passed/total result.`);
+  if (!Array.isArray(value.scenarios) || value.scenarios.length !== total)
+    throw new Error(`${filename}: proof.json scenarios do not match total.`);
+  for (const [index, scenario] of value.scenarios.entries()) {
+    if (
+      typeof scenario !== "object" ||
+      scenario === null ||
+      Array.isArray(scenario) ||
+      typeof (scenario as { name?: unknown }).name !== "string" ||
+      !["pass", "fail"].includes((scenario as { verdict?: unknown }).verdict as string) ||
+      !Array.isArray((scenario as { assertions?: unknown }).assertions) ||
+      !Array.isArray((scenario as { diagnostics?: unknown }).diagnostics)
+    )
+      throw new Error(`${filename}: proof.json scenario ${index} is malformed.`);
+    const assertions = (scenario as { assertions: unknown[] }).assertions;
+    const diagnostics = (scenario as { diagnostics: unknown[] }).diagnostics;
+    if (assertions.length === 0)
+      throw new Error(`${filename}: proof.json scenario ${index} has no assertions.`);
+    if (
+      !assertions.every((assertion) => {
+        if (typeof assertion !== "object" || assertion === null || Array.isArray(assertion))
+          return false;
+        const value = assertion as { id?: unknown; pass?: unknown };
+        return (
+          typeof value.id === "string" && value.id.trim() !== "" && typeof value.pass === "boolean"
+        );
+      })
+    )
+      throw new Error(`${filename}: proof.json scenario ${index} has malformed assertions.`);
+    if (
+      !diagnostics.every((diagnostic) => {
+        if (typeof diagnostic !== "object" || diagnostic === null || Array.isArray(diagnostic))
+          return false;
+        const value = diagnostic as { code?: unknown; message?: unknown; severity?: unknown };
+        return (
+          typeof value.code === "string" &&
+          value.code.trim() !== "" &&
+          typeof value.message === "string" &&
+          value.message.trim() !== "" &&
+          (value.severity === "error" || value.severity === "warning")
+        );
+      })
+    )
+      throw new Error(`${filename}: proof.json scenario ${index} has malformed diagnostics.`);
+    const verdict = (scenario as { verdict: string }).verdict;
+    if (
+      verdict === "pass" &&
+      (assertions.some((assertion) => !(assertion as { pass: boolean }).pass) ||
+        diagnostics.some((diagnostic) => (diagnostic as { severity: string }).severity === "error"))
+    )
+      throw new Error(
+        `${filename}: proof.json scenario ${index} is marked pass with failed evidence.`,
+      );
+  }
   if (proofResult !== `${passed}/${total}`)
     throw new Error(`${filename}: Proof result does not match proof.json.`);
 }
@@ -240,7 +291,7 @@ describe("sweep ledgers", () => {
     temporaryRoots.push(root);
     const ledger = [
       "Arm: vanilla",
-      "Proof result: 1/1",
+      "Proof result: 0/0 (not run; archived before PRD-019)",
       "Proof SHA-256: real",
       `Archive: ${root}`,
     ].join("\n");

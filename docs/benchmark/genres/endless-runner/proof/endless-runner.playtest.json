@@ -36,8 +36,15 @@
       { "id": "state", "path": "collected", "gte": 1, "changed": true },
       { "id": "state", "path": "lane", "equals": 2, "changed": true },
       { "id": "state", "path": "speed", "changed": true },
-      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
+      {
+        "id": "state",
+        "anyOf": [
+          { "path": "jumps", "gte": 1, "changed": true },
+          { "path": "peakRise", "gte": 0.5, "changed": true },
+          { "path": "slides", "gte": 1, "changed": true },
+          { "path": "peakSlide", "gte": 0.5, "changed": true }
+        ]
+      }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

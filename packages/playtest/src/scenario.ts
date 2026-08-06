@@ -86,6 +86,15 @@ export interface IPlaytestPathAssertion {
   path?: string;
   textIncludes?: string;
   throughoutSteps?: boolean;
+  anyOf?: IPlaytestResourcePathAlternative[];
+}
+
+export interface IPlaytestResourcePathAlternative {
+  changed?: boolean;
+  equals?: unknown;
+  gte?: number;
+  path: string;
+  textIncludes?: string;
 }
 
 export interface IPlaytestComponentAssertion extends Omit<IPlaytestPathAssertion, "id" | "textIncludes" | "throughoutSteps"> {
@@ -795,7 +804,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
         }
       : {}),
     ...(isRecord(value.reachability) ? { reachability: validateReachabilityAssertion(value.reachability, scenarioPath) } : {}),
-    ...(Array.isArray(value.resources) ? { resources: value.resources.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.resources) ? { resources: value.resources.map((item, index) => validateResourcePathAssertion(item, scenarioPath, `assert.resources[${index}]`)) } : {}),
     ...(Array.isArray(value.settled)
       ? {
           settled: value.settled.map((entry, index) =>
@@ -1195,6 +1204,52 @@ function validatePathAssertion(value: unknown): IPlaytestPathAssertion | undefin
   };
 }
 
+function validateResourcePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPathAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  if (hasKey(record, "anyOf")) {
+    rejectUnknownKeys(record, ["anyOf", "id"], scenarioPath, objectPath);
+    const alternatives = requireArray(record, "anyOf", scenarioPath, objectPath);
+    if (alternatives.length === 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.anyOf' must contain at least one path assertion.`);
+    }
+    return {
+      anyOf: alternatives.map((alternative, index) => validateResourcePathAlternative(
+        alternative,
+        scenarioPath,
+        `${objectPath}.anyOf[${index}]`,
+      )),
+      id: requireString(record, "id", scenarioPath, objectPath),
+    };
+  }
+  const assertion = validatePathAssertion(record);
+  if (assertion === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must name a resource id.`);
+  }
+  return assertion;
+}
+
+function validateResourcePathAlternative(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestResourcePathAlternative {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["changed", "equals", "gte", "path", "textIncludes"], scenarioPath, objectPath);
+  const changed = optionalBoolean(record, "changed", scenarioPath, objectPath);
+  const gte = optionalNumber(record, "gte", scenarioPath, objectPath);
+  const textIncludes = optionalString(record, "textIncludes", scenarioPath, objectPath);
+  if (!hasKey(record, "equals") && changed === undefined && gte === undefined && textIncludes === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must declare equals, gte, textIncludes, or changed.`);
+  }
+  return {
+    ...present("changed", changed),
+    ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
+    ...present("gte", gte),
+    path: requireString(record, "path", scenarioPath, objectPath),
+    ...present("textIncludes", textIncludes),
+  };
+}
+
 function validateViewport(value: unknown): IPlaytestViewport {
   if (!isRecord(value)) {
     return { height: 720, width: 1280 };
@@ -1367,6 +1422,10 @@ function validateNestedAssertionKeys(
     }
   }
   if (kind === "resources" || kind === "hud" || kind === "components") {
+    if (kind === "resources" && hasKey(value, "anyOf")) {
+      rejectUnknownKeys(value, ["anyOf", "id"], scenarioPath, `assert.${kind}${suffix}`);
+      return;
+    }
     if (Array.isArray(value.atSteps)) {
       value.atSteps.forEach((step, index) => {
         if (isRecord(step)) {

@@ -4,7 +4,7 @@ Genre: exploration
 Round: 2
 Brief SHA-256: e0eb67ef4568bece73a2db7bccdd4d7a1c4f85b08d7575e8df98790353603f39
 Arm: framework
-Proof result: 0/0 (not run; archived before PRD-019)
+Proof result: 0/1
 Proof SHA-256: 0a99497b13cc6b4d8bc275fb8b250dce1ab8440daada700fa1767f03a5b06d57
 Template: starter
 Archive: docs/benchmark/sweeps/exploration-2026-08-05

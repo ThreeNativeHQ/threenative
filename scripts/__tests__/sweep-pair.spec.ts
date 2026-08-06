@@ -261,6 +261,36 @@ describe("paired sweep", () => {
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/assertion/);
   });
 
+  it("rejects a pass verdict with an error diagnostic", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios: [
+          {
+            name: "fixture",
+            verdict: "pass",
+            assertions: [{ id: "fixture.assertion", pass: true }],
+            diagnostics: [{ code: "TN_FAILURE", message: "runtime failed", severity: "error" }],
+          },
+        ],
+        passed: 1,
+        total: 1,
+      }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/error diagnostic/);
+  });
+
   it("exposes the package command", async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(process.cwd(), "package.json"), "utf8"),

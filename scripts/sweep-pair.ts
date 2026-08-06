@@ -228,9 +228,14 @@ function readProof(root: string, manifest: SweepManifest): StoredProof {
         `Cannot pair '${root}': proof.json scenario ${index} has malformed diagnostics.`,
       );
     const assertions = scenario.assertions as readonly StoredProofAssertion[];
+    const diagnostics = scenario.diagnostics as readonly StoredProofDiagnostic[];
     if (scenario.verdict === "pass" && assertions.some(({ pass }) => !pass))
       throw new Error(
         `Cannot pair '${root}': proof.json scenario ${index} is marked pass with a failed assertion.`,
+      );
+    if (scenario.verdict === "pass" && diagnostics.some(({ severity }) => severity === "error"))
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario ${index} is marked pass with an error diagnostic.`,
       );
   }
   const observedPassed = proof.scenarios.filter(({ verdict }) => verdict === "pass").length;

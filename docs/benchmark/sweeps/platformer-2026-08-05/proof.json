@@ -1,14 +1,14 @@
 {
   "arm": "framework",
   "genre": "platformer",
-  "passed": 2,
+  "passed": 1,
   "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
   "scenarios": [
     {
       "assertions": [
         {
           "details": {
-            "consoleErrors": 2,
+            "consoleErrors": 0,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -19,8 +19,8 @@
           "details": {
             "axis": "+y",
             "min": 0.5,
-            "rawDelta": 1.970200002193451,
-            "signedDelta": 1.970200002193451
+            "rawDelta": 1.9703001379966736,
+            "signedDelta": 1.9703001379966736
           },
           "id": "movement.axisDelta",
           "pass": true
@@ -30,7 +30,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 12223.40659774948
+            "projectedPixels": 12224.590690586605
           },
           "id": "visibility.player",
           "pass": true
@@ -38,7 +38,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.219769731335784,
+            "separation": 9.219273610717657,
             "target": "player",
             "visible": true
           },
@@ -54,8 +54,6 @@
       "assertions": [
         {
           "details": {
-            "after": 5,
-            "before": 0,
             "expected": {
               "gte": 1,
               "changed": true
@@ -65,12 +63,10 @@
             "trivial": false
           },
           "id": "resource.state.coins",
-          "pass": true
+          "pass": false
         },
         {
           "details": {
-            "after": true,
-            "before": false,
             "expected": {
               "equals": true,
               "changed": true
@@ -80,12 +76,10 @@
             "trivial": false
           },
           "id": "resource.state.goalReached",
-          "pass": true
+          "pass": false
         },
         {
           "details": {
-            "after": 2,
-            "before": 0,
             "expected": {
               "gte": 1,
               "changed": true
@@ -95,7 +89,7 @@
             "trivial": false
           },
           "id": "resource.state.respawns",
-          "pass": true
+          "pass": false
         },
         {
           "details": {
@@ -112,7 +106,7 @@
         },
         {
           "details": {
-            "consoleErrors": 83,
+            "consoleErrors": 149,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -121,7 +115,7 @@
         },
         {
           "details": {
-            "distance": 14.12831279637832,
+            "distance": 17.280365402211686,
             "minimum": 5
           },
           "id": "movement.distance",
@@ -132,7 +126,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 16393.426633568863
+            "projectedPixels": 14169.922644245968
           },
           "id": "visibility.player",
           "pass": true
@@ -140,7 +134,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.80335118905817,
+            "separation": 9.50927849943764,
             "target": "player",
             "visible": true
           },
@@ -148,9 +142,28 @@
           "pass": true
         }
       ],
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'coins'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'goalReached'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'respawns'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        }
+      ],
       "name": "platformer-run-proof",
-      "verdict": "pass"
+      "verdict": "fail"
     }
   ],
   "total": 2

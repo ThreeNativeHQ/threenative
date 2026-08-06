@@ -113,7 +113,7 @@ describe("sealed proof runner", () => {
     ],
   ])("fails closed for %s", (_label, report) => {
     expect(reportFromOutput("fixture", JSON.stringify(report), "", true)).toMatchObject({
-      assertions: [],
+      assertions: [{ id: "sweep-proof.output", pass: false }],
       name: "fixture",
       verdict: "fail",
     });
