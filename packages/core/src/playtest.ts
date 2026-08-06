@@ -217,7 +217,8 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
       ctx.state.flush();
       const state = ctx.state.getState();
       assertJsonSafe(state);
-      return { GameState: state as Record<string, JsonValue> };
+      const value = state as Record<string, JsonValue>;
+      return { GameState: value, state: value };
     },
   };
 }

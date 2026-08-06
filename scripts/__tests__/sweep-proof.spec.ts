@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { sealedProofHash } from "../make-sandbox";
-import { ensureArchiveIndex, proofArtifactDirectory, verifySealedProof } from "../sweep-proof";
+import {
+  ensureArchiveIndex,
+  proofArtifactDirectory,
+  reportFromOutput,
+  verifySealedProof,
+} from "../sweep-proof";
 
 const temporaryRoots: string[] = [];
 
@@ -68,5 +73,52 @@ describe("sealed proof runner", () => {
   it("fails closed when a sandbox has a stale proof hash", async () => {
     const root = await manifestRoot("0".repeat(64));
     expect(() => verifySealedProof(path.join(root, "sweep.json"))).toThrow(/Proof hash mismatch/);
+  });
+
+  it.each([
+    ["missing assertion results", { pass: true, diagnostics: [] }],
+    ["empty assertion results", { pass: true, assertionResults: [], diagnostics: [] }],
+    [
+      "malformed pass",
+      { pass: "true", assertionResults: [{ id: "ok", pass: true }], diagnostics: [] },
+    ],
+    [
+      "malformed assertion verdict",
+      { pass: true, assertionResults: [{ id: "ok", pass: "true" }], diagnostics: [] },
+    ],
+    [
+      "malformed runner verdict",
+      {
+        pass: true,
+        verdict: "fail",
+        assertionResults: [{ id: "ok", pass: true }],
+        diagnostics: [],
+      },
+    ],
+    [
+      "malformed diagnostics",
+      { pass: true, assertionResults: [{ id: "ok", pass: true }], diagnostics: [{}] },
+    ],
+  ])("fails closed for %s", (_label, report) => {
+    expect(reportFromOutput("fixture", JSON.stringify(report), "", true)).toMatchObject({
+      assertions: [],
+      name: "fixture",
+      verdict: "fail",
+    });
+  });
+
+  it("accepts only a structurally valid runner report", () => {
+    expect(
+      reportFromOutput(
+        "fixture",
+        JSON.stringify({
+          pass: true,
+          assertionResults: [{ id: "movement.player", pass: true }],
+          diagnostics: [],
+        }),
+        "",
+        true,
+      ),
+    ).toMatchObject({ assertions: [{ id: "movement.player", pass: true }], verdict: "pass" });
   });
 });

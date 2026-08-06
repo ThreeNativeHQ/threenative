@@ -2,23 +2,23 @@
   "arm": "framework",
   "genre": "platformer",
   "passed": 2,
-  "proofHash": "e4ba94e8c1ba0dd895f8074bcabd22c2f8273d219c958affc08eb5c5399d8cca",
+  "proofHash": "36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217",
   "scenarios": [
     {
       "assertions": [
         {
           "details": {
-            "after": 1.8302891254425049,
+            "after": 1.9091780185699463,
             "before": 0,
             "expected": {
               "gte": 0.5,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "peakRise",
             "trivial": false
           },
-          "id": "resource.GameState.peakRise",
+          "id": "resource.state.peakRise",
           "pass": true
         },
         {
@@ -34,8 +34,8 @@
           "details": {
             "axis": "+y",
             "min": 0.5,
-            "rawDelta": 1.9704000353813171,
-            "signedDelta": 1.9704000353813171
+            "rawDelta": 2.033633291721344,
+            "signedDelta": 2.033633291721344
           },
           "id": "movement.axisDelta",
           "pass": true
@@ -45,7 +45,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 12224.232154999816
+            "projectedPixels": 12152.80538472538
           },
           "id": "visibility.player",
           "pass": true
@@ -53,7 +53,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.219423861808924,
+            "separation": 9.25072084957487,
             "target": "player",
             "visible": true
           },
@@ -75,11 +75,11 @@
               "gte": 1,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "coins",
             "trivial": false
           },
-          "id": "resource.GameState.coins",
+          "id": "resource.state.coins",
           "pass": true
         },
         {
@@ -90,11 +90,11 @@
               "equals": true,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "goalReached",
             "trivial": false
           },
-          "id": "resource.GameState.goalReached",
+          "id": "resource.state.goalReached",
           "pass": true
         },
         {
@@ -105,11 +105,11 @@
               "gte": 1,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "respawns",
             "trivial": false
           },
-          "id": "resource.GameState.respawns",
+          "id": "resource.state.respawns",
           "pass": true
         },
         {
@@ -127,7 +127,7 @@
         },
         {
           "details": {
-            "consoleErrors": 70,
+            "consoleErrors": 103,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -136,7 +136,7 @@
         },
         {
           "details": {
-            "distance": 14.898332200761873,
+            "distance": 15.208372460370867,
             "minimum": 5
           },
           "id": "movement.distance",
@@ -147,7 +147,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 17125.054188335147
+            "projectedPixels": 16472.81856238279
           },
           "id": "visibility.player",
           "pass": true
@@ -155,7 +155,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.125681432872154,
+            "separation": 9.149281512164666,
             "target": "player",
             "visible": true
           },

@@ -16,9 +16,10 @@ const RUNNER = path.join(REPO, "packages", "playtest", "dist", "runner", "cli.js
 const PROOF_PORT = 5190;
 
 interface PlaytestReport {
-  readonly assertionResults?: readonly unknown[];
-  readonly diagnostics?: readonly unknown[];
-  readonly pass?: boolean;
+  readonly assertionResults: readonly unknown[];
+  readonly diagnostics: readonly unknown[];
+  readonly pass: boolean;
+  readonly verdict?: "fail" | "pass";
 }
 
 export interface ProofScenarioResult {
@@ -155,24 +156,71 @@ function prepareProject(source: string, archive: boolean): { project: string; cl
   }
 }
 
-function reportFromOutput(
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAssertionResult(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.trim().length > 0 &&
+    typeof value.pass === "boolean"
+  );
+}
+
+function isDiagnostic(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    value.code.trim().length > 0 &&
+    typeof value.message === "string" &&
+    value.message.trim().length > 0 &&
+    (value.severity === "error" || value.severity === "warning")
+  );
+}
+
+function validateRunnerReport(value: unknown): PlaytestReport {
+  if (!isRecord(value)) throw new Error("runner output must be a JSON object");
+  if (typeof value.pass !== "boolean") throw new Error("runner output pass must be boolean");
+  if (
+    value.verdict !== undefined &&
+    (value.verdict !== "pass" || value.pass !== true) &&
+    (value.verdict !== "fail" || value.pass !== false)
+  )
+    throw new Error("runner output verdict does not match pass");
+  if (!Array.isArray(value.assertionResults) || value.assertionResults.length === 0)
+    throw new Error("runner output must contain non-empty assertionResults");
+  if (!value.assertionResults.every(isAssertionResult))
+    throw new Error("runner output assertionResults are malformed");
+  if (!Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic))
+    throw new Error("runner output diagnostics are malformed");
+  return value as unknown as PlaytestReport;
+}
+
+export function reportFromOutput(
   name: string,
   stdout: string,
   stderr: string,
   pass: boolean,
 ): ProofScenarioResult {
   try {
-    const report = JSON.parse(stdout.trim()) as PlaytestReport;
+    if (typeof pass !== "boolean") throw new Error("runner exit status must be boolean");
+    const report = validateRunnerReport(JSON.parse(stdout.trim()));
     return {
-      assertions: report.assertionResults ?? [],
-      diagnostics: report.diagnostics ?? (stderr.length === 0 ? [] : [{ message: stderr }]),
+      assertions: report.assertionResults,
+      diagnostics: report.diagnostics,
       name,
       verdict: report.pass === true && pass ? "pass" : "fail",
     };
-  } catch {
+  } catch (error) {
     return {
       assertions: [],
-      diagnostics: [{ message: stderr || stdout || "Playtest runner returned no report." }],
+      diagnostics: [
+        {
+          message: `${error instanceof Error ? error.message : String(error)}${stderr ? `: ${stderr}` : ""}`,
+        },
+      ],
       name,
       verdict: "fail",
     };

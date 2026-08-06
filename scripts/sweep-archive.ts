@@ -52,6 +52,38 @@ function copyFrameworkTypes(sandbox: string, archive: string): void {
   }
 }
 
+function packageNamePart(name: string): string {
+  return name.replace(/^@/, "").replaceAll("/", "-");
+}
+
+function copyPackageJson(packageFile: string, archive: string): void {
+  const packageJson = JSON.parse(fs.readFileSync(packageFile, "utf8")) as Record<string, unknown>;
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies"] as const) {
+    const rawDependencies = packageJson[section];
+    if (
+      typeof rawDependencies !== "object" ||
+      rawDependencies === null ||
+      Array.isArray(rawDependencies)
+    )
+      continue;
+    const dependencies = rawDependencies as Record<string, unknown>;
+    for (const [name, value] of Object.entries(dependencies)) {
+      if (typeof value !== "string" || !value.startsWith("file:")) continue;
+      const source = path.resolve(path.dirname(packageFile), value.slice("file:".length));
+      if (!fs.existsSync(source))
+        throw new Error(
+          `Cannot archive local dependency '${name}': file does not exist: ${source}`,
+        );
+      const relative = path.posix.join("vendor", packageNamePart(name), path.basename(source));
+      const destination = path.join(archive, ...relative.split("/"));
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.cpSync(source, destination, { recursive: true });
+      dependencies[name] = `file:./${relative}`;
+    }
+  }
+  fs.writeFileSync(path.join(archive, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
 function collectDeclarations(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name);
@@ -100,7 +132,7 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
     const playtests = path.join(source, "playtests");
     if (isDirectory(playtests))
       fs.cpSync(playtests, path.join(destination, "playtests"), { recursive: true });
-    fs.copyFileSync(packageFile, path.join(destination, "package.json"));
+    copyPackageJson(packageFile, destination);
     fs.copyFileSync(manifestFile, path.join(destination, "sweep.json"));
     copyFrameworkTypes(source, destination);
   } catch (error) {

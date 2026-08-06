@@ -28,9 +28,9 @@
     "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
     "movement": { "entity": "player", "minDistance": 2 },
     "resources": [
-      { "id": "GameState", "path": "score", "gte": 3, "changed": true },
-      { "id": "GameState", "path": "enemiesRemaining", "equals": 0, "changed": true },
-      { "id": "GameState", "path": "objective", "textIncludes": "SECURE", "changed": true }
+      { "id": "state", "path": "score", "gte": 3, "changed": true },
+      { "id": "state", "path": "enemiesRemaining", "equals": 0, "changed": true },
+      { "id": "state", "path": "objective", "textIncludes": "SECURE", "changed": true }
     ],
     "states": [{ "entity": "mission", "equals": "won" }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]

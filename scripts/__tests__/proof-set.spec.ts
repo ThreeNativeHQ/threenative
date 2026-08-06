@@ -12,6 +12,7 @@ const FORBIDDEN = [
   "RigidBody3D",
   "Area3D",
   "defineGame",
+  "GameState",
 ];
 
 describe("sealed genre proof set", () => {

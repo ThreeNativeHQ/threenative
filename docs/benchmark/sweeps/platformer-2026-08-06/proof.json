@@ -2,7 +2,7 @@
   "arm": "vanilla",
   "genre": "platformer",
   "passed": 2,
-  "proofHash": "e4ba94e8c1ba0dd895f8074bcabd22c2f8273d219c958affc08eb5c5399d8cca",
+  "proofHash": "36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217",
   "scenarios": [
     {
       "assertions": [
@@ -14,11 +14,11 @@
               "gte": 0.5,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "peakRise",
             "trivial": false
           },
-          "id": "resource.GameState.peakRise",
+          "id": "resource.state.peakRise",
           "pass": true
         },
         {
@@ -75,11 +75,11 @@
               "gte": 1,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "coins",
             "trivial": false
           },
-          "id": "resource.GameState.coins",
+          "id": "resource.state.coins",
           "pass": true
         },
         {
@@ -90,11 +90,11 @@
               "equals": true,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "goalReached",
             "trivial": false
           },
-          "id": "resource.GameState.goalReached",
+          "id": "resource.state.goalReached",
           "pass": true
         },
         {
@@ -105,11 +105,11 @@
               "gte": 1,
               "changed": true
             },
-            "id": "GameState",
+            "id": "state",
             "path": "respawns",
             "trivial": false
           },
-          "id": "resource.GameState.respawns",
+          "id": "resource.state.respawns",
           "pass": true
         },
         {

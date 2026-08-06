@@ -68,6 +68,40 @@ describe("sweep archive", () => {
     await expect(access(path.join(archive, "dist.js"))).rejects.toThrow();
   });
 
+  it("bundles local file dependencies and rewrites them relative to the archive", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    const tarball = path.join(root, "threenative-playtest.tgz");
+    await writeFile(tarball, "package tarball\n");
+    await writeFile(
+      path.join(sandbox, "package.json"),
+      JSON.stringify({
+        name: "fixture",
+        dependencies: { "@threenative/playtest": `file:${tarball}` },
+      }),
+    );
+    const archive = archiveSandbox(sandbox, root);
+    const packageJson = JSON.parse(await readFile(path.join(archive, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@threenative/playtest"]).toBe(
+      "file:./vendor/threenative-playtest/threenative-playtest.tgz",
+    );
+    await expect(
+      readFile(path.join(archive, "vendor/threenative-playtest/threenative-playtest.tgz"), "utf8"),
+    ).resolves.toBe("package tarball\n");
+  });
+
+  it("rejects a missing local file dependency instead of archiving a broken package", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "package.json"),
+      JSON.stringify({ dependencies: { fixture: "file:/tmp/does-not-exist.tgz" } }),
+    );
+    expect(() => archiveSandbox(sandbox, root)).toThrow(/file does not exist/);
+  });
+
   it("does not overwrite the first archive when the same sweep is archived twice", async () => {
     const root = await fixtureRoot();
     const sandbox = await writeSandbox(root);

@@ -15,6 +15,17 @@ afterEach(async () => {
 async function fixtureRoot(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-pair-"));
   temporaryRoots.push(root);
+  await mkdir(path.join(root, "docs/benchmark/genres/fixture/proof"), { recursive: true });
+  await writeFile(
+    path.join(root, "docs/benchmark/genres/fixture/proof/fixture.playtest.json"),
+    JSON.stringify({
+      name: "fixture",
+      schemaVersion: 1,
+      target: "web",
+      steps: [{ waitFrames: 1 }],
+      assert: { movement: { entity: "player", minDistance: 1 } },
+    }),
+  );
   return root;
 }
 
@@ -129,6 +140,45 @@ describe("paired sweep", () => {
     const framework = await writeArchive(root, "framework", { arm: "framework" });
     const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla", proof: false });
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/missing proof.json/);
+  });
+
+  it.each([
+    ["omitted", [{ name: "other", verdict: "pass", assertions: [], diagnostics: [] }]],
+    [
+      "extra",
+      [
+        { name: "fixture", verdict: "pass", assertions: [], diagnostics: [] },
+        { name: "extra", verdict: "pass", assertions: [], diagnostics: [] },
+      ],
+    ],
+    [
+      "duplicate",
+      [
+        { name: "fixture", verdict: "pass", assertions: [], diagnostics: [] },
+        { name: "fixture", verdict: "pass", assertions: [], diagnostics: [] },
+      ],
+    ],
+  ])("rejects %s proof scenarios", async (_label, scenarios) => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios,
+        passed: scenarios.length,
+        total: scenarios.length,
+      }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/scenario/);
   });
 
   it("rejects malformed scenarios and non-integer proof counts", async () => {

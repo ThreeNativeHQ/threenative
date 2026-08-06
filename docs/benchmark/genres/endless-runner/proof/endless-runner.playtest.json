@@ -32,10 +32,10 @@
       "pathLength": 5
     },
     "resources": [
-      { "id": "GameState", "path": "distance", "changed": true },
-      { "id": "GameState", "path": "collected", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "lane", "equals": 2, "changed": true },
-      { "id": "GameState", "path": "speed", "changed": true }
+      { "id": "state", "path": "distance", "changed": true },
+      { "id": "state", "path": "collected", "gte": 1, "changed": true },
+      { "id": "state", "path": "lane", "equals": 2, "changed": true },
+      { "id": "state", "path": "speed", "changed": true }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

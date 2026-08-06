@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type SandboxArm, type SweepManifest, readManifest } from "./make-sandbox.js";
+import {
+  type ProofFile,
+  type SandboxArm,
+  type SweepManifest,
+  readManifest,
+  sealedProofFiles,
+} from "./make-sandbox.js";
 import { type SweepMeasurement, measureSandbox } from "./measure-sandbox.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
@@ -45,6 +51,40 @@ function isDirectory(directory: string): boolean {
 
 function isFile(file: string): boolean {
   return fs.existsSync(file) && fs.statSync(file).isFile();
+}
+
+function sealedScenarioNames(repo: string, genre: string): string[] {
+  return sealedProofFiles(repo, genre).map((file: ProofFile) => {
+    let value: unknown;
+    try {
+      value = JSON.parse(fs.readFileSync(file.absolutePath, "utf8"));
+    } catch (error) {
+      throw new Error(`Cannot read sealed proof '${file.relativePath}': ${String(error)}.`);
+    }
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      typeof (value as { name?: unknown }).name !== "string" ||
+      (value as { name: string }).name.trim() === ""
+    )
+      throw new Error(`Cannot pair '${genre}': sealed proof '${file.relativePath}' has no name.`);
+    return (value as { name: string }).name;
+  });
+}
+
+function requireScenarioSet(
+  root: string,
+  actual: readonly StoredProofScenario[],
+  expected: readonly string[],
+): void {
+  const names = actual.map(({ name }) => name);
+  if (new Set(names).size !== names.length)
+    throw new Error(`Cannot pair '${root}': proof.json has duplicate scenario names.`);
+  if (names.length !== expected.length || names.some((name) => !expected.includes(name)))
+    throw new Error(
+      `Cannot pair '${root}': proof.json scenario names do not match the sealed proof set.`,
+    );
 }
 
 function resolveArchive(source: string): string {
@@ -179,6 +219,11 @@ export function pairSweeps(leftDirectory: string, rightDirectory: string, repo =
     throw new Error("Cannot pair sweeps with different proof hashes.");
   const leftProof = readProof(left, leftManifest);
   const rightProof = readProof(right, rightManifest);
+  const expectedScenarios = sealedScenarioNames(repo, leftManifest.genre);
+  requireScenarioSet(left, leftProof.scenarios, expectedScenarios);
+  requireScenarioSet(right, rightProof.scenarios, expectedScenarios);
+  if (leftProof.scenarios.some(({ name }, index) => name !== rightProof.scenarios[index]?.name))
+    throw new Error("Cannot pair sweeps with different proof scenario names.");
   const framework =
     leftManifest.arm === "framework"
       ? armResult(left, leftManifest, leftProof)

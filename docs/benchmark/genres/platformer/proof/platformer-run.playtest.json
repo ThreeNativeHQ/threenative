@@ -25,9 +25,9 @@
     },
     "movement": { "entity": "player", "minDistance": 5 },
     "resources": [
-      { "id": "GameState", "path": "coins", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "goalReached", "equals": true, "changed": true },
-      { "id": "GameState", "path": "respawns", "gte": 1, "changed": true }
+      { "id": "state", "path": "coins", "gte": 1, "changed": true },
+      { "id": "state", "path": "goalReached", "equals": true, "changed": true },
+      { "id": "state", "path": "respawns", "gte": 1, "changed": true }
     ],
     "hud": [{ "id": "coins", "changed": true }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]

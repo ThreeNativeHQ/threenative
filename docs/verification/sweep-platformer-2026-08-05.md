@@ -5,7 +5,7 @@ Round: 1
 Brief SHA-256: 8a7ee799256676d10fc7d22966e3e4fa93ed54c888fc91fd0f34fc3520ddd9fa
 Arm: framework
 Proof result: 0/0 (not run; archived before PRD-019)
-Proof SHA-256: e4ba94e8c1ba0dd895f8074bcabd22c2f8273d219c958affc08eb5c5399d8cca
+Proof SHA-256: 36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217
 Template: platformer
 Archive: docs/benchmark/sweeps/platformer-2026-08-05
 Framework version: 0.1.0

@@ -61,11 +61,11 @@
     },
     "movement": { "entity": "player", "minDistance": 4 },
     "resources": [
-      { "id": "GameState", "path": "area", "equals": "hub" },
-      { "id": "GameState", "path": "inspections", "equals": 3, "changed": true },
-      { "id": "GameState", "path": "inspectedPoints", "textIncludes": "north.archive" },
-      { "id": "GameState", "path": "objectiveComplete", "equals": true, "changed": true },
-      { "id": "GameState", "path": "returns", "equals": 2 }
+      { "id": "state", "path": "area", "equals": "hub" },
+      { "id": "state", "path": "inspections", "equals": 3, "changed": true },
+      { "id": "state", "path": "inspectedPoints", "textIncludes": "north.archive" },
+      { "id": "state", "path": "objectiveComplete", "equals": true, "changed": true },
+      { "id": "state", "path": "returns", "equals": 2 }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

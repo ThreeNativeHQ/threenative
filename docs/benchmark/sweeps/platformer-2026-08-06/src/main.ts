@@ -107,7 +107,7 @@ installThreePlaytestBridge({
     for (let index = 0; index < ticks; index += 1) tick();
   },
   renderer,
-  resources: { read: () => ({ GameState: { ...state } }) },
+  resources: { read: () => ({ state: { ...state } }) },
   scene,
 });
 
