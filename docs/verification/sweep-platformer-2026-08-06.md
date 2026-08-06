@@ -5,7 +5,7 @@ Round: 2
 Brief SHA-256: 8a7ee799256676d10fc7d22966e3e4fa93ed54c888fc91fd0f34fc3520ddd9fa
 Arm: vanilla
 Proof result: 2/2
-Proof SHA-256: 36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217
+Proof SHA-256: 1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7
 Template: starter
 Archive: docs/benchmark/sweeps/platformer-2026-08-06
 Framework version: 0.1.0

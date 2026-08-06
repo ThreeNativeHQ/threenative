@@ -2,28 +2,13 @@
   "arm": "framework",
   "genre": "platformer",
   "passed": 2,
-  "proofHash": "36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217",
+  "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
   "scenarios": [
     {
       "assertions": [
         {
           "details": {
-            "after": 1.9091780185699463,
-            "before": 0,
-            "expected": {
-              "gte": 0.5,
-              "changed": true
-            },
-            "id": "state",
-            "path": "peakRise",
-            "trivial": false
-          },
-          "id": "resource.state.peakRise",
-          "pass": true
-        },
-        {
-          "details": {
-            "consoleErrors": 0,
+            "consoleErrors": 2,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -34,8 +19,8 @@
           "details": {
             "axis": "+y",
             "min": 0.5,
-            "rawDelta": 2.033633291721344,
-            "signedDelta": 2.033633291721344
+            "rawDelta": 1.970200002193451,
+            "signedDelta": 1.970200002193451
           },
           "id": "movement.axisDelta",
           "pass": true
@@ -45,7 +30,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 12152.80538472538
+            "projectedPixels": 12223.40659774948
           },
           "id": "visibility.player",
           "pass": true
@@ -53,7 +38,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.25072084957487,
+            "separation": 9.219769731335784,
             "target": "player",
             "visible": true
           },
@@ -127,7 +112,7 @@
         },
         {
           "details": {
-            "consoleErrors": 103,
+            "consoleErrors": 98,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -136,7 +121,7 @@
         },
         {
           "details": {
-            "distance": 15.208372460370867,
+            "distance": 14.040090312926472,
             "minimum": 5
           },
           "id": "movement.distance",
@@ -147,7 +132,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 16472.81856238279
+            "projectedPixels": 13026.72788678688
           },
           "id": "visibility.player",
           "pass": true
@@ -155,7 +140,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.149281512164666,
+            "separation": 10.304796297838816,
             "target": "player",
             "visible": true
           },

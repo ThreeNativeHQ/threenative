@@ -52,6 +52,17 @@ function copyFrameworkTypes(sandbox: string, archive: string): void {
   }
 }
 
+function copyAppShell(sandbox: string, archive: string): void {
+  for (const name of fs.readdirSync(sandbox)) {
+    if (name === "index.html" || /^vite\.config\.[cm]?[jt]s$/.test(name)) {
+      fs.copyFileSync(path.join(sandbox, name), path.join(archive, name));
+    }
+  }
+  const publicDirectory = path.join(sandbox, "public");
+  if (isDirectory(publicDirectory))
+    fs.cpSync(publicDirectory, path.join(archive, "public"), { recursive: true });
+}
+
 function packageNamePart(name: string): string {
   return name.replace(/^@/, "").replaceAll("/", "-");
 }
@@ -132,6 +143,7 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
     const playtests = path.join(source, "playtests");
     if (isDirectory(playtests))
       fs.cpSync(playtests, path.join(destination, "playtests"), { recursive: true });
+    copyAppShell(source, destination);
     copyPackageJson(packageFile, destination);
     fs.copyFileSync(manifestFile, path.join(destination, "sweep.json"));
     copyFrameworkTypes(source, destination);

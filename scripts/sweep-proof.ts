@@ -218,7 +218,9 @@ export function reportFromOutput(
       assertions: [],
       diagnostics: [
         {
+          code: "TN_SWEEP_PROOF_INVALID_OUTPUT",
           message: `${error instanceof Error ? error.message : String(error)}${stderr ? `: ${stderr}` : ""}`,
+          severity: "error",
         },
       ],
       name,

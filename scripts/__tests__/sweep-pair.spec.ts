@@ -83,7 +83,14 @@ async function writeArchive(
           arm: options.arm,
           genre,
           proofHash,
-          scenarios: [{ name: "fixture", verdict: "pass", assertions: [], diagnostics: [] }],
+          scenarios: [
+            {
+              name: "fixture",
+              verdict: "pass",
+              assertions: [{ id: "fixture.assertion", pass: true }],
+              diagnostics: [],
+            },
+          ],
           passed: 1,
           total: 1,
         },
@@ -210,6 +217,48 @@ describe("paired sweep", () => {
       total: 1.5,
     });
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/invalid passed\/total/);
+    await invalid({
+      arm: manifest.arm,
+      genre: manifest.genre,
+      proofHash: manifest.proofHash,
+      scenarios: [
+        {
+          name: "fixture",
+          verdict: "pass",
+          assertions: [{ id: "fixture.assertion", pass: true }],
+          diagnostics: [{}],
+        },
+      ],
+      passed: 1,
+      total: 1,
+    });
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/malformed diagnostics/);
+  });
+
+  it.each([
+    ["empty assertions", []],
+    ["pass-false assertion", [{ id: "fixture.assertion", pass: false }]],
+  ])("rejects fabricated proof records with %s", async (_label, assertions) => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios: [{ name: "fixture", verdict: "pass", assertions, diagnostics: [] }],
+        passed: 1,
+        total: 1,
+      }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/assertion/);
   });
 
   it("exposes the package command", async () => {

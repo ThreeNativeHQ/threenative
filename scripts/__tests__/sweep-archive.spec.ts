@@ -27,6 +27,13 @@ async function writeSandbox(root: string, name = "sandbox"): Promise<string> {
   });
   await writeFile(path.join(sandbox, "src", "main.ts"), "export const ready = true;\n");
   await writeFile(path.join(sandbox, "playtests", "smoke.json"), "{}\n");
+  await mkdir(path.join(sandbox, "public"), { recursive: true });
+  await writeFile(
+    path.join(sandbox, "index.html"),
+    '<script type="module" src="/src/main.ts"></script>\n',
+  );
+  await writeFile(path.join(sandbox, "vite.config.ts"), "export default {};\n");
+  await writeFile(path.join(sandbox, "public", "favicon.svg"), "<svg />\n");
   await writeFile(path.join(sandbox, "package.json"), '{"name":"fixture"}\n');
   await writeFile(
     path.join(sandbox, "sweep.json"),
@@ -57,6 +64,15 @@ describe("sweep archive", () => {
     await expect(readFile(path.join(archive, "src/main.ts"), "utf8")).resolves.toContain("ready");
     await expect(readFile(path.join(archive, "playtests/smoke.json"), "utf8")).resolves.toBe(
       "{}\n",
+    );
+    await expect(readFile(path.join(archive, "index.html"), "utf8")).resolves.toContain(
+      "/src/main.ts",
+    );
+    await expect(readFile(path.join(archive, "vite.config.ts"), "utf8")).resolves.toBe(
+      "export default {};\n",
+    );
+    await expect(readFile(path.join(archive, "public/favicon.svg"), "utf8")).resolves.toBe(
+      "<svg />\n",
     );
     await expect(readFile(path.join(archive, "sweep.json"), "utf8")).resolves.toContain(
       '"genre":"fixture"',

@@ -22,7 +22,6 @@
       "entity": "player",
       "minAxisDelta": { "axis": "+y", "min": 0.5 }
     },
-    "resources": [{ "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }
 }

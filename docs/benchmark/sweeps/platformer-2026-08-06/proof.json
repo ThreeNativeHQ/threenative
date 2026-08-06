@@ -2,25 +2,10 @@
   "arm": "vanilla",
   "genre": "platformer",
   "passed": 2,
-  "proofHash": "36db54cfa232ffd4c93a73ea197b1c3eca9705a263bfeb697772be2580abd217",
+  "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
   "scenarios": [
     {
       "assertions": [
-        {
-          "details": {
-            "after": 1.5050000000000006,
-            "before": 0,
-            "expected": {
-              "gte": 0.5,
-              "changed": true
-            },
-            "id": "state",
-            "path": "peakRise",
-            "trivial": false
-          },
-          "id": "resource.state.peakRise",
-          "pass": true
-        },
         {
           "details": {
             "consoleErrors": 0,

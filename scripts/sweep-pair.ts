@@ -22,10 +22,21 @@ interface StoredProof {
 }
 
 interface StoredProofScenario {
-  readonly assertions: readonly unknown[];
-  readonly diagnostics: readonly unknown[];
+  readonly assertions: readonly StoredProofAssertion[];
+  readonly diagnostics: readonly StoredProofDiagnostic[];
   readonly name: string;
   readonly verdict: "pass" | "fail";
+}
+
+interface StoredProofAssertion {
+  readonly id: string;
+  readonly pass: boolean;
+}
+
+interface StoredProofDiagnostic {
+  readonly code: string;
+  readonly message: string;
+  readonly severity: "error" | "warning";
 }
 
 export interface PairArmResult {
@@ -51,6 +62,30 @@ function isDirectory(directory: string): boolean {
 
 function isFile(file: string): boolean {
   return fs.existsSync(file) && fs.statSync(file).isFile();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStoredProofAssertion(value: unknown): value is StoredProofAssertion {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.trim() !== "" &&
+    typeof value.pass === "boolean"
+  );
+}
+
+function isStoredProofDiagnostic(value: unknown): value is StoredProofDiagnostic {
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    value.code.trim() !== "" &&
+    typeof value.message === "string" &&
+    value.message.trim() !== "" &&
+    (value.severity === "error" || value.severity === "warning")
+  );
 }
 
 function sealedScenarioNames(repo: string, genre: string): string[] {
@@ -181,6 +216,21 @@ function readProof(root: string, manifest: SweepManifest): StoredProof {
     )
       throw new Error(
         `Cannot pair '${root}': proof.json has a malformed scenario entry at ${index}.`,
+      );
+    if (scenario.assertions.length === 0)
+      throw new Error(`Cannot pair '${root}': proof.json scenario ${index} has no assertions.`);
+    if (!scenario.assertions.every(isStoredProofAssertion))
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario ${index} has malformed assertions.`,
+      );
+    if (!scenario.diagnostics.every(isStoredProofDiagnostic))
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario ${index} has malformed diagnostics.`,
+      );
+    const assertions = scenario.assertions as readonly StoredProofAssertion[];
+    if (scenario.verdict === "pass" && assertions.some(({ pass }) => !pass))
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario ${index} is marked pass with a failed assertion.`,
       );
   }
   const observedPassed = proof.scenarios.filter(({ verdict }) => verdict === "pass").length;

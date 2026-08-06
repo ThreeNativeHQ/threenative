@@ -85,9 +85,11 @@ describe("genre sandbox", () => {
     await expect(readFile(path.join(result.out, "index.html"), "utf8")).resolves.toContain(
       "/src/main.ts",
     );
-    await expect(readFile(path.join(result.out, "AGENTS.md"), "utf8")).resolves.toContain(
-      "installThreePlaytestBridge",
-    );
+    const agents = await readFile(path.join(result.out, "AGENTS.md"), "utf8");
+    expect(agents).toContain("fixedStep");
+    expect(agents).toContain("diagnostics: () => []");
+    expect(agents).toContain("resources: { read: () => ({ state: { ...state } }) }");
+    expect(agents).toContain("generic resource id `state`");
     await expect(readFile(path.join(result.out, "src", "main.ts"))).rejects.toThrow();
     await expect(
       readFile(path.join(result.out, "node_modules", "@threenative", "core")),
