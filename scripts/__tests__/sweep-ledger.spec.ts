@@ -160,7 +160,20 @@ async function validateCommittedProof(markdown: string, filename: string): Promi
       throw new Error(
         `${filename}: proof.json scenario ${index} is marked pass with failed evidence.`,
       );
+    if (
+      verdict === "fail" &&
+      assertions.every((assertion) => (assertion as { pass: boolean }).pass) &&
+      diagnostics.every((diagnostic) => (diagnostic as { severity: string }).severity !== "error")
+    )
+      throw new Error(
+        `${filename}: proof.json scenario ${index} is marked fail without failed evidence.`,
+      );
   }
+  const observedPassed = value.scenarios.filter(
+    (scenario) => (scenario as { verdict: string }).verdict === "pass",
+  ).length;
+  if (passed !== observedPassed)
+    throw new Error(`${filename}: proof.json passed count does not match scenario verdicts.`);
   if (proofResult !== `${passed}/${total}`)
     throw new Error(`${filename}: Proof result does not match proof.json.`);
 }
@@ -275,9 +288,23 @@ describe("sweep ledgers", () => {
     await mkdir(root, { recursive: true });
     await writeFile(
       path.join(root, "proof.json"),
-      JSON.stringify({ arm: "vanilla", proofHash: "real", passed: 1, total: 1 }),
+      JSON.stringify({ arm: "vanilla", genre: "fixture", proofHash: "real", passed: 1, total: 1 }),
+    );
+    await writeFile(
+      path.join(root, "sweep.json"),
+      JSON.stringify({
+        arm: "framework",
+        genre: "fixture",
+        briefHash: "brief",
+        proofHash: "real",
+        template: "fixture",
+        date: "2099-01-01T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
     );
     const ledger = [
+      "Genre: fixture",
       "Arm: framework",
       "Proof result: 99/99",
       "Proof SHA-256: fake",
@@ -289,13 +316,71 @@ describe("sweep ledgers", () => {
   it("should reject a live ledger whose proof.json is missing", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-ledger-"));
     temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "sweep.json"),
+      JSON.stringify({
+        arm: "vanilla",
+        genre: "fixture",
+        briefHash: "brief",
+        proofHash: "real",
+        template: "fixture",
+        date: "2099-01-01T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
+    );
     const ledger = [
+      "Genre: fixture",
       "Arm: vanilla",
       "Proof result: 0/0 (not run; archived before PRD-019)",
       "Proof SHA-256: real",
       `Archive: ${root}`,
     ].join("\n");
     await expect(validateCommittedProof(ledger, "live.md")).rejects.toThrow(/proof\.json/);
+  });
+
+  it("should reject a live ledger whose proof count disagrees with scenario verdicts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-ledger-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "proof.json"),
+      JSON.stringify({
+        arm: "framework",
+        genre: "fixture",
+        proofHash: "real",
+        passed: 1,
+        total: 1,
+        scenarios: [
+          {
+            name: "fixture",
+            verdict: "fail",
+            assertions: [{ id: "fixture.assertion", pass: false }],
+            diagnostics: [{ code: "TN_FAILURE", message: "failed", severity: "error" }],
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      path.join(root, "sweep.json"),
+      JSON.stringify({
+        arm: "framework",
+        genre: "fixture",
+        briefHash: "brief",
+        proofHash: "real",
+        template: "fixture",
+        date: "2099-01-01T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
+    );
+    const ledger = [
+      "Genre: fixture",
+      "Arm: framework",
+      "Proof result: 1/1",
+      "Proof SHA-256: real",
+      `Archive: ${root}`,
+    ].join("\n");
+    await expect(validateCommittedProof(ledger, "live.md")).rejects.toThrow(/passed count/);
   });
 
   it("should validate both recorded sweeps and match their archived measurements", async () => {
@@ -319,6 +404,8 @@ describe("sweep ledgers", () => {
       const manifest = readManifest(path.join(archive, "sweep.json"));
       expect(field(markdown, "Genre")).toBe(manifest.genre);
       expect(field(markdown, "Brief SHA-256")).toBe(manifest.briefHash);
+      expect(field(markdown, "Arm")).toBe(manifest.arm);
+      expect(field(markdown, "Proof SHA-256")).toBe(manifest.proofHash);
       expect(Number(field(markdown, "User source LOC"))).toBe(measurement.userLoc);
       expect(Number(field(markdown, "Source files"))).toBe(measurement.sourceFiles);
       expect(Number(field(markdown, "Framework files"))).toBe(measurement.frameworkFiles);

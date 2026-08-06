@@ -18,6 +18,7 @@ const DEPENDENCY_SECTIONS = [
   "peerDependencies",
 ] as const;
 const VANILLA_BRIDGE_PACKAGE = "@threenative/playtest";
+const FORBIDDEN_FRAMEWORK_REFERENCE = /@threenative\/(?:core|physics|ui)(?:[\/@#?]|$)/;
 
 interface StoredProof {
   readonly arm: SandboxArm;
@@ -161,6 +162,40 @@ function isAllowedVanillaPackage(name: string): boolean {
   return !name.startsWith("@threenative/") || name === VANILLA_BRIDGE_PACKAGE;
 }
 
+function validateVanillaDependency(
+  root: string,
+  section: string,
+  name: string,
+  version: unknown,
+): void {
+  if (typeof version !== "string" || version.trim() === "")
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} must be a non-empty string.`,
+    );
+  if (FORBIDDEN_FRAMEWORK_REFERENCE.test(version))
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} points to a forbidden framework package through '${version}'.`,
+    );
+  if (
+    name === VANILLA_BRIDGE_PACKAGE &&
+    version.startsWith("npm:") &&
+    !/^npm:@threenative\/playtest(?:@|\/|$)/.test(version)
+  )
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} aliases a different package through '${version}'.`,
+    );
+  if (
+    name === VANILLA_BRIDGE_PACKAGE &&
+    /^(?:file|link):/.test(version) &&
+    /(?:^|[\\/])(?:threenative-)?(?:core|physics|ui)(?:[\\/.\-]|$)/i.test(
+      version.slice(version.indexOf(":") + 1),
+    )
+  )
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} points to a forbidden framework path through '${version}'.`,
+    );
+}
+
 function validateVanillaArchive(root: string, files: readonly string[]): void {
   const packageFile = path.join(root, "package.json");
   if (!isFile(packageFile))
@@ -182,11 +217,12 @@ function validateVanillaArchive(root: string, files: readonly string[]): void {
       throw new Error(
         `Cannot measure '${root}' as vanilla: package.json ${section} must be an object.`,
       );
-    for (const name of Object.keys(rawDependencies)) {
+    for (const [name, version] of Object.entries(rawDependencies)) {
       if (!isAllowedVanillaPackage(name))
         throw new Error(
           `Cannot measure '${root}' as vanilla: package.json declares forbidden framework dependency '${name}'.`,
         );
+      validateVanillaDependency(root, section, name, version);
     }
   }
   const importPattern =
@@ -296,6 +332,14 @@ function readProof(root: string, manifest: SweepManifest): StoredProof {
     if (scenario.verdict === "pass" && diagnostics.some(({ severity }) => severity === "error"))
       throw new Error(
         `Cannot pair '${root}': proof.json scenario ${index} is marked pass with an error diagnostic.`,
+      );
+    if (
+      scenario.verdict === "fail" &&
+      assertions.every(({ pass }) => pass) &&
+      diagnostics.every(({ severity }) => severity !== "error")
+    )
+      throw new Error(
+        `Cannot pair '${root}': proof.json scenario ${index} is marked fail without failed evidence.`,
       );
   }
   const observedPassed = proof.scenarios.filter(({ verdict }) => verdict === "pass").length;

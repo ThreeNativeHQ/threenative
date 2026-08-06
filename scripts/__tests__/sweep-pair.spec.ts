@@ -169,6 +169,17 @@ describe("paired sweep", () => {
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/forbidden framework dependency/);
   });
 
+  it("rejects a vanilla bridge dependency aliased to a framework package", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    await writeFile(
+      path.join(vanilla, "package.json"),
+      JSON.stringify({ dependencies: { "@threenative/playtest": "npm:@threenative/core@0.1.0" } }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/forbidden framework package/);
+  });
+
   it("rejects a vanilla archive that imports framework packages", async () => {
     const root = await fixtureRoot();
     const framework = await writeArchive(root, "framework", { arm: "framework" });
@@ -320,6 +331,36 @@ describe("paired sweep", () => {
       }),
     );
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/error diagnostic/);
+  });
+
+  it("rejects a fail verdict without failed evidence", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios: [
+          {
+            name: "fixture",
+            verdict: "fail",
+            assertions: [{ id: "fixture.assertion", pass: true }],
+            diagnostics: [{ code: "TN_NOTE", message: "warning only", severity: "warning" }],
+          },
+        ],
+        passed: 0,
+        total: 1,
+      }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(/without failed evidence/);
   });
 
   it("exposes the package command", async () => {

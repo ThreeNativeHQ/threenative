@@ -195,7 +195,11 @@ export function readManifest(file: string): SweepManifest {
 
 function sameRun(left: SweepManifest, right: SweepManifest): boolean {
   return (
-    left.genre === right.genre && left.briefHash === right.briefHash && left.date === right.date
+    left.arm === right.arm &&
+    left.genre === right.genre &&
+    left.briefHash === right.briefHash &&
+    left.proofHash === right.proofHash &&
+    left.date === right.date
   );
 }
 

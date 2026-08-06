@@ -3,7 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { makeSandbox, readManifest, resolveGenre, sealedProofHash } from "../make-sandbox";
+import {
+  isArchived,
+  makeSandbox,
+  readManifest,
+  resolveGenre,
+  sealedProofHash,
+} from "../make-sandbox";
 
 const temporaryRoots: string[] = [];
 
@@ -167,5 +173,33 @@ describe("genre sandbox", () => {
       }),
     ).toThrow(/pnpm sweep:archive/);
     await expect(readFile(path.join(sandbox, "sentinel.txt"), "utf8")).resolves.toBe("keep me\n");
+  });
+
+  it("does not treat another arm or proof as the archived run", async () => {
+    const root = await temporaryRoot("threenative-archive-identity-");
+    const manifest = {
+      arm: "vanilla" as const,
+      briefHash: "a".repeat(64),
+      date: "2099-01-01T00:00:00.000Z",
+      frameworkVersion: "0.1.0",
+      genre: "platformer",
+      proofHash: "b".repeat(64),
+      sourceLines: 0,
+      template: "platformer",
+    };
+    const archive = path.join(root, "docs", "benchmark", "sweeps", "platformer-2099-01-01");
+    await mkdir(archive, { recursive: true });
+    await writeFile(
+      path.join(archive, "sweep.json"),
+      JSON.stringify({ ...manifest, arm: "framework" }),
+    );
+    expect(isArchived(manifest, root)).toBe(false);
+    await writeFile(
+      path.join(archive, "sweep.json"),
+      JSON.stringify({ ...manifest, proofHash: "c".repeat(64) }),
+    );
+    expect(isArchived(manifest, root)).toBe(false);
+    await writeFile(path.join(archive, "sweep.json"), JSON.stringify(manifest));
+    expect(isArchived(manifest, root)).toBe(true);
   });
 });
