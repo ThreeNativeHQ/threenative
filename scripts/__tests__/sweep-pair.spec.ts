@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -178,6 +179,32 @@ describe("paired sweep", () => {
       JSON.stringify({ dependencies: { "@threenative/playtest": "npm:@threenative/core@0.1.0" } }),
     );
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/forbidden framework package/);
+  });
+
+  it("rejects an unscoped dependency whose local tarball embeds a framework package", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const packageRoot = path.join(vanilla, "vendor", "renamed-core", "package");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({ name: "@threenative/core", version: "0.1.0" }),
+    );
+    execFileSync("tar", [
+      "-czf",
+      path.join(vanilla, "vendor", "renamed-core.tgz"),
+      "-C",
+      path.dirname(packageRoot),
+      "package",
+    ]);
+    await writeFile(
+      path.join(vanilla, "package.json"),
+      JSON.stringify({ dependencies: { engine: "file:./vendor/renamed-core.tgz" } }),
+    );
+    expect(() => pairSweeps(framework, vanilla, root)).toThrow(
+      /embeds forbidden framework package/,
+    );
   });
 
   it("rejects a vanilla archive that imports framework packages", async () => {

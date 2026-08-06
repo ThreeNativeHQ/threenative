@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -162,6 +163,70 @@ function isAllowedVanillaPackage(name: string): boolean {
   return !name.startsWith("@threenative/") || name === VANILLA_BRIDGE_PACKAGE;
 }
 
+function localPackageJson(target: string): string {
+  if (isDirectory(target)) {
+    const packageFile = path.join(target, "package.json");
+    if (!isFile(packageFile))
+      throw new Error(`local dependency target '${target}' has no package.json.`);
+    return fs.readFileSync(packageFile, "utf8");
+  }
+  if (!isFile(target)) throw new Error(`local dependency target '${target}' does not exist.`);
+  let entries: string;
+  try {
+    entries = execFileSync("tar", ["-tzf", target], { encoding: "utf8" });
+  } catch (error) {
+    throw new Error(
+      `local dependency target '${target}' is not a readable package archive: ${String(error)}.`,
+    );
+  }
+  const packageEntry = entries.split("\n").find((entry) => /(?:^|\/)package\.json$/.test(entry));
+  if (packageEntry === undefined)
+    throw new Error(`local dependency target '${target}' has no package.json.`);
+  try {
+    return execFileSync("tar", ["-xOzf", target, packageEntry], { encoding: "utf8" });
+  } catch (error) {
+    throw new Error(
+      `local dependency target '${target}' has an unreadable package.json: ${String(error)}.`,
+    );
+  }
+}
+
+function validateLocalPackageIdentity(
+  root: string,
+  section: string,
+  name: string,
+  version: string,
+): void {
+  const prefix = /^(?:file|link):/.exec(version)?.[0];
+  if (prefix === undefined) return;
+  const target = path.resolve(root, version.slice(prefix.length));
+  let packageJson: unknown;
+  try {
+    packageJson = JSON.parse(localPackageJson(target));
+  } catch (error) {
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} has an invalid local package identity: ${error instanceof Error ? error.message : String(error)}.`,
+    );
+  }
+  if (
+    !isRecord(packageJson) ||
+    typeof packageJson.name !== "string" ||
+    packageJson.name.trim() === ""
+  )
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} local target '${version}' has no package name.`,
+    );
+  const packageName = packageJson.name;
+  if (packageName.startsWith("@threenative/") && packageName !== VANILLA_BRIDGE_PACKAGE)
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} local target '${version}' embeds forbidden framework package '${packageName}'.`,
+    );
+  if (name === VANILLA_BRIDGE_PACKAGE && packageName !== VANILLA_BRIDGE_PACKAGE)
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: package.json ${section}.${name} local target '${version}' is package '${packageName}', not the playtest bridge.`,
+    );
+}
+
 function validateVanillaDependency(
   root: string,
   section: string,
@@ -194,6 +259,7 @@ function validateVanillaDependency(
     throw new Error(
       `Cannot measure '${root}' as vanilla: package.json ${section}.${name} points to a forbidden framework path through '${version}'.`,
     );
+  validateLocalPackageIdentity(root, section, name, version);
 }
 
 function validateVanillaArchive(root: string, files: readonly string[]): void {
