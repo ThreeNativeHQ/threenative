@@ -35,7 +35,9 @@
       { "id": "state", "path": "distance", "changed": true },
       { "id": "state", "path": "collected", "gte": 1, "changed": true },
       { "id": "state", "path": "lane", "equals": 2, "changed": true },
-      { "id": "state", "path": "speed", "changed": true }
+      { "id": "state", "path": "speed", "changed": true },
+      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

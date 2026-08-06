@@ -59,4 +59,49 @@ describe("sealed genre proof set", () => {
     const input = resolveGenre(process.cwd(), "platformer");
     expect(input.proofHash).toBe(sealedProofHash(process.cwd(), "platformer"));
   });
+
+  it("keeps the brief-critical action assertions in the sealed proofs", async () => {
+    const endless = JSON.parse(
+      await readFile(
+        path.join(
+          process.cwd(),
+          "docs/benchmark/genres/endless-runner/proof/endless-runner.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as { assert?: { resources?: Array<{ path?: string }> } };
+    expect(endless.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
+      expect.arrayContaining(["jumps", "peakRise"]),
+    );
+
+    const topdown = JSON.parse(
+      await readFile(
+        path.join(
+          process.cwd(),
+          "docs/benchmark/genres/topdown-action/proof/topdown-action.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert?: {
+        animation?: Array<{
+          advancedFrames?: number;
+          clip?: string;
+          entity?: string;
+          entered?: boolean;
+        }>;
+        movement?: { rotationChanged?: boolean };
+        resources?: Array<{ path?: string }>;
+      };
+    };
+    expect(topdown.assert?.movement?.rotationChanged).toBe(true);
+    expect(topdown.assert?.animation).toEqual(
+      expect.arrayContaining([
+        { advancedFrames: 1, clip: "attack", entity: "player", entered: true },
+      ]),
+    );
+    expect(topdown.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
+      expect.arrayContaining(["shots", "reload"]),
+    );
+  });
 });

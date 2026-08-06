@@ -79,6 +79,18 @@ describe("sealed proof runner", () => {
     ["missing assertion results", { pass: true, diagnostics: [] }],
     ["empty assertion results", { pass: true, assertionResults: [], diagnostics: [] }],
     [
+      "contradictory failed assertion",
+      { pass: true, assertionResults: [{ id: "failed", pass: false }], diagnostics: [] },
+    ],
+    [
+      "contradictory error diagnostic",
+      {
+        pass: true,
+        assertionResults: [{ id: "ok", pass: true }],
+        diagnostics: [{ code: "TN_FAILURE", message: "failed", severity: "error" }],
+      },
+    ],
+    [
       "malformed pass",
       { pass: "true", assertionResults: [{ id: "ok", pass: true }], diagnostics: [] },
     ],

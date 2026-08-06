@@ -195,6 +195,14 @@ function validateRunnerReport(value: unknown): PlaytestReport {
     throw new Error("runner output assertionResults are malformed");
   if (!Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic))
     throw new Error("runner output diagnostics are malformed");
+  const assertionsPass = value.assertionResults.every(
+    (assertion) => isAssertionResult(assertion) && assertion.pass,
+  );
+  const diagnosticsPass = value.diagnostics.every(
+    (diagnostic) => isDiagnostic(diagnostic) && diagnostic.severity !== "error",
+  );
+  if (value.pass !== (assertionsPass && diagnosticsPass))
+    throw new Error("runner output pass contradicts assertion results or diagnostics");
   return value as unknown as PlaytestReport;
 }
 

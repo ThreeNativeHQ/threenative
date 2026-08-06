@@ -5,7 +5,7 @@ Round: 2
 Brief SHA-256: 053c4b8c58219b0e578b7526526566496d8ab16b916c86cebb539672b2f86b86
 Arm: framework
 Proof result: 0/0 (not run; archived before PRD-019)
-Proof SHA-256: b3c2873d7c31c3919fc7a9de1df7c8c9c9b42dff77a82f391be1d6ad354e6e7b
+Proof SHA-256: 17d31dbd3be01c6c5f7391026297814e931bd3004608f5380f6ab8d71006cd28
 Template: starter (no topdown-action template)
 Archive: docs/benchmark/sweeps/topdown-action-2026-08-05-3
 Framework version: 0.1.0

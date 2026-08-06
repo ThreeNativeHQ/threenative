@@ -5,7 +5,7 @@ Round: 2
 Brief SHA-256: 21a0d1035d21b0520da448104271118570528cf5416d33e8ceed64efeb6326ec
 Arm: framework
 Proof result: 0/0 (not run; archived before PRD-019)
-Proof SHA-256: b4670989251f7a0a07a4c86c05c8f68bb2e56b80cc7d23a0d2c616966817a731
+Proof SHA-256: f3636979dd996ae47b7d9eb5d5fbb4cf2889f8de679635073f8fca62fccae75b
 Template: starter
 Archive: docs/benchmark/sweeps/endless-runner-2026-08-05
 Framework version: 0.1.0

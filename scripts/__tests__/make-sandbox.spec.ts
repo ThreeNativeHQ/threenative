@@ -88,7 +88,11 @@ describe("genre sandbox", () => {
     const agents = await readFile(path.join(result.out, "AGENTS.md"), "utf8");
     expect(agents).toContain("fixedStep");
     expect(agents).toContain("diagnostics: () => []");
+    expect(agents).toContain("gameplay: () => ({");
+    expect(agents).toContain('animation: { player: { clip: "idle", advancedFrames: 1 } }');
+    expect(agents).toContain('states: { player: "idle", mission: "playing" }');
     expect(agents).toContain("resources: { read: () => ({ state: { ...state } }) }");
+    expect(agents).toContain("all five provider hooks");
     expect(agents).toContain("generic resource id `state`");
     await expect(readFile(path.join(result.out, "src", "main.ts"))).rejects.toThrow();
     await expect(
