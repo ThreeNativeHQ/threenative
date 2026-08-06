@@ -97,8 +97,25 @@ export interface IPlaytestResourcePathAlternative {
 }
 
 export interface IPlaytestResourcePathAssertion extends IPlaytestPathAssertion {
-  anyOf?: IPlaytestResourcePathAlternative[];
+  anyOf?: never;
 }
+
+export interface IPlaytestResourceAnyOfAssertion {
+  anyOf: IPlaytestResourcePathAlternative[];
+  atSteps?: never;
+  changed?: never;
+  equals?: never;
+  gte?: never;
+  id: string;
+  allowTrivial?: never;
+  path?: never;
+  textIncludes?: never;
+  throughoutSteps?: never;
+}
+
+export type IPlaytestResourceAssertion =
+  | IPlaytestResourceAnyOfAssertion
+  | IPlaytestResourcePathAssertion;
 
 export interface IPlaytestComponentAssertion extends Omit<IPlaytestPathAssertion, "id" | "textIncludes" | "throughoutSteps"> {
   component: string;
@@ -216,7 +233,7 @@ export interface IPlaytestScenarioAssertions {
   occluded?: IPlaytestOccludedAssertion[];
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
   reachability?: IPlaytestReachabilityAssertion;
-  resources?: IPlaytestResourcePathAssertion[];
+  resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
@@ -1207,7 +1224,7 @@ function validatePathAssertion(value: unknown): IPlaytestPathAssertion | undefin
   };
 }
 
-function validateResourcePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestResourcePathAssertion {
+function validateResourcePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestResourceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   if (hasKey(record, "anyOf")) {
     rejectUnknownKeys(record, ["anyOf", "id"], scenarioPath, objectPath);

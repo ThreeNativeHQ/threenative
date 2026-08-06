@@ -11,6 +11,7 @@ import {
   loadPlaytestScenario,
   requiredPlaytestCapabilities,
 } from "../src/index.js";
+import type { IPlaytestResourceAssertion } from "../src/index.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
@@ -116,6 +117,23 @@ test("scenario loading preserves a resource anyOf contract", async () => {
       { path: "peakRise", gte: 0.5, changed: true },
     ],
   });
+});
+
+test("resource assertion types reject mixed anyOf and normal path fields", () => {
+  const normal: IPlaytestResourceAssertion = { gte: 1, id: "state", path: "jumps" };
+  const alternatives: IPlaytestResourceAssertion = {
+    anyOf: [{ gte: 1, path: "jumps" }],
+    id: "state",
+  };
+  // @ts-expect-error anyOf is exclusive with normal path assertion fields.
+  const mixed: IPlaytestResourceAssertion = {
+    anyOf: [{ gte: 1, path: "jumps" }],
+    equals: 1,
+    id: "state",
+  };
+  expect(normal).toMatchObject({ id: "state", path: "jumps" });
+  expect(alternatives).toMatchObject({ id: "state", anyOf: expect.any(Array) });
+  expect(mixed).toMatchObject({ id: "state" });
 });
 
 test.each([
