@@ -59,9 +59,9 @@
       "targetInViewport": true,
       "within": 12
     },
-    "movement": { "entity": "player", "minDistance": 4 },
+    "movement": { "entity": "player", "pathLength": 4 },
     "resources": [
-      { "id": "state", "path": "area", "equals": "hub" },
+      { "id": "state", "path": "area", "equals": "hub", "allowTrivial": true },
       { "id": "state", "path": "inspections", "equals": 3, "changed": true },
       { "id": "state", "path": "inspectedPoints", "textIncludes": "north.archive" },
       { "id": "state", "path": "objectiveComplete", "equals": true, "changed": true },

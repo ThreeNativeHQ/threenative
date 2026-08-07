@@ -9,18 +9,7 @@ import { App } from "./ui/App.js";
 const viewportProbe = new URLSearchParams(globalThis.location.search).has("viewport");
 
 const game = defineGame<AbyssState>({
-  initialState: {
-    best: 0,
-    elapsed: 0,
-    energy: 100,
-    fps: 0,
-    hull: 100,
-    hunters: 0,
-    playerX: 0,
-    pulsing: false,
-    score: 0,
-    status: "attract",
-  },
+  camera: { far: 7_000, near: 5_000, projection: "orthogonal", size: 520 },
   input: {
     move: {
       down: ["KeyS", "ArrowDown"],

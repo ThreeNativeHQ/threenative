@@ -1,7 +1,7 @@
 import type { Ctx } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
 import { Group, Mesh, SphereGeometry, type Vector3 } from "three";
-import { palette, toon } from "../render/palette.js";
+import { createMaterials } from "../render/materials.js";
 import type { GameState } from "../state.js";
 import type { Character } from "./Character.js";
 
@@ -36,7 +36,7 @@ export class Patrol {
     this.#to = to.clone();
     this.#feel = feel;
     this.mesh = new Group();
-    const body = new Mesh(new SphereGeometry(0.46, 12, 8), toon(palette.enemy));
+    const body = new Mesh(new SphereGeometry(0.46, 12, 8), createMaterials().accent);
     body.scale.y = 0.72;
     body.castShadow = true;
     this.mesh.add(body);

@@ -6,11 +6,13 @@ import {
   MeshStandardMaterial,
   type PerspectiveCamera,
 } from "three";
-import type { AbyssState } from "./Abyss.js";
+import { Abyss, type AbyssState } from "./Abyss.js";
 
 type ProbeCtx = Ctx<AbyssState>;
 
 export class ViewportProbe extends Scene<AbyssState> {
+  static override readonly initialState = Abyss.initialState;
+
   #player: Mesh | undefined;
   #stopResize: (() => void) | undefined;
 

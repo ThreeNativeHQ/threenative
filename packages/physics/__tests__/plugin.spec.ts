@@ -1,6 +1,10 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Ctx } from "@threenative/core";
+import { Object3D } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import { Area3D } from "../src/Area3D.js";
+import { CollisionShape3D } from "../src/CollisionShape3D.js";
+import { RigidBody3D } from "../src/RigidBody3D.js";
 import { type PhysicsContext, rapier } from "../src/plugin.js";
 
 const plugins: Array<ReturnType<typeof rapier>> = [];
@@ -33,5 +37,22 @@ describe("rapier plugin", () => {
     for (let tick = 0; tick < 60; tick++) plugin.update?.(ctx, 1 / 60);
 
     expect(steps).toBe(60);
+  });
+
+  it("releases scene physics on sceneExit", async () => {
+    const { ctx, plugin } = await setup();
+    const body = new RigidBody3D({
+      object: new Object3D(),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    const area = new Area3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+
+    plugin.sceneExit?.(ctx);
+    expect(body.body.isValid()).toBe(false);
+    expect(area.body.isValid()).toBe(false);
   });
 });

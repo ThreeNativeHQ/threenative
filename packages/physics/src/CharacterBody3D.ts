@@ -92,6 +92,17 @@ export class CharacterBody3D {
     this.#sliding = true;
   }
 
+  syncToPhysics(): void {
+    if (this.#disposed || !this.body.isValid()) return;
+    const rotation = this.object.quaternion;
+    this.body.setNextKinematicRotation({
+      x: rotation.x,
+      y: rotation.y,
+      z: rotation.z,
+      w: rotation.w,
+    });
+  }
+
   teleport(position: Pick<Vector3, "x" | "y" | "z">): void {
     if (this.#disposed || !this.body.isValid())
       throw new Error("CharacterBody3D.teleport cannot be used after dispose.");

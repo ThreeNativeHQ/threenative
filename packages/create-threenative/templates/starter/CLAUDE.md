@@ -30,7 +30,7 @@ src/
   main.ts               defineGame(...) + React mount
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/             Player.ts, Crate.ts — plain classes, not an ECS
-  render/               lighting, post, materials, shapes, camera, sky — YOURS, plain Three.js
+  render/               palette, camera, sky, lighting, materials, postprocessing — YOURS
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
 playtests/play.playtest.json  one scenario, run by pnpm test
@@ -59,7 +59,9 @@ inside a scene. Prefer that over looking for a framework helper — if a helper 
 appear in the imports of an existing file, it probably does not exist.
 
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
-Every node has `dispose()`, and `exit()` must dispose what `enter()` created.
+Every node has `dispose()`. Register disposable entities with `ctx.entities`; the framework
+clears registered entities, scene objects, and physics nodes when a scene exits. Dispose a
+node explicitly only when removing it during play.
 
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the player movement code.
@@ -79,9 +81,13 @@ default — `pnpm add miniplex` if a game genuinely needs it.
 
 ## Visuals
 
-Edit everything in `src/render/` directly. It is a starting point, not a constraint, and it
-imports nothing from `@threenative/*`. Do not look for a config option to change the look —
-deliberately, there is none.
+Edit everything in `src/render/` directly. The six baseline files are `palette.ts`,
+`camera.ts`, `sky.ts`, `lighting.ts`, `materials.ts`, and `postprocessing.ts`; `shapes.ts`
+and `particles.ts` are additional helpers. They are ordinary Three.js source in this project,
+not a framework look or a config option. Keep the palette to six named colours with one
+`accent`; import it from materials and sky. Set tonemapping and exposure deliberately, use a
+rim light with soft shadows and `normalBias`, derive fog from the sky, and route bloom through
+`renderer.setOutputNode()` so midtones remain readable.
 
 What is already there, so you do not rebuild it:
 
@@ -121,6 +127,10 @@ const { score } = useGameState(); // in a component, ~10Hz
 ```
 
 Never subscribe a React component to per-frame data.
+
+The start scene owns the initial state in `static initialState`; omit a duplicate
+`initialState` literal from `defineGame`. Update only the fields that changed:
+`ctx.state.set({ score })`.
 
 ## Register entities you want to inspect or test
 

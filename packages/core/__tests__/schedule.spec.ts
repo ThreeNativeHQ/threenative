@@ -62,6 +62,7 @@ describe("Scheduler", () => {
     class Second extends Scene {}
 
     const game = defineGame({
+      initialState: {},
       plugins: [
         {
           setup: (_ctx, runtime) => {
@@ -96,6 +97,7 @@ describe("Scheduler", () => {
     }
 
     const game = defineGame({
+      initialState: {},
       plugins: [
         {
           setup: (_ctx, runtime) => {

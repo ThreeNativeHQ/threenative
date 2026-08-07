@@ -1,5 +1,5 @@
 import { BoxGeometry, Group, Mesh, SphereGeometry } from "three";
-import { palette, toon } from "./palette.js";
+import { createMaterials } from "./materials.js";
 
 export interface CharacterRig {
   readonly arms: [Group, Group];
@@ -8,10 +8,14 @@ export interface CharacterRig {
   readonly torso: Group;
 }
 
-function limb(side: number, y: number): Group {
+function limb(
+  side: number,
+  y: number,
+  material: ReturnType<typeof createMaterials>["character"],
+): Group {
   const joint = new Group();
   joint.position.set(side * 0.18, y, 0);
-  const mesh = new Mesh(new BoxGeometry(0.2, 0.42, 0.2), toon(palette.furLight));
+  const mesh = new Mesh(new BoxGeometry(0.2, 0.42, 0.2), material);
   mesh.position.y = -0.21;
   mesh.castShadow = true;
   joint.add(mesh);
@@ -19,22 +23,29 @@ function limb(side: number, y: number): Group {
 }
 
 export function createCharacterRig(): CharacterRig {
+  const materials = createMaterials();
   const root = new Group();
   const torso = new Group();
   torso.position.y = 0.72;
   root.add(torso);
-  const jacket = new Mesh(new BoxGeometry(0.62, 0.62, 0.46), toon(palette.jacket));
+  const jacket = new Mesh(new BoxGeometry(0.62, 0.62, 0.46), materials.accent);
   jacket.castShadow = true;
   torso.add(jacket);
-  const head = new Mesh(new SphereGeometry(0.32, 12, 8), toon(palette.fur));
+  const head = new Mesh(new SphereGeometry(0.32, 12, 8), materials.character);
   head.position.y = 0.55;
   head.castShadow = true;
   torso.add(head);
-  const nose = new Mesh(new SphereGeometry(0.07, 8, 6), toon(palette.eye));
+  const nose = new Mesh(new SphereGeometry(0.07, 8, 6), materials.shadow);
   nose.position.set(0, 0.5, 0.3);
   torso.add(nose);
-  const arms: [Group, Group] = [limb(-1, 0.2), limb(1, 0.2)];
-  const legs: [Group, Group] = [limb(-1, 0.48), limb(1, 0.48)];
+  const arms: [Group, Group] = [
+    limb(-1, 0.2, materials.character),
+    limb(1, 0.2, materials.character),
+  ];
+  const legs: [Group, Group] = [
+    limb(-1, 0.48, materials.character),
+    limb(1, 0.48, materials.character),
+  ];
   torso.add(...arms);
   root.add(...legs);
   return { arms, legs, root, torso };

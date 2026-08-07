@@ -44,4 +44,90 @@ describe("createRenderer", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  it("dispatches compute only through WebGPU and fails closed on WebGL2", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const dispatched: unknown[] = [];
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+
+    try {
+      const webgpu = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          compute: (node: unknown) => dispatched.push(node),
+          dispose: () => undefined,
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const node = {};
+      webgpu.compute(node);
+      expect(dispatched).toEqual([node]);
+      const originalRender = (webgpu.raw as { render: () => void }).render;
+      expect(() => webgpu.setOutputNode({})).not.toThrow();
+      expect((webgpu.raw as { render: () => void }).render).toBe(originalRender);
+      webgpu.dispose();
+
+      const webgl = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(() => webgl.compute(node)).toThrow("webgl2");
+      expect(() => webgl.setOutputNode({})).toThrow("webgl2");
+      webgl.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("replaces and disposes only the framework-owned output pipeline", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    let disposed = 0;
+    const originalRender = () => undefined;
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          compute: () => undefined,
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          init: async () => undefined,
+          render: originalRender,
+          setSize: () => undefined,
+          toneMapping: 0,
+        }),
+      });
+      const raw = renderer.raw as { render: () => void };
+      expect(raw.render).toBe(originalRender);
+      renderer.setOutputNode({});
+      renderer.setOutputNode({});
+      expect(raw.render).toBe(originalRender);
+      renderer.dispose();
+      expect(disposed).toBe(1);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
 });

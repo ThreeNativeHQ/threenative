@@ -13,7 +13,6 @@ const game = defineGame<GameState, PhysicsContext>({
   // Without a container the canvas is appended to <body> as the last child,
   // where it lands after #app in the layout and paints over everything else.
   container: app,
-  initialState: { playerX: -2, score: 0 },
   plugins: [
     rapier(),
     (ctx) =>

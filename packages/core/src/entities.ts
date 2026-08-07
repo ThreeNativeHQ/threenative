@@ -4,6 +4,10 @@ export interface Debuggable {
   debug(): Record<string, unknown>;
 }
 
+interface Disposable {
+  dispose(): void;
+}
+
 interface TaggedEntity {
   tags?: unknown;
 }
@@ -23,6 +27,11 @@ export function autoFields(entity: object): Record<string, unknown> {
   return fields;
 }
 
+function disposeEntity(entity: object): void {
+  const dispose = (entity as Partial<Disposable>).dispose;
+  if (typeof dispose === "function") dispose.call(entity);
+}
+
 export class Registry {
   #named = new Map<string, object>();
 
@@ -37,11 +46,15 @@ export class Registry {
   }
 
   remove(name: string): void {
+    const entity = this.#named.get(name);
     this.#named.delete(name);
+    if (entity !== undefined) disposeEntity(entity);
   }
 
   clear(): void {
+    const entities = [...new Set(this.#named.values())];
     this.#named.clear();
+    for (const entity of entities) disposeEntity(entity);
   }
 
   snapshot(): EntitySnapshot {

@@ -1,4 +1,5 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
+import { RenderPipeline } from "three/webgpu";
 
 export type RendererKind = "webgpu" | "webgl2";
 
@@ -6,7 +7,9 @@ export interface RendererLike {
   readonly domElement: HTMLCanvasElement;
   readonly kind: RendererKind;
   readonly raw: unknown;
+  compute(node: unknown): void;
   render(scene: Object3D, camera: Camera): void;
+  setOutputNode(node: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   dispose(): void;
 }
@@ -21,6 +24,7 @@ export interface RendererOptions {
 type RendererInstance = {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
+  compute?: (node: unknown) => void;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
   dispose?: () => void;
@@ -33,12 +37,36 @@ function canvasSize(canvas: HTMLCanvasElement): [number, number] {
 }
 
 function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
+  let outputPipeline: RenderPipeline | undefined;
+
   return {
     domElement: raw.domElement,
     kind,
     raw,
-    dispose: () => raw.dispose?.(),
-    render: (scene, camera) => raw.render(scene, camera),
+    compute: (node) => {
+      if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
+      if (typeof raw.compute !== "function")
+        throw new Error("webgpu renderer does not expose compute().");
+      raw.compute(node);
+    },
+    dispose: () => {
+      outputPipeline?.dispose();
+      outputPipeline = undefined;
+      raw.dispose?.();
+    },
+    render: (scene, camera) => {
+      if (outputPipeline === undefined) raw.render(scene, camera);
+      else outputPipeline.render();
+    },
+    setOutputNode: (node) => {
+      if (kind !== "webgpu")
+        throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
+      outputPipeline?.dispose();
+      outputPipeline = new RenderPipeline(
+        raw as unknown as ConstructorParameters<typeof RenderPipeline>[0],
+        node as ConstructorParameters<typeof RenderPipeline>[1],
+      );
+    },
     setSize: (width, height, updateStyle = false) => raw.setSize(width, height, updateStyle),
   };
 }

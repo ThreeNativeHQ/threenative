@@ -6,12 +6,11 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Boot } from "./scenes/Boot.js";
 import { Level } from "./scenes/Level.js";
-import { type GameState, initialState } from "./state.js";
+import type { GameState } from "./state.js";
 import { App } from "./ui/App.js";
 import "./style.css";
 
 const game = defineGame<GameState, PhysicsContext>({
-  initialState,
   input: {
     dash: { buttons: [7], down: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], down: ["Space"] },

@@ -1,9 +1,7 @@
 import {
-  AmbientLight,
   BackSide,
   BufferAttribute,
   Color,
-  DirectionalLight,
   Fog,
   Mesh,
   MeshBasicMaterial,
@@ -37,9 +35,4 @@ export function setupSky(scene: Scene): void {
   scene.background = new Color(palette.skyHigh);
   scene.fog = new Fog(palette.skyLow, 28, 180);
   scene.add(skyDome());
-  scene.add(new AmbientLight(0xffffff, 0.35));
-  scene.add(new DirectionalLight(0xfff0cf, 3));
-  const bounce = new DirectionalLight(0x73c8ff, 0.8);
-  bounce.position.set(-4, 5, -6);
-  scene.add(bounce);
 }

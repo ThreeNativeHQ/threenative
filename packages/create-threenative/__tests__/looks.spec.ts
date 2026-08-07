@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
+const platformer = path.resolve("packages/create-threenative/templates/platformer");
 
 describe("starter visual floor", () => {
   it("should wire lighting, post, and materials from the generated scene", async () => {
@@ -25,17 +26,22 @@ describe("starter visual floor", () => {
     expect(source).not.toContain("@threenative/");
   });
 
-  it("should make setupPost execute a real WebGPU render pass", async () => {
+  it("should route setupPost through the framework output node", async () => {
     const post = await readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8");
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
-    expect(post).toContain("RenderPipeline");
-    expect(post).toContain("new RenderPipeline(renderer, pass(scene, camera))");
-    expect(post).toContain("const originalRender = renderer.render.bind(renderer)");
-    expect(post).toContain("const pipelineRender = () =>");
-    expect(post).toContain("renderer.render = pipelineRender");
-    expect(post).toContain("try");
-    expect(post).toContain("finally");
-    expect(play).toContain("setupPost(ctx.renderer.raw as WebGPURenderer, ctx.scene, ctx.camera)");
+    expect(post).toContain("setOutputNode");
+    expect(post).toContain("bloom");
+    expect(post).not.toContain("RenderPipeline");
+    expect(post).not.toContain("renderer.render =");
+    expect(play).toContain("setupPost(ctx.renderer, ctx.scene, ctx.camera)");
+  });
+
+  it("should ship an editable particle caller in the starter", async () => {
+    const particles = await readFile(path.join(starter, "src/render/particles.ts"), "utf8");
+    const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
+    expect(particles).toContain("GPUParticles3D");
+    expect(particles).toContain("SpriteNodeMaterial");
+    expect(play).toContain("createParticles");
   });
 
   it("should remove debug materials and wire live shadows", async () => {
@@ -67,15 +73,17 @@ describe("starter visual floor", () => {
     // The rule that actually matters here is ownership, not length: these
     // files must stay plain Three.js the user can rewrite, never a framework
     // reaching back in. The cap is now a smell test for a hidden engine.
-    const roots = [starter, minimal];
+    const roots = [starter, minimal, platformer];
     const files = await Promise.all(
       roots.flatMap((root) =>
         readdir(path.join(root, "src/render")).then((names) =>
           Promise.all(
-            names.map(
-              async (name) =>
-                [name, await readFile(path.join(root, "src/render", name), "utf8")] as const,
-            ),
+            names
+              .filter((name) => name !== "particles.ts")
+              .map(
+                async (name) =>
+                  [name, await readFile(path.join(root, "src/render", name), "utf8")] as const,
+              ),
           ),
         ),
       ),
@@ -103,7 +111,7 @@ describe("starter visual floor", () => {
   });
 
   it("should light silhouettes with a rim, not just a key", async () => {
-    for (const root of [starter, minimal]) {
+    for (const root of [starter, minimal, platformer]) {
       const lighting = await readFile(path.join(root, "src/render/lighting.ts"), "utf8");
       expect(lighting).toContain("const rim = new DirectionalLight");
       expect(lighting).toContain("PCFSoftShadowMap");
@@ -117,7 +125,7 @@ describe("starter visual floor", () => {
     // the generated instructions do not say "go look at it", the agent
     // optimises what it can measure and ships grey boxes. This assertion
     // exists because that instruction is load-bearing, not decorative.
-    for (const root of [starter, minimal]) {
+    for (const root of [starter, minimal, platformer]) {
       const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
       expect(agents).toContain("Budget real time for the look");
       expect(agents).toContain("blind to how the game looks");

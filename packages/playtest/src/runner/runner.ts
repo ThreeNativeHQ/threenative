@@ -351,6 +351,10 @@ async function runStep(
   }
   if (step.press !== undefined && step.release) {
     await page.keyboard.up(step.press);
+    // Let the game loop observe the release before a following step presses the
+    // same key again. Without this frame, adjacent steps are indistinguishable
+    // from one continuous hold to input latches.
+    await waitFrames(page, 1);
   }
 }
 

@@ -18,6 +18,8 @@ export class FixedStepLoop {
   #lastTime: number | undefined;
   #frameHandle: number | undefined;
   #running = false;
+  #fps = 0;
+  #lastRenderTime: number | undefined;
 
   constructor(options: FixedStepLoopOptions) {
     this.step = options.step ?? 1 / 60;
@@ -42,10 +44,16 @@ export class FixedStepLoop {
     return this.#running;
   }
 
+  get fps(): number {
+    return this.#fps;
+  }
+
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
     this.#lastTime = now;
+    this.#lastRenderTime = undefined;
+    this.#fps = 0;
     this.#frameHandle = this.#requestFrame((time) => this.#frame(time));
   }
 
@@ -69,6 +77,13 @@ export class FixedStepLoop {
       updates += 1;
     }
     if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
+    if (Number.isFinite(now)) {
+      if (this.#lastRenderTime !== undefined) {
+        const frameMs = now - this.#lastRenderTime;
+        if (frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
+      }
+      this.#lastRenderTime = now;
+    }
     this.#onRender();
     return updates;
   }

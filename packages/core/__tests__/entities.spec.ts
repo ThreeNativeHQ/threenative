@@ -66,6 +66,26 @@ describe("Registry", () => {
     expect(registry.snapshot()).toEqual({ "coin.3": { tags: ["coin"] } });
   });
 
+  it("disposes registered resources when removed or cleared", () => {
+    const registry = new Registry();
+    let removed = 0;
+    let cleared = 0;
+    registry.add("removed", {
+      dispose: () => {
+        removed += 1;
+      },
+    });
+    registry.add("cleared", {
+      dispose: () => {
+        cleared += 1;
+      },
+    });
+    registry.remove("removed");
+    registry.clear();
+    expect(removed).toBe(1);
+    expect(cleared).toBe(1);
+  });
+
   it("empties the registry when a scene exits", async () => {
     let sceneRegistry: Registry | undefined;
     class RegisteredScene extends Scene<Record<string, unknown>> {

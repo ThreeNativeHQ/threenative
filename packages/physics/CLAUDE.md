@@ -35,8 +35,9 @@ the user reaches `body` directly.
 ## Contracts to keep
 
 - Every node exposes `dispose()`, and disposing must remove the Rapier handle and detach
-  from the scene. Scene `exit()` in the examples and templates disposes in reverse order of
-  creation; keep that pattern.
+  from the scene. The framework calls the plugin's scene-exit hook for nodes that remain
+  registered with Rapier; callers still dispose a node explicitly when removing it during
+  play.
 - The fixed step is deterministic. `__tests__/determinism.spec.ts` asserts identical inputs
   produce identical transforms — a change that makes it flaky is a broken change, not a
   flaky test.

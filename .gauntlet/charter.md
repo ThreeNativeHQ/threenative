@@ -1,10 +1,10 @@
-# Gauntlet charter — ThreeNative self-improvement round 1
+# Gauntlet charter — ThreeNative self-improvement round 2
 
 ## Goal
 
-Run the same platformer brief through isolated framework and vanilla builders, then turn
-every evidence-backed vanilla win into the smallest justified framework or user-space
-change.
+Run a third-genre exploration brief through isolated framework and vanilla builders, then
+turn only evidence-backed cross-genre savings into the smallest justified framework or
+user-space change. The long-term bar remains a 50% framework/vanilla user-LOC ratio.
 
 ## Constraints
 
@@ -18,16 +18,21 @@ change.
 
 The framework arm must match or exceed the vanilla arm on sealed functional proof, blind
 visual score, and user source LOC. Reach rate is recorded but never gated. Every claim needs
-an archived proof, guarded capture, pair report, and fresh blind critic output.
+an archived proof, guarded capture, pair report, and fresh blind critic output. Any proposed
+framework reduction must be reusable across genres, save more than 20 caller lines, and leave
+materials, lighting, camera framing, post-processing, and gameplay policy in user source.
 
 ## Baseline evidence
 
-- Existing archived platformer baseline: framework and vanilla both pass 2/2 sealed scenarios;
-  framework uses 1,073 user LOC and vanilla uses 176.
-- The headed capture guard accepts four non-blank frames for each archived arm.
-- Fresh blind instrument result: vanilla sample playability 4 / visuals 3; framework sample
-  playability 3 / visuals 4. The framework wins the visual signal; vanilla wins playability.
-- The pair is baseline evidence only; this round must use two fresh builder contexts.
+- Frozen Abyss control: framework 402 normalized LOC versus vanilla 473 (85.0%); the target is
+  237 LOC or lower.
+- The arm census classifies framework look plus game code alone at 301 LOC, so no honest
+  reduction may hide those 301 lines in a package.
+- Existing platformer pair: framework 726 LOC versus vanilla 769 (94.4%), both sealed proofs
+  pass, framework wins the blind visual comparison.
+- Existing top-down action pair: framework 1606 LOC versus vanilla 1620 (99.1%), both sealed
+  proofs pass, and both visual loops are readable.
+- This round must use fresh exploration builder contexts; prior archives are comparison data.
 
 ## Evidence method
 

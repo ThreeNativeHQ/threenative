@@ -53,6 +53,7 @@ describe("Random", () => {
       }
     }
     const game = defineGame({
+      initialState: {},
       renderer: renderer(testCanvas()),
       scenes: { test: TestScene },
       seed: 90210,
@@ -68,6 +69,7 @@ describe("Random", () => {
     class TestScene extends Scene {}
     const canvas = testCanvas();
     const game = defineGame({
+      initialState: {},
       plugins: [playtest()],
       renderer: renderer(canvas),
       scenes: { test: TestScene },

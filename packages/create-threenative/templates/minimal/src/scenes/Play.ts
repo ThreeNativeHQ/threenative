@@ -1,63 +1,48 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { type Ctx, Scene, type SceneFrame } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, Mesh, MeshStandardMaterial } from "three";
+import { BoxGeometry, Mesh, type PerspectiveCamera } from "three";
 import { Player } from "../entities/Player.js";
+import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
+import { floorMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = Ctx<GameState, PhysicsContext>;
 
 export class Play extends Scene<GameState, PhysicsContext> {
-  #floor: RigidBody3D | undefined;
-  #player: Player | undefined;
-  #pickup: Area3D | undefined;
-  #unsubscribe: (() => void) | undefined;
+  static override readonly initialState: GameState = { playerX: -2, score: 0 };
 
-  enter(ctx: GameCtx): void {
+  override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+    setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer.raw as { toneMapping?: number; toneMappingExposure?: number });
-    ctx.camera.position.set(0, 3, 9);
-    ctx.camera.lookAt(0, 1, 0);
-    const floor = new Mesh(
-      new BoxGeometry(10, 0.2, 4),
-      new MeshStandardMaterial({ color: 0x12384a, roughness: 0.78, metalness: 0.12 }),
-    );
+    setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    setupCamera(ctx.camera as PerspectiveCamera);
+    const floor = new Mesh(new BoxGeometry(10, 0.2, 4), floorMaterial);
     floor.position.y = -0.1;
     floor.receiveShadow = true;
     ctx.add(floor);
-    this.#floor = new RigidBody3D({
+    new RigidBody3D({
       object: floor,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(floor),
       type: "fixed",
     });
-    this.#player = new Player(ctx);
-    ctx.entities.add("player", this.#player);
-    this.#pickup = new Area3D({
+    const player = new Player(ctx);
+    ctx.entities.add("player", player);
+    const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: 1.5, y: 0.5, z: 0 },
       shape: CollisionShape3D.box(1, 1, 1),
     });
-    this.#unsubscribe = this.#pickup.on("bodyEntered", (body) => {
-      if (body === this.#player?.body) ctx.state.set((state) => ({ score: state.score + 1 }));
+    pickup.on("bodyEntered", (body) => {
+      if (body === player.body) ctx.state.set((state) => ({ score: state.score + 1 }));
     });
-  }
 
-  update(ctx: GameCtx, dt: number): void {
-    this.#player?.update(ctx, dt);
-    ctx.state.set({ playerX: this.#player?.mesh.position.x ?? -2 });
-  }
-
-  exit(ctx: GameCtx): void {
-    this.#unsubscribe?.();
-    this.#pickup?.dispose();
-    ctx.entities.remove("player");
-    this.#player?.dispose();
-    this.#floor?.dispose();
-    this.#unsubscribe = undefined;
-    this.#pickup = undefined;
-    this.#player = undefined;
-    this.#floor = undefined;
+    return (frameCtx, dt) => {
+      player.update(frameCtx, dt);
+      frameCtx.state.set({ playerX: player.mesh.position.x });
+    };
   }
 }

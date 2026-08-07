@@ -10,6 +10,7 @@ import {
   PCFSoftShadowMap,
   type Scene,
 } from "three";
+import { palette } from "./palette.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
@@ -17,9 +18,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  scene.add(new HemisphereLight(0x7cc7e8, 0x1b3a48, 1.6));
+  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.6));
 
-  const key = new DirectionalLight(0xfff2d6, 3);
+  const key = new DirectionalLight(palette.accent, 3);
   key.position.set(4, 7, 3);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -29,9 +30,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   key.shadow.normalBias = 0.03;
   scene.add(key);
 
-  const rim = new DirectionalLight(0x8fd0ff, 0.75);
+  const rim = new DirectionalLight(palette.player, 0.75);
   rim.position.set(-5, 3, -6);
   scene.add(rim);
 
-  scene.add(new AmbientLight(0xffffff, 0.28));
+  scene.add(new AmbientLight(palette.shadow, 0.28));
 }

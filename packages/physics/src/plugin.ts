@@ -79,7 +79,12 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
           });
         } else if (body instanceof RigidBody3D) body.syncToPhysics();
       }
-      for (const body of bodies) if (body instanceof CharacterBody3D) body.step();
+      for (const body of bodies) {
+        if (body instanceof CharacterBody3D) {
+          body.syncToPhysics();
+          body.step();
+        }
+      }
       physics.world.step(physics.eventQueue);
       for (const body of bodies) body.syncFromPhysics();
       physics.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
@@ -119,9 +124,14 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
       }
       kinematicMotions.clear();
     },
+    sceneExit: () => {
+      for (const area of [...areas.values()]) area.dispose();
+      for (const body of [...bodies]) body.dispose();
+      kinematicMotions.clear();
+    },
     dispose: () => {
-      for (const area of areas.values()) area.dispose();
-      for (const body of bodies) body.dispose();
+      for (const area of [...areas.values()]) area.dispose();
+      for (const body of [...bodies]) body.dispose();
       context?.eventQueue.free();
       context?.world.free();
       context = undefined;

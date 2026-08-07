@@ -146,6 +146,7 @@ describe("playtest plugin", () => {
       }
     }
     const game = defineGame({
+      initialState: {},
       plugins: [playtest()],
       renderer: {
         canvas,
@@ -196,6 +197,7 @@ describe("playtest plugin", () => {
     }
 
     const game = defineGame({
+      initialState: {},
       plugins: [playtest()],
       renderer: {
         canvas,

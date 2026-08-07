@@ -1,0 +1,36 @@
+{
+  "name": "sealed-north-south-route",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after", "runtimeTrace": true },
+  "steps": [
+    { "kind": "input", "label": "hub-inspect", "press": "KeyE", "holdTicks": 10, "release": true },
+    { "kind": "input", "label": "enter-north", "press": "ArrowUp", "holdTicks": 60, "release": true },
+    { "kind": "input", "label": "north-inspect", "press": "KeyE", "holdTicks": 10, "release": true },
+    { "kind": "input", "label": "return-to-hub", "press": "ArrowDown", "holdTicks": 90, "release": true },
+    { "kind": "input", "label": "enter-south", "press": "ArrowDown", "holdTicks": 90, "release": true },
+    { "kind": "input", "label": "south-inspect", "press": "KeyE", "holdTicks": 10, "release": true },
+    { "kind": "input", "label": "final-hub-return", "press": "ArrowUp", "holdTicks": 90, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "area", "equals": "hub" },
+      { "id": "GameState", "path": "inspections", "equals": 3, "changed": true },
+      { "id": "GameState", "path": "inspectedPoints", "equals": ["hub.beacon", "north.archive", "south.grove"], "changed": true },
+      { "id": "GameState", "path": "objectiveComplete", "equals": true, "changed": true },
+      { "id": "GameState", "path": "returns", "equals": 2, "changed": true }
+    ],
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "targetInViewport": true,
+      "within": 9.5
+    },
+    "movement": { "entity": "player", "minDistance": 4 },
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

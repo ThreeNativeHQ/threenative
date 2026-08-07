@@ -1,17 +1,19 @@
-# Gauntlet progress — ThreeNative self-improvement round 1
+# Gauntlet progress — ThreeNative self-improvement round 2
 
 ## Current bar
 
 The framework must match or beat a fresh vanilla builder on sealed functional proof, blind
 visual score, and user source LOC, without owning the look or contaminating the comparison.
 
-## Final result
+## Current result
 
-- Final round-1 platformer pair: both arms pass sealed proof 2/2; framework uses 726 user LOC
-  and 24,065 source bytes versus vanilla’s 769 LOC and 24,081 bytes.
-- Fresh final13 blind judge: framework averages visuals 4.5 / playability 4.0; vanilla averages
-  visuals 3.5 / playability 3.0.
-- Round 1 is complete; signed evidence is in `docs/verification/round-1-2026-08-06.md`.
+- Frozen Abyss: framework 402 normalized LOC versus vanilla 473 (85.0%); the honest look/game
+  floor is 301 framework LOC.
+- Prior platformer: framework 726 LOC versus vanilla 769; both sealed proofs pass and the
+  framework wins the blind visual comparison.
+- Prior top-down action: framework 1606 LOC versus vanilla 1620; both sealed proofs pass and
+  both arms render readable win loops.
+- Round 2 is open in `docs/verification/round-2-2026-08-07.md`; exploration arms are pending.
 
 ## Components
 
@@ -56,3 +58,16 @@ PRD-021 phases 1–2 are complete: 19 focused tests pass across the round-resume
 validators, malformed ledgers and failed proof artifacts fail closed. The final round ledger
 contains the pair report, anonymous reveal/judge, closed gap dispositions, and passing final
 repository gates. PRD-023 and PRD-024 are moved to `done/`.
+
+## Round 2 work
+
+| Component | Status | Evidence |
+|---|---|---|
+| Exploration framework arm | pending | isolated builder sandbox not yet created |
+| Exploration vanilla arm | pending | must follow the archived framework arm |
+| Cross-genre abstraction candidate | in review | requires >20 caller-line savings and a named live caller |
+| Fresh critic | pending | must inspect both real captures read-only |
+
+The lead has not written game code. Existing physics rotation synchronization is retained as
+a correctness fix, not counted as a LOC claim; target-lock logic remains user-space because it
+is combat-specific.

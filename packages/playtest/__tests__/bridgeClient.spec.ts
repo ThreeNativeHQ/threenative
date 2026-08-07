@@ -38,7 +38,12 @@ test("the WebGPU browser recipe expands to the sealed Chromium flags", () => {
   expect(
     parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "webgpu"], "/project")
       .browserArgs,
-  ).toEqual(["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"]);
+  ).toEqual([
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+  ]);
   expect(() =>
     parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "unknown"], "/project"),
   ).toThrow(/Unknown browser recipe/);

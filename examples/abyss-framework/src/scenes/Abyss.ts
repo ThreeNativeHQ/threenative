@@ -1,4 +1,4 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { type Ctx, GPUParticles3D, Scene, type SceneFrame } from "@threenative/core";
 import {
   Fn,
   If,
@@ -7,7 +7,6 @@ import {
   float,
   hash,
   instanceIndex,
-  instancedArray,
   mix,
   sin,
   time,
@@ -19,26 +18,29 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { createLighting } from "../render/lighting.js";
-import { type PostStack, createPostProcessing } from "../render/postprocessing.js";
+import { createPostProcessing } from "../render/postprocessing.js";
 
-export type AbyssState = {
-  best: number;
-  elapsed: number;
-  energy: number;
-  fps: number;
-  hull: number;
-  hunters: number;
-  playerX: number;
-  pulsing: boolean;
-  score: number;
-  status: "attract" | "over" | "play";
+type AbyssStatus = "attract" | "over" | "play";
+
+const initialState = {
+  best: 0,
+  elapsed: 0,
+  energy: 100,
+  fps: 0,
+  hull: 100,
+  hunters: 0,
+  playerX: 0,
+  pulsing: false,
+  score: 0,
+  status: "attract" as AbyssStatus,
 };
+
+export type AbyssState = typeof initialState;
 
 /** React asks for a run by dispatching this; the scene owns what starting means. */
 export const START_EVENT = "abyss:start";
 
 type AbyssCtx = Ctx<AbyssState>;
-type RawComputeRenderer = { compute(node: unknown): void };
 type Pearl = { drift: THREE.Vector2; mesh: THREE.Mesh };
 type Hunter = { mesh: THREE.Mesh; speed: number; spin: number };
 
@@ -47,43 +49,22 @@ const VIEW = 520;
 const CAMERA_DISTANCE = 6_000;
 
 export class Abyss extends Scene<AbyssState> {
-  #frame: ((ctx: AbyssCtx, dt: number) => void) | undefined;
-  #post: PostStack | undefined;
-  #startCleanup: (() => void) | undefined;
-  #fps = 0;
-  #lastRender: number | undefined;
+  static override readonly initialState = initialState;
 
-  override enter(ctx: AbyssCtx): void {
-    // The core owns a PerspectiveCamera, but Abyss is framed orthographically:
-    // VIEW is a half-height in world units, not a field of view. Standing well
-    // back with a narrow fov makes the projection near enough to parallel that
-    // the 320-unit-deep plankton box no longer splays at the edges, and puts
-    // the visible half-height at exactly VIEW so the toroidal wrap seam lands
-    // off-screen instead of inside the frame.
-    const camera = ctx.camera as THREE.PerspectiveCamera;
+  #startCleanup: (() => void) | undefined;
+
+  override enter(ctx: AbyssCtx): SceneFrame<AbyssState> {
+    const camera = ctx.camera;
     camera.position.set(0, 0, CAMERA_DISTANCE);
-    camera.fov = (2 * Math.atan(VIEW / CAMERA_DISTANCE) * 180) / Math.PI;
-    camera.near = CAMERA_DISTANCE - 1_000;
-    camera.far = CAMERA_DISTANCE + 1_000;
     camera.lookAt(0, 0, 0);
     ctx.viewport.resize();
     ctx.scene.background = new THREE.Color(0x04080d);
     ctx.add(createLighting());
 
-    const raw = ctx.renderer.raw as RawComputeRenderer;
-    const field = { d: 320, h: VIEW * 2, w: VIEW * 2 };
-    const layout = () => {
-      const aspect = ctx.viewport.size.aspect;
-      field.w = VIEW * 2 * aspect;
-      field.h = VIEW * 2;
-    };
-    const stopLayout = ctx.viewport.onResize(layout);
-    layout();
+    const field = { d: 320, h: VIEW * 2, w: VIEW * 2 * ctx.viewport.size.aspect };
 
     /* ------------------------------------------------------- plankton (GPU) */
 
-    const positions = instancedArray(PLANKTON, "vec3");
-    const velocities = instancedArray(PLANKTON, "vec3");
     const uLamp = uniform(new THREE.Vector3());
     const uField = uniform(new THREE.Vector3(field.w, field.h, field.d));
     const uReach = uniform(210);
@@ -99,72 +80,71 @@ export class Abyss extends Scene<AbyssState> {
       );
     });
 
-    const computeInit = Fn(() => {
-      positions
-        .element(instanceIndex)
-        .assign(
-          vec3(
-            hash(instanceIndex).sub(0.5).mul(uField.x),
-            hash(instanceIndex.add(11)).sub(0.5).mul(uField.y),
-            hash(instanceIndex.add(23)).sub(0.5).mul(uField.z),
-          ),
-        );
-      velocities.element(instanceIndex).assign(vec3(0));
-    })().compute(PLANKTON);
-
-    const computeUpdate = Fn(() => {
-      const pos = positions.element(instanceIndex);
-      const vel = velocities.element(instanceIndex);
-      const dt = deltaTime.min(1 / 30);
-      const toLamp = uLamp.sub(pos);
-      const dist = toLamp.length().max(0.001);
-      const dir = toLamp.div(dist);
-      const acc = vec3(
-        sin(pos.y.mul(0.011).add(time.mul(0.47))),
-        cos(pos.x.mul(0.009).sub(time.mul(0.41))),
-        sin(pos.z.mul(0.021).add(time.mul(0.33))),
-      )
-        .mul(26)
-        .toVar();
-
-      If(dist.lessThan(uReach), () => {
-        const pull = float(1).sub(dist.div(uReach));
-        acc.addAssign(dir.mul(pull.mul(uPull)));
-        acc.addAssign(vec3(dir.y.negate(), dir.x, 0).mul(pull.mul(230)));
-      });
-
-      vel.assign(vel.add(acc.mul(dt)).mul(0.984));
-      const speed = vel.length();
-      If(speed.greaterThan(240), () => {
-        vel.assign(vel.mul(float(240).div(speed)));
-      });
-      pos.addAssign(vel.mul(dt));
-      If(dist.lessThan(26), () => {
-        pos.assign(rimSpawn());
-        vel.assign(vec3(0));
-      });
-      const half = uField.mul(0.5);
-      pos.assign(pos.add(half).div(uField).fract().mul(uField).sub(half));
-    })().compute(PLANKTON);
-
-    const plankton = new THREE.Sprite(
-      new THREE.SpriteNodeMaterial({
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-      }),
-    );
-    const planktonMaterial = plankton.material;
-    const speed = velocities.toAttribute().length();
-    const falloff = float(1).sub(uv().sub(0.5).length().mul(2)).max(0).pow(2.6);
-    planktonMaterial.positionNode = positions.toAttribute();
+    const planktonMaterial = new THREE.SpriteNodeMaterial({
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+    });
     planktonMaterial.scaleNode = vec2(7);
-    planktonMaterial.colorNode = vec4(
-      mix(vec3(0.09, 0.38, 0.78), vec3(0.52, 0.94, 1), speed.mul(0.007).clamp(0, 1)),
-      falloff.mul(0.65),
-    );
-    plankton.count = PLANKTON;
-    plankton.frustumCulled = false;
+    const plankton = new GPUParticles3D({
+      amount: PLANKTON,
+      material: planktonMaterial,
+      start: ({ positions, velocities }) => {
+        const speed = velocities.toAttribute().length();
+        const falloff = float(1).sub(uv().sub(0.5).length().mul(2)).max(0).pow(2.6);
+        planktonMaterial.colorNode = vec4(
+          mix(vec3(0.09, 0.38, 0.78), vec3(0.52, 0.94, 1), speed.mul(0.007).clamp(0, 1)),
+          falloff.mul(0.65),
+        );
+        return Fn(() => {
+          positions
+            .element(instanceIndex)
+            .assign(
+              vec3(
+                hash(instanceIndex).sub(0.5).mul(uField.x),
+                hash(instanceIndex.add(11)).sub(0.5).mul(uField.y),
+                hash(instanceIndex.add(23)).sub(0.5).mul(uField.z),
+              ),
+            );
+          velocities.element(instanceIndex).assign(vec3(0));
+        })().compute(PLANKTON);
+      },
+      process: ({ positions, velocities }) =>
+        Fn(() => {
+          const pos = positions.element(instanceIndex);
+          const vel = velocities.element(instanceIndex);
+          const dt = deltaTime.min(1 / 30);
+          const toLamp = uLamp.sub(pos);
+          const dist = toLamp.length().max(0.001);
+          const dir = toLamp.div(dist);
+          const acc = vec3(
+            sin(pos.y.mul(0.011).add(time.mul(0.47))),
+            cos(pos.x.mul(0.009).sub(time.mul(0.41))),
+            sin(pos.z.mul(0.021).add(time.mul(0.33))),
+          )
+            .mul(26)
+            .toVar();
+
+          If(dist.lessThan(uReach), () => {
+            const pull = float(1).sub(dist.div(uReach));
+            acc.addAssign(dir.mul(pull.mul(uPull)));
+            acc.addAssign(vec3(dir.y.negate(), dir.x, 0).mul(pull.mul(230)));
+          });
+
+          vel.assign(vel.add(acc.mul(dt)).mul(0.984));
+          const speed = vel.length();
+          If(speed.greaterThan(240), () => {
+            vel.assign(vel.mul(float(240).div(speed)));
+          });
+          pos.addAssign(vel.mul(dt));
+          If(dist.lessThan(26), () => {
+            pos.assign(rimSpawn());
+            vel.assign(vec3(0));
+          });
+          const half = uField.mul(0.5);
+          pos.assign(pos.add(half).div(uField).fract().mul(uField).sub(half));
+        })().compute(PLANKTON),
+    });
     ctx.add(plankton);
 
     /* ------------------------------------------------------- entities (CPU) */
@@ -223,16 +203,9 @@ export class Abyss extends Scene<AbyssState> {
       pearl.drift.set((Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40);
     };
 
-    if (ctx.renderer.kind === "webgpu") {
-      this.#post = createPostProcessing(
-        ctx.renderer.raw as THREE.WebGPURenderer,
-        ctx.scene,
-        camera,
-      );
-    }
-    if (typeof raw.compute === "function") raw.compute(computeInit);
+    ctx.renderer.setOutputNode(createPostProcessing(ctx.scene, camera));
 
-    let status: AbyssState["status"] = "attract";
+    let status: AbyssStatus = "attract";
     let score = 0;
     let hull = 100;
     let energy = 100;
@@ -247,16 +220,6 @@ export class Abyss extends Scene<AbyssState> {
     const lastPointer = ctx.input.raw.pointer.position.clone();
     let usingPointer = false;
 
-    // Screen pixel -> world units on the z = 0 plane, so the lure lands under
-    // the cursor the way it does in the vanilla build.
-    const pointToWorld = (pointer: THREE.Vector2) => {
-      const halfHeight = Math.tan((camera.fov * Math.PI) / 360) * camera.position.z;
-      const halfWidth = halfHeight * camera.aspect;
-      return {
-        x: ((pointer.x / Math.max(globalThis.innerWidth, 1)) * 2 - 1) * halfWidth,
-        y: -((pointer.y / Math.max(globalThis.innerHeight, 1)) * 2 - 1) * halfHeight,
-      };
-    };
     ctx.entities.add("player", {
       debug: () => ({ hull, position: lure.position.toArray(), score }),
       mesh: lure,
@@ -267,7 +230,7 @@ export class Abyss extends Scene<AbyssState> {
         best,
         elapsed,
         energy,
-        fps: this.#fps,
+        fps: ctx.fps,
         hull,
         hunters: hunters.length,
         playerX: lure.position.x,
@@ -296,11 +259,12 @@ export class Abyss extends Scene<AbyssState> {
     globalThis.addEventListener(START_EVENT, start);
     this.#startCleanup = () => {
       globalThis.removeEventListener(START_EVENT, start);
-      stopLayout();
     };
     pearls.forEach(placePearl);
 
-    this.#frame = (frameCtx, dt) => {
+    return (frameCtx, dt) => {
+      field.w = VIEW * 2 * frameCtx.viewport.size.aspect;
+      uField.value.x = field.w;
       const now = performance.now();
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
@@ -320,7 +284,7 @@ export class Abyss extends Scene<AbyssState> {
         elapsed += dt;
         const speed = 560 * dt;
         if (usingPointer) {
-          const world = pointToWorld(pointer);
+          const world = ctx.viewport.projectPosition(pointer);
           target.set(world.x, world.y);
         } else {
           target.x += move.x * speed;
@@ -377,32 +341,12 @@ export class Abyss extends Scene<AbyssState> {
         status = "over";
         best = Math.max(best, score);
       }
-      if (typeof raw.compute === "function") raw.compute(computeUpdate);
       publish(pulse);
     };
   }
 
-  override update(ctx: AbyssCtx, dt: number): void {
-    this.#frame?.(ctx, dt);
-  }
-
-  override render(_ctx: AbyssCtx): void {
-    // Sampled here, not in update(): the loop is fixed-step, so update() runs
-    // at a constant 1/60 regardless of what the GPU is actually managing.
-    const now = performance.now();
-    if (this.#lastRender !== undefined) {
-      const frameMs = now - this.#lastRender;
-      if (frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
-    }
-    this.#lastRender = now;
-    this.#post?.render();
-  }
-
-  override exit(ctx: AbyssCtx): void {
+  override exit(): void {
     this.#startCleanup?.();
-    ctx.entities.remove("player");
-    this.#post = undefined;
-    this.#frame = undefined;
     this.#startCleanup = undefined;
   }
 }

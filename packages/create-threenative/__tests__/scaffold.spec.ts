@@ -18,6 +18,8 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/particles.ts",
+  "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
@@ -40,6 +42,15 @@ const STARTER_PATHS = [
   "public/pickup.ogg",
 ];
 
+const MINIMAL_RENDER_PATHS = [
+  "src/render/palette.ts",
+  "src/render/camera.ts",
+  "src/render/sky.ts",
+  "src/render/lighting.ts",
+  "src/render/materials.ts",
+  "src/render/postprocessing.ts",
+] as const;
+
 const PLATFORMER_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
@@ -54,8 +65,12 @@ const PLATFORMER_PATHS = [
   "src/level/Checkpoints.ts",
   "src/level/Platform.ts",
   "src/render/palette.ts",
+  "src/render/camera.ts",
+  "src/render/lighting.ts",
+  "src/render/materials.ts",
   "src/render/rig.ts",
   "src/render/sky.ts",
+  "src/render/postprocessing.ts",
   "src/render/terrain.ts",
   "playtests/jump.playtest.json",
   "playtests/patrol.playtest.json",
@@ -102,6 +117,23 @@ describe("create-threenative", () => {
         ),
       );
       expect(renderFiles.join("\n")).not.toContain("@threenative/");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should scaffold the minimal six-file render layer", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-render-"));
+    try {
+      const result = await createProject(
+        { install: false, target: "minimal-look", template: "minimal" },
+        root,
+      );
+      for (const relativePath of MINIMAL_RENDER_PATHS) {
+        await expect(
+          readFile(path.join(result.target, relativePath), "utf8"),
+        ).resolves.toBeTruthy();
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

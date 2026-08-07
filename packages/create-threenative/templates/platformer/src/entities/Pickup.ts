@@ -1,7 +1,7 @@
 import type { Ctx } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
 import { CylinderGeometry, Group, Mesh, Vector3 } from "three";
-import { palette, toon } from "../render/palette.js";
+import { createMaterials } from "../render/materials.js";
 import type { GameState } from "../state.js";
 import type { Character } from "./Character.js";
 
@@ -19,9 +19,10 @@ export class Pickup {
   constructor(ctx: GameCtx, player: Character, at: Vector3, onCollect: () => void) {
     this.#base = at.clone();
     this.mesh = new Group();
+    const materials = createMaterials();
     const coin = new Mesh(
       new CylinderGeometry(0.28, 0.28, 0.12, 18).rotateX(Math.PI / 2),
-      toon(palette.coin),
+      materials.accent,
     );
     coin.castShadow = true;
     this.mesh.add(coin);

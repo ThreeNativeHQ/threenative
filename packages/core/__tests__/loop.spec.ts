@@ -33,6 +33,19 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(5);
   });
 
+  it("should expose a finite render FPS that decays after a stall", () => {
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    loop.stepFrame(0);
+    expect(Number.isFinite(loop.fps)).toBe(true);
+    for (let frame = 1; frame <= 60; frame++) loop.stepFrame((frame * 1_000) / 60);
+    const steady = loop.fps;
+    loop.stepFrame(10_000);
+
+    expect(steady).toBeGreaterThan(0);
+    expect(loop.fps).toBeGreaterThanOrEqual(0);
+    expect(loop.fps).toBeLessThan(steady);
+  });
+
   it("should schedule the next frame when rendering throws", () => {
     const callbacks: Array<(time: number) => void> = [];
     const loop = new FixedStepLoop({

@@ -1,0 +1,12 @@
+[
+  {
+    "arm": "vanilla",
+    "id": "vanilla-reference",
+    "label": "sample-01"
+  },
+  {
+    "arm": "framework",
+    "id": "framework-reference",
+    "label": "sample-02"
+  }
+]

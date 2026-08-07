@@ -1,0 +1,159 @@
+{
+  "arm": "vanilla",
+  "genre": "exploration",
+  "passed": 0,
+  "proofHash": "5c826dab48249ea198c364236d853f31336ecb58d2926c330dde9d93caa73809",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "north",
+            "before": "hub",
+            "expected": {
+              "equals": "hub",
+              "allowTrivial": true
+            },
+            "id": "state",
+            "path": "area",
+            "trivial": true,
+            "trivialityOptOut": true
+          },
+          "id": "resource.state.area",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": 2,
+            "before": 0,
+            "expected": {
+              "equals": 3,
+              "changed": true
+            },
+            "id": "state",
+            "path": "inspections",
+            "trivial": false
+          },
+          "id": "resource.state.inspections",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": [
+              "hub.beacon",
+              "north.archive"
+            ],
+            "before": [],
+            "expected": {
+              "textIncludes": "north.archive"
+            },
+            "id": "state",
+            "path": "inspectedPoints",
+            "trivial": false
+          },
+          "id": "resource.state.inspectedPoints",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": false,
+            "before": false,
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "objectiveComplete",
+            "trivial": false
+          },
+          "id": "resource.state.objectiveComplete",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": 2,
+            "before": 0,
+            "expected": {
+              "equals": 2
+            },
+            "id": "state",
+            "path": "returns",
+            "trivial": false
+          },
+          "id": "resource.state.returns",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "minimum": 4,
+            "pathLength": 127.28000000000007
+          },
+          "id": "movement.pathLength",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 17606.648023702484
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'area'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'inspections'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_STATE_STAGNATED",
+          "message": "Resource 'state' path 'objectiveComplete' did not change after the scenario moved the subject 20.560 units.",
+          "artifactPath": "effect-log.json",
+          "observedRuntimePath": "effect-log.json/entries[kind=resource,resource=state]",
+          "path": "/tmp/threenative-proof-BI4eSM/exploration.playtest.json/assert/resources/state/objectiveComplete",
+          "resourceId": "state",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-BI4eSM/exploration.playtest.json",
+          "suggestion": "The scenario movement path executed but the asserted resource never changed. Capture effect-log.json, then check pickup/contact predicates, route coordinates, resource write declarations, and stale duplicate systems before rerunning."
+        },
+        {
+          "code": "TN_PLAYTEST_CAMERA_ASSERTION_FAILED",
+          "message": "Camera did not satisfy the declared follow or viewport assertion.",
+          "severity": "error",
+          "suggestion": "Check camera registration, follow distance, and target framing."
+        }
+      ],
+      "name": "exploration-brief-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 1
+}

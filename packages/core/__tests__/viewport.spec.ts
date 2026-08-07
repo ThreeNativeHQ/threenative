@@ -1,4 +1,4 @@
-import { PerspectiveCamera } from "three";
+import { OrthographicCamera, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import { Viewport, type ViewportSize } from "../src/viewport.js";
 
@@ -26,10 +26,12 @@ class FakeResizeObserver {
 function renderer(canvas: HTMLCanvasElement) {
   return {
     canvas,
+    compute: () => undefined,
     domElement: canvas,
     kind: "webgl2" as const,
     raw: {},
     render: () => undefined,
+    setOutputNode: () => undefined,
     setSize: () => undefined,
     dispose: () => undefined,
   };
@@ -81,5 +83,40 @@ describe("Viewport", () => {
     canvas.size = { aspect: 1, height: 720, width: 720 };
     FakeResizeObserver.current?.trigger();
     expect(sizes).toHaveLength(1);
+  });
+
+  it("reframes orthogonal cameras and projects screen coordinates in world units", () => {
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: FakeResizeObserver,
+    });
+    const canvas = testCanvas();
+    const camera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    const viewport = new Viewport({ camera, renderer: renderer(canvas) });
+
+    expect(camera.left).toBeCloseTo(-(10 * (1280 / 720)));
+    expect(camera.right).toBeCloseTo(10 * (1280 / 720));
+    const centre = viewport.projectPosition(new Vector2(640, 360));
+    expect(centre.x).toBeCloseTo(0);
+    expect(centre.y).toBeCloseTo(0);
+    expect(centre.z).toBeCloseTo(0);
+    expect(viewport.unprojectPosition(new Vector3(0, 0, 0))).toEqual(new Vector2(640, 360));
+  });
+
+  it("projects a perspective screen point onto a world plane", () => {
+    const canvas = testCanvas();
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    const viewport = new Viewport({ camera, renderer: renderer(canvas) });
+    const right = viewport.projectPosition(new Vector2(1280, 360));
+    const expected = Math.tan((60 * Math.PI) / 360) * 10 * (1280 / 720);
+    expect(right.x).toBeCloseTo(expected, 6);
+    expect(right.y).toBeCloseTo(0, 6);
+    const screen = viewport.unprojectPosition(new Vector3(0, 0, 0));
+    expect(screen.x).toBeCloseTo(640, 6);
+    expect(screen.y).toBeCloseTo(360, 6);
   });
 });

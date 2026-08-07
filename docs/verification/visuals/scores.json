@@ -1,0 +1,11 @@
+{
+  "templates": {
+    "minimal": 4,
+    "starter": 5,
+    "platformer": 4
+  },
+  "parity": {
+    "framework": 5,
+    "vanilla": 5
+  }
+}

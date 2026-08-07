@@ -12,9 +12,13 @@ export abstract class Scene<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
+  static readonly initialState: Record<string, unknown> | undefined = undefined;
+
   load(_ctx: Ctx<TState, TPhysics>): void | Promise<void> {}
 
-  enter(_ctx: Ctx<TState, TPhysics>): void {}
+  enter(_ctx: Ctx<TState, TPhysics>): SceneEnterResult<TState, TPhysics> {
+    return undefined;
+  }
 
   exit(_ctx: Ctx<TState, TPhysics>): void {}
 
@@ -28,10 +32,22 @@ export type SceneConstructor<
   TPhysics = undefined,
 > = new () => Scene<TState, TPhysics>;
 
+export type SceneFrame<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> = (ctx: Ctx<TState, TPhysics>, dt: number) => void;
+
+export type SceneEnterResult<
+  TState extends Record<string, unknown> = Record<string, unknown>,
+  TPhysics = undefined,
+> = // biome-ignore lint/suspicious/noConfusingVoidType: void preserves existing Scene.enter overrides.
+void | SceneFrame<TState, TPhysics>;
+
 export interface Ctx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
+  readonly fps: number;
   readonly renderer: RendererLike;
   readonly viewport: Viewport;
   readonly scene: ThreeScene;

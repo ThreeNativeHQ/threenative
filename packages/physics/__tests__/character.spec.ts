@@ -271,6 +271,24 @@ describe("CharacterBody3D", () => {
     character.dispose();
   });
 
+  it("should preserve script-controlled rotation through a physics tick", async () => {
+    const { ctx, plugin } = await setup();
+    const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    const character = new CharacterBody3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object,
+    });
+
+    object.rotation.y = Math.PI / 2;
+    character.move({ x: 1, y: 0, z: 0 });
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(object.rotation.y).toBeCloseTo(Math.PI / 2, 4);
+    expect(character.body.rotation().y).toBeCloseTo(Math.sin(Math.PI / 4), 4);
+    character.dispose();
+  });
+
   it("should keep CollisionShape3D.fromMesh taking a Mesh", () => {
     const mesh = new Mesh(new BoxGeometry(1, 1, 1));
     expect(() => CollisionShape3D.fromMesh(mesh)).not.toThrow();

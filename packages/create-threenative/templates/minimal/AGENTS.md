@@ -27,7 +27,7 @@ src/
   main.ts               defineGame(...); HUD is plain DOM here
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/Player.ts    a plain class, not an ECS
-  render/               lighting, postprocessing, materials — YOURS, plain Three.js
+  render/               palette, camera, sky, lighting, materials, postprocessing — YOURS
   state.ts              the state shape the HUD reads
 playtests/play.playtest.json  one scenario, run by pnpm test
 threenative.config.ts   renderer + plugins. No visual options, by design.
@@ -54,7 +54,9 @@ hunting for a framework helper — if one does not appear in an existing file's 
 probably does not exist.
 
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
-Every node has `dispose()`, and `exit()` must dispose what `enter()` created.
+Every node has `dispose()`. Register disposable entities with `ctx.entities`; the framework
+clears registered entities, scene objects, and physics nodes when a scene exits. Dispose a
+node explicitly only when removing it during play.
 
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the player movement code.
@@ -72,9 +74,12 @@ template does not ship a rigged asset; adding one belongs in `public/`, not in t
 
 ## Visuals
 
-Edit `src/render/lighting.ts`, `postprocessing.ts`, and `materials.ts` directly. They are a
-starting point, not a constraint, and they import nothing from `@threenative/*`. There is no
-config option for the look, deliberately.
+Edit the six files in `src/render/` directly: `palette.ts`, `camera.ts`, `sky.ts`,
+`lighting.ts`, `materials.ts`, and `postprocessing.ts`. They are ordinary Three.js source in
+this project, not a framework look or a config option. Keep the palette to six named colours
+with one `accent`; import it from materials and sky. Set tonemapping and exposure deliberately,
+use a rim light with soft shadows and `normalBias`, derive fog from the sky, and route bloom
+through `renderer.setOutputNode()` so midtones remain readable.
 
 `lighting.ts` ships key, bounce, **rim** and ambient with soft shadows. The rim is what
 stops silhouettes reading as flat cut-outs against the background; do not delete it while
@@ -99,6 +104,9 @@ the DOM per frame.
 
 If the UI grows past a few readouts, scaffold with the `starter` template instead, which
 ships React 19 + Tailwind and `@threenative/ui`.
+
+The start scene owns the initial state in `static initialState`; omit a duplicate
+`initialState` literal from `defineGame`. `ctx.state.set({ playerX })` is a partial patch.
 
 ## Register entities you want to inspect or test
 

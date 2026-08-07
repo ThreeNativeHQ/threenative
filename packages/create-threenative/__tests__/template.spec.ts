@@ -103,8 +103,9 @@ describe("template contracts", () => {
         const stem = renderFile.slice(0, -3);
         const importers = sources.filter(
           ([file, source]) =>
-            file !== path.join(root, "src/render", renderFile) &&
-            source.includes(`/render/${stem}.js`),
+            (file !== path.join(root, "src/render", renderFile) &&
+              source.includes(`/render/${stem}.js`)) ||
+            source.includes(`./${stem}.js`),
         );
         expect(
           importers.map(([file]) => path.relative(root, file)),
@@ -170,7 +171,7 @@ describe("template contracts", () => {
     expect(play).toContain("setupSky(ctx.scene");
     expect(play).toContain("KILL_PLANE");
     expect(play).toContain("player.respawn()");
-    expect(play).toContain("this.#audio?.play(buffer)");
+    expect(play).toContain("audio.play(buffer)");
     for (const player of [starterPlayer, minimalPlayer]) {
       expect(player).toContain("moveAndSlide");
       expect(player).toContain("body.velocity");
@@ -197,8 +198,8 @@ describe("template contracts", () => {
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
     expect(sky).toContain("scene.background = top");
     expect(sky).toContain("scene.fog = new Fog(bottom, 18, 80)");
-    expect(sky).toContain("options.top === undefined");
-    expect(sky).toContain("options.bottom === undefined");
+    expect(sky).toContain("resolved.top === undefined");
+    expect(sky).toContain("resolved.bottom === undefined");
     expect(sky).toContain("throw new TypeError");
   });
 
