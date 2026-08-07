@@ -127,9 +127,46 @@ describe("paired sweep", () => {
     const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
     expect(pairSweeps(framework, vanilla, root)).toMatchObject({
       genre: "fixture",
-      framework: { passed: 1, total: 1, reachRate: 1, sourceFiles: 1 },
-      vanilla: { passed: 1, total: 1, reachRate: 0, sourceFiles: 1 },
+      framework: {
+        passed: 1,
+        total: 1,
+        reachRate: 1,
+        sourceFiles: 1,
+        frameworkFiles: 1,
+        threeOnlyFiles: 0,
+        usedExports: ["defineGame"],
+        unusedExports: [],
+      },
+      vanilla: {
+        passed: 1,
+        total: 1,
+        reachRate: 0,
+        sourceFiles: 1,
+        frameworkFiles: 0,
+        threeOnlyFiles: 1,
+        usedExports: [],
+        unusedExports: [],
+      },
     });
+    const pair = pairSweeps(framework, vanilla, root);
+    expect(pair.framework.sourceBytes).toBeGreaterThan(0);
+    expect(pair.vanilla.sourceBytes).toBeGreaterThan(0);
+  });
+
+  it("reports a signed framework-minus-vanilla source cost delta", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    await writeFile(path.join(vanilla, "src", "extra.ts"), "export const extra = true;\n");
+
+    const pair = pairSweeps(framework, vanilla, root);
+
+    expect(pair.delta).toEqual({
+      sourceBytes: pair.framework.sourceBytes - pair.vanilla.sourceBytes,
+      sourceFiles: -1,
+      userLoc: -1,
+    });
+    expect(pair.delta.sourceBytes).toBeLessThan(0);
   });
 
   it("rejects self-comparison and same-arm pairs", async () => {

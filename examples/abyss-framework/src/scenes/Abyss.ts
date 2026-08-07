@@ -66,21 +66,18 @@ export class Abyss extends Scene<AbyssState> {
     camera.near = CAMERA_DISTANCE - 1_000;
     camera.far = CAMERA_DISTANCE + 1_000;
     camera.lookAt(0, 0, 0);
-    camera.updateProjectionMatrix();
+    ctx.viewport.resize();
     ctx.scene.background = new THREE.Color(0x04080d);
     ctx.add(createLighting());
 
     const raw = ctx.renderer.raw as RawComputeRenderer;
     const field = { d: 320, h: VIEW * 2, w: VIEW * 2 };
     const layout = () => {
-      const aspect = globalThis.innerWidth / Math.max(globalThis.innerHeight, 1);
+      const aspect = ctx.viewport.size.aspect;
       field.w = VIEW * 2 * aspect;
       field.h = VIEW * 2;
-      camera.aspect = aspect;
-      camera.updateProjectionMatrix();
-      ctx.renderer.setSize(globalThis.innerWidth, globalThis.innerHeight);
     };
-    globalThis.addEventListener("resize", layout);
+    const stopLayout = ctx.viewport.onResize(layout);
     layout();
 
     /* ------------------------------------------------------- plankton (GPU) */
@@ -299,7 +296,7 @@ export class Abyss extends Scene<AbyssState> {
     globalThis.addEventListener(START_EVENT, start);
     this.#startCleanup = () => {
       globalThis.removeEventListener(START_EVENT, start);
-      globalThis.removeEventListener("resize", layout);
+      stopLayout();
     };
     pearls.forEach(placePearl);
 

@@ -7,6 +7,7 @@ const SOURCE_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".ts", ".tsx"]
 
 export interface SweepMeasurement {
   readonly userLoc: number;
+  readonly sourceBytes: number;
   readonly sourceFiles: number;
   readonly frameworkFiles: number;
   readonly threeOnlyFiles: number;
@@ -181,6 +182,7 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
     throw new Error(`Cannot measure '${root}': framework declarations export no symbols.`);
 
   let userLoc = 0;
+  let sourceBytes = 0;
   let frameworkFiles = 0;
   let threeOnlyFiles = 0;
   for (const file of files) {
@@ -188,6 +190,7 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
     const framework = importsFramework(source);
     const three = importsThree(source);
     userLoc += lineCount(source);
+    sourceBytes += Buffer.byteLength(source, "utf8");
     if (framework) frameworkFiles += 1;
     if (three && !framework) threeOnlyFiles += 1;
   }
@@ -202,6 +205,7 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
   }
   return {
     userLoc,
+    sourceBytes,
     sourceFiles: files.length,
     frameworkFiles,
     threeOnlyFiles,

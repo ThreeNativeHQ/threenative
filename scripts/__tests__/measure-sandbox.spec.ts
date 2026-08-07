@@ -37,13 +37,14 @@ describe("sandbox measurement", () => {
     const root = await fixtureRoot();
     await mkdir(path.join(root, "src"), { recursive: true });
     await installDeclarations(root);
-    await writeFile(
-      path.join(root, "src", "main.ts"),
-      'import { Vector3 } from "three";\nconst position = new Vector3();\nvoid position;\n',
-    );
+    const source =
+      'import { Vector3 } from "three";\nconst label = "é";\nconst position = new Vector3();\nvoid position;\n';
+    await writeFile(path.join(root, "src", "main.ts"), source);
     const measurement = measureSandbox(root);
     expect(measurement.reachRate).toBe(0);
     expect(measurement.frameworkFiles).toBe(0);
+    expect(measurement.sourceBytes).toBe(Buffer.byteLength(source, "utf8"));
+    expect(measurement.sourceBytes).not.toBe(source.length);
     expect(measurement.threeOnlyFiles).toBe(1);
   });
 

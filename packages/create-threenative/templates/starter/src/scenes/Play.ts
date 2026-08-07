@@ -1,6 +1,6 @@
 import { AudioBus, type Ctx, Scene } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { Group, Mesh, type PerspectiveCamera } from "three";
+import { Group, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
@@ -35,7 +35,9 @@ export class Play extends Scene<GameState, PhysicsContext> {
     setupSky(ctx.scene, { top: 0x83d8f2, bottom: 0x18334d });
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer.raw as WebGPURenderer, ctx.scene, ctx.camera);
-    const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
+    const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
+      lookAhead: new Vector3(0, 0.9, -0.4),
+    });
     this.#springArm = springArm;
 
     const materials = createMaterials();

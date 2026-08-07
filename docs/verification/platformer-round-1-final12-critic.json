@@ -1,0 +1,41 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "tie",
+    "confidence": "medium",
+    "rationale": "The active samples trade strengths with the completion samples; the average visual and playability scores are tied, but no single frame exposes every gameplay cue together."
+  },
+  "samples": [
+    {
+      "biggestGap": "Camera and hazard readability.",
+      "evidence": "Polished 3D scene with visible route, coin line, goal, platforms, HUD, and restart key; camera is not clearly behind the player and the hazard is ambiguous.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    },
+    {
+      "biggestGap": "End-state framing hides the route and coin trail.",
+      "evidence": "Clearly shows separated platforms, gap, spikes, goal, readable completion HUD, and replay key; the coin line and much of the route are absent.",
+      "label": "sample-02",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    },
+    {
+      "biggestGap": "No clearly visible hazard.",
+      "evidence": "Strong behind/above third-person view with a clear coin route, raised platforms, gaps, distant goal, readable HUD, and restart key.",
+      "label": "sample-03",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 5
+    },
+    {
+      "biggestGap": "Too tightly framed on the goal to evidence the level.",
+      "evidence": "Polished goal celebration with readable completion HUD and restart key, but the route, coin line, raised gap, and hazard are not visible.",
+      "label": "sample-04",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 3
+    }
+  ]
+}

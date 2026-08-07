@@ -6,6 +6,7 @@ import type { Random } from "./random.js";
 import type { RendererLike } from "./renderer.js";
 import type { ScheduleHandle } from "./schedule.js";
 import type { GameStore } from "./state.js";
+import type { Viewport } from "./viewport.js";
 
 export abstract class Scene<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -32,6 +33,7 @@ export interface Ctx<
   TPhysics = undefined,
 > {
   readonly renderer: RendererLike;
+  readonly viewport: Viewport;
   readonly scene: ThreeScene;
   readonly camera: Camera;
   readonly entities: Registry;

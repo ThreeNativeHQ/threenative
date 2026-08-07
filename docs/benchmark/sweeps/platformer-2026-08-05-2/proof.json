@@ -8,7 +8,7 @@
       "assertions": [
         {
           "details": {
-            "consoleErrors": 2,
+            "consoleErrors": 0,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -19,8 +19,8 @@
           "details": {
             "axis": "+y",
             "min": 0.5,
-            "rawDelta": 1.970300018787384,
-            "signedDelta": 1.970300018787384
+            "rawDelta": 2.074097692966461,
+            "signedDelta": 2.074097692966461
           },
           "id": "movement.axisDelta",
           "pass": true
@@ -30,7 +30,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 12224.917180803785
+            "projectedPixels": 11288.067455576138
           },
           "id": "visibility.player",
           "pass": true
@@ -38,7 +38,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.21913676840474,
+            "separation": 9.54101877963963,
             "target": "player",
             "visible": true
           },
@@ -112,7 +112,7 @@
         },
         {
           "details": {
-            "consoleErrors": 181,
+            "consoleErrors": 0,
             "networkErrors": 0,
             "runtimeDiagnostics": 0
           },
@@ -121,7 +121,7 @@
         },
         {
           "details": {
-            "distance": 18.514649745780922,
+            "distance": 24.99494303075653,
             "minimum": 5
           },
           "id": "movement.distance",
@@ -132,7 +132,7 @@
             "entity": "player",
             "minProjectedPixels": 20,
             "offscreenRatio": 0,
-            "projectedPixels": 14040.469432434133
+            "projectedPixels": 9343.273046456261
           },
           "id": "visibility.player",
           "pass": true
@@ -140,7 +140,7 @@
         {
           "details": {
             "camera": "camera.main",
-            "separation": 9.602482895019717,
+            "separation": 11.427812782184407,
             "target": "player",
             "visible": true
           },

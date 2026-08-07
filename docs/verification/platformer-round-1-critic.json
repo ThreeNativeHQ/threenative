@@ -1,0 +1,41 @@
+{
+  "samples": [
+    {
+      "label": "sample-01",
+      "playability": 4,
+      "visuals": 4,
+      "screenshotWorthy": "yes",
+      "evidence": "Readable objective and 0/8 counter, visible player, coin trail, raised platforms, wooden bridges, trees, and movement/jump/restart prompts.",
+      "biggestGap": "No visible goal flag or enemy/hazard in the gameplay view."
+    },
+    {
+      "label": "sample-02",
+      "playability": 2,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "Completion banner, 8/8 counter, goal structure, and replay instruction clearly communicate a finished run.",
+      "biggestGap": "The screenshot is a sparse end state and provides little evidence of the playable route or platforming challenge."
+    },
+    {
+      "label": "sample-03",
+      "playability": 5,
+      "visuals": 3,
+      "screenshotWorthy": "yes",
+      "evidence": "Player, six-coin line, successive raised platforms, wooden bridge, visible flag, objective text, counter, and jump prompts form a very clear playable route.",
+      "biggestGap": "The scene lacks a visible enemy or hazard and has washed-out, repetitive background presentation."
+    },
+    {
+      "label": "sample-04",
+      "playability": 2,
+      "visuals": 2,
+      "screenshotWorthy": "no",
+      "evidence": "6/6 counter, goal-reached text, completion overlay, play-again button, and restart prompt confirm successful completion.",
+      "biggestGap": "The large completion overlay and extreme goal close-up obscure nearly all gameplay context."
+    }
+  ],
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "medium",
+    "rationale": "Sample-01 offers the strongest overall visual composition and environmental richness while still showing clear platforming cues. Sample-03 communicates the route and goal more clearly, but its scene is flatter and less visually developed."
+  }
+}

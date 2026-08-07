@@ -9,6 +9,9 @@ const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(1);
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.domElement.tabIndex = 0;
+renderer.domElement.setAttribute("aria-label", "Platformer game canvas. Click to focus, then use the controls shown on screen.");
+renderer.domElement.addEventListener("pointerdown", () => renderer.domElement.focus());
 document.body.appendChild(renderer.domElement);
 
 scene.add(new THREE.HemisphereLight(0xa9d6ff, 0x152033, 2.2));
@@ -50,6 +53,11 @@ coinsElement.id = "coins";
 coinsElement.textContent = "Coins: 0";
 document.body.appendChild(coinsElement);
 
+const controlsElement = document.createElement("div");
+controlsElement.id = "controls";
+controlsElement.textContent = "Move: A/D or ←/→ · Jump: W/↑/Space · Reach the pink flag";
+document.body.appendChild(controlsElement);
+
 const state = {
   coins: 0,
   goalReached: false,
@@ -58,9 +66,12 @@ const state = {
 };
 const pressed = new Set<string>();
 const justPressed = new Set<string>();
+const controlCodes = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "KeyA", "KeyD", "KeyW", "Space"]);
 let verticalVelocity = 0;
+let playtestControlled = false;
 
 window.addEventListener("keydown", (event) => {
+  if (controlCodes.has(event.code)) event.preventDefault();
   if (!event.repeat) justPressed.add(event.code);
   pressed.add(event.code);
 });
@@ -73,8 +84,12 @@ function updateCamera(): void {
 
 function tick(): void {
   const dt = 1 / 60;
-  if (justPressed.has("Space") && player.position.y <= 0.001) verticalVelocity = 8.5;
-  if (pressed.has("ArrowRight")) player.position.x += 6 * dt;
+  const jumpPressed = justPressed.has("Space") || justPressed.has("ArrowUp") || justPressed.has("KeyW");
+  const movingLeft = pressed.has("ArrowLeft") || pressed.has("KeyA");
+  const movingRight = pressed.has("ArrowRight") || pressed.has("KeyD");
+  if (jumpPressed && player.position.y <= 0.001) verticalVelocity = 8.5;
+  if (movingLeft) player.position.x -= 6 * dt;
+  if (movingRight) player.position.x += 6 * dt;
   verticalVelocity -= 22 * dt;
   player.position.y += verticalVelocity * dt;
   if (player.position.y <= 0) {
@@ -104,6 +119,7 @@ installThreePlaytestBridge({
     { id: "player", object: player },
   ],
   fixedStep: (ticks) => {
+    playtestControlled = true;
     for (let index = 0; index < ticks; index += 1) tick();
   },
   renderer,
@@ -119,6 +135,7 @@ window.addEventListener("resize", () => {
 });
 
 function render(): void {
+  if (!playtestControlled) tick();
   renderer.render(scene, camera);
   window.requestAnimationFrame(render);
 }

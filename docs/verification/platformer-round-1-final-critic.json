@@ -1,0 +1,41 @@
+{
+  "samples": [
+    {
+      "label": "sample-01",
+      "playability": 5,
+      "visuals": 5,
+      "screenshotWorthy": "yes",
+      "evidence": "Third-person view clearly shows the player, coin trail, raised green platforms, hazards, readable objective HUD, and jump/dash prompts.",
+      "biggestGap": "The goal and restart path are not visible in this frame."
+    },
+    {
+      "label": "sample-02",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "yes",
+      "evidence": "Victory HUD shows 8/8 coins and replay instruction; the goal structure, tiered platforms, trees, and toy-like forms are clearly visible.",
+      "biggestGap": "The completed view provides little evidence of hazards, gaps, or traversal challenge."
+    },
+    {
+      "label": "sample-03",
+      "playability": 2,
+      "visuals": 2,
+      "screenshotWorthy": "no",
+      "evidence": "Completion overlay confirms 6/6 coins and offers replay, with bright colors and rounded shapes behind it.",
+      "biggestGap": "The large overlay and close framing obscure nearly all platforming context."
+    },
+    {
+      "label": "sample-04",
+      "playability": 5,
+      "visuals": 4,
+      "screenshotWorthy": "yes",
+      "evidence": "The initial view clearly presents a coin line, distant goal, raised platforms, hazard, readable objective and count, movement/jump prompts, and restart input.",
+      "biggestGap": "The pastel scene is less richly detailed and dimensional than the reference."
+    }
+  ],
+  "comparisonVerdict": {
+    "betterSample": "sample-04",
+    "confidence": "high",
+    "rationale": "It communicates the complete playable loop most clearly in one initial view: objective, collectible route, goal, hazard, platforms, input prompts, and restart path."
+  }
+}

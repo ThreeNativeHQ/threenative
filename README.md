@@ -20,12 +20,12 @@ classifier in `--check` mode, so hand-edited numbers fail the benchmark job.
 | Arm | File | Plumbing LOC | Game LOC | Total LOC | Vanilla wins? |
 |---|---|---:|---:|---:|---|
 | Vanilla | `examples/abyss-vanilla/src/main.js` | 138 | 272 | 410 | — |
-| ThreeNative | `examples/abyss-framework/src/main.tsx` | 8 | 31 | 39 | — |
+| ThreeNative | `examples/abyss-framework/src/main.tsx` | 10 | 32 | 42 | — |
 | ThreeNative | `examples/abyss-framework/src/render/lighting.ts` | 2 | 8 | 10 | — |
 | ThreeNative | `examples/abyss-framework/src/render/postprocessing.ts` | 7 | 13 | 20 | — |
-| ThreeNative | `examples/abyss-framework/src/scenes/Abyss.ts` | 67 | 344 | 411 | — |
+| ThreeNative | `examples/abyss-framework/src/scenes/Abyss.ts` | 67 | 341 | 408 | — |
 | **Vanilla** | **control total** | **138** | **272** | **410** | yes |
-| **ThreeNative** | **framework total** | **84** | **396** | **480** | no |
+| **ThreeNative** | **framework total** | **86** | **394** | **480** | no |
 
 **Static result:** vanilla wins. Vanilla wins are shown per summary row; the framework example remains the independently playable proof scene until the manual Abyss parity run is completed.
 <!-- benchmark:loc:end -->

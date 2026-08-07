@@ -30,6 +30,18 @@ confirm that only that arm's proof fails.
 6. Reveal authoritative provider usage events and record them after the blind scores.
 7. Publish `docs/benchmark/RESULTS-<date>.md`, including failures and void conditions.
 
+## Instrument scores
+
+The capture and judge path is an instrument for the improvement loop, not an authoritative
+benchmark result. `pnpm sweep:judge <bundle> --input <fresh-critic.json>` rechecks every PNG,
+validates the blind sample labels and bounded scores, and writes `judge.json`. The critic
+input must be produced before reveal and must not contain an arm identifier.
+
+An instrument score can identify a broken or empty frame, compare a candidate during a round,
+and name the largest visible gap. It cannot satisfy the equal-proof contract's visual claim,
+cannot replace the human blind session, and cannot produce a non-VOID `RESULTS-<date>.md`.
+The reveal map remains outside the bundle and is never supplied to the critic.
+
 Example scorer invocation:
 
 ```sh
@@ -64,7 +76,11 @@ The result is `VOID`, not a loss, if any item below occurs:
 - the scorer sees arm identity before quality scores are written;
 - fewer than three completed repeats exist for either arm;
 - an arm lacks an authoritative final provider usage event;
-- artifacts are not stripped or the blind bundle contains an arm identifier.
+- artifacts are not stripped or the blind bundle contains an arm identifier;
+- an image bundle has fewer samples than required arms, the reveal map is inside the bundle,
+  or a judge response names an unknown/missing sample;
+- the capture guard rejects any image, or the critic input contains the reveal or an arm
+  identifier.
 
 Do not replace a void with an estimated token count, inferred model usage, or an
 unblinded quality score.

@@ -25,6 +25,21 @@ function renderer(canvas: HTMLCanvasElement) {
   };
 }
 
+class TrackingResizeObserver {
+  static instances: TrackingResizeObserver[] = [];
+  disconnected = false;
+
+  constructor(_callback: ResizeObserverCallback) {
+    TrackingResizeObserver.instances.push(this);
+  }
+
+  observe(_target: Element): void {}
+
+  disconnect(): void {
+    this.disconnected = true;
+  }
+}
+
 describe("Game", () => {
   it("should run exit, clear, load, and enter in order on goto", async () => {
     const events: string[] = [];
@@ -131,5 +146,33 @@ describe("Game", () => {
     advance(1);
     expect(observedStep).toBeCloseTo(1 / 30);
     game.stop();
+  });
+
+  it("should dispose the viewport observer when stopped", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: TrackingResizeObserver,
+    });
+
+    try {
+      TrackingResizeObserver.instances = [];
+      class TestScene extends Scene {}
+      const game = defineGame({
+        renderer: renderer(testCanvas()),
+        scenes: { test: TestScene },
+        start: "test",
+      });
+
+      await game.start();
+      expect(TrackingResizeObserver.instances).toHaveLength(2);
+      game.stop();
+      expect(TrackingResizeObserver.instances.every((observer) => observer.disconnected)).toBe(
+        true,
+      );
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "ResizeObserver");
+      else Object.defineProperty(globalThis, "ResizeObserver", descriptor);
+    }
   });
 });

@@ -133,4 +133,21 @@ describe("sealed proof runner", () => {
       ),
     ).toMatchObject({ assertions: [{ id: "movement.player", pass: true }], verdict: "pass" });
   });
+
+  it("keeps a structured runner failure in invalid-output evidence", () => {
+    const result = reportFromOutput(
+      "fixture",
+      JSON.stringify({
+        diagnostics: [
+          { code: "TN_PLAYTEST_BRIDGE_MISSING", message: "bridge missing", severity: "error" },
+        ],
+        pass: false,
+      }),
+      "",
+      false,
+    );
+    expect(result.diagnostics[0]).toMatchObject({
+      message: expect.stringContaining("TN_PLAYTEST_BRIDGE_MISSING"),
+    });
+  });
 });

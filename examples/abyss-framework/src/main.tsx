@@ -3,7 +3,10 @@ import { playtest } from "@threenative/core/playtest";
 import "./style.css";
 import { createRoot } from "react-dom/client";
 import { Abyss, type AbyssState } from "./scenes/Abyss.js";
+import { ViewportProbe } from "./scenes/ViewportProbe.js";
 import { App } from "./ui/App.js";
+
+const viewportProbe = new URLSearchParams(globalThis.location.search).has("viewport");
 
 const game = defineGame<AbyssState>({
   initialState: {
@@ -29,8 +32,8 @@ const game = defineGame<AbyssState>({
     start: { down: ["Enter"] },
   },
   plugins: [playtest()],
-  renderer: { preferWebGPU: true },
-  scenes: { play: Abyss },
+  renderer: { preferWebGPU: !viewportProbe },
+  scenes: { play: viewportProbe ? ViewportProbe : Abyss },
   start: "play",
 });
 

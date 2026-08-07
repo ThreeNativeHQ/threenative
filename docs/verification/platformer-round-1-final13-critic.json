@@ -1,0 +1,41 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-02",
+    "confidence": "high",
+    "rationale": "The strongest route frame clearly exposes the coin line, platforms, gaps, hazards, goal, HUD, and restart path; the paired completion frame remains polished."
+  },
+  "samples": [
+    {
+      "biggestGap": "Completion framing obscures nearly all gameplay landmarks.",
+      "evidence": "Clean low-poly presentation, readable completion HUD, visible goal frame and third-person camera. The flat end-state view hides the route, coin line, gap, and hazard.",
+      "label": "sample-01",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 3
+    },
+    {
+      "biggestGap": "The goal and hazards are relatively small at the far end of the route.",
+      "evidence": "Strong elevated third-person composition with a clear platform route, visible coin line, distant goal, gap, raised sections, hazards, readable HUD, and restart key.",
+      "label": "sample-02",
+      "playability": 5,
+      "screenshotWorthy": "yes",
+      "visuals": 5
+    },
+    {
+      "biggestGap": "The completed goal framing omits the coin trail and broader route.",
+      "evidence": "Polished goal-area view clearly shows the flag, raised platforms, gap, hazard spikes, readable HUD, and restart path. The completion state provides no visible coin route.",
+      "label": "sample-03",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    },
+    {
+      "biggestGap": "The hazard requirement is not visually demonstrated.",
+      "evidence": "Clear behind/above camera, readable HUD and input keys, strong coin line, raised platforms, gaps, and a distant goal structure. No distinct hazard is visible.",
+      "label": "sample-04",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "tie",
+    "confidence": "medium",
+    "rationale": "The two active and completion samples trade strengths; average visual scores are equal, with one sample strongest on route readability and the other strongest on completion polish."
+  },
+  "samples": [
+    {
+      "biggestGap": "The gameplay challenge and route are not visible.",
+      "evidence": "Polished low-poly presentation and readable completion HUD, but the frame hides the route and shows no coin line, gap, or hazard.",
+      "label": "sample-01",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 3
+    },
+    {
+      "biggestGap": "Missing visible coin progression and hazard feedback.",
+      "evidence": "Strong low-poly scene with multiple raised platforms, visible gaps, a goal gate, readable HUD, controls, and restart prompt; no clear coin line or hazard.",
+      "label": "sample-02",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    },
+    {
+      "biggestGap": "No clearly visible hazard.",
+      "evidence": "Highly polished scene with a clear elevated route, visible coin line, goal gate, platforms, gaps, readable HUD, restart path, and behind-character camera.",
+      "label": "sample-03",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 5
+    },
+    {
+      "biggestGap": "The player and immediate gameplay context are small, weakening moment-to-moment readability.",
+      "evidence": "Wide elevated third-person view clearly shows the route, coin line, goal, raised sections and gaps, apparent hazard obstacles, readable HUD, and restart path.",
+      "label": "sample-04",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    }
+  ],
+  "verdict": "ready"
+}

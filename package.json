@@ -13,16 +13,19 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test && vitest run",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
-    "test:playtest": "pnpm --filter @threenative/playtest build && node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-arg --enable-unsafe-webgpu --browser-arg --disable-gpu-sandbox --browser-arg --ignore-gpu-blocklist && node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/camera.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-arg --enable-unsafe-webgpu --browser-arg --disable-gpu-sandbox --browser-arg --ignore-gpu-blocklist",
+    "test:playtest": "pnpm --filter @threenative/playtest build && xvfb-run -a -s '-screen 0 1600x900x24' node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && xvfb-run -a -s '-screen 0 1600x900x24' node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/camera.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
     "lint": "biome check .",
     "budgets": "tsx scripts/check-budgets.ts",
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
+    "sweep:capture": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/sweep-capture.ts",
     "sweep:measure": "tsx scripts/measure-sandbox.ts",
     "sweep:delta": "tsx scripts/sweep-delta.ts",
     "sweep:proof": "tsx scripts/sweep-proof.ts",
-    "sweep:pair": "tsx scripts/sweep-pair.ts"
+    "sweep:judge": "tsx scripts/sweep-judge.ts",
+    "sweep:pair": "tsx scripts/sweep-pair.ts",
+    "round:next": "tsx scripts/round-next.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

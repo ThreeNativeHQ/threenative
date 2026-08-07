@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 
 export interface IPlaytestServerConfig {
   command: string;
@@ -26,7 +27,23 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   const url = readFlag(argv, "--url") ?? "http://127.0.0.1:5173";
   const projectPath = resolve(cwd, readFlag(argv, "--project") ?? ".");
   const serverCommand = readFlag(argv, "--server-command");
-  const browserArgs = readRepeatedFlag(argv, "--browser-arg");
+  const explicitBrowserArgs = readRepeatedFlag(argv, "--browser-arg");
+  const browserRecipe = readFlag(argv, "--browser-recipe");
+  if (argv.includes("--browser-recipe") && browserRecipe === undefined) {
+    throw new Error("Flag '--browser-recipe' requires a value, for example --browser-recipe webgpu.");
+  }
+  if (browserRecipe !== undefined && browserRecipe !== "webgpu") {
+    throw new Error(`Unknown browser recipe '${browserRecipe}'. Expected 'webgpu'.`);
+  }
+  if (browserRecipe !== undefined && explicitBrowserArgs.length > 0) {
+    throw new Error("Choose --browser-recipe or --browser-arg, not both.");
+  }
+  const browserArgs =
+    explicitBrowserArgs.length > 0
+      ? explicitBrowserArgs
+      : browserRecipe === "webgpu"
+        ? [...WEBGPU_BROWSER_ARGS]
+        : [];
   return {
     artifactDirectory: resolve(projectPath, readFlag(argv, "--artifacts") ?? "artifacts/playtest"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
@@ -51,7 +68,7 @@ function readFlag(argv: readonly string[], name: string): string | undefined {
 // A browser arg is itself dash-prefixed, so "starts with --" is not usable as the
 // separator here; the reserved names are.
 const PLAYTEST_FLAGS = new Set([
-  "--artifacts", "--browser-arg", "--headed", "--project", "--scenario",
+  "--artifacts", "--browser-arg", "--browser-recipe", "--headed", "--project", "--scenario",
   "--server-command", "--server-timeout", "--timeout", "--trace", "--url",
 ]);
 

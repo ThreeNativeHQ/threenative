@@ -56,15 +56,25 @@ interface SealedProofExpectation {
 
 export interface PairArmResult {
   readonly archive: string;
+  readonly frameworkFiles: number;
   readonly passed: number;
   readonly reachRate: number;
   readonly sourceFiles: number;
+  readonly sourceBytes: number;
+  readonly threeOnlyFiles: number;
   readonly total: number;
   readonly userLoc: number;
+  readonly unusedExports: readonly string[];
+  readonly usedExports: readonly string[];
 }
 
 export interface SweepPair {
   readonly briefHash: string;
+  readonly delta: {
+    readonly sourceBytes: number;
+    readonly sourceFiles: number;
+    readonly userLoc: number;
+  };
   readonly framework: PairArmResult;
   readonly genre: string;
   readonly proofHash: string;
@@ -518,16 +528,19 @@ function measureVanilla(root: string): SweepMeasurement {
   if (files.length === 0) throw new Error(`Cannot measure '${root}': src/ has no source files.`);
   validateVanillaArchive(root, files);
   let userLoc = 0;
+  let sourceBytes = 0;
   let threeOnlyFiles = 0;
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
     userLoc += lineCount(source);
+    sourceBytes += Buffer.byteLength(source, "utf8");
     if (/(?:from\s*|import\s*\(|require\s*\(\s*)["']three["']/.test(source)) threeOnlyFiles += 1;
   }
   return {
     frameworkFiles: 0,
     reachRate: 0,
     sourceFiles: files.length,
+    sourceBytes,
     threeOnlyFiles,
     unusedExports: [],
     usedExports: [],
@@ -625,11 +638,16 @@ function armResult(root: string, manifest: SweepManifest, proof: StoredProof): P
   const measured = measurement(root, manifest.arm);
   return {
     archive: root,
+    frameworkFiles: measured.frameworkFiles,
     passed: proof.passed,
     reachRate: measured.reachRate,
     sourceFiles: measured.sourceFiles,
+    sourceBytes: measured.sourceBytes,
+    threeOnlyFiles: measured.threeOnlyFiles,
     total: proof.total,
     userLoc: measured.userLoc,
+    unusedExports: measured.unusedExports,
+    usedExports: measured.usedExports,
   };
 }
 
@@ -669,6 +687,11 @@ export function pairSweeps(leftDirectory: string, rightDirectory: string, repo =
       : armResult(right, rightManifest, rightProof);
   return {
     briefHash: leftManifest.briefHash,
+    delta: {
+      sourceBytes: framework.sourceBytes - vanilla.sourceBytes,
+      sourceFiles: framework.sourceFiles - vanilla.sourceFiles,
+      userLoc: framework.userLoc - vanilla.userLoc,
+    },
     framework,
     genre: leftManifest.genre,
     proofHash: leftManifest.proofHash,

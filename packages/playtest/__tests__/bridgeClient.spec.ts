@@ -34,6 +34,16 @@ test("browser args are repeatable and absent when unused", () => {
   expect(parseStandalonePlaytestArgs(["playtests/move.json"], "/project").browserArgs).toBe(undefined);
 });
 
+test("the WebGPU browser recipe expands to the sealed Chromium flags", () => {
+  expect(
+    parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "webgpu"], "/project")
+      .browserArgs,
+  ).toEqual(["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"]);
+  expect(() =>
+    parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "unknown"], "/project"),
+  ).toThrow(/Unknown browser recipe/);
+});
+
 test("a browser arg with no value fails instead of swallowing the next flag", () => {
   // `--browser-arg --headed` would otherwise consume `--headed` as the value and
   // silently drop the mode the author asked for.

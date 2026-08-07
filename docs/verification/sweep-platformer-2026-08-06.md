@@ -9,7 +9,7 @@ Proof SHA-256: 1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7
 Template: starter
 Archive: docs/benchmark/sweeps/platformer-2026-08-06
 Framework version: 0.1.0
-User source LOC: 149
+User source LOC: 176
 Source files: 2
 Framework files: 1
 Three-only files: 0
@@ -18,11 +18,13 @@ Used exports: installThreePlaytestBridge
 Unused exports: IPlaytestAdvanceResult, IPlaytestAerodynamicsAssertion, IPlaytestAnimationAssertion, IPlaytestAnimationObservation, IPlaytestArtifactRequest, IPlaytestAssertionResult, IPlaytestAssertionSchemaEntry, IPlaytestAssertionSchemaField, IPlaytestBridgeClient, IPlaytestBridgeDescription, IPlaytestBridgeHost, IPlaytestBridgeReady, IPlaytestBridgeV1, IPlaytestCameraAssertion, IPlaytestCapabilityDescriptor, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestContactObservation, IPlaytestDiagnostic, IPlaytestDiagnosticsAssertion, IPlaytestEntityObservation, IPlaytestEntityTransform, IPlaytestFollowReport, IPlaytestGameplayObservation, IPlaytestMovementAssertion, IPlaytestObservationSnapshot, IPlaytestObservations, IPlaytestOccludedAssertion, IPlaytestOverlayNodeAssertion, IPlaytestParityConfig, IPlaytestPathAssertion, IPlaytestProtocolDiagnostic, IPlaytestReachabilityAssertion, IPlaytestReport, IPlaytestSampleRequest, IPlaytestScenario, IPlaytestScenarioAssertions, IPlaytestScenarioDiagnostic, IPlaytestScenarioSetup, IPlaytestServerConfig, IPlaytestSettledAssertion, IPlaytestSetupEntityTransform, IPlaytestSetupRequest, IPlaytestSetupResource, IPlaytestSetupSchemaEntry, IPlaytestStateAssertion, IPlaytestStep, IPlaytestTagCountAssertion, IPlaytestTagObservation, IPlaytestTransformSample, IPlaytestViewport, IPlaytestVisibilityAssertion, IPlaytestVisualAssertion, IPlaytestWorldAssertion, IStandalonePlaytestConfig, IStandalonePlaytestReport, IThreeObservationInput, IThreePlaytestBridgeInstallation, IThreePlaytestBridgeOptions, IThreePlaytestEntity, IThreePlaytestResources, JsonPrimitive, JsonValue, PLAYTEST_ASSERTION_REGISTRY, PLAYTEST_BRIDGE_GLOBAL, PLAYTEST_CAPABILITY_REGISTRY, PLAYTEST_PROTOCOL_LIMITS, PLAYTEST_PROTOCOL_VERSION, PLAYTEST_SETUP_REGISTRY, PlaytestBridgeError, PlaytestCapability, PlaytestClockMode, PlaytestDiagnosticCode, PlaytestInputDelivery, PlaytestScenarioError, PlaytestTarget, PlaytestVec3, ThreePlaytestEntityRegistry, ThreePlaytestRenderer, applyScenarioOverrides, assertJsonSafe, buildReport, connectPlaytestBridge, evaluateRichPlaytestAssertions, initStandalonePlaytest, jsonByteLength, loadPlaytestScenario, missingPlaytestCapabilities, objectPath, oneShotScenario, overlayNodeObservationKey, parsePlaytestTarget, parseStandalonePlaytestArgs, parseViewport, playtestDiagnostic, playtestStepHoldTicks, playtestStepWaitTicks, requiredPlaytestCapabilities, runStandalonePlaytest, sampleThreeObservations, unknownPlaytestCapabilities
 Measurement command: `pnpm sweep:measure docs/benchmark/sweeps/platformer-2026-08-06`
 First game-code tool call: 1 (plain Three.js source)
-Visual result: PASS — the real vanilla build passed the sealed jump/run proof 2/2 with zero console, network, and runtime diagnostics.
+Visual result: PASS — the real vanilla build passed the sealed jump/run proof 2/2 and
+produced four guarded non-blank captures. The declared diagnostics contract had zero network
+and runtime diagnostics; its detail field recorded one console error per scenario.
 
 ## Paired proof
 
-`pnpm sweep:pair docs/benchmark/sweeps/platformer-2026-08-05-2 docs/benchmark/sweeps/platformer-2026-08-06` passed both arms 2/2 for the same brief and proof hash. The vanilla arm uses 149 user LOC across 2 source files; the framework arm uses 1073 user LOC across 18 source files.
+`pnpm sweep:pair docs/benchmark/sweeps/platformer-2026-08-05-2 docs/benchmark/sweeps/platformer-2026-08-06` passed both arms 2/2 for the same brief and proof hash. The vanilla arm uses 176 user LOC across 2 source files; the framework arm uses 1073 user LOC across 18 source files.
 
 ## Friction ledger
 

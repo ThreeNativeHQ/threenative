@@ -28,7 +28,7 @@ export function Hud({ game }: { game: Game<GameState, PhysicsContext> }) {
   const score = useGameState(game, (state) => state.score);
   const playerX = useGameState(game, (state) => state.playerX);
   return (
-    <div className="pointer-events-none absolute inset-0 p-6">
+    <div className="pointer-events-none absolute left-6 top-6 w-24">
       <div className="text-[10px] uppercase tracking-[0.14em] text-dim">score</div>
       <div className="text-4xl leading-none tabular-nums text-lume">{score}</div>
       <Meter label="position" value={Math.abs(playerX) * 10} />

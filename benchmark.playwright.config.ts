@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/src/runner/browser.js";
 
 export default defineConfig({
   testDir: "./examples/abyss-framework/tests",
@@ -13,7 +14,7 @@ export default defineConfig({
     headless: true,
     screenshot: "only-on-failure",
     launchOptions: {
-      args: ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+      args: [...WEBGPU_BROWSER_ARGS],
     },
   },
   webServer: {

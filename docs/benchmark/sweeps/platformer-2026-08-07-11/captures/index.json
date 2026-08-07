@@ -1,0 +1,49 @@
+{
+  "recipe": "webgpu-xvfb-headed",
+  "captures": [
+    {
+      "distinctColors": 21738,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.14309068632405678,
+      "width": 1280,
+      "bytes": 170809,
+      "capture": "platformer-jump-proof-after.png",
+      "scenario": "platformer-jump-proof",
+      "source": "proof-artifacts/0/after.png"
+    },
+    {
+      "distinctColors": 22688,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.14789378883583543,
+      "width": 1280,
+      "bytes": 164870,
+      "capture": "platformer-jump-proof-before.png",
+      "scenario": "platformer-jump-proof",
+      "source": "proof-artifacts/0/before.png"
+    },
+    {
+      "distinctColors": 13261,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.14076182320915034,
+      "width": 1280,
+      "bytes": 132367,
+      "capture": "platformer-run-proof-after.png",
+      "scenario": "platformer-run-proof",
+      "source": "proof-artifacts/1/after.png"
+    },
+    {
+      "distinctColors": 22744,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.1478904714279323,
+      "width": 1280,
+      "bytes": 164740,
+      "capture": "platformer-run-proof-before.png",
+      "scenario": "platformer-run-proof",
+      "source": "proof-artifacts/1/before.png"
+    }
+  ]
+}

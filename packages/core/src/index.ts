@@ -32,3 +32,5 @@ export { Scheduler } from "./schedule.js";
 export type { ScheduleHandle } from "./schedule.js";
 export { createGameStore } from "./state.js";
 export type { GameStore, StatePatch } from "./state.js";
+export { Viewport } from "./viewport.js";
+export type { ViewportOptions, ViewportResizeHandler, ViewportSize } from "./viewport.js";

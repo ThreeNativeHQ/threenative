@@ -21,3 +21,13 @@ canvas {
   position: fixed;
   top: 24px;
 }
+
+#controls {
+  background: rgb(16 32 58 / 82%);
+  border: 1px solid #9dc7e6;
+  border-radius: 8px;
+  bottom: 24px;
+  left: 24px;
+  padding: 8px 12px;
+  position: fixed;
+}

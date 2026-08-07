@@ -38,6 +38,10 @@ export interface ProofResult {
   readonly total: number;
 }
 
+export interface ProofOptions {
+  readonly headed?: boolean;
+}
+
 function isDirectory(directory: string): boolean {
   return fs.existsSync(directory) && fs.statSync(directory).isDirectory();
 }
@@ -222,12 +226,17 @@ export function reportFromOutput(
       verdict: report.pass === true && pass ? "pass" : "fail",
     };
   } catch (error) {
+    const runnerOutput = [stderr, stdout]
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .join("\n")
+      .slice(0, 4_000);
     return {
       assertions: [{ id: "sweep-proof.output", pass: false }],
       diagnostics: [
         {
           code: "TN_SWEEP_PROOF_INVALID_OUTPUT",
-          message: `${error instanceof Error ? error.message : String(error)}${stderr ? `: ${stderr}` : ""}`,
+          message: `${error instanceof Error ? error.message : String(error)}${runnerOutput ? `: ${runnerOutput}` : ""}`,
           severity: "error",
         },
       ],
@@ -242,6 +251,7 @@ function runScenario(
   scenario: string,
   artifactDirectory: string,
   port: number,
+  options: ProofOptions,
 ): ProofScenarioResult {
   const scenarioData = JSON.parse(fs.readFileSync(scenario, "utf8")) as { name?: unknown };
   const name = typeof scenarioData.name === "string" ? scenarioData.name : path.basename(scenario);
@@ -261,17 +271,18 @@ function runScenario(
     "30000",
     "--artifacts",
     artifactDirectory,
-    "--browser-arg",
-    "--enable-unsafe-webgpu",
-    "--browser-arg",
-    "--disable-gpu-sandbox",
-    "--browser-arg",
-    "--ignore-gpu-blocklist",
+    "--browser-recipe",
+    "webgpu",
+    ...(options.headed ? ["--headed"] : []),
   ];
+  const environment = { ...process.env };
+  environment.WAYLAND_DISPLAY = undefined;
+  environment.XDG_SESSION_TYPE = undefined;
   try {
     const stdout = execFileSync("node", args, {
       cwd: REPO,
       encoding: "utf8",
+      env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });
     return reportFromOutput(name, stdout, "", true);
@@ -286,7 +297,11 @@ function runScenario(
   }
 }
 
-export function runProof(sourceDirectory: string, repo = REPO): ProofResult {
+export function runProof(
+  sourceDirectory: string,
+  repo = REPO,
+  options: ProofOptions = {},
+): ProofResult {
   const source = resolveSandbox(sourceDirectory);
   const manifestFile = path.join(source, "sweep.json");
   const manifest = readManifest(manifestFile);
@@ -311,6 +326,7 @@ export function runProof(sourceDirectory: string, repo = REPO): ProofResult {
         path.join(scenarioRoot, file.relativePath),
         scenarioArtifacts,
         PROOF_PORT + index,
+        options,
       );
     });
     const passed = scenarios.filter(({ verdict }) => verdict === "pass").length;

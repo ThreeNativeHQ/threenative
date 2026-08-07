@@ -33,7 +33,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     camera.fov = 54;
     camera.far = 220;
-    camera.updateProjectionMatrix();
+    ctx.viewport.resize();
 
     this.#platforms = [
       createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 }),

@@ -8,6 +8,7 @@ import { type RendererLike, type RendererOptions, createRenderer } from "./rende
 import type { Ctx, Scene, SceneConstructor } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
+import { Viewport } from "./viewport.js";
 
 export type PluginCleanup = () => void;
 
@@ -96,6 +97,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #ctx: Ctx<TState, TPhysics> | undefined;
   #scene: Scene<TState, TPhysics> | undefined;
   #renderer: RendererLike | undefined;
+  #viewport: Viewport | undefined;
   #input: InputMap | undefined;
   #state: GameStore<TState>;
   #loop: FixedStepLoop | undefined;
@@ -165,6 +167,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
+    const viewport = new Viewport({ camera, renderer: this.#renderer });
+    this.#viewport = viewport;
     const assets = createAssetLoader(this.#config.assets);
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
@@ -184,6 +188,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       physics: undefined as TPhysics,
       random,
       renderer: this.#renderer,
+      viewport,
       scene: threeScene,
       state: this.#state,
       tween: (target, properties, duration) => scheduler.tween(target, properties, duration),
@@ -248,8 +253,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
     this.#input?.dispose();
     this.#state.stop();
+    this.#viewport?.dispose();
     this.#renderer?.dispose();
     this.#renderer = undefined;
+    this.#viewport = undefined;
     this.#input = undefined;
     this.#scene = undefined;
     this.#ctx = undefined;
