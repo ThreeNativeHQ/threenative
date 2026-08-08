@@ -1,7 +1,7 @@
 # PRD-035 — Hot reload with state preservation
 
 **Status: BLOCKED on Gate 0.** `docs/strategy/ROADMAP.md` Gate 0 (round 2 to completion on
-both arms, plus `round:deletions`) is unrun, and `docs/strategy/OPPORTUNITY-AREAS.md` says
+both arms, plus `round:deletions`) is unrun, and `docs/PRDs/OPPORTUNITY-AREAS.md` says
 no area starts before it closes. This PRD is the design for Roadmap **Phase 2 — "Dev loop.
 Hot reload with state preservation."** It is written now so the decision is ready; **do not
 begin Phase 1 until Gate 0 exits on its first outcome.**

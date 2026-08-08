@@ -77,7 +77,7 @@ recording, and nothing turns a reproduced bug into a regression test.
 `packages/physics/__tests__/determinism.spec.ts:10-43`;
 `packages/playtest/src/protocol.ts:85-98`, `scenario.ts:14-38,594-718`;
 `packages/playtest/AGENTS.md`; `docs/PRDs/done/PRD-006`, `PRD-008`, `PRD-028`;
-`docs/architecture/CHARTER.md §2`; `docs/strategy/OPPORTUNITY-AREAS.md §5`;
+`docs/architecture/CHARTER.md §2`; `docs/PRDs/OPPORTUNITY-AREAS.md §5`;
 `node_modules/.pnpm/@dimforge+rapier3d-compat@0.19.3/**` (see §1.4).
 
 ### 1.1 Current behaviour
@@ -517,7 +517,7 @@ scenario, and the CLI's subcommand test fails.
   the explicit statement that the framework does not serialize entities and will not.
 - `packages/physics/AGENTS.md` — EDIT: the §1.4 correction, if Phase 0 did not already land
   it.
-- `docs/strategy/OPPORTUNITY-AREAS.md` — EDIT: re-score §5 with the Phase 0 finding.
+- `docs/PRDs/OPPORTUNITY-AREAS.md` — EDIT: re-score §5 with the Phase 0 finding.
 - `README.md` / `CLAUDE.md` — REGENERATED via `pnpm sync:agents` and
   `pnpm tsx scripts/count-loc.ts`.
 

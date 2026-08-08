@@ -1,8 +1,8 @@
 # PRD-021 — The improvement round: a loop that survives a context reset
 
-**Status: phases 1–2 implementation complete.** The round schema and deterministic resume
-command are shipped. A real isolated round, deletion report, and plateau decision remain
-open; this PRD stays active.
+**Status: complete.** Phases 1–5 are shipped and exercised by a real isolated exploration
+round. The round ledger, deterministic resume command, persistent-unused-export report,
+firewall evidence, blind judge, pair decision, and required gates all have live evidence.
 
 **Complexity: 5 → MEDIUM mode** (1-5 files +1, new system +2, tooling across repo +2)
 
@@ -163,3 +163,16 @@ close on green tests alone.
 ledger passing its own schema test, plus `pnpm round:next` printing `close the round` against
 it, plus `pnpm round:deletions` producing a list — even an empty one, which after a single
 round is the honest answer.
+
+### Closure evidence — 2026-08-07
+
+- `docs/verification/round-2-2026-08-07.md` records the exploration pair: both sealed proofs
+  pass `1/1`, the blind visual judge scores the framework arm `4/5` versus `3/5`, and the
+  pair records vanilla lower on user-owned source cost.
+- `pnpm round:deletions` checked the current framework archive and the previous framework
+  archive and reported 161 persistent unused exports. The report is recorded in the round
+  ledger; no deletion is automated by design.
+- `pnpm round:next` printed `close round 2` after the ledger schema, four required gates, and
+  the gap disposition were complete.
+- Final gates: `pnpm typecheck`, `pnpm lint`, `pnpm test` (116 files / 695 tests), and
+  `pnpm budgets` all passed.

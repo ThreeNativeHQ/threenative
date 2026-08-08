@@ -15,7 +15,7 @@ phase, plus a manual checkpoint on the phases that change what a screenshot show
 **Depends on:** PRD-003 (physics), PRD-013 (platformer kit), PRD-007 (playtest bridge).
 **Charter authority:** `CHARTER.md` §5 (borrowed vocabulary), §5b (never own the look),
 §9a (when a package may exist), §10 (budgets), §11.1 (the 20-line rule), §11.5 (packages).
-**Strategy source:** [`OPPORTUNITY-AREAS.md`](../strategy/OPPORTUNITY-AREAS.md) area #3,
+**Strategy source:** [`OPPORTUNITY-AREAS.md`](./OPPORTUNITY-AREAS.md) area #3,
 score 86 (Gap 30 / Ceiling 22 / Agent 22 / Cost 12).
 
 ---
@@ -676,7 +676,7 @@ behind as dead code."*
 - `packages/create-threenative/templates/platformer/AGENTS.md` — EDIT: when to use `Patrol`
   (scripted route) vs `Chaser` (navmesh pursuit), and that steering/aggro/re-path cadence are
   the user's to write
-- `docs/strategy/OPPORTUNITY-AREAS.md` — EDIT: mark area #3 shipped and record that the slot
+- `docs/PRDs/OPPORTUNITY-AREAS.md` — EDIT: mark area #3 shipped and record that the slot
   was **not** spent
 - `docs/strategy/ROADMAP.md` — EDIT: add PRD-034 to the "Which roadmap items have PRDs" table
 - `docs/verification/` — NEW: dated gate results for this PRD, per the folder's convention

@@ -39,7 +39,7 @@ is still a grey box. The legacy tree solved this and the solution was left behin
 `packages/core/src/assets.ts` · `scripts/check-budgets.ts:40-90` · `scripts/catalog.ts` ·
 `scripts/__tests__/catalog.spec.ts` · `.github/workflows/ci.yml:61-144` (scaffold smoke) ·
 `docs/product/ASSET-PIPELINE.md` · `docs/strategy/ROADMAP.md` ·
-`docs/strategy/OPPORTUNITY-AREAS.md` · `docs/architecture/CHARTER.md` §2/§5b/§8/§9b/§10 ·
+`docs/PRDs/OPPORTUNITY-AREAS.md` · `docs/architecture/CHARTER.md` §2/§5b/§8/§9b/§10 ·
 `../threejs-to-bevy/packages/asset-mcp/{package.json,README.md,src/server.ts,src/config.ts,src/tools/source-directory.ts,src/polyhaven/client.ts}`.
 
 **Current behavior — every row was checked against the source, not the docs:**
