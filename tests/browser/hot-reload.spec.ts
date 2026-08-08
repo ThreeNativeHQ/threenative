@@ -109,14 +109,20 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   });
 
   await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(2_200);
-  await page.keyboard.up("ArrowRight");
-  await page.waitForFunction(() => {
-    const scoreLabel = [...document.querySelectorAll("div")].find(
-      (element) => element.textContent?.trim() === "score",
+  try {
+    await page.waitForFunction(
+      () => {
+        const scoreLabel = [...document.querySelectorAll("div")].find(
+          (element) => element.textContent?.trim() === "score",
+        );
+        return Number(scoreLabel?.nextElementSibling?.textContent ?? Number.NaN) > 0;
+      },
+      undefined,
+      { timeout: 12_000 },
     );
-    return Number(scoreLabel?.nextElementSibling?.textContent ?? Number.NaN) > 0;
-  });
+  } finally {
+    await page.keyboard.up("ArrowRight");
+  }
   const before = await runtimeSnapshot(page);
   expect(before.score).toBeGreaterThan(0);
   const heapBefore = await heapSize(page);

@@ -1,11 +1,11 @@
 # PRD-035 — Hot reload with state preservation
 
-**Status: IMPLEMENTATION DELIVERED; browser consumer gate pending on a supported runner.**
+**Status: IMPLEMENTATION DELIVERED; supported-browser consumer gate passes; full release evidence remains.**
 Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
 `docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; repository and visual gates
-pass, while the real starter HMR gate completes its state/flatness checks but remains
-unverified on zero console errors because this headless Chromium emits WebGPU backend errors
-before the first edit. Keep this PRD open until a supported browser runner proves that gate.
+pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11 runner, including
+zero console errors; the full browser suite and remaining manual/negative-control evidence
+are still open.
 
 **Complexity: 10 → HIGH mode.** (10+ files +3, new module +2, concurrency/lifecycle state
 +2, multi-package +2, external API — Vite's HMR contract +1.) HIGH means an automated
@@ -617,7 +617,8 @@ Every criterion below describes what a developer observes, not what code exists.
 
 ### Binary done checks
 
-- [ ] All phases complete — Phase 5's supported-browser zero-console gate remains pending.
+- [ ] All phases complete — the supported-browser consumer gate passes; full suite and manual
+      release evidence remain open.
 - [ ] All specified tests pass
 - [x] `pnpm typecheck && pnpm lint && pnpm test` passes
 - [x] `pnpm budgets` green — **no new package** (7/8 unchanged; the last slot stays free for
