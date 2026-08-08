@@ -8,7 +8,7 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 | Folder | Holds | Status of contents |
 |---|---|---|
 | `PRDs/` | Numbered work specs, one per shipped unit | **Binding once merged.** Capped at 10 files |
-| `verification/` | Gate results per PRD, dated | Historical record |
+| `verification/` | Gate results per PRD, dated, plus round ledgers | Historical record |
 | `benchmark/` | Protocol, sealed prompts, dated results | Binding protocol, VOID result |
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
 | `architecture/` | Shape of things not yet built | **Proposal**, except where it records shipped behaviour |
@@ -35,6 +35,10 @@ genres, brief hashes, proof hashes, and missing proof results before reporting p
 source LOC, source files, and framework reach side by side.
 The current caller census and recomputed round-2 comparison are recorded in
 [`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md).
+
+The self-improvement loop is recorded in
+[`verification/round-2-2026-08-07.md`](verification/round-2-2026-08-07.md). Resume it with
+`pnpm round:next`; persistent unused-export evidence comes from `pnpm round:deletions`.
 
 ## Strategy
 

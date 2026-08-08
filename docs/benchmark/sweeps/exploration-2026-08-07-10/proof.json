@@ -1,0 +1,131 @@
+{
+  "arm": "vanilla",
+  "genre": "exploration",
+  "passed": 1,
+  "proofHash": "5c826dab48249ea198c364236d853f31336ecb58d2926c330dde9d93caa73809",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "hub",
+            "before": "hub",
+            "expected": {
+              "equals": "hub",
+              "allowTrivial": true
+            },
+            "id": "state",
+            "path": "area",
+            "trivial": true,
+            "trivialityOptOut": true
+          },
+          "id": "resource.state.area",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 3,
+            "before": 0,
+            "expected": {
+              "equals": 3,
+              "changed": true
+            },
+            "id": "state",
+            "path": "inspections",
+            "trivial": false
+          },
+          "id": "resource.state.inspections",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": [
+              "hub.beacon",
+              "north.archive",
+              "south.grove"
+            ],
+            "before": [],
+            "expected": {
+              "textIncludes": "north.archive"
+            },
+            "id": "state",
+            "path": "inspectedPoints",
+            "trivial": false
+          },
+          "id": "resource.state.inspectedPoints",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": true,
+            "before": false,
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "objectiveComplete",
+            "trivial": false
+          },
+          "id": "resource.state.objectiveComplete",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 2,
+            "before": 0,
+            "expected": {
+              "equals": 2
+            },
+            "id": "state",
+            "path": "returns",
+            "trivial": false
+          },
+          "id": "resource.state.returns",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "minimum": 4,
+            "pathLength": 69.79999999999998
+          },
+          "id": "movement.pathLength",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 34979.49562185777
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "separation": 11.50648904281382,
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "name": "exploration-brief-proof",
+      "verdict": "pass"
+    }
+  ],
+  "total": 1
+}

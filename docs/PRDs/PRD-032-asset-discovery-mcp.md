@@ -4,11 +4,10 @@ prd_contract: v1
 
 # PRD-032 — Asset discovery: the scaffold hands the agent a licensed-asset tool
 
-**Status:** open, **not started, and not startable.** Gated on **Gate 0** of
-`docs/strategy/ROADMAP.md` — round 2 must run to completion on both arms and exit on the
-"the framework arm wins" branch. Two of five roadmap axes read `0` because they have never
-been measured. Building capability onto an unmeasured product is the mechanism that took v1
-to 790k lines, and this PRD is the first item that would do it.
+**Status:** open, queued, and not started. Gate 0 passed on 2026-08-07 through the framework
+blind-visual branch, but the roadmap's Phase 1 exit gate must pass before this PRD starts.
+The next evidence needed is a wider three-genre pair and a green budget gate; this PRD does
+not begin during that measurement phase.
 
 **Complexity: 6 → MEDIUM mode** (touches 10+ files +3, new mechanism from scratch — the
 upstream tool-profile selector +2, external API integration +1).

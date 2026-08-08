@@ -1,0 +1,26 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-02",
+    "confidence": "high",
+    "rationale": "sample-02 presents the player, landmark, interaction prompt, objective state, and navigable space with substantially clearer framing and lighting; sample-01's foreground obstruction hides too much of the playable scene."
+  },
+  "samples": [
+    {
+      "biggestGap": "The obstructed camera framing makes navigation and the central landmark difficult to read.",
+      "evidence": "Visible controls, a third-person figure, 3/3 field notes, and a completion message communicate a working exploration loop. The central beacon and dark trees echo the reference, but a large foreground structure obscures most of the scene.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3
+    },
+    {
+      "biggestGap": "The screenshot shows the hub clearly but does not visually establish the two distinct explorable areas or their transitions.",
+      "evidence": "The centered third-person figure, inspection prompt, movement controls, current directive, and completed journal make the interaction state immediately legible. Strong beacon lighting, tree silhouettes, and restrained cyan-gold accents create clear hierarchy and depth.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    }
+  ],
+  "verdict": "ready"
+}

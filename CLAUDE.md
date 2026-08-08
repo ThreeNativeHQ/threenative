@@ -54,6 +54,11 @@ pnpm tsx scripts/count-loc.ts           # regenerates the README LOC table
 pnpm --filter abyss-framework dev       # run the framework example
 ```
 
+The self-improvement loop resumes from `docs/verification/round-*.md`. Run
+`pnpm round:next` to compute the single next action; run `pnpm round:deletions` after a
+completed pair to report exports unreached across consecutive rounds. Move a completed PRD
+to `docs/PRDs/done/` and keep the round ledger as the evidence record.
+
 CI runs typecheck → lint → test → scaffold smoke, in that order, and each gate blocks the
 next. Run `pnpm typecheck && pnpm lint && pnpm test` before claiming a change is done.
 

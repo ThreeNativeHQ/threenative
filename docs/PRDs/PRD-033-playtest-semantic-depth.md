@@ -57,7 +57,7 @@ and one catch-all `GameState` blob.
 | `core/src/playtest.ts` reads that snapshot and forwards **only** `animation`, `state` and `tags` from it | `core/src/playtest.ts:104-142` |
 | Everything else the agent's game knows about itself reaches assertions as one blob: `{ GameState: state, state }` | `core/src/playtest.ts:212-224` |
 | Across all 20 committed scenarios, kind usage is: `diagnostics` ×19, `resources` ×14, `movement` ×9, `visibility` ×5, `tags` ×3, `world` ×1, `visual` ×1, `camera` ×1 | `grep` over `examples/**` and `templates/**/*.playtest.json` |
-| `components`, `states`, `contacts`, `animation`, `hud` are used **zero times** | same |
+| `components`, `states`, `contacts`, `animation`, `hud` are used **zero times** *within this scope* | same. **Scope matters and must travel with this claim:** widening the grep to `docs/benchmark/genres/**` finds exactly one `animation` user, `topdown-action/proof/topdown-action-pointer.playtest.json:22`. Nothing shipped to a scaffolded user reaches these kinds. |
 
 The last two rows are the finding this PRD exists for. The semantic channels PRD-009 and
 PRD-010 built are used by nothing, and the channel agents actually reach for is a
@@ -181,8 +181,18 @@ scenarios), plus `examples/abyss-framework` for the CI gate. Not a synthetic fix
 **Requirements this subject does NOT exercise:** animation clips and state machines
 (`templates/starter` and `minimal` carry those), and the `desktop`/`bevy` targets.
 **Phase that closes each gap:** Phase 1 covers the targets by marking per-target
-support explicitly; animation/state remain proven by their own PRD-009 scenarios, re-run
-unchanged as a regression control in Phase 5.
+support explicitly; animation/state **have no usable regression control and Phase 5 must
+build one rather than inherit it.**
+
+> **Corrected 2026-08-07 — the original plan here was a gate that could not fail.** It
+> said animation/state "remain proven by their own PRD-009 scenarios, re-run unchanged as
+> a regression control in Phase 5." PRD-009's subject `examples/platformer/src/entities/Fox.ts`
+> no longer exists, there is no `.glb` anywhere in the repo, and no committed scenario
+> under `examples/**` or `templates/**` asserts `animation`. Re-running "unchanged" would
+> have re-run nothing and reported green — the exact silent-pass mechanism `CLAUDE.md`'s
+> verification-honesty section names. Phase 5 therefore authors a new scenario against a
+> live subject, and its negative control must be observed red before the gate counts.
+> Found by PRD-039's caller census; see `PRD-039-animation-state-machine.md` §5.
 
 ---
 

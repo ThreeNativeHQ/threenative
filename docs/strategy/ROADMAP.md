@@ -1,7 +1,8 @@
 # Roadmap — the path from 30 to 80
 
-**Status:** proposal, rewritten 2026-08-07. Supersedes the 2026-08-02 phase plan, whose
-Phase 0 table described six PRDs when twenty-eight are now in `docs/PRDs/done/`.
+**Status:** Gate 0 closed on 2026-08-07; Phase 1 is now the active gate. Supersedes the
+2026-08-02 phase plan, whose Phase 0 table described six PRDs when twenty-eight are now in
+`docs/PRDs/done/`.
 **Charter authority:** `CHARTER.md` §3 (win condition), §5b (the ownership boundary),
 §7 (mobile), §10 (budgets), §12.
 
@@ -22,19 +23,20 @@ than argued.
 | **Does what vanilla can't** | Capabilities that are 0→1, not 15% off | package inventory, reach rate |
 | **Survives the platform** | Web, then phone | `CHARTER.md` §7 device matrix |
 
-## Where we are — 30/100
+## Where we are — 30/100 baseline plus Gate 0 evidence
 
 | Axis | Score | Evidence |
 |---|---:|---|
-| Ships working | **0** | Never measured. `round-2-2026-08-07.md` reads `unmeasured` in every arm row |
-| Looks good | **0** | Never measured. Same reason |
+| Ships working | **measured tie** | Round 2 exploration: framework 1/1, vanilla 1/1 |
+| Looks good | **framework win** | Fresh blind judge: framework 4/5, vanilla 3/5 |
 | Costs less | **8** | PRD-024: framework 726 user LOC / 7 files vs vanilla 769 / 2 files. A 5.6% win, source bytes a tie (24,065 vs 24,081), N=1 genre |
 | Does what vanilla can't | **12** | `physics` (Rapier bindings — vanilla has none) and `playtest` both ship. `playtest` is given away to the vanilla arm by §3, so it wins no comparison |
 | Survives the platform | **2** | Web only. §7 resolved the *research* question; neither device spike has run |
 
-**The two zeroes are not failures. They are unrun measurements**, and they are the two
-largest available gains. The instruments were built by PRD-019 and PRD-020 and have never
-been driven to a conclusion.
+**The two prior zeroes are now measured.** The instruments built by PRD-019 and PRD-020 now
+have a fresh exploration result: functional parity, framework visual win, and vanilla
+source-cost win. Gate 0 exits on the framework-win blind branch; the Phase 1 gate still
+requires widening the pair before further capability investment.
 
 **Why LOC cannot get us to 80:** plumbing is ~30% of a game and is already halved
 (138 → 68 on the static control). §5b permanently assigns the rest to the user, with
@@ -49,13 +51,13 @@ one item needed a new PRD.
 
 | Roadmap item | PRD | State |
 |---|---|---|
-| Run round 2 to completion | [PRD-021](../PRDs/PRD-021-the-improvement-round.md) phase 4 | open |
-| `round:deletions` — rule 2's executor | [PRD-021](../PRDs/PRD-021-the-improvement-round.md) phase 3 | open, unbuilt |
+| Run round 2 to completion | [PRD-021](../PRDs/done/PRD-021-the-improvement-round.md) phase 4 | done — `round-2-2026-08-07.md` |
+| `round:deletions` — rule 2's executor | [PRD-021](../PRDs/done/PRD-021-the-improvement-round.md) phase 3 | done — 161 candidates reported |
 | Paired arm machinery | `done/PRD-019-paired-arm.md` | shipped |
 | Capture, judge, blind bundle | `done/PRD-020-seeing-the-game.md` | shipped |
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
-| Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **new, gated on Gate 0** |
+| Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **queued, gated on Phase 1 exit** |
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
@@ -67,35 +69,39 @@ pipeline, because it is deferred behind triggers that have not fired.
 
 ## Gate 0 — measure before investing further
 
-**Gate to start:** nothing. This is the current phase, and nothing below it should begin
-until it closes.
+**Gate to start:** nothing. This phase is closed; its recorded result unlocks Phase 1.
 
 Run round 2 to completion on `exploration`: both arms, isolated contexts, sealed proofs,
-capture, judge, pair. `pnpm round:next` prints the next command at every step.
+capture, judge, pair. **Complete:** `docs/verification/round-2-2026-08-07.md` records both
+`1/1` proofs, guarded captures, the fresh blind judge, pair metrics, and the cost-gap
+disposition.
 
-Then finish [PRD-021](../PRDs/PRD-021-the-improvement-round.md) phase 3 —
-`scripts/round-deletions.ts` and `round:deletions`. Rule 2
+Then finish [PRD-021](../PRDs/done/PRD-021-the-improvement-round.md) phase 3 —
+`scripts/round-deletions.ts` and `round:deletions`. **Complete:** the command checked the
+current and previous framework archives and reported 161 persistent candidates. Rule 2
 is the charter's kill switch and it has executed **zero** times; the list of exports no
 build ever reached currently sits in a JSON blob nothing reads. That is the shape of the
 failure that killed v1 at 790k lines.
 
-**Gate to exit — one of two outcomes, decided by the number, not by preference:**
+**Gate to exit — one of two outcomes, decided by the number, not by preference: closed.**
 
 - **The framework arm passes proofs materially more often, or scores higher blind.**
+  Result: the proofs tie at `1/1`, while the framework scores higher blind (`4/5` vs `3/5`).
   The product is real. Proceed to Phase 1.
 - **Both arms tie on proofs, visuals and cost.** The framework is not a framework.
   Narrow to `@threenative/physics` and `@threenative/playtest` — two genuinely useful
   Three.js libraries — and delete the rest. This is the kill switch working, not a
   failure.
 
-**Points available: +25** (ships working, looks good), and they are available *only* by
-running the instruments. No code change earns them.
+**Evidence earned:** the two previously unmeasured axes now have a real result. No code
+change earns Gate 0 credit; the round instruments do.
 
 ---
 
 ## Phase 1 — win the two unmeasured axes
 
-**Gate to start:** Gate 0 exits on the first outcome.
+**Gate to start:** Gate 0 exits on the first outcome. **Open now:** widen the pair beyond the
+single exploration genre before starting Phase 2.
 
 1. **Close every gap the round-2 ledger names.** Each gap row gets exactly one
    disposition; a `framework change` disposition names a live caller and a PRD.
@@ -104,8 +110,8 @@ running the instruments. No code change earns them.
    `camera`, `sky`, `lighting`, `materials`, `postprocessing`), and `pnpm visuals`
    scaffolds each one, captures a headed WebGPU frame under `xvfb-run`, and rejects blank
    frames through the capture guard. See `docs/product/VISUAL-BASELINE.md`.
-   **What has never happened is the blind pair against vanilla.** The remaining work on
-   this axis is a scoring session, not a template rewrite — no PRD, and no new code.
+   **The exploration blind pair is now recorded.** The remaining work on this axis is to
+   widen the scoring session, not rewrite templates — no PRD, and no new code.
 3. **Widen the pair beyond N=1.** `platformer` and `topdown-action` have pair machinery
    and archives; `endless-runner` has a sealed proof set and no pair.
 
