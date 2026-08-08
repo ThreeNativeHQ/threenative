@@ -1,8 +1,8 @@
 # PRD-038 — Runtime GPU transport and acceleration
 
-**Status:** implementation delivered; the browser consumer gate is pending on a supported
-WebGPU runner. This PRD remains open until that gate passes, and is not moved to `done/`
-or merged yet.
+**Status:** implementation delivered; the exact `starter-pick` consumer gate passes on an
+isolated Brave/WebGPU runner. The PRD remains open until the scaffold's full test/removal
+gates and remaining release evidence pass; it is not moved to `done/` yet.
 
 **Verdict up front: two of three candidates are killed, and the one that survives does not
 go in `@threenative/core`.**
@@ -332,7 +332,7 @@ one fails, the phase stops and this PRD is revised rather than worked around.
 - [x] Install `three-mesh-bvh@0.9.14` in the starter template. Confirm the exports are
       named `acceleratedRaycast`, `computeBoundsTree`, `disposeBoundsTree`. **If the names
       differ, correct §2 and §6 in this document before continuing.**
-- [ ] Confirm it works against `three@0.185.1` (peer range claims `>= 0.159.0`) and against
+- [x] Confirm it works against `three@0.185.1` (peer range claims `>= 0.159.0`) and against
       a mesh rendered by the **WebGPU** renderer. Raycasting is CPU-side and should be
       renderer-independent; confirm rather than assume.
 - [x] Measure the tree-shaken production bundle delta from `vite build` with and without
@@ -350,11 +350,11 @@ confirmed the same exports, and imported it against `three@0.185.1`; the shipped
 declares `three-mesh-bvh: 0.9.14`.
 
 A CPU raycast against the 100,000-triangle sculpture returned hits with the same Three.js
-geometry used by the WebGPU template; the raycast path is renderer-independent. The
-browser-side WebGPU confirmation remains open. The standard Playwright Chromium run traps
-before page startup in this environment; an isolated Brave 150.1.92.143 run under Xvfb
-reached the scaffold but reported that WebGPU was unavailable and fell back to WebGL2, so
-it is not a valid WebGPU consumer result.
+geometry used by the WebGPU template; the raycast path is renderer-independent. The exact
+scaffolded consumer now also runs on Brave 150.1.92.143 with `navigator.gpu`, a non-null
+adapter, and a `webgpu` canvas context. The adapter reports the SwiftShader software
+backend, so this is WebGPU compatibility evidence, not a hardware-performance claim.
+The standard Playwright Chromium run still traps before page startup in this environment.
 
 The no-BVH warm-up baseline was 6.88 ms worst-case (12 samples, 100,000 triangles); the
 BVH build took 47.27 ms lazily, and subsequent BVH raycasts stayed below 0.10 ms after
@@ -520,9 +520,9 @@ The direct CPU control against the same 100,000-triangle geometry and exact `0.9
 artifact returned 59/60 picks under the 1 ms budget with BVH and 0/60 with that call
 removed; both variants returned all 60 hits.
 
-The scaffold consumer gate remains open. The standard Playwright Chromium run traps during
-launch with `SIGTRAP`/`EPERM`. A fresh-profile Brave 150.1.92.143 run under Xvfb reached the
-changed scaffold's bridge and observed `GameState` moving from
+The earlier fresh-profile Brave run under Xvfb reached the changed scaffold's bridge and
+recorded the following historical WebGL result. The standard Playwright Chromium run traps
+during launch with `SIGTRAP`/`EPERM`. That run observed `GameState` moving from
 `fastPicks: 0, hovered: ""` to `fastPicks: 20, hovered: "sculpture"`, then to
 `hovered: ""` after moving off; bridge diagnostics stayed empty. That run also logged
 `THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend` and other
@@ -541,6 +541,16 @@ display, but `navigator.gpu` remained absent under default, explicit Vulkan, and
 SwiftShader flags. That confirms a browser with a working page transport is still not a
 WebGPU-capable consumer runner in this environment.
 
+The supported consumer gate was then rerun on real X11 with a fresh Brave profile and the
+exact checked-in `playtests/pick.playtest.json`. The app's WebGPU canvas rendered the
+starter scene and its HUD showed `HOVER sculpture`. The runner observed `hovered: ""` at
+the `idle` checkpoint, `hovered: "sculpture"` at `settle`, `fastPicks: 310` against the
+`gte: 50` threshold, zero console errors, zero network errors, and zero runtime
+diagnostics; the process exited 0. Removing only the `computeBoundsTree()` line kept the
+hover assertion green but produced `fastPicks: 0`, exit 1, and
+`TN_PLAYTEST_RESOURCE_ASSERTION_FAILED`. The exact screenshot is non-blank and includes
+the sculpture, particles, lighting, and HUD.
+
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
 HEAD for environmental reasons. **Baseline first:** run the existing 9 scenarios before
@@ -552,6 +562,11 @@ whether or not the GPU produced pixels.
 
 **Revert check:** remove the scenario from the `test` script → the scaffolded project's
 `pnpm test` scenario count drops from 10 to 9.
+
+The fresh scaffold typecheck and Vite build pass after a pre-existing template defect was
+repaired: `lighting.ts` referenced an undeclared `palette.shadow`; both shadow-light uses
+now use the existing `palette.skyLow` role. This repair is unrelated to the acceleration
+path but is required for a scaffolded consumer to typecheck.
 
 ---
 
