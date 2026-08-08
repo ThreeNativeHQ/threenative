@@ -206,7 +206,16 @@ export function recordToScenario(
   const assert = requireAssertions({
     diagnostics: { noConsoleErrors: true, runtimeReady: true },
     ...behavior,
-    world: { seed: recording.seed },
+    world: {
+      runtime: {
+        agent: recording.runtime.agent,
+        core: recording.runtime.core,
+        randomState: recording.randomState,
+        rapier: recording.runtime.rapier,
+        step: recording.runtime.step,
+      },
+      seed: recording.seed,
+    },
   }, scenarioPath);
   if (steps.length === 0) throw invalidScenario(scenarioPath, "recording produced no steps.");
   return {

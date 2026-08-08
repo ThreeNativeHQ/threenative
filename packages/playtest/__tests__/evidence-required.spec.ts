@@ -170,6 +170,34 @@ test("movement.reachesPositionWithin considers the final observed position", asy
   expect(evaluated.assertions.find(({ id }) => id === "movement.reachesPosition")?.pass).toBe(true);
 });
 
+test("world runtime fingerprints pass only when the complete metadata matches", async () => {
+  const runtime = { agent: "browser", core: "0.1.0", randomState: 90210, rapier: null, step: 1 / 60 };
+  const evaluated = await evaluate(
+    { world: { runtime, seed: 90210 } },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: { gameplay: { states: {}, animation: {}, world: { runtime, seed: 90210 } } },
+      } as IPlaytestObservations,
+    },
+  );
+  expect(evaluated.assertions.find(({ id }) => id === "world.seed")).toEqual(expect.objectContaining({ pass: true }));
+
+  const mismatched = await evaluate(
+    { world: { runtime, seed: 90210 } },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: {
+          gameplay: { states: {}, animation: {}, world: { runtime: { ...runtime, randomState: 90211 }, seed: 90210 } },
+        },
+      } as IPlaytestObservations,
+    },
+  );
+  expect(mismatched.assertions.find(({ id }) => id === "world.seed")).toEqual(expect.objectContaining({ pass: false }));
+  expect(mismatched.diagnostics[0]?.observedRuntimePath).toContain("world/runtime");
+});
+
 test("an animation assertion requires matching evidence rather than defaulting to satisfied", async () => {
   // `minCount` was 0 unless `entered` or `advancedFrames` was set, so a bare
   // { entity, clip } assertion evaluated `0 >= 0` and passed with no effect log.

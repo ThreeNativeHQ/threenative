@@ -33,8 +33,13 @@
     { "keys": ["ArrowRight"], "tick": 1682 },
     { "keys": ["ArrowDown"], "tick": 1742 }
   ],
-  "randomState": 0,
-  "runtime": { "agent": "browser", "core": "0.1.0", "rapier": null, "step": 0.016666666666666666 },
+  "randomState": 90210,
+  "runtime": {
+    "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    "core": "0.1.0",
+    "rapier": null,
+    "step": 0.016666666666666666
+  },
   "seed": 90210,
   "ticks": 1800,
   "version": 1

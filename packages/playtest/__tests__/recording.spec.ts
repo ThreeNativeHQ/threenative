@@ -37,6 +37,10 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
     pathLength: 0.05,
     reachesPositionWithin: { maxDistance: 0.001, position: [0, 0, 0] },
   });
+  expect(scenario.assert?.world).toEqual({
+    runtime: { agent: "node", core: "0.1.0", randomState: 123, rapier: null, step: 1 / 60 },
+    seed: 90210,
+  });
 });
 
 test("should preserve simultaneous keys as a held-key-set step", () => {

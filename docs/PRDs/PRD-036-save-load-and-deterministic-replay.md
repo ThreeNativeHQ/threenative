@@ -199,13 +199,16 @@ Five pieces, all small, none of them a format for anything the user did not decl
   scene transition. Playback mode is driven externally through the `runtime.fixedStep()` that
   already exists.
 - **The `Recording`** — a closed, six-key JSON object: `version`, `runtime`, `seed`,
-  `step`, `ticks`, `input`. Nothing else may ever be added to it. It describes **what the
-  player did**, never **what the world contains**. Unknown keys are rejected at load.
+  `randomState`, `ticks`, `input`. The fixed-step `step` lives inside `runtime`; it is not
+  a top-level key. Nothing else may ever be added to the recording. It describes **what
+  the player did**, never **what the world contains**. Unknown keys are rejected at load.
 - **`playtest record-to-scenario`** — a CLI subcommand converting a recording plus a
   separately captured final-position oracle into a scenario file. Reads both JSON files,
   validates fail-closed with playtest's own validators, and emits `steps[]` in the
   `press`/`holdTicks`/`release` vocabulary that already exists. A missing oracle is an error:
-  input-only duration thresholds are not regression proof. **No `@threenative/core`
+  input-only duration thresholds are not regression proof. The generated scenario also
+  carries the recording's runtime fingerprint into an executed `assert.world.runtime`
+  assertion. **No `@threenative/core`
   dependency** — `packages/playtest/AGENTS.md` forbids it, and JSON on disk is the whole
   interface.
 
@@ -543,10 +546,11 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,037 tests passed.
+      on 2026-08-08; 142 files / 1,052 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
-- [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Brave/WebGPU
-      runner; the checked-in 1,800-tick scenario reported movement and zero runtime errors.
+- [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Chromium/WebGPU
+      runner in 22.3 seconds; the checked-in 1,800-tick scenario reported movement, a
+      matching runtime fingerprint, and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean
 - [x] `pnpm budgets`: still **7 workspace packages**, with 4,196 framework LOC against the

@@ -14,6 +14,13 @@
       }
     },
     "world": {
+      "runtime": {
+        "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+        "core": "0.1.0",
+        "randomState": 90210,
+        "rapier": null,
+        "step": 0.016666666666666666
+      },
       "seed": 90210
     }
   },

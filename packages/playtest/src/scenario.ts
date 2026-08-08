@@ -227,7 +227,16 @@ export interface IPlaytestReachabilityAssertion {
   envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
 }
 
+export interface IPlaytestWorldRuntimeAssertion {
+  agent: string;
+  core: string;
+  randomState: number;
+  rapier: string | null;
+  step: number;
+}
+
 export interface IPlaytestWorldAssertion {
+  runtime?: IPlaytestWorldRuntimeAssertion;
   seed: number | null;
 }
 
@@ -933,10 +942,34 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
 }
 
 function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestWorldAssertion {
+  rejectUnknownKeys(value, ["runtime", "seed"], scenarioPath, "assert.world");
   if (!hasKey(value, "seed") || (value.seed !== null && (typeof value.seed !== "number" || !Number.isFinite(value.seed)))) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.world.seed' must be a finite number or null.");
   }
-  return { seed: value.seed as number | null };
+  const runtimeValue = value.runtime;
+  if (runtimeValue === undefined) return { seed: value.seed as number | null };
+  const runtime = requireRecord(runtimeValue, scenarioPath, "assert.world.runtime");
+  rejectUnknownKeys(runtime, ["agent", "core", "randomState", "rapier", "step"], scenarioPath, "assert.world.runtime");
+  const randomState = optionalNumber(runtime, "randomState", scenarioPath, "assert.world.runtime");
+  if (randomState === undefined || !Number.isInteger(randomState)) {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.randomState' must be an integer.");
+  }
+  const rapier = runtime.rapier;
+  if (rapier !== null && typeof rapier !== "string") {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.rapier' must be a string or null.");
+  }
+  return {
+    runtime: {
+      agent: requireString(runtime, "agent", scenarioPath, "assert.world.runtime"),
+      core: requireString(runtime, "core", scenarioPath, "assert.world.runtime"),
+      randomState,
+      rapier: rapier as string | null,
+      step: optionalPositiveNumber(runtime, "step", scenarioPath, "assert.world.runtime") ?? (() => {
+        throw invalidScenario(scenarioPath, "'assert.world.runtime.step' must be a positive number.");
+      })(),
+    },
+    seed: value.seed as number | null,
+  };
 }
 
 function validateReachabilityAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestReachabilityAssertion {
@@ -1585,5 +1618,13 @@ function validateNestedAssertionKeys(
         });
       }
     }
+  }
+  if (kind === "world" && isRecord(value.runtime)) {
+    rejectUnknownKeys(
+      value.runtime,
+      ["agent", "core", "randomState", "rapier", "step"],
+      scenarioPath,
+      `assert.${kind}${suffix}.runtime`,
+    );
   }
 }
