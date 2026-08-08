@@ -1,8 +1,9 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** proposal. **GATED ON GATE 0 of `docs/strategy/ROADMAP.md`** — Gate 0 is unrun,
-two of five axes have never been measured, and `OPPORTUNITY-AREAS.md` binds every Tier 1
-area to it. Nothing in this document starts until round 2 completes on both arms.
+**Status:** implementation delivered in a partial lane; the browser consumer gate is
+pending on a supported runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
+closed, but this PRD remains open until its consumer proof passes and is not moved to
+`done/` or merged yet.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after
