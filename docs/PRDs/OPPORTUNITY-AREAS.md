@@ -64,7 +64,7 @@ Building from this list before Gate 0 closes is how v1 got to 790k lines.
 | 4 | Hot reload with state preservation | **80** | 28 | 24 | 12 | 16 |
 | 5 | Save/load & deterministic replay | **80** | 30 | 18 | 18 | 14 |
 
-### 1. Asset discovery & licensing — 94 · WIP (`PRD-032`)
+### 1. Asset discovery & licensing — 94 · VOID pending publishable profile (`PRD-032`)
 
 Three.js ships a `GLTFLoader` and nothing that tells you *where a legally usable model
 lives*. This is the single largest 0→1 on the board and the only Tier 1 item that costs

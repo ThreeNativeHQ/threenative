@@ -2,7 +2,7 @@
 
 **Status:** Gate 0 closed on 2026-08-07; Phase 1 passed on 2026-08-08; Phase 2 is now
 active. Supersedes the 2026-08-02 phase plan, whose Phase 0 table described six PRDs when
-twenty-eight are now in `docs/PRDs/done/`.
+thirty-one are now in `docs/PRDs/done/`.
 **Charter authority:** `CHARTER.md` §3 (win condition), §5b (the ownership boundary),
 §7 (mobile), §10 (budgets), §12.
 
@@ -153,8 +153,9 @@ to verify its own game in a browser.
   the LOC table. Measure reach rate on a physics-heavy genre and let the number say
   whether it is carrying the framework.
 
-**Gate to exit:** an agent scaffolds a game, finds and licenses a real asset without
-leaving the project, and the paired vanilla arm cannot match it inside the same brief.
+**Gate to exit:** one of the remaining Phase 2 capabilities — hot reload/state preservation
+or physics reach — ships with consumer-scoped proof that the paired vanilla arm cannot match
+inside the same brief. The voided asset-discovery PRD is not part of this gate.
 
 **Points: +15** → ~75/100.
 

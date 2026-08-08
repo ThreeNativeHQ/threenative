@@ -245,11 +245,10 @@ So the two dispositions come apart, and must be recorded separately:
 | Build `AnimationNodeStateMachine` / blend trees? | **WONTBUILD, unchanged** | §3's per-feature table stands on its own: 6 of 7 features are 1–2 lines of vanilla `three`, and interruption is already implemented and tested at `animation.ts:46-48` / `animation.spec.ts:37-51`. No rigged asset would change a line count. |
 | Delete `AnimationPlayer` under rule 2? | **NO — stay it** | The evidence for deletion is reach rate, and reach rate is unmeasurable until 0.3 supplies the input. Deleting now and rewriting in a month is the kill switch misfiring, not working. |
 
-**Where the asset arrives from:** `PRD-032-asset-discovery-mcp.md` is the mechanism —
-its Phase 2 exit is an agent finding and licensing a real asset without leaving the
-project. The first rigged character it returns *is* measurement 0.3. This PRD therefore
-depends on PRD-032 reaching Phase 2, and that dependency should be read as a schedule, not
-a hope.
+**Where the asset could arrive from:** PRD-032 prepared an upstream profile but is void
+until a publishable version exists. Its Phase 2 scaffold integration never ran, so this
+PRD's measurement 0.3 remains blocked on a future asset-tool release rather than being
+claimed as delivered.
 
 **The trap this section exists to prevent:** if 0.2 executes before 0.3, the round after
 it will report `AnimationPlayer` as absent rather than unreached, and the deletion becomes
