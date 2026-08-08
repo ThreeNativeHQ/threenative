@@ -536,6 +536,10 @@ scaffold: Playwright Chromium still reported repeated `FD ownership violation` f
 `GPU process isn't usable`, and exited with `SIGTRAP` even with crashpad-disabled,
 `--in-process-gpu`, and SwiftShader flags. The in-process and SwiftShader variants did
 launch, but exposed no `navigator.gpu`; they cannot stand in for the required WebGPU run.
+An isolated Brave 150.1.92.143 process connected over localhost CDP on the real X11
+display, but `navigator.gpu` remained absent under default, explicit Vulkan, and
+SwiftShader flags. That confirms a browser with a working page transport is still not a
+WebGPU-capable consumer runner in this environment.
 
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
