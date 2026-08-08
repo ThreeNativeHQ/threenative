@@ -63,7 +63,8 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
     if (!Array.isArray(sample.keys) || !sample.keys.every((key) => typeof key === "string"))
       throw invalidScenario(scenarioPath, "recording input.keys must contain strings.");
     const keys = [...sample.keys];
-    if (keys.length > 1) throw invalidScenario(scenarioPath, "recording input cannot emit simultaneous keys.");
+    if (new Set(keys).size !== keys.length)
+      throw invalidScenario(scenarioPath, "recording input.keys must not repeat.");
     const pointer = sample.pointer;
     if (
       pointer !== undefined &&
@@ -72,28 +73,36 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
         !pointer.every((item) => typeof item === "number" && Number.isFinite(item)))
     )
       throw invalidScenario(scenarioPath, "recording input.pointer must be a finite three-number tuple.");
-    if (pointer !== undefined && pointer[2] !== 0)
-      throw invalidScenario(scenarioPath, "recording pointer buttons cannot be emitted as playtest steps.");
+    if (pointer !== undefined && (pointer[2] < 0 || !Number.isInteger(pointer[2])))
+      throw invalidScenario(scenarioPath, "recording input.pointer buttons must be a non-negative integer.");
     previousTick = tick;
     return { keys, ...(pointer === undefined ? {} : { pointer: pointer as [number, number, number] }), tick };
   });
   return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
 }
 
-function sampleSteps(sample: RecordingSample, ticks: number, scenarioPath: string): IPlaytestStep {
+function sampleSteps(
+  sample: RecordingSample,
+  ticks: number,
+  release: boolean,
+  scenarioPath: string,
+): IPlaytestStep {
   if (ticks < 1) throw invalidScenario(scenarioPath, "recording produced a non-positive step duration.");
-  const key = sample.keys[0];
   const pointerPosition = sample.pointer === undefined
     ? undefined
     : {
+        buttons: sample.pointer[2],
         x: sample.pointer[0] / SCENARIO_VIEWPORT.width,
         y: sample.pointer[1] / SCENARIO_VIEWPORT.height,
       };
   if (pointerPosition !== undefined && (pointerPosition.x < 0 || pointerPosition.x > 1 || pointerPosition.y < 0 || pointerPosition.y > 1))
     throw invalidScenario(scenarioPath, "recording pointer position must fit the playtest viewport.");
-  return key === undefined
-    ? { ...(pointerPosition === undefined ? {} : { pointerPosition }), release: true, waitTicks: ticks }
-    : { ...(pointerPosition === undefined ? {} : { pointerPosition }), holdTicks: ticks, press: key, release: true };
+  return {
+    ...(pointerPosition === undefined ? {} : { pointerPosition }),
+    holdTicks: ticks,
+    press: sample.keys,
+    release,
+  };
 }
 
 function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestStep[] {
@@ -103,16 +112,27 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
   if (first.tick > 0) steps.push({ release: true, waitTicks: first.tick });
   for (const [index, sample] of recording.input.entries()) {
     const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
-    steps.push(sampleSteps(sample, nextTick - sample.tick, scenarioPath));
+    steps.push(sampleSteps(sample, nextTick - sample.tick, index === recording.input.length - 1, scenarioPath));
   }
   return steps;
 }
 
 function behaviorAssertions(recording: RecordingValue, scenarioPath: string) {
-  if (!recording.input.some((sample) => sample.keys.length > 0)) {
+  const activeTicks = recording.input.reduce((total, sample, index) => {
+    const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
+    return total + (sample.keys.length > 0 || sample.pointer !== undefined ? nextTick - sample.tick : 0);
+  }, 0);
+  if (activeTicks === 0) {
     throw invalidScenario(scenarioPath, "recording produced no meaningful behavior assertions.");
   }
-  return { movement: { entity: "player", minDistance: 0.1 } };
+  const minimumTraversal = activeTicks * recording.runtime.step;
+  return {
+    movement: {
+      entity: "player",
+      minDistance: minimumTraversal,
+      pathLength: minimumTraversal,
+    },
+  };
 }
 
 export function requireAssertions(

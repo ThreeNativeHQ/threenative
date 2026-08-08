@@ -6,7 +6,7 @@ type ReplayPlugin = { readonly recording: Recording | undefined };
 
 type ReplayProofStep = {
   readonly holdTicks?: number;
-  readonly press?: string;
+  readonly press?: string | readonly string[];
   readonly release?: boolean;
   readonly waitTicks?: number;
 };
@@ -66,8 +66,12 @@ export function installReplayProof(
         if (recording === undefined) throw new Error("No replay recording is available yet.");
         const runtime = getRuntime();
         if (runtime === undefined) throw new Error("The game runtime is not ready.");
+        const pointerTarget = game.ctx?.renderer.domElement;
+        if (pointerTarget === undefined) throw new Error("The game renderer is not ready.");
+        const driver = createReplayDriver(recording, window, pointerTarget);
+        driver.prepare(runtime);
         await game.goto("play");
-        return createReplayDriver(recording, window)(runtime);
+        return driver(runtime);
       },
       recordAndReplay: async (steps: readonly ReplayProofStep[]) => {
         game.stop();
@@ -77,7 +81,9 @@ export function installReplayProof(
         const held = new Set<string>();
         const recordTrace: ReplayTrace = [];
         for (const step of steps) {
-          if (step.press !== undefined) dispatchKeys(window, held, [step.press]);
+          if (step.press !== undefined) {
+            dispatchKeys(window, held, Array.isArray(step.press) ? step.press : [step.press]);
+          }
           for (let tick = 0; tick < proofStepTicks(step); tick += 1) {
             runtime.fixedStep(1);
             recordTrace.push(playerSnapshot(game));
@@ -87,9 +93,12 @@ export function installReplayProof(
         const recording = replayPlugin.recording;
         if (recording === undefined) throw new Error("Replay proof did not produce a recording.");
 
+        const pointerTarget = game.ctx?.renderer.domElement;
+        if (pointerTarget === undefined) throw new Error("The game renderer is not ready.");
+        const driver = createReplayDriver(recording, window, pointerTarget);
+        driver.prepare(runtime);
         await game.goto("play");
         const replayTrace: ReplayTrace = [];
-        const driver = createReplayDriver(recording, window);
         driver({
           ...runtime,
           fixedStep: (ticks) => {

@@ -429,9 +429,11 @@ or pointer changed. No entity appears anywhere in it. Ever.
 **Implementation:**
 - [x] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
       `ctx.random.state`; `update` samples `ctx.input.raw` and appends on change.
-- [x] `createReplayDriver(recording, target)` validates the runtime fingerprint (throws
-      `TN_REPLAY_RUNTIME_MISMATCH`), then per tick dispatches the synthetic events for that
-      tick **before** `runtime.fixedStep(1)` (§2.2).
+- [x] `createReplayDriver(recording, target, pointerTarget?)` validates the runtime fingerprint
+      (throws `TN_REPLAY_RUNTIME_MISMATCH`), and its `prepare(runtime)` method restores the
+      captured RNG state before a caller rebuilds a scene. Playback then dispatches synthetic
+      events for each tick **before** `runtime.fixedStep(1)` (§2.2), through the same keyboard
+      and pointer `InputMap` targets as live input.
 - [x] **Fail closed at load:** unknown key → throw; `version !== 1` → throw; `input` empty →
       throw `TN_REPLAY_EMPTY`; `ticks < 1` → throw. A recording that asserts nothing must not
       be replayable — that is the v1 harness lesson, and it is the single most important line
@@ -481,8 +483,11 @@ that found six indistinguishable presets when all six metrics passed.
       `rejectUnknownKeys` (`scenario.ts`).
 - [x] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
       `waitTicks`. **Ticks, never milliseconds.**
-- [x] Emit at least one assertion, derived from the recording's final observed state. **A
-      scenario with zero assertions is a hard error** — the exact v1 failure this package
+- [x] Emit at least one behavior assertion derived from the recording's active input duration:
+      `minDistance` and `pathLength` use the captured fixed-step duration rather than a
+      hard-coded threshold. The closed six-key recording intentionally contains no entity
+      observation, so an exact final-state oracle remains a consumer/manual checkpoint; a
+      scenario with zero assertions is still a hard error — the exact v1 failure this package
       exists to prevent.
 
 **Tests Required:**

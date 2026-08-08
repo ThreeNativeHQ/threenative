@@ -6,7 +6,8 @@
     },
     "movement": {
       "entity": "player",
-      "minDistance": 0.1
+      "minDistance": 29.983333333333336,
+      "pathLength": 29.983333333333336
     },
     "world": {
       "seed": 90210

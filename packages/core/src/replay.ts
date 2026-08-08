@@ -8,12 +8,7 @@ export interface Recording {
     readonly tick: number;
   }[];
   readonly randomState: number;
-  readonly runtime: {
-    readonly agent: string;
-    readonly core: string;
-    readonly rapier: string | null;
-    readonly step: number;
-  };
+  readonly runtime: { agent: string; core: string; rapier: string | null; step: number };
   readonly seed: number;
   readonly ticks: number;
   readonly version: 1;
@@ -29,6 +24,16 @@ function object(value: unknown, name: string): Record<string, unknown> {
 function rejectKeys(value: Record<string, unknown>, allowed: readonly string[]): void {
   const unknown = Object.keys(value).find((key) => !allowed.includes(key));
   if (unknown !== undefined) fail("TN_REPLAY_INVALID", `unknown key '${unknown}'`);
+}
+function validatePointer(value: unknown, name: string): void {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 3 ||
+    value.some((item) => !Number.isFinite(item)) ||
+    !Number.isInteger(value[2]) ||
+    value[2] < 0
+  )
+    fail("TN_REPLAY_INVALID", `${name} must be [finite x, finite y, non-negative integer buttons]`);
 }
 function validate(value: unknown): Recording {
   const root = object(value, "recording");
@@ -72,6 +77,7 @@ function validate(value: unknown): Recording {
       fail("TN_REPLAY_INVALID", "input.keys must contain strings");
     if (new Set(sample.keys).size !== sample.keys.length)
       fail("TN_REPLAY_INVALID", "input.keys must not repeat");
+    if (sample.pointer !== undefined) validatePointer(sample.pointer, "input.pointer");
     previousTick = sample.tick;
   }
   return root as unknown as Recording;
@@ -83,12 +89,7 @@ function pointerEvent(
   type: "pointerdown" | "pointermove" | "pointerup",
   [clientX, clientY, buttons]: readonly [number, number, number],
 ): Event {
-  return Object.assign(new Event(type), {
-    buttons,
-    clientX,
-    clientY,
-    pointerId: 0,
-  });
+  return Object.assign(new Event(type), { buttons, clientX, clientY, pointerId: 0 });
 }
 function dispatchKeys(target: EventTarget, current: Set<string>, keys: readonly string[]): void {
   for (const key of current) if (!keys.includes(key)) target.dispatchEvent(keyEvent("keyup", key));
@@ -97,7 +98,6 @@ function dispatchKeys(target: EventTarget, current: Set<string>, keys: readonly 
   for (const key of keys) current.add(key);
 }
 type ReplayPublic = { readonly recording: Recording | undefined; readonly runId: symbol };
-type ReplayDriver = ((runtime: GamePluginRuntime) => number) & { readonly runId: symbol };
 export function replay<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -126,42 +126,27 @@ export function replay<
     setup: (ctx, runtime) => {
       if (runtime?.seed === null || runtime?.seed === undefined)
         fail("TN_REPLAY_UNSEEDED", "replay requires a seed");
+      const { rapier, seed, step } = runtime;
       recordRuntime = runtime;
       header = {
         randomState: ctx.random.state,
-        runtime: {
-          agent: currentAgent,
-          core: CORE_VERSION,
-          rapier: runtime.rapier ?? null,
-          step: runtime.step,
-        },
-        seed: runtime.seed,
+        runtime: { agent: currentAgent, core: CORE_VERSION, rapier: rapier ?? null, step },
+        seed,
         version: 1,
       };
-      samples.length = 0;
-      ticks = 0;
+      samples.length = ticks = 0;
       previousKeys = [];
       previousPointer = [0, 0, 0];
       return undefined;
     },
     update: (ctx) => {
       const keys = [...ctx.input.raw.keys].sort();
-      const pointer: [number, number, number] = [
-        ctx.input.raw.pointer.position.x,
-        ctx.input.raw.pointer.position.y,
-        ctx.input.raw.pointer.buttons,
-      ];
+      const { position, buttons } = ctx.input.raw.pointer;
+      const pointer = [...position.toArray(), buttons] as [number, number, number];
       const pointerChanged = pointer.join() !== previousPointer.join();
-      const changed =
-        pointerChanged ||
-        keys.length !== previousKeys.length ||
-        keys.some((key, index) => key !== previousKeys[index]);
+      const changed = pointerChanged || keys.join() !== previousKeys.join();
       if (changed) {
-        samples.push({
-          keys,
-          ...(pointerChanged ? { pointer } : {}),
-          tick: ticks,
-        });
+        samples.push({ keys, ...(pointerChanged ? { pointer } : {}), tick: ticks });
         previousKeys = keys;
         previousPointer = pointer;
       }
@@ -169,25 +154,48 @@ export function replay<
     },
   };
 }
-export function createReplayDriver(recording: Recording, target: EventTarget): ReplayDriver {
+function validateRuntime(
+  runtime: GamePluginRuntime,
+  recording: Recording,
+): NonNullable<GamePluginRuntime["random"]> {
+  const random = runtime.random;
+  if (
+    runtime.seed !== recording.seed ||
+    runtime.step !== recording.runtime.step ||
+    (runtime.rapier ?? null) !== (recording.runtime.rapier ?? null) ||
+    recording.runtime.core !== CORE_VERSION ||
+    recording.runtime.agent !== currentAgent ||
+    random === undefined
+  )
+    fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
+  return random;
+}
+function restoreRandomState(
+  random: NonNullable<GamePluginRuntime["random"]>,
+  state: number,
+): NonNullable<GamePluginRuntime["random"]> {
+  try {
+    random.state = state;
+  } catch {
+    fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
+  }
+  if (random.state !== state)
+    fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
+  return random;
+}
+export function createReplayDriver(
+  recording: Recording,
+  target: EventTarget,
+  pointerTarget = target,
+) {
   const value = validate(recording);
   const samples = new Map(value.input.map((sample) => [sample.tick, sample]));
+  let preparedRandom: Pick<NonNullable<GamePluginRuntime["random"]>, "state"> | undefined;
   const driver = Object.assign(
     (runtime: GamePluginRuntime) => {
-      if (runtime.seed !== value.seed || runtime.step !== value.runtime.step)
-        fail("TN_REPLAY_RUNTIME_MISMATCH", "recording seed or fixed step does not match");
-      if ((runtime.rapier ?? null) !== (value.runtime.rapier ?? null))
-        fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
-      if (runtime.random === undefined)
-        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state handle is unavailable");
-      try {
-        runtime.random.state = value.randomState;
-      } catch {
-        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
-      }
-      if (runtime.random.state !== value.randomState)
-        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
-
+      const random = validateRuntime(runtime, value);
+      if (preparedRandom !== random) restoreRandomState(random, value.randomState);
+      preparedRandom = undefined;
       const keys = new Set<string>();
       let pointer: [number, number, number] = [0, 0, 0];
       for (let tick = 0; tick < value.ticks; tick += 1) {
@@ -203,7 +211,7 @@ export function createReplayDriver(recording: Recording, target: EventTarget): R
                 : !wasDown && nextDown
                   ? "pointerdown"
                   : "pointermove";
-            target.dispatchEvent(pointerEvent(type, sample.pointer));
+            pointerTarget.dispatchEvent(pointerEvent(type, sample.pointer));
             pointer = [...sample.pointer];
           }
         }
@@ -211,9 +219,12 @@ export function createReplayDriver(recording: Recording, target: EventTarget): R
       }
       return value.ticks;
     },
-    { runId: Symbol("replay-driver") },
-  ) as ReplayDriver;
-  if (value.runtime.core !== CORE_VERSION || value.runtime.agent !== currentAgent)
-    fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
+    {
+      prepare: (runtime: GamePluginRuntime) => {
+        preparedRandom = restoreRandomState(validateRuntime(runtime, value), value.randomState);
+      },
+      runId: Symbol("replay-driver"),
+    },
+  );
   return driver;
 }

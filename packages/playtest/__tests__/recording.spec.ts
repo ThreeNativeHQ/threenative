@@ -20,12 +20,44 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
   const scenario = recordToScenario(recording());
 
   expect(scenario.steps).toEqual([
-    { holdTicks: 3, press: "KeyW", release: true },
-    { release: true, waitTicks: 2 },
+    { holdTicks: 3, press: ["KeyW"], release: false },
+    { holdTicks: 2, press: [], release: true },
   ]);
   expect(scenario.steps.reduce((total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0), 0)).toBe(5);
   expect(Object.keys(scenario.assert ?? {}).length).toBeGreaterThan(0);
-  expect(scenario.assert?.movement).toEqual({ entity: "player", minDistance: 0.1 });
+  expect(scenario.assert?.movement).toEqual({ entity: "player", minDistance: 0.05, pathLength: 0.05 });
+});
+
+test("should preserve simultaneous keys as a held-key-set step", () => {
+  const scenario = recordToScenario({
+    ...recording(),
+    input: [
+      { keys: ["KeyW", "KeyD"], tick: 0 },
+      { keys: [], tick: 2 },
+    ],
+    ticks: 3,
+  });
+
+  expect(scenario.steps).toEqual([
+    { holdTicks: 2, press: ["KeyW", "KeyD"], release: false },
+    { holdTicks: 1, press: [], release: true },
+  ]);
+});
+
+test("should preserve pointer position and button transitions", () => {
+  const scenario = recordToScenario({
+    ...recording(),
+    input: [
+      { keys: [], pointer: [640, 360, 1], tick: 0 },
+      { keys: [], pointer: [640, 360, 0], tick: 2 },
+    ],
+    ticks: 3,
+  });
+
+  expect(scenario.steps).toEqual([
+    { holdTicks: 2, pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, press: [], release: false },
+    { holdTicks: 1, pointerPosition: { buttons: 0, x: 0.5, y: 0.5 }, press: [], release: true },
+  ]);
 });
 
 test("should throw when the recording contains an unknown key", () => {

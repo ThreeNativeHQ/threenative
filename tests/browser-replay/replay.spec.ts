@@ -13,7 +13,7 @@ const nestedBrowserMode =
 
 interface ReplayProofStep {
   holdTicks?: number;
-  press?: string;
+  press?: string | string[];
   release?: boolean;
   waitTicks?: number;
 }
