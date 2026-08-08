@@ -8,38 +8,17 @@
   "steps": [
     {
       "kind": "input",
-      "label": "leave-ledge-1",
+      "label": "leave-ledge",
       "press": "ArrowLeft",
-      "holdTicks": 40,
+      "holdTicks": 91,
       "release": true
     },
     {
       "kind": "input",
-      "label": "leave-ledge-2",
+      "label": "off-ledge",
       "press": "ArrowLeft",
-      "holdTicks": 40,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "leave-ledge-3",
-      "press": "ArrowLeft",
-      "holdTicks": 40,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "leave-ledge-4",
-      "press": "ArrowLeft",
-      "holdTicks": 40,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "leave-ledge-5",
-      "press": "ArrowLeft",
-      "holdTicks": 40,
-      "release": true
+      "holdTicks": 12,
+      "release": false
     },
     { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },
     { "kind": "wait", "label": "jump-arc", "waitTicks": 18, "release": true }

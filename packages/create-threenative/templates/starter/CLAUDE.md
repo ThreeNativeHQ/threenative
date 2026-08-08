@@ -33,7 +33,7 @@ src/
   render/               palette, camera, sky, lighting, materials, postprocessing — YOURS
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
-playtests/play.playtest.json  one scenario, run by pnpm test
+playtests/*.playtest.json      committed browser scenarios, run by pnpm test
 playtest/boot-to-play.json  Boot-to-Play jump proof for the standalone runner
 threenative.config.ts   renderer + plugins. No visual options, by design.
 ```
@@ -55,8 +55,11 @@ player.mesh        // THREE.Mesh
 ```
 
 Any Three.js tutorial, StackOverflow answer, or snippet you already know works unchanged
-inside a scene. Prefer that over looking for a framework helper — if a helper does not
-appear in the imports of an existing file, it probably does not exist.
+inside a scene. Prefer that over hunting for a framework wrapper — **for anything Three.js
+itself does (geometry, materials, lights, math), there is no wrapper and you should write
+the Three.js.** The exception is the loop: scene changes, timers and tweens are on `ctx`,
+not in an import, so grepping the imports of an existing file will not find them. The
+table below is the complete list.
 
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
 Every node has `dispose()`. Register disposable entities with `ctx.entities`; the framework
@@ -69,6 +72,64 @@ node explicitly only when removing it during play.
 `CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity`; the player keeps
 the coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
 
+## The `ctx` surface — you already have these, do not rebuild them
+
+`ctx` carries five things that get reimplemented by hand in almost every project, because
+they are **properties on `ctx`, never imports** — grepping an existing file's imports will
+never surface them. This table is the complete list.
+
+| You already have | Rather than | Signature |
+|---|---|---|
+| `ctx.goto("play")` | a hand-written `#reset()` | `(name: string) => Promise<void>` |
+| `ctx.tween(obj, { y: 2 }, 0.4)` | a `Math.sin` / `lerp` accumulator | `(target, props, seconds) => Promise<void>` |
+| `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
+| `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
+| `ctx.random.range(-1, 1)` | `Math.random()` | seeded — a replay produces identical results |
+
+**`ctx.goto(name)` restarts the current scene.** Calling `ctx.goto("play")` from inside
+`Play` tears the scene down and rebuilds it: `exit()` runs, scheduled callbacks are cleared,
+registered entities are cleared, the Three scene is emptied, then a fresh instance runs
+`load()` and `enter()`. That is your entire restart button, and your entire death-and-retry.
+
+Do **not** write a `#reset()` that walks your entities putting them back. It is ~15 lines
+that look right and quietly miss the scheduler and anything you spawned after `enter()`, so
+the second playthrough behaves differently from the first — and no gate in this project will
+catch that.
+
+**One rule when calling it from a frame function: `goto` and then `return`, immediately.**
+
+```ts
+if (player.dead) {
+  void ctx.goto("play");
+  return;              // ← required. Everything below now runs against a torn-down scene.
+}
+```
+
+From React, the same call is `game.goto("play")` — use that for a restart button instead of
+routing a counter through game state.
+
+**`ctx.tween` is for timing, not for looks.** Use it for the *when* — a pickup rising over
+0.4s, a door opening, a hit flash — and keep the *what* (colour, shape, easing feel) in
+`src/render/`. Motion driven by a persistent `Math.sin(elapsed)` in `update()` is still the
+right tool for a continuous idle bob; `tween` is for anything that starts, runs once, and
+finishes.
+
+**`ctx.random` is seeded from `defineGame({ seed })`.** Use it for anything a playtest needs
+to reproduce — spawn positions, patrol offsets, level variation. `Math.random()` makes a
+scenario that passes once and fails on replay for no visible reason.
+
+## Save and load
+
+Save only the state you declare. The framework does not serialize entities, scene graphs, or
+physics handles, and it never will; save those fields in your own object literal:
+
+```ts
+const save = JSON.stringify({ state: ctx.state.getState(), playerX: player.mesh.position.x });
+const loaded = JSON.parse(save) as { state: GameState; playerX: number };
+ctx.state.set(loaded.state);
+player.body.teleport({ x: loaded.playerX, y: player.mesh.position.y, z: player.mesh.position.z });
+```
+
 ## Assets and animation
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
@@ -78,6 +139,56 @@ does not ship a rigged asset; adding one belongs in `public/`, not in the framew
 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.
+
+## Finding assets — you have an MCP server for this
+
+**Reach for it when the asset is conventional; build anything custom yourself.**
+
+- **Textures, materials, HDRIs and sound effects — prefer the tools.** Rusted metal, oak
+  planks, a studio HDRI, a UI click: these are well-established and a CC0 one beats what you
+  would hand-author.
+- **Models — only when the thing is conventional.** A car, a plane, a crate, a barrel, a
+  tree, a chair. If this game's main character is a car, fetching a compatible `.glb` is the
+  right call.
+- **Anything specific to this game — write it in `src/render/`.** A downloaded model standing
+  in for a bespoke design reads as a weird asset dropped into the scene, and it looks worse
+  than a clean composition of primitives. This is the failure the tools make easy.
+
+When in doubt, build it programmatically. A fetched asset has to match what the game needs,
+not merely exist.
+
+`.mcp.json` in this project launches `threenative-asset-mcp` from `node_modules`, so your host
+lists its tools alongside your own. It advertises 32; these 8 are the loop you will use for
+nearly everything:
+
+1. `asset_search_sources` — start here, never at a provider. It returns every catalogued
+   source with its license summary, attribution requirement, browse URL, and whether an agent
+   can complete a download from it. **That output is the authority on what is reachable** —
+   not this file, and not your memory of some other project.
+2. `polyhaven_search_assets` (CC0 models, textures, HDRIs), `ambientcg_search_assets` (CC0
+   materials and textures), or `audio_search_assets` (Kenney, Sonniss).
+3. `polyhaven_list_files` / `ambientcg_list_files` — the license, official URL, byte size and
+   md5 of every resolution and format. **Read this before downloading, not after**, and pick a
+   sane one: Poly Haven lists 16k PNGs over 1 GB beside 8k JPEGs at 28 MB. A game does not
+   need the 16k.
+4. `asset_download_file` writes into `public/`; `audio_download_asset` is the audio path.
+5. Append the file, its source, its license and its URL to `CREDITS.md` **before the turn
+   ends**. Poly Haven requires a visible Poly Haven credit when its API is used, ambientCG is
+   CC0 per asset page, and audio and bundle licenses are per pack.
+
+**Never state a license you did not read off a tool result.** If `polyhaven_list_files` or
+`ambientcg_search_assets` did not tell you, you do not know it.
+
+The other tools are narrower, and the directory spells out the conditions on each. The Fab
+tools talk to a marketplace: the server never purchases anything, and only directly-free files
+download. `smithsonian_search_assets` returns museum scans at scan resolution, which this
+project has no pipeline to decimate — that geometry is the wrong shape for a game. When in
+doubt check `asset_search_sources` first; its `caution` and license fields are the current
+truth for the pinned version, and they change between versions.
+
+Load what you downloaded the ordinary way — `ctx.assets.model("crate.glb")`,
+`ctx.assets.texture(...)`, `ctx.assets.audio(...)` — and write your own material and lighting
+around it in `src/render/`. The framework ships no asset and picks none for you.
 
 ## Visuals
 
@@ -131,6 +242,12 @@ Never subscribe a React component to per-frame data.
 The start scene owns the initial state in `static initialState`; omit a duplicate
 `initialState` literal from `defineGame`. Update only the fields that changed:
 `ctx.state.set({ score })`.
+
+`main.ts` calls `acceptHotUpdate(game, import.meta.hot)` for development reloads. The
+framework preserves only JSON-shaped store state, so `Play.enter()` must seed entities
+from the carried values such as `playerX`; the scene graph, physics world, audio voices,
+particles, and renderer are rebuilt on every update.
+The keyboard and React restart paths reset `Play.initialState` before rebuilding the scene.
 
 ## Register entities you want to inspect or test
 

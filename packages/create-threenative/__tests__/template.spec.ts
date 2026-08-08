@@ -186,6 +186,59 @@ describe("template contracts", () => {
     expect(menu).toContain("game.resume()");
   });
 
+  it("should demonstrate the complete ctx lifecycle surface", async () => {
+    const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
+    const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
+    expect(play).toContain('frameCtx.goto("play")');
+    expect(play).toContain("frameCtx.state.set(Play.initialState)");
+    expect(play).toContain("frameCtx.state.flush()");
+    expect(play).toContain("ctx.tween(");
+    expect(play).toContain("ctx.after(");
+    expect(play).toContain("pickup.monitoring = false");
+    expect(menu).toContain('game.goto("play")');
+
+    const restart = JSON.parse(
+      await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
+    ) as {
+      assert: {
+        resources: Array<{
+          atSteps?: Array<{ equals: number; label: string }>;
+          changed?: boolean;
+          equals?: number;
+          path: string;
+        }>;
+      };
+    };
+    const score = restart.assert.resources.find(
+      ({ path: resourcePath }) => resourcePath === "score",
+    );
+    expect(score).toMatchObject({
+      atSteps: [
+        { equals: 1, label: "collected" },
+        { equals: 0, label: "restarted" },
+      ],
+    });
+    expect(score?.changed).toBeUndefined();
+    expect(restart.assert.resources).toContainEqual({
+      atSteps: [
+        { equals: 2, label: "collected" },
+        { equals: 3, label: "restarted" },
+      ],
+      id: "GameState",
+      path: "entityCount",
+    });
+
+    for (const template of templates) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents).toContain(
+        "## The `ctx` surface — you already have these, do not rebuild them",
+      );
+      expect(agents).toContain('| `ctx.goto("play")` |');
+      expect(agents).toContain("goto` and then `return`");
+      expect(agents).not.toContain("probably does not exist");
+    }
+  });
+
   it("should decay the platformer coyote timer every update", async () => {
     const character = await readFile(
       path.join(templateRoot, "platformer/src/entities/Character.ts"),
@@ -209,6 +262,16 @@ describe("template contracts", () => {
       expect(agents).toContain("AnimationPlayer");
       expect(agents).toContain(".glb` in `public/");
       expect(agents).toContain("ctx.assets.model");
+    }
+  });
+
+  it("should keep the asset MCP out of every workspace package", async () => {
+    const packagesRoot = path.resolve("packages");
+    for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = path.join(packagesRoot, entry.name, "package.json");
+      const manifest = await readFile(manifestPath, "utf8").catch(() => undefined);
+      expect(manifest ?? "", entry.name).not.toContain("threenative-asset-mcp");
     }
   });
 

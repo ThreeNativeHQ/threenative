@@ -19,10 +19,13 @@ import {
   type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
-import { chromium, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+
+export { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 class ManagedServerError extends Error {
   constructor(readonly diagnostic: IPlaytestProtocolDiagnostic) {
@@ -39,16 +42,46 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   url: string;
 }
 
+interface LabeledPlaytestSample {
+  label: string;
+  signals: unknown[];
+  snapshot: IPlaytestObservationSnapshot;
+}
+
 export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): Promise<IStandalonePlaytestReport> {
   const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
   await mkdir(config.artifactDirectory, { recursive: true });
-  const server = config.server === undefined ? undefined : startManagedServer(config);
-  const browser = await chromium.launch({
-    ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
-    headless: config.headless,
-  });
+  let server: ChildProcess | undefined;
+  let browser: Browser | undefined;
   let page: Page | undefined;
+  let teardownPromise: Promise<void> | undefined;
+  const teardown = async (): Promise<void> => {
+    if (teardownPromise !== undefined) return teardownPromise;
+    teardownPromise = (async () => {
+      stopManagedServer(server);
+      await page?.context().close().catch(() => undefined);
+      await browser?.close().catch(() => undefined);
+    })();
+    return teardownPromise;
+  };
+  const handleSignal = (): void => {
+    void teardown().catch(() => undefined).finally(() => {
+      process.exitCode = 2;
+      process.exit(2);
+    });
+  };
+  process.once("SIGINT", handleSignal);
+  process.once("SIGTERM", handleSignal);
+  const preflight = preflightDisplay(config, scenario);
+  if (preflight !== undefined) {
+    process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
+  }
   try {
+    server = config.server === undefined ? undefined : startManagedServer(config);
+    browser = await chromium.launch({
+      ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
+      headless: config.headless,
+    });
     if (server !== undefined) {
       await waitForUrl(config.url, config.server?.timeoutMs ?? config.timeoutMs, server);
     }
@@ -73,14 +106,17 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     ).catch(() => false);
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
+    const sampleRequest = { entities: entityIds, include: ["components", "diagnostics", "entities", "resources"], resources: resourceIds } as const;
+    const labeledSamples: LabeledPlaytestSample[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
-    const beforeSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    const beforeSnapshot = await bridge?.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
     const pathPositions = beforeSnapshot === undefined || pathEntity === undefined
       ? []
       : [entityPosition(beforeSnapshot, pathEntity)].filter((position): position is PlaytestVec3 => position !== undefined);
+    const inputState: StepInputState = { heldKeys: new Set(), pointerButtons: 0 };
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
     const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
@@ -88,13 +124,29 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         ? { path: join(config.artifactDirectory, "before.png") }
         : undefined)
       : undefined;
-    for (const step of scenario.steps) {
-      await runStep(page, bridge, step, scenario.viewport, pathEntity, pathPositions);
+    for (const [index, step] of scenario.steps.entries()) {
+      await runStep(
+        page,
+        bridge,
+        step,
+        scenario.viewport,
+        pathEntity,
+        pathPositions,
+        inputState,
+        index === scenario.steps.length - 1,
+      );
+      if (step.label !== undefined && bridge !== undefined) {
+        const snapshot = await bridge.sample(sampleRequest);
+        const signals = bridge.description.capabilities.includes("runtime.events")
+          ? await bridge.drainEvents()
+          : [];
+        labeledSamples.push({ label: step.label, signals, snapshot });
+      }
       if (step.screenshot !== undefined) {
         await page.screenshot({ path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
-    const afterSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    const afterSnapshot = await bridge?.sample(sampleRequest);
     if (afterSnapshot !== undefined && pathEntity !== undefined) {
       const position = entityPosition(afterSnapshot, pathEntity);
       if (position !== undefined) pathPositions.push(position);
@@ -120,19 +172,47 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       pairObservations(beforeHud, afterHud),
       runtimeReady,
       visual,
+      labeledSamples,
     );
     await context.close();
-    return report;
+    return addPreflightDiagnostic(report, preflight);
   } catch (error) {
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
-      return failureReport(config, scenario, error.diagnostic);
+      return addPreflightDiagnostic(failureReport(config, scenario, error.diagnostic), preflight);
     }
     throw error;
   } finally {
-    await page?.context().close().catch(() => undefined);
-    await browser.close();
-    stopManagedServer(server);
+    process.off("SIGINT", handleSignal);
+    process.off("SIGTERM", handleSignal);
+    await teardown();
   }
+}
+
+export function preflightDisplay(
+  config: Pick<IStandalonePlaytestConfig, "headless">,
+  scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">,
+  environment: NodeJS.ProcessEnv = process.env,
+  platform = process.platform,
+): IPlaytestDiagnostic | undefined {
+  const takesScreenshot = scenario.artifacts?.screenshots !== false
+    || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
+  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual)) {
+    return undefined;
+  }
+  return {
+    code: "TN_PLAYTEST_HEADLESS_WEBGPU",
+    message: "Headless Linux visual runs may render WebGPU blank without a display; use xvfb-run -a -s '-screen 0 1600x900x24'.",
+    severity: "warning",
+    suggestion: "Prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
+  };
+}
+
+function addPreflightDiagnostic(
+  report: IStandalonePlaytestReport,
+  diagnostic: IPlaytestDiagnostic | undefined,
+): IStandalonePlaytestReport {
+  return diagnostic === undefined ? report : { ...report, diagnostics: [diagnostic, ...report.diagnostics] };
 }
 
 export function buildReport(
@@ -146,12 +226,14 @@ export function buildReport(
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
   runtimeReady = true,
   visual: IPlaytestObservations["visual"] = undefined,
+  labeledSamples: readonly LabeledPlaytestSample[] = [],
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
   const afterPosition = entityPosition(afterSnapshot, entity);
   const beforeRotation = entityRotation(beforeSnapshot, entity);
   const afterRotation = entityRotation(afterSnapshot, entity);
+  const components = componentObservations(beforeSnapshot, afterSnapshot);
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
     : subtract(afterPosition, beforePosition);
@@ -175,8 +257,19 @@ export function buildReport(
     frames: scenario.steps.reduce((total, step) => total + (step.holdFrames ?? step.waitFrames ?? step.holdTicks ?? step.waitTicks ?? 1), 0),
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),
-    observations: {
+    observations: buildObservations({
       console: consoleEntries,
+      ...(components === undefined
+        ? {}
+        : { components }),
+      ...(labeledSamples.length === 0
+        ? {}
+        : {
+            componentSeries: labeledSamples.map(({ label, snapshot }) => ({ label, snapshots: snapshot.components ?? {}, tick: snapshot.clock.tick ?? 0 })),
+            resourceSeries: labeledSamples.map(({ label, snapshot }) => ({ label, snapshots: snapshot.resources ?? {}, tick: snapshot.clock.tick ?? 0 })),
+            signalSeries: labeledSamples.map(({ label, signals, snapshot }) => ({ label, signals, tick: snapshot.clock.tick ?? 0 })),
+            signals: labeledSamples.flatMap(({ signals }) => signals),
+          }),
       hud,
       network: networkEntries,
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
@@ -185,7 +278,7 @@ export function buildReport(
         : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario),
       ...(visual === undefined ? {} : { visual }),
-    },
+    }),
   };
   if (scenario.assert?.camera !== undefined) {
     base.follow = cameraReport(scenario, beforeSnapshot, afterSnapshot);
@@ -213,6 +306,32 @@ export function buildReport(
     target: scenario.target,
     url: config.url,
   };
+}
+
+function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
+  const observations = {} as IPlaytestObservations;
+  for (const field of STANDALONE_PLAYTEST_OBSERVATION_FIELDS) {
+    const value = candidate[field];
+    if (value !== undefined) Object.assign(observations, { [field]: value });
+  }
+  return observations;
+}
+
+function componentObservations(
+  before: IPlaytestObservationSnapshot | undefined,
+  after: IPlaytestObservationSnapshot | undefined,
+): IPlaytestObservations["components"] {
+  if (before?.components === undefined && after?.components === undefined) return undefined;
+  const entities = new Set([...Object.keys(before?.components ?? {}), ...Object.keys(after?.components ?? {})]);
+  return Object.fromEntries([...entities].map((entity) => {
+    const beforeFields = before?.components?.[entity] ?? {};
+    const afterFields = after?.components?.[entity] ?? {};
+    const fields = new Set([...Object.keys(beforeFields), ...Object.keys(afterFields)]);
+    return [entity, Object.fromEntries([...fields].map((field) => [field, {
+      ...(beforeFields[field] === undefined ? {} : { before: beforeFields[field] }),
+      ...(afterFields[field] === undefined ? {} : { after: afterFields[field] }),
+    }]))];
+  }));
 }
 
 function screenshotObservations(
@@ -328,15 +447,35 @@ async function runStep(
   viewport: IPlaytestScenario["viewport"],
   pathEntity: string | undefined,
   pathPositions: PlaytestVec3[],
+  inputState: StepInputState,
+  finalStep: boolean,
 ): Promise<void> {
   if (step.pointerPosition !== undefined) {
     await page.mouse.move(
       step.pointerPosition.x * viewport.width,
       step.pointerPosition.y * viewport.height,
     );
+    if (step.pointerPosition.buttons !== undefined) {
+      await setPointerButtons(page, inputState, step.pointerPosition.buttons);
+    }
   }
-  if (step.press !== undefined) {
-    await page.keyboard.down(step.press);
+  const press = step.press;
+  if (typeof press === "string") {
+    await page.keyboard.down(press);
+    inputState.heldKeys.add(press);
+  } else if (press !== undefined) {
+    for (const key of inputState.heldKeys) {
+      if (!press.includes(key)) {
+        await page.keyboard.up(key);
+        inputState.heldKeys.delete(key);
+      }
+    }
+    for (const key of press) {
+      if (!inputState.heldKeys.has(key)) {
+        await page.keyboard.down(key);
+        inputState.heldKeys.add(key);
+      }
+    }
   }
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
@@ -349,13 +488,53 @@ async function runStep(
     await waitFrames(page, Math.max(frames, ticks, 1));
     await samplePathPosition(bridge, pathEntity, pathPositions);
   }
-  if (step.press !== undefined && step.release) {
-    await page.keyboard.up(step.press);
+  if (press !== undefined && step.release) {
+    const released = typeof press === "string" ? [press] : [...inputState.heldKeys];
+    for (const key of released) {
+      await page.keyboard.up(key);
+      inputState.heldKeys.delete(key);
+    }
     // Let the game loop observe the release before a following step presses the
     // same key again. Without this frame, adjacent steps are indistinguishable
     // from one continuous hold to input latches.
-    await waitFrames(page, 1);
+    if (!finalStep) await waitFrames(page, 1);
   }
+  if (step.pointerPosition?.buttons !== undefined && step.release) {
+    await setPointerButtons(page, inputState, 0);
+  }
+}
+
+type StepInputState = {
+  heldKeys: Set<string>;
+  pointerButtons: number;
+};
+
+const POINTER_BUTTONS = [
+  { button: "left", mask: 1 },
+  { button: "right", mask: 2 },
+  { button: "middle", mask: 4 },
+] as const;
+
+async function setPointerButtons(
+  page: Page,
+  inputState: StepInputState,
+  buttons: number,
+): Promise<void> {
+  const supportedMask = POINTER_BUTTONS.reduce((mask, entry) => mask | entry.mask, 0);
+  if ((buttons & ~supportedMask) !== 0) {
+    throw new Error(`Playtest pointer button mask ${buttons} is not supported by Playwright.`);
+  }
+  for (const entry of POINTER_BUTTONS) {
+    if ((inputState.pointerButtons & entry.mask) !== 0 && (buttons & entry.mask) === 0) {
+      await page.mouse.up({ button: entry.button });
+    }
+  }
+  for (const entry of POINTER_BUTTONS) {
+    if ((inputState.pointerButtons & entry.mask) === 0 && (buttons & entry.mask) !== 0) {
+      await page.mouse.down({ button: entry.button });
+    }
+  }
+  inputState.pointerButtons = buttons;
 }
 
 async function samplePathPosition(
@@ -557,7 +736,13 @@ async function waitForUrl(url: string, timeoutMs: number, server: ChildProcess):
 function stopManagedServer(server: ChildProcess | undefined): void {
   if (server?.pid === undefined || server.exitCode !== null) return;
   if (process.platform === "win32") server.kill();
-  else process.kill(-server.pid, "SIGTERM");
+  else {
+    try {
+      process.kill(-server.pid, "SIGTERM");
+    } catch {
+      // The process group may have exited between the status check and teardown.
+    }
+  }
 }
 
 function managedServerError(message: string, url: string, timeoutMs: number, output: readonly string[]): ManagedServerError {

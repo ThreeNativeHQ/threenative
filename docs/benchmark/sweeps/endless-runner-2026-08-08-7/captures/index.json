@@ -1,0 +1,27 @@
+{
+  "recipe": "webgpu-xvfb-headed",
+  "captures": [
+    {
+      "distinctColors": 15287,
+      "brightPixelRatio": 0.9994140625,
+      "height": 720,
+      "luminanceStdDev": 0.23900525255303046,
+      "width": 1280,
+      "bytes": 159420,
+      "capture": "endless-runner-brief-proof-after.png",
+      "scenario": "endless-runner-brief-proof",
+      "source": "proof-artifacts/0/after.png"
+    },
+    {
+      "distinctColors": 13537,
+      "brightPixelRatio": 0.9994032118055556,
+      "height": 720,
+      "luminanceStdDev": 0.2751248840103845,
+      "width": 1280,
+      "bytes": 103267,
+      "capture": "endless-runner-brief-proof-before.png",
+      "scenario": "endless-runner-brief-proof",
+      "source": "proof-artifacts/0/before.png"
+    }
+  ]
+}

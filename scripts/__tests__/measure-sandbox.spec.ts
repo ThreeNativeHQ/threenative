@@ -48,6 +48,79 @@ describe("sandbox measurement", () => {
     expect(measurement.threeOnlyFiles).toBe(1);
   });
 
+  it("charges only the lines a framework arm added above its archived starter", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "starter-baseline", "src"), { recursive: true });
+    await installDeclarations(root);
+    const kept = 'import { UsedExport } from "@threenative/core";\nvoid UsedExport;\n';
+    await writeFile(path.join(root, "starter-baseline", "src", "main.ts"), kept);
+    await writeFile(path.join(root, "src", "main.ts"), `${kept}ready();\n`);
+
+    const measurement = measureSandbox(root);
+
+    expect(measurement.userLoc).toBe(3);
+    expect(measurement.starterLoc).toBe(2);
+    expect(measurement.starterSource).toBe("archived");
+    expect(measurement.authoredLoc).toBe(1);
+    expect(measurement.starterSurvivedLoc).toBe(2);
+    expect(measurement.authoredBytes).toBe(Buffer.byteLength("ready();\n", "utf8"));
+  });
+
+  it("charges a rewritten starter file its rewrite, not its net line delta", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "starter-baseline", "src"), { recursive: true });
+    await installDeclarations(root);
+    await writeFile(
+      path.join(root, "starter-baseline", "src", "main.ts"),
+      'import { UsedExport } from "@threenative/core";\nstarterOne();\nstarterTwo();\nstarterThree();\n',
+    );
+    await writeFile(
+      path.join(root, "src", "main.ts"),
+      'import { UsedExport } from "@threenative/core";\nauthoredOne();\nauthoredTwo();\nauthoredThree();\n',
+    );
+
+    const measurement = measureSandbox(root);
+
+    // Net delta is zero here; three lines were written.
+    expect(measurement.userLoc - measurement.starterLoc).toBe(0);
+    expect(measurement.authoredLoc).toBe(3);
+  });
+
+  it("never lets deleted starter files drive authored cost below zero", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "starter-baseline", "src"), { recursive: true });
+    await installDeclarations(root);
+    await writeFile(
+      path.join(root, "starter-baseline", "src", "deleted.ts"),
+      "one\ntwo\nthree\nfour\nfive\n",
+    );
+    await writeFile(
+      path.join(root, "src", "main.ts"),
+      'import { UsedExport } from "@threenative/core";\nvoid UsedExport;\n',
+    );
+
+    const measurement = measureSandbox(root);
+
+    expect(measurement.starterLoc).toBe(5);
+    expect(measurement.authoredLoc).toBe(2);
+  });
+
+  it("refuses to measure a framework archive with no frozen starter baseline", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await installDeclarations(root);
+    await writeFile(
+      path.join(root, "src", "main.ts"),
+      'import { UsedExport } from "@threenative/core";\nvoid UsedExport;\n',
+    );
+    await writeFile(path.join(root, "sweep.json"), JSON.stringify({ arm: "framework" }));
+
+    expect(() => measureSandbox(root)).toThrow(/frozen starter-baseline/);
+  });
+
   it("throws when src has no source files instead of reporting 0/0", async () => {
     const root = await fixtureRoot();
     await mkdir(path.join(root, "src"), { recursive: true });

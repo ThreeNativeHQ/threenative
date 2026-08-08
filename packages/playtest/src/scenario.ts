@@ -22,10 +22,12 @@ export interface IPlaytestStep {
     type: string;
   };
   pointerPosition?: {
+    buttons?: number;
     x: number;
     y: number;
   };
-  press?: string;
+  /** A string presses one key; an array describes the complete held-key set. */
+  press?: string | readonly string[];
   release: boolean;
   screenshot?: string;
   waitFrames?: number;
@@ -132,6 +134,14 @@ export interface IPlaytestContactAssertion {
   with?: string;
 }
 
+export interface IPlaytestSignalAssertion {
+  atStep?: string;
+  entity?: string;
+  maxCount?: number;
+  minCount?: number;
+  name: string;
+}
+
 export interface IPlaytestSettledAssertion {
   atStep?: string;
   compareToStep?: string;
@@ -217,7 +227,16 @@ export interface IPlaytestReachabilityAssertion {
   envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
 }
 
+export interface IPlaytestWorldRuntimeAssertion {
+  agent: string;
+  core: string;
+  randomState: number;
+  rapier: string | null;
+  step: number;
+}
+
 export interface IPlaytestWorldAssertion {
+  runtime?: IPlaytestWorldRuntimeAssertion;
   seed: number | null;
 }
 
@@ -235,6 +254,7 @@ export interface IPlaytestScenarioAssertions {
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
+  signals?: IPlaytestSignalAssertion[];
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
   visibility?: IPlaytestVisibilityAssertion[];
@@ -473,10 +493,12 @@ function validatePlaytestScenario(value: unknown, scenarioPath: string, absolute
     throw invalidStep(scenarioPath, "Scenario steps[] must contain at least one step.");
   }
   const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
+  const assertions = isRecord(value.assert) ? validateAssertions(value.assert, scenarioPath) : undefined;
+  validateStepLabels(steps, assertions, scenarioPath);
   return {
     ...(typeof value.acceptanceId === "string" ? { acceptanceId: value.acceptanceId } : {}),
     ...(isRecord(value.artifacts) ? { artifacts: validateArtifacts(value.artifacts, scenarioPath) } : {}),
-    ...(isRecord(value.assert) ? { assert: validateAssertions(value.assert, scenarioPath) } : {}),
+    ...(assertions === undefined ? {} : { assert: assertions }),
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
@@ -604,7 +626,13 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     "waitTicks",
     "window",
   ], scenarioPath, `steps[${index}]`);
-  const press = typeof value.press === "string" && value.press.length > 0 ? value.press : undefined;
+  const press = typeof value.press === "string" && value.press.length > 0
+    ? value.press
+    : Array.isArray(value.press)
+      && value.press.every((key) => typeof key === "string" && key.length > 0)
+      && new Set(value.press).size === value.press.length
+      ? [...value.press]
+      : undefined;
   const overlayMessage = isRecord(value.overlayMessage)
     && typeof value.overlayMessage.overlayId === "string"
     && value.overlayMessage.overlayId.length > 0
@@ -616,6 +644,12 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
         type: value.overlayMessage.type,
       }
     : undefined;
+  const pointerButtons = isRecord(value.pointerPosition)
+    && typeof value.pointerPosition.buttons === "number"
+    && Number.isInteger(value.pointerPosition.buttons)
+    && value.pointerPosition.buttons >= 0
+    ? value.pointerPosition.buttons
+    : undefined;
   const pointerPosition = isRecord(value.pointerPosition)
     && typeof value.pointerPosition.x === "number"
     && Number.isFinite(value.pointerPosition.x)
@@ -625,13 +659,18 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     && Number.isFinite(value.pointerPosition.y)
     && value.pointerPosition.y >= 0
     && value.pointerPosition.y <= 1
-    ? { x: value.pointerPosition.x, y: value.pointerPosition.y }
+    && (value.pointerPosition.buttons === undefined || pointerButtons !== undefined)
+    ? {
+        ...(pointerButtons === undefined ? {} : { buttons: pointerButtons }),
+        x: value.pointerPosition.x,
+        y: value.pointerPosition.y,
+      }
     : undefined;
   if (isRecord(value.overlayMessage)) {
     rejectUnknownKeys(value.overlayMessage, ["overlayId", "payload", "type"], scenarioPath, `steps[${index}].overlayMessage`);
   }
   if (isRecord(value.pointerPosition)) {
-    rejectUnknownKeys(value.pointerPosition, ["x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
+    rejectUnknownKeys(value.pointerPosition, ["buttons", "x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
   }
   const holdFrames = positiveInteger(value.holdFrames);
   const holdTicks = positiveInteger(value.holdTicks);
@@ -655,7 +694,11 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (isRecord(value.window)) {
     rejectUnknownKeys(value.window, ["height", "operation", "width"], scenarioPath, `steps[${index}].window`);
   }
-  if (kind === "wait" && press !== undefined) {
+  if (value.press !== undefined && press === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} press must be a non-empty key or a unique array of non-empty keys.`);
+  }
+  const hasPress = press !== undefined && (typeof press === "string" || press.length > 0);
+  if (kind === "wait" && hasPress) {
     throw invalidStep(scenarioPath, `Scenario step ${index} kind wait cannot define press.`);
   }
   if (value.overlayMessage !== undefined && overlayMessage === undefined) {
@@ -666,6 +709,9 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   }
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
+  }
+  if (value.label !== undefined && (typeof value.label !== "string" || value.label.trim() === "")) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
   }
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
@@ -713,6 +759,51 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   };
 }
 
+function validateStepLabels(
+  steps: readonly IPlaytestStep[],
+  assertions: IPlaytestScenarioAssertions | undefined,
+  scenarioPath: string,
+): void {
+  const labels = new Set<string>();
+  for (const [index, step] of steps.entries()) {
+    if (step.label === undefined) continue;
+    if (step.label.trim() === "") {
+      throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
+    }
+    if (labels.has(step.label)) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} repeats duplicate label '${step.label}'.`);
+    }
+    labels.add(step.label);
+  }
+  if (assertions === undefined) return;
+  const requireLabel = (label: string | undefined, path: string): void => {
+    if (label !== undefined && !labels.has(label)) {
+      throw invalidScenario(scenarioPath, `Assertion '${path}' names step label '${label}', but no scenario step defines it.`);
+    }
+  };
+  for (const [index, assertion] of (assertions.resources ?? []).entries()) {
+    for (const [stepIndex, step] of (assertion.atSteps ?? []).entries()) {
+      requireLabel(step.label, `assert.resources[${index}].atSteps[${stepIndex}].label`);
+    }
+  }
+  for (const [index, assertion] of (assertions.components ?? []).entries()) {
+    for (const [stepIndex, step] of (assertion.atSteps ?? []).entries()) {
+      requireLabel(step.label, `assert.components[${index}].atSteps[${stepIndex}].label`);
+    }
+  }
+  for (const [index, assertion] of (assertions.signals ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.signals[${index}].atStep`);
+  }
+  for (const [index, assertion] of (assertions.contacts ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.contacts[${index}].atStep`);
+  }
+  for (const [index, assertion] of (assertions.settled ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.settled[${index}].atStep`);
+    requireLabel(assertion.compareToStep, `assert.settled[${index}].compareToStep`);
+  }
+  requireLabel(assertions.movement?.reachesPositionWithin?.atStep, "assert.movement.reachesPositionWithin.atStep");
+}
+
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
   if (step.press === undefined || step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
   return Math.max(1, step.holdTicks ?? fallback);
@@ -726,6 +817,9 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   rejectUnknownKeys(value, PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), scenarioPath, "assert");
   validateAssertionShapes(value, scenarioPath);
   validateAssertionKeys(value, scenarioPath);
+  if (Array.isArray(value.signals) && value.signals.length === 0) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  }
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
@@ -832,6 +926,13 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
           ),
         }
       : {}),
+    ...(Array.isArray(value.signals)
+      ? {
+          signals: value.signals.map((entry, index) =>
+            validateSignalAssertion(entry, scenarioPath, `assert.signals[${index}]`),
+          ),
+        }
+      : {}),
     ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map(validateVisibilityAssertion).filter((item): item is IPlaytestVisibilityAssertion => item !== undefined) } : {}),
@@ -841,10 +942,34 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
 }
 
 function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestWorldAssertion {
+  rejectUnknownKeys(value, ["runtime", "seed"], scenarioPath, "assert.world");
   if (!hasKey(value, "seed") || (value.seed !== null && (typeof value.seed !== "number" || !Number.isFinite(value.seed)))) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.world.seed' must be a finite number or null.");
   }
-  return { seed: value.seed as number | null };
+  const runtimeValue = value.runtime;
+  if (runtimeValue === undefined) return { seed: value.seed as number | null };
+  const runtime = requireRecord(runtimeValue, scenarioPath, "assert.world.runtime");
+  rejectUnknownKeys(runtime, ["agent", "core", "randomState", "rapier", "step"], scenarioPath, "assert.world.runtime");
+  const randomState = optionalNumber(runtime, "randomState", scenarioPath, "assert.world.runtime");
+  if (randomState === undefined || !Number.isInteger(randomState)) {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.randomState' must be an integer.");
+  }
+  const rapier = runtime.rapier;
+  if (rapier !== null && typeof rapier !== "string") {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.rapier' must be a string or null.");
+  }
+  return {
+    runtime: {
+      agent: requireString(runtime, "agent", scenarioPath, "assert.world.runtime"),
+      core: requireString(runtime, "core", scenarioPath, "assert.world.runtime"),
+      randomState,
+      rapier: rapier as string | null,
+      step: optionalPositiveNumber(runtime, "step", scenarioPath, "assert.world.runtime") ?? (() => {
+        throw invalidScenario(scenarioPath, "'assert.world.runtime.step' must be a positive number.");
+      })(),
+    },
+    seed: value.seed as number | null,
+  };
 }
 
 function validateReachabilityAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestReachabilityAssertion {
@@ -1182,6 +1307,18 @@ function validateContactAssertion(value: unknown): IPlaytestContactAssertion | u
   };
 }
 
+function validateSignalAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSignalAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "entity", "maxCount", "minCount", "name"], scenarioPath, objectPath);
+  return {
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("maxCount", optionalNonNegativeInteger(record, "maxCount", scenarioPath, objectPath)),
+    ...present("minCount", optionalNonNegativeInteger(record, "minCount", scenarioPath, objectPath)),
+    name: requireString(record, "name", scenarioPath, objectPath),
+  };
+}
+
 function validateAnimationAssertion(value: unknown): IPlaytestAnimationAssertion | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -1279,7 +1416,7 @@ function validateViewport(value: unknown): IPlaytestViewport {
   return width === undefined || height === undefined ? { height: 720, width: 1280 } : { height, width };
 }
 
-function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError {
+export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError {
   return new PlaytestScenarioError({
     code: "TN_PLAYTEST_SCENARIO_INVALID",
     fix: {
@@ -1393,7 +1530,7 @@ function rejectWrongTypedFields(
   }
 }
 
-function rejectUnknownKeys(
+export function rejectUnknownKeys(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
   scenarioPath: string,
@@ -1481,5 +1618,13 @@ function validateNestedAssertionKeys(
         });
       }
     }
+  }
+  if (kind === "world" && isRecord(value.runtime)) {
+    rejectUnknownKeys(
+      value.runtime,
+      ["agent", "core", "randomState", "rapier", "step"],
+      scenarioPath,
+      `assert.${kind}${suffix}.runtime`,
+    );
   }
 }

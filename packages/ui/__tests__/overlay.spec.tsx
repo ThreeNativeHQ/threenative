@@ -69,4 +69,21 @@ describe("DebugOverlay", () => {
     expect(snapshot.mock.calls.length).toBeLessThanOrEqual(11);
     act(() => renderer.unmount());
   });
+
+  it("stays empty while the devtools snapshot is replaced", () => {
+    vi.useFakeTimers();
+    const controls = installDevWindow(() => ({ player: { hull: 100 } }));
+    (globalThis.window as unknown as { __THREENATIVE__?: unknown }).__THREENATIVE__ = {};
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<DebugOverlay />);
+    });
+    act(() => {
+      controls.toggle();
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(renderer.root.findAllByType("tbody")[0]?.findAllByType("tr")).toHaveLength(0);
+    act(() => renderer.unmount());
+  });
 });

@@ -38,6 +38,8 @@ async function archive(
     path.join(directory, "src/main.ts"),
     'import { UsedExport } from "@threenative/core";\nvoid UsedExport;\n',
   );
+  await mkdir(path.join(directory, "starter-baseline", "src"), { recursive: true });
+  await writeFile(path.join(directory, "starter-baseline", "src", "main.ts"), "// starter\n");
   await writeFile(
     path.join(directory, "sweep.json"),
     JSON.stringify({

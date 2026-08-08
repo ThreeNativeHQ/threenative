@@ -21,11 +21,13 @@ export interface IThreePlaytestResources {
 
 export interface IThreePlaytestBridgeOptions {
   camera: Camera;
+  components?: () => Record<string, Record<string, JsonValue>>;
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<void> | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
+  events?: () => JsonValue[];
   renderer: ThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
@@ -52,6 +54,8 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.fixedStep === undefined ? [] : ["runtime.fixedStep"]),
     ...(options.resources === undefined ? [] : ["runtime.resources"]),
     ...(options.diagnostics === undefined ? [] : ["runtime.diagnostics"]),
+    ...(Object.keys(options.components?.() ?? {}).length === 0 ? [] : ["runtime.components"]),
+    ...(options.events === undefined ? [] : ["runtime.events"]),
     ...(options.gameplay === undefined ? [] : ["runtime.animation", "runtime.state"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
@@ -69,6 +73,16 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
           },
         }),
     applySetup: async (request) => applySetup(registry, options.resources, request),
+    ...(options.events === undefined
+      ? {}
+      : {
+          drainEvents: async (limit = PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain) => {
+            if (!Number.isInteger(limit) || limit < 0) throw new Error("drainEvents limit must be a non-negative integer.");
+            const events = options.events!();
+            assertJsonSafe(events);
+            return events.slice(0, Math.min(limit, PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain));
+          },
+        }),
     describe: () => ({
       capabilities: capabilities(),
       limits: PLAYTEST_PROTOCOL_LIMITS,
@@ -89,8 +103,12 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         scene: options.scene,
         tick: options.fixedStep === undefined ? undefined : tick,
       }, request);
-      assertJsonSafe(snapshot);
-      return snapshot;
+      const components = options.components?.();
+      const result = components === undefined || Object.keys(components).length === 0
+        ? snapshot
+        : { ...snapshot, components };
+      assertJsonSafe(result);
+      return result;
     },
   };
   host[PLAYTEST_BRIDGE_GLOBAL] = bridge;

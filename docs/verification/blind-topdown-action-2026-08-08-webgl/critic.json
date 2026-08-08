@@ -1,0 +1,41 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "high",
+    "rationale": "Sample 01 communicates the active mission more completely: the arena, target list, objective, score, health, controls, and recharge state are all immediately legible. Sample 02 has a clear low-poly 3D arena and a visible attack projectile, but its presentation is sparser and gives less moment-to-moment mission context. Neither frame visibly demonstrates audio, so audio is scored as not applicable rather than inferred."
+  },
+  "samples": [
+    {
+      "biggestGap": "The active frame does not visibly demonstrate particles or audio feedback.",
+      "evidence": "Strong tactical HUD hierarchy, readable arena grid, target roster, objective state, recharge meter, controls, player, enemies, pickups, and a clear attack aftermath make the loop easy to understand.",
+      "label": "sample-01",
+      "playability": 5,
+      "screenshotWorthy": "yes",
+      "visuals": 5,
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 5
+      }
+    },
+    {
+      "biggestGap": "The arena and HUD are readable, but the sparse composition does not show much particle or audio feedback.",
+      "evidence": "The angled 3D court, cover, three sentry targets, pickups, player, attack projectile, weapon meter, controls, and objective are all visible in one coherent frame.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
+    }
+  ]
+}

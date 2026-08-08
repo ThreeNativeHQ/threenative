@@ -1,10 +1,37 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { createProject, parseArgs } from "../src/index.js";
 
+const run = promisify(execFile);
+
+const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
+const ASSET_MCP = "threenative-asset-mcp";
+const ALL_TEMPLATES = ["starter", "minimal", "platformer"] as const;
+
+/** Edits a template in place, runs the body, and always puts the file back. The scaffolder
+ * resolves its own template root, so a negative control cannot be staged anywhere else. */
+async function withBrokenTemplateFile<T>(
+  relativePath: string,
+  content: string | undefined,
+  body: () => Promise<T>,
+): Promise<T> {
+  const file = path.join(TEMPLATE_ROOT, relativePath);
+  const original = await readFile(file, "utf8");
+  try {
+    if (content === undefined) await rm(file);
+    else await writeFile(file, content);
+    return await body();
+  } finally {
+    await writeFile(file, original);
+  }
+}
+
 const STARTER_PATHS = [
+  ".mcp.json",
   "AGENTS.md",
   "CLAUDE.md",
   "package.json",
@@ -23,6 +50,7 @@ const STARTER_PATHS = [
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
+  "src/pick.ts",
   "src/render/sky.ts",
   "src/entities/Crate.ts",
   "src/entities/Player.ts",
@@ -39,6 +67,7 @@ const STARTER_PATHS = [
   "playtests/pause.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/seed.playtest.json",
+  "playtests/pick.playtest.json",
   "public/pickup.ogg",
 ];
 
@@ -60,6 +89,7 @@ const PLATFORMER_PATHS = [
   "src/scenes/Boot.ts",
   "src/scenes/Level.ts",
   "src/entities/Character.ts",
+  "src/entities/Chaser.ts",
   "src/entities/Patrol.ts",
   "src/entities/Pickup.ts",
   "src/level/Checkpoints.ts",
@@ -79,6 +109,9 @@ const PLATFORMER_PATHS = [
   "playtests/stomp-rise.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/oneway.playtest.json",
+  "playtests/collision-layers.playtest.json",
+  "playtests/chase.playtest.json",
+  "playtests/avoidance.playtest.json",
 ];
 
 describe("create-threenative", () => {
@@ -139,6 +172,70 @@ describe("create-threenative", () => {
     }
   });
 
+  it("should not ship recast in a build that never imports the navigation entry", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-bundle-"));
+    try {
+      const result = await createProject(
+        { install: false, target: "minimal-bundle", template: "minimal" },
+        root,
+      );
+      const scope = path.join(result.target, "node_modules", "@threenative");
+      await mkdir(scope, { recursive: true });
+      await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
+      await symlink(path.resolve("packages/physics"), path.join(scope, "physics"), "dir");
+      const pnpmPackages = await readdir(path.resolve("node_modules/.pnpm"));
+      const vitePackage = pnpmPackages.find((entry) => entry.startsWith("vite@"));
+      const threePackage = pnpmPackages.find((entry) => entry.startsWith("three@"));
+      if (vitePackage === undefined || threePackage === undefined) {
+        throw new Error("Bundle isolation requires the workspace Vite and Three.js packages.");
+      }
+      await symlink(
+        path.resolve("node_modules/.pnpm", vitePackage, "node_modules/vite"),
+        path.join(result.target, "node_modules", "vite"),
+        "dir",
+      );
+      await symlink(
+        path.resolve("node_modules/.pnpm", threePackage, "node_modules/three"),
+        path.join(result.target, "node_modules", "three"),
+        "dir",
+      );
+      try {
+        await run(path.resolve("node_modules/.bin/vite"), ["build", result.target], {
+          cwd: process.cwd(),
+        });
+      } catch (error) {
+        const output = error as { code?: string | number; stderr?: string; stdout?: string };
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} code=${output.code ?? "unknown"}\n${output.stdout ?? ""}\n${output.stderr ?? ""}`,
+        );
+      }
+      const distRoot = path.join(result.target, "dist");
+      const entries = await readdir(distRoot, { recursive: true });
+      const files = (
+        await Promise.all(
+          entries.map(async (entry) => {
+            const relativePath = String(entry);
+            return (await stat(path.join(distRoot, relativePath))).isFile()
+              ? relativePath
+              : undefined;
+          }),
+        )
+      ).filter((entry): entry is string => entry !== undefined);
+      const artifactNames = files.filter((file) => file.toLowerCase().includes("recast"));
+      const contents = await Promise.all(
+        files.map(async (file) => {
+          const value = await readFile(path.join(result.target, "dist", file));
+          return value.toString("utf8");
+        }),
+      );
+
+      expect(artifactNames).toEqual([]);
+      expect(contents.join("\n")).not.toMatch(/recast-navigation|@recast-navigation/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({
       install: false,
@@ -168,6 +265,122 @@ describe("create-threenative", () => {
       await expect(
         readFile(path.join(result.target, "src/scenes/Level.ts"), "utf8"),
       ).resolves.toContain('ctx.entities.add("player"');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should launch the asset MCP from the project's own node_modules", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-"));
+    try {
+      const result = await createProject(
+        { install: false, target: "my-game", template: "starter" },
+        root,
+      );
+      const raw = await readFile(path.join(result.target, ".mcp.json"), "utf8");
+      expect(raw).not.toContain("npx");
+      const config = JSON.parse(raw) as {
+        mcpServers: Record<string, { args: string[]; command: string }>;
+      };
+      const server = config.mcpServers["threenative-assets"];
+      expect(server?.command).toBe("node");
+      expect(server?.args[0]).toBe(`./node_modules/${ASSET_MCP}/dist/index.js`);
+      const manifest = JSON.parse(
+        await readFile(path.join(result.target, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string> };
+      expect(manifest.devDependencies?.[ASSET_MCP]).toBeDefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should ship the same asset MCP config and pin in every template", async () => {
+    const configs = await Promise.all(
+      ALL_TEMPLATES.map((template) => readFile(path.join(TEMPLATE_ROOT, template, ".mcp.json"))),
+    );
+    const pins = await Promise.all(
+      ALL_TEMPLATES.map(async (template) => {
+        const manifest = JSON.parse(
+          await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+        ) as { devDependencies?: Record<string, string> };
+        return manifest.devDependencies?.[ASSET_MCP];
+      }),
+    );
+    expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
+    expect(pins[0]).toMatch(/^\d+\.\d+\.\d+$/u);
+    expect(new Set(pins).size, JSON.stringify(pins)).toBe(1);
+  });
+
+  it("should document only tools the pinned asset MCP actually serves", async () => {
+    const surface = JSON.parse(
+      await readFile(path.resolve("packages/create-threenative/asset-mcp-tools.json"), "utf8"),
+    ) as { recommended: string[]; tools: string[]; version: string };
+    const served = new Set(surface.tools);
+    const namespaces = new Set(surface.tools.map((tool) => tool.split("_")[0]));
+    for (const template of ALL_TEMPLATES) {
+      const agents = await readFile(path.join(TEMPLATE_ROOT, template, "AGENTS.md"), "utf8");
+      const mentioned = [...agents.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
+        .map((match) => match[1] as string)
+        .filter((name) => namespaces.has(name.split("_")[0] as string));
+      expect(
+        mentioned.filter((name) => !served.has(name)),
+        template,
+      ).toEqual([]);
+      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string> };
+      expect(manifest.devDependencies?.[ASSET_MCP], template).toBe(surface.version);
+    }
+  });
+
+  it("should throw when .mcp.json is missing from the template", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-missing-"));
+    try {
+      await withBrokenTemplateFile("starter/.mcp.json", undefined, async () => {
+        await expect(
+          createProject({ install: false, target: "my-game", template: "starter" }, root),
+        ).rejects.toThrow(/no \.mcp\.json/u);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should throw when .mcp.json names a package the project does not depend on", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-undeclared-"));
+    try {
+      const broken = JSON.stringify({
+        mcpServers: {
+          "threenative-assets": {
+            command: "node",
+            args: ["./node_modules/not-a-dependency/dist/index.js"],
+          },
+        },
+      });
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+        await expect(
+          createProject({ install: false, target: "my-game", template: "starter" }, root),
+        ).rejects.toThrow(/not-a-dependency.*does not depend on/u);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should throw when .mcp.json launches an unpinned remote package", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-npx-"));
+    try {
+      const broken = JSON.stringify({
+        mcpServers: {
+          "threenative-assets": { command: "npx", args: ["-y", ASSET_MCP] },
+        },
+      });
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+        await expect(
+          createProject({ install: false, target: "my-game", template: "starter" }, root),
+        ).rejects.toThrow(/must launch from '\.\/node_modules\/'/u);
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

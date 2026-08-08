@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@source "../index.html";
+@source "./";
+
+@theme {
+  --color-sky: #7ed7f4;
+  --color-road: #18243d;
+  --color-coral: #f15c61;
+  --color-leaf: #42d978;
+  --color-sun: #f8fcff;
+  --color-accent: #ffd45c;
+  --font-sans: Inter, ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-sky);
+  color: var(--color-road);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+canvas {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.hud-panel {
+  position: relative;
+  border: 1px solid rgb(248 252 255 / 62%);
+  border-radius: 1.1rem;
+  background: rgb(248 252 255 / 82%);
+  box-shadow: 0 14px 35px rgb(24 36 61 / 12%), inset 0 1px 0 white;
+  backdrop-filter: blur(12px);
+}
+
+.hud-label {
+  color: rgb(24 36 61 / 52%);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud-value {
+  color: var(--color-road);
+  font-size: clamp(1.25rem, 3.2vw, 2rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 950;
+  letter-spacing: -0.055em;
+  line-height: 1.1;
+  margin-top: 0.35rem;
+  transition: transform 160ms ease;
+}
+
+.hud-value small {
+  color: rgb(24 36 61 / 48%);
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  margin-left: 0.22rem;
+  text-transform: uppercase;
+}
+
+.speed-track {
+  background: rgb(24 36 61 / 8%);
+}
+
+.speed-track i {
+  background: linear-gradient(90deg, var(--color-accent), var(--color-coral));
+  display: block;
+  height: 100%;
+  transition: width 240ms ease;
+}
+
+.controls {
+  border: 1px solid rgb(248 252 255 / 48%);
+  background: rgb(24 36 61 / 78%);
+  box-shadow: 0 9px 24px rgb(24 36 61 / 18%);
+  color: rgb(248 252 255 / 82%);
+  backdrop-filter: blur(10px);
+}
+
+.controls kbd {
+  color: var(--color-accent);
+  font: inherit;
+  margin-right: 0.1rem;
+}
+
+.controls i {
+  background: rgb(248 252 255 / 18%);
+  height: 0.8rem;
+  width: 1px;
+}
+
+.crash-card {
+  width: min(25rem, 100%);
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 2rem;
+  background: rgb(248 252 255 / 94%);
+  box-shadow: 0 24px 70px rgb(24 36 61 / 28%);
+  padding: 2rem;
+  animation: card-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.restart-button {
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-road);
+  box-shadow: 0 8px 18px rgb(24 36 61 / 22%);
+  color: white;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  padding: 0.8rem 1.2rem;
+  text-transform: uppercase;
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.restart-button:hover,
+.restart-button:focus-visible {
+  background: var(--color-coral);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.restart-button span {
+  color: var(--color-accent);
+  margin-left: 0.35rem;
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 520px) {
+  .controls span { font-size: 0; }
+  .controls span kbd { font-size: 11px; }
+  .hud-panel { border-radius: 0.9rem; }
+}

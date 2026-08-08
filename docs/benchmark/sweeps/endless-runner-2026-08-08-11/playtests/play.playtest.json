@@ -1,0 +1,23 @@
+{
+  "name": "endless-runner-core-loop",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "steps": [
+    { "kind": "wait", "waitFrames": 24 },
+    { "kind": "input", "press": "ArrowRight", "holdFrames": 1, "release": true },
+    { "kind": "wait", "waitFrames": 20 },
+    { "kind": "input", "press": "Space", "holdFrames": 1, "release": true },
+    { "kind": "wait", "waitFrames": 12 }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "distance", "gte": 5, "changed": true },
+      { "id": "GameState", "path": "speed", "gte": 10 },
+      { "id": "GameState", "path": "lane", "equals": 1 },
+      { "id": "GameState", "path": "jumps", "gte": 1 }
+    ]
+  }
+}

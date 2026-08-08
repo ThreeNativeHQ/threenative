@@ -13,11 +13,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./navigation": {
+      "types": "./dist/navigation/index.d.ts",
+      "import": "./dist/navigation/index.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
   "dependencies": {
-    "@dimforge/rapier3d-compat": "catalog:"
+    "@dimforge/rapier3d-compat": "catalog:",
+    "recast-navigation": "catalog:"
   },
   "peerDependencies": {
     "@threenative/core": ">=0.1.0 <0.2.0"

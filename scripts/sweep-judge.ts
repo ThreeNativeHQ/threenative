@@ -3,6 +3,15 @@ import path from "node:path";
 import { assertFrameShowsSomething } from "./capture-guard.js";
 import { hasArmIdentifier } from "./score-blind.js";
 
+export interface PolishScore {
+  readonly behavior: number;
+  readonly visuals: number;
+  readonly effects: number;
+  readonly particles: number;
+  readonly audio: number | "na";
+  readonly ux: number;
+}
+
 export interface JudgeSample {
   readonly biggestGap: string;
   readonly evidence: string;
@@ -10,6 +19,9 @@ export interface JudgeSample {
   readonly playability: number;
   readonly screenshotWorthy: "no" | "yes";
   readonly visuals: number;
+  /** Optional v2 rubric. If supplied, every blind sample must supply it. */
+  readonly polish?: PolishScore;
+  readonly polishAverage?: number;
 }
 
 export interface JudgeInput {
@@ -51,6 +63,43 @@ function score(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 5;
 }
 
+function parsePolish(value: unknown): PolishScore | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("TN_JUDGE_INVALID: polish must be an object.");
+  if (
+    !score(value.behavior) ||
+    !score(value.visuals) ||
+    !score(value.effects) ||
+    !score(value.particles) ||
+    !(score(value.audio) || value.audio === "na") ||
+    !score(value.ux)
+  ) {
+    throw new Error(
+      "TN_JUDGE_INVALID: polish needs 1-5 behavior, visuals, effects, particles, and UX scores plus audio 1-5 or na.",
+    );
+  }
+  return {
+    behavior: value.behavior,
+    visuals: value.visuals,
+    effects: value.effects,
+    particles: value.particles,
+    audio: value.audio,
+    ux: value.ux,
+  };
+}
+
+function polishAverage(polish: PolishScore): number {
+  const values = [
+    polish.behavior,
+    polish.visuals,
+    polish.effects,
+    polish.particles,
+    polish.audio === "na" ? undefined : polish.audio,
+    polish.ux,
+  ].filter((value): value is number => value !== undefined);
+  return Number((values.reduce((total, value) => total + value, 0) / values.length).toFixed(2));
+}
+
 function parseJudgeInput(value: unknown): JudgeInput {
   if (!isRecord(value) || !Array.isArray(value.samples) || !isRecord(value.comparisonVerdict)) {
     throw new Error("TN_JUDGE_INVALID: expected samples and comparisonVerdict.");
@@ -68,6 +117,7 @@ function parseJudgeInput(value: unknown): JudgeInput {
       throw new Error("TN_JUDGE_INVALID: every sample needs bounded scores and evidence.");
     }
     const screenshotWorthy = sample.screenshotWorthy as "no" | "yes";
+    const polish = parsePolish(sample.polish);
     return {
       biggestGap: sample.biggestGap,
       evidence: sample.evidence,
@@ -75,8 +125,12 @@ function parseJudgeInput(value: unknown): JudgeInput {
       playability: sample.playability,
       screenshotWorthy,
       visuals: sample.visuals,
+      ...(polish === undefined ? {} : { polish, polishAverage: polishAverage(polish) }),
     };
   });
+  const polishPresence = samples.map((sample) => sample.polish !== undefined);
+  if (polishPresence.some(Boolean) && polishPresence.some((present) => !present))
+    throw new Error("TN_JUDGE_INVALID: either every blind sample has polish scores or none do.");
   const comparison = value.comparisonVerdict;
   if (
     !nonEmptyString(comparison.betterSample) ||

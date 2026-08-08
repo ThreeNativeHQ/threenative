@@ -1,0 +1,41 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "tie",
+    "confidence": "medium",
+    "rationale": "Both samples communicate a complete runner loop with readable input and a deliberate low-poly presentation. One favors title and obstacle readability; the other favors cleaner HUD hierarchy and a more detailed runner model. Neither frame shows sound or particle feedback, so the polish result is a tie rather than an inferred winner."
+  },
+  "samples": [
+    {
+      "biggestGap": "No visible moment-to-moment effects, particles, or audio feedback.",
+      "evidence": "The active run is immediately readable through the road, collectibles, obstacle, player, HUD, and input strip.",
+      "label": "sample-01",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
+    },
+    {
+      "biggestGap": "The world is polished but the player and obstacles could read larger at the same camera distance.",
+      "evidence": "The active run has clear lane, jump, slide, score, distance, speed, collectible, obstacle, and environment cues.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
+    }
+  ]
+}

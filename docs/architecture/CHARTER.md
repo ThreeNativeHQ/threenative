@@ -421,7 +421,7 @@ threenative/
   pnpm-workspace.yaml
   packages/
     core/                  # loop, lifecycle, scenes, input, assets, web platform,
-                           #   renderer bootstrap (~40 lines), state store
+                           #   renderer bootstrap (~40 lines), state store, hot reload
     physics/               # Rapier binding — separate ONLY because of the WASM dep
     physics-native/        # JSI binding to Rapier's Rust (§7). The crown jewel.
     ui/                    # React bindings — separate ONLY because of the React dep

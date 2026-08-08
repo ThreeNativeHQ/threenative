@@ -1,5 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Vector3 } from "three";
+import { interactionGroups } from "./collision.js";
 import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
@@ -19,6 +20,10 @@ export interface Area3DOptions {
   readonly world?: RAPIER.World;
   readonly shape: RAPIER.ColliderDesc;
   readonly position?: Pick<Vector3, "x" | "y" | "z">;
+  /** Godot's collision_layer — which layers this area occupies. Default 1. */
+  readonly collisionLayer?: number;
+  /** Godot's collision_mask — which layers this area scans. Default 0xffff. */
+  readonly collisionMask?: number;
 }
 
 export class Area3D {
@@ -29,6 +34,7 @@ export class Area3D {
   #physics: PhysicsContext | undefined;
   #entered = new Map<number, PhysicsBody3D>();
   #contacts: AreaContact[] = [];
+  #monitoring = true;
   #listeners: Record<AreaEvent, Set<AreaHandler>> = {
     bodyEntered: new Set(),
     bodyExited: new Set(),
@@ -46,10 +52,15 @@ export class Area3D {
       RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
     );
     this.body.userData = this;
-    this.collider = world.createCollider(
-      options.shape.setSensor(true).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
-      this.body,
-    );
+    const shape = options.shape
+      .setSensor(true)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
+      shape.setCollisionGroups(
+        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+      );
+    }
+    this.collider = world.createCollider(shape, this.body);
     this.#physics?.addArea(this);
   }
 
@@ -58,13 +69,24 @@ export class Area3D {
     return () => this.#listeners[event].delete(handler);
   }
 
+  /** Mirrors Godot's Area3D.monitoring. When false the area reports no contacts. */
+  get monitoring(): boolean {
+    return this.#monitoring;
+  }
+
+  set monitoring(value: boolean) {
+    if (this.#monitoring === value) return;
+    this.#monitoring = value;
+    if (!value) this.#entered.clear();
+  }
+
   setPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
     if (this.#disposed || !this.body.isValid()) return;
     this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
   }
 
   handleCollision(body: PhysicsBody3D, started: boolean): void {
-    if (this.#disposed) return;
+    if (this.#disposed || !this.#monitoring) return;
     const handle = body.body.handle;
     if (started) {
       if (this.#entered.has(handle)) return;

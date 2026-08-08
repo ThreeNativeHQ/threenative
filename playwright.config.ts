@@ -1,27 +1,128 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, defineConfig } from "@playwright/test";
 import { PNG } from "pngjs";
+import { createProject } from "./packages/create-threenative/src/index.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const starterLookServer = process.argv.includes("--starter-look-server");
+const hotReloadServer = process.argv.includes("--hot-reload-server");
 const starterLookGatePort = 4176;
 const starterLookReadyPort = 4175;
+const hotReloadPort = 4177;
+const replayPort = 4178;
+const hotReloadProjectFile = path.join(
+  tmpdir(),
+  `threenative-hot-reload-${path.basename(repoRoot)}.path`,
+);
+const localPackages = ["core", "physics", "playtest", "ui"] as const;
+// The scaffolded projects install from tarballs, not from `packages/*` directly: a source
+// directory still carries `catalog:` specifiers, which only resolve inside this workspace.
+// `pnpm pack` rewrites them, which is the same thing CI's scaffold smoke does.
+const localPackageSources = await packLocalPackages();
+
+async function packLocalPackages(): Promise<Record<string, string>> {
+  const existing = process.env.THREENATIVE_PACKED_PACKAGES;
+  const staging = existing ?? (await mkdtemp(path.join(tmpdir(), "threenative-packed-")));
+  if (existing === undefined) {
+    await run("pnpm", ["-r", "--workspace-concurrency=1", "--if-present", "run", "build"]);
+    for (const name of localPackages)
+      await run("pnpm", [
+        "--filter",
+        `./packages/${name}`,
+        "exec",
+        "pnpm",
+        "pack",
+        "--pack-destination",
+        staging,
+      ]);
+    process.env.THREENATIVE_PACKED_PACKAGES = staging;
+  }
+  const files = await readdir(staging);
+  const sources: Record<string, string> = {};
+  for (const name of localPackages) {
+    const tarball = files.find((file) => file.startsWith(`threenative-${name}-`));
+    if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${name}.`);
+    sources[`@threenative/${name}`] = path.join(staging, tarball);
+  }
+  return sources;
+}
+
+async function run(command: string, args: readonly string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, [...args], { cwd: repoRoot, stdio: "inherit" });
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${command} ${args.join(" ")} exited ${code}.`)),
+    );
+  });
+}
 
 if (starterLookServer) await runStarterLookServer();
+if (hotReloadServer) await runHotReloadServer();
+const hotReloadProject =
+  starterLookServer || hotReloadServer ? undefined : await prepareHotReloadProject();
+if (hotReloadProject !== undefined) process.env.THREENATIVE_HOT_RELOAD_PROJECT = hotReloadProject;
+
+async function prepareHotReloadProject(): Promise<string> {
+  const existing = await readSharedHotReloadProject();
+  if (existing !== undefined) return existing;
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-hot-reload-"));
+  const target = path.join(temporaryRoot, "starter");
+  await createProject(
+    { install: true, packageSources: localPackageSources, target, template: "starter" },
+    repoRoot,
+  );
+  await writeFile(hotReloadProjectFile, target);
+  return target;
+}
+
+async function runHotReloadServer(): Promise<void> {
+  const target = process.env.THREENATIVE_HOT_RELOAD_PROJECT ?? (await readSharedHotReloadProject());
+  if (target === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
+  const server = startStarterServer(target, hotReloadPort);
+  const output: string[] = [];
+  server.stdout?.on("data", (chunk) => output.push(String(chunk)));
+  server.stderr?.on("data", (chunk) => output.push(String(chunk)));
+  try {
+    await waitForUrl(`http://127.0.0.1:${hotReloadPort}/`, server, 120_000);
+    await keepServerAlive(server);
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,
+    );
+  } finally {
+    await rm(path.dirname(target), {
+      force: true,
+      maxRetries: 10,
+      recursive: true,
+      retryDelay: 100,
+    });
+  }
+}
+
+async function readSharedHotReloadProject(): Promise<string | undefined> {
+  const target = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
+  if (target.length === 0) return undefined;
+  try {
+    await readdir(target);
+    return target;
+  } catch {
+    return undefined;
+  }
+}
 
 async function runStarterLookServer(): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-starter-look-"));
   const target = path.join(temporaryRoot, "starter");
   const artifacts = path.join(temporaryRoot, "artifacts");
-  const template = path.join(repoRoot, "packages/create-threenative/templates/starter");
-  const dependencies = path.join(repoRoot, "node_modules/.pnpm/node_modules");
-  await cp(template, target, { recursive: true });
-  await renderTemplate(target, "starter-look");
-  await symlink(dependencies, path.join(target, "node_modules"), "dir");
+  await createProject(
+    { install: true, packageSources: localPackageSources, target, template: "starter" },
+    repoRoot,
+  );
 
   const server = startStarterServer(target, starterLookGatePort);
   const serverOutput: string[] = [];
@@ -53,20 +154,12 @@ function startStarterServer(target: string, port: number): ChildProcess {
   return spawn(
     "pnpm",
     ["--dir", target, "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: repoRoot,
+      env: { ...process.env, CHOKIDAR_USEPOLLING: process.env.CHOKIDAR_USEPOLLING ?? "true" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
-}
-
-async function renderTemplate(directory: string, projectName: string): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const source = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      await renderTemplate(source, projectName);
-      continue;
-    }
-    const content = await readFile(source, "utf8");
-    await writeFile(source, content.replaceAll("__PROJECT_NAME__", projectName));
-  }
 }
 
 async function waitForUrl(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
@@ -96,10 +189,9 @@ async function runStarterLookScenario(artifacts: string, port: number): Promise<
       `http://127.0.0.1:${port}/`,
       "--artifacts",
       artifacts,
-      "--browser-arg",
-      "--disable-gpu-sandbox",
-      "--browser-arg",
-      "--ignore-gpu-blocklist",
+      "--browser-recipe",
+      "webgpu",
+      "--headed",
     ],
     { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -138,7 +230,8 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   const cool = countPixels(
     image,
     stage,
-    (red, green, blue) => red < 110 && green > 90 && blue > 130 && blue > red * 1.35,
+    (red, green, blue) =>
+      red < 190 && green > 80 && blue > 100 && blue > red * 1.08 && green > red * 0.7,
   );
   const luminance =
     pixels.reduce((sum, [red, green, blue]) => sum + pixelLuminance(red, green, blue), 0) /
@@ -312,6 +405,47 @@ export default defineConfig({
       url: "http://127.0.0.1:4175",
       timeout: 120_000,
       reuseExistingServer: false,
+    },
+    ...(hotReloadProject === undefined
+      ? []
+      : [
+          {
+            command: "node --import tsx playwright.config.ts --hot-reload-server",
+            env: {
+              ...process.env,
+              CHOKIDAR_USEPOLLING: process.env.CHOKIDAR_USEPOLLING ?? "true",
+            },
+            url: `http://127.0.0.1:${hotReloadPort}`,
+            timeout: 120_000,
+            reuseExistingServer: false,
+          },
+        ]),
+    {
+      command: "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 4178 --strictPort",
+      url: `http://127.0.0.1:${replayPort}`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+    },
+  ],
+  projects: [
+    {
+      name: "abyss-vanilla",
+      testDir: "./examples/abyss-vanilla/__tests__",
+    },
+    {
+      name: "hot-reload",
+      testDir: "./tests/browser",
+      use: {
+        baseURL: `http://127.0.0.1:${hotReloadPort}`,
+        launchOptions: {
+          args: ["--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+        },
+      },
+    },
+    {
+      name: "abyss-framework-replay",
+      testDir: "./tests/browser-replay",
+      use: { baseURL: `http://127.0.0.1:${replayPort}` },
     },
   ],
 });

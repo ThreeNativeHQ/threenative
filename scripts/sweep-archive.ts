@@ -52,6 +52,25 @@ function copyFrameworkTypes(sandbox: string, archive: string): void {
   }
 }
 
+function copyStarterBaseline(archive: string, manifest: SweepManifest, repo: string): void {
+  if (manifest.arm !== "framework" || manifest.template === "none") return;
+  const starter = path.join(
+    repo,
+    "packages",
+    "create-threenative",
+    "templates",
+    manifest.template,
+    "src",
+  );
+  if (!isDirectory(starter))
+    throw new Error(`Cannot archive '${manifest.template}': missing starter template src/.`);
+  fs.cpSync(starter, path.join(archive, "starter-baseline", "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(archive, "starter-baseline", "SOURCE.json"),
+    `${JSON.stringify({ origin: "scaffold", template: manifest.template }, null, 2)}\n`,
+  );
+}
+
 function copyAppShell(sandbox: string, archive: string): void {
   for (const name of fs.readdirSync(sandbox)) {
     if (name === "index.html" || /^vite\.config\.[cm]?[jt]s$/.test(name)) {
@@ -147,6 +166,7 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
     copyPackageJson(packageFile, destination);
     fs.copyFileSync(manifestFile, path.join(destination, "sweep.json"));
     copyFrameworkTypes(source, destination);
+    copyStarterBaseline(destination, manifest, repo);
   } catch (error) {
     fs.rmSync(destination, { recursive: true, force: true });
     throw error;

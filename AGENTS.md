@@ -52,6 +52,11 @@ pnpm tsx scripts/count-loc.ts           # regenerates the README LOC table
 pnpm --filter abyss-framework dev       # run the framework example
 ```
 
+The self-improvement loop resumes from `docs/verification/round-*.md`. Run
+`pnpm round:next` to compute the single next action; run `pnpm round:deletions` after a
+completed pair to report exports unreached across consecutive rounds. Move a completed PRD
+to `docs/PRDs/done/` and keep the round ledger as the evidence record.
+
 CI runs typecheck → lint → test → scaffold smoke, in that order, and each gate blocks the
 next. Run `pnpm typecheck && pnpm lint && pnpm test` before claiming a change is done.
 
@@ -81,6 +86,12 @@ These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignorin
 
 `pnpm budgets` enforces: 8 workspace packages, 15,000 framework LOC (`packages/*/src`,
 excluding salvage), and 10 files in `docs/PRDs/`.
+
+It also fails if any `packages/*/package.json` claims `threenative-asset-mcp`. That server is
+the asset-discovery MCP each template pins and each generated project installs; it is an
+external process, and vendoring its ~10.8k lines would break the LOC and package caps at
+once. Its surface of record is `packages/create-threenative/asset-mcp-tools.json`, recorded
+by running the pinned version — update it by running the server, never by reading its docs.
 
 ## Layout
 
@@ -137,8 +148,14 @@ re-run on every later change to that behaviour — this is what rule 4 loops aga
 pnpm --filter @threenative/playtest build          # the CLI is built, not checked in
 node packages/playtest/dist/runner/cli.js init     # writes playtests/smoke.playtest.json
 node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
-  --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-arg --enable-unsafe-webgpu
+  --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu
 ```
+
+For screenshot or `visual` assertions on a headless Linux machine, prefix the command
+with `xvfb-run -a -s '-screen 0 1600x900x24'`. The current WebGPU flags are supplied by
+`--browser-recipe webgpu`; `--browser-arg` remains the escape hatch for custom Chromium
+flags. Exit code `0` means the playtest passed, `1` means assertions failed, and `2` means
+the run never reached assertions.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`. Working today:
 `diagnostics`, console, network, screenshot and trace assertions work against any URL. The

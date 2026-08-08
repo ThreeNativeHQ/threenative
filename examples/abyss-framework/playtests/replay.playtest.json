@@ -1,0 +1,197 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 30,
+      "pathLength": 30,
+      "reachesPositionWithin": {
+        "maxDistance": 0.000001,
+        "position": [559.7900029397031, -416.0200256012394, 0]
+      }
+    },
+    "world": {
+      "runtime": {
+        "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+        "core": "0.1.0",
+        "randomState": 90210,
+        "rapier": null,
+        "step": 0.016666666666666666
+      },
+      "seed": 90210
+    }
+  },
+  "name": "replay",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 1,
+      "press": ["Enter"],
+      "release": false
+    },
+    {
+      "holdTicks": 1,
+      "press": ["Space"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowDown"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowLeft"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
+    },
+    {
+      "holdTicks": 58,
+      "press": ["ArrowDown"],
+      "release": true
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 0
+}

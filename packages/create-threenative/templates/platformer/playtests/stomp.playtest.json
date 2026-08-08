@@ -6,9 +6,15 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "Space", "holdTicks": 4, "release": true },
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 50, "release": true },
-    { "kind": "wait", "waitTicks": 10, "release": true }
+    {
+      "kind": "input",
+      "label": "near-patrol",
+      "press": "ArrowRight",
+      "holdTicks": 46,
+      "release": true
+    },
+    { "kind": "input", "label": "jump", "press": "Space", "holdTicks": 4, "release": true },
+    { "kind": "wait", "label": "stomp-settled", "waitTicks": 45, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },

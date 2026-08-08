@@ -1,0 +1,17 @@
+{
+  "name": "platformer-chase",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "chaser",
+  "steps": [{ "kind": "wait", "waitTicks": 300, "release": true }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "chaser",
+      "reachesPositionWithin": { "position": [0, 0.66, 0], "maxDistance": 1.2 },
+      "pathLength": 9.0
+    }
+  }
+}

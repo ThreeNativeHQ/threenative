@@ -9,7 +9,11 @@ Proof SHA-256: `<sha256>`
 Template: `<template or none>`
 Archive: `docs/benchmark/sweeps/<genre>-<date>`
 Framework version: `<version>`
+Starter source LOC: `<number, or 0 for vanilla>`
+Starter lines survived: `<number, or 0 for vanilla>`
 User source LOC: `<number>`
+Authored LOC: `<number>`
+Authored bytes: `<number>`
 Source files: `<number>`
 Framework files: `<number>`
 Three-only files: `<number>`
@@ -19,6 +23,8 @@ Unused exports: `<comma-separated names or None>`
 Measurement command: `pnpm sweep:measure docs/benchmark/sweeps/<genre>-<date>`
 First game-code tool call: `<number>`
 Visual result: `<pass or fail, with the largest remaining difference>`
+Blind polish: `behavior <1-5>, visuals <1-5>, effects <1-5>, particles <1-5>, audio <1-5 or na>, UX <1-5; average <number>`
+Replay intent: `<yes or no, with one sentence of evidence>`
 
 Round 1 is the baseline. A round-2 ledger must use the same genre and brief hash so
 `pnpm sweep:delta <round-1-archive> <round-2-archive>` can compare it. The command refuses

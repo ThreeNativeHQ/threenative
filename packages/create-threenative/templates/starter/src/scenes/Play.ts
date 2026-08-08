@@ -3,12 +3,13 @@ import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@thr
 import { Group, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
+import { pickAt } from "../pick.js";
 import { createSpringArm } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createMaterials } from "../render/materials.js";
 import { createParticles } from "../render/particles.js";
 import { setupPost } from "../render/postprocessing.js";
-import { ball, block, makeRandom, roundedBox, spike, tube } from "../render/shapes.js";
+import { ball, block, makeRandom, roundedBox, sculpture, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
@@ -19,6 +20,9 @@ const KILL_PLANE = -4;
 export class Play extends Scene<GameState, PhysicsContext> {
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
+    entityCount: 0,
+    fastPicks: 0,
+    hovered: "",
     jumps: 0,
     levelX: -99,
     peakRise: 0,
@@ -40,6 +44,10 @@ export class Play extends Scene<GameState, PhysicsContext> {
     });
 
     const materials = createMaterials();
+    const sculptureMesh = sculpture(materials.crate);
+    sculptureMesh.name = "sculpture";
+    sculptureMesh.position.set(-2, 2.6, -1.5);
+    ctx.add(sculptureMesh);
     const levelX = ctx.random.range(-1, 1);
     const pickupX = 1.2 + makeRandom(Math.round((levelX + 1) * 1000))() * 0.8;
     const floorMesh = new Mesh(roundedBox(10, 0.2, 4, 0.08), materials.floor);
@@ -53,7 +61,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
       type: "fixed",
     });
     new Crate(ctx, levelX, 4, -1.5, materials.crate);
-    const player = new Player(ctx, materials.player);
+    const state = ctx.state.getState();
+    const player = new Player(ctx, materials.player, {
+      x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
+      y: 0.5,
+      z: 0,
+    });
     const pickupBase = block(0.42, 0.14, 0.42, materials.player);
     const pickupStem = tube(0.08, 0.08, 0.3, materials.player);
     const pickupOrb = ball(0.16, materials.player);
@@ -67,9 +80,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickupVisual.position.set(pickupX, 0.5, 0);
     pickupVisual.castShadow = true;
     ctx.add(pickupVisual);
+    ctx.entities.add("pickup", pickupVisual);
+    void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
     springArm.snap(player.mesh.position);
     ctx.state.set({ levelX });
     ctx.entities.add("player", player);
+    ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },
@@ -78,10 +94,31 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickup.on("bodyEntered", (body) => {
       if (body !== player.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
+      ctx.entities.remove("pickup");
+      ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
+      pickup.monitoring = false;
+      pickupVisual.visible = false;
+      ctx.after(1.2, () => {
+        ctx.entities.add("pickup", pickupVisual);
+        pickupVisual.visible = true;
+        pickup.monitoring = true;
+      });
       void pickupAudio.then((buffer) => audio.play(buffer)).catch(() => undefined);
     });
+    if (state.score > 0) {
+      ctx.entities.remove("pickup");
+      pickup.monitoring = false;
+      pickupVisual.visible = false;
+    }
 
     return (frameCtx, dt) => {
+      // Restart resets the store before clearing entities and scheduled callbacks.
+      if (frameCtx.input.justPressed("restart")) {
+        frameCtx.state.set(Play.initialState);
+        frameCtx.state.flush();
+        void frameCtx.goto("play");
+        return;
+      }
       player.update(frameCtx, dt);
       let respawned = false;
       if (player.mesh.position.y < KILL_PLANE) {
@@ -90,6 +127,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         respawned = true;
       }
       springArm.follow(player.mesh.position, dt);
+      pickAt(frameCtx);
       const debug = player.debug();
       const previous = frameCtx.state.getState();
       frameCtx.state.set({
@@ -98,6 +136,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
         playerX: player.mesh.position.x,
         respawns: previous.respawns + (respawned ? 1 : 0),
+        entityCount: Object.keys(frameCtx.entities.snapshot()).length,
       });
     };
   }

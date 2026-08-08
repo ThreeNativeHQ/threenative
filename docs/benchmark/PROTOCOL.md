@@ -35,6 +35,53 @@ The win condition is the paired arm: `pnpm sweep:pair <framework-archive>
 kill switch of `CHARTER.md` §3 still applies to this table row by row — if the vanilla
 column wins a row, that row leaves the framework.
 
+## Fair paired score
+
+`User source LOC` and source bytes remain useful maintenance facts, but they are not the
+framework cost score. A framework archive records the exact `starter-baseline/src/` it was
+given, and its fair authored cost is the source it actually wrote on top of that starter:
+
+```text
+authored LOC = every final line that is not a surviving starter line, per file
+```
+
+The comparison is per file against the frozen starter, by longest common subsequence — not
+`final - starter`. A net subtraction hides a rewrite, and the first sweep measured this way
+rewrote all fourteen starter files: net delta read 541 lines against 838 actually authored.
+Deleting a starter file costs nothing and can never push the total below zero.
+
+The vanilla arm is scaffolded with an empty `src/`, so it has no baseline to subtract and
+its authored LOC is its complete source from 0 to the final build. Both arms are therefore
+answering the same question: how much source did the agent write to reach the same
+specification?
+
+Two things this number is not. It is not a token count — reading the starter costs input
+tokens the framework arm pays and the vanilla arm does not, and the authoritative provider
+usage events remain the token record. And it is not a free pass for the starter: template
+lines are lines the benchmark stops charging, so `pnpm budgets` caps each template in
+`packages/create-threenative/templates/` and CI fails when one grows past it. Moving
+gameplay into a template to win a sweep breaks that cap and `CHARTER.md` §11 rule 3.
+
+A framework archive with no `starter-baseline/src/` fails measurement rather than falling
+back to the live template; re-measuring an old archive against a newer starter would move
+its published numbers.
+
+`pnpm sweep:pair` reports `authoredLoc` and `authoredBytes` for efficiency, `starterLoc`
+and `starterSurvivedLoc` to show how much of the starter survived, and `userLoc` as
+final-size context.
+
+Efficiency alone is not a win. Each genre also receives a blind polish score after the
+sealed proof is run. The quality rubric covers behavior, visuals, effects/particles,
+audio, and UX/completeness. Audio is `na` when the sealed brief does not request sound;
+unrequested extras do not earn automatic credit. `polishAverage` is the mean of the
+numeric dimensions.
+
+For a three-genre round, call the framework consistently better only when all genres have
+equal-or-better sealed-proof results, at least two genres have a strictly higher blind
+polish average, at least two have a non-positive authored LOC delta, and no genre loses
+both polish and proof. A single strong screenshot or a single LOC win is evidence, not a
+round win.
+
 ## Equal-proof contract
 
 Both arms receive the exact same prompt and must satisfy the same checks:
@@ -57,8 +104,8 @@ confirm that only that arm's proof fails.
 3. Run the same model and prompt three times with an empty directory and `three`.
 4. Use `scripts/score-blind.ts` to strip package, folder, arm, and control labels and
    deterministically shuffle the six artifacts.
-5. Have one human play every sample and record playability, visuals, and replay intent
-   before seeing tokens, steps, or LOC.
+5. Have one human play every sample and record the full polish rubric and replay intent
+   before seeing tokens, steps, LOC, or arm identity.
 6. Reveal authoritative provider usage events and record them after the blind scores.
 7. Publish `docs/benchmark/RESULTS-<date>.md`, including failures and void conditions.
 
@@ -87,15 +134,34 @@ pnpm tsx scripts/score-blind.ts \
 
 ## Blind scoring rubric
 
-Score each sample before cost disclosure.
+Score each sample before cost disclosure. Use the same 1–5 scale for every dimension:
 
-| Score | Playability | Visuals |
-|---:|---|---|
-| 1 | Does not start or cannot be controlled | Broken, blank, or unusable |
-| 2 | Starts but interaction is substantially broken | Default/debug output with major defects |
-| 3 | Complete loop with friction | Coherent presentation with visible rough edges |
-| 4 | Comfortable to play and understand | Deliberate composition, hierarchy, and feedback |
-| 5 | Immediately playable and satisfying | Polished, distinctive, and internally consistent |
+| Score | Behavior | Visuals | Effects / particles | Audio | UX / completeness |
+|---:|---|---|---|---|---|
+| 1 | Does not start or cannot be controlled | Broken, blank, or unusable | Missing or broken feedback | Missing/broken when required | Loop is unusable or incomplete |
+| 2 | Starts but interaction is substantially broken | Default/debug output with major defects | Static or confusing feedback | Poor or disruptive when required | Major rough edges block understanding |
+| 3 | Complete loop with friction | Coherent presentation with visible rough edges | Some response, little depth | Basic and functional when required | Understandable but unfinished |
+| 4 | Comfortable to play and understand | Deliberate composition, hierarchy, and feedback | Clear, well-timed feedback and motion | Supports the intended mood when required | Complete, readable, and replayable |
+| 5 | Immediately playable and satisfying | Polished, distinctive, and internally consistent | Rich, purposeful, and cohesive feedback | Memorable and well-mixed when required | Finished experience with strong replay pull |
+
+The v2 critic object accepted by `pnpm sweep:judge` is:
+
+```json
+{
+  "polish": {
+    "behavior": 1,
+    "visuals": 1,
+    "effects": 1,
+    "particles": 1,
+    "audio": "na",
+    "ux": 1
+  }
+}
+```
+
+The script computes `polishAverage` and rejects partial rubric coverage across blind
+samples. Also record: **Would you play it again?** `yes` or `no`, with one sentence of
+evidence.
 
 Also record: **Would you play it again?** `yes` or `no`, with one sentence of evidence.
 

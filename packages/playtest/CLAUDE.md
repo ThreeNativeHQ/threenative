@@ -47,3 +47,11 @@ differs from the rest of the repo. Match the file you are editing, not the root 
 Vitest at the root only collects `packages/**/__tests__/**/*.spec.ts`. The co-located
 `src/**/*.test.ts` files here are **not** run by `pnpm test`. Put anything that must gate CI
 in `__tests__/`, or run the co-located ones explicitly and say that you did.
+
+## Running the operator CLI
+
+Use `--browser-recipe webgpu` for the current Chromium WebGPU flags. For screenshot or
+`visual` assertions on a headless Linux machine, prefix the command with
+`xvfb-run -a -s '-screen 0 1600x900x24'`. `--browser-arg` remains the escape hatch for
+custom Chromium flags. Exit code `0` means pass, `1` means assertions failed, and `2`
+means the run never reached assertions.

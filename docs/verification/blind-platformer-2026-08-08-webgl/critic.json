@@ -1,0 +1,73 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-04",
+    "confidence": "high",
+    "rationale": "Sample 04 is the strongest first-play view: it shows a traversable route, collectibles, gaps, hazards, a distant goal, the player, objective, controls, and a fall counter together. Sample 02 is the strongest completion view, but the other two samples present a much simpler scene with less route and challenge information. None of the frames visibly demonstrates audio, so audio is scored as not applicable rather than inferred."
+  },
+  "samples": [
+    {
+      "biggestGap": "The completion screen is readable but the simple scene hides most traversal challenge and moment-to-moment feedback.",
+      "evidence": "Clear character, goal frame, completion message, collectible total, replay prompt, and input strip are visible, with clean rounded 3D forms and a coherent color palette.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      }
+    },
+    {
+      "biggestGap": "The completion state communicates success well but does not show the route as clearly as the active view.",
+      "evidence": "Detailed low-poly course, raised platforms, gaps, spikes, goal flag, character, star total, completion progress, and replay controls remain legible after the run.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 5,
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
+    },
+    {
+      "biggestGap": "The active screen has a large amount of empty space and does not expose meaningful traversal, hazards, or effects.",
+      "evidence": "The player, platform, collectible count, movement/jump objective, and input prompt are visible, but the course is represented by only a few simple shapes.",
+      "label": "sample-03",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      }
+    },
+    {
+      "biggestGap": "The route is clear, but the frame does not visibly demonstrate particles or audio feedback.",
+      "evidence": "Strong third-person composition shows the player, coin line, raised platforms, gaps, spikes, goal, environment dressing, objective, controls, and fall counter in one view.",
+      "label": "sample-04",
+      "playability": 5,
+      "screenshotWorthy": "yes",
+      "visuals": 5,
+      "polish": {
+        "behavior": 5,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 5
+      }
+    }
+  ]
+}

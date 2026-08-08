@@ -1,4 +1,5 @@
 import { defineGame } from "@threenative/core";
+import { acceptHotUpdate } from "@threenative/core/hot";
 import type { PhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import { Play } from "./scenes/Play.js";
@@ -24,4 +25,6 @@ const game = defineGame<GameState, PhysicsContext>({
   start: "play",
 });
 
+import.meta.hot?.accept();
+acceptHotUpdate(game, import.meta.hot);
 void game.start();

@@ -7,6 +7,7 @@ export type GameState = {
   hearts: number;
   jumps: number;
   peakRise: number;
+  playerX: number;
   respawns: number;
   topSpeed: number;
 };

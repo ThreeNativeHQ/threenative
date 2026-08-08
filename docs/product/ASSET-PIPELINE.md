@@ -4,6 +4,20 @@
 §11.1, §11.5 (a package exists only when it carries a dependency the others must not
 inherit).
 
+## Discovery shipped; the pipeline did not
+
+Asset **discovery** — finding a licensed model, texture, HDRI or sound and recording its
+attribution — is a separate problem from the build-time pipeline below, and it shipped in
+PRD-032. It runs beside the agent as an external MCP process (`threenative-asset-mcp`,
+pinned in every template's `package.json` and launched by the generated `.mcp.json`), so it
+costs 0 framework LOC and 0 package slots; `pnpm budgets` fails if it is ever vendored.
+
+The deferral below still binds discovery in one direction: `smithsonian_*` returns
+scan-resolution photogrammetry that this project has no way to decimate, so the generated
+`AGENTS.md` tells the agent not to route through it. **That tool is what the pipeline's
+arrival unlocks.** Nothing else here is affected — discovery does not start the pipeline,
+and shipping it does not fire either trigger.
+
 ## Why it is on the list at all
 
 AI-generated games fail less often on gameplay code than on assets: inconsistent art

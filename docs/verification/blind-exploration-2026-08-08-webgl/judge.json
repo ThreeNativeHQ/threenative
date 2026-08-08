@@ -1,0 +1,44 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-02",
+    "confidence": "high",
+    "rationale": "Sample 02 presents the player, beacon, journal, objective, interaction prompt, route context, lighting, and signal effects with substantially clearer framing. Sample 01 communicates a completed loop, but its foreground obstruction hides the playable space and offers less visual feedback. Neither frame visibly demonstrates audio, so audio is scored as not applicable rather than inferred."
+  },
+  "samples": [
+    {
+      "biggestGap": "The foreground obstruction hides much of the navigable space and the frame does not visibly demonstrate particles or audio feedback.",
+      "evidence": "The completed journal, beacon landmark, interaction prompt, player, movement input, and completion message establish a working exploration loop, but the central structure dominates the view.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "The hub view does not prove the two remote areas in a single frame, although the journal and objective make the loop clear.",
+      "evidence": "Strong beacon lighting, readable journal, centered player, interaction prompt, objective panel, note detail, trees, signal markers, and bright world effects create a clear and polished exploration presentation.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 5,
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 4,
+        "particles": 4,
+        "audio": "na",
+        "ux": 5
+      },
+      "polishAverage": 4.4
+    }
+  ],
+  "verdict": "ready"
+}

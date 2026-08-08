@@ -52,6 +52,36 @@ describe("budget gate", () => {
     );
   });
 
+  it("should fail when the asset MCP is vendored into packages", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "asset-mcp");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify({ name: "threenative-asset-mcp" }),
+    );
+    const report = await collectBudgets(root);
+    expect(report.vendoredAssetMcp).toEqual(["asset-mcp"]);
+    expect(budgetErrors(report).join("\n")).toContain("must stay external");
+  });
+
+  it("should fail when a workspace package depends on the asset MCP", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "core");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify({ dependencies: { "threenative-asset-mcp": "0.4.0" }, name: "core" }),
+    );
+    const report = await collectBudgets(root);
+    expect(budgetErrors(report).join("\n")).toContain("must stay external");
+  });
+
+  it("should keep the asset MCP external in the real tree", async () => {
+    const report = await collectBudgets(process.cwd());
+    expect(report.vendoredAssetMcp).toEqual([]);
+  });
+
   it("should keep the real tree under every cap", async () => {
     const report = await collectBudgets(process.cwd());
     expect(budgetErrors(report)).toEqual([]);

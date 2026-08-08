@@ -217,18 +217,18 @@ describe("CharacterBody3D", () => {
     const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));
     platformMesh.position.y = 2;
     const platform = new RigidBody3D({
+      collisionLayer: 2,
       object: platformMesh,
       physics: ctx.physics,
       shape: CollisionShape3D.fromMesh(platformMesh),
       type: "fixed",
     });
-    platform.collider.setCollisionGroups((2 << 16) | 0xffff);
 
     const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
     mesh.position.set(0, 0.5, 0);
     const character = new CharacterBody3D({
       gravity: -9.81,
-      oneWayGroups: 2,
+      oneWayLayers: 2,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.2, 0.3),
       object: mesh,

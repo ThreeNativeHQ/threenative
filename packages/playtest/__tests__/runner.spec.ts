@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
-import { buildReport } from "../src/runner/runner.js";
+import { buildReport, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
@@ -144,4 +144,52 @@ test("frame-timed steps stay on the live browser loop", () => {
   expect(playtestStepWaitTicks({ release: true, waitFrames: 5 })).toBe(0);
   expect(playtestStepHoldTicks({ holdTicks: 5, press: "KeyW", release: true }, 0)).toBe(5);
   expect(playtestStepWaitTicks({ release: true, waitTicks: 5 })).toBe(5);
+});
+
+test("runner derives semantic series from labeled snapshots and the exported field list", () => {
+  const currentScenario: IPlaytestScenario = {
+    assert: {
+      components: [{ atSteps: [{ equals: 2, label: "last" }], changed: true, component: "health", entity: "player", gte: 2 }],
+      resources: [{ atSteps: [{ equals: 1, label: "first" }, { equals: 3, label: "last" }], id: "GameState", path: "coins", equals: 3 }],
+      signals: [{ entity: "player", minCount: 2, name: "collected" }],
+    },
+    name: "semantic-series",
+    schemaVersion: 1,
+    steps: [
+      { label: "first", release: true, waitFrames: 1 },
+      { label: "last", release: true, waitFrames: 1 },
+    ],
+    target: "web",
+    viewport: { height: 720, width: 1280 },
+    warmupFrames: 0,
+  };
+  const snapshot = (coins: number, health: number, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    components: { player: { health } },
+    entities: [],
+    resources: { GameState: { coins } },
+  });
+
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    snapshot(0, 1, 0),
+    snapshot(3, 2, 2),
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [
+      { label: "first", signals: [{ entity: "player", name: "collected" }], snapshot: snapshot(1, 3, 1) },
+      { label: "last", signals: [{ entity: "player", name: "collected" }], snapshot: snapshot(3, 2, 2) },
+    ],
+  );
+
+  expect(STANDALONE_PLAYTEST_OBSERVATION_FIELDS).toContain("resourceSeries");
+  expect(result.observations?.resourceSeries).toHaveLength(2);
+  expect(result.observations?.componentSeries?.[1]?.snapshots.player?.health).toBe(2);
+  expect(result.observations?.signals).toHaveLength(2);
+  expect(result.pass).toBe(true);
 });

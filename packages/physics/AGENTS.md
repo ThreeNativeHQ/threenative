@@ -4,9 +4,10 @@ Read `/AGENTS.md` first. This file only covers what is different here.
 
 ## Why this package exists
 
-One reason: the Rapier WASM dependency must not be inherited by games that do not use
-physics. That is the whole justification, and it is the only kind of justification that
-creates a package here.
+One reason: the Rapier and Recast WASM dependencies must not be inherited by games that do
+not use physics or navigation. That is the whole justification, and it is the only kind of
+justification that creates a package here. Navigation is a `./navigation` subpath so the
+last workspace slot stays reserved for `@threenative/physics-native`.
 
 ## The names are Godot's
 
@@ -36,10 +37,21 @@ the user reaches `body` directly.
   from the scene. The framework calls the plugin's scene-exit hook for nodes that remain
   registered with Rapier; callers still dispose a node explicitly when removing it during
   play.
-- The fixed step is deterministic. `__tests__/determinism.spec.ts` asserts identical inputs
-  produce identical transforms — a change that makes it flaky is a broken change, not a
-  flaky test.
+- The fixed step is repeatable only within the pinned runtime that proves it. `__tests__/
+  determinism.spec.ts` compares contact-rich `World.takeSnapshot()` bytes on the same
+  machine and in a fresh worker; do not claim cross-browser, cross-OS, or cross-version
+  replay portability.
 - `Area3D.on('bodyEntered', ...)` returns an unsubscribe function. Callers store it.
+
+## Navigation
+
+`NavigationRegion3D` bakes a solo Recast navmesh from the user's world-space meshes,
+`NavigationAgent3D` computes a path and exposes the next position, and
+`NavigationObstacle3D` supplies local crowd avoidance. The agent never moves its object;
+gameplay writes the steering velocity and calls `CharacterBody3D.moveAndSlide()`.
+
+Solo navmeshes are static. Obstacles affect local avoidance only; geometry that changes
+shape requires an explicit re-bake and is outside this binding.
 
 ## Native path
 

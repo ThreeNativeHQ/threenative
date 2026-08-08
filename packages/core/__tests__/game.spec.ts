@@ -46,6 +46,190 @@ class EmptyScene extends Scene {
 }
 
 describe("Game", () => {
+  it("should read input from a custom target when inputTarget is provided", async () => {
+    const customTarget = new EventTarget();
+    const unrelatedTarget = new EventTarget();
+    let advance: ((ticks: number) => number) | undefined;
+    let pressed = false;
+    class InputScene extends Scene {
+      static override readonly initialState = {};
+
+      override update(ctx: Ctx): void {
+        pressed = ctx.input.pressed("move");
+      }
+    }
+    const game = defineGame({
+      inputTarget: customTarget,
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: InputScene },
+      start: "test",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    const keydown = new Event("keydown");
+    Object.defineProperty(keydown, "code", { value: "KeyW" });
+    unrelatedTarget.dispatchEvent(keydown);
+    advance(1);
+    expect(pressed).toBe(false);
+    customTarget.dispatchEvent(keydown);
+    advance(1);
+    expect(pressed).toBe(true);
+    game.stop();
+  });
+
+  it("should default to window when inputTarget is omitted", async () => {
+    const originalWindow = globalThis.window;
+    const windowTarget = new EventTarget();
+    Object.defineProperty(globalThis, "window", { configurable: true, value: windowTarget });
+    let advance: ((ticks: number) => number) | undefined;
+    let pressed = false;
+    class InputScene extends Scene {
+      static override readonly initialState = {};
+
+      override update(ctx: Ctx): void {
+        pressed = ctx.input.pressed("move");
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: InputScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+      const keydown = new Event("keydown");
+      Object.defineProperty(keydown, "code", { value: "KeyW" });
+      windowTarget.dispatchEvent(keydown);
+      advance(1);
+      expect(pressed).toBe(true);
+    } finally {
+      game.stop();
+      if (originalWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else
+        Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
+  it("should leave no renderer or loop when stopped during an in-flight start", async () => {
+    let disposed = 0;
+    let frames = 0;
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const canvas = testCanvas();
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: () => {
+        frames += 1;
+        return frames;
+      },
+    });
+    try {
+      const start = game.start();
+      game.stop();
+      await start;
+      expect(disposed).toBe(1);
+      expect(frames).toBe(0);
+      expect(game.ctx).toBeUndefined();
+    } finally {
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("should dispose plugins exactly once when stopped during setup", async () => {
+    let releaseSetup!: () => void;
+    let disposed = 0;
+    const setup = new Promise<undefined>((resolve) => {
+      releaseSetup = () => resolve(undefined);
+    });
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => setup,
+          dispose: () => {
+            disposed += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+
+    const start = game.start();
+    await Promise.resolve();
+    game.stop();
+    releaseSetup();
+    await start;
+    expect(disposed).toBe(1);
+  });
+
+  it("should stay idempotent when stop is called twice", async () => {
+    let disposed = 0;
+    class TestScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => undefined,
+          dispose: () => {
+            disposed += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    game.stop();
+    game.stop();
+    expect(disposed).toBe(1);
+  });
+
   it("keeps the existing perspective camera when no camera config is supplied", async () => {
     const game = defineGame({
       initialState: {},
@@ -222,6 +406,112 @@ describe("Game", () => {
     if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
     advance(1);
     expect(updates).toBe(1);
+    game.stop();
+  });
+
+  it("exposes goto on Game, reconstructs the current scene, and clears its scheduler", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let enters = 0;
+    let scheduled = 0;
+
+    class Restartable extends Scene<{ score: number }> {
+      static override readonly initialState = { score: 0 };
+
+      override enter(ctx: Ctx): void {
+        enters += 1;
+        ctx.entities.add(`entity-${enters}`, {});
+        ctx.every(() => scheduled++);
+      }
+    }
+
+    const game = defineGame<{ score: number }>({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { play: Restartable },
+      start: "play",
+    });
+
+    expect(() => game.goto("play")).toThrow("before start");
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    advance(1);
+    expect(scheduled).toBe(1);
+
+    game.state.set({ score: 7 });
+    game.state.flush();
+    const firstScene = game.scene;
+    await game.goto("play");
+    expect(game.scene).not.toBe(firstScene);
+    expect(game.state.getState().score).toBe(0);
+    expect(enters).toBe(2);
+    expect(game.ctx?.entities.snapshot()).toEqual({ "entity-2": {} });
+    advance(1);
+    expect(scheduled).toBe(2);
+    game.stop();
+  });
+
+  it("does not run plugins against a destination during a frame navigation", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let destinationUpdates = 0;
+    let beforePluginUpdates = 0;
+    let pluginUpdates = 0;
+
+    class First extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: Ctx): (ctx: Ctx, dt: number) => void {
+        return () => {
+          void ctx.goto("second");
+          return;
+        };
+      }
+    }
+
+    class Second extends Scene {
+      override enter(): (ctx: Ctx, dt: number) => void {
+        return () => {
+          destinationUpdates += 1;
+        };
+      }
+    }
+
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+          beforeUpdate: () => {
+            beforePluginUpdates += 1;
+          },
+          update: () => {
+            pluginUpdates += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { first: First, second: Second },
+      start: "first",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    advance(1);
+    expect(destinationUpdates).toBe(0);
+    expect(beforePluginUpdates).toBe(1);
+    expect(pluginUpdates).toBe(0);
+    advance(1);
+    expect(destinationUpdates).toBe(1);
+    expect(beforePluginUpdates).toBe(2);
+    expect(pluginUpdates).toBe(1);
     game.stop();
   });
 

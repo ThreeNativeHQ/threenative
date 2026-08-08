@@ -4,6 +4,7 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
 export type { CharacterBody3DOptions } from "./CharacterBody3D.js";
 export { CollisionShape3D } from "./CollisionShape3D.js";
 export type { CollisionShapeKind } from "./CollisionShape3D.js";
+export { interactionGroups } from "./collision.js";
 export { RigidBody3D } from "./RigidBody3D.js";
 export type { RigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";
 export { rapier } from "./plugin.js";

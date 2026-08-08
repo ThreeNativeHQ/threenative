@@ -8,7 +8,7 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 | Folder | Holds | Status of contents |
 |---|---|---|
 | `PRDs/` | Numbered work specs, one per shipped unit | **Binding once merged.** Capped at 10 files |
-| `verification/` | Gate results per PRD, dated | Historical record |
+| `verification/` | Gate results per PRD, dated, plus round ledgers | Historical record |
 | `benchmark/` | Protocol, sealed prompts, dated results | Binding protocol, VOID result |
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
 | `architecture/` | Shape of things not yet built | **Proposal**, except where it records shipped behaviour |
@@ -36,6 +36,10 @@ source LOC, source files, and framework reach side by side.
 The current caller census and recomputed round-2 comparison are recorded in
 [`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md).
 
+The self-improvement loop is recorded in
+[`verification/round-2-2026-08-07.md`](verification/round-2-2026-08-07.md). Resume it with
+`pnpm round:next`; persistent unused-export evidence comes from `pnpm round:deletions`.
+
 ## Strategy
 
 - [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse
@@ -54,7 +58,7 @@ The current caller census and recomputed round-2 comparison are recorded in
 ## Product
 
 - [product/PERFORMANCE-BUDGETS.md](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
-- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start
+- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start; asset *discovery* shipped separately in [PRDs/done/PRD-032-asset-discovery-mcp.md](PRDs/done/PRD-032-asset-discovery-mcp.md)
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
 ## Spikes

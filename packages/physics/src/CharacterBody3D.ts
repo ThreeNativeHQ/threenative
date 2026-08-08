@@ -1,5 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Object3D, Vector3 } from "three";
+import { interactionGroups } from "./collision.js";
 import type { PhysicsContext } from "./plugin.js";
 
 export interface CharacterBody3DOptions {
@@ -17,8 +18,12 @@ export interface CharacterBody3DOptions {
   readonly snapToGround?: number;
   readonly gravity?: number;
   readonly maxFallSpeed?: number;
-  /** Collider membership bits to ignore while moving upward. */
-  readonly oneWayGroups?: number;
+  /** Godot's collision_layer — which layers this body occupies. Default 1. */
+  readonly collisionLayer?: number;
+  /** Godot's collision_mask — which layers this body scans. Default 0xffff. */
+  readonly collisionMask?: number;
+  /** Collider layer bits to ignore while moving upward. */
+  readonly oneWayLayers?: number;
 }
 
 export class CharacterBody3D {
@@ -29,7 +34,7 @@ export class CharacterBody3D {
   readonly velocity: Vector3;
   gravity: number;
   maxFallSpeed: number;
-  readonly oneWayGroups: number;
+  readonly oneWayLayers: number;
   grounded = false;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
@@ -48,7 +53,7 @@ export class CharacterBody3D {
     this.velocity = this.object.position.clone().set(0, 0, 0);
     this.gravity = options.gravity ?? -9.81;
     this.maxFallSpeed = options.maxFallSpeed ?? 50;
-    this.oneWayGroups = options.oneWayGroups ?? 0;
+    this.oneWayLayers = options.oneWayLayers ?? 0;
     const description = RAPIER.RigidBodyDesc.kinematicPositionBased()
       .setTranslation(this.object.position.x, this.object.position.y, this.object.position.z)
       .setRotation({
@@ -59,6 +64,11 @@ export class CharacterBody3D {
       });
     this.body = world.createRigidBody(description);
     this.body.userData = this;
+    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
+      options.shape.setCollisionGroups(
+        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+      );
+    }
     this.collider = world.createCollider(options.shape, this.body);
     this.controller = world.createCharacterController(options.offset ?? 0.01);
     this.controller.setMaxSlopeClimbAngle(options.maxSlopeClimbAngle ?? Math.PI / 4);
@@ -126,12 +136,14 @@ export class CharacterBody3D {
       y: this.#desired.y + (carry?.y ?? 0),
       z: this.#desired.z + (carry?.z ?? 0),
     };
-    const groups = this.oneWayGroups > 0xffff ? this.oneWayGroups >>> 16 : this.oneWayGroups;
     const filterGroups =
-      this.velocity.y > 0 && groups !== 0 ? (0xffff << 16) | (0xffff ^ groups) : undefined;
+      this.velocity.y > 0 && this.oneWayLayers !== 0
+        ? interactionGroups(0xffff, 0xffff ^ this.oneWayLayers)
+        : undefined;
     const filterPredicate =
-      this.velocity.y > 0 && groups !== 0
-        ? (collider: RAPIER.Collider) => ((collider.collisionGroups() >>> 16) & groups) === 0
+      this.velocity.y > 0 && this.oneWayLayers !== 0
+        ? (collider: RAPIER.Collider) =>
+            ((collider.collisionGroups() >>> 16) & this.oneWayLayers) === 0
         : undefined;
     this.controller.computeColliderMovement(
       this.collider,

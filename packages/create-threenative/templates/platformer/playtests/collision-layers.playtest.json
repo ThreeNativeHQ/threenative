@@ -1,0 +1,36 @@
+{
+  "name": "platformer-collision-layers",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "debris-filtered", "waitTicks": 50, "release": true },
+    {
+      "kind": "input",
+      "label": "player-pickup",
+      "press": "ArrowRight",
+      "holdTicks": 16,
+      "release": true
+    },
+    { "kind": "input", "label": "jump", "press": "Space", "holdTicks": 4, "release": true },
+    { "kind": "wait", "label": "one-way-landing", "waitTicks": 100, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 1.5 } },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "coins",
+        "atSteps": [
+          { "label": "debris-filtered", "equals": 0 },
+          { "label": "player-pickup", "equals": 1 }
+        ]
+      },
+      { "id": "GameState", "path": "peakRise", "gte": 1.5, "changed": true }
+    ],
+    "signals": [{ "name": "collected", "entity": "player", "minCount": 1 }]
+  }
+}

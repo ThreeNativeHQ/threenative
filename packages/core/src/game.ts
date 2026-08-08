@@ -15,7 +15,10 @@ export type PluginCleanup = () => void;
 
 export interface GamePluginRuntime {
   fixedStep(ticks: number): number;
+  readonly random?: Pick<Random, "state">;
+  rapier?: string | null;
   readonly seed: number | null;
+  readonly step: number;
 }
 
 interface DevTools {
@@ -31,10 +34,18 @@ declare global {
 function installDevTools(entities: Registry): PluginCleanup {
   const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
   if (!isDev || typeof window === "undefined") return () => undefined;
-  const devTools: DevTools = { snapshot: () => entities.snapshot() };
+  const devTools: DevTools = {
+    ...(window.__THREENATIVE__ as (DevTools & Record<string, unknown>) | undefined),
+    snapshot: () => entities.snapshot(),
+  };
   window.__THREENATIVE__ = devTools;
   return () => {
-    if (window.__THREENATIVE__ === devTools) window.__THREENATIVE__ = undefined;
+    if (window.__THREENATIVE__ !== devTools) return;
+    const remaining = Object.fromEntries(
+      Object.entries(devTools).filter(([key]) => key !== "snapshot"),
+    );
+    window.__THREENATIVE__ =
+      Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as DevTools);
   };
 }
 
@@ -51,6 +62,7 @@ export interface GamePluginHooks<
     ctx: Ctx<TState, TPhysics>,
     runtime?: GamePluginRuntime,
   ): undefined | PluginCleanup | Promise<undefined | PluginCleanup>;
+  beforeUpdate?(ctx: Ctx<TState, TPhysics>, dt: number): void;
   update?(ctx: Ctx<TState, TPhysics>, dt: number): void;
   sceneExit?(ctx: Ctx<TState, TPhysics>): void;
   dispose?(ctx: Ctx<TState, TPhysics>): void;
@@ -71,6 +83,7 @@ export interface GameConfig<
   readonly container?: HTMLElement;
   readonly input?: InputBindings;
   readonly initialState?: TState;
+  readonly inputTarget?: EventTarget;
   readonly maxSteps?: number;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
@@ -105,6 +118,8 @@ export interface Game<
   readonly ctx: Ctx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
+  /** Rebuilds the requested scene from the game's declared initial state. */
+  goto(name: string): Promise<void>;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -160,12 +175,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #viewport: Viewport | undefined;
   #input: InputMap | undefined;
   #state: GameStore<TState>;
+  #initialState: TState;
   #loop: FixedStepLoop | undefined;
   #cleanup: Array<() => void> = [];
   #particles = new Set<GPUParticles3D>();
   #entities: Registry | undefined;
   #random: Random | undefined;
   #scheduler: Scheduler | undefined;
+  #activePlugins: Array<GamePluginHooks<TState, TPhysics>> = [];
+  #disposedPlugins = new Set<GamePluginHooks<TState, TPhysics>>();
+  #pendingStart: Promise<void> | undefined;
+  #aborted = false;
+  #sceneEntered = false;
   #paused = false;
   #started = false;
 
@@ -183,6 +204,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       );
     }
     this.#state = createGameStore(initialState, this.#config.stateFlushMs);
+    this.#initialState = { ...initialState };
   }
 
   get ctx(): Ctx<TState, TPhysics> | undefined {
@@ -197,12 +219,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     return this.#state;
   }
 
+  goto(name: string): Promise<void> {
+    if (this.#ctx === undefined) throw new Error("Cannot call game.goto() before start().");
+    this.#state.stop();
+    this.#state.setState({ ...this.#initialState });
+    this.#state.start();
+    return this.#goto(name, this.#ctx);
+  }
+
   #goto(name: string, ctx: Ctx<TState, TPhysics>): Promise<void> {
     const SceneType = this.#config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
     this.#sceneFrame = undefined;
     this.#scene?.exit(ctx);
+    this.#sceneEntered = false;
     this.#scheduler?.clear();
     this.#entities?.clear();
     for (const plugin of this.#config.plugins ?? []) {
@@ -229,26 +260,49 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     // overwrite it with the boot scene's undefined return value.
     if (this.#scene !== scene) return;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
+    this.#sceneEntered = true;
   }
 
-  async start(): Promise<void> {
-    if (this.#started) return;
+  start(): Promise<void> {
+    if (this.#started) return Promise.resolve();
+    if (this.#pendingStart !== undefined) return this.#pendingStart;
+    this.#aborted = false;
+    const pendingStart = this.#boot();
+    this.#pendingStart = pendingStart;
+    void pendingStart.then(
+      () => {
+        if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
+      },
+      () => {
+        if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
+      },
+    );
+    return pendingStart;
+  }
+
+  async #boot(): Promise<void> {
     const SceneType = this.#config.scenes[this.#config.start];
     if (SceneType === undefined) throw new Error(`Unknown start scene '${this.#config.start}'.`);
 
-    this.#renderer = await createRenderer({
+    const renderer = await createRenderer({
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
     });
-    const canvas = this.#renderer.domElement;
+    if (this.#aborted) {
+      renderer.dispose();
+      return;
+    }
+    this.#renderer = renderer;
+    const canvas = renderer.domElement;
     if (this.#config.container !== undefined && canvas.parentElement !== this.#config.container) {
       this.#config.container.append(canvas);
     } else if (canvas.parentElement === null && typeof document !== "undefined") {
       document.body.append(canvas);
     }
 
-    const inputTarget = typeof window === "undefined" ? canvas : window;
+    const inputTarget =
+      this.#config.inputTarget ?? (typeof window === "undefined" ? canvas : window);
     this.#input = new InputMap(this.#config.input, inputTarget, canvas);
     this.#state.start();
     const threeScene = new ThreeScene();
@@ -264,10 +318,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       add: (object) => {
         threeScene.add(object);
         if (object instanceof GPUParticles3D) {
-          const renderer = this.#renderer;
-          if (renderer === undefined)
+          const activeRenderer = this.#renderer;
+          if (activeRenderer === undefined)
             throw new Error("Cannot add particles before the game starts.");
-          object.attachRenderer(renderer);
+          object.attachRenderer(activeRenderer);
           this.#particles.add(object);
         }
         return object;
@@ -307,18 +361,20 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
             particle.process(this.#renderer);
           }
         }
-        this.#renderer?.render(threeScene, camera);
+        renderer.render(threeScene, camera);
         this.#scene?.render(ctx);
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
         this.#input?.tick();
         scheduler.tick(dt);
-        if (this.#sceneFrame !== undefined) this.#sceneFrame(ctx, dt);
-        else this.#scene?.update(ctx, dt);
-        for (const plugin of this.#config.plugins ?? []) {
-          if (typeof plugin !== "function") plugin.update?.(ctx, dt);
-        }
+        for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
+        const scene = this.#scene;
+        const frame = this.#sceneFrame;
+        if (frame !== undefined) frame(ctx, dt);
+        else scene?.update(ctx, dt);
+        if (this.#scene !== scene || this.#sceneFrame !== frame) return;
+        for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
       },
       step: this.#config.step,
     });
@@ -326,19 +382,40 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#loop = gameLoop;
     const runtime: GamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      random,
+      rapier: null,
       seed: this.#config.seed ?? null,
+      step: gameLoop.step,
     };
     for (const plugin of this.#config.plugins ?? []) {
       const cleanup =
         typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
+      if (typeof plugin !== "function") this.#activePlugins.push(plugin);
+      if (this.#aborted) {
+        if (cleanup !== undefined) this.#cleanup.push(cleanup);
+        this.#teardown(ctx);
+        return;
+      }
       if (cleanup !== undefined) this.#cleanup.push(cleanup);
     }
-    await this.#scene.load(ctx);
-    this.#enterScene(this.#scene, ctx);
+    const scene = this.#scene;
+    if (scene === undefined) {
+      this.#teardown(ctx);
+      return;
+    }
+    await scene.load(ctx);
+    if (this.#aborted) {
+      this.#teardown(ctx);
+      return;
+    }
+    this.#enterScene(scene, ctx);
+    if (this.#aborted) {
+      this.#teardown(ctx);
+      return;
+    }
     this.#started = true;
     gameLoop.start();
   }
-
   pause(): void {
     this.#paused = true;
   }
@@ -348,22 +425,38 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   }
 
   stop(): void {
-    if (!this.#started) return;
+    this.#aborted = true;
+    this.#teardown();
+  }
+
+  #disposePlugin(plugin: GamePluginHooks<TState, TPhysics>, ctx: Ctx<TState, TPhysics>): void {
+    if (this.#disposedPlugins.has(plugin)) return;
+    this.#disposedPlugins.add(plugin);
+    plugin.dispose?.(ctx);
+  }
+
+  #teardown(startingCtx?: Ctx<TState, TPhysics>): void {
+    const ctx = this.#ctx ?? startingCtx;
     this.#loop?.stop();
-    if (this.#ctx !== undefined) this.#scene?.exit(this.#ctx);
+    if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
+    this.#sceneEntered = false;
     this.#scheduler?.clear();
     this.#entities?.clear();
     this.#entities = undefined;
-    for (const plugin of this.#config.plugins ?? []) {
-      if (typeof plugin !== "function" && this.#ctx !== undefined) plugin.dispose?.(this.#ctx);
-    }
+    if (ctx !== undefined)
+      for (const plugin of this.#activePlugins) this.#disposePlugin(plugin, ctx);
+    this.#activePlugins = [];
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
-    if (this.#ctx !== undefined) clearScene(this.#ctx.scene, this.#particles);
+    if (ctx !== undefined) clearScene(ctx.scene, this.#particles);
     this.#input?.dispose();
     this.#state.stop();
     this.#viewport?.dispose();
-    this.#renderer?.dispose();
+    const renderer = this.#renderer;
+    renderer?.dispose();
+    const removeCanvas = renderer?.domElement.remove;
+    if (renderer !== undefined && typeof removeCanvas === "function")
+      removeCanvas.call(renderer.domElement);
     this.#renderer = undefined;
     this.#viewport = undefined;
     this.#input = undefined;
@@ -372,6 +465,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#loop = undefined;
     this.#random = undefined;
     this.#scheduler = undefined;
+    this.#disposedPlugins.clear();
     this.#paused = false;
     this.#started = false;
   }

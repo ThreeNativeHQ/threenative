@@ -6,9 +6,28 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".ts", ".tsx"]);
 
 export interface SweepMeasurement {
+  /** Final source count in the submitted sandbox. Kept for maintenance context. */
   readonly userLoc: number;
   readonly sourceBytes: number;
   readonly sourceFiles: number;
+  /** Frozen starter source count; zero for a vanilla arm. */
+  readonly starterLoc: number;
+  readonly starterBytes: number;
+  readonly starterFiles: number;
+  /**
+   * Where the starter baseline came from. `archived` was copied at scaffold time;
+   * `reconstructed` was recovered from git history for a sweep that predates the archiving.
+   */
+  readonly starterSource: "archived" | "reconstructed" | "none";
+  /**
+   * Lines the agent actually wrote: every final line that is not a surviving starter line,
+   * counted per file against the frozen starter. A rewritten starter file costs its rewrite;
+   * a deleted starter file costs nothing and can never make the total negative.
+   */
+  readonly authoredLoc: number;
+  readonly authoredBytes: number;
+  /** Starter lines still present unchanged in the submission. */
+  readonly starterSurvivedLoc: number;
   readonly frameworkFiles: number;
   readonly threeOnlyFiles: number;
   readonly reachRate: number;
@@ -86,6 +105,114 @@ function lineCount(source: string): number {
   return normalized.endsWith("\n")
     ? normalized.slice(0, -1).split("\n").length
     : normalized.split("\n").length;
+}
+
+function sourceTotals(files: readonly string[]): {
+  readonly bytes: number;
+  readonly files: number;
+  readonly loc: number;
+} {
+  let bytes = 0;
+  let loc = 0;
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    bytes += Buffer.byteLength(source, "utf8");
+    loc += lineCount(source);
+  }
+  return { bytes, files: files.length, loc };
+}
+
+function lines(source: string): string[] {
+  const normalized = source.replaceAll("\r\n", "\n");
+  if (normalized.length === 0) return [];
+  return (normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized).split("\n");
+}
+
+/**
+ * Final lines that no unchanged starter line accounts for, by longest common subsequence.
+ * `final - starter` would hide a rewrite: the endless-runner sweep rewrote all fourteen
+ * starter files, so its net delta read 541 lines against 775 actually written.
+ */
+function authoredLines(starter: string, final: string): { bytes: number; loc: number } {
+  const before = lines(starter);
+  const after = lines(final);
+  const width = before.length + 1;
+  const table = new Uint32Array(width * (after.length + 1));
+  for (let row = after.length - 1; row >= 0; row -= 1) {
+    for (let column = before.length - 1; column >= 0; column -= 1) {
+      table[row * width + column] =
+        after[row] === before[column]
+          ? (table[(row + 1) * width + column + 1] as number) + 1
+          : Math.max(
+              table[(row + 1) * width + column] as number,
+              table[row * width + column + 1] as number,
+            );
+    }
+  }
+  let bytes = 0;
+  let loc = 0;
+  let row = 0;
+  let column = 0;
+  while (row < after.length) {
+    if (column < before.length && after[row] === before[column]) {
+      row += 1;
+      column += 1;
+      continue;
+    }
+    if (
+      column < before.length &&
+      (table[row * width + column + 1] as number) > (table[(row + 1) * width + column] as number)
+    ) {
+      column += 1;
+      continue;
+    }
+    bytes += Buffer.byteLength(`${after[row] as string}\n`, "utf8");
+    loc += 1;
+    row += 1;
+  }
+  return { bytes, loc };
+}
+
+interface StarterBaseline {
+  /** Starter source keyed by its path relative to `src/`. */
+  readonly files: ReadonlyMap<string, string>;
+  readonly source: "archived" | "reconstructed" | "none";
+}
+
+/** A baseline recovered from git history says so in writing; anything else is scaffold-time. */
+function baselineOrigin(directory: string): "archived" | "reconstructed" {
+  const file = path.join(directory, "SOURCE.json");
+  if (!fs.existsSync(file)) return "archived";
+  const value = JSON.parse(fs.readFileSync(file, "utf8")) as { origin?: unknown };
+  if (value.origin === "reconstructed") return "reconstructed";
+  if (value.origin === "scaffold") return "archived";
+  throw new Error(`Invalid starter baseline origin in '${file}': ${String(value.origin)}.`);
+}
+
+/**
+ * The frozen starter the agent was handed. Only the copy inside the archive counts: reading
+ * the live template instead would re-score old archives every time the template changes.
+ */
+function starterBaseline(root: string): StarterBaseline {
+  const baseline = path.join(root, "starter-baseline");
+  const archived = path.join(baseline, "src");
+  if (isDirectory(archived)) {
+    const files = new Map<string, string>();
+    for (const file of sourceFiles(archived)) {
+      files.set(path.relative(archived, file).split(path.sep).join("/"), file);
+    }
+    return { files, source: baselineOrigin(baseline) };
+  }
+
+  const manifestFile = path.join(root, "sweep.json");
+  if (!fs.existsSync(manifestFile)) return { files: new Map(), source: "none" };
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as { arm?: unknown };
+  if (manifest.arm === "framework") {
+    throw new Error(
+      `Cannot measure '${root}': a framework archive needs its frozen starter-baseline/src/. Re-archive with pnpm sweep:archive, or copy the starter template the run was scaffolded from into ${path.join(root, "starter-baseline", "src")}.`,
+    );
+  }
+  return { files: new Map(), source: "none" };
 }
 
 function exportedNames(source: string): string[] {
@@ -174,6 +301,8 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
   if (!isDirectory(sourceRoot)) throw new Error(`Cannot measure '${root}': missing src/.`);
   const files = sourceFiles(sourceRoot).sort();
   if (files.length === 0) throw new Error(`Cannot measure '${root}': src/ has no source files.`);
+  const baseline = starterBaseline(root);
+  const starter = sourceTotals([...baseline.files.values()]);
   const frameworkModules = frameworkDeclarations(root);
   const allExports = new Map<string, Set<string>>(
     [...frameworkModules].map(([moduleName, names]) => [moduleName, new Set(names)]),
@@ -185,12 +314,23 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
   let sourceBytes = 0;
   let frameworkFiles = 0;
   let threeOnlyFiles = 0;
+  let authoredLoc = 0;
+  let authoredBytes = 0;
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
     const framework = importsFramework(source);
     const three = importsThree(source);
     userLoc += lineCount(source);
     sourceBytes += Buffer.byteLength(source, "utf8");
+    const starterFile = baseline.files.get(
+      path.relative(sourceRoot, file).split(path.sep).join("/"),
+    );
+    const authored =
+      starterFile === undefined
+        ? { bytes: Buffer.byteLength(source, "utf8"), loc: lineCount(source) }
+        : authoredLines(fs.readFileSync(starterFile, "utf8"), source);
+    authoredLoc += authored.loc;
+    authoredBytes += authored.bytes;
     if (framework) frameworkFiles += 1;
     if (three && !framework) threeOnlyFiles += 1;
   }
@@ -207,6 +347,13 @@ export function measureSandbox(rootDirectory: string): SweepMeasurement {
     userLoc,
     sourceBytes,
     sourceFiles: files.length,
+    starterLoc: starter.loc,
+    starterBytes: starter.bytes,
+    starterFiles: starter.files,
+    starterSource: baseline.source,
+    authoredLoc,
+    authoredBytes,
+    starterSurvivedLoc: userLoc - authoredLoc,
     frameworkFiles,
     threeOnlyFiles,
     reachRate: frameworkFiles / files.length,

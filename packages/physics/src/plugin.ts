@@ -3,6 +3,7 @@ import type { Ctx, GamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
+import type { NavigationContext } from "./navigation/index.js";
 
 export interface PhysicsOptions {
   readonly gravity?: { readonly x: number; readonly y: number; readonly z: number };
@@ -13,7 +14,9 @@ export type PhysicsBody3D = RigidBody3D | CharacterBody3D;
 export interface PhysicsContext {
   readonly world: RAPIER.World;
   readonly eventQueue: RAPIER.EventQueue;
+  navigation?: NavigationContext;
   add(body: PhysicsBody3D): void;
+  numBodies(): number;
   kinematicMotion?(
     colliderHandle: number,
   ): { readonly x: number; readonly y: number; readonly z: number } | undefined;
@@ -42,8 +45,9 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
   >();
 
   return {
-    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>) => {
+    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>, runtime) => {
       await initialize();
+      if (runtime !== undefined) runtime.rapier = RAPIER.version();
       const world = new RAPIER.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
       const eventQueue = new RAPIER.EventQueue(true);
       context = {
@@ -53,6 +57,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         },
         addArea: (area) => areas.set(area.collider.handle, area),
         kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
+        numBodies: () => bodies.size,
         eventQueue,
         remove: (body) => {
           bodies.delete(body);
@@ -107,13 +112,15 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
       });
       for (const area of areas.values()) {
         const current = new Map<number, PhysicsBody3D>();
+        const areaMask = area.collider.collisionGroups() & 0xffff;
         physics.world.intersectionsWithShape(
           area.collider.translation(),
           area.collider.rotation(),
           area.collider.shape,
           (collider) => {
             const body = bodiesByCollider.get(collider.handle);
-            if (body !== undefined) current.set(body.body.handle, body);
+            if (body !== undefined && ((collider.collisionGroups() >>> 16) & areaMask) !== 0)
+              current.set(body.body.handle, body);
             return true;
           },
           RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,

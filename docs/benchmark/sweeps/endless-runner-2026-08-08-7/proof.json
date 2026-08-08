@@ -1,0 +1,186 @@
+{
+  "arm": "framework",
+  "genre": "endless-runner",
+  "passed": 1,
+  "proofHash": "4e985122c5fdd62a5b8d36c2acc7d1a6c7d0b49aa1583f47dbf721c5c46764db",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": 101.36848847911037,
+            "before": 7.819531235911595,
+            "expected": {
+              "changed": true
+            },
+            "id": "state",
+            "path": "distance",
+            "trivial": false
+          },
+          "id": "resource.state.distance",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 1,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "collected",
+            "trivial": false
+          },
+          "id": "resource.state.collected",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 2,
+            "before": 1,
+            "expected": {
+              "equals": 2,
+              "changed": true
+            },
+            "id": "state",
+            "path": "lane",
+            "trivial": false
+          },
+          "id": "resource.state.lane",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 19.212579345880147,
+            "before": 18.090216331564626,
+            "expected": {
+              "changed": true
+            },
+            "id": "state",
+            "path": "speed",
+            "trivial": false
+          },
+          "id": "resource.state.speed",
+          "pass": true
+        },
+        {
+          "details": {
+            "alternatives": [
+              {
+                "after": 1,
+                "before": 0,
+                "expected": {
+                  "gte": 1,
+                  "changed": true
+                },
+                "id": "state",
+                "path": "jumps",
+                "trivial": false
+              },
+              {
+                "after": 1.770833333333335,
+                "before": 0,
+                "expected": {
+                  "gte": 0.5,
+                  "changed": true
+                },
+                "id": "state",
+                "path": "peakRise",
+                "trivial": false
+              },
+              {
+                "expected": {
+                  "gte": 1,
+                  "changed": true
+                },
+                "id": "state",
+                "path": "slides",
+                "trivial": false
+              },
+              {
+                "expected": {
+                  "gte": 0.5,
+                  "changed": true
+                },
+                "id": "state",
+                "path": "peakSlide",
+                "trivial": false
+              }
+            ],
+            "id": "state",
+            "observed": {
+              "before": {
+                "distance": 7.819531235911595,
+                "collected": 0,
+                "lane": 1,
+                "speed": 18.090216331564626,
+                "jumps": 0,
+                "peakRise": 0
+              },
+              "after": {
+                "distance": 101.36848847911037,
+                "collected": 1,
+                "lane": 2,
+                "speed": 19.212579345880147,
+                "jumps": 1,
+                "peakRise": 1.770833333333335
+              }
+            }
+          },
+          "id": "resource.state.anyOf",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 93.60539461638861,
+            "minimum": 5
+          },
+          "id": "movement.distance",
+          "pass": true
+        },
+        {
+          "details": {
+            "minimum": 5,
+            "pathLength": 94.11371272755726
+          },
+          "id": "movement.pathLength",
+          "pass": true
+        },
+        {
+          "details": {
+            "axis": "-z",
+            "min": 5,
+            "rawDelta": -93.54895724319877,
+            "signedDelta": 93.54895724319877
+          },
+          "id": "movement.axisDelta",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 17697.180588668136
+          },
+          "id": "visibility.player",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "name": "endless-runner-brief-proof",
+      "verdict": "pass"
+    }
+  ],
+  "total": 1
+}
