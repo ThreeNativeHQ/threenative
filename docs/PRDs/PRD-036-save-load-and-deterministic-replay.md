@@ -548,10 +548,10 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,073 tests passed.
+      on 2026-08-08; 142 files / 1,076 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Chromium/WebGPU
-      runner in 19.0 seconds; the checked-in 1,800-tick scenario reported movement, a
+      runner in 20.2 seconds; the checked-in 1,800-tick scenario reported movement, a
       matching runtime fingerprint, and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean
