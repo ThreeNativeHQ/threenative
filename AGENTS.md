@@ -142,8 +142,14 @@ re-run on every later change to that behaviour — this is what rule 4 loops aga
 pnpm --filter @threenative/playtest build          # the CLI is built, not checked in
 node packages/playtest/dist/runner/cli.js init     # writes playtests/smoke.playtest.json
 node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
-  --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-arg --enable-unsafe-webgpu
+  --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu
 ```
+
+For screenshot or `visual` assertions on a headless Linux machine, prefix the command
+with `xvfb-run -a -s '-screen 0 1600x900x24'`. The current WebGPU flags are supplied by
+`--browser-recipe webgpu`; `--browser-arg` remains the escape hatch for custom Chromium
+flags. Exit code `0` means the playtest passed, `1` means assertions failed, and `2` means
+the run never reached assertions.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`. Working today:
 `diagnostics`, console, network, screenshot and trace assertions work against any URL. The

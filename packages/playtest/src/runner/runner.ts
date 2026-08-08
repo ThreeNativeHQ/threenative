@@ -19,7 +19,7 @@ import {
   type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
-import { chromium, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
@@ -51,13 +51,37 @@ interface LabeledPlaytestSample {
 export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): Promise<IStandalonePlaytestReport> {
   const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
   await mkdir(config.artifactDirectory, { recursive: true });
-  const server = config.server === undefined ? undefined : startManagedServer(config);
-  const browser = await chromium.launch({
-    ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
-    headless: config.headless,
-  });
+  let server: ChildProcess | undefined;
+  let browser: Browser | undefined;
   let page: Page | undefined;
+  let teardownPromise: Promise<void> | undefined;
+  const teardown = async (): Promise<void> => {
+    if (teardownPromise !== undefined) return teardownPromise;
+    teardownPromise = (async () => {
+      stopManagedServer(server);
+      await page?.context().close().catch(() => undefined);
+      await browser?.close().catch(() => undefined);
+    })();
+    return teardownPromise;
+  };
+  const handleSignal = (): void => {
+    void teardown().catch(() => undefined).finally(() => {
+      process.exitCode = 2;
+      process.exit(2);
+    });
+  };
+  process.once("SIGINT", handleSignal);
+  process.once("SIGTERM", handleSignal);
+  const preflight = preflightDisplay(config, scenario);
+  if (preflight !== undefined) {
+    process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
+  }
   try {
+    server = config.server === undefined ? undefined : startManagedServer(config);
+    browser = await chromium.launch({
+      ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
+      headless: config.headless,
+    });
     if (server !== undefined) {
       await waitForUrl(config.url, config.server?.timeoutMs ?? config.timeoutMs, server);
     }
@@ -141,17 +165,44 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       labeledSamples,
     );
     await context.close();
-    return report;
+    return addPreflightDiagnostic(report, preflight);
   } catch (error) {
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
-      return failureReport(config, scenario, error.diagnostic);
+      return addPreflightDiagnostic(failureReport(config, scenario, error.diagnostic), preflight);
     }
     throw error;
   } finally {
-    await page?.context().close().catch(() => undefined);
-    await browser.close();
-    stopManagedServer(server);
+    process.off("SIGINT", handleSignal);
+    process.off("SIGTERM", handleSignal);
+    await teardown();
   }
+}
+
+export function preflightDisplay(
+  config: Pick<IStandalonePlaytestConfig, "headless">,
+  scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">,
+  environment: NodeJS.ProcessEnv = process.env,
+  platform = process.platform,
+): IPlaytestDiagnostic | undefined {
+  const takesScreenshot = scenario.artifacts?.screenshots !== false
+    || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
+  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual)) {
+    return undefined;
+  }
+  return {
+    code: "TN_PLAYTEST_HEADLESS_WEBGPU",
+    message: "Headless Linux visual runs may render WebGPU blank without a display; use xvfb-run -a -s '-screen 0 1600x900x24'.",
+    severity: "warning",
+    suggestion: "Prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
+  };
+}
+
+function addPreflightDiagnostic(
+  report: IStandalonePlaytestReport,
+  diagnostic: IPlaytestDiagnostic | undefined,
+): IStandalonePlaytestReport {
+  return diagnostic === undefined ? report : { ...report, diagnostics: [diagnostic, ...report.diagnostics] };
 }
 
 export function buildReport(
@@ -615,7 +666,13 @@ async function waitForUrl(url: string, timeoutMs: number, server: ChildProcess):
 function stopManagedServer(server: ChildProcess | undefined): void {
   if (server?.pid === undefined || server.exitCode !== null) return;
   if (process.platform === "win32") server.kill();
-  else process.kill(-server.pid, "SIGTERM");
+  else {
+    try {
+      process.kill(-server.pid, "SIGTERM");
+    } catch {
+      // The process group may have exited between the status check and teardown.
+    }
+  }
 }
 
 function managedServerError(message: string, url: string, timeoutMs: number, output: readonly string[]): ManagedServerError {

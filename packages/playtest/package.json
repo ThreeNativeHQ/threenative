@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build"
+    "test": "pnpm run build && vitest run --config ../../vitest.config.ts && bash __tests__/orphan-cleanup.sh"
   },
   "dependencies": {
     "pngjs": "catalog:"
