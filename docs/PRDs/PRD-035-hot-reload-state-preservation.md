@@ -1,11 +1,13 @@
 # PRD-035 — Hot reload with state preservation
 
-**Status: IMPLEMENTATION DELIVERED; supported-browser consumer gate passes; full release evidence remains.**
+**Status: IMPLEMENTATION DELIVERED; supported-browser consumer and manual jump/fall probes
+pass; full release evidence remains.**
 Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
-`docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; repository and visual gates
-pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11 runner, including
-zero console errors; the full browser suite and remaining manual/negative-control evidence
-are still open.
+`docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; the implementation
+checkpoint gates pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11
+runner, including zero console errors, and a manual jump/fall probe shows the edited
+`JUMP_SPEED` taking effect while the player lands cleanly. The full browser suite and
+remaining manual/negative-control evidence are still open.
 
 **Complexity: 10 → HIGH mode.** (10+ files +3, new module +2, concurrency/lifecycle state
 +2, multi-package +2, external API — Vite's HMR contract +1.) HIGH means an automated
