@@ -25,7 +25,7 @@
     { "kind": "wait", "label": "win-condition", "waitTicks": 25 }
   ],
   "assert": {
-    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "movement": { "entity": "player", "minDistance": 2 },
     "resources": [
       { "id": "state", "path": "score", "gte": 3, "changed": true },
