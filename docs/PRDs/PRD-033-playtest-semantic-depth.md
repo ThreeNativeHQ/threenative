@@ -137,10 +137,10 @@ the user's agent ships the emission. Same division as `contacts`.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `observationPath` on each registry entry + `TN_PLAYTEST_OBSERVATION_UNAVAILABLE` | `runner/bridgeClient.ts:~93` in `connectPlaytestBridge`; TBD at implementation | a misleading gameplay-shaped red | n/a — the evaluators stay for supported targets | a scenario asserting `movement.notFacing` against `abyss-framework` must fail with the new code naming `effectLog`; today it fails with `TN_PLAYTEST_NOT_FACING_ASSERTION_FAILED` and advice about patrol yaw |
-| 2 | `unknownPlaytestCapabilities` wired into connect | `runner/bridgeClient.ts:~68` after `describe()`; TBD | the dead export at `capabilities.ts:60` | export kept, now called | **fails on the unmodified tree**: `core/src/playtest.ts:67` advertises `runtime.audio`, absent from `PLAYTEST_CAPABILITY_REGISTRY`. Phase 1 must resolve it deliberately (register it or stop advertising it), and the red is recorded first |
-| 3 | Labeled-step sampling → `resourceSeries` | `runner/runner.ts:~91` step loop; TBD | before/after-only sampling | before/after retained — different question | delete the per-step sample call → the new `collect` scenario's `atSteps` goes red with "no sample for label", not green |
-| 4 | `components` from `Registry.snapshot()` + `runtime.components` advertised | `core/src/playtest.ts:~34` `gameplayObservations`; `runner/runner.ts` sample `include`; TBD | `GameState` as the only per-entity view | no — `resources` still serves genuinely global state; `components` serves per-entity | delete the damage handler in `templates/platformer` → `components` on `player.health` goes red while `resources.GameState` stays green, which is the whole point |
+| 1 | `observationPath` on each registry entry + `TN_PLAYTEST_OBSERVATION_UNAVAILABLE` | `packages/playtest/src/runner/bridgeClient.ts:145` in `unavailableObservation`; `:154` checks conditional labeled-series paths | a misleading gameplay-shaped red | n/a — the evaluators stay for supported targets | a scenario asserting `movement.notFacing` against `abyss-framework` must fail with the new code naming `effectLog`; today it fails with `TN_PLAYTEST_NOT_FACING_ASSERTION_FAILED` and advice about patrol yaw |
+| 2 | `unknownPlaytestCapabilities` wired into connect | `packages/playtest/src/runner/bridgeClient.ts:76` after `describe()` | the dead export at `capabilities.ts:60` | export kept, now called | **fails on the unmodified tree**: `core/src/playtest.ts:67` advertises `runtime.audio`, absent from `PLAYTEST_CAPABILITY_REGISTRY`. Phase 1 must resolve it deliberately (register it or stop advertising it), and the red is recorded first |
+| 3 | Labeled-step sampling → `resourceSeries` | `packages/playtest/src/runner/runner.ts:104` step loop | before/after-only sampling | before/after retained — different question | delete the per-step sample call → the new `collect` scenario's `atSteps` goes red with "no sample for label", not green |
+| 4 | `components` from `Registry.snapshot()` + `runtime.components` advertised | `packages/core/src/playtest.ts:35` component provider; `packages/playtest/src/runner/runner.ts:104` sample include | `GameState` as the only per-entity view | no — `resources` still serves genuinely global state; `components` serves per-entity | delete the damage handler in `templates/platformer` → `components` on `player.health` goes red while `resources.GameState` stays green, which is the whole point |
 | 5 | `signals` assertion + `drainEvents` in `three/bridge.ts` | `runner/runner.ts` step loop; `templates/platformer/src/main.ts` supplies `events` | nothing — new observation | n/a | remove the `collected` emit in the template → the `signals` scenario goes red; remove the whole `events` callback → `TN_PLAYTEST_CAPABILITY_MISSING` for `runtime.events`, never a pass |
 | 6 | Template scenarios exercising 3–5 | `pnpm test:playtest`; scaffold smoke in CI | scenarios that assert only `diagnostics` + `resources` | no — existing scenarios stay | delete a scenario file → suite count drops and the gate fails |
 
@@ -432,7 +432,7 @@ Each of these is a statement about a game, not about a file.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
+- [ ] Integration Ledger has zero unresolved cells; every live caller is a real non-test `file:line`
 - [ ] Every new exported symbol has a non-test consumer (census pasted)
 - [ ] Revert check passed for each of rows 1–5
 - [ ] Every gate has a negative control observed failing

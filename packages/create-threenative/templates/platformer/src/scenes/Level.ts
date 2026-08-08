@@ -6,6 +6,7 @@ import { Patrol } from "../entities/Patrol.js";
 import { Pickup, coinArc } from "../entities/Pickup.js";
 import { Checkpoints } from "../level/Checkpoints.js";
 import { createPlatform } from "../level/Platform.js";
+import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -60,6 +61,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
       const id = `coin.${pickups.length}`;
       const pickup = new Pickup(ctx, character, at, () => {
         coins += 1;
+        emitPlaytestEvent({ entity: "player", name: "collected" });
       });
       pickups.push({ id, value: pickup });
       ctx.entities.add(id, pickup);

@@ -9,6 +9,7 @@ import {
   PLAYTEST_PROTOCOL_VERSION,
   PlaytestScenarioError,
   loadPlaytestScenario,
+  type IPlaytestStep,
 } from "../src/index.js";
 import { connectPlaytestBridge, PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 
@@ -20,7 +21,7 @@ import { connectPlaytestBridge, PlaytestBridgeError } from "../src/runner/bridge
 // These tests were observed RED against the pre-fix parser: loadPlaytestScenario
 // resolved instead of throwing for the first three.
 
-async function writeScenario(assert: unknown): Promise<string> {
+async function writeScenario(assert: unknown, steps: IPlaytestStep[] = [{ release: true, waitFrames: 1 }]): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "playtest-silent-drop-"));
   await writeFile(
     join(directory, "scenario.json"),
@@ -28,7 +29,7 @@ async function writeScenario(assert: unknown): Promise<string> {
       assert,
       name: "silent-drop",
       schemaVersion: 1,
-      steps: [{ release: true, waitFrames: 1 }],
+      steps,
     }),
   );
   return directory;
@@ -125,7 +126,7 @@ test("refuses a scenario whose observation this runner cannot produce", async ()
   const scenario = await loadPlaytestScenario(directory, "scenario.json");
   let caught: unknown;
   try {
-    await connectPlaytestBridge(fakePage(["entity.observe"]), scenario);
+    await connectPlaytestBridge(fakePage(["entity.observe", "runtime.contacts"]), scenario);
   } catch (error) {
     caught = error;
   }
@@ -136,6 +137,49 @@ test("refuses a scenario whose observation this runner cannot produce", async ()
   expect(error.diagnostic.path).toBe("effectLog");
   expect(error.diagnostic.message).toContain("movement.notFacing");
   expect(error.diagnostic.message).not.toContain("patrol yaw");
+});
+
+test("names an unavailable labeled movement series", async () => {
+  const directory = await writeScenario(
+    {
+      movement: {
+        entity: "player",
+        reachesPositionWithin: { atStep: "goal", maxDistance: 1, position: [1, 0, 0] },
+      },
+    },
+    [{ label: "goal", release: true, waitFrames: 1 }],
+  );
+  const scenario = await loadPlaytestScenario(directory, "scenario.json");
+  let caught: unknown;
+  try {
+    await connectPlaytestBridge(fakePage(["entity.observe"]), scenario);
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(PlaytestBridgeError);
+  const error = caught as PlaytestBridgeError;
+  expect(error.diagnostic.code).toBe("TN_PLAYTEST_OBSERVATION_UNAVAILABLE");
+  expect(error.diagnostic.path).toBe("effectLogSeries");
+});
+
+test("names an unavailable labeled physics series", async () => {
+  const directory = await writeScenario(
+    { contacts: [{ atStep: "hit", entity: "player", minCount: 1 }] },
+    [{ label: "hit", release: true, waitFrames: 1 }],
+  );
+  const scenario = await loadPlaytestScenario(directory, "scenario.json");
+  let caught: unknown;
+  try {
+    await connectPlaytestBridge(fakePage(["entity.observe", "runtime.contacts"]), scenario);
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(PlaytestBridgeError);
+  const error = caught as PlaytestBridgeError;
+  expect(error.diagnostic.code).toBe("TN_PLAYTEST_OBSERVATION_UNAVAILABLE");
+  expect(error.diagnostic.path).toBe("physicsDebugSeries");
 });
 
 test("keeps a supported observation kind connected", async () => {

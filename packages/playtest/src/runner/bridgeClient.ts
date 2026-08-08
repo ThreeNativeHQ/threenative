@@ -151,12 +151,14 @@ function unavailableObservation(
         reason: `Assertion '${entry.kind}' is not supported on target '${scenario.target}'.`,
       };
     }
-    if (!STANDALONE_OBSERVATION_FIELD_SET.includes(entry.observationPath)) {
-      return {
-        assertion: entry.kind,
-        path: entry.observationPath,
-        reason: `The standalone runner does not produce an ${entry.observationPath} observation.`,
-      };
+    for (const path of requiredObservationPaths(scenario, entry.kind, entry.observationPath)) {
+      if (!STANDALONE_OBSERVATION_FIELD_SET.includes(path)) {
+        return {
+          assertion: entry.kind,
+          path,
+          reason: `The standalone runner does not produce an ${path} observation required by this assertion.`,
+        };
+      }
     }
   }
   const movement = scenario.assert?.movement;
@@ -179,6 +181,20 @@ function unavailableObservation(
     }
   }
   return undefined;
+}
+
+function requiredObservationPaths(
+  scenario: IPlaytestScenario,
+  kind: string,
+  defaultPath: string,
+): readonly string[] {
+  if (kind === "movement" && scenario.assert?.movement?.reachesPositionWithin?.atStep !== undefined) {
+    return ["effectLogSeries"];
+  }
+  if (kind === "contacts" && scenario.assert?.contacts?.some(({ atStep }) => atStep !== undefined) === true) {
+    return ["physicsDebugSeries"];
+  }
+  return [defaultPath];
 }
 
 function assertBoundedPayload(value: unknown): void {

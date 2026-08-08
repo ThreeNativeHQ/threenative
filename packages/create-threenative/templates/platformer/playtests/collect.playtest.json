@@ -14,6 +14,12 @@
       "release": true
     },
     {
+      "kind": "wait",
+      "label": "score-holds",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
       "kind": "input",
       "label": "last-coin",
       "press": "ArrowRight",
@@ -29,10 +35,14 @@
         "path": "coins",
         "gte": 3,
         "changed": true,
-        "atSteps": [{ "label": "first-coin", "equals": 1 }, { "label": "last-coin", "equals": 3 }]
+        "atSteps": [
+          { "label": "first-coin", "equals": 1 },
+          { "label": "score-holds", "equals": 1 },
+          { "label": "last-coin", "equals": 3 }
+        ]
       }
     ],
     "signals": [{ "name": "collected", "entity": "player", "minCount": 3 }],
-    "tags": [{ "tag": "coin", "count": 2 }]
+    "tags": [{ "tag": "coin", "count": 4 }]
   }
 }

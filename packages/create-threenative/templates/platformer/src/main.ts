@@ -4,24 +4,16 @@ import type { PhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { drainPlaytestEvents } from "./playtest-events.js";
 import { Boot } from "./scenes/Boot.js";
 import { Level } from "./scenes/Level.js";
 import type { GameState } from "./state.js";
 import { App } from "./ui/App.js";
 import "./style.css";
 
-let collectedCoins = 0;
-// biome-ignore lint/style/useConst: the callback closes over the game initialized below.
-let game: ReturnType<typeof defineGame<GameState, PhysicsContext>>;
-const events = () => {
-  game.state.flush();
-  const coins = game.state.getState().coins;
-  const collected = Math.max(0, coins - collectedCoins);
-  collectedCoins = coins;
-  return Array.from({ length: collected }, () => ({ entity: "player", name: "collected" }));
-};
+const events = () => drainPlaytestEvents();
 
-game = defineGame<GameState, PhysicsContext>({
+const game = defineGame<GameState, PhysicsContext>({
   input: {
     dash: { buttons: [7], down: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], down: ["Space"] },
