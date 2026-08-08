@@ -1,11 +1,8 @@
 # PRD-034 — Navigation & pathfinding
 
-**Status: BLOCKED on Gate 0 of [`ROADMAP.md`](../strategy/ROADMAP.md).** Gate 0 is the
-current phase and nothing below it may start until it exits. If Gate 0 exits on its
-*second* outcome — both arms tie, the framework narrows to `@threenative/physics` and
-`@threenative/playtest` — this PRD survives, because navigation lands **inside**
-`@threenative/physics` (see §2). It does not survive as a separate package. That is one of
-the reasons for the decision in §2.
+**Status: ready after the Phase 1 exit; implementation in progress.** Gate 0 is closed and
+the corpus decision keeps navigation **inside** `@threenative/physics` (see §2), rather
+than creating a separate package.
 
 **Complexity: 10 → HIGH mode.**
 (10+ files +3, new module from scratch +2, complex state logic +2, multi-package +2,
