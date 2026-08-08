@@ -69,10 +69,11 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
 | Physics collision layers and masks | [PRD-040](../PRDs/PRD-040-physics-collision-layers.md) | **open, queued behind Phase 1** |
 | DRY the sweep corpus | [PRD-041](../PRDs/PRD-041-sweep-corpus-dry.md) | **open, queued behind Phase 1** |
+| Playtest operator ergonomics | [PRD-042](../PRDs/PRD-042-playtest-operator-ergonomics.md) | **proposed, queued behind Phase 1** |
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current non-done inventory is PRD-033 through PRD-036 and PRD-038 through PRD-041;
+The current non-done inventory is PRD-033 through PRD-036 and PRD-038 through PRD-042;
 there is no PRD-037 file in `docs/PRDs/`.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
