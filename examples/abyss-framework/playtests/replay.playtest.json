@@ -1,0 +1,35 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "world": {
+      "seed": 90210
+    }
+  },
+  "name": "replay",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 1,
+      "press": "Enter",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "release": true,
+      "waitTicks": 29
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 0
+}

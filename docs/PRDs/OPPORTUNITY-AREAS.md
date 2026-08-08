@@ -62,7 +62,7 @@ Building from this list before Gate 0 closes is how v1 got to 790k lines.
 | 2 | Agent self-verification (playtest depth) | **90** | 30 | 25 | 25 | 10 |
 | 3 | Navigation & pathfinding | **86** | 30 | 22 | 22 | 12 |
 | 4 | Hot reload with state preservation | **80** | 28 | 24 | 12 | 16 |
-| 5 | Save/load & deterministic replay | **80** | 30 | 18 | 18 | 14 |
+| 5 | Save/load & deterministic replay | **82** | 30 | 18 | 20 | 14 |
 
 ### 1. Asset discovery & licensing — 94 · VOID pending publishable profile (`PRD-032`)
 
@@ -124,7 +124,7 @@ were." Look-neutral, several hundred vanilla lines, and it never touches a scree
 feel the pain a human does. This is the strongest *human-adoption* item on the list and a
 weak benchmark item — worth building, worth not expecting the pair to reward.
 
-### 5. Save/load & deterministic replay — 80 · not started
+### 5. Save/load & deterministic replay — 82 · Phase 0 measured, implementation in progress
 
 Three.js has `toJSON` for the scene graph and nothing for game state. A seeded RNG already
 ships (`createRandom`), which is half of determinism.
@@ -137,6 +137,14 @@ write, which feeds directly into area 2.
 serialized scene format, and that is a closed question in §2 with 25,898 LOC of evidence
 behind it. Scope it to *game state the user declared*, never to the scene graph. If the
 design starts describing entities generically, stop.
+
+**Phase 0 measurement (2026-08-08):** Rapier 0.19.3 produced identical 9,757-byte
+`World.takeSnapshot()` results for a five-box stack on a floor after 300 fixed ticks, both
+twice in one process and in a fresh worker. Moving the first box from `y=0` to `y=1e-9`
+changed the bytes. This supports same-machine, same-runtime replay; it does not support
+cross-browser, cross-OS, or cross-version portability, so the ceiling score remains 18.
+The agent-leverage score rises from 18 to 20 because the measured replay oracle can feed a
+fail-closed playtest scenario; the package cost remains 14.
 
 ---
 

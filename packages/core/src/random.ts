@@ -2,6 +2,7 @@ export interface Random {
   (): number;
   pick<T>(items: readonly T[]): T;
   range(min: number, max: number): number;
+  state: number;
 }
 
 export function createRandom(seed?: number): Random {
@@ -23,5 +24,18 @@ export function createRandom(seed?: number): Random {
     if (items.length === 0) throw new RangeError("pick requires a non-empty list.");
     return items[Math.floor(random() * items.length)] as T;
   };
+  Object.defineProperty(random, "state", {
+    get: () => {
+      if (!deterministic) throw new Error("state is unavailable on an unseeded random.");
+      return state;
+    },
+    set: (value: number) => {
+      if (!deterministic) throw new Error("state is unavailable on an unseeded random.");
+      if (!Number.isFinite(value) || !Number.isInteger(value)) {
+        throw new TypeError("state must be a finite integer.");
+      }
+      state = value >>> 0;
+    },
+  });
   return random;
 }

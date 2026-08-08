@@ -25,6 +25,8 @@ export { GPUParticles3D } from "./particles.js";
 export type { GPUParticles3DBuffers, GPUParticles3DOptions } from "./particles.js";
 export { createRandom } from "./random.js";
 export type { Random } from "./random.js";
+export { createReplayDriver, replay } from "./replay.js";
+export type { Recording } from "./replay.js";
 export { autoFields, Registry } from "./entities.js";
 export type { Debuggable, EntitySnapshot } from "./entities.js";
 export { input, InputMap } from "./input.js";

@@ -46,6 +46,89 @@ class EmptyScene extends Scene {
 }
 
 describe("Game", () => {
+  it("should read input from a custom target when inputTarget is provided", async () => {
+    const customTarget = new EventTarget();
+    const unrelatedTarget = new EventTarget();
+    let advance: ((ticks: number) => number) | undefined;
+    let pressed = false;
+    class InputScene extends Scene {
+      static override readonly initialState = {};
+
+      override update(ctx: Ctx): void {
+        pressed = ctx.input.pressed("move");
+      }
+    }
+    const game = defineGame({
+      inputTarget: customTarget,
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: InputScene },
+      start: "test",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    const keydown = new Event("keydown");
+    Object.defineProperty(keydown, "code", { value: "KeyW" });
+    unrelatedTarget.dispatchEvent(keydown);
+    advance(1);
+    expect(pressed).toBe(false);
+    customTarget.dispatchEvent(keydown);
+    advance(1);
+    expect(pressed).toBe(true);
+    game.stop();
+  });
+
+  it("should default to window when inputTarget is omitted", async () => {
+    const originalWindow = globalThis.window;
+    const windowTarget = new EventTarget();
+    Object.defineProperty(globalThis, "window", { configurable: true, value: windowTarget });
+    let advance: ((ticks: number) => number) | undefined;
+    let pressed = false;
+    class InputScene extends Scene {
+      static override readonly initialState = {};
+
+      override update(ctx: Ctx): void {
+        pressed = ctx.input.pressed("move");
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: InputScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+      const keydown = new Event("keydown");
+      Object.defineProperty(keydown, "code", { value: "KeyW" });
+      windowTarget.dispatchEvent(keydown);
+      advance(1);
+      expect(pressed).toBe(true);
+    } finally {
+      game.stop();
+      if (originalWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else
+        Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
   it("should leave no renderer or loop when stopped during an in-flight start", async () => {
     let disposed = 0;
     let frames = 0;

@@ -1,4 +1,4 @@
-import { defineGame } from "@threenative/core";
+import { defineGame, replay } from "@threenative/core";
 import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import type { PhysicsContext } from "@threenative/physics";
@@ -16,7 +16,7 @@ const game = defineGame<GameState, PhysicsContext>({
     jump: { buttons: [0], down: ["Space"] },
     restart: { down: ["KeyR"] },
   },
-  plugins: [rapier(), playtest()],
+  plugins: [rapier(), replay(), playtest()],
   scenes: { boot: Boot, play: Play },
   seed: 90210,
   start: "boot",

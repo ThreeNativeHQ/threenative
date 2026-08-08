@@ -39,9 +39,10 @@ the user reaches `body` directly.
   from the scene. The framework calls the plugin's scene-exit hook for nodes that remain
   registered with Rapier; callers still dispose a node explicitly when removing it during
   play.
-- The fixed step is deterministic. `__tests__/determinism.spec.ts` asserts identical inputs
-  produce identical transforms — a change that makes it flaky is a broken change, not a
-  flaky test.
+- The fixed step is repeatable only within the pinned runtime that proves it. `__tests__/
+  determinism.spec.ts` compares contact-rich `World.takeSnapshot()` bytes on the same
+  machine and in a fresh worker; do not claim cross-browser, cross-OS, or cross-version
+  replay portability.
 - `Area3D.on('bodyEntered', ...)` returns an unsubscribe function. Callers store it.
 
 ## Navigation

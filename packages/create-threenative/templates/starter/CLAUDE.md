@@ -118,6 +118,18 @@ finishes.
 to reproduce — spawn positions, patrol offsets, level variation. `Math.random()` makes a
 scenario that passes once and fails on replay for no visible reason.
 
+## Save and load
+
+Save only the state you declare. The framework does not serialize entities, scene graphs, or
+physics handles, and it never will; save those fields in your own object literal:
+
+```ts
+const save = JSON.stringify({ state: ctx.state.getState(), playerX: player.mesh.position.x });
+const loaded = JSON.parse(save) as { state: GameState; playerX: number };
+ctx.state.set(loaded.state);
+player.mesh.position.x = loaded.playerX;
+```
+
 ## Assets and animation
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a

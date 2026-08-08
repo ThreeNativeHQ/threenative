@@ -1360,7 +1360,7 @@ function validateViewport(value: unknown): IPlaytestViewport {
   return width === undefined || height === undefined ? { height: 720, width: 1280 } : { height, width };
 }
 
-function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError {
+export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError {
   return new PlaytestScenarioError({
     code: "TN_PLAYTEST_SCENARIO_INVALID",
     fix: {
@@ -1474,7 +1474,7 @@ function rejectWrongTypedFields(
   }
 }
 
-function rejectUnknownKeys(
+export function rejectUnknownKeys(
   value: Record<string, unknown>,
   allowedKeys: readonly string[],
   scenarioPath: string,

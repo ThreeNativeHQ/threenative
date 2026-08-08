@@ -45,6 +45,37 @@ describe("Random", () => {
     for (let index = 0; index < 1_000; index += 1) expect(first()).toBe(second());
   });
 
+  it("should reproduce the sequence when state is restored", () => {
+    const random = createRandom(90210);
+    for (let index = 0; index < 10; index += 1) random();
+    const state = random.state;
+    const expected = Array.from({ length: 10 }, () => random());
+
+    random.state = state;
+
+    expect(Array.from({ length: 10 }, () => random())).toEqual(expected);
+  });
+
+  it("should throw when reading or writing state from an unseeded random", () => {
+    const random = createRandom();
+
+    expect(() => random.state).toThrow(/unseeded/u);
+    expect(() => {
+      random.state = 1;
+    }).toThrow(/unseeded/u);
+  });
+
+  it("should throw when state is set to a non-integer", () => {
+    const random = createRandom(90210);
+
+    expect(() => {
+      random.state = 1.5;
+    }).toThrow(TypeError);
+    expect(() => {
+      random.state = Number.POSITIVE_INFINITY;
+    }).toThrow(TypeError);
+  });
+
   it("should expose the configured deterministic stream through Ctx", async () => {
     const draws: number[] = [];
     class TestScene extends Scene {
