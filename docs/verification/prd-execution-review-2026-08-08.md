@@ -9,20 +9,23 @@ the first failing runs remain as historical diagnosis.
 
 - The packed-tarball scaffold fix is committed at `21a32c0`; the licensed-asset MCP scaffold
   work is committed at `12b3d3d`.
-- The full browser gate now passes under the prescribed headed WebGPU recipe: all three
-  projects passed in 2.1 minutes.
+- The PRD-036 lane is merged at `f3fe02f` (including its replay consumer, oracle, and
+  pointer/replay follow-up fixes).
+- The full browser gate now passes under the prescribed headed WebGPU recipe: all four tests
+  passed in 1.7 minutes, including the checked-in replay scenario and real record/replay trace.
 - Fresh starter proofs now pass: coyote jump `1/1`, peak rise `1.04`, and look camera
   separation `9.451` against the `9.5` limit, with zero console/network errors.
-- PRD-036's follow-up lane is committed at `7e61a9f` and still needs to be merged into this
-  branch before the final main integration.
+- PRD-036's remaining release gates are now limited to the manual watch-and-diverge check,
+  replay-removal/stale-artifact controls, and its separate ≤200-line feature-delta budget.
 
 ---
 
-## 1. Headline — the stated blockers are stale
+## 1. Historical gate snapshot — superseded by post-merge evidence
 
-Every open PRD says its release evidence is held up by two things: a repository-wide
+At the pre-merge `272b5ea` snapshot, every open PRD said its release evidence was held up by two things: a repository-wide
 lint/test red from dirty proof JSON, and port 4173 being held by an unrelated process.
-**Both were re-run today and neither is true any more.**
+That snapshot was re-run during the original review and is retained here as historical
+diagnosis; the current post-merge gate results are recorded in §7.
 
 | Gate | What the PRDs record | Re-run result at `272b5ea` |
 |---|---|---|
@@ -41,9 +44,8 @@ The WIP commit `272b5ea` is what cleared the lint/test red: it reformatted
 `docs/verification/*-reveal.json` and repaired the two `topdown-action*.playtest.json`
 proof files that `proof-set.spec.ts` was failing on.
 
-**Consequence:** PRD-033, PRD-035, PRD-036 and PRD-038 each cite these blockers as a reason
-they stay in `docs/PRDs/`. That reason has expired. The verification ledgers now understate
-the project's real state, which is the same honesty failure mode in the other direction.
+**Historical consequence:** PRD-033, PRD-035, PRD-036 and PRD-038 each cited these blockers as
+a reason they stayed in `docs/PRDs/`. The current disposition must use §7, not this snapshot.
 
 ### A caution about how these gates are run
 
@@ -167,38 +169,37 @@ final rerun recorded in §7.
 
 ---
 
-## 3. The other real blocker: unmerged PRD-036 work
+## 3. The former merge blocker: PRD-036 work is integrated
 
 `linchpin/prd-036-save-load-and-deterministic-replay` has **19 commits and 1,454
-insertions that are not on `docs/opportunity-areas-prds`**, plus a committed follow-up
-at `7e61a9f` in its worktree.
+insertions that were not on `docs/opportunity-areas-prds`**, plus a committed follow-up
+at `7e61a9f`. The lane and follow-up are now integrated by merge commit `f3fe02f`.
 
 Merge base is `248b5d9`; HEAD has 25 commits the lane does not have, so the two have
 genuinely diverged.
 
 What is stranded on the lane:
 
-| Artifact | Status on HEAD |
+| Artifact | Status after `f3fe02f` |
 |---|---|
 | `tests/browser-replay/replay.golden.json` (mid-trace + final-position oracle) | **absent** |
 | `packages/playtest/__tests__/evidence-required.spec.ts` | **absent** |
 | `examples/abyss-framework/recordings/replay.json`, `replay.oracle.json`, `src/replay-proof.ts` | **absent** |
 | `packages/playtest/src/runner/recording.ts` (+149), `scenario.ts` (+76), `runner.ts` (+70), `assertions.ts` (+39), `protocol.ts` (+14) | **absent** |
 
-This matters because the lane's own `docs/verification/PRD-036.md` records the exact
+This mattered because the lane's own `docs/verification/PRD-036.md` recorded the exact
 control that HEAD's copy still lists as **pending**:
 
 > temporarily changing `const speed = 560 * dt` … to `const speed = 565.6 * dt` makes the
 > **generated-scenario test itself** fail its `movement.reachesPositionWithin` assertion …
 > mid-trace: Expected <= 0.000001; Received 4.6533223516233875
 
-So the "generated-scenario regression sensitivity" that HEAD's ledger calls unfinished has
-in fact been done and observed red — on a branch nobody merged. PRD-036 is being held open
-by a merge, not by missing work.
+So the "generated-scenario regression sensitivity" that HEAD's ledger called unfinished had
+already been done and observed red. It is now part of the merged consumer proof.
 
-**Merge hazard:** the lane predates the PRD-038 merge, so it does not contain
-`templates/starter/src/pick.ts` or `pick.playtest.json`. A merge is safe; a rebase-onto or
-checkout of the lane tree would silently revert PRD-038's only deliverable.
+**Merge hazard (resolved):** the lane predated the PRD-038 merge and did not contain
+`packages/create-threenative/templates/starter/src/pick.ts` or `pick.playtest.json`. The merge
+preserved both files.
 
 **The former uncommitted lane follow-up is now committed** at `7e61a9f`:
 
@@ -229,8 +230,8 @@ now been exercised by the passing full `xvfb-run ... pnpm test:browser` gate; th
 check remains a separate negative-control item.
 
 ### PRD-036 — save/load and deterministic replay
-**Recommend: merge the lane first. It is the top priority in this queue.**
-See §3. After the merge, three items remain genuinely open per the lane's own ledger: the
+**Recommend: finish the remaining release gates, then move to `docs/PRDs/done/`.**
+The merge and full browser consumer proof are complete. Three items remain genuinely open per the lane's own ledger: the
 manual watch-and-diverge checkpoint, the replay-removal/stale-artifact control, and the
 PRD's own ≤200-line feature-delta gate (the lane records core/physics at `+288/-32`, a net
 `+256` — **over the PRD's own budget**, and `pnpm budgets` does not catch it because the
@@ -311,11 +312,11 @@ it is cited as a reason to keep a PRD open.
    `three-mesh-bvh 0.9.14` install into both temp projects.
 2. ~~Put `runStarterLookScenario` on `--browser-recipe webgpu --headed` and run the browser
    gate~~ — **done**, see §7.
-3. **Merge `linchpin/prd-036-save-load-and-deterministic-replay` into
-   `docs/opportunity-areas-prds`** (merge, do not rebase — §3 hazard). Commit or discard the
-   lane follow-up first; the `pointerType` change is committed at `7e61a9f`.
-4. **Move PRD-039 and PRD-033 to `docs/PRDs/done/`**, and update `OPPORTUNITY-AREAS.md`
-   area #8 while doing it.
+3. ~~**Merge `linchpin/prd-036-save-load-and-deterministic-replay` into
+   `docs/opportunity-areas-prds`**~~ — **done** in `f3fe02f`; the merge preserved the PRD-038
+   starter transport files and the lane follow-up.
+4. **Finish the remaining PRD-036 controls, then move PRD-039, PRD-033, PRD-035 and PRD-038
+   to `docs/PRDs/done/`**, updating `OPPORTUNITY-AREAS.md` area #8 while doing it.
 5. ~~Fix `coyote` and `look` in the starter template~~ — **done**, see §7; then **close
    round 2** (`pnpm round:next`) and decide 5b — delete the dead exports or fix the
    instrument.
@@ -324,10 +325,12 @@ it is cited as a reason to keep a PRD open.
 
 | Proof | Result |
 |---|---|
-| `xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser` | **PASS** — `3 passed (2.1m)` |
+| `xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser` | **PASS** — `4 passed (1.7m)` |
 | Fresh `coyote.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — `jumps: 1`, `coyoteJumps: 1`, `peakRise: 1.04`, zero diagnostics |
 | Fresh `look.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — movement `7.27`, camera separation `9.451`, zero diagnostics |
-| PRD-036 focused tests | **PASS** — 36 tests across replay, runner, and recording specs |
+| PRD-036 focused tests | **PASS** — 67 tests across replay, constraints, runner, recording, scenario, and census specs |
+| `pnpm budgets` | **PASS** — 7 packages, 4,243 framework LOC, 6 PRD files |
+| `pnpm lint` / `pnpm test` | **BLOCKED outside this review lane** — lint sees broken PRD worktree symlinks plus the existing topdown proof formatting; test reports 1,084/1,086 tests with the existing missing `reload` proof assertion and sync-agent-docs timeout |
 
 PRD-043 is not part of these results. It remains a proposed, later execution item and must
 not be marked done from this review.
