@@ -154,7 +154,7 @@ fail-closed playtest scenario; the package cost remains 14.
 |---|---|---:|---|
 | 6 | Spatial audio buses | **64** | Partly shipped (`AudioBus`). `PositionalAudio` exists but is awkward; the gap is buses/ducking, not playback. Keep it small. |
 | 7 | Mobile & on-device | **61** | Gap is real, cost is brutal (§7 0b is 1–2 weeks of JSI work) and a failed spike *deletes* a charter promise. High variance, correctly scheduled last. |
-| 8 | Animation state machines | **57** | `AnimationMixer` already ships and is decent. Godot's `AnimationTree` is opinionated — real ceiling risk. Only justified if the round-2 ledger names crossfade/root-motion as a measured gap. |
+| 8 | Animation state machines | **57** | **Conditionally closed — PRD-039 is WONTBUILD.** `AnimationMixer` already ships and is decent. Godot's `AnimationTree` is opinionated — real ceiling risk. Reopen only if the round-2 ledger names crossfade/root-motion as a measured gap. |
 | 9 | Perf: instancing, LOD, streaming | **48** | `InstancedMesh` and `LOD` both ship. Owning batching caps what the user can render. Ship as template source, not package code. |
 | 10 | React/UI bindings | **49** | 22 LOC of `useGameState` is the 20-line rule working correctly. React and Tailwind are already in every model's weights. **Do not grow this.** |
 

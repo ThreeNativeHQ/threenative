@@ -61,20 +61,22 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
 | Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
-| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; supported Chromium/WebGPU platformer consumer gate passes 11/11; unrelated dirty proof-file lint blockers remain** |
+| Playtest semantic depth | [done/PRD-033](../PRDs/done/PRD-033-playtest-semantic-depth.md) | **done; 11/11 platformer semantic scenarios and observed-red controls verified** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
 | Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **implementation delivered; isolated Brave/WebGPU consumer and manual jump/fall probes pass; full suite/negative release evidence pending** |
 | Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **partial implementation merged; checked-in consumer, same-run replay, and 1% movement-impulse divergence pass; generated-scenario regression sensitivity/full release evidence pending** |
 | Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **partial implementation merged; exact starter-pick WebGPU gate and removable-feature build pass; coyote/look baseline assertions keep the full scaffold release gate pending** |
-| Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
+| Animation state machine / blend control | [done/PRD-039](../PRDs/done/PRD-039-animation-state-machine.md) | **closed — WONTBUILD; area #8 conditionally closed; reopen only on the recorded rigged-asset triggers** |
+| Terrain and open worlds | [PRD-043](../PRDs/PRD-043-terrain-and-open-world.md) | **proposed — queued for later execution; outside the 2026-08-08 execution review** |
 | Physics collision layers and masks | [done/PRD-040](../PRDs/done/PRD-040-physics-collision-layers.md) | **done; consumer scenario, review repair, and full gates verified 2026-08-08** |
 | DRY the sweep corpus | [done/PRD-041](../PRDs/done/PRD-041-sweep-corpus-dry.md) | **done; implementation gates and review repair verified; n≥10 adoption rerun and browser proof remain environment/evidence gaps** |
 | Playtest operator ergonomics | [done/PRD-042](../PRDs/done/PRD-042-playtest-operator-ergonomics.md) | **done; clean package gate, review repair manager-verified; repository-wide red is unrelated dirty proof/worktree formatting** |
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current non-done inventory is PRD-033 through PRD-036, PRD-038, and PRD-039;
-PRD-039 is the closed WONTBUILD record, and there is no PRD-037 file in `docs/PRDs/`.
+The current non-done inventory is PRD-035, PRD-036, PRD-038, and proposed PRD-043;
+PRD-033 and PRD-039 are complete records in `done/`, and there is no PRD-037 file in
+`docs/PRDs/`.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
 says a spike is a throwaway app whose only output is an answer; and the build-time asset

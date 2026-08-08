@@ -1,11 +1,16 @@
 # PRD-039 — Animation state machine / blend control
 
-**Status: CLOSED — WONTBUILD.** No framework code ships from this PRD. The finding is that
+**Status: CLOSED — WONTBUILD; moved to `done/` on 2026-08-08.** No framework code ships from
+this PRD. The finding is that
 `AnimationPlayer` at 96 lines is already the right size, that the two features an
 `AnimationTree` port would add are *already implemented and tested* in it, and that the
 remaining features are one-liners in vanilla Three.js. What this PRD ships instead is the
 template snippet the user writes, and a **Phase 0 measurement** that names the exact
 numbers which would reopen it.
+
+The only current action is the recorded disposition: opportunity area #8 is conditionally
+closed. A future rigged-asset round may reopen this finding only through the triggers in §4a;
+it does not create an implementation task today.
 
 **Gate:** `ROADMAP.md` **Gate 0 is unrun**, and even after it exits, `OPPORTUNITY-AREAS.md`
 conditions this area on a further trigger: area #8, score 57 — *"Only justified if the

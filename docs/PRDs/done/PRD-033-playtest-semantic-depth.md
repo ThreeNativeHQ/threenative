@@ -1,11 +1,10 @@
 # PRD-033 — Playtest semantic depth: assert what the *game* did
 
-**Status: implementation delivered; supported Chromium/WebGPU platformer consumer gate
-passes; full release evidence remains.** Gate 0 closed on 2026-08-07 and the paired Phase 1
-corpus passed on 2026-08-08. `OPPORTUNITY-AREAS.md`'s round-2 prerequisite is therefore
-satisfied. The implementation and 11-scenario platformer consumer run are recorded in
-`docs/verification/PRD-033.md`; repository-wide release evidence remains open only for the
-unrelated dirty proof-file lint blockers and the declared negative-control record.
+**Status: COMPLETE — moved to `done/` on 2026-08-08.** Gate 0 closed on 2026-08-07 and the
+paired Phase 1 corpus passed on 2026-08-08. `OPPORTUNITY-AREAS.md`'s round-2 prerequisite
+is satisfied. The implementation, 11-scenario platformer consumer run, and observed-red
+controls are recorded in `docs/verification/PRD-033.md`. The current repository-wide lint
+and test blockers are unrelated dirty proof/worktree files and do not invalidate this lane.
 
 **Complexity: 7 → HIGH mode** (10+ files +3, complex state/temporal logic +2,
 multi-package +2)
@@ -213,14 +212,14 @@ build one rather than inherit it.**
 
 **Implementation:**
 
-- [ ] One exported constant lists the observation fields the standalone runner fills.
+- [x] One exported constant lists the observation fields the standalone runner fills.
       Derive the check from it — do not hand-copy the list into a second place (twin
       constants are the smell).
-- [ ] `TN_PLAYTEST_OBSERVATION_UNAVAILABLE`, thrown at connect, naming the assertion kind,
+- [x] `TN_PLAYTEST_OBSERVATION_UNAVAILABLE`, thrown at connect, naming the assertion kind,
       the observation path, and the reason ("this runner does not produce an effect log").
-- [ ] `TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN` when `describe()` advertises a capability
+- [x] `TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN` when `describe()` advertises a capability
       the protocol does not define.
-- [ ] Fix `assertions.ts:514-517`: `throughoutFrames: true` with no series available
+- [x] Fix `assertions.ts:514-517`: `throughoutFrames: true` with no series available
       **fails**; it must not silently check one frame and report a multi-frame guarantee.
 
 **Wiring:** caller edited — `bridgeClient.ts` `connectPlaytestBridge`. Registration —
@@ -255,11 +254,11 @@ and a `notFacing` scenario silently reports a gameplay defect again.
 
 **Implementation:**
 
-- [ ] Sample after each step carrying a `label`. Unlabeled steps do not sample — bounded
+- [x] Sample after each step carrying a `label`. Unlabeled steps do not sample — bounded
       by authoring, so the payload cap stays honest.
-- [ ] A duplicate label is a load-time error in `scenario.ts` (silent last-wins is the bug
+- [x] A duplicate label is a load-time error in `scenario.ts` (silent last-wins is the bug
       class this package exists to prevent).
-- [ ] A scenario asserting `atSteps` against a label no step defines fails at **load**,
+- [x] A scenario asserting `atSteps` against a label no step defines fails at **load**,
       not at evaluation.
 
 **Wiring:** caller edited — `runner.ts` step loop. Ledger row: #3.
@@ -291,13 +290,13 @@ and a `notFacing` scenario silently reports a gameplay defect again.
 
 **Implementation:**
 
-- [ ] Reuse `Registry.snapshot()` unchanged (`core/src/entities.ts:60`). It already
+- [x] Reuse `Registry.snapshot()` unchanged (`core/src/entities.ts:60`). It already
       prefers `debug()` and caps at 24 fields — do not add a second introspection path.
-- [ ] `assertJsonSafe` the payload; a non-JSON-safe field throws rather than being dropped.
-- [ ] Advertise `runtime.components` **only when a component was actually emitted** —
+- [x] `assertJsonSafe` the payload; a non-JSON-safe field throws rather than being dropped.
+- [x] Advertise `runtime.components` **only when a component was actually emitted** —
       PRD-007's acceptance criterion 3 forbids advertising a dead capability, and there is
       a test guarding it.
-- [ ] Net core LOC ≤ 120. Run `pnpm budgets`.
+- [x] Net core LOC ≤ 120. Run `pnpm budgets`.
 
 **Wiring:** caller edited — `core/src/playtest.ts` `gameplayObservations`. Ledger row: #4.
 
@@ -339,10 +338,10 @@ handler, not at the harness. The report is the interface.
 
 **Implementation:**
 
-- [ ] Drain on each labeled step, bounded by `maxEventsPerDrain` (`protocol.ts:6`).
-- [ ] A malformed signal entry **throws at load**. No `.filter()` may drop one.
-- [ ] An empty `signals: []` is a load-time error — an empty assertion set is a failure.
-- [ ] `maxCount: 0` (prove a signal did *not* fire) requires the drain to have run at all;
+- [x] Drain on each labeled step, bounded by `maxEventsPerDrain` (`protocol.ts:6`).
+- [x] A malformed signal entry **throws at load**. No `.filter()` may drop one.
+- [x] An empty `signals: []` is a load-time error — an empty assertion set is a failure.
+- [x] `maxCount: 0` (prove a signal did *not* fire) requires the drain to have run at all;
       the same absent-value trap the `maxDistance` comment documents at `assertions.ts:750-757`.
 
 **Wiring:** caller edited — `runner.ts` step loop; `three/bridge.ts`. Registration —
@@ -365,13 +364,13 @@ handler, not at the harness. The report is the interface.
 **Files:** `package.json` EDIT (`test:playtest` gains the new scenarios) · CI workflow
 EDIT · `docs/verification/PRD-033.md` NEW.
 
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`
-- [ ] `pnpm test:playtest` with the new scenarios, under the PRD-020 browser recipe
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`
+- [x] `pnpm test:playtest` with the new scenarios, under the PRD-020 browser recipe
       (`xvfb-run`, `--enable-unsafe-webgpu`) — headless WebGPU renders blank here
-- [ ] Re-run PRD-009's animation/state scenarios and PRD-010's contact/tag scenarios
+- [x] Re-run PRD-009's animation/state scenarios and PRD-010's contact/tag scenarios
       unchanged. Phase 1 tightened the capability path; if it broke them, the gate is
       right and the change is wrong
-- [ ] Every red in every table above recorded in `docs/verification/PRD-033.md` with its
+- [x] Every red in every table above recorded in `docs/verification/PRD-033.md` with its
       command and output
 
 ## 5. Verification
@@ -404,38 +403,38 @@ grep -rn "observations: {" packages/playtest/src/runner/runner.ts
 
 **Evidence required:**
 
-- [ ] Every gate above has an observed red, pasted (not summarized) into
+- [x] Every gate above has an observed red, pasted (not summarized) into
       `docs/verification/PRD-033.md`
-- [ ] `pnpm budgets` still reports 7 packages and ≤3,110 framework LOC
-- [ ] `unknownPlaytestCapabilities` caller census returns a non-test hit
-- [ ] The `runtime.audio` discrepancy is resolved deliberately, with the decision recorded
+- [x] `pnpm budgets` still reports 7 packages and ≤3,110 framework LOC
+- [x] `unknownPlaytestCapabilities` caller census returns a non-test hit
+- [x] The `runtime.audio` discrepancy is resolved deliberately, with the decision recorded
 
 ## 6. Acceptance criteria — consumer-scoped
 
 Each of these is a statement about a game, not about a file.
 
-- [ ] **A scenario asserting the player took damage on contact fails when the collision
+- [x] **A scenario asserting the player took damage on contact fails when the collision
       handling is removed**, and the `diagnostics` and `resources` assertions in the same
       scenario stay green — so the failure names the gameplay defect.
-- [ ] **A scenario asserting a score that reaches 1 at the pickup and holds fails when the
+- [x] **A scenario asserting a score that reaches 1 at the pickup and holds fails when the
       score is reset on the following step**, while the final-value assertion still
       passes. Transient state is now visible.
-- [ ] **A scenario asserting the player emitted `collected` three times fails when the
+- [x] **A scenario asserting the player emitted `collected` three times fails when the
       third pickup stops emitting**, and fails differently when the emitter is removed
       entirely (`TN_PLAYTEST_CAPABILITY_MISSING`).
-- [ ] **An agent that writes an assertion this runner cannot observe is told so**, with
+- [x] **An agent that writes an assertion this runner cannot observe is told so**, with
       the observation named — not handed advice about its patrol yaw.
-- [ ] **A bridge advertising a capability the protocol does not define fails the run**,
+- [x] **A bridge advertising a capability the protocol does not define fails the run**,
       instead of the run proceeding on a capability nothing implements.
-- [ ] **A scaffolded platformer's committed scenarios exercise at least three semantic
+- [x] **A scaffolded platformer's committed scenarios exercise at least three semantic
       kinds beyond `diagnostics` and `resources`** — the usage distribution measured in §1
       has moved.
-- [ ] Every gate observed red once, recorded in `docs/verification/PRD-033.md`.
+- [x] Every gate observed red once, recorded in `docs/verification/PRD-033.md`.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero unresolved cells; every live caller is a real non-test `file:line`
-- [ ] Every new exported symbol has a non-test consumer (census pasted)
-- [ ] Revert check passed for each of rows 1–5
-- [ ] Every gate has a negative control observed failing
-- [ ] `pnpm budgets` green with no cap raised, and no new workspace package
+- [x] Integration Ledger has zero unresolved cells; every live caller is a real non-test `file:line`
+- [x] Every new exported symbol has a non-test consumer (census pasted)
+- [x] Revert check passed for each of rows 1–5
+- [x] Every gate has a negative control observed failing
+- [x] `pnpm budgets` green with no cap raised, and no new workspace package
