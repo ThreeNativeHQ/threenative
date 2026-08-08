@@ -58,6 +58,7 @@ export function formatUsage(): string {
     "",
     "Commands:",
     "  init                  create a starter playtest configuration",
+    "  record-to-scenario    convert a replay recording into a scenario",
     "",
     "Options:",
     ...flags,

@@ -1,8 +1,11 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** proposal. **GATED ON GATE 0 of `docs/strategy/ROADMAP.md`** — Gate 0 is unrun,
-two of five axes have never been measured, and `OPPORTUNITY-AREAS.md` binds every Tier 1
-area to it. Nothing in this document starts until round 2 completes on both arms.
+**Status:** implementation delivered in a partial lane; the browser consumer gate is
+partially proven on a supported isolated Brave/WebGPU runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
+closed, but this PRD remains open until its consumer proof passes and is not moved to
+`done/` or merged yet. Automated gates and the checked-in replay consumer project passed
+on 2026-08-08; the full browser suite, manual checkpoint, and negative controls remain
+pending. See `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after
@@ -251,20 +254,21 @@ phase end means the phase is incomplete.**
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `Random.state` accessor | TBD — `replay.ts` recording header; `templates/starter/src/scenes/Play.ts` save example | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
-| 2 | `GameConfig.inputTarget` | TBD — `game.ts:~251` reads it; replay driver passes one | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
-| 3 | `replay()` plugin, record mode | TBD — `examples/abyss-framework/src/main.tsx` plugin array; `templates/starter/src/main.ts` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
-| 4 | Replay driver (playback) | TBD — `packages/playtest/src/runner/runner.ts` replay path; the example's dev-only replay button | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
-| 5 | `TN_REPLAY_RUNTIME_MISMATCH` | TBD — replay driver load path | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
-| 6 | `playtest record-to-scenario` | TBD — `packages/playtest/src/runner/cli.ts` subcommand table | nothing | n/a | feed a recording with an unknown top-level key → **throws `invalidScenario`**, per this package's fail-closed rule |
-| 7 | Generated `bug.playtest.json` | TBD — the example's `playtests/` dir, run by `pnpm test:browser` | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
-| 8 | Physics same-seed byte-equality test | TBD — `packages/physics/__tests__/determinism.spec.ts` (EDIT) | the tolerance-only 30-vs-144 assertion, which stays but stops being the only one | no — kept, joined | perturb one body's initial y by `1e-9` → **snapshot bytes differ** |
-| 9 | Tripwire constraints test | TBD — `packages/core/__tests__/constraints.spec.ts` (EDIT) | nothing | n/a | add a `"type"` key to the recording schema → **CI red** |
+| 1 | `Random.state` accessor | `packages/core/src/replay.ts:129` reads it into the recording header; `packages/core/src/replay.ts:184-190` restores it before stepping | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
+| 2 | `GameConfig.inputTarget` | `packages/core/src/game.ts:301-303` selects the configured target or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
+| 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
+| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
+| 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
+| 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-125` dispatches and writes the conversion | nothing | n/a | feed a recording with an unknown top-level key → **throws `invalidScenario`**, per this package's fail-closed rule |
+| 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:127-143` generates `examples/abyss-framework/playtests/replay.playtest.json`; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
+| 8 | Physics same-seed byte-equality test | `packages/physics/__tests__/determinism.spec.ts:99-106` | the tolerance-only 30-vs-144 assertion, which stays but stops being the only one | no — kept, joined | perturb one body's initial y by `1e-9` → **snapshot bytes differ** |
+| 9 | Tripwire constraints test | `packages/core/__tests__/constraints.spec.ts:37-59` | nothing | n/a | add a `"type"` key to the recording schema → **CI red** |
 
 ### Reachability
 
 - **Entry point:** the game loop. `replay()` sits in the `plugins` array beside `rapier()`
-  and `playtest()`, and its `update` runs at `game.ts:319-321` every fixed tick.
+  and `playtest()`, and its `update` runs at `game.ts:319-321` every fixed tick. The
+  runtime carries the optional seeded random handle and the live Rapier version.
 - **Pre-existing files edited to call it:** `packages/core/src/game.ts` (`inputTarget`),
   `packages/core/src/index.ts` (export), `packages/playtest/src/runner/cli.ts`
   (subcommand), `examples/abyss-framework/src/main.tsx` and
@@ -274,8 +278,9 @@ phase end means the phase is incomplete.**
   code (§0.2). The verification path is a CLI and a CI run.
 - **Full flow:** player plays → `replay()` samples input per tick → user exports
   `recording.json` → `npx @threenative/playtest record-to-scenario recording.json` →
-  `bug.playtest.json` → `pnpm test:browser` re-runs it on every later change, and it goes red
-  when the behaviour regresses.
+  `bug.playtest.json` → the `abyss-framework-replay` Playwright project re-runs the exact
+  checked-in 1,800-tick scenario on every later change, and it goes red when the behaviour
+  regresses.
 - **Replaces:** nothing. Genuinely new — vanilla Three.js ships no answer, and neither does
   ThreeNative today.
 
@@ -311,11 +316,11 @@ integration and nothing else.
   §1.4. Then `pnpm sync:agents`.
 
 **Implementation:**
-- [ ] `simulateStack(seed)` builds floor + 5 boxes, steps 300 fixed ticks, returns
+- [x] `simulateStack(seed)` builds floor + 5 boxes, steps 300 fixed ticks, returns
       `world.takeSnapshot()`.
-- [ ] Assert `simulateStack(1)` equals `simulateStack(1)` **byte for byte**, twice in the
+- [x] Assert `simulateStack(1)` equals `simulateStack(1)` **byte for byte**, twice in the
       same process, and again in a fresh worker.
-- [ ] Assert perturbing one box's initial `y` by `1e-9` produces **different** bytes.
+- [x] Assert perturbing one box's initial `y` by `1e-9` produces **different** bytes.
 
 **Tests Required:**
 | Test file | Test name | Assertion | Negative control (must be observed red) |
@@ -344,9 +349,9 @@ case never covered this. That is the point of the phase and should be recorded.
 - `packages/core/__tests__/constraints.spec.ts` — EDIT: public-surface guard.
 
 **Implementation:**
-- [ ] `Object.defineProperty(random, "state", { get, set })`. Setter throws
+- [x] `Object.defineProperty(random, "state", { get, set })`. Setter throws
       `TypeError` on a non-finite or non-integer value — **fail closed**, per the repo rule.
-- [ ] An unseeded `Random` (which delegates to `Math.random`, `random.ts:12`) **throws** on
+- [x] An unseeded `Random` (which delegates to `Math.random`, `random.ts:12`) **throws** on
       `state` read *and* write. A silently-zero state on a non-deterministic RNG is exactly
       the "fake-deterministic" failure PRD-014 already ruled against.
 
@@ -376,8 +381,8 @@ public-surface list.
   is not backward-compatible and the phase is wrong. (Same discipline as PRD-028 Phase 3.)
 
 **Implementation:**
-- [ ] One optional field, one `??`. Default path byte-identical to today.
-- [ ] Test dispatches `Object.assign(new Event("keydown"), { code: "KeyW" })` at a bare
+- [x] One optional field, one `??`. Default path byte-identical to today.
+- [x] Test dispatches `Object.assign(new Event("keydown"), { code: "KeyW" })` at a bare
       `EventTarget` — `input.ts:36-38` reads `code ?? key`, so this works in the node
       environment with no DOM.
 
@@ -422,12 +427,12 @@ Six top-level keys. `input` samples are **delta-encoded** — one entry only whe
 or pointer changed. No entity appears anywhere in it. Ever.
 
 **Implementation:**
-- [ ] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
+- [x] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
       `ctx.random.state`; `update` samples `ctx.input.raw` and appends on change.
-- [ ] `createReplayDriver(recording, target)` validates the runtime fingerprint (throws
+- [x] `createReplayDriver(recording, target)` validates the runtime fingerprint (throws
       `TN_REPLAY_RUNTIME_MISMATCH`), then per tick dispatches the synthetic events for that
       tick **before** `runtime.fixedStep(1)` (§2.2).
-- [ ] **Fail closed at load:** unknown key → throw; `version !== 1` → throw; `input` empty →
+- [x] **Fail closed at load:** unknown key → throw; `version !== 1` → throw; `input` empty →
       throw `TN_REPLAY_EMPTY`; `ticks < 1` → throw. A recording that asserts nothing must not
       be replayable — that is the v1 harness lesson, and it is the single most important line
       in this phase.
@@ -470,13 +475,13 @@ that found six indistinguishable presets when all six metrics passed.
 - `examples/abyss-framework/playtests/replay.playtest.json` — NEW (generated, checked in).
 
 **Implementation:**
-- [ ] Parse `recording.json` **as JSON only**. No `@threenative/core` import — that
+- [x] Parse `recording.json` **as JSON only**. No `@threenative/core` import — that
       dependency is forbidden here and the file on disk is the entire interface.
-- [ ] Reject unknown keys with `invalidScenario(...)`, never drop them, never coerce. Reuse
+- [x] Reject unknown keys with `invalidScenario(...)`, never drop them, never coerce. Reuse
       `rejectUnknownKeys` (`scenario.ts`).
-- [ ] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
+- [x] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
       `waitTicks`. **Ticks, never milliseconds.**
-- [ ] Emit at least one assertion, derived from the recording's final observed state. **A
+- [x] Emit at least one assertion, derived from the recording's final observed state. **A
       scenario with zero assertions is a hard error** — the exact v1 failure this package
       exists to prevent.
 
@@ -522,14 +527,18 @@ scenario, and the CLI's subcommand test fails.
   `pnpm tsx scripts/count-loc.ts`.
 
 **Gates:**
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
+      on 2026-08-08; 142 files / 1,009 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
-- [ ] scaffold smoke test green; no `catalog:` survives scaffolding
-- [ ] `pnpm sync:agents --check` clean
-- [ ] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
+- [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Brave/WebGPU
+      runner; the checked-in 1,800-tick scenario reported movement and zero runtime errors.
+- [x] scaffold smoke test green; no `catalog:` survives scaffolding
+- [x] `pnpm sync:agents --check` clean
+- [x] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
       (current core+physics `src` is 2,602 lines against a 15,000 cap; the constraint that
       binds is §11.1, not the cap). Any piece that did not pay for its own lines is reported
-      with its measured delta and **reverted in this phase**, per §11.2.
+      with its measured delta and **reverted in this phase**, per §11.2. Current result:
+      4,184 framework LOC and a +32 normalized-LOC ratchet from the 408-line baseline.
 
 ---
 
@@ -555,6 +564,11 @@ this exact feature could report green while doing nothing:
   Two forms, both run: (a) the jump impulse changed by 1%; (b) one body's initial y moved by
   `1e-9`. Both must diverge by orders of magnitude more than the equality tolerance.
 - **Fail-closed:** a fingerprint mismatch throws. It never runs-and-nearly-matches.
+
+- **Checked-in recording proof:** `examples/abyss-framework/playtests/replay.playtest.json`
+  contains 1,800 fixed ticks and a movement assertion; `tests/browser-replay/replay.spec.ts`
+  reads that exact path before invoking the playtest runner, so deleting the fixture fails the
+  browser project before any stale artifact can be used.
 
 ---
 
@@ -585,24 +599,25 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 
 - [ ] All phases complete
 - [ ] All specified tests pass
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
 - [ ] `pnpm test:browser` passes, including the generated replay scenario
 - [ ] All automated checkpoints passed; manual checkpoints on Phases 3 and 5 passed
-- [ ] No UI required — save UI is explicitly user code (§0.2), stated here rather than
+- [x] No UI required — save UI is explicitly user code (§0.2), stated here rather than
       silently omitted
 
 ### Integration gates
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
-- [ ] Every new exported symbol has a non-test consumer (census pasted, not summarised)
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
+- [x] Every new exported symbol has a non-test consumer (census pasted, not summarised)
 - [ ] Revert check passed: removing `replay()` breaks the example's typecheck and
       `constraints.spec.ts`
-- [ ] No behaviour has two live implementations — replayed input flows through the **same**
+- [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
 - [ ] Every gate has a negative control that was **observed failing**
-- [ ] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
+- [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
-      three-tick unit fixture
+      three-tick unit fixture. The replay consumer proof is recorded in
+      `docs/verification/PRD-036.md`; the manual divergence and red controls remain open.
 - [ ] Package count still 7/8; framework LOC delta ≤ 200 and recorded
 
 ### Honesty note for whoever files this

@@ -1,0 +1,43 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.1
+    },
+    "world": {
+      "seed": 90210
+    }
+  },
+  "name": "replay",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 1,
+      "press": "Enter",
+      "release": true
+    },
+    {
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "holdTicks": 1797,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "release": true,
+      "waitTicks": 1
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 0
+}

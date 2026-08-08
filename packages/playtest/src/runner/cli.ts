@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PlaytestScenarioError } from "../scenario.js";
@@ -10,6 +11,7 @@ import {
   type IStandalonePlaytestConfig,
 } from "./config.js";
 import { initStandalonePlaytest } from "./init.js";
+import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest } from "./runner.js";
 
 export interface IRunnerDiagnostic {
@@ -79,6 +81,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stdout.write(`${JSON.stringify({ ...result, pass: true }, null, 2)}\n`);
       return 0;
     }
+    if (argv[0] === "record-to-scenario") {
+      return await recordToScenarioCommand(argv.slice(1));
+    }
     config = parseStandalonePlaytestArgs(argv);
     const report = await runStandalonePlaytest(config);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -94,6 +99,31 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     process.exitCode = 2;
     return 2;
   }
+}
+
+async function recordToScenarioCommand(argv: readonly string[]): Promise<number> {
+  const inputPath = argv[0];
+  const outputFlag = argv.indexOf("--out");
+  const outputPath = outputFlag < 0 ? undefined : argv[outputFlag + 1];
+  if (inputPath === undefined || outputPath === undefined || argv.length !== 3) {
+    throw new PlaytestCliUsageError(
+      "Usage: threenative-playtest record-to-scenario recording.json --out bug.playtest.json",
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(resolve(inputPath), "utf8"));
+  } catch (error) {
+    throw new PlaytestCliUsageError(
+      `Could not read recording '${inputPath}' as JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const scenario = recordToScenario(parsed, inputPath);
+  const absoluteOutput = resolve(outputPath);
+  await mkdir(dirname(absoluteOutput), { recursive: true });
+  await writeFile(absoluteOutput, `${JSON.stringify(scenario, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ output: absoluteOutput, pass: true }, null, 2)}\n`);
+  return 0;
 }
 
 function diagnostic(code: string, message: string, instruction: string): IRunnerDiagnostic {

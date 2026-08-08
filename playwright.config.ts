@@ -11,6 +11,7 @@ const starterLookServer = process.argv.includes("--starter-look-server");
 const starterLookGatePort = 4176;
 const starterLookReadyPort = 4175;
 const hotReloadPort = 4177;
+const replayPort = 4178;
 
 if (starterLookServer) await runStarterLookServer();
 const hotReloadProject = starterLookServer ? undefined : await prepareHotReloadProject();
@@ -337,6 +338,12 @@ export default defineConfig({
             reuseExistingServer: false,
           },
         ]),
+    {
+      command: "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 4178 --strictPort",
+      url: `http://127.0.0.1:${replayPort}`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+    },
   ],
   projects: [
     {
@@ -347,6 +354,11 @@ export default defineConfig({
       name: "hot-reload",
       testDir: "./tests/browser",
       use: { baseURL: `http://127.0.0.1:${hotReloadPort}` },
+    },
+    {
+      name: "abyss-framework-replay",
+      testDir: "./tests/browser-replay",
+      use: { baseURL: `http://127.0.0.1:${replayPort}` },
     },
   ],
 });

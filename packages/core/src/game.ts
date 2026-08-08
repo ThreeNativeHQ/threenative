@@ -15,7 +15,10 @@ export type PluginCleanup = () => void;
 
 export interface GamePluginRuntime {
   fixedStep(ticks: number): number;
+  readonly random?: Pick<Random, "state">;
+  rapier?: string | null;
   readonly seed: number | null;
+  readonly step: number;
 }
 
 interface DevTools {
@@ -79,6 +82,7 @@ export interface GameConfig<
   readonly container?: HTMLElement;
   readonly input?: InputBindings;
   readonly initialState?: TState;
+  readonly inputTarget?: EventTarget;
   readonly maxSteps?: number;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
@@ -296,7 +300,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       document.body.append(canvas);
     }
 
-    const inputTarget = typeof window === "undefined" ? canvas : window;
+    const inputTarget =
+      this.#config.inputTarget ?? (typeof window === "undefined" ? canvas : window);
     this.#input = new InputMap(this.#config.input, inputTarget, canvas);
     this.#state.start();
     const threeScene = new ThreeScene();
@@ -377,7 +382,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#loop = gameLoop;
     const runtime: GamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      random,
+      rapier: null,
       seed: this.#config.seed ?? null,
+      step: gameLoop.step,
     };
     for (const plugin of this.#config.plugins ?? []) {
       const cleanup =
