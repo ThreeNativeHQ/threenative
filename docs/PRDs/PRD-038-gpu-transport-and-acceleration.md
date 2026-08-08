@@ -351,8 +351,10 @@ declares `three-mesh-bvh: 0.9.14`.
 
 A CPU raycast against the 100,000-triangle sculpture returned hits with the same Three.js
 geometry used by the WebGPU template; the raycast path is renderer-independent. The
-browser-side WebGPU confirmation remains open because Chromium traps before page startup
-in this environment.
+browser-side WebGPU confirmation remains open. The standard Playwright Chromium run traps
+before page startup in this environment; an isolated Brave 150.1.92.143 run under Xvfb
+reached the scaffold but reported that WebGPU was unavailable and fell back to WebGL2, so
+it is not a valid WebGPU consumer result.
 
 The no-BVH warm-up baseline was 6.88 ms worst-case (12 samples, 100,000 triangles); the
 BVH build took 47.27 ms lazily, and subsequent BVH raycasts stayed below 0.10 ms after
@@ -516,10 +518,18 @@ false `definitely-not-a-mesh` equality returned `pass: false` with
 this change and 10 after it (the PRD's 7/8 count predates two already-invoked scenarios).
 The direct CPU control against the same 100,000-triangle geometry and exact `0.9.14`
 artifact returned 59/60 picks under the 1 ms budget with BVH and 0/60 with that call
-removed; both variants returned all 60 hits. The browser scenario and its red negative
-controls could not reach assertions in this sandbox because Chromium traps during launch
-with `SIGTRAP`/`EPERM`; the exact runner command and environment baseline are recorded in
-the lane report.
+removed; both variants returned all 60 hits.
+
+The scaffold consumer gate remains open. The standard Playwright Chromium run traps during
+launch with `SIGTRAP`/`EPERM`. A fresh-profile Brave 150.1.92.143 run under Xvfb reached the
+changed scaffold's bridge and observed `GameState` moving from
+`fastPicks: 0, hovered: ""` to `fastPicks: 20, hovered: "sculpture"`, then to
+`hovered: ""` after moving off; bridge diagnostics stayed empty. That run also logged
+`THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend` and other
+warnings, so it does not satisfy the WebGPU or `noConsoleErrors` acceptance criteria. A
+clean pre-Phase-1 scaffold in the same isolated Brave pass produced 15
+`OperationError: Instance dropped in popErrorScope` page errors plus the existing
+deprecation warning. These are environment observations, not passing scenario results.
 
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
