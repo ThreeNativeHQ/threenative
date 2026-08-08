@@ -3,7 +3,8 @@
 **Status:** implementation delivered in a partial lane; the browser consumer gate is
 pending on a supported runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
 closed, but this PRD remains open until its consumer proof passes and is not moved to
-`done/` or merged yet.
+`done/` or merged yet. Automated gates passed on 2026-08-08; the browser and manual
+consumer checks remain pending.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after
@@ -314,11 +315,11 @@ integration and nothing else.
   §1.4. Then `pnpm sync:agents`.
 
 **Implementation:**
-- [ ] `simulateStack(seed)` builds floor + 5 boxes, steps 300 fixed ticks, returns
+- [x] `simulateStack(seed)` builds floor + 5 boxes, steps 300 fixed ticks, returns
       `world.takeSnapshot()`.
-- [ ] Assert `simulateStack(1)` equals `simulateStack(1)` **byte for byte**, twice in the
+- [x] Assert `simulateStack(1)` equals `simulateStack(1)` **byte for byte**, twice in the
       same process, and again in a fresh worker.
-- [ ] Assert perturbing one box's initial `y` by `1e-9` produces **different** bytes.
+- [x] Assert perturbing one box's initial `y` by `1e-9` produces **different** bytes.
 
 **Tests Required:**
 | Test file | Test name | Assertion | Negative control (must be observed red) |
@@ -347,9 +348,9 @@ case never covered this. That is the point of the phase and should be recorded.
 - `packages/core/__tests__/constraints.spec.ts` — EDIT: public-surface guard.
 
 **Implementation:**
-- [ ] `Object.defineProperty(random, "state", { get, set })`. Setter throws
+- [x] `Object.defineProperty(random, "state", { get, set })`. Setter throws
       `TypeError` on a non-finite or non-integer value — **fail closed**, per the repo rule.
-- [ ] An unseeded `Random` (which delegates to `Math.random`, `random.ts:12`) **throws** on
+- [x] An unseeded `Random` (which delegates to `Math.random`, `random.ts:12`) **throws** on
       `state` read *and* write. A silently-zero state on a non-deterministic RNG is exactly
       the "fake-deterministic" failure PRD-014 already ruled against.
 
@@ -379,8 +380,8 @@ public-surface list.
   is not backward-compatible and the phase is wrong. (Same discipline as PRD-028 Phase 3.)
 
 **Implementation:**
-- [ ] One optional field, one `??`. Default path byte-identical to today.
-- [ ] Test dispatches `Object.assign(new Event("keydown"), { code: "KeyW" })` at a bare
+- [x] One optional field, one `??`. Default path byte-identical to today.
+- [x] Test dispatches `Object.assign(new Event("keydown"), { code: "KeyW" })` at a bare
       `EventTarget` — `input.ts:36-38` reads `code ?? key`, so this works in the node
       environment with no DOM.
 
@@ -425,12 +426,12 @@ Six top-level keys. `input` samples are **delta-encoded** — one entry only whe
 or pointer changed. No entity appears anywhere in it. Ever.
 
 **Implementation:**
-- [ ] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
+- [x] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
       `ctx.random.state`; `update` samples `ctx.input.raw` and appends on change.
-- [ ] `createReplayDriver(recording, target)` validates the runtime fingerprint (throws
+- [x] `createReplayDriver(recording, target)` validates the runtime fingerprint (throws
       `TN_REPLAY_RUNTIME_MISMATCH`), then per tick dispatches the synthetic events for that
       tick **before** `runtime.fixedStep(1)` (§2.2).
-- [ ] **Fail closed at load:** unknown key → throw; `version !== 1` → throw; `input` empty →
+- [x] **Fail closed at load:** unknown key → throw; `version !== 1` → throw; `input` empty →
       throw `TN_REPLAY_EMPTY`; `ticks < 1` → throw. A recording that asserts nothing must not
       be replayable — that is the v1 harness lesson, and it is the single most important line
       in this phase.
@@ -473,13 +474,13 @@ that found six indistinguishable presets when all six metrics passed.
 - `examples/abyss-framework/playtests/replay.playtest.json` — NEW (generated, checked in).
 
 **Implementation:**
-- [ ] Parse `recording.json` **as JSON only**. No `@threenative/core` import — that
+- [x] Parse `recording.json` **as JSON only**. No `@threenative/core` import — that
       dependency is forbidden here and the file on disk is the entire interface.
-- [ ] Reject unknown keys with `invalidScenario(...)`, never drop them, never coerce. Reuse
+- [x] Reject unknown keys with `invalidScenario(...)`, never drop them, never coerce. Reuse
       `rejectUnknownKeys` (`scenario.ts`).
-- [ ] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
+- [x] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
       `waitTicks`. **Ticks, never milliseconds.**
-- [ ] Emit at least one assertion, derived from the recording's final observed state. **A
+- [x] Emit at least one assertion, derived from the recording's final observed state. **A
       scenario with zero assertions is a hard error** — the exact v1 failure this package
       exists to prevent.
 
@@ -525,14 +526,16 @@ scenario, and the CLI's subcommand test fails.
   `pnpm tsx scripts/count-loc.ts`.
 
 **Gates:**
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
+      on 2026-08-08; 142 files / 1,009 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
-- [ ] scaffold smoke test green; no `catalog:` survives scaffolding
-- [ ] `pnpm sync:agents --check` clean
-- [ ] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
+- [x] scaffold smoke test green; no `catalog:` survives scaffolding
+- [x] `pnpm sync:agents --check` clean
+- [x] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
       (current core+physics `src` is 2,602 lines against a 15,000 cap; the constraint that
       binds is §11.1, not the cap). Any piece that did not pay for its own lines is reported
-      with its measured delta and **reverted in this phase**, per §11.2.
+      with its measured delta and **reverted in this phase**, per §11.2. Current result:
+      4,184 framework LOC and a +32 normalized-LOC ratchet from the 408-line baseline.
 
 ---
 
@@ -593,19 +596,19 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 
 - [ ] All phases complete
 - [ ] All specified tests pass
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
 - [ ] `pnpm test:browser` passes, including the generated replay scenario
 - [ ] All automated checkpoints passed; manual checkpoints on Phases 3 and 5 passed
-- [ ] No UI required — save UI is explicitly user code (§0.2), stated here rather than
+- [x] No UI required — save UI is explicitly user code (§0.2), stated here rather than
       silently omitted
 
 ### Integration gates
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
-- [ ] Every new exported symbol has a non-test consumer (census pasted, not summarised)
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
+- [x] Every new exported symbol has a non-test consumer (census pasted, not summarised)
 - [ ] Revert check passed: removing `replay()` breaks the example's typecheck and
       `constraints.spec.ts`
-- [ ] No behaviour has two live implementations — replayed input flows through the **same**
+- [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
 - [ ] Every gate has a negative control that was **observed failing**
 - [ ] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
