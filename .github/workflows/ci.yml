@@ -121,6 +121,18 @@ jobs:
           }
           await browser.close();
           NODE
+      - name: Generate platformer scaffold
+        run: |
+          target="$RUNNER_TEMP/threenative-platformer"
+          core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
+            --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
+          pnpm --dir "$target" install
+          pnpm exec playwright install chromium
+          xvfb-run -a -s '-screen 0 1600x900x24' pnpm --dir "$target" test
 
   benchmark:
     needs: test

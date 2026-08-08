@@ -132,6 +132,14 @@ export interface IPlaytestContactAssertion {
   with?: string;
 }
 
+export interface IPlaytestSignalAssertion {
+  atStep?: string;
+  entity?: string;
+  maxCount?: number;
+  minCount?: number;
+  name: string;
+}
+
 export interface IPlaytestSettledAssertion {
   atStep?: string;
   compareToStep?: string;
@@ -235,6 +243,7 @@ export interface IPlaytestScenarioAssertions {
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
+  signals?: IPlaytestSignalAssertion[];
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
   visibility?: IPlaytestVisibilityAssertion[];
@@ -473,10 +482,12 @@ function validatePlaytestScenario(value: unknown, scenarioPath: string, absolute
     throw invalidStep(scenarioPath, "Scenario steps[] must contain at least one step.");
   }
   const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
+  const assertions = isRecord(value.assert) ? validateAssertions(value.assert, scenarioPath) : undefined;
+  validateStepLabels(steps, assertions, scenarioPath);
   return {
     ...(typeof value.acceptanceId === "string" ? { acceptanceId: value.acceptanceId } : {}),
     ...(isRecord(value.artifacts) ? { artifacts: validateArtifacts(value.artifacts, scenarioPath) } : {}),
-    ...(isRecord(value.assert) ? { assert: validateAssertions(value.assert, scenarioPath) } : {}),
+    ...(assertions === undefined ? {} : { assert: assertions }),
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
@@ -667,6 +678,9 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
   }
+  if (value.label !== undefined && (typeof value.label !== "string" || value.label.trim() === "")) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
+  }
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
@@ -713,6 +727,51 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   };
 }
 
+function validateStepLabels(
+  steps: readonly IPlaytestStep[],
+  assertions: IPlaytestScenarioAssertions | undefined,
+  scenarioPath: string,
+): void {
+  const labels = new Set<string>();
+  for (const [index, step] of steps.entries()) {
+    if (step.label === undefined) continue;
+    if (step.label.trim() === "") {
+      throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
+    }
+    if (labels.has(step.label)) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} repeats duplicate label '${step.label}'.`);
+    }
+    labels.add(step.label);
+  }
+  if (assertions === undefined) return;
+  const requireLabel = (label: string | undefined, path: string): void => {
+    if (label !== undefined && !labels.has(label)) {
+      throw invalidScenario(scenarioPath, `Assertion '${path}' names step label '${label}', but no scenario step defines it.`);
+    }
+  };
+  for (const [index, assertion] of (assertions.resources ?? []).entries()) {
+    for (const [stepIndex, step] of (assertion.atSteps ?? []).entries()) {
+      requireLabel(step.label, `assert.resources[${index}].atSteps[${stepIndex}].label`);
+    }
+  }
+  for (const [index, assertion] of (assertions.components ?? []).entries()) {
+    for (const [stepIndex, step] of (assertion.atSteps ?? []).entries()) {
+      requireLabel(step.label, `assert.components[${index}].atSteps[${stepIndex}].label`);
+    }
+  }
+  for (const [index, assertion] of (assertions.signals ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.signals[${index}].atStep`);
+  }
+  for (const [index, assertion] of (assertions.contacts ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.contacts[${index}].atStep`);
+  }
+  for (const [index, assertion] of (assertions.settled ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.settled[${index}].atStep`);
+    requireLabel(assertion.compareToStep, `assert.settled[${index}].compareToStep`);
+  }
+  requireLabel(assertions.movement?.reachesPositionWithin?.atStep, "assert.movement.reachesPositionWithin.atStep");
+}
+
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
   if (step.press === undefined || step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
   return Math.max(1, step.holdTicks ?? fallback);
@@ -726,6 +785,9 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   rejectUnknownKeys(value, PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), scenarioPath, "assert");
   validateAssertionShapes(value, scenarioPath);
   validateAssertionKeys(value, scenarioPath);
+  if (Array.isArray(value.signals) && value.signals.length === 0) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  }
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
@@ -829,6 +891,13 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
       ? {
           settled: value.settled.map((entry, index) =>
             validateSettledAssertion(entry, scenarioPath, `assert.settled[${index}]`),
+          ),
+        }
+      : {}),
+    ...(Array.isArray(value.signals)
+      ? {
+          signals: value.signals.map((entry, index) =>
+            validateSignalAssertion(entry, scenarioPath, `assert.signals[${index}]`),
           ),
         }
       : {}),
@@ -1179,6 +1248,18 @@ function validateContactAssertion(value: unknown): IPlaytestContactAssertion | u
     ...(typeof value.minCount === "number" && Number.isFinite(value.minCount) ? { minCount: value.minCount } : {}),
     ...(Array.isArray(value.requiredOn) ? { requiredOn: value.requiredOn.filter((item): item is PlaytestTarget => item === "web" || item === "desktop" || item === "bevy") } : {}),
     ...(typeof value.with === "string" ? { with: value.with } : {}),
+  };
+}
+
+function validateSignalAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSignalAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "entity", "maxCount", "minCount", "name"], scenarioPath, objectPath);
+  return {
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("maxCount", optionalNonNegativeInteger(record, "maxCount", scenarioPath, objectPath)),
+    ...present("minCount", optionalNonNegativeInteger(record, "minCount", scenarioPath, objectPath)),
+    name: requireString(record, "name", scenarioPath, objectPath),
   };
 }
 

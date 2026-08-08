@@ -10,12 +10,23 @@ import type { GameState } from "./state.js";
 import { App } from "./ui/App.js";
 import "./style.css";
 
-const game = defineGame<GameState, PhysicsContext>({
+let collectedCoins = 0;
+// biome-ignore lint/style/useConst: the callback closes over the game initialized below.
+let game: ReturnType<typeof defineGame<GameState, PhysicsContext>>;
+const events = () => {
+  game.state.flush();
+  const coins = game.state.getState().coins;
+  const collected = Math.max(0, coins - collectedCoins);
+  collectedCoins = coins;
+  return Array.from({ length: collected }, () => ({ entity: "player", name: "collected" }));
+};
+
+game = defineGame<GameState, PhysicsContext>({
   input: {
     dash: { buttons: [7], down: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], down: ["Space"] },
   },
-  plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), playtest()],
+  plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), playtest({ events })],
   scenes: { boot: Boot, level: Level },
   start: "boot",
 });

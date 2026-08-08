@@ -6,12 +6,33 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 52, "release": true },
-    { "kind": "wait", "waitTicks": 16, "release": true }
+    {
+      "kind": "input",
+      "label": "first-coin",
+      "press": "ArrowRight",
+      "holdTicks": 16,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "last-coin",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "GameState", "path": "coins", "gte": 3, "changed": true }],
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "coins",
+        "gte": 3,
+        "changed": true,
+        "atSteps": [{ "label": "first-coin", "equals": 1 }, { "label": "last-coin", "equals": 3 }]
+      }
+    ],
+    "signals": [{ "name": "collected", "entity": "player", "minCount": 3 }],
     "tags": [{ "tag": "coin", "count": 2 }]
   }
 }

@@ -39,6 +39,27 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   url: string;
 }
 
+export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
+  "components",
+  "componentSeries",
+  "console",
+  "hud",
+  "network",
+  "resources",
+  "resourceSeries",
+  "runtimeDiagnostics",
+  "runtimeObservations",
+  "signals",
+  "signalSeries",
+  "visual",
+] as const;
+
+interface LabeledPlaytestSample {
+  label: string;
+  signals: unknown[];
+  snapshot: IPlaytestObservationSnapshot;
+}
+
 export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): Promise<IStandalonePlaytestReport> {
   const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
   await mkdir(config.artifactDirectory, { recursive: true });
@@ -73,8 +94,10 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     ).catch(() => false);
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
+    const sampleRequest = { entities: entityIds, include: ["components", "diagnostics", "entities", "resources"], resources: resourceIds } as const;
+    const labeledSamples: LabeledPlaytestSample[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
-    const beforeSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    const beforeSnapshot = await bridge?.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
@@ -90,11 +113,18 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       : undefined;
     for (const step of scenario.steps) {
       await runStep(page, bridge, step, scenario.viewport, pathEntity, pathPositions);
+      if (step.label !== undefined && bridge !== undefined) {
+        const snapshot = await bridge.sample(sampleRequest);
+        const signals = bridge.description.capabilities.includes("runtime.events")
+          ? await bridge.drainEvents()
+          : [];
+        labeledSamples.push({ label: step.label, signals, snapshot });
+      }
       if (step.screenshot !== undefined) {
         await page.screenshot({ path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
-    const afterSnapshot = await bridge?.sample({ entities: entityIds, include: ["entities", "resources", "diagnostics"], resources: resourceIds });
+    const afterSnapshot = await bridge?.sample(sampleRequest);
     if (afterSnapshot !== undefined && pathEntity !== undefined) {
       const position = entityPosition(afterSnapshot, pathEntity);
       if (position !== undefined) pathPositions.push(position);
@@ -120,6 +150,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       pairObservations(beforeHud, afterHud),
       runtimeReady,
       visual,
+      labeledSamples,
     );
     await context.close();
     return report;
@@ -146,12 +177,14 @@ export function buildReport(
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
   runtimeReady = true,
   visual: IPlaytestObservations["visual"] = undefined,
+  labeledSamples: readonly LabeledPlaytestSample[] = [],
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
   const afterPosition = entityPosition(afterSnapshot, entity);
   const beforeRotation = entityRotation(beforeSnapshot, entity);
   const afterRotation = entityRotation(afterSnapshot, entity);
+  const components = componentObservations(beforeSnapshot, afterSnapshot);
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
     : subtract(afterPosition, beforePosition);
@@ -175,8 +208,19 @@ export function buildReport(
     frames: scenario.steps.reduce((total, step) => total + (step.holdFrames ?? step.waitFrames ?? step.holdTicks ?? step.waitTicks ?? 1), 0),
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),
-    observations: {
+    observations: buildObservations({
       console: consoleEntries,
+      ...(components === undefined
+        ? {}
+        : { components }),
+      ...(labeledSamples.length === 0
+        ? {}
+        : {
+            componentSeries: labeledSamples.map(({ label, snapshot }) => ({ label, snapshots: snapshot.components ?? {}, tick: snapshot.clock.tick ?? 0 })),
+            resourceSeries: labeledSamples.map(({ label, snapshot }) => ({ label, snapshots: snapshot.resources ?? {}, tick: snapshot.clock.tick ?? 0 })),
+            signalSeries: labeledSamples.map(({ label, signals, snapshot }) => ({ label, signals, tick: snapshot.clock.tick ?? 0 })),
+            signals: labeledSamples.flatMap(({ signals }) => signals),
+          }),
       hud,
       network: networkEntries,
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
@@ -185,7 +229,7 @@ export function buildReport(
         : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario),
       ...(visual === undefined ? {} : { visual }),
-    },
+    }),
   };
   if (scenario.assert?.camera !== undefined) {
     base.follow = cameraReport(scenario, beforeSnapshot, afterSnapshot);
@@ -213,6 +257,32 @@ export function buildReport(
     target: scenario.target,
     url: config.url,
   };
+}
+
+function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
+  const observations = {} as IPlaytestObservations;
+  for (const field of STANDALONE_PLAYTEST_OBSERVATION_FIELDS) {
+    const value = candidate[field];
+    if (value !== undefined) Object.assign(observations, { [field]: value });
+  }
+  return observations;
+}
+
+function componentObservations(
+  before: IPlaytestObservationSnapshot | undefined,
+  after: IPlaytestObservationSnapshot | undefined,
+): IPlaytestObservations["components"] {
+  if (before?.components === undefined && after?.components === undefined) return undefined;
+  const entities = new Set([...Object.keys(before?.components ?? {}), ...Object.keys(after?.components ?? {})]);
+  return Object.fromEntries([...entities].map((entity) => {
+    const beforeFields = before?.components?.[entity] ?? {};
+    const afterFields = after?.components?.[entity] ?? {};
+    const fields = new Set([...Object.keys(beforeFields), ...Object.keys(afterFields)]);
+    return [entity, Object.fromEntries([...fields].map((field) => [field, {
+      ...(beforeFields[field] === undefined ? {} : { before: beforeFields[field] }),
+      ...(afterFields[field] === undefined ? {} : { after: afterFields[field] }),
+    }]))];
+  }));
 }
 
 function screenshotObservations(

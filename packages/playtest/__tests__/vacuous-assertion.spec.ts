@@ -115,3 +115,9 @@ test("valid scalar values still parse unchanged", async () => {
   expect(scenario.assert.movement).toEqual({ entity: "player", maxDistance: 10, minDistance: 0.5, rotationChanged: true });
   expect(scenario.assert.camera).toEqual({ entity: "camera", follows: "player", targetInViewport: true, within: 5 });
 });
+
+test("an empty signals array fails at load instead of asserting nothing", async () => {
+  const error = await loadError({ signals: [] });
+
+  expect(error.diagnostic.message).toMatch(/assert\.signals.*at least one/u);
+});

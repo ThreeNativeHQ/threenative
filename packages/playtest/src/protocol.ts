@@ -77,6 +77,7 @@ export interface IPlaytestObservationSnapshot {
     timeMs?: number;
   };
   diagnostics?: JsonValue[];
+  components?: Record<string, Record<string, JsonValue>>;
   entities?: IPlaytestEntityObservation[];
   gameplay?: IPlaytestGameplayObservation;
   resources?: Record<string, JsonValue>;

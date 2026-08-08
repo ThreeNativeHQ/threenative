@@ -93,6 +93,43 @@ describe("playtest plugin", () => {
     }
   });
 
+  it("exposes registry fields as components only when fields exist", async () => {
+    const canvas = testCanvas();
+    class TestScene extends Scene {
+      override enter(ctx: Ctx): void {
+        const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        ctx.add(player);
+        ctx.entities.add("player", { debug: () => ({ health: 2 }), mesh: player });
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      const installed = bridge();
+      expect((await installed.describe()).capabilities).toContain("runtime.components");
+      expect((await installed.sample({})).components).toEqual({ player: { health: 2 } });
+    } finally {
+      game.stop();
+    }
+  });
+
   it("publishes registry tags and drained contacts through gameplay channels", async () => {
     const canvas = testCanvas();
     const body = {};

@@ -52,6 +52,7 @@ export class Character {
   readonly tags = ["player"];
   state: CharacterState = "idle";
   coyoteJumps = 0;
+  health = 3;
   jumps = 0;
   dashes = 0;
   #rig: CharacterRig;
@@ -126,6 +127,7 @@ export class Character {
     return {
       dashes: this.dashes,
       grounded: this.body.grounded,
+      health: this.health,
       jumps: this.jumps,
       position: this.mesh.position.toArray(),
       state: this.state,

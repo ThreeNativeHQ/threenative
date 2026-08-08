@@ -54,6 +54,49 @@ test("scenario loading rejects mixed frame and fixed timing", async () => {
   }
 });
 
+test("scenario loading rejects duplicate step labels", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-duplicate-label-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "duplicate-label",
+    schemaVersion: 1,
+    steps: [
+      { label: "pickup", release: true, waitFrames: 1 },
+      { label: "pickup", release: true, waitFrames: 1 },
+    ],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/duplicate label 'pickup'/u) },
+  });
+});
+
+test("scenario loading rejects a wrong-typed step label", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-wrong-label-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "wrong-label",
+    schemaVersion: 1,
+    steps: [{ label: 42, release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/label must be a non-empty string/u) },
+  });
+});
+
+test("scenario loading rejects an atSteps label that was never sampled", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-missing-label-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { resources: [{ atSteps: [{ equals: 1, label: "missing" }], id: "GameState", path: "coins" }] },
+    name: "missing-label",
+    schemaVersion: 1,
+    steps: [{ label: "present", release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/names step label 'missing'/u) },
+  });
+});
+
 test("schema version 1 parser keeps stable diagnostics", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
   await writeFile(join(directory, "scenario.json"), JSON.stringify({

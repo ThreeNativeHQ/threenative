@@ -1,5 +1,5 @@
 import type { IPlaytestReport } from "./report.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion } from "./scenario.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -17,8 +17,10 @@ export interface IPlaytestAssertionSchemaEntry {
   example: unknown;
   fields: IPlaytestAssertionSchemaField[];
   kind: keyof NonNullable<IPlaytestScenario["assert"]>;
+  observationPath: string;
   requiredCapabilities: readonly PlaytestCapability[];
   resultIdPrefix: string;
+  supportedOn: readonly PlaytestTarget[];
   triviality: "not-applicable" | "reject-initial-value";
 }
 
@@ -32,8 +34,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "reachability",
+    observationPath: "entityTransforms",
     requiredCapabilities: ["entity.observe"],
     resultIdPrefix: "reachability.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -47,8 +51,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "aerodynamics",
+    observationPath: "physicsDebugSeries",
     requiredCapabilities: ["runtime.fixedStep", "runtime.physics"],
     resultIdPrefix: "aerodynamics.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -61,8 +67,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "visual",
+    observationPath: "visual",
     requiredCapabilities: ["browser.screenshot"],
     resultIdPrefix: "visual.",
+    supportedOn: ["web"],
     triviality: "not-applicable",
   },
   {
@@ -87,8 +95,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "movement",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["entity.observe"],
     resultIdPrefix: "movement.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -102,8 +112,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "camera",
+    observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["camera.observe", "entity.observe"],
     resultIdPrefix: "camera",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -121,8 +133,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "components",
+    observationPath: "components",
     requiredCapabilities: ["runtime.components"],
     resultIdPrefix: "component.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
   },
   {
@@ -142,8 +156,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "resources",
+    observationPath: "resources",
     requiredCapabilities: ["runtime.resources"],
     resultIdPrefix: "resource.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
   },
   {
@@ -156,8 +172,28 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "tags",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.tags"],
     resultIdPrefix: "tags.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+  },
+  {
+    description: "Proves a named Godot signal was emitted by the application during the run or at a labeled step.",
+    example: { signals: [{ name: "collected", entity: "player", minCount: 3, atStep: "last-coin" }] },
+    fields: [
+      { description: "Retained step label to inspect instead of the full signal history.", name: "atStep", type: "string" },
+      { description: "Entity id that emitted the signal.", name: "entity", type: "string" },
+      { description: "Maximum number of matching signals; use zero to prove separation.", name: "maxCount", type: "non-negative integer" },
+      { description: "Minimum number of matching signals.", name: "minCount", type: "non-negative integer" },
+      { description: "Godot signal name emitted by the application.", name: "name", required: true, type: "string" },
+    ],
+    cardinality: "array",
+    kind: "signals",
+    observationPath: "signals",
+    requiredCapabilities: ["runtime.events"],
+    resultIdPrefix: "signal.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -169,8 +205,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "states",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.state"],
     resultIdPrefix: "states.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -187,8 +225,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "hud",
+    observationPath: "hud",
     requiredCapabilities: ["runtime.ui"],
     resultIdPrefix: "hud.",
+    supportedOn: ["web"],
     triviality: "reject-initial-value",
   },
   {
@@ -204,8 +244,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "overlayNodes",
+    observationPath: "overlayNodes",
     requiredCapabilities: ["browser.dom"],
     resultIdPrefix: "overlayNode.",
+    supportedOn: ["web"],
     triviality: "not-applicable",
   },
   {
@@ -220,8 +262,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "diagnostics",
+    observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
     resultIdPrefix: "diagnostics",
+    supportedOn: ["web"],
     triviality: "not-applicable",
   },
   {
@@ -234,8 +278,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "visibility",
+    observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["entity.bounds"],
     resultIdPrefix: "visibility.",
+    supportedOn: ["web"],
     triviality: "not-applicable",
   },
   {
@@ -244,8 +290,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [{ description: "Expected configured deterministic seed, or null when unseeded.", name: "seed", required: true, type: "json" }],
     cardinality: "object",
     kind: "world",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.world"],
     resultIdPrefix: "world.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -262,8 +310,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "contacts",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.contacts"],
     resultIdPrefix: "contact.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -279,9 +329,11 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "settled",
+    observationPath: "physicsDebugSeries",
     triviality: "not-applicable",
     requiredCapabilities: ["runtime.physics"],
     resultIdPrefix: "settled.",
+    supportedOn: ["web", "desktop", "bevy"],
   },
   {
     description: "Proves rendered scene geometry occludes the segment between an origin entity and target.",
@@ -292,8 +344,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "occluded",
+    observationPath: "effectLog",
     requiredCapabilities: ["runtime.physics"],
     resultIdPrefix: "occluded.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
   {
@@ -307,8 +361,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "animation",
+    observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.animation"],
     resultIdPrefix: "animation.",
+    supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
   },
 ] as const;
@@ -394,6 +450,8 @@ export interface IPlaytestObservations {
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;
   runtimeDiagnostics?: unknown;
+  signals?: unknown[];
+  signalSeries?: Array<{ label: string; signals: unknown[]; tick: number }>;
   visibility?: Record<string, unknown>;
   visual?: {
     changedPixelRatio?: number;
@@ -511,11 +569,13 @@ export function evaluateRichPlaytestAssertions(input: {
       }
     }
     if (visual.entityVisible !== undefined) {
-      const samples = input.report.observations?.visual?.runtimeDiagnosticsSeries ?? [input.report.observations?.runtimeDiagnostics];
+      const frameSeries = input.report.observations?.visual?.runtimeDiagnosticsSeries;
+      const samples = frameSeries ?? [input.report.observations?.runtimeDiagnostics];
       const selected = visual.entityVisible.throughoutFrames === true ? samples : samples.slice(-1);
       const projected = selected.map((sample) => projectedPixelsForEntity(runtimeDiagnosticsSnapshot(sample), visual.entityVisible!.entity, input.scenario.viewport));
-      const pass = projected.length > 0 && projected.every((pixels) => pixels !== undefined && pixels >= visual.entityVisible!.minProjectedPixels);
-      assertions.push({ id: `visual.${index}.entityVisible`, pass, details: { entity: visual.entityVisible.entity, projectedPixels: projected } });
+      const hasRequiredSeries = visual.entityVisible.throughoutFrames !== true || (frameSeries !== undefined && frameSeries.length > 0);
+      const pass = hasRequiredSeries && projected.length > 0 && projected.every((pixels) => pixels !== undefined && pixels >= visual.entityVisible!.minProjectedPixels);
+      assertions.push({ id: `visual.${index}.entityVisible`, pass, details: { entity: visual.entityVisible.entity, hasRequiredSeries, projectedPixels: projected } });
       if (!pass) diagnostics.push({ code: "TN_PLAYTEST_ENTITY_VISIBILITY_DROPPED", message: `Entity '${visual.entityVisible.entity}' dropped below ${visual.entityVisible.minProjectedPixels} projected pixels.`, severity: "error", suggestion: "Check per-frame visibility, camera clipping, scale, and renderer state." });
     }
   }
@@ -546,7 +606,8 @@ export function evaluateRichPlaytestAssertions(input: {
         label: sample.label,
         value: readPath(sample.snapshots[assertion.id], assertion.path),
       }));
-      const pass = samples.length === input.scenario.steps.length && samples.every((sample) => pathValuePass(assertion, sample.value));
+      const expectedSamples = input.scenario.steps.reduce((count, step) => count + (step.label === undefined ? 0 : 1), 0);
+      const pass = expectedSamples > 0 && samples.length === expectedSamples && samples.every((sample) => pathValuePass(assertion, sample.value));
       assertions.push({ details: { samples }, id: `resource.${assertion.id}.${assertion.path ?? "value"}.throughoutSteps`, pass });
       if (!pass) diagnostics.push({
         code: "TN_PLAYTEST_RESOURCE_TRANSITION_ASSERTION_FAILED",
@@ -575,6 +636,33 @@ export function evaluateRichPlaytestAssertions(input: {
         suggestion: "Inspect the failed and restored labeled samples and fix the retry transition.",
       });
     }
+  }
+  for (const assertion of scenarioAssertions.signals ?? []) {
+    const series = input.report.observations?.signalSeries;
+    const selected = assertion.atStep === undefined
+      ? undefined
+      : series?.find((sample) => sample.label === assertion.atStep);
+    const drained = assertion.atStep === undefined
+      ? series !== undefined && series.length > 0
+      : selected !== undefined;
+    const events = assertion.atStep === undefined ? input.report.observations?.signals : selected?.signals;
+    const count = matchingSignals(events, assertion);
+    const minCount = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
+    const pass = drained && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
+    assertions.push({
+      details: { atStep: assertion.atStep, count, entity: assertion.entity, maxCount: assertion.maxCount, minCount, name: assertion.name },
+      id: `signal.${assertion.name}`,
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_SIGNAL_NOT_OBSERVED",
+      message: !drained
+        ? `Signal assertion '${assertion.name}' had no retained event drain${assertion.atStep === undefined ? "" : ` at step '${assertion.atStep}'`}.`
+        : `Expected signal '${assertion.name}'${assertion.entity === undefined ? "" : ` from '${assertion.entity}'`} ${minCount} time(s), observed ${count}.`,
+      observedRuntimePath: "observations.json/signalSeries",
+      severity: "error",
+      suggestion: "Expose a bounded events callback on the playtest bridge and inspect the emitted signal name and entity.",
+    });
   }
   if (scenarioAssertions.world !== undefined) {
     const result = evaluateWorldAssertion(scenarioAssertions.world, input.report.observations?.runtimeObservations);
@@ -1466,6 +1554,17 @@ function componentValueChecks(assertion: IPlaytestComponentAssertion, value: unk
     ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(resolved, assertion.equals)] : []),
     ...(assertion.gte === undefined ? [] : [typeof resolved === "number" && resolved >= assertion.gte]),
   ];
+}
+
+function matchingSignals(events: unknown[] | undefined, assertion: IPlaytestSignalAssertion): number {
+  if (events === undefined) return 0;
+  let count = 0;
+  for (const event of events) {
+    if (!isRecord(event) || event.name !== assertion.name) continue;
+    if (assertion.entity !== undefined && event.entity !== assertion.entity) continue;
+    count += 1;
+  }
+  return count;
 }
 
 function trivialAssertionDiagnostic(id: string, path: string | undefined, before: unknown, sourcePath: string | undefined): IPlaytestDiagnostic {

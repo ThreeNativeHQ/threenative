@@ -107,6 +107,36 @@ test("gameplay providers advertise and return animation and state channels toget
   installation.dispose();
 });
 
+test("component and event providers advertise only the observations they supply", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    components: () => ({ player: { health: 2 } }),
+    events: () => [{ entity: "player", name: "collected" }],
+    renderer,
+    scene: new Scene(),
+  });
+
+  const description = await installation.bridge.describe();
+  expect(description.capabilities).toContain("runtime.components");
+  expect(description.capabilities).toContain("runtime.events");
+  expect((await installation.bridge.sample({})).components).toEqual({ player: { health: 2 } });
+  expect(await installation.bridge.drainEvents?.()).toEqual([{ entity: "player", name: "collected" }]);
+  installation.dispose();
+});
+
+test("an empty component provider does not advertise a dead capability", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    components: () => ({}),
+    renderer,
+    scene: new Scene(),
+  });
+
+  expect((await installation.bridge.describe()).capabilities).not.toContain("runtime.components");
+  expect((await installation.bridge.sample({})).components).toBeUndefined();
+  installation.dispose();
+});
+
 test("gameplay channels stay absent when no provider supplies them", async () => {
   const installation = installThreePlaytestBridge({
     camera: new PerspectiveCamera(),

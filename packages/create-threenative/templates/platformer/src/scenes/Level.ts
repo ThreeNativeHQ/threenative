@@ -115,6 +115,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
       for (const entry of pickups) entry.value.update(dt);
       checkpoints.pass(character.mesh.position);
       checkpoints.update(dt, character);
+      character.health = checkpoints.hearts;
       if (character.mesh.position.y < KILL_PLANE) checkpoints.respawn(character);
 
       removeCollected();

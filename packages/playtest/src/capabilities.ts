@@ -11,6 +11,7 @@ export type PlaytestCapability =
   | "entity.observe"
   | "entity.setup"
   | "runtime.animation"
+  | "runtime.audio"
   | "runtime.components"
   | "runtime.contacts"
   | "runtime.diagnostics"
@@ -42,6 +43,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("entity.observe", "Samples registered entity transforms and visibility."),
   capability("entity.setup", "Applies bounded transforms to registered entities."),
   capability("runtime.animation", "Samples application-owned animation state."),
+  capability("runtime.audio", "Samples application-owned audio runtime state."),
   capability("runtime.components", "Samples registered JSON-safe component state."),
   capability("runtime.contacts", "Samples bounded collision and trigger contacts."),
   capability("runtime.diagnostics", "Samples application-owned runtime diagnostics."),

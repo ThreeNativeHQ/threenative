@@ -17,7 +17,7 @@ import type { Ctx } from "./scene.js";
 export function playtest<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
->(): GamePluginHooks<TState, TPhysics> {
+>(options: PlaytestOptions = {}): GamePluginHooks<TState, TPhysics> {
   let dispose: (() => void) | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
 
@@ -29,7 +29,9 @@ export function playtest<
         camera: ctx.camera,
         diagnostics: () => [...diagnostics],
         entities: () => bridgeEntities(ctx),
+        components: () => componentObservations(ctx.entities.snapshot()),
         ...(runtime === undefined ? {} : { fixedStep: (ticks: number) => advance(runtime, ticks) }),
+        ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed),
         gameplayChannels: () => gameplayChannels(ctx),
         renderer: ctx.renderer.raw as { getDrawingBufferSize(target: Vector2): Vector2 },
@@ -53,6 +55,10 @@ interface RuntimeObservation {
 }
 
 type RuntimeGameplayObservation = IPlaytestGameplayObservation & RuntimeObservation;
+
+export interface PlaytestOptions {
+  readonly events?: () => JsonValue[];
+}
 
 function installRuntimeChannels(bridge: IPlaytestBridgeV1): void {
   const describe = bridge.describe;
@@ -207,6 +213,18 @@ function tagCounts(snapshot: EntitySnapshot): Record<string, { count: number }> 
     for (const tag of fields.tags ?? []) counts[tag] = { count: (counts[tag]?.count ?? 0) + 1 };
   }
   return counts;
+}
+
+function componentObservations(
+  snapshot: EntitySnapshot,
+): Record<string, Record<string, JsonValue>> {
+  const components: Record<string, Record<string, JsonValue>> = {};
+  for (const [id, fields] of Object.entries(snapshot)) {
+    if (Object.keys(fields).length === 0) continue;
+    assertJsonSafe(fields, `$.components.${id}`);
+    components[id] = fields as Record<string, JsonValue>;
+  }
+  return components;
 }
 
 function stateResources<TState extends Record<string, unknown>, TPhysics>(
