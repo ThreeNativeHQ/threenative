@@ -61,7 +61,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
 | Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
-| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **proposed, gated on Phase 1 exit** |
+| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
 | Navigation and pathfinding | [PRD-034](../PRDs/PRD-034-navigation-and-pathfinding.md) | **queued, gated on Phase 1 exit** |
 | Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **queued, gated on Phase 1 exit** |
 | Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **proposed, gated on Phase 1 exit** |

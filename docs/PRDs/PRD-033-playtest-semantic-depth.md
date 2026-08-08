@@ -1,9 +1,10 @@
 # PRD-033 — Playtest semantic depth: assert what the *game* did
 
-**Status: proposed, ready after the Phase 1 exit.** Gate 0 closed on 2026-08-07 and the
-paired Phase 1 corpus passed on 2026-08-08. `OPPORTUNITY-AREAS.md`'s round-2 prerequisite
-is therefore satisfied. This PRD is area **#2, score 90**. Building it before that gate
-was how v1 reached 790k lines; it is now eligible for execution.
+**Status: implementation delivered; browser consumer gate pending on a supported runner.**
+Gate 0 closed on 2026-08-07 and the paired Phase 1 corpus passed on 2026-08-08.
+`OPPORTUNITY-AREAS.md`'s round-2 prerequisite is satisfied. The implementation and
+non-browser gates are committed; Chromium exits before page creation in this managed
+environment, so the real platformer scenarios remain explicitly unverified here.
 
 **Complexity: 7 → HIGH mode** (10+ files +3, complex state/temporal logic +2,
 multi-package +2)
