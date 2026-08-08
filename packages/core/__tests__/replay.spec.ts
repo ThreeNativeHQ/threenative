@@ -24,6 +24,8 @@ async function recordThreeTicks(): Promise<{
   plugin: ReturnType<typeof replay>;
   recording: Recording;
   trace: string[][];
+  target: EventTarget;
+  ctx: Ctx;
 }> {
   const target = new EventTarget();
   const input = new InputMap(undefined, target);
@@ -40,7 +42,7 @@ async function recordThreeTicks(): Promise<{
   }
   const recording = plugin.recording;
   if (recording === undefined) throw new Error("Replay plugin did not produce a recording.");
-  return { input, plugin, recording, trace };
+  return { input, plugin, recording, trace, target, ctx };
 }
 
 describe("replay", () => {
@@ -161,16 +163,21 @@ describe("replay", () => {
       input: [
         {
           keys: [],
-          pointer: [12, 34, 1, 320, 180] as [number, number, number, number, number],
+          pointer: [12, 34, 3, 320, 180] as [number, number, number, number, number],
           tick: 0,
         },
         {
           keys: [],
-          pointer: [12, 34, 0, 320, 180] as [number, number, number, number, number],
+          pointer: [12, 34, 2, 320, 180] as [number, number, number, number, number],
           tick: 1,
         },
+        {
+          keys: [],
+          pointer: [12, 34, 0, 320, 180] as [number, number, number, number, number],
+          tick: 2,
+        },
       ],
-      ticks: 2,
+      ticks: 3,
     };
     const observed: Array<[number, boolean, number, number]> = [];
     const driver = createReplayDriver(pointerRecording, keyboardTarget, pointerTarget);
@@ -188,7 +195,8 @@ describe("replay", () => {
     );
 
     expect(observed).toEqual([
-      [1, true, 112, 84],
+      [3, true, 112, 84],
+      [2, false, 112, 84],
       [0, false, 112, 84],
     ]);
     recorded.input.dispose();
@@ -278,6 +286,25 @@ describe("replay", () => {
     expect(recordTrace.runId).not.toBe(replayTrace.runId);
     recorded.input.dispose();
     replayInput.dispose();
+  });
+
+  it("should not append replay ticks to an active recording", async () => {
+    const recorded = await recordThreeTicks();
+    const before = recorded.plugin.recording;
+    expect(before).toBeDefined();
+    createReplayDriver(
+      recorded.recording,
+      recorded.target,
+    )(
+      runtime(() => {
+        recorded.input.tick();
+        recorded.plugin.beforeUpdate?.(recorded.ctx, 1 / 60);
+        return 1;
+      }),
+    );
+
+    expect(recorded.plugin.recording).toEqual(before);
+    recorded.input.dispose();
   });
 
   it("should clear live input before replaying the first tick", async () => {
