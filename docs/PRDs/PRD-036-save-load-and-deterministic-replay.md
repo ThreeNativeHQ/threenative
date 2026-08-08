@@ -255,7 +255,7 @@ phase end means the phase is incomplete.**
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
 | 1 | `Random.state` accessor | `packages/core/src/replay.ts:129` reads it into the recording header; `packages/core/src/replay.ts:184-190` restores it before stepping | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
-| 2 | `GameConfig.inputTarget` | `packages/core/src/game.ts:301-303` selects the configured target or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
+| 2 | `GameConfig.inputTarget` | `examples/abyss-framework/src/main.tsx` passes `window`; `packages/core/src/game.ts:301-303` selects it or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
 | 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
 | 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
 | 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
@@ -533,7 +533,7 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,009 tests passed.
+      on 2026-08-08; 142 files / 1,029 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Brave/WebGPU
       runner; the checked-in 1,800-tick scenario reported movement and zero runtime errors.
@@ -543,7 +543,8 @@ scenario, and the CLI's subcommand test fails.
       (current core+physics `src` is 2,602 lines against a 15,000 cap; the constraint that
       binds is §11.1, not the cap). Any piece that did not pay for its own lines is reported
       with its measured delta and **reverted in this phase**, per §11.2. Current result:
-      4,184 framework LOC and a +32 normalized-LOC ratchet from the 408-line baseline.
+      4,196 framework LOC. The benchmark count is 432 / 473 normalized LOC (91.3%); the
+      current framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
 
 ---
 

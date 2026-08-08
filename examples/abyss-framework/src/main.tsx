@@ -21,6 +21,7 @@ const replayRuntime: GamePluginHooks<AbyssState> = {
 
 const game = defineGame<AbyssState>({
   camera: { far: 7_000, near: 5_000, projection: "orthogonal", size: 520 },
+  inputTarget: window,
   input: {
     move: {
       down: ["KeyS", "ArrowDown"],

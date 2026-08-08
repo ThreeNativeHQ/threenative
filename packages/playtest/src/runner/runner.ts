@@ -489,6 +489,9 @@ async function runStep(
     // from one continuous hold to input latches.
     await waitFrames(page, 1);
   }
+  if (step.pointerPosition?.buttons !== undefined && step.release) {
+    await setPointerButtons(page, inputState, 0);
+  }
 }
 
 type StepInputState = {

@@ -23,21 +23,24 @@ async function recordThreeTicks(): Promise<{
   input: InputMap;
   plugin: ReturnType<typeof replay>;
   recording: Recording;
+  trace: string[][];
 }> {
   const target = new EventTarget();
   const input = new InputMap(undefined, target);
   const plugin = replay();
   const ctx = { input, random: createRandom(90210) } as unknown as Ctx;
+  const trace: string[][] = [];
   await plugin.setup?.(ctx, runtime());
   target.dispatchEvent(keyEvent("keydown", "KeyW"));
   for (let tick = 0; tick < 3; tick += 1) {
     if (tick === 2) target.dispatchEvent(keyEvent("keyup", "KeyW"));
     input.tick();
+    trace.push([...input.raw.keys].sort());
     plugin.update?.(ctx, 1 / 60);
   }
   const recording = plugin.recording;
   if (recording === undefined) throw new Error("Replay plugin did not produce a recording.");
-  return { input, plugin, recording };
+  return { input, plugin, recording, trace };
 }
 
 describe("replay", () => {
@@ -181,12 +184,54 @@ describe("replay", () => {
 
   it("should record identities from the record and replay-driver runs", async () => {
     const recorded = await recordThreeTicks();
-    const driver = createReplayDriver(recorded.recording, new EventTarget());
+    const replayTarget = new EventTarget();
+    const replayInput = new InputMap(undefined, replayTarget);
+    const replayDriver = createReplayDriver(recorded.recording, replayTarget);
+    const replayTrace = { runId: replayDriver.runId, values: [] as string[][] };
+    const recordTrace = { runId: recorded.plugin.runId, values: recorded.trace };
 
-    driver(runtime());
+    replayDriver(
+      runtime(() => {
+        replayInput.tick();
+        replayTrace.values.push([...replayInput.raw.keys].sort());
+        return 1;
+      }),
+    );
 
-    expect(recorded.plugin.runId).not.toBe(driver.runId);
+    expect(replayTrace.values).toEqual(recordTrace.values);
+    expect(recordTrace.runId).not.toBe(replayTrace.runId);
     recorded.input.dispose();
+    replayInput.dispose();
+  });
+
+  it("should clear live input before replaying the first tick", async () => {
+    const recorded = await recordThreeTicks();
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    target.dispatchEvent(keyEvent("keydown", "KeyD"));
+    target.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 12,
+        clientY: 34,
+        pointerId: 0,
+      }),
+    );
+    const observed: Array<[string[], number]> = [];
+    createReplayDriver(
+      recorded.recording,
+      target,
+    )(
+      runtime(() => {
+        input.tick();
+        observed.push([[...input.raw.keys].sort(), input.raw.pointer.buttons]);
+        return 1;
+      }),
+    );
+
+    expect(observed[0]).toEqual([["KeyW"], 0]);
+    recorded.input.dispose();
+    input.dispose();
   });
 
   it("should throw when the recording has no input samples", async () => {

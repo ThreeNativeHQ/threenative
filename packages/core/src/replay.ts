@@ -196,6 +196,7 @@ export function createReplayDriver(
       const random = validateRuntime(runtime, value);
       if (preparedRandom !== random) restoreRandomState(random, value.randomState);
       preparedRandom = undefined;
+      target.dispatchEvent(new Event("blur"));
       const keys = new Set<string>();
       let pointer: [number, number, number] = [0, 0, 0];
       for (let tick = 0; tick < value.ticks; tick += 1) {

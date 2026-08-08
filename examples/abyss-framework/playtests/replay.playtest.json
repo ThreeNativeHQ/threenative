@@ -6,8 +6,8 @@
     },
     "movement": {
       "entity": "player",
-      "minDistance": 29.983333333333336,
-      "pathLength": 29.983333333333336
+      "minDistance": 29.983333333333334,
+      "pathLength": 29.983333333333334
     },
     "world": {
       "seed": 90210
@@ -18,161 +18,162 @@
   "steps": [
     {
       "holdTicks": 1,
-      "press": "Enter",
-      "release": true
+      "press": ["Enter"],
+      "release": false
     },
     {
-      "release": true,
-      "waitTicks": 1
-    },
-    {
-      "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "holdTicks": 1,
+      "press": [],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowDown",
-      "release": true
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowLeft",
-      "release": true
+      "press": ["ArrowDown"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowUp",
-      "release": true
+      "press": ["ArrowLeft"],
+      "release": false
     },
     {
       "holdTicks": 60,
-      "press": "ArrowRight",
-      "release": true
+      "press": ["ArrowUp"],
+      "release": false
+    },
+    {
+      "holdTicks": 60,
+      "press": ["ArrowRight"],
+      "release": false
     },
     {
       "holdTicks": 58,
-      "press": "ArrowDown",
+      "press": ["ArrowDown"],
       "release": true
     }
   ],

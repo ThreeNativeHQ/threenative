@@ -127,7 +127,7 @@ physics handles, and it never will; save those fields in your own object literal
 const save = JSON.stringify({ state: ctx.state.getState(), playerX: player.mesh.position.x });
 const loaded = JSON.parse(save) as { state: GameState; playerX: number };
 ctx.state.set(loaded.state);
-player.mesh.position.x = loaded.playerX;
+player.body.teleport({ x: loaded.playerX, y: player.mesh.position.y, z: player.mesh.position.z });
 ```
 
 ## Assets and animation

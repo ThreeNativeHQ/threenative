@@ -32,12 +32,12 @@ describe("arm census", () => {
       census.files
         .filter((file) => file.arm === "framework")
         .reduce((total, file) => total + file.total, 0),
-    ).toBe(431);
+    ).toBe(432);
   });
 
   it("renders the measured ratio and class table", () => {
     const markdown = renderArmCensus(collectArmCensus(), "2026-08-07");
-    expect(markdown).toContain("431 / 473 = 91.1%");
+    expect(markdown).toContain("432 / 473 = 91.3%");
     expect(markdown).toContain(
       "| Arm | Look | Game | Pattern | Plumbing | Normalized LOC | Raw LOC |",
     );
