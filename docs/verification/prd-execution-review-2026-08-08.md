@@ -1,8 +1,20 @@
 # PRD execution review — 2026-08-08
 
-Scope: the five PRDs still in `docs/PRDs/` (033, 035, 036, 038, 039) on branch
-`docs/opportunity-areas-prds` at `272b5ea`. Every claim below was re-run in this working
-tree today; nothing is carried over from the PRD or verification documents unchecked.
+Scope: the five selected PRDs (033, 035, 036, 038, 039) on branch
+`docs/opportunity-areas-prds`. PRD-043 is deliberately outside this review and is queued
+for later execution. Every current claim below is backed by a run in this working tree;
+the first failing runs remain as historical diagnosis.
+
+## Current disposition
+
+- The packed-tarball scaffold fix is committed at `21a32c0`; the licensed-asset MCP scaffold
+  work is committed at `12b3d3d`.
+- The full browser gate now passes under the prescribed headed WebGPU recipe: all three
+  projects passed in 2.1 minutes.
+- Fresh starter proofs now pass: coyote jump `1/1`, peak rise `1.04`, and look camera
+  separation `9.451` against the `9.5` limit, with zero console/network errors.
+- PRD-036's follow-up lane is committed at `7e61a9f` and still needs to be merged into this
+  branch before the final main integration.
 
 ---
 
@@ -45,7 +57,7 @@ a concurrent build produces a red that looks exactly like a hot-reload defect.
 
 ---
 
-## 2. `pnpm test:browser` is broken by PRD-038 — one missing dependency
+## 2. Historical browser blocker — resolved in this review
 
 This is the finding with the shortest fix and the widest blast radius. **It is not a port
 conflict.** With every port free, `pnpm test:browser` dies before a single test runs:
@@ -119,7 +131,7 @@ parent's tarballs instead of packing a second time. Each temp project then runs 
 `pnpm install` against its own manifest, which is where `three-mesh-bvh@0.9.14` is
 declared — so the original import resolves for the same reason it resolves for a real user.
 
-### Verified result: the dependency blocker is gone, and a third one is now visible
+### Historical result: the dependency blocker was followed by a recipe gap
 
 With the pack step in place, `pnpm test:browser` was re-run under
 `xvfb-run -a -s '-screen 0 1600x900x24'` with ports 4173–4178 confirmed free and nothing
@@ -150,17 +162,16 @@ assertions, and the same one `pnpm test:playtest` and `pnpm visuals` already fol
 next step for whoever picks this up is to bring `runStarterLookScenario` onto
 `--browser-recipe webgpu --headed`, then re-run.
 
-**Status of the three Playwright projects (`abyss-vanilla`, `hot-reload`,
-`abyss-framework-replay`): still unobserved.** The webServer set aborts before any project
-runs. No claim of green is made for any of them.
+The historical first run did not observe the three projects. That state is superseded by the
+final rerun recorded in §7.
 
 ---
 
 ## 3. The other real blocker: unmerged PRD-036 work
 
 `linchpin/prd-036-save-load-and-deterministic-replay` has **19 commits and 1,454
-insertions that are not on `docs/opportunity-areas-prds`**, plus four files of uncommitted
-changes in its worktree.
+insertions that are not on `docs/opportunity-areas-prds`**, plus a committed follow-up
+at `7e61a9f` in its worktree.
 
 Merge base is `248b5d9`; HEAD has 25 commits the lane does not have, so the two have
 genuinely diverged.
@@ -189,7 +200,7 @@ by a merge, not by missing work.
 `templates/starter/src/pick.ts` or `pick.playtest.json`. A merge is safe; a rebase-onto or
 checkout of the lane tree would silently revert PRD-038's only deliverable.
 
-**Uncommitted on the lane worktree** (unreviewed, in no commit anywhere):
+**The former uncommitted lane follow-up is now committed** at `7e61a9f`:
 
 - `packages/core/src/replay.ts` — a genuine pointer bug fix. `pointerType` was
   `previous & ~next ? "pointerup" : "pointerdown"`, which misclassifies chorded button
@@ -212,12 +223,10 @@ red, which now passes. Its lane is four commits *behind* HEAD, not ahead — not
 stranded.
 
 ### PRD-035 — hot reload with state preservation
-**Recommend: run the browser leak gate, then close.**
+**Recommend: close after the final integration commit.**
 Implementation and template wiring are on HEAD; the lane is behind HEAD. Its checklist has
-three unchecked boxes, all of which are one command: `pnpm test:browser` including the
-`hot-reload` project, and the revert check (remove `acceptHotUpdate` from the template →
-leak gate red). §7 of the PRD also still declares proof-subject debt that the recorded
-starter run already discharges.
+now been exercised by the passing full `xvfb-run ... pnpm test:browser` gate; the revert
+check remains a separate negative-control item.
 
 ### PRD-036 — save/load and deterministic replay
 **Recommend: merge the lane first. It is the top priority in this queue.**
@@ -228,18 +237,18 @@ PRD's own ≤200-line feature-delta gate (the lane records core/physics at `+288
 global 15,000 cap is green at 4,184).
 
 ### PRD-038 — runtime GPU transport and acceleration
-**Recommend: fix the two starter scenarios, then close.**
+**Recommend: close after the final integration commit.**
 The `starter-pick` consumer gate and the removal proof both pass (recorded, and the
-`fastPicks: 310 → 0` control is a clean red). What holds it open is two *pre-existing*
-starter-template failures that are not PRD-038's work:
+`fastPicks: 310 → 0` control is a clean red). The two pre-existing starter-template failures
+are fixed in this review:
 
-- `coyote` — `GameState.coyoteJumps` stays `0`, asserted `equals: 1`.
-- `look` — camera separation `9.503` against `"within": 9.5`.
+- `coyote` — the scenario now leaves the ledge while retaining the input chord; the fresh
+  headed WebGPU run records `coyoteJumps: 1`.
+- `look` — the starter arm offset is now within budget; the fresh run records separation
+  `9.451` against `"within": 9.5`.
 
-`look` is a hairline threshold. `coyote` is either a real template defect or a scenario
-whose five 40-tick ledge walks no longer leave the ledge. Either way this is a
-starter-template bug being used as a release gate for an unrelated PRD. Fix them in their
-own change and stop blocking PRD-038 on them.
+These are starter-template changes, not framework package changes, and remain isolated from
+the PRD-038 transport implementation.
 
 ### PRD-039 — animation state machine
 **Recommend: move to `docs/PRDs/done/` now.**
@@ -281,8 +290,8 @@ either the exports really are dead and rule 2 requires deleting them, or the ins
 over-reports because a sandbox arm only exercises a genre slice — in which case the report
 needs a reach threshold and the current output is noise that trains everyone to skip it.
 
-### 5c. 62 commits unmerged to `main`
-`docs/opportunity-areas-prds` is 62 commits ahead of `main` and `main` is not ahead at all.
+### 5c. Unmerged work on the review branch
+`docs/opportunity-areas-prds` is ahead of `main` and `main` is not ahead at all.
 Everything in this review — PRD-033 through PRD-039, four merged lanes, the whole hot
 reload and replay implementation — exists only on one local branch with no remote. There is
 no upstream copy of any of it.
@@ -300,16 +309,25 @@ it is cited as a reason to keep a PRD open.
 1. ~~Unblock the scaffolded projects' dependency resolution~~ — **done**, see §2. The
    pack-then-scaffold step is in `playwright.config.ts`; verified by observing
    `three-mesh-bvh 0.9.14` install into both temp projects.
-2. **Put `runStarterLookScenario` on `--browser-recipe webgpu --headed`** (§2), then run
-   `pnpm test:browser` serialized with ports 4173–4178 free. Until that lands, the webServer
-   set aborts and none of the three Playwright projects execute — which is the single
-   unchecked box shared by PRD-035, PRD-036 and PRD-038.
+2. ~~Put `runStarterLookScenario` on `--browser-recipe webgpu --headed` and run the browser
+   gate~~ — **done**, see §7.
 3. **Merge `linchpin/prd-036-save-load-and-deterministic-replay` into
    `docs/opportunity-areas-prds`** (merge, do not rebase — §3 hazard). Commit or discard the
-   four uncommitted worktree files first; the `pointerType` change is a real fix and should
-   not be lost.
+   lane follow-up first; the `pointerType` change is committed at `7e61a9f`.
 4. **Move PRD-039 and PRD-033 to `docs/PRDs/done/`**, and update `OPPORTUNITY-AREAS.md`
    area #8 while doing it.
-5. **Fix `coyote` and `look` in the starter template** as their own change, then close
-   PRD-038; then **close round 2** (`pnpm round:next`) and decide 5b — delete the dead
-   exports or fix the instrument.
+5. ~~Fix `coyote` and `look` in the starter template~~ — **done**, see §7; then **close
+   round 2** (`pnpm round:next`) and decide 5b — delete the dead exports or fix the
+   instrument.
+
+## 7. Final evidence after review fixes
+
+| Proof | Result |
+|---|---|
+| `xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser` | **PASS** — `3 passed (2.1m)` |
+| Fresh `coyote.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — `jumps: 1`, `coyoteJumps: 1`, `peakRise: 1.04`, zero diagnostics |
+| Fresh `look.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — movement `7.27`, camera separation `9.451`, zero diagnostics |
+| PRD-036 focused tests | **PASS** — 36 tests across replay, runner, and recording specs |
+
+PRD-043 is not part of these results. It remains a proposed, later execution item and must
+not be marked done from this review.

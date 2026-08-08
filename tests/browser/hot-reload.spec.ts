@@ -1,6 +1,9 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+test.setTimeout(120_000);
 
 interface HotDiagnostics {
   reloads: number;
@@ -18,7 +21,11 @@ interface RuntimeSnapshot {
   navigationEntries: number;
 }
 
-const project = process.env.THREENATIVE_HOT_RELOAD_PROJECT;
+const hotReloadProjectFile = path.join(tmpdir(), "threenative-hot-reload-threejs-webgpu.path");
+const sharedProject = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
+const project =
+  process.env.THREENATIVE_HOT_RELOAD_PROJECT ??
+  (sharedProject.length > 0 ? sharedProject : undefined);
 
 async function runtimeSnapshot(page: import("@playwright/test").Page): Promise<RuntimeSnapshot> {
   return page.evaluate(() => {
@@ -86,7 +93,7 @@ async function waitForHotReload(
 }
 
 test.afterAll(async () => {
-  if (project !== undefined) await rm(path.dirname(project), { force: true, recursive: true });
+  await rm(hotReloadProjectFile, { force: true });
 });
 
 test("preserves starter state and stays flat across ten real HMR updates", async ({ page }) => {

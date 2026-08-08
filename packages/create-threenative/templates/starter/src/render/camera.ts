@@ -33,7 +33,7 @@ export function createSpringArm(
 ): SpringArm {
   // Keep the starter's target-relative distance below the 9.5-unit look budget
   // so the player and nearby route stay readable after the camera settles.
-  const offset = options.offset ?? new Vec3(0, 4.2, 8.5);
+  const offset = options.offset ?? new Vec3(0, 4.2, 8.45);
   const lookAhead = options.lookAhead ?? new Vec3(0, 1, 0);
   const damping = options.damping ?? 0.18;
 
