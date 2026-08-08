@@ -1,10 +1,9 @@
 # PRD-033 — Playtest semantic depth: assert what the *game* did
 
-**Status: proposed, and GATED. Do not start.** `ROADMAP.md` Gate 0 is unrun — two of five
-axes read `0` because they have never been measured. `OPPORTUNITY-AREAS.md` is explicit:
-"No area in this document should be started before round 2 completes on both arms."
-This PRD is area **#2, score 90**. It starts when Gate 0 exits on its first outcome, and
-not before. Building it earlier is how v1 reached 790k lines.
+**Status: proposed, ready after the Phase 1 exit.** Gate 0 closed on 2026-08-07 and the
+paired Phase 1 corpus passed on 2026-08-08. `OPPORTUNITY-AREAS.md`'s round-2 prerequisite
+is therefore satisfied. This PRD is area **#2, score 90**. Building it before that gate
+was how v1 reached 790k lines; it is now eligible for execution.
 
 **Complexity: 7 → HIGH mode** (10+ files +3, complex state/temporal logic +2,
 multi-package +2)
@@ -76,7 +75,7 @@ no bridge (`bridgeClient.ts:58-67`). None of that is touched except to extend it
 `packages/playtest` is a **salvage package and is excluded from the 15,000-line framework
 cap**: `scripts/check-budgets.ts:11` holds `SALVAGE_PACKAGES = new Set(["playtest",
 "asset-mcp", "shader-portable"])` and line 61 skips them. `pnpm budgets` on a clean tree
-reports `7 packages, 2988 framework LOC, 2 PRD files`.
+reports `7 packages, 2988 framework LOC, 9 PRD files`.
 
 So:
 
