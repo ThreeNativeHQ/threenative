@@ -12,7 +12,14 @@
       "playability": 3,
       "screenshotWorthy": "yes",
       "visuals": 3,
-      "polish": { "behavior": 3, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 3 }
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      }
     },
     {
       "biggestGap": "The completion state communicates success well but does not show the route as clearly as the active view.",
@@ -21,7 +28,14 @@
       "playability": 4,
       "screenshotWorthy": "yes",
       "visuals": 5,
-      "polish": { "behavior": 4, "visuals": 5, "effects": 3, "particles": 2, "audio": "na", "ux": 4 }
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
     },
     {
       "biggestGap": "The active screen has a large amount of empty space and does not expose meaningful traversal, hazards, or effects.",
@@ -30,7 +44,14 @@
       "playability": 3,
       "screenshotWorthy": "no",
       "visuals": 3,
-      "polish": { "behavior": 3, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 3 }
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      }
     },
     {
       "biggestGap": "The route is clear, but the frame does not visibly demonstrate particles or audio feedback.",
@@ -39,7 +60,14 @@
       "playability": 5,
       "screenshotWorthy": "yes",
       "visuals": 5,
-      "polish": { "behavior": 5, "visuals": 5, "effects": 3, "particles": 2, "audio": "na", "ux": 5 }
+      "polish": {
+        "behavior": 5,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 5
+      }
     }
   ]
 }

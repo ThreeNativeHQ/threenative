@@ -12,7 +12,14 @@
       "playability": 3,
       "screenshotWorthy": "no",
       "visuals": 3,
-      "polish": { "behavior": 4, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      }
     },
     {
       "biggestGap": "The hub view does not prove the two remote areas in a single frame, although the journal and objective make the loop clear.",
@@ -21,7 +28,14 @@
       "playability": 4,
       "screenshotWorthy": "yes",
       "visuals": 5,
-      "polish": { "behavior": 4, "visuals": 5, "effects": 4, "particles": 4, "audio": "na", "ux": 5 }
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 4,
+        "particles": 4,
+        "audio": "na",
+        "ux": 5
+      }
     }
   ]
 }

@@ -12,7 +12,14 @@
       "playability": 5,
       "screenshotWorthy": "yes",
       "visuals": 5,
-      "polish": { "behavior": 4, "visuals": 5, "effects": 3, "particles": 2, "audio": "na", "ux": 5 }
+      "polish": {
+        "behavior": 4,
+        "visuals": 5,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 5
+      }
     },
     {
       "biggestGap": "The arena and HUD are readable, but the sparse composition does not show much particle or audio feedback.",
@@ -21,7 +28,14 @@
       "playability": 4,
       "screenshotWorthy": "yes",
       "visuals": 3,
-      "polish": { "behavior": 4, "visuals": 3, "effects": 3, "particles": 2, "audio": "na", "ux": 4 }
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 3,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      }
     }
   ]
 }
