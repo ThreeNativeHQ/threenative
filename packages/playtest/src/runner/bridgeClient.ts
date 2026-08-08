@@ -18,7 +18,7 @@ import {
 } from "../index.js";
 import type { Page } from "playwright";
 
-import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./runner.js";
+import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 const STANDALONE_OBSERVATION_FIELD_SET: readonly string[] = STANDALONE_PLAYTEST_OBSERVATION_FIELDS;
 

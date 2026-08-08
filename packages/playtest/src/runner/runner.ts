@@ -23,6 +23,9 @@ import { chromium, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+
+export { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 class ManagedServerError extends Error {
   constructor(readonly diagnostic: IPlaytestProtocolDiagnostic) {
@@ -38,21 +41,6 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   target: string;
   url: string;
 }
-
-export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
-  "components",
-  "componentSeries",
-  "console",
-  "hud",
-  "network",
-  "resources",
-  "resourceSeries",
-  "runtimeDiagnostics",
-  "runtimeObservations",
-  "signals",
-  "signalSeries",
-  "visual",
-] as const;
 
 interface LabeledPlaytestSample {
   label: string;
