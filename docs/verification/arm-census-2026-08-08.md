@@ -2,14 +2,14 @@
 
 This census runs one classifier over the Biome-normalized source of the frozen vanilla control and the framework arm. Every normalized line has exactly one class; ambiguous lines fall to `game`.
 
-Measured ratio: **408 / 473 = 86.3%** framework / vanilla normalized LOC.
+Measured ratio: **440 / 473 = 93.0%** framework / vanilla normalized LOC.
 
 ## Totals
 
 | Arm | Look | Game | Pattern | Plumbing | Normalized LOC | Raw LOC |
 |---|---:|---:|---:|---:|---:|---:|
 | vanilla | 104 | 257 | 13 | 99 | 473 | 410 |
-| framework | 97 | 207 | 22 | 82 | 408 | 408 |
+| framework | 97 | 231 | 22 | 90 | 440 | 440 |
 
 ## Per-file reconciliation
 
@@ -18,7 +18,7 @@ Each class total must sum to the normalized total; the last column is the indepe
 | Arm | File | Raw LOC | Look | Game | Pattern | Plumbing | Normalized LOC |
 |---|---|---:|---:|---:|---:|---:|---:|
 | vanilla | `examples/abyss-vanilla/src/main.js` | 410 | 104 | 257 | 13 | 99 | 473 |
-| framework | `examples/abyss-framework/src/main.tsx` | 37 | 1 | 18 | 0 | 18 | 37 |
+| framework | `examples/abyss-framework/src/main.tsx` | 69 | 1 | 42 | 0 | 26 | 69 |
 | framework | `examples/abyss-framework/src/render/lighting.ts` | 10 | 3 | 4 | 0 | 3 | 10 |
 | framework | `examples/abyss-framework/src/render/postprocessing.ts` | 9 | 3 | 2 | 0 | 4 | 9 |
 | framework | `examples/abyss-framework/src/scenes/Abyss.ts` | 352 | 90 | 183 | 22 | 57 | 352 |
@@ -36,10 +36,10 @@ Ranges are inclusive and refer to the normalized source. The script retains the 
 
 ### framework: `examples/abyss-framework/src/main.tsx`
 
-- **look:** 13
-- **game:** 14-28, 31, 36-37
+- **look:** 14
+- **game:** 11, 15-30, 32, 34-35, 37-40, 42-43, 47-51, 53-60, 63, 68-69
 - **pattern:** —
-- **plumbing:** 1-12, 29-30, 32-35
+- **plumbing:** 1-10, 12-13, 31, 33, 36, 41, 44-46, 52, 61-62, 64-67
 
 ### framework: `examples/abyss-framework/src/render/lighting.ts`
 

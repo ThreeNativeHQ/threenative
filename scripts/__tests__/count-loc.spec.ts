@@ -51,7 +51,7 @@ describe("count-loc", () => {
     expect(table).toContain("Plumbing LOC");
     expect(table).toContain("Raw LOC");
     expect(table).toContain("Normalised LOC");
-    expect(table).toContain("86.3%");
+    expect(table).toContain("93.0%");
     expect(table).toContain("Vanilla wins?");
     expect(table).toContain("Static result:");
   });
