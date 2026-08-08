@@ -195,6 +195,37 @@ describe("template contracts", () => {
     expect(play).toContain("pickup.monitoring = false");
     expect(menu).toContain('game.goto("play")');
 
+    const restart = JSON.parse(
+      await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
+    ) as {
+      assert: {
+        resources: Array<{
+          atSteps?: Array<{ equals: number; label: string }>;
+          changed?: boolean;
+          equals?: number;
+          path: string;
+        }>;
+      };
+    };
+    const score = restart.assert.resources.find(
+      ({ path: resourcePath }) => resourcePath === "score",
+    );
+    expect(score).toMatchObject({
+      atSteps: [
+        { equals: 1, label: "collected" },
+        { equals: 0, label: "restarted" },
+      ],
+    });
+    expect(score?.changed).toBeUndefined();
+    expect(restart.assert.resources).toContainEqual({
+      atSteps: [
+        { equals: 2, label: "collected" },
+        { equals: 3, label: "restarted" },
+      ],
+      id: "GameState",
+      path: "entityCount",
+    });
+
     for (const template of templates) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
       expect(agents).toContain(

@@ -19,6 +19,7 @@ const KILL_PLANE = -4;
 export class Play extends Scene<GameState, PhysicsContext> {
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
+    entityCount: 0,
     jumps: 0,
     levelX: -99,
     peakRise: 0,
@@ -68,10 +69,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickupVisual.position.set(pickupX, 0.5, 0);
     pickupVisual.castShadow = true;
     ctx.add(pickupVisual);
+    ctx.entities.add("pickup", pickupVisual);
     void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
     springArm.snap(player.mesh.position);
     ctx.state.set({ levelX });
     ctx.entities.add("player", player);
+    ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },
@@ -80,9 +83,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickup.on("bodyEntered", (body) => {
       if (body !== player.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
+      ctx.entities.remove("pickup");
+      ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
       pickup.monitoring = false;
       pickupVisual.visible = false;
       ctx.after(1.2, () => {
+        ctx.entities.add("pickup", pickupVisual);
         pickupVisual.visible = true;
         pickup.monitoring = true;
       });
@@ -111,6 +117,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
         playerX: player.mesh.position.x,
         respawns: previous.respawns + (respawned ? 1 : 0),
+        entityCount: Object.keys(frameCtx.entities.snapshot()).length,
       });
     };
   }

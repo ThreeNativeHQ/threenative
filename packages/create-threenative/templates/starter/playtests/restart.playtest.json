@@ -23,9 +23,12 @@
       {
         "id": "GameState",
         "path": "score",
-        "equals": 0,
-        "changed": true,
         "atSteps": [{ "label": "collected", "equals": 1 }, { "label": "restarted", "equals": 0 }]
+      },
+      {
+        "id": "GameState",
+        "path": "entityCount",
+        "atSteps": [{ "label": "collected", "equals": 2 }, { "label": "restarted", "equals": 3 }]
       }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
