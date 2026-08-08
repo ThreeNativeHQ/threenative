@@ -2,14 +2,14 @@
 
 This census runs one classifier over the Biome-normalized source of the frozen vanilla control and the framework arm. Every normalized line has exactly one class; ambiguous lines fall to `game`.
 
-Measured ratio: **440 / 473 = 93.0%** framework / vanilla normalized LOC.
+Measured ratio: **436 / 473 = 92.2%** framework / vanilla normalized LOC.
 
 ## Totals
 
 | Arm | Look | Game | Pattern | Plumbing | Normalized LOC | Raw LOC |
 |---|---:|---:|---:|---:|---:|---:|
 | vanilla | 104 | 257 | 13 | 99 | 473 | 410 |
-| framework | 97 | 231 | 22 | 90 | 440 | 440 |
+| framework | 97 | 227 | 22 | 90 | 436 | 436 |
 
 ## Per-file reconciliation
 
@@ -18,7 +18,7 @@ Each class total must sum to the normalized total; the last column is the indepe
 | Arm | File | Raw LOC | Look | Game | Pattern | Plumbing | Normalized LOC |
 |---|---|---:|---:|---:|---:|---:|---:|
 | vanilla | `examples/abyss-vanilla/src/main.js` | 410 | 104 | 257 | 13 | 99 | 473 |
-| framework | `examples/abyss-framework/src/main.tsx` | 69 | 1 | 42 | 0 | 26 | 69 |
+| framework | `examples/abyss-framework/src/main.tsx` | 65 | 1 | 38 | 0 | 26 | 65 |
 | framework | `examples/abyss-framework/src/render/lighting.ts` | 10 | 3 | 4 | 0 | 3 | 10 |
 | framework | `examples/abyss-framework/src/render/postprocessing.ts` | 9 | 3 | 2 | 0 | 4 | 9 |
 | framework | `examples/abyss-framework/src/scenes/Abyss.ts` | 352 | 90 | 183 | 22 | 57 | 352 |
@@ -36,10 +36,10 @@ Ranges are inclusive and refer to the normalized source. The script retains the 
 
 ### framework: `examples/abyss-framework/src/main.tsx`
 
-- **look:** 14
-- **game:** 11, 15-30, 32, 34-35, 37-40, 42-43, 47-51, 53-60, 63, 68-69
+- **look:** 22
+- **game:** 12-16, 18-19, 23-38, 40, 42-43, 45-48, 51, 53-56, 59, 64-65
 - **pattern:** —
-- **plumbing:** 1-10, 12-13, 31, 33, 36, 41, 44-46, 52, 61-62, 64-67
+- **plumbing:** 1-11, 17, 20-21, 39, 41, 44, 49-50, 52, 57-58, 60-63
 
 ### framework: `examples/abyss-framework/src/render/lighting.ts`
 
@@ -61,3 +61,4 @@ Ranges are inclusive and refer to the normalized source. The script retains the 
 - **game:** 18, 25-36, 41, 47-49, 51-52, 54, 62, 76, 80-81, 87, 90-91, 98-99, 102, 107-108, 111, 124-126, 132, 134-135, 138-139, 141, 143, 147, 152, 156, 165-166, 170-171, 174, 176, 180-181, 183, 185-186, 188, 192-202, 204, 206, 208-216, 220-221, 224-226, 228-250, 253, 255, 257-262, 266, 268-270, 272, 276-281, 283-311, 313-318, 320-321, 328-329, 335-346, 348-352
 - **pattern:** 148, 158, 172, 177, 179, 190-191, 203, 251-252, 254, 263, 323-327, 330-334
 - **plumbing:** 1-2, 19-24, 37-40, 42-46, 50, 53, 55-56, 60, 63-67, 72, 82, 127, 133, 149-151, 155, 159, 173, 182, 205, 207, 217-219, 222-223, 227, 256, 264-265, 271, 273-275, 282, 312, 322, 347
+
