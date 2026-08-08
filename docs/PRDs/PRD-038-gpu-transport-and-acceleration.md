@@ -406,6 +406,10 @@ the scaffolder, which ships to every user.
       completes under the Phase-0 measured budget.
 - [x] Write `hovered` to the object's name, or `""` on a miss.
 
+The starter's store batches ordinary state writes at 100 ms. `pick.ts` therefore keeps a
+per-sculpture counter between flushes and flushes only on a hover transition: the HUD sees
+the interaction immediately, while the acceleration counter does not lose per-frame picks.
+
 **Wiring:**
 - [x] Caller edited: `Play.ts:130` calls `pickAt(ctx)` from `update`.
 - [ ] Registration: none required — `Play` is the scaffolded main scene.
@@ -431,7 +435,7 @@ move the mouse over the sculpture, watch the HUD name it and clear on move-off.
 
 - `packages/create-threenative/templates/starter/playtests/pick.playtest.json` — NEW
 - `packages/create-threenative/templates/starter/package.json` — EDIT: append the scenario
-  to the `test` script chain alongside the seven existing scenarios.
+  to the `test` script chain alongside the nine existing scenarios.
 
 **The honest problem this phase has to solve.** A "the click registers a hit" assertion
 **does not prove the BVH is doing anything** — an unaccelerated raycast against 100k
@@ -500,7 +504,7 @@ and `changed` — **there is no `lte`** (`packages/playtest/src/assertions.ts:13
 2. **Run the scenario against the pre-Phase-1 tree.** It must fail with a missing
    `hovered` resource, confirming the gate is not already satisfied by the baseline.
 3. **Confirm the runner collected the scenario.** Check that the `test` script's scenario
-   count went from 7 to 8 and that `pick.playtest.json` appears in the run output — a
+   count went from 9 to 10 and that `pick.playtest.json` appears in the run output — a
    scenario file that exists but is never invoked is the listed-but-absent failure.
 4. **Assert something known false** (`"equals": "definitely-not-a-mesh"`) once, and
    confirm the harness reports a failure rather than skipping the key.
@@ -519,7 +523,7 @@ the lane report.
 
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
-HEAD for environmental reasons. **Baseline first:** run the existing 7 scenarios before
+HEAD for environmental reasons. **Baseline first:** run the existing 9 scenarios before
 touching anything, record which already fail, and never attribute a pre-existing failure
 to this change. Run headed under `xvfb-run` with `--enable-unsafe-webgpu`. This scenario
 asserts no `visual` or screenshot criteria specifically so it does not depend on the
@@ -527,7 +531,7 @@ canvas actually painting — `resources` reads `window.__THREENATIVE__`, which p
 whether or not the GPU produced pixels.
 
 **Revert check:** remove the scenario from the `test` script → the scaffolded project's
-`pnpm test` scenario count drops from 8 to 7.
+`pnpm test` scenario count drops from 10 to 9.
 
 ---
 
@@ -537,9 +541,10 @@ whether or not the GPU produced pixels.
       it in the HUD within one frame**, and a human sees it change on move-off.
 - [ ] **`starter-pick` passes in the scaffolded project's own `pnpm test`**, and goes red
       when the BVH construction line is deleted while the mesh and the pick call remain.
-- [ ] **A scaffolded project that deletes `src/pick.ts` and removes the dependency still
-      builds and passes its remaining 7 scenarios** — the acceleration is owned by the
-      user and removable, which is the whole reason it is in the template.
+- [ ] **A scaffolded project that removes the `pickAt` import and call, deletes
+      `src/pick.ts` and removes the dependency, still builds and passes its remaining 9
+      scenarios** — the acceleration is owned by the user and removable, which is the
+      whole reason it is in the template.
 - [ ] **`@threenative/core` gains no dependency and no line of code.** `pnpm budgets` shows
       7 packages and unchanged framework LOC.
 - [ ] **No `.ktx2` or meshopt decoder wiring ships anywhere**, and

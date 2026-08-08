@@ -10,6 +10,8 @@ const FAST_PICK_BUDGET_MS = 1;
 const ndc = new Vector2();
 const raycaster = new Raycaster();
 raycaster.firstHitOnly = true;
+let trackedTarget: Mesh | undefined;
+let fastPickCount = 0;
 
 // This is a global Three.js effect owned by this project. Delete this file and
 // its import to remove accelerated picking, or remove these three assignments
@@ -21,8 +23,17 @@ Mesh.prototype.raycast = acceleratedRaycast;
 export function pickAt(ctx: PickCtx): void {
   const target = ctx.scene.getObjectByName("sculpture");
   if (!(target instanceof Mesh)) {
-    ctx.state.set({ hovered: "" });
+    trackedTarget = undefined;
+    fastPickCount = 0;
+    const previous = ctx.state.getState();
+    ctx.state.set({ fastPicks: 0, hovered: "" });
+    if (previous.fastPicks !== 0 || previous.hovered !== "") ctx.state.flush();
     return;
+  }
+
+  if (trackedTarget !== target) {
+    trackedTarget = target;
+    fastPickCount = ctx.state.getState().fastPicks;
   }
 
   if (target.geometry.boundsTree === undefined) target.geometry.computeBoundsTree();
@@ -33,9 +44,9 @@ export function pickAt(ctx: PickCtx): void {
   const started = performance.now();
   const hit = raycaster.intersectObject(target, false)[0];
   const elapsed = performance.now() - started;
-  const state = ctx.state.getState();
-  ctx.state.set({
-    fastPicks: state.fastPicks + (hit !== undefined && elapsed < FAST_PICK_BUDGET_MS ? 1 : 0),
-    hovered: hit?.object.name ?? "",
-  });
+  if (hit !== undefined && elapsed < FAST_PICK_BUDGET_MS) fastPickCount += 1;
+  const previous = ctx.state.getState();
+  const hovered = hit?.object.name ?? "";
+  ctx.state.set({ fastPicks: fastPickCount, hovered });
+  if (previous.hovered !== hovered) ctx.state.flush();
 }
