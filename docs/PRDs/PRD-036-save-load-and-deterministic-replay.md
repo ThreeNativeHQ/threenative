@@ -1,10 +1,11 @@
 # PRD-036 — Save/load and deterministic replay
 
 **Status:** implementation delivered in a partial lane; the browser consumer gate is
-pending on a supported runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
+partially proven on a supported isolated Brave/WebGPU runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
 closed, but this PRD remains open until its consumer proof passes and is not moved to
-`done/` or merged yet. Automated gates passed on 2026-08-08; the browser and manual
-consumer checks remain pending.
+`done/` or merged yet. Automated gates and the checked-in replay consumer project passed
+on 2026-08-08; the full browser suite, manual checkpoint, and negative controls remain
+pending. See `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after
@@ -529,6 +530,8 @@ scenario, and the CLI's subcommand test fails.
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
       on 2026-08-08; 142 files / 1,009 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
+- [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Brave/WebGPU
+      runner; the checked-in 1,800-tick scenario reported movement and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean
 - [x] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
@@ -611,9 +614,10 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 - [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
 - [ ] Every gate has a negative control that was **observed failing**
-- [ ] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
+- [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
-      three-tick unit fixture
+      three-tick unit fixture. The replay consumer proof is recorded in
+      `docs/verification/PRD-036.md`; the manual divergence and red controls remain open.
 - [ ] Package count still 7/8; framework LOC delta ≤ 200 and recorded
 
 ### Honesty note for whoever files this
