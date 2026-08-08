@@ -4,10 +4,12 @@ prd_contract: v1
 
 # PRD-032 — Asset discovery: the scaffold hands the agent a licensed-asset tool
 
-**Status:** open, queued, and not started. Gate 0 passed on 2026-08-07 through the framework
-blind-visual branch, but the roadmap's Phase 1 exit gate must pass before this PRD starts.
-The next evidence needed is a wider three-genre pair and a green budget gate; this PRD does
-not begin during that measurement phase.
+**Status:** **VOID — Phase 1 prerequisite is not publishable** (finding recorded 2026-08-08).
+The upstream profile implementation is prepared in commit `6d1f9ebf` in the separate
+`threejs-to-bevy` checkout, but the registry still resolves `0.4.0` without the profile and
+this machine is not authenticated to publish `0.5.0`. Phase 2 cannot safely pin an
+unresolvable dependency, so the roadmap asset bullet is removed rather than left as a
+promise.
 
 **Complexity: 6 → MEDIUM mode** (touches 10+ files +3, new mechanism from scratch — the
 upstream tool-profile selector +2, external API integration +1).
@@ -48,7 +50,7 @@ is still a grey box. The legacy tree solved this and the solution was left behin
 | The scaffolder writes no MCP configuration at all | `packages/create-threenative/src/index.ts` — no `.mcp.json`, no `mcpServers` key anywhere under `packages/create-threenative/` |
 | Framework-side asset support is a ~90-line cached loader | `packages/core/src/assets.ts` — `model`, `texture`, `audio`, injectable per-kind loaders |
 | A working asset MCP already exists, outside this repo | `../threejs-to-bevy/packages/asset-mcp` — `threenative-asset-mcp`, MIT, ~10.8k LOC of TypeScript |
-| **The registry's latest is `0.4.0`, not `0.5.0`** | `npm view threenative-asset-mcp versions` → `'0.4.0'`; the local tree's `package.json` says `0.5.0` and is **unpublished**. `ROADMAP.md:129` and `CHARTER.md` §8 both cite 0.5.0 — they describe a working tree, not something a generated project can install |
+| **The registry's latest is `0.4.0`, not `0.5.0`** | `npm view threenative-asset-mcp version` → `0.4.0`; the local tree's `package.json` says `0.5.0` and is **unpublished**. `npm whoami` → `ENEEDAUTH`. `ROADMAP.md` and `CHARTER.md` cite 0.5.0 — they describe a working tree, not something a generated project can install |
 | **It registers 32 tools, unconditionally** | `src/server.ts:178-717` — 32 `server.registerTool(...)` calls inside `createServer`. `ROADMAP.md:129` says "25+"; `CHARTER.md` §8 says 32. 32 is correct |
 | **There is no way to expose fewer** | no env var, flag or option gates registration — `grep -rn "TOOLS\|enabledTools\|toolFilter" src` finds only `ASSET_MCP_VERSION`/`ASSET_MCP_USER_AGENT` in `src/package-info.ts`. `src/config.ts` reads 12 `FAB_*` variables and none of them touch the tool list |
 | **The server already computes which sources an agent can actually finish a download from** | `src/tools/source-directory.ts:73-100` — `agentReady = disposition === "supported" && downloadTool && downloadSupport !== "provider-page" && downloadSupport !== "authenticated-url"`, described in schema as "True only when an agent can complete the download through this MCP without browser, login, checkout, or paywall interaction" |
@@ -288,15 +290,22 @@ currently claims "v0.5.0 … 25+ tools"; both numbers are wrong against the regi
 source) · this PRD EDIT (record the published version and the finding).
 
 **Implementation:**
-- [ ] Add a profile selector to `createServer` — `--profile <name>` and
+- [x] Add a profile selector to `createServer` — `--profile <name>` and
       `THREENATIVE_ASSET_MCP_PROFILE`, with `game-assets` naming the 8 tools in §2.
-- [ ] Unknown profile → write the error to stderr and `process.exit(1)`. **Never** fall
+- [x] Unknown profile → write the error to stderr and `process.exit(1)`. **Never** fall
       back to all 32.
 - [ ] Re-verify every provider's terms before publishing. The README's own status note
       calls Fab's routes undocumented and subject to restriction; Poly Haven requires a
       unique User-Agent and visible credit. **A stale claim about someone else's licensing
       is the one failure mode of this PRD that a patch cannot recover.**
 - [ ] Publish. Record the exact version string in this PRD.
+
+**Void finding (2026-08-08):** The profile work and its upstream package checks are in
+`threejs-to-bevy` commit `6d1f9ebf`. `pnpm --filter threenative-asset-mcp typecheck`, its
+focused/full test run (19 files, 128 tests), `verify:contents`, and `npm publish --dry-run`
+passed. The real release gate cannot pass here: `npm view threenative-asset-mcp version`
+returns `0.4.0`, and `npm whoami` returns `ENEEDAUTH`. No generated template is wired to
+`0.5.0`, because doing so would create a scaffold that cannot install its MCP server.
 
 **Wiring:** Ledger row 1. Nothing in this repo consumes it yet — that is Phase 2, and this
 phase does not close as "done", it closes as "the prerequisite exists".
@@ -576,8 +585,8 @@ red CI job.
 
 | Phase | Gate | Result | Negative control observed red? |
 |---|---|---|---|
-| 1 | published version resolves; `tools/list` = 8 | — | — |
-| 2 | starter scaffolds with `.mcp.json`; smoke `tools/list` = 8 | — | — |
-| 3 | all three templates; `pnpm budgets` externality | — | — |
-| 4 | `AGENTS.md` documents exactly the 8; mirrors in sync | — | — |
-| 5 | live agent run; frame capture; no-MCP control | — | — |
+| 1 | published version resolves; `tools/list` = 8 | **VOID** — registry `0.4.0` has no profile; `0.5.0` cannot be published without npm auth | profile implementation and unknown-profile checks passed upstream; publish gate unavailable |
+| 2 | starter scaffolds with `.mcp.json`; smoke `tools/list` = 8 | **NOT RUN** — Phase 1 void | — |
+| 3 | all three templates; `pnpm budgets` externality | **NOT RUN** — Phase 1 void | — |
+| 4 | `AGENTS.md` documents exactly the 8; mirrors in sync | **NOT RUN** — Phase 1 void | — |
+| 5 | live agent run; frame capture; no-MCP control | **NOT RUN** — Phase 1 void | — |

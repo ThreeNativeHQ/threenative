@@ -1,8 +1,8 @@
 # Roadmap — the path from 30 to 80
 
-**Status:** Gate 0 closed on 2026-08-07; Phase 1 is now the active gate. Supersedes the
-2026-08-02 phase plan, whose Phase 0 table described six PRDs when twenty-eight are now in
-`docs/PRDs/done/`.
+**Status:** Gate 0 closed on 2026-08-07; Phase 1 passed on 2026-08-08; Phase 2 is now
+active. Supersedes the 2026-08-02 phase plan, whose Phase 0 table described six PRDs when
+twenty-eight are now in `docs/PRDs/done/`.
 **Charter authority:** `CHARTER.md` §3 (win condition), §5b (the ownership boundary),
 §7 (mobile), §10 (budgets), §12.
 
@@ -27,9 +27,9 @@ than argued.
 
 | Axis | Score | Evidence |
 |---|---:|---|
-| Ships working | **measured tie** | Round 2 exploration: framework 1/1, vanilla 1/1 |
-| Looks good | **framework win** | Fresh blind judge: framework 4/5, vanilla 3/5 |
-| Costs less | **8** | PRD-024: framework 726 user LOC / 7 files vs vanilla 769 / 2 files. A 5.6% win, source bytes a tie (24,065 vs 24,081), N=1 genre |
+| Ships working | **measured tie** | Phase 1 corpus: framework and vanilla tie on all 4 sealed genre proofs |
+| Looks good | **framework wins 2/4** | Phase 1 v2 blind judges: platformer and exploration win, endless ties, topdown loses |
+| Costs less | **wins 2/4** | Phase 1 authored-cost deltas: platformer -187 LOC and topdown -695 LOC; endless +442 and exploration +95 |
 | Does what vanilla can't | **12** | `physics` (Rapier bindings — vanilla has none) and `playtest` both ship. `playtest` is given away to the vanilla arm by §3, so it wins no comparison |
 | Survives the platform | **2** | Web only. §7 resolved the *research* question; neither device spike has run |
 
@@ -60,7 +60,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Capture, judge, blind bundle | `done/PRD-020-seeing-the-game.md` | shipped |
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
-| Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **queued, gated on Phase 1 exit** |
+| Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
 | Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **proposed, gated on Phase 1 exit** |
 | Navigation and pathfinding | [PRD-034](../PRDs/PRD-034-navigation-and-pathfinding.md) | **queued, gated on Phase 1 exit** |
 | Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **queued, gated on Phase 1 exit** |
@@ -68,10 +68,11 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **open, gated on Phase 1 exit** |
 | Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
 | Physics collision layers and masks | [PRD-040](../PRDs/PRD-040-physics-collision-layers.md) | **open, queued behind Phase 1** |
+| DRY the sweep corpus | [PRD-041](../PRDs/PRD-041-sweep-corpus-dry.md) | **open, queued behind Phase 1** |
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current non-done inventory is PRD-032 through PRD-036 and PRD-038 through PRD-040;
+The current non-done inventory is PRD-033 through PRD-036 and PRD-038 through PRD-041;
 there is no PRD-037 file in `docs/PRDs/`.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
@@ -125,14 +126,15 @@ single exploration genre before starting Phase 2.
    frames through the capture guard. See `docs/product/VISUAL-BASELINE.md`.
    **The exploration blind pair is now recorded.** The remaining work on this axis is to
    widen the scoring session, not rewrite templates — no PRD, and no new code.
-3. **Widen the pair beyond N=1.** `platformer` and `topdown-action` have pair machinery
-   and archives; `endless-runner` has a sealed proof set and no pair.
+3. **Widen the pair beyond N=1.** `platformer`, `topdown-action`, `endless-runner`, and
+   `exploration` now have paired archives and blind v2 polish evidence. The four-genre
+   record is [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md).
 
-**Gate to exit:** three genres paired on the same sealed specifications; framework proof
-results are equal or better in every genre; framework blind polish is strictly higher in at
-least two; authored LOC delta is non-positive in at least two; no genre loses both proof
+**Gate to exit — passed 2026-08-08:** four genres are paired on the same sealed
+specifications; framework proof results are equal in every genre; framework blind polish is
+strictly higher in two; authored LOC delta is non-positive in two; no genre loses both proof
 and polish; and `pnpm budgets` is green with no cap raised (§10 — exceeding a cap is not a
-signal to raise the cap).
+signal to raise the cap). Full evidence is [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md).
 
 **Points: +30** → ~60/100.
 
@@ -140,26 +142,11 @@ signal to raise the cap).
 
 ## Phase 2 — capabilities vanilla does not have
 
-**Gate to start:** Phase 1 exit gate green.
+**Gate to start:** Phase 1 exit gate green — passed 2026-08-08.
 
 This is the axis with the most headroom, because it is the only one where the comparison
-is 0→1 rather than a percentage. Vanilla Three.js has no physics, no asset pipeline, and
-no way for an agent to verify its own game in a browser.
-
-- **Assets — [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md).** The legacy tree already
-  solved this: `threenative-asset-mcp` v0.5.0 in `../threejs-to-bevy/packages/asset-mcp`,
-  10,847 LOC and 25+ tools over Fab, Poly Haven, ambientCG, Smithsonian 3D, Sketchfab,
-  itch and a curated game-audio catalog, separating source discovery from license-verified
-  direct downloads.
-
-  **It costs zero workspace slots and zero framework LOC.** `check-budgets.ts:56-69`
-  counts only `packages/*/src` and workspace members; the server stays external and the
-  scaffold declares it in the generated project's `.mcp.json`. Vendoring it would consume
-  72% of the 15,000 LOC cap and a ninth package against a cap of eight.
-
-  PRD-032 also records why `docs/product/ASSET-PIPELINE.md`'s deferral does not apply:
-  that document defers a *build-time optimization* pipeline on LOC-cap grounds. Discovery
-  and licensing is a separate problem that runs beside the agent, not inside the build.
+is 0→1 rather than a percentage. Vanilla Three.js has no physics and no way for an agent
+to verify its own game in a browser.
 - **Dev loop.** Hot reload with state preservation. Hundreds of vanilla lines nobody
   wants to write, and it does not touch the look.
 - **`physics` earns its keep.** It is already the strongest asset and appears nowhere in
