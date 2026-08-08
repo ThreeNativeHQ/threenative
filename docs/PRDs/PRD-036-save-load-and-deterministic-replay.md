@@ -1,11 +1,13 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** implementation delivered in a partial lane; the checked-in browser consumer and
-real-subject same-run replay checkpoint pass on isolated Brave/WebGPU. Gate 0 and Phase 1
-of `docs/strategy/ROADMAP.md` are closed, but this PRD remains open until its full consumer
-proof is complete and is not moved to `done/`. The implementation and checked-in replay
-consumer project are merged on `docs/opportunity-areas-prds`; the full browser suite, 1%
-divergence checkpoint, and negative controls remain pending. See
+**Status:** implementation delivered in a partial lane; the checked-in browser consumer,
+real-subject same-run replay, and 1% movement-impulse divergence checkpoint pass on isolated
+Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coefficient is the
+available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
+this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
+The implementation and checked-in replay consumer project are merged on
+`docs/opportunity-areas-prds`; the full browser suite and observed-red/revert controls remain
+pending. See
 `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
@@ -258,7 +260,7 @@ phase end means the phase is incomplete.**
 | 1 | `Random.state` accessor | `packages/core/src/replay.ts:129` reads it into the recording header; `packages/core/src/replay.ts:184-190` restores it before stepping | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
 | 2 | `GameConfig.inputTarget` | `packages/core/src/game.ts:301-303` selects the configured target or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
 | 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
-| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
+| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the Abyss movement impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
 | 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
 | 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-125` dispatches and writes the conversion | nothing | n/a | feed a recording with an unknown top-level key → **throws `invalidScenario`**, per this package's fail-closed rule |
 | 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:127-143` generates `examples/abyss-framework/playtests/replay.playtest.json`; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
@@ -456,8 +458,8 @@ array, so the plugin's `update` runs on every frame of a real game.
 
 **User Verification (manual):** run `pnpm --filter abyss-framework dev`, play ~10 seconds,
 export the recording, replay it, and **watch the ship fly the same path**. Then change the
-jump impulse by 1% and watch it visibly diverge. Eyes on the output — the detection method
-that found six indistinguishable presets when all six metrics passed.
+Abyss movement impulse by 1% and watch it visibly diverge. Eyes on the output — the detection
+method that found six indistinguishable presets when all six metrics passed.
 
 ---
 
@@ -562,7 +564,7 @@ this exact feature could report green while doing nothing:
 - **Positive:** same seed + same `randomState` + same input stream → identical trace, and
   identical `world.takeSnapshot()` bytes.
 - **Negative (required by the brief):** a **one-bit change must produce a different trace**.
-  Two forms, both run: (a) the jump impulse changed by 1%; (b) one body's initial y moved by
+  Two forms, both run: (a) the Abyss movement impulse changed by 1%; (b) one body's initial y moved by
   `1e-9`. Both must diverge by orders of magnitude more than the equality tolerance.
 - **Fail-closed:** a fingerprint mismatch throws. It never runs-and-nearly-matches.
 
@@ -581,8 +583,9 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 1. **Record 30 seconds of play in `examples/abyss-framework`, replay it from the recording,
    and the final player position and score match the original** — position within `1e-6`,
    score exactly.
-2. **The same replay diverges detectably when the jump impulse is changed by 1%** — final
-   position differs by more than `0.1` world units, i.e. more than 10⁵× the tolerance in (1).
+2. **The same replay diverges detectably when the Abyss movement impulse is changed by 1%** —
+   final position differs by more than `0.1` world units, i.e. more than 10⁵× the tolerance in
+   (1).
 3. **A recording exported from a real session becomes a `.playtest.json` that runs in CI**
    and goes red when the behaviour it captured regresses. Proved by changing the impulse and
    watching `pnpm test:browser` fail.
@@ -600,7 +603,9 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 
 - [ ] All phases complete
 - [ ] All specified tests pass
-- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
+- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes; lint and test are
+      currently blocked by out-of-scope/user-edited proof JSON, recorded in the verification
+      ledger
 - [ ] `pnpm test:browser` passes, including the generated replay scenario
 - [ ] All automated checkpoints passed; manual checkpoints on Phases 3 and 5 passed
 - [x] No UI required — save UI is explicitly user code (§0.2), stated here rather than
@@ -617,8 +622,8 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 - [ ] Every gate has a negative control that was **observed failing**
 - [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
-      three-tick unit fixture. The replay consumer proof is recorded in
-      `docs/verification/PRD-036.md`; the manual divergence and red controls remain open.
+      three-tick unit fixture. The replay consumer proof and 1% movement-impulse divergence
+      are recorded in `docs/verification/PRD-036.md`; observed-red controls remain open.
 - [ ] Package count still 7/8; framework LOC delta ≤ 200 and recorded
 
 ### Honesty note for whoever files this
