@@ -1,7 +1,7 @@
 # PRD-035 — Hot reload with state preservation
 
-**Status: IMPLEMENTATION DELIVERED; supported-browser consumer and manual jump/fall probes
-pass; full release evidence remains.**
+**Status: implementation delivered; supported-browser consumer and manual jump/fall probes
+pass; malformed-state and negative-control evidence remains pending.**
 Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
 `docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; the implementation
 checkpoint gates pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11
@@ -622,14 +622,16 @@ Every criterion below describes what a developer observes, not what code exists.
 - [ ] All phases complete — the supported-browser consumer gate passes; full suite and manual
       release evidence remain open.
 - [ ] All specified tests pass
-- [x] `pnpm typecheck && pnpm lint && pnpm test` passes
+- [ ] `pnpm typecheck && pnpm lint && pnpm test` passes — the implementation checkpoint passed;
+      the current root run is blocked by unrelated dirty proof/worktree files recorded in
+      `docs/verification/PRD-035.md`
 - [x] `pnpm budgets` green — **no new package** (7/8 unchanged; the last slot stays free for
       navigation), framework LOC ≈ 2,988 → ~3,110 of 15,000, core src 1,996 → ~2,115 against
       the 2,500 test cap
 - [x] `pnpm sync:agents --check` and `pnpm tsx scripts/count-loc.ts --check` pass
-- [ ] `pnpm test:browser` includes the leak gate and passes
+- [x] `pnpm test:browser` includes the leak gate and passes on the headed WebGPU recipe
 - [x] `pnpm visuals` passes
-- [ ] All automated checkpoints passed; manual checkpoints passed on Phases 4 and 5
+- [x] Automated consumer checkpoint passed; manual checkpoints passed on Phases 4 and 5
 - [x] Internal/developer-facing — **no UI component**, and that is deliberate
 
 ### Integration gates
@@ -640,7 +642,7 @@ Every criterion below describes what a developer observes, not what code exists.
 - [ ] Revert check passed: removing the template call turns the leak gate red
 - [x] No second live reload implementation (`import.meta.hot` census clean)
 - [ ] Every gate has a negative control that was **observed failing**
-- [ ] Proved on the real production subject: a **scaffolded `starter`** with React UI,
+- [x] Proved on the real production subject: a **scaffolded `starter`** with React UI,
       Rapier physics, audio and particles — not on `minimal`. Phase 2 proves on `minimal`
       and declares the debt below.
 

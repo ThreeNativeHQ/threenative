@@ -6,8 +6,10 @@ Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coef
 available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
 this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
 The implementation and checked-in replay consumer project are merged on
-`docs/opportunity-areas-prds`; the full browser suite, generated-scenario regression sensitivity,
-and replay removal/revert controls remain pending. Selected fail-closed controls are observed-red.
+`docs/opportunity-areas-prds`; the full headed browser suite now passes, while generated-scenario
+regression sensitivity, replay removal/revert controls, the manual watch-and-diverge checkpoint,
+and the separate ≤200-line source-delta gate remain pending. Selected fail-closed controls are
+observed-red.
 `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /

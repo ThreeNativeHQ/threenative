@@ -1,8 +1,8 @@
 # PRD-038 — Runtime GPU transport and acceleration
 
-**Status:** implementation delivered; the exact `starter-pick` consumer gate passes on an
-isolated Brave/WebGPU runner. The PRD remains open until the scaffold's full test/removal
-gates and remaining release evidence pass; it is not moved to `done/` yet.
+**Status:** implementation delivered; the exact `starter-pick` consumer gate, its acceleration
+negative control, and the repaired headed WebGPU review consumers pass. The PRD remains open
+until the repaired nine-scenario removal proof and the scoped release gate are recorded.
 
 **Verdict up front: two of three candidates are killed, and the one that survives does not
 go in `@threenative/core`.**
@@ -572,27 +572,27 @@ path but is required for a scaffolded consumer to typecheck.
 
 ## 11. Acceptance criteria — consumer-scoped
 
-- [ ] **Hovering the 100k-triangle sculpture in a freshly scaffolded starter project names
+- [x] **Hovering the 100k-triangle sculpture in a freshly scaffolded starter project names
       it in the HUD within one frame**, and a human sees it change on move-off.
-- [ ] **`starter-pick` passes in the scaffolded project's own `pnpm test`**, and goes red
+- [x] **`starter-pick` passes in the scaffolded project's own `pnpm test`**, and goes red
       when the BVH construction line is deleted while the mesh and the pick call remain.
 - [ ] **A scaffolded project that removes the `pickAt` import and call, deletes
       `src/pick.ts` and removes the dependency, still builds and passes its remaining 9
       scenarios** — the acceleration is owned by the user and removable, which is the
       whole reason it is in the template.
-- [ ] **`@threenative/core` gains no dependency and no line of code.** `pnpm budgets` shows
+- [x] **`@threenative/core` gains no dependency and no line of code.** `pnpm budgets` shows
       7 packages and unchanged framework LOC.
-- [ ] **No `.ktx2` or meshopt decoder wiring ships anywhere**, and
+- [x] **No `.ktx2` or meshopt decoder wiring ships anywhere**, and
       `docs/product/ASSET-PIPELINE.md` is unchanged — the encode deferral is intact.
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` green, with the pre-existing clean-tree
       failures recorded as a baseline first and excluded by name.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells.
-- [ ] Caller census pasted: `pickAt` and `sculpture` each have a non-test consumer.
-- [ ] Revert check passed: deleting `pick.ts` breaks the scaffold smoke gate.
-- [ ] Every gate has a negative control observed red — specifically control #1, which is
+- [x] Integration Ledger has zero `TBD` cells.
+- [x] Caller census pasted: `pickAt` and `sculpture` each have a non-test consumer.
+- [x] Revert check passed: deleting `pick.ts` breaks the scaffold smoke gate.
+- [x] Every gate has a negative control observed red — specifically control #1, which is
       the only one that distinguishes "picking works" from "picking is accelerated".
 
 ---
