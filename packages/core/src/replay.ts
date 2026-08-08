@@ -44,8 +44,8 @@ function validate(value: unknown): Recording {
   const root = object(value, "recording");
   rejectKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"]);
   if (root.version !== 1) fail("TN_REPLAY_INVALID", "version must be 1");
-  if (!Number.isInteger(root.seed) || !Number.isInteger(root.randomState))
-    fail("TN_REPLAY_INVALID", "seed and randomState must be integers");
+  if (!Number.isFinite(root.seed) || !Number.isInteger(root.randomState))
+    fail("TN_REPLAY_INVALID", "seed must be finite and randomState must be an integer");
   const ticks = root.ticks as number;
   if (!Number.isInteger(ticks) || ticks < 1) fail("TN_REPLAY_INVALID", "ticks must be positive");
   if (!Array.isArray(root.input) || root.input.length === 0)

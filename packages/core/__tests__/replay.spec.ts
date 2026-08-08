@@ -90,12 +90,13 @@ describe("replay", () => {
     const strippedTarget = new EventTarget();
     const strippedInput = new InputMap(undefined, strippedTarget);
     const strippedTrace: number[] = [];
+    let strippedPosition = 0;
     const strippedDriver = createReplayDriver(stripped, strippedTarget);
     strippedDriver(
       runtime(() => {
         strippedInput.tick();
-        if (strippedInput.pressed("move")) strippedTrace.push(1);
-        else strippedTrace.push(0);
+        if (strippedInput.pressed("move")) strippedPosition += 1;
+        strippedTrace.push(strippedPosition);
         return 1;
       }),
     );
@@ -328,6 +329,19 @@ describe("replay", () => {
         physicsRecording,
         new EventTarget(),
       )(runtime(() => 0, undefined, "0.30.1")),
+    ).not.toThrow();
+    input.dispose();
+  });
+
+  it("should accept a finite fractional seed", async () => {
+    const { input, recording } = await recordThreeTicks();
+    const fractional = { ...recording, seed: 1.5 };
+
+    expect(() =>
+      createReplayDriver(
+        fractional,
+        new EventTarget(),
+      )({ ...runtime(() => 0, createRandom(1.5)), seed: 1.5 }),
     ).not.toThrow();
     input.dispose();
   });

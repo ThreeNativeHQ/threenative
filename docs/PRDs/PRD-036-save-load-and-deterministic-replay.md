@@ -265,7 +265,7 @@ phase end means the phase is incomplete.**
 | 1 | `Random.state` accessor | `packages/core/src/replay.ts:129` reads it into the recording header; `packages/core/src/replay.ts:184-190` restores it before stepping | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
 | 2 | `GameConfig.inputTarget` | `examples/abyss-framework/src/main.tsx` passes `window`; `packages/core/src/game.ts:301-303` selects it or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
 | 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
-| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
+| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the movement impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
 | 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
 | 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-131` dispatches and writes the conversion | nothing | n/a | feed a recording or oracle with an unknown key, or omit the oracle → **throws `invalidScenario`**, per this package's fail-closed rule |
 | 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:197-220` generates `examples/abyss-framework/playtests/replay.playtest.json` from the recording and oracle; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording/oracle and regenerate → conversion fails; it must never pass on a stale copy |
@@ -469,7 +469,7 @@ array, so the plugin's `beforeUpdate` runs on every fixed tick of a real game.
 
 **User Verification (manual):** run `pnpm --filter abyss-framework dev`, play ~10 seconds,
 export the recording, replay it, and **watch the ship fly the same path**. Then change the
-jump impulse by 1% and watch it visibly diverge. Eyes on the output — the detection method
+movement impulse by 1% and watch it visibly diverge. Eyes on the output — the detection method
 that found six indistinguishable presets when all six metrics passed.
 
 ---
@@ -548,10 +548,10 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,059 tests passed.
+      on 2026-08-08; 142 files / 1,062 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Chromium/WebGPU
-      runner in 24.5 seconds; the checked-in 1,800-tick scenario reported movement, a
+      runner in 22.9 seconds; the checked-in 1,800-tick scenario reported movement, a
       matching runtime fingerprint, and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean
@@ -583,7 +583,7 @@ this exact feature could report green while doing nothing:
 - **Positive:** same seed + same `randomState` + same input stream → identical trace, and
   identical `world.takeSnapshot()` bytes.
 - **Negative (required by the brief):** a **one-bit change must produce a different trace**.
-  Two forms, both run: (a) the jump impulse changed by 1%; (b) one body's initial y moved by
+  Two forms, both run: (a) the movement impulse changed by 1%; (b) one body's initial y moved by
   `1e-9`. Both must diverge by orders of magnitude more than the equality tolerance.
 - **Fail-closed:** a fingerprint mismatch throws. It never runs-and-nearly-matches.
 
@@ -604,11 +604,11 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 1. **Record 30 seconds of play in `examples/abyss-framework`, replay it from the recording,
    and the final player position and score match the original** — position within `1e-6`,
    score exactly.
-2. **The same replay diverges detectably when the jump impulse is changed by 1%** — final
+2. **The same replay diverges detectably when the movement impulse is changed by 1%** — final
    position differs by more than `0.1` world units, i.e. more than 10⁵× the tolerance in (1).
 3. **A recording exported from a real session becomes a `.playtest.json` that runs in CI**
-   and goes red when the behaviour it captured regresses. Proved by changing the impulse and
-   watching `pnpm test:browser` fail.
+   and goes red when the behaviour it captured regresses. Proved by changing the movement
+   impulse and watching `pnpm test:browser` fail.
 4. **A replay whose runtime fingerprint does not match refuses to run**, naming
    `TN_REPLAY_RUNTIME_MISMATCH`, rather than running and reporting a near-match.
 5. **A scaffolded project saves and loads its game state in ≤5 lines the user wrote
