@@ -64,8 +64,8 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
 | Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
-| Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **proposed, gated on Phase 1 exit** |
-| Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **open, gated on Phase 1 exit** |
+| Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **partial implementation in lane; browser consumer gate pending on a supported runner** |
+| Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **partial implementation in lane; browser consumer gate pending on a supported runner** |
 | Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
 | Physics collision layers and masks | [done/PRD-040](../PRDs/done/PRD-040-physics-collision-layers.md) | **done; consumer scenario, review repair, and full gates verified 2026-08-08** |
 | DRY the sweep corpus | [done/PRD-041](../PRDs/done/PRD-041-sweep-corpus-dry.md) | **done; implementation gates and review repair verified; n≥10 adoption rerun and browser proof remain environment/evidence gaps** |
