@@ -83,7 +83,7 @@ function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer 
   return [point[0] - (rect?.left ?? 0), point[1] - (rect?.top ?? 0), point[2], width, height];
 }
 function pointerType(previous: number, next: number) {
-  return previous === next ? "pointermove" : previous & ~next ? "pointerup" : "pointerdown";
+  return previous && !next ? "pointerup" : !previous && next ? "pointerdown" : "pointermove";
 }
 function targetPointerPosition(pointer: Pointer, target: EventTarget): Point {
   const viewport = target as unknown as HTMLCanvasElement & Window;

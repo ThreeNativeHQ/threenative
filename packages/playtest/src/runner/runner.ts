@@ -124,8 +124,17 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         ? { path: join(config.artifactDirectory, "before.png") }
         : undefined)
       : undefined;
-    for (const step of scenario.steps) {
-      await runStep(page, bridge, step, scenario.viewport, pathEntity, pathPositions, inputState);
+    for (const [index, step] of scenario.steps.entries()) {
+      await runStep(
+        page,
+        bridge,
+        step,
+        scenario.viewport,
+        pathEntity,
+        pathPositions,
+        inputState,
+        index === scenario.steps.length - 1,
+      );
       if (step.label !== undefined && bridge !== undefined) {
         const snapshot = await bridge.sample(sampleRequest);
         const signals = bridge.description.capabilities.includes("runtime.events")
@@ -439,6 +448,7 @@ async function runStep(
   pathEntity: string | undefined,
   pathPositions: PlaytestVec3[],
   inputState: StepInputState,
+  finalStep: boolean,
 ): Promise<void> {
   if (step.pointerPosition !== undefined) {
     await page.mouse.move(
@@ -487,7 +497,7 @@ async function runStep(
     // Let the game loop observe the release before a following step presses the
     // same key again. Without this frame, adjacent steps are indistinguishable
     // from one continuous hold to input latches.
-    await waitFrames(page, 1);
+    if (!finalStep) await waitFrames(page, 1);
   }
   if (step.pointerPosition?.buttons !== undefined && step.release) {
     await setPointerButtons(page, inputState, 0);

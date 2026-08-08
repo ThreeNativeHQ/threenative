@@ -196,7 +196,7 @@ describe("replay", () => {
 
     expect(observed).toEqual([
       [3, true, 112, 84],
-      [2, false, 112, 84],
+      [2, true, 112, 84],
       [0, false, 112, 84],
     ]);
     recorded.input.dispose();
