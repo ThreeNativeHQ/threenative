@@ -185,26 +185,28 @@ export class Abyss extends Scene<AbyssState> {
     const hunterMaterial = glowMaterial(0x8a6bff, 2);
     const spawnHunter = () => {
       const mesh = new THREE.Mesh(hunterGeometry, hunterMaterial);
-      const angle = ctx.random.range(0, Math.PI * 2);
+      const angle = ctx.random() * Math.PI * 2;
       mesh.position.set(Math.cos(angle) * field.w * 0.55, Math.sin(angle) * field.h * 0.55, 0);
       ctx.add(mesh);
-      hunters.push({
-        mesh,
-        speed: ctx.random.range(96, 136),
-        spin: ctx.random.range(-1, 1),
-      });
+      hunters.push({ mesh, speed: 96 + ctx.random() * 40, spin: ctx.random() * 2 - 1 });
     };
-    const placePearl = (pearl: Pearl, index: number) => {
+    const placePearl = (pearl: Pearl, index: number, randomize = true) => {
+      const phase = index * 2.3999632297;
       if (index === 0) {
         pearl.mesh.position.set(125, 0, 0);
       } else {
         pearl.mesh.position.set(
-          ctx.random.range(-0.5, 0.5) * field.w * 0.86,
-          ctx.random.range(-0.5, 0.5) * field.h * 0.86,
+          randomize ? (ctx.random() - 0.5) * field.w * 0.86 : Math.sin(phase) * field.w * 0.38,
+          randomize
+            ? (ctx.random() - 0.5) * field.h * 0.86
+            : Math.cos(phase * 1.17) * field.h * 0.38,
           0,
         );
       }
-      pearl.drift.set(ctx.random.range(-0.5, 0.5) * 40, ctx.random.range(-0.5, 0.5) * 40);
+      pearl.drift.set(
+        randomize ? (ctx.random() - 0.5) * 40 : Math.cos(phase) * 18,
+        randomize ? (ctx.random() - 0.5) * 40 : Math.sin(phase * 1.17) * 18,
+      );
     };
 
     ctx.renderer.setOutputNode(createPostProcessing(ctx.scene, camera));
@@ -216,6 +218,7 @@ export class Abyss extends Scene<AbyssState> {
     let elapsed = 0;
     let nextHunter = 6;
     let best = 0;
+    let simulationTime = 0;
     const target = new THREE.Vector2();
     const temporary = new THREE.Vector3();
     // Seeded from the live pointer, not from NaN: an unequal first comparison
@@ -255,7 +258,7 @@ export class Abyss extends Scene<AbyssState> {
       for (const hunter of hunters) hunter.mesh.removeFromParent();
       hunters.length = 0;
       spawnHunter();
-      pearls.forEach(placePearl);
+      pearls.forEach((pearl, index) => placePearl(pearl, index));
       publish(false);
       // React renders on a 10Hz throttle; flush so the veil clears immediately.
       ctx.state.flush();
@@ -264,12 +267,13 @@ export class Abyss extends Scene<AbyssState> {
     this.#startCleanup = () => {
       globalThis.removeEventListener(START_EVENT, start);
     };
-    pearls.forEach(placePearl);
+    pearls.forEach((pearl, index) => placePearl(pearl, index, false));
 
     return (frameCtx, dt) => {
       field.w = VIEW * 2 * frameCtx.viewport.size.aspect;
       uField.value.x = field.w;
-      const now = performance.now();
+      simulationTime += dt;
+      const now = simulationTime * 1_000;
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
 

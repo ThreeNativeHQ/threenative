@@ -62,6 +62,7 @@ export interface GamePluginHooks<
     ctx: Ctx<TState, TPhysics>,
     runtime?: GamePluginRuntime,
   ): undefined | PluginCleanup | Promise<undefined | PluginCleanup>;
+  beforeUpdate?(ctx: Ctx<TState, TPhysics>, dt: number): void;
   update?(ctx: Ctx<TState, TPhysics>, dt: number): void;
   sceneExit?(ctx: Ctx<TState, TPhysics>): void;
   dispose?(ctx: Ctx<TState, TPhysics>): void;
@@ -367,14 +368,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         if (this.#paused) return;
         this.#input?.tick();
         scheduler.tick(dt);
+        for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
         if (frame !== undefined) frame(ctx, dt);
         else scene?.update(ctx, dt);
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
-        for (const plugin of this.#config.plugins ?? []) {
-          if (typeof plugin !== "function") plugin.update?.(ctx, dt);
-        }
+        for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
       },
       step: this.#config.step,
     });
@@ -416,7 +416,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#started = true;
     gameLoop.start();
   }
-
   pause(): void {
     this.#paused = true;
   }

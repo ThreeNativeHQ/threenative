@@ -119,6 +119,36 @@ describe("Random", () => {
     }
   });
 
+  it("should expose the seeded replay runtime fingerprint", async () => {
+    class TestScene extends Scene {}
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: renderer(canvas),
+      scenes: { test: TestScene },
+      seed: 90210,
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      const world = (await bridge().sample({})).gameplay?.world;
+      expect(world).toEqual({
+        runtime: {
+          agent: typeof navigator === "undefined" ? "node" : navigator.userAgent,
+          core: "0.1.0",
+          randomState: 90210,
+          rapier: null,
+          step: 1 / 60,
+        },
+        seed: 90210,
+      });
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should reject range(a, b) with b <= a", () => {
     const random = createRandom(1);
 

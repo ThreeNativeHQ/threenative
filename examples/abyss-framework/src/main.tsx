@@ -1,9 +1,10 @@
-import { createReplayDriver, defineGame, replay } from "@threenative/core";
+import { defineGame, replay } from "@threenative/core";
 import type { GamePluginHooks, GamePluginRuntime } from "@threenative/core";
 import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import "./style.css";
 import { createRoot } from "react-dom/client";
+import { installReplayProof } from "./replay-proof.js";
 import { Abyss, type AbyssState } from "./scenes/Abyss.js";
 import { ViewportProbe } from "./scenes/ViewportProbe.js";
 import { App } from "./ui/App.js";
@@ -20,6 +21,7 @@ const replayRuntime: GamePluginHooks<AbyssState> = {
 
 const game = defineGame<AbyssState>({
   camera: { far: 7_000, near: 5_000, projection: "orthogonal", size: 520 },
+  inputTarget: window,
   input: {
     move: {
       down: ["KeyS", "ArrowDown"],
@@ -38,22 +40,7 @@ const game = defineGame<AbyssState>({
 });
 
 if (import.meta.env.DEV) {
-  Object.assign(globalThis, {
-    __THREENATIVE_REPLAY__: {
-      get recording() {
-        return replayPlugin.recording;
-      },
-      export: () => JSON.stringify(replayPlugin.recording),
-      replay: async () => {
-        const recording = replayPlugin.recording;
-        if (recording === undefined) throw new Error("No replay recording is available yet.");
-        if (gameRuntime === undefined) throw new Error("The game runtime is not ready.");
-        if (gameRuntime.random !== undefined) gameRuntime.random.state = recording.randomState;
-        await game.goto("play");
-        return createReplayDriver(recording, window)(gameRuntime);
-      },
-    },
-  });
+  installReplayProof(game, replayPlugin, () => gameRuntime);
 }
 
 import.meta.hot?.accept();

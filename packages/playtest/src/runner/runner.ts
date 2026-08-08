@@ -116,6 +116,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     const pathPositions = beforeSnapshot === undefined || pathEntity === undefined
       ? []
       : [entityPosition(beforeSnapshot, pathEntity)].filter((position): position is PlaytestVec3 => position !== undefined);
+    const inputState: StepInputState = { heldKeys: new Set(), pointerButtons: 0 };
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
     const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
@@ -123,8 +124,17 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         ? { path: join(config.artifactDirectory, "before.png") }
         : undefined)
       : undefined;
-    for (const step of scenario.steps) {
-      await runStep(page, bridge, step, scenario.viewport, pathEntity, pathPositions);
+    for (const [index, step] of scenario.steps.entries()) {
+      await runStep(
+        page,
+        bridge,
+        step,
+        scenario.viewport,
+        pathEntity,
+        pathPositions,
+        inputState,
+        index === scenario.steps.length - 1,
+      );
       if (step.label !== undefined && bridge !== undefined) {
         const snapshot = await bridge.sample(sampleRequest);
         const signals = bridge.description.capabilities.includes("runtime.events")
@@ -437,15 +447,35 @@ async function runStep(
   viewport: IPlaytestScenario["viewport"],
   pathEntity: string | undefined,
   pathPositions: PlaytestVec3[],
+  inputState: StepInputState,
+  finalStep: boolean,
 ): Promise<void> {
   if (step.pointerPosition !== undefined) {
     await page.mouse.move(
       step.pointerPosition.x * viewport.width,
       step.pointerPosition.y * viewport.height,
     );
+    if (step.pointerPosition.buttons !== undefined) {
+      await setPointerButtons(page, inputState, step.pointerPosition.buttons);
+    }
   }
-  if (step.press !== undefined) {
-    await page.keyboard.down(step.press);
+  const press = step.press;
+  if (typeof press === "string") {
+    await page.keyboard.down(press);
+    inputState.heldKeys.add(press);
+  } else if (press !== undefined) {
+    for (const key of inputState.heldKeys) {
+      if (!press.includes(key)) {
+        await page.keyboard.up(key);
+        inputState.heldKeys.delete(key);
+      }
+    }
+    for (const key of press) {
+      if (!inputState.heldKeys.has(key)) {
+        await page.keyboard.down(key);
+        inputState.heldKeys.add(key);
+      }
+    }
   }
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
@@ -458,13 +488,53 @@ async function runStep(
     await waitFrames(page, Math.max(frames, ticks, 1));
     await samplePathPosition(bridge, pathEntity, pathPositions);
   }
-  if (step.press !== undefined && step.release) {
-    await page.keyboard.up(step.press);
+  if (press !== undefined && step.release) {
+    const released = typeof press === "string" ? [press] : [...inputState.heldKeys];
+    for (const key of released) {
+      await page.keyboard.up(key);
+      inputState.heldKeys.delete(key);
+    }
     // Let the game loop observe the release before a following step presses the
     // same key again. Without this frame, adjacent steps are indistinguishable
     // from one continuous hold to input latches.
-    await waitFrames(page, 1);
+    if (!finalStep) await waitFrames(page, 1);
   }
+  if (step.pointerPosition?.buttons !== undefined && step.release) {
+    await setPointerButtons(page, inputState, 0);
+  }
+}
+
+type StepInputState = {
+  heldKeys: Set<string>;
+  pointerButtons: number;
+};
+
+const POINTER_BUTTONS = [
+  { button: "left", mask: 1 },
+  { button: "right", mask: 2 },
+  { button: "middle", mask: 4 },
+] as const;
+
+async function setPointerButtons(
+  page: Page,
+  inputState: StepInputState,
+  buttons: number,
+): Promise<void> {
+  const supportedMask = POINTER_BUTTONS.reduce((mask, entry) => mask | entry.mask, 0);
+  if ((buttons & ~supportedMask) !== 0) {
+    throw new Error(`Playtest pointer button mask ${buttons} is not supported by Playwright.`);
+  }
+  for (const entry of POINTER_BUTTONS) {
+    if ((inputState.pointerButtons & entry.mask) !== 0 && (buttons & entry.mask) === 0) {
+      await page.mouse.up({ button: entry.button });
+    }
+  }
+  for (const entry of POINTER_BUTTONS) {
+    if ((inputState.pointerButtons & entry.mask) === 0 && (buttons & entry.mask) !== 0) {
+      await page.mouse.down({ button: entry.button });
+    }
+  }
+  inputState.pointerButtons = buttons;
 }
 
 async function samplePathPosition(

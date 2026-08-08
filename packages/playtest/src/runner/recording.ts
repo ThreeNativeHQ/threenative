@@ -3,7 +3,7 @@ import { invalidScenario, rejectUnknownKeys } from "../scenario.js";
 
 interface RecordingSample {
   keys: string[];
-  pointer?: [number, number, number];
+  pointer?: [number, number, number, number, number];
   tick: number;
 }
 
@@ -16,7 +16,16 @@ interface RecordingValue {
   version: 1;
 }
 
+interface RecordingOracle {
+  movement: {
+    entity: string;
+    position: [number, number, number];
+    tolerance: number;
+  };
+}
+
 const SCENARIO_VIEWPORT = { height: 720, width: 1280 } as const;
+const SUPPORTED_POINTER_BUTTONS = 1 | 2 | 4;
 
 function recordNumber(value: unknown, path: string, integer = false): number {
   if (typeof value !== "number" || !Number.isFinite(value) || (integer && !Number.isInteger(value)))
@@ -35,11 +44,36 @@ function recordObject(value: unknown, path: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function recordTuple(value: unknown, path: string): [number, number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 3 ||
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  )
+    throw invalidScenario(path, `${path} must be a finite three-number tuple.`);
+  return value as [number, number, number];
+}
+
+function recordPointer(value: unknown, path: string): [number, number, number, number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 5 ||
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  )
+    throw invalidScenario(path, `${path} must be [x, y, buttons, viewport width, viewport height].`);
+  const pointer = value as [number, number, number, number, number];
+  if (!Number.isInteger(pointer[2]) || pointer[2] < 0 || (pointer[2] & ~SUPPORTED_POINTER_BUTTONS) !== 0)
+    throw invalidScenario(path, `${path} buttons must use left, right, or middle buttons only.`);
+  if (!Number.isInteger(pointer[3]) || pointer[3] < 1 || !Number.isInteger(pointer[4]) || pointer[4] < 1)
+    throw invalidScenario(path, `${path} viewport dimensions must be positive integers.`);
+  return pointer;
+}
+
 function validateRecording(value: unknown, scenarioPath: string): RecordingValue {
   const root = recordObject(value, scenarioPath);
   rejectUnknownKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"], scenarioPath, "recording");
   if (root.version !== 1) throw invalidScenario(scenarioPath, "recording.version must be 1.");
-  const seed = recordNumber(root.seed, "recording.seed", true);
+  const seed = recordNumber(root.seed, "recording.seed");
   const randomState = recordNumber(root.randomState, "recording.randomState", true);
   const ticks = recordNumber(root.ticks, "recording.ticks", true);
   if (ticks < 1) throw invalidScenario(scenarioPath, "recording.ticks must be positive.");
@@ -63,37 +97,63 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
     if (!Array.isArray(sample.keys) || !sample.keys.every((key) => typeof key === "string"))
       throw invalidScenario(scenarioPath, "recording input.keys must contain strings.");
     const keys = [...sample.keys];
-    if (keys.length > 1) throw invalidScenario(scenarioPath, "recording input cannot emit simultaneous keys.");
-    const pointer = sample.pointer;
-    if (
-      pointer !== undefined &&
-      (!Array.isArray(pointer) ||
-        pointer.length !== 3 ||
-        !pointer.every((item) => typeof item === "number" && Number.isFinite(item)))
-    )
-      throw invalidScenario(scenarioPath, "recording input.pointer must be a finite three-number tuple.");
-    if (pointer !== undefined && pointer[2] !== 0)
-      throw invalidScenario(scenarioPath, "recording pointer buttons cannot be emitted as playtest steps.");
+    if (new Set(keys).size !== keys.length)
+      throw invalidScenario(scenarioPath, "recording input.keys must not repeat.");
+    const pointer = sample.pointer === undefined
+      ? undefined
+      : recordPointer(sample.pointer, `recording.input[${index}].pointer`);
     previousTick = tick;
-    return { keys, ...(pointer === undefined ? {} : { pointer: pointer as [number, number, number] }), tick };
+    return { keys, ...(pointer === undefined ? {} : { pointer }), tick };
   });
   return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
 }
 
-function sampleSteps(sample: RecordingSample, ticks: number, scenarioPath: string): IPlaytestStep {
+function validateRecordingOracle(value: unknown, scenarioPath: string): RecordingOracle {
+  if (value === undefined) {
+    throw invalidScenario(
+      scenarioPath,
+      "recording conversion requires a final-position oracle; pass --oracle oracle.json.",
+    );
+  }
+  const root = recordObject(value, `${scenarioPath}:oracle`);
+  rejectUnknownKeys(root, ["movement"], scenarioPath, "recording oracle");
+  const movement = recordObject(root.movement, `${scenarioPath}:oracle.movement`);
+  rejectUnknownKeys(
+    movement,
+    ["entity", "position", "tolerance"],
+    scenarioPath,
+    "recording oracle movement",
+  );
+  const entity = recordString(movement.entity, "recording oracle movement.entity");
+  const position = recordTuple(movement.position, "recording oracle movement.position");
+  const tolerance = recordNumber(movement.tolerance, "recording oracle movement.tolerance");
+  if (tolerance < 0)
+    throw invalidScenario(scenarioPath, "recording oracle movement.tolerance must be non-negative.");
+  return { movement: { entity, position, tolerance } };
+}
+
+function sampleSteps(
+  sample: RecordingSample,
+  ticks: number,
+  release: boolean,
+  scenarioPath: string,
+): IPlaytestStep {
   if (ticks < 1) throw invalidScenario(scenarioPath, "recording produced a non-positive step duration.");
-  const key = sample.keys[0];
   const pointerPosition = sample.pointer === undefined
     ? undefined
     : {
-        x: sample.pointer[0] / SCENARIO_VIEWPORT.width,
-        y: sample.pointer[1] / SCENARIO_VIEWPORT.height,
+        buttons: sample.pointer[2],
+        x: sample.pointer[0] / sample.pointer[3],
+        y: sample.pointer[1] / sample.pointer[4],
       };
   if (pointerPosition !== undefined && (pointerPosition.x < 0 || pointerPosition.x > 1 || pointerPosition.y < 0 || pointerPosition.y > 1))
     throw invalidScenario(scenarioPath, "recording pointer position must fit the playtest viewport.");
-  return key === undefined
-    ? { ...(pointerPosition === undefined ? {} : { pointerPosition }), release: true, waitTicks: ticks }
-    : { ...(pointerPosition === undefined ? {} : { pointerPosition }), holdTicks: ticks, press: key, release: true };
+  return {
+    ...(pointerPosition === undefined ? {} : { pointerPosition }),
+    holdTicks: ticks,
+    press: sample.keys,
+    release,
+  };
 }
 
 function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestStep[] {
@@ -103,16 +163,35 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
   if (first.tick > 0) steps.push({ release: true, waitTicks: first.tick });
   for (const [index, sample] of recording.input.entries()) {
     const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
-    steps.push(sampleSteps(sample, nextTick - sample.tick, scenarioPath));
+    steps.push(sampleSteps(sample, nextTick - sample.tick, index === recording.input.length - 1, scenarioPath));
   }
   return steps;
 }
 
-function behaviorAssertions(recording: RecordingValue, scenarioPath: string) {
-  if (!recording.input.some((sample) => sample.keys.length > 0)) {
+function behaviorAssertions(
+  recording: RecordingValue,
+  oracle: RecordingOracle,
+  scenarioPath: string,
+) {
+  const activeTicks = recording.input.reduce((total, sample, index) => {
+    const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
+    return total + (sample.keys.length > 0 || sample.pointer !== undefined ? nextTick - sample.tick : 0);
+  }, 0);
+  if (activeTicks === 0) {
     throw invalidScenario(scenarioPath, "recording produced no meaningful behavior assertions.");
   }
-  return { movement: { entity: "player", minDistance: 0.1 } };
+  const minimumTraversal = activeTicks * recording.runtime.step;
+  return {
+    movement: {
+      entity: oracle.movement.entity,
+      minDistance: minimumTraversal,
+      pathLength: minimumTraversal,
+      reachesPositionWithin: {
+        maxDistance: oracle.movement.tolerance,
+        position: oracle.movement.position,
+      },
+    },
+  };
 }
 
 export function requireAssertions(
@@ -124,14 +203,28 @@ export function requireAssertions(
   return value;
 }
 
-export function recordToScenario(value: unknown, scenarioPath = "recording.json"): IPlaytestScenario {
+export function recordToScenario(
+  value: unknown,
+  scenarioPath = "recording.json",
+  oracleValue?: unknown,
+): IPlaytestScenario {
   const recording = validateRecording(value, scenarioPath);
+  const oracle = validateRecordingOracle(oracleValue, scenarioPath);
   const steps = emitSteps(recording, scenarioPath);
-  const behavior = behaviorAssertions(recording, scenarioPath);
+  const behavior = behaviorAssertions(recording, oracle, scenarioPath);
   const assert = requireAssertions({
     diagnostics: { noConsoleErrors: true, runtimeReady: true },
     ...behavior,
-    world: { seed: recording.seed },
+    world: {
+      runtime: {
+        agent: recording.runtime.agent,
+        core: recording.runtime.core,
+        randomState: recording.randomState,
+        rapier: recording.runtime.rapier,
+        step: recording.runtime.step,
+      },
+      seed: recording.seed,
+    },
   }, scenarioPath);
   if (steps.length === 0) throw invalidScenario(scenarioPath, "recording produced no steps.");
   return {

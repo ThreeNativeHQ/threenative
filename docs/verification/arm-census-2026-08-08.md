@@ -2,14 +2,14 @@
 
 This census runs one classifier over the Biome-normalized source of the frozen vanilla control and the framework arm. Every normalized line has exactly one class; ambiguous lines fall to `game`.
 
-Measured ratio: **436 / 473 = 92.2%** framework / vanilla normalized LOC.
+Measured ratio: **432 / 473 = 91.3%** framework / vanilla normalized LOC.
 
 ## Totals
 
 | Arm | Look | Game | Pattern | Plumbing | Normalized LOC | Raw LOC |
 |---|---:|---:|---:|---:|---:|---:|
 | vanilla | 104 | 257 | 13 | 99 | 473 | 410 |
-| framework | 97 | 227 | 22 | 90 | 436 | 436 |
+| framework | 101 | 223 | 22 | 86 | 432 | 432 |
 
 ## Per-file reconciliation
 
@@ -18,10 +18,10 @@ Each class total must sum to the normalized total; the last column is the indepe
 | Arm | File | Raw LOC | Look | Game | Pattern | Plumbing | Normalized LOC |
 |---|---|---:|---:|---:|---:|---:|---:|
 | vanilla | `examples/abyss-vanilla/src/main.js` | 410 | 104 | 257 | 13 | 99 | 473 |
-| framework | `examples/abyss-framework/src/main.tsx` | 65 | 1 | 38 | 0 | 26 | 65 |
+| framework | `examples/abyss-framework/src/main.tsx` | 53 | 1 | 30 | 0 | 22 | 53 |
 | framework | `examples/abyss-framework/src/render/lighting.ts` | 10 | 3 | 4 | 0 | 3 | 10 |
 | framework | `examples/abyss-framework/src/render/postprocessing.ts` | 9 | 3 | 2 | 0 | 4 | 9 |
-| framework | `examples/abyss-framework/src/scenes/Abyss.ts` | 352 | 90 | 183 | 22 | 57 | 352 |
+| framework | `examples/abyss-framework/src/scenes/Abyss.ts` | 360 | 94 | 187 | 22 | 57 | 360 |
 
 ## Classified line ranges
 
@@ -36,10 +36,10 @@ Ranges are inclusive and refer to the normalized source. The script retains the 
 
 ### framework: `examples/abyss-framework/src/main.tsx`
 
-- **look:** 22
-- **game:** 12-16, 18-19, 23-38, 40, 42-43, 45-48, 51, 53-56, 59, 64-65
+- **look:** 23
+- **game:** 13-17, 19-20, 24-40, 42-44, 47, 52-53
 - **pattern:** —
-- **plumbing:** 1-11, 17, 20-21, 39, 41, 44, 49-50, 52, 57-58, 60-63
+- **plumbing:** 1-12, 18, 21-22, 41, 45-46, 48-51
 
 ### framework: `examples/abyss-framework/src/render/lighting.ts`
 
@@ -57,7 +57,7 @@ Ranges are inclusive and refer to the normalized source. The script retains the 
 
 ### framework: `examples/abyss-framework/src/scenes/Abyss.ts`
 
-- **look:** 3-17, 57-59, 61, 68-71, 73-75, 77-79, 83-86, 88-89, 92-97, 100-101, 103-106, 109-110, 112-123, 128-131, 136-137, 140, 142, 144-146, 153-154, 157, 160-164, 167-169, 175, 178, 184, 187, 189, 267, 319
-- **game:** 18, 25-36, 41, 47-49, 51-52, 54, 62, 76, 80-81, 87, 90-91, 98-99, 102, 107-108, 111, 124-126, 132, 134-135, 138-139, 141, 143, 147, 152, 156, 165-166, 170-171, 174, 176, 180-181, 183, 185-186, 188, 192-202, 204, 206, 208-216, 220-221, 224-226, 228-250, 253, 255, 257-262, 266, 268-270, 272, 276-281, 283-311, 313-318, 320-321, 328-329, 335-346, 348-352
-- **pattern:** 148, 158, 172, 177, 179, 190-191, 203, 251-252, 254, 263, 323-327, 330-334
-- **plumbing:** 1-2, 19-24, 37-40, 42-46, 50, 53, 55-56, 60, 63-67, 72, 82, 127, 133, 149-151, 155, 159, 173, 182, 205, 207, 217-219, 222-223, 227, 256, 264-265, 271, 273-275, 282, 312, 322, 347
+- **look:** 3-17, 57-59, 61, 68-71, 73-75, 77-79, 83-86, 88-89, 92-97, 100-101, 103-106, 109-110, 112-123, 128-131, 136-137, 140, 142, 144-146, 153-154, 157, 160-164, 167-169, 175, 178, 184, 187, 189, 199, 202, 207-208, 274, 327
+- **game:** 18, 25-36, 41, 47-49, 51-52, 54, 62, 76, 80-81, 87, 90-91, 98-99, 102, 107-108, 111, 124-126, 132, 134-135, 138-139, 141, 143, 147, 152, 156, 165-166, 170-171, 174, 176, 180-181, 183, 185-186, 188, 192-198, 200-201, 203-205, 209-210, 212, 214-223, 227-228, 231-233, 235-257, 260, 262, 264-269, 273, 275-278, 280, 284-289, 291-319, 321-326, 328-329, 336-337, 343-354, 356-360
+- **pattern:** 148, 158, 172, 177, 179, 190-191, 206, 258-259, 261, 270, 331-335, 338-342
+- **plumbing:** 1-2, 19-24, 37-40, 42-46, 50, 53, 55-56, 60, 63-67, 72, 82, 127, 133, 149-151, 155, 159, 173, 182, 211, 213, 224-226, 229-230, 234, 263, 271-272, 279, 281-283, 290, 320, 330, 355

@@ -22,10 +22,12 @@ export interface IPlaytestStep {
     type: string;
   };
   pointerPosition?: {
+    buttons?: number;
     x: number;
     y: number;
   };
-  press?: string;
+  /** A string presses one key; an array describes the complete held-key set. */
+  press?: string | readonly string[];
   release: boolean;
   screenshot?: string;
   waitFrames?: number;
@@ -225,7 +227,16 @@ export interface IPlaytestReachabilityAssertion {
   envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
 }
 
+export interface IPlaytestWorldRuntimeAssertion {
+  agent: string;
+  core: string;
+  randomState: number;
+  rapier: string | null;
+  step: number;
+}
+
 export interface IPlaytestWorldAssertion {
+  runtime?: IPlaytestWorldRuntimeAssertion;
   seed: number | null;
 }
 
@@ -615,7 +626,13 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     "waitTicks",
     "window",
   ], scenarioPath, `steps[${index}]`);
-  const press = typeof value.press === "string" && value.press.length > 0 ? value.press : undefined;
+  const press = typeof value.press === "string" && value.press.length > 0
+    ? value.press
+    : Array.isArray(value.press)
+      && value.press.every((key) => typeof key === "string" && key.length > 0)
+      && new Set(value.press).size === value.press.length
+      ? [...value.press]
+      : undefined;
   const overlayMessage = isRecord(value.overlayMessage)
     && typeof value.overlayMessage.overlayId === "string"
     && value.overlayMessage.overlayId.length > 0
@@ -627,6 +644,12 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
         type: value.overlayMessage.type,
       }
     : undefined;
+  const pointerButtons = isRecord(value.pointerPosition)
+    && typeof value.pointerPosition.buttons === "number"
+    && Number.isInteger(value.pointerPosition.buttons)
+    && value.pointerPosition.buttons >= 0
+    ? value.pointerPosition.buttons
+    : undefined;
   const pointerPosition = isRecord(value.pointerPosition)
     && typeof value.pointerPosition.x === "number"
     && Number.isFinite(value.pointerPosition.x)
@@ -636,13 +659,18 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     && Number.isFinite(value.pointerPosition.y)
     && value.pointerPosition.y >= 0
     && value.pointerPosition.y <= 1
-    ? { x: value.pointerPosition.x, y: value.pointerPosition.y }
+    && (value.pointerPosition.buttons === undefined || pointerButtons !== undefined)
+    ? {
+        ...(pointerButtons === undefined ? {} : { buttons: pointerButtons }),
+        x: value.pointerPosition.x,
+        y: value.pointerPosition.y,
+      }
     : undefined;
   if (isRecord(value.overlayMessage)) {
     rejectUnknownKeys(value.overlayMessage, ["overlayId", "payload", "type"], scenarioPath, `steps[${index}].overlayMessage`);
   }
   if (isRecord(value.pointerPosition)) {
-    rejectUnknownKeys(value.pointerPosition, ["x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
+    rejectUnknownKeys(value.pointerPosition, ["buttons", "x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
   }
   const holdFrames = positiveInteger(value.holdFrames);
   const holdTicks = positiveInteger(value.holdTicks);
@@ -666,7 +694,11 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (isRecord(value.window)) {
     rejectUnknownKeys(value.window, ["height", "operation", "width"], scenarioPath, `steps[${index}].window`);
   }
-  if (kind === "wait" && press !== undefined) {
+  if (value.press !== undefined && press === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} press must be a non-empty key or a unique array of non-empty keys.`);
+  }
+  const hasPress = press !== undefined && (typeof press === "string" || press.length > 0);
+  if (kind === "wait" && hasPress) {
     throw invalidStep(scenarioPath, `Scenario step ${index} kind wait cannot define press.`);
   }
   if (value.overlayMessage !== undefined && overlayMessage === undefined) {
@@ -910,10 +942,34 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
 }
 
 function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestWorldAssertion {
+  rejectUnknownKeys(value, ["runtime", "seed"], scenarioPath, "assert.world");
   if (!hasKey(value, "seed") || (value.seed !== null && (typeof value.seed !== "number" || !Number.isFinite(value.seed)))) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.world.seed' must be a finite number or null.");
   }
-  return { seed: value.seed as number | null };
+  const runtimeValue = value.runtime;
+  if (runtimeValue === undefined) return { seed: value.seed as number | null };
+  const runtime = requireRecord(runtimeValue, scenarioPath, "assert.world.runtime");
+  rejectUnknownKeys(runtime, ["agent", "core", "randomState", "rapier", "step"], scenarioPath, "assert.world.runtime");
+  const randomState = optionalNumber(runtime, "randomState", scenarioPath, "assert.world.runtime");
+  if (randomState === undefined || !Number.isInteger(randomState)) {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.randomState' must be an integer.");
+  }
+  const rapier = runtime.rapier;
+  if (rapier !== null && typeof rapier !== "string") {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.rapier' must be a string or null.");
+  }
+  return {
+    runtime: {
+      agent: requireString(runtime, "agent", scenarioPath, "assert.world.runtime"),
+      core: requireString(runtime, "core", scenarioPath, "assert.world.runtime"),
+      randomState,
+      rapier: rapier as string | null,
+      step: optionalPositiveNumber(runtime, "step", scenarioPath, "assert.world.runtime") ?? (() => {
+        throw invalidScenario(scenarioPath, "'assert.world.runtime.step' must be a positive number.");
+      })(),
+    },
+    seed: value.seed as number | null,
+  };
 }
 
 function validateReachabilityAssertion(value: Record<string, unknown>, scenarioPath: string): IPlaytestReachabilityAssertion {
@@ -1562,5 +1618,13 @@ function validateNestedAssertionKeys(
         });
       }
     }
+  }
+  if (kind === "world" && isRecord(value.runtime)) {
+    rejectUnknownKeys(
+      value.runtime,
+      ["agent", "core", "randomState", "rapier", "step"],
+      scenarioPath,
+      `assert.${kind}${suffix}.runtime`,
+    );
   }
 }

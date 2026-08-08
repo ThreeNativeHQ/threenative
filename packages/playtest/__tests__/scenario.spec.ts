@@ -37,6 +37,40 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
   expect({ ...parsed, sourcePath: undefined }).toEqual({ ...scenario, inputDelivery: "deterministic", sourcePath: undefined });
 });
 
+test("world assertions preserve and validate a deterministic runtime fingerprint", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-"));
+  const scenario = {
+    assert: {
+      world: {
+        runtime: { agent: "browser", core: "0.1.0", randomState: 90210, rapier: null, step: 1 / 60 },
+        seed: 90210,
+      },
+    },
+    name: "world-runtime",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  };
+  await writeFile(join(directory, "scenario.json"), JSON.stringify(scenario));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.world).toEqual(scenario.assert.world);
+});
+
+test("world assertions reject unknown runtime fingerprint keys", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-invalid-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { world: { runtime: { agent: "browser", core: "0.1.0", randomState: 1, rapier: null, step: 1 / 60, extra: true }, seed: 1 } },
+    name: "invalid-world-runtime",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/Unknown key 'extra'/u) },
+  });
+});
+
 test("scenario loading rejects mixed frame and fixed timing", async () => {
   for (const [index, step] of [
     { holdTicks: 5, press: "KeyW", release: true, waitFrames: 5 },

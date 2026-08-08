@@ -23,21 +23,26 @@ async function recordThreeTicks(): Promise<{
   input: InputMap;
   plugin: ReturnType<typeof replay>;
   recording: Recording;
+  trace: string[][];
+  target: EventTarget;
+  ctx: Ctx;
 }> {
   const target = new EventTarget();
   const input = new InputMap(undefined, target);
   const plugin = replay();
   const ctx = { input, random: createRandom(90210) } as unknown as Ctx;
+  const trace: string[][] = [];
   await plugin.setup?.(ctx, runtime());
   target.dispatchEvent(keyEvent("keydown", "KeyW"));
   for (let tick = 0; tick < 3; tick += 1) {
     if (tick === 2) target.dispatchEvent(keyEvent("keyup", "KeyW"));
     input.tick();
-    plugin.update?.(ctx, 1 / 60);
+    trace.push([...input.raw.keys].sort());
+    plugin.beforeUpdate?.(ctx, 1 / 60);
   }
   const recording = plugin.recording;
   if (recording === undefined) throw new Error("Replay plugin did not produce a recording.");
-  return { input, plugin, recording };
+  return { input, plugin, recording, trace, target, ctx };
 }
 
 describe("replay", () => {
@@ -87,12 +92,13 @@ describe("replay", () => {
     const strippedTarget = new EventTarget();
     const strippedInput = new InputMap(undefined, strippedTarget);
     const strippedTrace: number[] = [];
+    let strippedPosition = 0;
     const strippedDriver = createReplayDriver(stripped, strippedTarget);
     strippedDriver(
       runtime(() => {
         strippedInput.tick();
-        if (strippedInput.pressed("move")) strippedTrace.push(1);
-        else strippedTrace.push(0);
+        if (strippedInput.pressed("move")) strippedPosition += 1;
+        strippedTrace.push(strippedPosition);
         return 1;
       }),
     );
@@ -120,14 +126,220 @@ describe("replay", () => {
     recorded.input.dispose();
   });
 
+  it("should prepare random state before a replay scene is rebuilt", async () => {
+    const recorded = await recordThreeTicks();
+    const replayRandom = createRandom(1);
+    const replayRuntime = runtime(() => 0, replayRandom);
+    const driver = createReplayDriver(recorded.recording, new EventTarget());
+    const expectedAfterSceneRandom = createRandom(1);
+    expectedAfterSceneRandom.state = recorded.recording.randomState;
+    expectedAfterSceneRandom();
+    driver.prepare(replayRuntime);
+    replayRandom();
+    let stateAtFirstStep: number | undefined;
+    driver({
+      ...replayRuntime,
+      fixedStep: () => {
+        stateAtFirstStep = replayRandom.state;
+        return 1;
+      },
+    });
+
+    expect(stateAtFirstStep).toBe(expectedAfterSceneRandom.state);
+    recorded.input.dispose();
+  });
+
+  it("should route pointer playback to the input map's pointer target", async () => {
+    const recorded = await recordThreeTicks();
+    const keyboardTarget = new EventTarget();
+    const pointerTarget = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+      getBoundingClientRect: () => ({ height: 180, left: 100, top: 50, width: 320 }),
+    });
+    const input = new InputMap({ pulse: { pointer: true } }, keyboardTarget, pointerTarget);
+    const pointerRecording = {
+      ...recorded.recording,
+      input: [
+        {
+          keys: [],
+          pointer: [12, 34, 3, 320, 180] as [number, number, number, number, number],
+          tick: 0,
+        },
+        {
+          keys: [],
+          pointer: [12, 34, 2, 320, 180] as [number, number, number, number, number],
+          tick: 1,
+        },
+        {
+          keys: [],
+          pointer: [12, 34, 0, 320, 180] as [number, number, number, number, number],
+          tick: 2,
+        },
+      ],
+      ticks: 3,
+    };
+    const observed: Array<[number, boolean, number, number]> = [];
+    const driver = createReplayDriver(pointerRecording, keyboardTarget, pointerTarget);
+    driver(
+      runtime(() => {
+        input.tick();
+        observed.push([
+          input.raw.pointer.buttons,
+          input.raw.pointer.down,
+          input.raw.pointer.position.x,
+          input.raw.pointer.position.y,
+        ]);
+        return 1;
+      }),
+    );
+
+    expect(observed).toEqual([
+      [3, true, 112, 84],
+      [2, true, 112, 84],
+      [0, false, 112, 84],
+    ]);
+    recorded.input.dispose();
+    input.dispose();
+  });
+
+  it("should record pointer coordinates relative to the canvas", async () => {
+    const keyboardTarget = new EventTarget();
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+      getBoundingClientRect: () => ({ height: 180, left: 100, top: 50, width: 320 }),
+    }) as unknown as HTMLCanvasElement;
+    const input = new InputMap(undefined, keyboardTarget, canvas);
+    const plugin = replay();
+    const ctx = {
+      input,
+      random: createRandom(90210),
+      renderer: { domElement: canvas },
+    } as unknown as Ctx;
+    await plugin.setup?.(ctx, runtime());
+    canvas.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 112,
+        clientY: 74,
+        pointerId: 0,
+      }),
+    );
+    input.tick();
+    plugin.beforeUpdate?.(ctx, 1 / 60);
+
+    expect(plugin.recording?.input[0]?.pointer).toEqual([12, 24, 1, 320, 180]);
+    input.dispose();
+  });
+
+  it("should release synthetic input after replay", async () => {
+    const recorded = await recordThreeTicks();
+    const target = new EventTarget();
+    const input = new InputMap({ pulse: { pointer: true } }, target, target);
+    const recording = {
+      ...recorded.recording,
+      input: [
+        {
+          keys: ["KeyW"],
+          pointer: [12, 34, 1, 320, 180] as [number, number, number, number, number],
+          tick: 0,
+        },
+      ],
+      ticks: 1,
+    };
+
+    createReplayDriver(
+      recording,
+      target,
+    )(
+      runtime(() => {
+        input.tick();
+        return 1;
+      }),
+    );
+
+    expect([...input.raw.keys]).toEqual([]);
+    expect(input.raw.pointer.buttons).toBe(0);
+    expect(input.raw.pointer.down).toBe(false);
+    recorded.input.dispose();
+    input.dispose();
+  });
+
   it("should record identities from the record and replay-driver runs", async () => {
     const recorded = await recordThreeTicks();
-    const driver = createReplayDriver(recorded.recording, new EventTarget());
+    const replayTarget = new EventTarget();
+    const replayInput = new InputMap(undefined, replayTarget);
+    const replayDriver = createReplayDriver(recorded.recording, replayTarget);
+    const replayTrace = { runId: replayDriver.runId, values: [] as string[][] };
+    const recordTrace = { runId: recorded.plugin.runId, values: recorded.trace };
 
-    driver(runtime());
+    replayDriver(
+      runtime(() => {
+        replayInput.tick();
+        replayTrace.values.push([...replayInput.raw.keys].sort());
+        return 1;
+      }),
+    );
 
-    expect(recorded.plugin.runId).not.toBe(driver.runId);
+    expect(replayTrace.values).toEqual(recordTrace.values);
+    expect(recordTrace.runId).not.toBe(replayTrace.runId);
     recorded.input.dispose();
+    replayInput.dispose();
+  });
+
+  it("should not append replay ticks to an active recording", async () => {
+    const recorded = await recordThreeTicks();
+    const before = recorded.plugin.recording;
+    expect(before).toBeDefined();
+    createReplayDriver(
+      recorded.recording,
+      recorded.target,
+    )(
+      runtime(() => {
+        recorded.input.tick();
+        recorded.plugin.beforeUpdate?.(recorded.ctx, 1 / 60);
+        return 1;
+      }),
+    );
+
+    expect(recorded.plugin.recording).toEqual(before);
+    recorded.input.dispose();
+  });
+
+  it("should clear live input before replaying the first tick", async () => {
+    const recorded = await recordThreeTicks();
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    target.dispatchEvent(keyEvent("keydown", "KeyD"));
+    target.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 12,
+        clientY: 34,
+        pointerId: 0,
+      }),
+    );
+    const observed: Array<[string[], number, number, number]> = [];
+    createReplayDriver(
+      recorded.recording,
+      target,
+    )(
+      runtime(() => {
+        input.tick();
+        observed.push([
+          [...input.raw.keys].sort(),
+          input.raw.pointer.buttons,
+          input.raw.pointer.position.x,
+          input.raw.pointer.position.y,
+        ]);
+        return 1;
+      }),
+    );
+
+    expect(observed[0]).toEqual([["KeyW"], 0, 0, 0]);
+    recorded.input.dispose();
+    input.dispose();
   });
 
   it("should throw when the recording has no input samples", async () => {
@@ -135,6 +347,21 @@ describe("replay", () => {
     expect(() => createReplayDriver({ ...recording, input: [] }, new EventTarget())).toThrow(
       /TN_REPLAY_EMPTY/u,
     );
+    input.dispose();
+  });
+
+  it("should reject malformed pointer samples at load", async () => {
+    const { input, recording } = await recordThreeTicks();
+    expect(() =>
+      createReplayDriver(
+        {
+          ...recording,
+          input: [{ keys: ["KeyW"], pointer: [0, 0, 0.5, 1280, 720], tick: 0 }],
+          ticks: 1,
+        },
+        new EventTarget(),
+      ),
+    ).toThrow(/TN_REPLAY_INVALID/u);
     input.dispose();
   });
 
@@ -163,6 +390,19 @@ describe("replay", () => {
         physicsRecording,
         new EventTarget(),
       )(runtime(() => 0, undefined, "0.30.1")),
+    ).not.toThrow();
+    input.dispose();
+  });
+
+  it("should accept a finite fractional seed", async () => {
+    const { input, recording } = await recordThreeTicks();
+    const fractional = { ...recording, seed: 1.5 };
+
+    expect(() =>
+      createReplayDriver(
+        fractional,
+        new EventTarget(),
+      )({ ...runtime(() => 0, createRandom(1.5)), seed: 1.5 }),
     ).not.toThrow();
     input.dispose();
   });

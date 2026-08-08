@@ -287,7 +287,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
   {
     description: "Proves runtime world metadata exposed by the application bridge.",
     example: { world: { seed: 90210 } },
-    fields: [{ description: "Expected configured deterministic seed, or null when unseeded.", name: "seed", required: true, type: "json" }],
+    fields: [
+      { description: "Expected configured deterministic seed, or null when unseeded.", name: "seed", required: true, type: "json" },
+      { description: "Expected deterministic replay runtime fingerprint.", name: "runtime", type: "object" },
+    ],
     cardinality: "object",
     kind: "world",
     observationPath: "runtimeObservations",
@@ -1409,18 +1412,42 @@ function evaluateWorldAssertion(
   const gameplay = gameplayObservations(observations);
   const world = isRecord(gameplay?.world) ? gameplay.world : undefined;
   const observed = world?.seed;
-  const pass = (typeof observed === "number" || observed === null) && observed === assertion.seed;
-  const result = { details: { expected: assertion.seed, observed: observed ?? null }, id: "world.seed", pass };
+  const seedPass = (typeof observed === "number" || observed === null) && observed === assertion.seed;
+  const observedRuntime = isRecord(world?.runtime) ? world.runtime : undefined;
+  const expectedRuntime = assertion.runtime;
+  const runtimePass = expectedRuntime === undefined || (
+    observedRuntime !== undefined &&
+    observedRuntime.agent === expectedRuntime.agent &&
+    observedRuntime.core === expectedRuntime.core &&
+    observedRuntime.randomState === expectedRuntime.randomState &&
+    observedRuntime.rapier === expectedRuntime.rapier &&
+    observedRuntime.step === expectedRuntime.step
+  );
+  const pass = seedPass && runtimePass;
+  const result = {
+    details: {
+      expected: assertion.seed,
+      expectedRuntime: expectedRuntime ?? null,
+      observed: observed ?? null,
+      observedRuntime: observedRuntime ?? null,
+    },
+    id: "world.seed",
+    pass,
+  };
   return pass
     ? { assertion: result }
     : {
         assertion: result,
         diagnostic: {
           code: "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
-          message: `Runtime world seed ${observed === undefined ? "was unavailable" : JSON.stringify(observed)} did not equal ${JSON.stringify(assertion.seed)}.`,
-          observedRuntimePath: "observations.json/runtimeObservations/gameplay/world/seed",
+          message: !seedPass
+            ? `Runtime world seed ${observed === undefined ? "was unavailable" : JSON.stringify(observed)} did not equal ${JSON.stringify(assertion.seed)}.`
+            : `Runtime world fingerprint ${observedRuntime === undefined ? "was unavailable" : JSON.stringify(observedRuntime)} did not equal ${JSON.stringify(expectedRuntime)}.`,
+          observedRuntimePath: !seedPass
+            ? "observations.json/runtimeObservations/gameplay/world/seed"
+            : "observations.json/runtimeObservations/gameplay/world/runtime",
           severity: "error",
-          suggestion: "Expose the configured world seed through the runtime bridge and rerun the scenario.",
+          suggestion: "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario.",
         },
       };
 }

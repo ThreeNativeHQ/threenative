@@ -63,11 +63,25 @@ export interface IPlaytestTagObservation {
   count: number;
 }
 
+export interface IPlaytestWorldRuntimeObservation {
+  agent: string;
+  core: string;
+  randomState: number;
+  rapier: string | null;
+  step: number;
+}
+
+export interface IPlaytestWorldObservation {
+  runtime?: IPlaytestWorldRuntimeObservation;
+  seed: number | null;
+}
+
 export interface IPlaytestGameplayObservation {
   animation: Record<string, IPlaytestAnimationObservation>;
   contacts?: IPlaytestContactObservation[];
   states: Record<string, string>;
   tags?: Record<string, IPlaytestTagObservation>;
+  world?: IPlaytestWorldObservation;
 }
 
 export interface IPlaytestObservationSnapshot {
