@@ -56,12 +56,18 @@ interface SealedProofExpectation {
 
 export interface PairArmResult {
   readonly archive: string;
+  readonly authoredBytes: number;
+  readonly authoredLoc: number;
   readonly frameworkFiles: number;
   readonly passed: number;
   readonly reachRate: number;
   readonly sourceFiles: number;
   readonly sourceBytes: number;
   readonly threeOnlyFiles: number;
+  readonly starterBytes: number;
+  readonly starterFiles: number;
+  readonly starterLoc: number;
+  readonly starterSurvivedLoc: number;
   readonly total: number;
   readonly userLoc: number;
   readonly unusedExports: readonly string[];
@@ -71,6 +77,10 @@ export interface PairArmResult {
 export interface SweepPair {
   readonly briefHash: string;
   readonly delta: {
+    /** Fair authored-cost delta: framework minus vanilla. */
+    readonly authoredBytes: number;
+    readonly authoredLoc: number;
+    /** Final totals retained for maintenance context, not the fair cost score. */
     readonly sourceBytes: number;
     readonly sourceFiles: number;
     readonly userLoc: number;
@@ -527,6 +537,10 @@ function measureVanilla(root: string): SweepMeasurement {
   const files = sourceFiles(path.join(root, "src")).sort();
   if (files.length === 0) throw new Error(`Cannot measure '${root}': src/ has no source files.`);
   validateVanillaArchive(root, files);
+  if (fs.existsSync(path.join(root, "starter-baseline")))
+    throw new Error(
+      `Cannot measure '${root}' as vanilla: it carries a starter-baseline/. The vanilla arm is authored from an empty src/.`,
+    );
   let userLoc = 0;
   let sourceBytes = 0;
   let threeOnlyFiles = 0;
@@ -537,11 +551,18 @@ function measureVanilla(root: string): SweepMeasurement {
     if (/(?:from\s*|import\s*\(|require\s*\(\s*)["']three["']/.test(source)) threeOnlyFiles += 1;
   }
   return {
+    authoredBytes: sourceBytes,
+    authoredLoc: userLoc,
     frameworkFiles: 0,
     reachRate: 0,
     sourceFiles: files.length,
     sourceBytes,
     threeOnlyFiles,
+    starterBytes: 0,
+    starterFiles: 0,
+    starterLoc: 0,
+    starterSource: "none",
+    starterSurvivedLoc: 0,
     unusedExports: [],
     usedExports: [],
     userLoc,
@@ -638,12 +659,18 @@ function armResult(root: string, manifest: SweepManifest, proof: StoredProof): P
   const measured = measurement(root, manifest.arm);
   return {
     archive: root,
+    authoredBytes: measured.authoredBytes,
+    authoredLoc: measured.authoredLoc,
     frameworkFiles: measured.frameworkFiles,
     passed: proof.passed,
     reachRate: measured.reachRate,
     sourceFiles: measured.sourceFiles,
     sourceBytes: measured.sourceBytes,
     threeOnlyFiles: measured.threeOnlyFiles,
+    starterBytes: measured.starterBytes,
+    starterFiles: measured.starterFiles,
+    starterLoc: measured.starterLoc,
+    starterSurvivedLoc: measured.starterSurvivedLoc,
     total: proof.total,
     userLoc: measured.userLoc,
     unusedExports: measured.unusedExports,
@@ -688,6 +715,8 @@ export function pairSweeps(leftDirectory: string, rightDirectory: string, repo =
   return {
     briefHash: leftManifest.briefHash,
     delta: {
+      authoredBytes: framework.authoredBytes - vanilla.authoredBytes,
+      authoredLoc: framework.authoredLoc - vanilla.authoredLoc,
       sourceBytes: framework.sourceBytes - vanilla.sourceBytes,
       sourceFiles: framework.sourceFiles - vanilla.sourceFiles,
       userLoc: framework.userLoc - vanilla.userLoc,
@@ -706,12 +735,34 @@ function main(): void {
     throw new Error("Usage: pnpm sweep:pair <framework-archive> <vanilla-archive>.");
   const pair = pairSweeps(left, right);
   process.stdout.write(`${JSON.stringify(pair, null, 2)}\n`);
-  process.stdout.write("arm       passed/total  source LOC  files  reach rate\n");
-  process.stdout.write(
-    `framework ${pair.framework.passed}/${pair.framework.total}         ${pair.framework.userLoc}        ${pair.framework.sourceFiles}      ${pair.framework.reachRate}\n`,
+  const cells = (name: string, arm: PairArmResult): string[] => [
+    name,
+    `${arm.passed}/${arm.total}`,
+    String(arm.authoredLoc),
+    String(arm.userLoc),
+    String(arm.starterLoc),
+    String(arm.starterSurvivedLoc),
+    String(arm.sourceFiles),
+    String(arm.reachRate),
+  ];
+  const table = [
+    ["arm", "proof", "authored", "final", "starter", "survived", "files", "reach"],
+    cells("framework", pair.framework),
+    cells("vanilla", pair.vanilla),
+  ];
+  const widths = (table[0] as string[]).map((_, index) =>
+    Math.max(...table.map((line) => (line[index] as string).length)),
   );
+  for (const line of table) {
+    process.stdout.write(
+      `${line
+        .map((cell, index) => cell.padEnd((widths[index] as number) + 2))
+        .join("")
+        .trimEnd()}\n`,
+    );
+  }
   process.stdout.write(
-    `vanilla   ${pair.vanilla.passed}/${pair.vanilla.total}         ${pair.vanilla.userLoc}        ${pair.vanilla.sourceFiles}      ${pair.vanilla.reachRate}\n`,
+    `authored cost delta (framework - vanilla): ${pair.delta.authoredLoc} LOC, ${pair.delta.authoredBytes} bytes\n`,
   );
 }
 

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#77d8f3" />
+    <link rel="icon" href="data:," />
+    <title>Skyline Sprint</title>
+  </head>
+  <body>
+    <main id="game" aria-label="Skyline Sprint endless runner">
+      <div class="hud" aria-live="polite">
+        <section class="brand">
+          <span class="brand__eyebrow">ENDLESS RUN</span>
+          <strong>SKYLINE<br />SPRINT</strong>
+        </section>
+        <section class="stats">
+          <div><span>DISTANCE</span><b id="distance">0000</b><small>M</small></div>
+          <div><span>SCORE</span><b id="score">000</b><small>PTS</small></div>
+          <div><span>SPEED</span><b id="speed">18.0</b><small>M/S</small></div>
+        </section>
+        <section class="controls">
+          <span><kbd>←</kbd><kbd>→</kbd> SWITCH LANE</span>
+          <span><kbd>SPACE</kbd> JUMP</span>
+        </section>
+      </div>
+      <div class="lane-pips" aria-hidden="true"><i></i><i class="active"></i><i></i></div>
+      <div class="flash" id="flash"><span>WIPEOUT</span><small>RUN RESTARTED</small></div>
+      <div class="start-cue">RUNNING <i></i></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

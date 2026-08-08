@@ -6,6 +6,12 @@ const LIMITS = {
   packages: 8,
   frameworkLoc: 15_000,
   prdFiles: 10,
+  /**
+   * A sweep charges the framework arm only for what it authors above its starter, so every
+   * line inside a template is a line the benchmark stops counting. Capped per template so the
+   * exemption cannot quietly become a place to hide gameplay.
+   */
+  templateLoc: 1_200,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
@@ -14,6 +20,7 @@ export type BudgetReport = {
   packages: number;
   frameworkLoc: number;
   prdFiles: number;
+  templates: { name: string; loc: number }[];
 };
 
 async function filesUnder(root: string, predicate: (file: string) => boolean): Promise<string[]> {
@@ -65,9 +72,23 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
       )),
     );
   }
+  const templateRoot = path.join(root, "packages", "create-threenative", "templates");
+  const templates: { name: string; loc: number }[] = [];
+  for (const entry of await readdir(templateRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory()) continue;
+    templates.push({
+      name: entry.name,
+      loc: await countLines(
+        await filesUnder(path.join(templateRoot, entry.name), (file) =>
+          /\.(?:ts|tsx|js|jsx|css)$/.test(file),
+        ),
+      ),
+    });
+  }
   return {
     packages: await workspacePackageCount(root),
     frameworkLoc: await countLines(sourceFiles),
+    templates,
     prdFiles: (
       await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
     ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,
@@ -85,6 +106,13 @@ export function budgetErrors(report: BudgetReport): string[] {
     errors.push(
       `framework LOC cap exceeded: ${report.frameworkLoc} lines (limit ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc})`,
     );
+  }
+  for (const template of report.templates) {
+    if (template.loc > LIMITS.templateLoc) {
+      errors.push(
+        `template LOC cap exceeded: ${template.name} is ${template.loc} lines (limit ${LIMITS.templateLoc}, +${template.loc - LIMITS.templateLoc}). Template lines are exempt from the sweep's authored cost, so this cap is what keeps that exemption honest.`,
+      );
+    }
   }
   if (report.prdFiles > LIMITS.prdFiles) {
     errors.push(
@@ -108,7 +136,7 @@ if (
   enforceBudgets(process.cwd())
     .then((report) => {
       console.log(
-        `budgets ok: ${report.packages} packages, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files`,
+        `budgets ok: ${report.packages} packages, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
       );
     })
     .catch((error: unknown) => {

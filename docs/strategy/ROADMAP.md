@@ -19,7 +19,7 @@ than argued.
 |---|---|---|
 | **Ships working** | Does an agent building with the framework produce a game that passes the sealed proofs more often than one building vanilla? | `pnpm sweep:pair` → `passed/total` |
 | **Looks good** | Does the framework arm score higher on the blind visual rubric? | `pnpm sweep:judge`, human blind session |
-| **Costs less** | Fewer user LOC, source bytes and files for the same game? | `pnpm sweep:measure`, `scripts/count-loc.ts` |
+| **Costs less** | Does the agent write less source above the framework starter than vanilla writes from zero? | `pnpm sweep:pair` → `authoredLoc` (per-file diff against the frozen starter); `scripts/count-loc.ts` remains a framework ratchet |
 | **Does what vanilla can't** | Capabilities that are 0→1, not 15% off | package inventory, reach rate |
 | **Survives the platform** | Web, then phone | `CHARTER.md` §7 device matrix |
 
@@ -35,8 +35,11 @@ than argued.
 
 **The two prior zeroes are now measured.** The instruments built by PRD-019 and PRD-020 now
 have a fresh exploration result: functional parity, framework visual win, and vanilla
-source-cost win. Gate 0 exits on the framework-win blind branch; the Phase 1 gate still
-requires widening the pair before further capability investment.
+final-source-cost win under the old total-LOC view. That old number is historical. New
+rounds report starter LOC plus authored LOC, so the framework arm is charged for what it
+wrote and not for the starter it was handed.
+The Phase 1 gate still requires a repeatable win across genres before further capability
+investment.
 
 **Why LOC cannot get us to 80:** plumbing is ~30% of a game and is already halved
 (138 → 68 on the static control). §5b permanently assigns the rest to the user, with
@@ -46,8 +49,8 @@ of a game that was already mostly won.
 
 ## Which roadmap items have PRDs
 
-Most of this roadmap is **measurement of shipped machinery**, not unbuilt features. Only
-one item needed a new PRD.
+Most of this roadmap is **measurement of shipped machinery**, not unbuilt features. The
+non-done PRD inventory is recorded here so new proposals cannot disappear from the queue.
 
 | Roadmap item | PRD | State |
 |---|---|---|
@@ -58,8 +61,18 @@ one item needed a new PRD.
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
 | Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **queued, gated on Phase 1 exit** |
+| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **proposed, gated on Phase 1 exit** |
+| Navigation and pathfinding | [PRD-034](../PRDs/PRD-034-navigation-and-pathfinding.md) | **queued, gated on Phase 1 exit** |
+| Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **queued, gated on Phase 1 exit** |
+| Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **proposed, gated on Phase 1 exit** |
+| Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **open, gated on Phase 1 exit** |
+| Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
+| Physics collision layers and masks | [PRD-040](../PRDs/PRD-040-physics-collision-layers.md) | **open, queued behind Phase 1** |
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
+
+The current non-done inventory is PRD-032 through PRD-036 and PRD-038 through PRD-040;
+there is no PRD-037 file in `docs/PRDs/`.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
 says a spike is a throwaway app whose only output is an answer; and the build-time asset
@@ -115,8 +128,10 @@ single exploration genre before starting Phase 2.
 3. **Widen the pair beyond N=1.** `platformer` and `topdown-action` have pair machinery
    and archives; `endless-runner` has a sealed proof set and no pair.
 
-**Gate to exit:** three genres paired, framework arm ahead on proofs and blind visuals in
-at least two, and `pnpm budgets` green with no cap raised (§10 — exceeding a cap is not a
+**Gate to exit:** three genres paired on the same sealed specifications; framework proof
+results are equal or better in every genre; framework blind polish is strictly higher in at
+least two; authored LOC delta is non-positive in at least two; no genre loses both proof
+and polish; and `pnpm budgets` is green with no cap raised (§10 — exceeding a cap is not a
 signal to raise the cap).
 
 **Points: +30** → ~60/100.

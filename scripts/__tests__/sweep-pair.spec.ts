@@ -63,6 +63,11 @@ async function writeArchive(
     }),
   );
   if (options.arm === "framework") {
+    await mkdir(path.join(archive, "starter-baseline", "src"), { recursive: true });
+    await writeFile(
+      path.join(archive, "starter-baseline", "src", "main.ts"),
+      'import { defineGame } from "@threenative/core";\n',
+    );
     await mkdir(path.join(archive, "framework-types", "@threenative", "core"), { recursive: true });
     await writeFile(
       path.join(archive, "framework-types", "@threenative", "core", "index.d.ts"),
@@ -162,6 +167,8 @@ describe("paired sweep", () => {
     const pair = pairSweeps(framework, vanilla, root);
 
     expect(pair.delta).toEqual({
+      authoredBytes: pair.framework.authoredBytes - pair.vanilla.authoredBytes,
+      authoredLoc: pair.framework.authoredLoc - pair.vanilla.authoredLoc,
       sourceBytes: pair.framework.sourceBytes - pair.vanilla.sourceBytes,
       sourceFiles: -1,
       userLoc: -1,

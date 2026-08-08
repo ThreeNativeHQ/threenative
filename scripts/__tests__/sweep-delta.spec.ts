@@ -46,6 +46,8 @@ async function writeArchive(
     ? `import { ${imported} } from "@threenative/core";\nvoid ${imported};\n`
     : 'import { Vector3 } from "three";\nvoid new Vector3();\n';
   await writeFile(path.join(archive, "src", "main.ts"), source);
+  await mkdir(path.join(archive, "starter-baseline", "src"), { recursive: true });
+  await writeFile(path.join(archive, "starter-baseline", "src", "main.ts"), "// starter\n");
   const genre = options.genre ?? "fixture";
   const briefHash = options.briefHash ?? "a".repeat(64);
   await writeFile(
