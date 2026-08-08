@@ -6,10 +6,21 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 26, "release": true },
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 3, "release": false },
-    { "kind": "input", "press": "Space", "holdTicks": 4, "release": true },
-    { "kind": "wait", "waitTicks": 34, "release": true }
+    {
+      "kind": "input",
+      "label": "enemy-contact",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rise-after-contact",
+      "press": "Space",
+      "holdTicks": 4,
+      "release": true
+    },
+    { "kind": "wait", "label": "damage-settled", "waitTicks": 10, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },

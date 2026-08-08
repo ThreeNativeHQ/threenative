@@ -10,7 +10,7 @@
       "kind": "input",
       "label": "enemy-contact",
       "press": "ArrowRight",
-      "holdTicks": 48,
+      "holdTicks": 60,
       "release": true
     },
     { "kind": "wait", "label": "damage-settled", "waitTicks": 10, "release": true }

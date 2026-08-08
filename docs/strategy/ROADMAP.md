@@ -61,7 +61,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
 | Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
-| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
+| Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; supported Chromium/WebGPU platformer consumer gate passes 11/11; unrelated dirty proof-file lint blockers remain** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
 | Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **implementation delivered; isolated Brave/WebGPU consumer and manual jump/fall probes pass; full suite/negative release evidence pending** |
 | Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **partial implementation merged; checked-in consumer, same-run replay, and 1% movement-impulse divergence pass; generated-scenario regression sensitivity/full release evidence pending** |
