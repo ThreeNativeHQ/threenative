@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, defineConfig } from "@playwright/test";
 import { PNG } from "pngjs";
+import { createProject } from "./packages/create-threenative/src/index.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const starterLookServer = process.argv.includes("--starter-look-server");
@@ -12,6 +13,48 @@ const starterLookGatePort = 4176;
 const starterLookReadyPort = 4175;
 const hotReloadPort = 4177;
 const replayPort = 4178;
+const localPackages = ["core", "physics", "playtest", "ui"] as const;
+// The scaffolded projects install from tarballs, not from `packages/*` directly: a source
+// directory still carries `catalog:` specifiers, which only resolve inside this workspace.
+// `pnpm pack` rewrites them, which is the same thing CI's scaffold smoke does.
+const localPackageSources = await packLocalPackages();
+
+async function packLocalPackages(): Promise<Record<string, string>> {
+  const existing = process.env.THREENATIVE_PACKED_PACKAGES;
+  const staging = existing ?? (await mkdtemp(path.join(tmpdir(), "threenative-packed-")));
+  if (existing === undefined) {
+    await run("pnpm", ["-r", "--workspace-concurrency=1", "--if-present", "run", "build"]);
+    for (const name of localPackages)
+      await run("pnpm", [
+        "--filter",
+        `./packages/${name}`,
+        "exec",
+        "pnpm",
+        "pack",
+        "--pack-destination",
+        staging,
+      ]);
+    process.env.THREENATIVE_PACKED_PACKAGES = staging;
+  }
+  const files = await readdir(staging);
+  const sources: Record<string, string> = {};
+  for (const name of localPackages) {
+    const tarball = files.find((file) => file.startsWith(`threenative-${name}-`));
+    if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${name}.`);
+    sources[`@threenative/${name}`] = path.join(staging, tarball);
+  }
+  return sources;
+}
+
+async function run(command: string, args: readonly string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, [...args], { cwd: repoRoot, stdio: "inherit" });
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${command} ${args.join(" ")} exited ${code}.`)),
+    );
+  });
+}
 
 if (starterLookServer) await runStarterLookServer();
 const hotReloadProject = starterLookServer ? undefined : await prepareHotReloadProject();
@@ -20,11 +63,10 @@ if (hotReloadProject !== undefined) process.env.THREENATIVE_HOT_RELOAD_PROJECT =
 async function prepareHotReloadProject(): Promise<string> {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-hot-reload-"));
   const target = path.join(temporaryRoot, "starter");
-  const template = path.join(repoRoot, "packages/create-threenative/templates/starter");
-  const dependencies = path.join(repoRoot, "node_modules/.pnpm/node_modules");
-  await cp(template, target, { recursive: true });
-  await renderTemplate(target, "hot-reload");
-  await symlink(dependencies, path.join(target, "node_modules"), "dir");
+  await createProject(
+    { install: true, packageSources: localPackageSources, target, template: "starter" },
+    repoRoot,
+  );
   return target;
 }
 
@@ -32,11 +74,10 @@ async function runStarterLookServer(): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-starter-look-"));
   const target = path.join(temporaryRoot, "starter");
   const artifacts = path.join(temporaryRoot, "artifacts");
-  const template = path.join(repoRoot, "packages/create-threenative/templates/starter");
-  const dependencies = path.join(repoRoot, "node_modules/.pnpm/node_modules");
-  await cp(template, target, { recursive: true });
-  await renderTemplate(target, "starter-look");
-  await symlink(dependencies, path.join(target, "node_modules"), "dir");
+  await createProject(
+    { install: true, packageSources: localPackageSources, target, template: "starter" },
+    repoRoot,
+  );
 
   const server = startStarterServer(target, starterLookGatePort);
   const serverOutput: string[] = [];
@@ -68,20 +109,12 @@ function startStarterServer(target: string, port: number): ChildProcess {
   return spawn(
     "pnpm",
     ["--dir", target, "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: repoRoot,
+      env: { ...process.env, CHOKIDAR_USEPOLLING: process.env.CHOKIDAR_USEPOLLING ?? "true" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
-}
-
-async function renderTemplate(directory: string, projectName: string): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const source = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      await renderTemplate(source, projectName);
-      continue;
-    }
-    const content = await readFile(source, "utf8");
-    await writeFile(source, content.replaceAll("__PROJECT_NAME__", projectName));
-  }
 }
 
 async function waitForUrl(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
