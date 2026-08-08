@@ -36,7 +36,7 @@ async function recordThreeTicks(): Promise<{
     if (tick === 2) target.dispatchEvent(keyEvent("keyup", "KeyW"));
     input.tick();
     trace.push([...input.raw.keys].sort());
-    plugin.update?.(ctx, 1 / 60);
+    plugin.beforeUpdate?.(ctx, 1 / 60);
   }
   const recording = plugin.recording;
   if (recording === undefined) throw new Error("Replay plugin did not produce a recording.");
@@ -217,19 +217,24 @@ describe("replay", () => {
         pointerId: 0,
       }),
     );
-    const observed: Array<[string[], number]> = [];
+    const observed: Array<[string[], number, number, number]> = [];
     createReplayDriver(
       recorded.recording,
       target,
     )(
       runtime(() => {
         input.tick();
-        observed.push([[...input.raw.keys].sort(), input.raw.pointer.buttons]);
+        observed.push([
+          [...input.raw.keys].sort(),
+          input.raw.pointer.buttons,
+          input.raw.pointer.position.x,
+          input.raw.pointer.position.y,
+        ]);
         return 1;
       }),
     );
 
-    expect(observed[0]).toEqual([["KeyW"], 0]);
+    expect(observed[0]).toEqual([["KeyW"], 0, 0, 0]);
     recorded.input.dispose();
     input.dispose();
   });

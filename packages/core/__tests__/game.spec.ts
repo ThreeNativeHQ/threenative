@@ -460,6 +460,7 @@ describe("Game", () => {
   it("does not run plugins against a destination during a frame navigation", async () => {
     let advance: ((ticks: number) => number) | undefined;
     let destinationUpdates = 0;
+    let beforePluginUpdates = 0;
     let pluginUpdates = 0;
 
     class First extends Scene {
@@ -488,6 +489,9 @@ describe("Game", () => {
             advance = runtime?.fixedStep;
             return undefined;
           },
+          beforeUpdate: () => {
+            beforePluginUpdates += 1;
+          },
           update: () => {
             pluginUpdates += 1;
           },
@@ -502,9 +506,11 @@ describe("Game", () => {
     if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
     advance(1);
     expect(destinationUpdates).toBe(0);
+    expect(beforePluginUpdates).toBe(1);
     expect(pluginUpdates).toBe(0);
     advance(1);
     expect(destinationUpdates).toBe(1);
+    expect(beforePluginUpdates).toBe(2);
     expect(pluginUpdates).toBe(1);
     game.stop();
   });

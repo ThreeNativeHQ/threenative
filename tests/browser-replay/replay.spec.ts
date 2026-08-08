@@ -46,6 +46,10 @@ test("executes the checked-in 30-second replay scenario", async ({ baseURL }) =>
   );
   expect(ticks).toBe(1_800);
   expect(scenario.assert?.movement).toBeDefined();
+  expect(
+    (scenario.assert?.movement as { reachesPositionWithin?: unknown } | undefined)
+      ?.reachesPositionWithin,
+  ).toBeDefined();
 
   const artifacts = await mkdtemp(path.join(tmpdir(), "threenative-replay-test-"));
   try {

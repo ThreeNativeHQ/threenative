@@ -103,11 +103,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
 async function recordToScenarioCommand(argv: readonly string[]): Promise<number> {
   const inputPath = argv[0];
-  const outputFlag = argv.indexOf("--out");
-  const outputPath = outputFlag < 0 ? undefined : argv[outputFlag + 1];
-  if (inputPath === undefined || outputPath === undefined || argv.length !== 3) {
+  const withOracle =
+    argv.length === 5 && argv[1] === "--oracle" && argv[3] === "--out";
+  const oraclePath = withOracle ? argv[2] : undefined;
+  const outputPath = withOracle ? argv[4] : undefined;
+  if (inputPath === undefined || oraclePath === undefined || outputPath === undefined) {
     throw new PlaytestCliUsageError(
-      "Usage: threenative-playtest record-to-scenario recording.json --out bug.playtest.json",
+      "Usage: threenative-playtest record-to-scenario recording.json --oracle oracle.json --out bug.playtest.json",
     );
   }
   let parsed: unknown;
@@ -118,7 +120,15 @@ async function recordToScenarioCommand(argv: readonly string[]): Promise<number>
       `Could not read recording '${inputPath}' as JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const scenario = recordToScenario(parsed, inputPath);
+  let oracle: unknown;
+  try {
+    oracle = JSON.parse(await readFile(resolve(oraclePath), "utf8"));
+  } catch (error) {
+    throw new PlaytestCliUsageError(
+      `Could not read recording oracle '${oraclePath}' as JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const scenario = recordToScenario(parsed, inputPath, oracle);
   const absoluteOutput = resolve(outputPath);
   await mkdir(dirname(absoluteOutput), { recursive: true });
   await writeFile(absoluteOutput, `${JSON.stringify(scenario, null, 2)}\n`);

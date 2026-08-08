@@ -16,6 +16,14 @@ interface RecordingValue {
   version: 1;
 }
 
+interface RecordingOracle {
+  movement: {
+    entity: string;
+    position: [number, number, number];
+    tolerance: number;
+  };
+}
+
 const SCENARIO_VIEWPORT = { height: 720, width: 1280 } as const;
 
 function recordNumber(value: unknown, path: string, integer = false): number {
@@ -33,6 +41,16 @@ function recordObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw invalidScenario(path, `${path} must be an object.`);
   return value as Record<string, unknown>;
+}
+
+function recordTuple(value: unknown, path: string): [number, number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 3 ||
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  )
+    throw invalidScenario(path, `${path} must be a finite three-number tuple.`);
+  return value as [number, number, number];
 }
 
 function validateRecording(value: unknown, scenarioPath: string): RecordingValue {
@@ -81,6 +99,30 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
   return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
 }
 
+function validateRecordingOracle(value: unknown, scenarioPath: string): RecordingOracle {
+  if (value === undefined) {
+    throw invalidScenario(
+      scenarioPath,
+      "recording conversion requires a final-position oracle; pass --oracle oracle.json.",
+    );
+  }
+  const root = recordObject(value, `${scenarioPath}:oracle`);
+  rejectUnknownKeys(root, ["movement"], scenarioPath, "recording oracle");
+  const movement = recordObject(root.movement, `${scenarioPath}:oracle.movement`);
+  rejectUnknownKeys(
+    movement,
+    ["entity", "position", "tolerance"],
+    scenarioPath,
+    "recording oracle movement",
+  );
+  const entity = recordString(movement.entity, "recording oracle movement.entity");
+  const position = recordTuple(movement.position, "recording oracle movement.position");
+  const tolerance = recordNumber(movement.tolerance, "recording oracle movement.tolerance");
+  if (tolerance < 0)
+    throw invalidScenario(scenarioPath, "recording oracle movement.tolerance must be non-negative.");
+  return { movement: { entity, position, tolerance } };
+}
+
 function sampleSteps(
   sample: RecordingSample,
   ticks: number,
@@ -117,7 +159,11 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
   return steps;
 }
 
-function behaviorAssertions(recording: RecordingValue, scenarioPath: string) {
+function behaviorAssertions(
+  recording: RecordingValue,
+  oracle: RecordingOracle,
+  scenarioPath: string,
+) {
   const activeTicks = recording.input.reduce((total, sample, index) => {
     const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
     return total + (sample.keys.length > 0 || sample.pointer !== undefined ? nextTick - sample.tick : 0);
@@ -128,9 +174,13 @@ function behaviorAssertions(recording: RecordingValue, scenarioPath: string) {
   const minimumTraversal = activeTicks * recording.runtime.step;
   return {
     movement: {
-      entity: "player",
+      entity: oracle.movement.entity,
       minDistance: minimumTraversal,
       pathLength: minimumTraversal,
+      reachesPositionWithin: {
+        maxDistance: oracle.movement.tolerance,
+        position: oracle.movement.position,
+      },
     },
   };
 }
@@ -144,10 +194,15 @@ export function requireAssertions(
   return value;
 }
 
-export function recordToScenario(value: unknown, scenarioPath = "recording.json"): IPlaytestScenario {
+export function recordToScenario(
+  value: unknown,
+  scenarioPath = "recording.json",
+  oracleValue?: unknown,
+): IPlaytestScenario {
   const recording = validateRecording(value, scenarioPath);
+  const oracle = validateRecordingOracle(oracleValue, scenarioPath);
   const steps = emitSteps(recording, scenarioPath);
-  const behavior = behaviorAssertions(recording, scenarioPath);
+  const behavior = behaviorAssertions(recording, oracle, scenarioPath);
   const assert = requireAssertions({
     diagnostics: { noConsoleErrors: true, runtimeReady: true },
     ...behavior,

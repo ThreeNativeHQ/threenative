@@ -193,17 +193,21 @@ Five pieces, all small, none of them a format for anything the user did not decl
   input** — there is no second input path that can drift from the first. This is the design's
   best property and it costs one field.
 - **`replay()` — a core plugin, shaped exactly like `playtest()`.** `GamePluginHooks` with
-  `setup(ctx, runtime)` and `update(ctx, dt)`. Recording mode samples `ctx.input.raw` once
-  per tick and appends a sample **only when the held set or pointer changed**. Playback mode
-  is driven externally through the `runtime.fixedStep()` that already exists.
+  `setup(ctx, runtime)` and a `beforeUpdate(ctx, dt)` hook. Recording mode samples
+  `ctx.input.raw` once per tick and appends a sample **only when the held set or pointer
+  changed**. The pre-scene hook records the triggering input even when that input requests a
+  scene transition. Playback mode is driven externally through the `runtime.fixedStep()` that
+  already exists.
 - **The `Recording`** — a closed, six-key JSON object: `version`, `runtime`, `seed`,
   `step`, `ticks`, `input`. Nothing else may ever be added to it. It describes **what the
   player did**, never **what the world contains**. Unknown keys are rejected at load.
-- **`playtest record-to-scenario`** — a CLI subcommand converting a recording into a
-  scenario file. Reads JSON, validates fail-closed with playtest's own validators, emits
-  `steps[]` in the `press`/`holdTicks`/`release` vocabulary that already exists. **No
-  `@threenative/core` dependency** — `packages/playtest/AGENTS.md` forbids it, and JSON on
-  disk is the whole interface.
+- **`playtest record-to-scenario`** — a CLI subcommand converting a recording plus a
+  separately captured final-position oracle into a scenario file. Reads both JSON files,
+  validates fail-closed with playtest's own validators, and emits `steps[]` in the
+  `press`/`holdTicks`/`release` vocabulary that already exists. A missing oracle is an error:
+  input-only duration thresholds are not regression proof. **No `@threenative/core`
+  dependency** — `packages/playtest/AGENTS.md` forbids it, and JSON on disk is the whole
+  interface.
 
 ### 2.1 Flow
 
@@ -223,9 +227,10 @@ flowchart LR
 
 ### 2.2 Ordering — the one subtle thing, pinned by a test
 
-`game.ts:313-322` runs `onUpdate` as: `input.tick()` → `scheduler.tick()` → scene → plugins.
-So the `replay()` plugin's `update` observes the input state the scene *just consumed* at
-tick N — correct for recording. For playback, the driver dispatches frame N's events
+`game.ts:313-322` runs `onUpdate` as: `input.tick()` → `scheduler.tick()` → plugin
+`beforeUpdate` → scene → plugin `update`. So the `replay()` plugin's pre-scene hook observes
+the input state the scene consumes at tick N — correct for recording — and is not skipped when
+the scene requests a transition. For playback, the driver dispatches frame N's events
 **before** calling `fixedStep(1)`, so `input.tick()` at the top of tick N picks them up.
 Record and playback therefore agree by construction. Phase 3's first test asserts exactly
 this alignment on a three-tick recording, and it is written to fail if the offset is off by
@@ -259,15 +264,15 @@ phase end means the phase is incomplete.**
 | 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
 | 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
 | 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
-| 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-125` dispatches and writes the conversion | nothing | n/a | feed a recording with an unknown top-level key → **throws `invalidScenario`**, per this package's fail-closed rule |
-| 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:127-143` generates `examples/abyss-framework/playtests/replay.playtest.json`; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
+| 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-131` dispatches and writes the conversion | nothing | n/a | feed a recording or oracle with an unknown key, or omit the oracle → **throws `invalidScenario`**, per this package's fail-closed rule |
+| 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:197-220` generates `examples/abyss-framework/playtests/replay.playtest.json` from the recording and oracle; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording/oracle and regenerate → conversion fails; it must never pass on a stale copy |
 | 8 | Physics same-seed byte-equality test | `packages/physics/__tests__/determinism.spec.ts:99-106` | the tolerance-only 30-vs-144 assertion, which stays but stops being the only one | no — kept, joined | perturb one body's initial y by `1e-9` → **snapshot bytes differ** |
 | 9 | Tripwire constraints test | `packages/core/__tests__/constraints.spec.ts:37-59` | nothing | n/a | add a `"type"` key to the recording schema → **CI red** |
 
 ### Reachability
 
 - **Entry point:** the game loop. `replay()` sits in the `plugins` array beside `rapier()`
-  and `playtest()`, and its `update` runs at `game.ts:319-321` every fixed tick. The
+  and `playtest()`, and its `beforeUpdate` runs at `game.ts:371` every fixed tick. The
   runtime carries the optional seeded random handle and the live Rapier version.
 - **Pre-existing files edited to call it:** `packages/core/src/game.ts` (`inputTarget`),
   `packages/core/src/index.ts` (export), `packages/playtest/src/runner/cli.ts`
@@ -277,10 +282,11 @@ phase end means the phase is incomplete.**
   template; there is **no framework UI** and none is planned — save slots and menus are user
   code (§0.2). The verification path is a CLI and a CI run.
 - **Full flow:** player plays → `replay()` samples input per tick → user exports
-  `recording.json` → `npx @threenative/playtest record-to-scenario recording.json` →
-  `bug.playtest.json` → the `abyss-framework-replay` Playwright project re-runs the exact
-  checked-in 1,800-tick scenario on every later change, and it goes red when the behaviour
-  regresses.
+  `recording.json` and a final-position oracle → `npx @threenative/playtest
+  record-to-scenario recording.json --oracle replay.oracle.json --out bug.playtest.json` →
+  the checked-in `bug.playtest.json` → the `abyss-framework-replay` Playwright project
+  re-runs the exact 1,800-tick scenario on every later change, and it goes red when the
+  behaviour regresses.
 - **Replaces:** nothing. Genuinely new — vanilla Three.js ships no answer, and neither does
   ThreeNative today.
 
@@ -428,7 +434,8 @@ or pointer changed. No entity appears anywhere in it. Ever.
 
 **Implementation:**
 - [x] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
-      `ctx.random.state`; `update` samples `ctx.input.raw` and appends on change.
+      `ctx.random.state`; `beforeUpdate` samples `ctx.input.raw` and appends on change before
+      the scene can transition.
 - [x] `createReplayDriver(recording, target, pointerTarget?)` validates the runtime fingerprint
       (throws `TN_REPLAY_RUNTIME_MISMATCH`), and its `prepare(runtime)` method restores the
       captured RNG state before a caller rebuilds a scene. Playback then dispatches synthetic
@@ -440,7 +447,7 @@ or pointer changed. No entity appears anywhere in it. Ever.
       in this phase.
 
 **Wiring:** ledger rows 2, 3, 4, 5. The example arm carries `replay()` in its live plugin
-array, so the plugin's `update` runs on every frame of a real game.
+array, so the plugin's `beforeUpdate` runs on every fixed tick of a real game.
 
 **Tests Required:**
 | Test file | Test name | Assertion | Negative control (observed red) |
@@ -450,7 +457,7 @@ array, so the plugin's `update` runs on every frame of a real game.
 | same | `should record identities that differ between the two runs` | the record-run id and replay-run id are asserted **unequal** | make them the same object → red. This is the anti-self-comparison control: it proves the two traces came from two runs. |
 | same | `should throw when the recording has no input samples` | `toThrow(/TN_REPLAY_EMPTY/)` | delete the guard → red, and note that without the guard the "reproduce the trace" test would pass vacuously |
 | same | `should throw when the runtime fingerprint does not match` | `toThrow(/TN_REPLAY_RUNTIME_MISMATCH/)` | delete the guard → red |
-| `packages/core/__tests__/constraints.spec.ts` | `should reject a recording schema key that names an entity type` | the three §0.1 greps are empty; schema keys `toEqual` the six | add a `"type"` key → red |
+| `packages/core/__tests__/constraints.spec.ts` | `should reject a recording schema key that names an entity type` | the three §0.1 greps are empty; the actual replay validator rejects an added `type` key | add a `"type"` key to the validator's allow-list → red |
 
 **Revert check:** rename `replay` → `examples/abyss-framework` fails typecheck, and
 `constraints.spec.ts`'s public-surface list fails. Both are pre-existing gates.
@@ -464,7 +471,7 @@ that found six indistinguishable presets when all six metrics passed.
 
 ### Phase 4: recording → playtest scenario (the compounding phase)
 
-**Files (5; 3 pre-existing):**
+**Files (6; 3 pre-existing):**
 - `packages/playtest/src/runner/recording.ts` — NEW: fail-closed recording validator +
   `steps[]` emitter.
 - `packages/playtest/src/runner/cli.ts` — EDIT: `record-to-scenario` subcommand.
@@ -474,6 +481,8 @@ that found six indistinguishable presets when all six metrics passed.
   `src/**/*.test.ts` (`packages/playtest/AGENTS.md`). A test written next to the source would
   be an **uncollected test** — the first row of the skill's silent-pass table, and it would
   make this whole phase report green while asserting nothing.
+- `examples/abyss-framework/recordings/replay.oracle.json` — NEW: final-position oracle kept
+  separate from the closed six-key recording.
 - `examples/abyss-framework/playtests/replay.playtest.json` — NEW (generated, checked in).
 
 **Implementation:**
@@ -483,12 +492,12 @@ that found six indistinguishable presets when all six metrics passed.
       `rejectUnknownKeys` (`scenario.ts`).
 - [x] Emit `steps[]` using the existing vocabulary only: `press`, `holdTicks`, `release`,
       `waitTicks`. **Ticks, never milliseconds.**
-- [x] Emit at least one behavior assertion derived from the recording's active input duration:
-      `minDistance` and `pathLength` use the captured fixed-step duration rather than a
-      hard-coded threshold. The closed six-key recording intentionally contains no entity
-      observation, so an exact final-state oracle remains a consumer/manual checkpoint; a
-      scenario with zero assertions is still a hard error — the exact v1 failure this package
-      exists to prevent.
+- [x] Require a separate, fail-closed final-position oracle and emit
+      `movement.reachesPositionWithin` from it. The closed six-key recording intentionally
+      contains no entity observation; the oracle stays consumer-scoped instead of widening
+      the recording schema. `minDistance` and `pathLength` still use the captured fixed-step
+      duration, and a scenario with zero assertions remains a hard error — the exact v1
+      failure this package exists to prevent.
 
 **Tests Required:**
 | Test file | Test name | Assertion | Negative control (observed red) |
@@ -503,6 +512,7 @@ that found six indistinguishable presets when all six metrics passed.
 pnpm --filter @threenative/playtest build
 node packages/playtest/dist/runner/cli.js record-to-scenario \
   examples/abyss-framework/recordings/bug.json \
+  --oracle examples/abyss-framework/recordings/bug.oracle.json \
   --out examples/abyss-framework/playtests/replay.playtest.json
 pnpm test:browser
 # caller census — the new symbol must have a non-test consumer
@@ -533,18 +543,18 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,029 tests passed.
+      on 2026-08-08; 142 files / 1,037 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Brave/WebGPU
       runner; the checked-in 1,800-tick scenario reported movement and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean
-- [x] `pnpm budgets`: still **7 workspace packages**, framework LOC increase **≤ 200**
-      (current core+physics `src` is 2,602 lines against a 15,000 cap; the constraint that
-      binds is §11.1, not the cap). Any piece that did not pay for its own lines is reported
-      with its measured delta and **reverted in this phase**, per §11.2. Current result:
-      4,196 framework LOC. The benchmark count is 432 / 473 normalized LOC (91.3%); the
-      current framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
+- [x] `pnpm budgets`: still **7 workspace packages**, with 4,196 framework LOC against the
+      15,000 global cap. The benchmark count is 432 / 473 normalized LOC (91.3%); the current
+      framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
+- [ ] Feature-delta gate: framework source changed by **+258/-2 = +256 net lines** in the
+      scoped core/physics diff, so the PRD's ≤200-line gate is open. `pnpm budgets` does not
+      prove this feature-delta constraint; no false pass is recorded.
 
 ---
 
@@ -571,10 +581,12 @@ this exact feature could report green while doing nothing:
   `1e-9`. Both must diverge by orders of magnitude more than the equality tolerance.
 - **Fail-closed:** a fingerprint mismatch throws. It never runs-and-nearly-matches.
 
-- **Checked-in recording proof:** `examples/abyss-framework/playtests/replay.playtest.json`
-  contains 1,800 fixed ticks and a movement assertion; `tests/browser-replay/replay.spec.ts`
-  reads that exact path before invoking the playtest runner, so deleting the fixture fails the
-  browser project before any stale artifact can be used.
+- **Checked-in recording proof:** `examples/abyss-framework/recordings/replay.json` plus its
+  final-position oracle generate `examples/abyss-framework/playtests/replay.playtest.json`,
+  which contains 1,800 fixed ticks and a final-position assertion;
+  `tests/browser-replay/replay.spec.ts` reads that exact path before invoking the playtest
+  runner, so deleting the fixture fails the browser project before any stale artifact can be
+  used.
 
 ---
 
@@ -624,7 +636,9 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
       three-tick unit fixture. The replay consumer proof is recorded in
       `docs/verification/PRD-036.md`; the manual divergence and red controls remain open.
-- [ ] Package count still 7/8; framework LOC delta ≤ 200 and recorded
+- [x] Package count still 7/8.
+- [ ] Framework LOC delta ≤ 200 and recorded: +256 net core/physics source lines; global
+      budgets pass but this scoped gate does not.
 
 ### Honesty note for whoever files this
 

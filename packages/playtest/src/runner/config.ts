@@ -59,6 +59,7 @@ export function formatUsage(): string {
     "Commands:",
     "  init                  create a starter playtest configuration",
     "  record-to-scenario    convert a replay recording into a scenario",
+    "                        (requires --oracle <json> and --out <json>)",
     "",
     "Options:",
     ...flags,

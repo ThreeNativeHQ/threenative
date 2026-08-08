@@ -16,8 +16,14 @@ function recording() {
   };
 }
 
+function oracle() {
+  return {
+    movement: { entity: "player", position: [0, 0, 0], tolerance: 0.001 },
+  };
+}
+
 test("should emit a scenario whose steps reproduce the recorded holds", () => {
-  const scenario = recordToScenario(recording());
+  const scenario = recordToScenario(recording(), "recording.json", oracle());
 
   expect(scenario.steps).toEqual([
     { holdTicks: 3, press: ["KeyW"], release: false },
@@ -25,7 +31,12 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
   ]);
   expect(scenario.steps.reduce((total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0), 0)).toBe(5);
   expect(Object.keys(scenario.assert ?? {}).length).toBeGreaterThan(0);
-  expect(scenario.assert?.movement).toEqual({ entity: "player", minDistance: 0.05, pathLength: 0.05 });
+  expect(scenario.assert?.movement).toEqual({
+    entity: "player",
+    minDistance: 0.05,
+    pathLength: 0.05,
+    reachesPositionWithin: { maxDistance: 0.001, position: [0, 0, 0] },
+  });
 });
 
 test("should preserve simultaneous keys as a held-key-set step", () => {
@@ -36,7 +47,7 @@ test("should preserve simultaneous keys as a held-key-set step", () => {
       { keys: [], tick: 2 },
     ],
     ticks: 3,
-  });
+  }, "recording.json", oracle());
 
   expect(scenario.steps).toEqual([
     { holdTicks: 2, press: ["KeyW", "KeyD"], release: false },
@@ -52,7 +63,7 @@ test("should preserve pointer position and button transitions", () => {
       { keys: [], pointer: [640, 360, 0], tick: 2 },
     ],
     ticks: 3,
-  });
+  }, "recording.json", oracle());
 
   expect(scenario.steps).toEqual([
     { holdTicks: 2, pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, press: [], release: false },
@@ -61,7 +72,7 @@ test("should preserve pointer position and button transitions", () => {
 });
 
 test("should throw when the recording contains an unknown key", () => {
-  expect(() => recordToScenario({ ...recording(), type: "entity" })).toThrow(/Unknown key/u);
+  expect(() => recordToScenario({ ...recording(), type: "entity" }, "recording.json", oracle())).toThrow(/Unknown key/u);
 });
 
 test("should throw when the emitted scenario would carry zero assertions", () => {
@@ -69,11 +80,25 @@ test("should throw when the emitted scenario would carry zero assertions", () =>
 });
 
 test("should throw when the recording contains no behavior to assert", () => {
-  expect(() => recordToScenario({ ...recording(), input: [{ keys: [], tick: 0 }] })).toThrow(
+  expect(() => recordToScenario({ ...recording(), input: [{ keys: [], tick: 0 }] }, "recording.json", oracle())).toThrow(
     /meaningful behavior assertions/u,
   );
 });
 
+test("should require a final-position oracle for regression scenarios", () => {
+  expect(() => recordToScenario(recording())).toThrow(/final-position oracle/u);
+});
+
+test("should reject unknown oracle keys", () => {
+  expect(() =>
+    recordToScenario(
+      recording(),
+      "recording.json",
+      { ...oracle(), metadata: "not a movement oracle" },
+    ),
+  ).toThrow(/Unknown key/u);
+});
+
 test("should be collected by the root runner", () => {
-  expect(recordToScenario(recording()).name).toBe("replay");
+  expect(recordToScenario(recording(), "recording.json", oracle()).name).toBe("replay");
 });

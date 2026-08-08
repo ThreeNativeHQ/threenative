@@ -139,7 +139,7 @@ export function replay<
       previousPointer = [0, 0, 0];
       return undefined;
     },
-    update: (ctx) => {
+    beforeUpdate: (ctx) => {
       const keys = [...ctx.input.raw.keys].sort();
       const { position, buttons } = ctx.input.raw.pointer;
       const pointer = [...position.toArray(), buttons] as [number, number, number];

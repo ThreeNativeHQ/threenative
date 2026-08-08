@@ -150,6 +150,7 @@ export class InputMap {
     this.#heldKeys.clear();
     this.#pointerDown = false;
     this.#pointerButtons = 0;
+    this.#pointerPosition.set(0, 0);
     this.raw.pointer.buttons = 0;
     this.raw.pointer.down = false;
     this.#previousPressed.clear();

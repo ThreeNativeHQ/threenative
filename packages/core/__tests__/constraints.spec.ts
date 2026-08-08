@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { createReplayDriver } from "../src/replay.js";
 
 const sourceDirectory = path.resolve("packages/core/src");
 const randomSource = path.join(sourceDirectory, "random.ts");
@@ -49,14 +50,10 @@ describe("core constraints", () => {
       ticks: 1,
       version: 1,
     };
-    expect(Object.keys(recording).sort()).toEqual([
-      "input",
-      "randomState",
-      "runtime",
-      "seed",
-      "ticks",
-      "version",
-    ]);
+    const validRecording = { ...recording, input: [{ keys: [], tick: 0 }] };
+    expect(() =>
+      createReplayDriver({ ...validRecording, type: "entity" } as never, new EventTarget()),
+    ).toThrow(/unknown key 'type'/u);
   });
 
   it("should keep the saveable random state on the public surface", () => {

@@ -22,10 +22,14 @@ describe("InputMap", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);
     target.dispatchEvent(keyEvent("keydown", "KeyA"));
+    target.dispatchEvent(
+      Object.assign(new Event("pointermove"), { clientX: 12, clientY: 34, buttons: 0 }),
+    );
 
     target.dispatchEvent(new Event("blur"));
 
     expect(input.vector("move").toArray()).toEqual([0, 0]);
+    expect(input.raw.pointer.position.toArray()).toEqual([0, 0]);
     input.dispose();
   });
 

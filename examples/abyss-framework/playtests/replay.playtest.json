@@ -7,7 +7,11 @@
     "movement": {
       "entity": "player",
       "minDistance": 29.983333333333334,
-      "pathLength": 29.983333333333334
+      "pathLength": 29.983333333333334,
+      "reachesPositionWithin": {
+        "maxDistance": 0.000001,
+        "position": [559.7900029397031, -416.0200256012394, 0]
+      }
     },
     "world": {
       "seed": 90210
