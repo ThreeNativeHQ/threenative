@@ -48,6 +48,7 @@ function runReplayScenario(
         artifacts,
         "--browser-recipe",
         "webgpu",
+        "--headed",
         "--timeout",
         "120000",
       ],
