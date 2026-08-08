@@ -2,8 +2,9 @@
 
 **Status:** implementation delivered in a partial lane; the browser consumer gate is
 partially proven on a supported isolated Brave/WebGPU runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
-closed, but this PRD remains open until its consumer proof passes and is not moved to
-`done/` or merged yet. Automated gates and the checked-in replay consumer project passed
+closed, but this PRD remains open until its consumer proof is complete and is not moved to
+`done/`. The implementation and checked-in replay consumer project are merged on
+`docs/opportunity-areas-prds`; automated gates passed
 on 2026-08-08; the full browser suite, manual checkpoint, and negative controls remain
 pending. See `docs/verification/PRD-036.md`.
 
