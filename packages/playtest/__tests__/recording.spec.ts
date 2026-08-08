@@ -63,8 +63,8 @@ test("should preserve pointer position and button transitions", () => {
   const scenario = recordToScenario({
     ...recording(),
     input: [
-      { keys: [], pointer: [640, 360, 1], tick: 0 },
-      { keys: [], pointer: [640, 360, 0], tick: 2 },
+      { keys: [], pointer: [640, 360, 1, 1280, 720], tick: 0 },
+      { keys: [], pointer: [640, 360, 0, 1280, 720], tick: 2 },
     ],
     ticks: 3,
   }, "recording.json", oracle());
@@ -73,6 +73,20 @@ test("should preserve pointer position and button transitions", () => {
     { holdTicks: 2, pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, press: [], release: false },
     { holdTicks: 1, pointerPosition: { buttons: 0, x: 0.5, y: 0.5 }, press: [], release: true },
   ]);
+});
+
+test("should normalize pointer coordinates against the recording viewport", () => {
+  const scenario = recordToScenario({
+    ...recording(),
+    input: [
+      { keys: [], pointer: [960, 540, 1, 1920, 1080], tick: 0 },
+      { keys: [], pointer: [960, 540, 0, 1920, 1080], tick: 2 },
+    ],
+  }, "recording.json", oracle());
+
+  expect(scenario.steps[0]).toMatchObject({
+    pointerPosition: { buttons: 1, x: 0.5, y: 0.5 },
+  });
 });
 
 test("should throw when the recording contains an unknown key", () => {

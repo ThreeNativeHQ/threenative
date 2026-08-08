@@ -154,8 +154,16 @@ describe("replay", () => {
     const pointerRecording = {
       ...recorded.recording,
       input: [
-        { keys: [], pointer: [12, 34, 1] as [number, number, number], tick: 0 },
-        { keys: [], pointer: [12, 34, 0] as [number, number, number], tick: 1 },
+        {
+          keys: [],
+          pointer: [12, 34, 1, 320, 180] as [number, number, number, number, number],
+          tick: 0,
+        },
+        {
+          keys: [],
+          pointer: [12, 34, 0, 320, 180] as [number, number, number, number, number],
+          tick: 1,
+        },
       ],
       ticks: 2,
     };
@@ -178,6 +186,39 @@ describe("replay", () => {
       [1, true, 12, 34],
       [0, false, 12, 34],
     ]);
+    recorded.input.dispose();
+    input.dispose();
+  });
+
+  it("should release synthetic input after replay", async () => {
+    const recorded = await recordThreeTicks();
+    const target = new EventTarget();
+    const input = new InputMap({ pulse: { pointer: true } }, target, target);
+    const recording = {
+      ...recorded.recording,
+      input: [
+        {
+          keys: ["KeyW"],
+          pointer: [12, 34, 1, 320, 180] as [number, number, number, number, number],
+          tick: 0,
+        },
+      ],
+      ticks: 1,
+    };
+
+    createReplayDriver(
+      recording,
+      target,
+    )(
+      runtime(() => {
+        input.tick();
+        return 1;
+      }),
+    );
+
+    expect([...input.raw.keys]).toEqual([]);
+    expect(input.raw.pointer.buttons).toBe(0);
+    expect(input.raw.pointer.down).toBe(false);
     recorded.input.dispose();
     input.dispose();
   });
@@ -253,7 +294,7 @@ describe("replay", () => {
       createReplayDriver(
         {
           ...recording,
-          input: [{ keys: ["KeyW"], pointer: [0, 0, 0.5], tick: 0 }],
+          input: [{ keys: ["KeyW"], pointer: [0, 0, 0.5, 1280, 720], tick: 0 }],
           ticks: 1,
         },
         new EventTarget(),

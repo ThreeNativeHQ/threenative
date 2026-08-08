@@ -1,12 +1,13 @@
 import type { GamePluginHooks, GamePluginRuntime } from "./game.js";
 const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
+type Pointer = readonly [number, number, number, number, number];
+type Point = readonly [number, number, number];
+type ReplayContext = { renderer?: { domElement: HTMLCanvasElement } };
+type RecordingSample = Readonly<{ keys: readonly string[]; pointer?: Pointer; tick: number }>;
+type Random = NonNullable<GamePluginRuntime["random"]>;
 export interface Recording {
-  readonly input: readonly {
-    readonly keys: readonly string[];
-    readonly pointer?: readonly [number, number, number];
-    readonly tick: number;
-  }[];
+  readonly input: readonly RecordingSample[];
   readonly randomState: number;
   readonly runtime: { agent: string; core: string; rapier: string | null; step: number };
   readonly seed: number;
@@ -26,24 +27,24 @@ function rejectKeys(value: Record<string, unknown>, allowed: readonly string[]):
   if (unknown !== undefined) fail("TN_REPLAY_INVALID", `unknown key '${unknown}'`);
 }
 function validatePointer(value: unknown, name: string): void {
-  if (
-    !Array.isArray(value) ||
-    value.length !== 3 ||
-    value.some((item) => !Number.isFinite(item)) ||
-    !Number.isInteger(value[2]) ||
-    value[2] < 0
-  )
-    fail("TN_REPLAY_INVALID", `${name} must be [finite x, finite y, non-negative integer buttons]`);
+  const pointer = Array.isArray(value) ? value : [];
+  const valid =
+    pointer.length === 5 &&
+    pointer.every(Number.isFinite) &&
+    Number.isInteger(pointer[2]) &&
+    pointer[2] >= 0 &&
+    Number.isInteger(pointer[3]) &&
+    pointer[3] > 0 &&
+    Number.isInteger(pointer[4]) &&
+    pointer[4] > 0;
+  if (!valid)
+    fail("TN_REPLAY_INVALID", `${name} must contain x, y, buttons, viewport width, and height`);
 }
 function validate(value: unknown): Recording {
   const root = object(value, "recording");
   rejectKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"]);
   if (root.version !== 1) fail("TN_REPLAY_INVALID", "version must be 1");
-  if (
-    ![root.seed, root.randomState].every(
-      (item) => typeof item === "number" && Number.isInteger(item),
-    )
-  )
+  if (!Number.isInteger(root.seed) || !Number.isInteger(root.randomState))
     fail("TN_REPLAY_INVALID", "seed and randomState must be integers");
   const ticks = root.ticks as number;
   if (!Number.isInteger(ticks) || ticks < 1) fail("TN_REPLAY_INVALID", "ticks must be positive");
@@ -51,34 +52,28 @@ function validate(value: unknown): Recording {
     fail("TN_REPLAY_EMPTY", "input is empty");
   const rawRuntime = object(root.runtime, "runtime");
   rejectKeys(rawRuntime, ["agent", "core", "rapier", "step"]);
-  if (
-    typeof rawRuntime.agent !== "string" ||
-    rawRuntime.agent.length === 0 ||
-    typeof rawRuntime.core !== "string" ||
-    rawRuntime.core.length === 0 ||
-    (rawRuntime.rapier !== null && typeof rawRuntime.rapier !== "string") ||
-    typeof rawRuntime.step !== "number" ||
-    !Number.isFinite(rawRuntime.step) ||
-    rawRuntime.step <= 0
-  )
-    fail("TN_REPLAY_INVALID", "runtime fingerprint is invalid");
+  const validRuntime =
+    [rawRuntime.agent, rawRuntime.core].every(
+      (item) => typeof item === "string" && item.length > 0,
+    ) &&
+    (rawRuntime.rapier === null || typeof rawRuntime.rapier === "string") &&
+    typeof rawRuntime.step === "number" &&
+    Number.isFinite(rawRuntime.step) &&
+    rawRuntime.step > 0;
+  if (!validRuntime) fail("TN_REPLAY_INVALID", "runtime fingerprint is invalid");
   let previousTick = -1;
   for (const rawSample of root.input) {
     const sample = object(rawSample, "input sample");
     rejectKeys(sample, ["keys", "pointer", "tick"]);
-    if (
-      typeof sample.tick !== "number" ||
-      !Number.isInteger(sample.tick) ||
-      sample.tick <= previousTick ||
-      sample.tick >= ticks
-    )
+    const tick = sample.tick as number;
+    if (!Number.isInteger(tick) || tick <= previousTick || tick >= ticks)
       fail("TN_REPLAY_INVALID", "input ticks are out of range");
     if (!Array.isArray(sample.keys) || sample.keys.some((key) => typeof key !== "string"))
       fail("TN_REPLAY_INVALID", "input.keys must contain strings");
     if (new Set(sample.keys).size !== sample.keys.length)
       fail("TN_REPLAY_INVALID", "input.keys must not repeat");
     if (sample.pointer !== undefined) validatePointer(sample.pointer, "input.pointer");
-    previousTick = sample.tick;
+    previousTick = tick;
   }
   return root as unknown as Recording;
 }
@@ -87,15 +82,35 @@ function keyEvent(type: "keydown" | "keyup", code: string): Event {
 }
 function pointerEvent(
   type: "pointerdown" | "pointermove" | "pointerup",
-  [clientX, clientY, buttons]: readonly [number, number, number],
+  [clientX, clientY, buttons]: Point,
 ): Event {
   return Object.assign(new Event(type), { buttons, clientX, clientY, pointerId: 0 });
+}
+function pointerViewport(ctx: ReplayContext): [number, number] {
+  const canvas = ctx.renderer?.domElement;
+  const width = canvas?.clientWidth || globalThis.innerWidth || 1;
+  const height = canvas?.clientHeight || globalThis.innerHeight || 1;
+  return [width, height];
+}
+function pointerType(previous: number, next: number) {
+  return previous && !next ? "pointerup" : !previous && next ? "pointerdown" : "pointermove";
+}
+function targetPointerPosition(pointer: Pointer, target: EventTarget): Point {
+  const viewport = target as unknown as Partial<Record<string, number>>;
+  const width = viewport.clientWidth || viewport.innerWidth || pointer[3];
+  const height = viewport.clientHeight || viewport.innerHeight || pointer[4];
+  return [(pointer[0] * width) / pointer[3], (pointer[1] * height) / pointer[4], pointer[2]];
 }
 function dispatchKeys(target: EventTarget, current: Set<string>, keys: readonly string[]): void {
   for (const key of current) if (!keys.includes(key)) target.dispatchEvent(keyEvent("keyup", key));
   for (const key of keys) if (!current.has(key)) target.dispatchEvent(keyEvent("keydown", key));
   current.clear();
   for (const key of keys) current.add(key);
+}
+function releasePointer(pointer: Pointer, target: EventTarget): void {
+  if (pointer[2] === 0) return;
+  const released = [pointer[0], pointer[1], 0, pointer[3], pointer[4]] as Pointer;
+  target.dispatchEvent(pointerEvent("pointerup", targetPointerPosition(released, target)));
 }
 type ReplayPublic = { readonly recording: Recording | undefined; readonly runId: symbol };
 export function replay<
@@ -108,17 +123,14 @@ export function replay<
   let recordRuntime: GamePluginRuntime | undefined;
   let ticks = 0;
   let previousKeys: string[] = [];
-  let previousPointer: [number, number, number] = [0, 0, 0];
+  let previousPointer: Pointer = [0, 0, 0, 1, 1];
   return {
     get recording() {
       if (header === undefined) return undefined;
       return {
         ...header,
         input: [...samples],
-        runtime: {
-          ...header.runtime,
-          rapier: recordRuntime?.rapier ?? header.runtime.rapier,
-        },
+        runtime: { ...header.runtime, rapier: recordRuntime?.rapier ?? header.runtime.rapier },
         ticks,
       };
     },
@@ -135,29 +147,23 @@ export function replay<
         version: 1,
       };
       samples.length = ticks = 0;
-      previousKeys = [];
-      previousPointer = [0, 0, 0];
+      [previousKeys, previousPointer] = [[], [0, 0, 0, ...pointerViewport(ctx)] as Pointer];
       return undefined;
     },
     beforeUpdate: (ctx) => {
       const keys = [...ctx.input.raw.keys].sort();
       const { position, buttons } = ctx.input.raw.pointer;
-      const pointer = [...position.toArray(), buttons] as [number, number, number];
+      const pointer = [...position.toArray(), buttons, ...pointerViewport(ctx)] as Pointer;
       const pointerChanged = pointer.join() !== previousPointer.join();
-      const changed = pointerChanged || keys.join() !== previousKeys.join();
-      if (changed) {
+      if (pointerChanged || keys.join() !== previousKeys.join()) {
         samples.push({ keys, ...(pointerChanged ? { pointer } : {}), tick: ticks });
-        previousKeys = keys;
-        previousPointer = pointer;
+        [previousKeys, previousPointer] = [keys, pointer];
       }
       ticks += 1;
     },
   };
 }
-function validateRuntime(
-  runtime: GamePluginRuntime,
-  recording: Recording,
-): NonNullable<GamePluginRuntime["random"]> {
+function validateRuntime(runtime: GamePluginRuntime, recording: Recording): Random {
   const random = runtime.random;
   if (
     runtime.seed !== recording.seed ||
@@ -170,10 +176,7 @@ function validateRuntime(
     fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
   return random;
 }
-function restoreRandomState(
-  random: NonNullable<GamePluginRuntime["random"]>,
-  state: number,
-): NonNullable<GamePluginRuntime["random"]> {
+function restoreRandomState(random: Random, state: number): Random {
   try {
     random.state = state;
   } catch {
@@ -190,7 +193,7 @@ export function createReplayDriver(
 ) {
   const value = validate(recording);
   const samples = new Map(value.input.map((sample) => [sample.tick, sample]));
-  let preparedRandom: Pick<NonNullable<GamePluginRuntime["random"]>, "state"> | undefined;
+  let preparedRandom: Pick<Random, "state"> | undefined;
   const driver = Object.assign(
     (runtime: GamePluginRuntime) => {
       const random = validateRuntime(runtime, value);
@@ -198,26 +201,23 @@ export function createReplayDriver(
       preparedRandom = undefined;
       target.dispatchEvent(new Event("blur"));
       const keys = new Set<string>();
-      let pointer: [number, number, number] = [0, 0, 0];
+      let pointer: Pointer = [0, 0, 0, 1, 1];
       for (let tick = 0; tick < value.ticks; tick += 1) {
         const sample = samples.get(tick);
         if (sample !== undefined) {
           dispatchKeys(target, keys, sample.keys);
           if (sample.pointer !== undefined && pointer.join() !== sample.pointer.join()) {
-            const wasDown = pointer[2] !== 0;
-            const nextDown = sample.pointer[2] !== 0;
-            const type =
-              wasDown && !nextDown
-                ? "pointerup"
-                : !wasDown && nextDown
-                  ? "pointerdown"
-                  : "pointermove";
-            pointerTarget.dispatchEvent(pointerEvent(type, sample.pointer));
-            pointer = [...sample.pointer];
+            const type = pointerType(pointer[2], sample.pointer[2]);
+            pointerTarget.dispatchEvent(
+              pointerEvent(type, targetPointerPosition(sample.pointer, pointerTarget)),
+            );
+            pointer = sample.pointer;
           }
         }
         runtime.fixedStep(1);
       }
+      dispatchKeys(target, keys, []);
+      releasePointer(pointer, pointerTarget);
       return value.ticks;
     },
     {

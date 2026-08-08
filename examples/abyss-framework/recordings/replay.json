@@ -1,7 +1,7 @@
 {
   "input": [
     { "keys": ["Enter"], "tick": 0 },
-    { "keys": [], "tick": 1 },
+    { "keys": ["Space"], "tick": 1 },
     { "keys": ["ArrowRight"], "tick": 2 },
     { "keys": ["ArrowDown"], "tick": 62 },
     { "keys": ["ArrowLeft"], "tick": 122 },

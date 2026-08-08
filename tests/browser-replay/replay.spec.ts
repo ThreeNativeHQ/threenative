@@ -113,6 +113,7 @@ test("compares a real Abyss record/replay trace against golden movement", async 
   const finalReplayed = result.replayTrace.at(-1);
   if (finalRecorded === undefined || finalReplayed === undefined)
     throw new Error("Replay proof did not observe a final player state.");
+  expect(golden.finalScore).toBeGreaterThan(0);
   expect(finalRecorded.score).toBe(golden.finalScore);
   expect(finalReplayed.score).toBe(finalRecorded.score);
   expect(Math.abs(finalRecorded.position[0] - golden.finalPlayerX)).toBeLessThanOrEqual(

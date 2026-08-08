@@ -1,11 +1,11 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** implementation delivered in a partial lane; the browser consumer gate is
-partially proven on a supported isolated Brave/WebGPU runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
-closed, but this PRD remains open until its consumer proof passes and is not moved to
-`done/` or merged yet. Automated gates and the checked-in replay consumer project passed
-on 2026-08-08; the full browser suite, manual checkpoint, and negative controls remain
-pending. See `docs/verification/PRD-036.md`.
+**Status:** implementation delivered in a partial lane; the supported browser consumer gate
+is proven on an isolated Brave/WebGPU runner. Gate 0 and Phase 1 of
+`docs/strategy/ROADMAP.md` are closed. The PRD remains open because the full browser suite,
+manual checkpoint, replay-removal controls, and the separate ≤200-line feature-delta gate
+remain pending. It is intentionally not moved to `done/`; see
+`docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after
@@ -428,12 +428,14 @@ interface Recording {
   readonly randomState: number;   // Phase 1
   readonly ticks: number;
   readonly input: readonly { tick: number; keys: readonly string[];
-                             pointer?: readonly [number, number, number] }[];
+                             pointer?: readonly [number, number, number, number, number] }[];
 }
 ```
 
 Six top-level keys. `input` samples are **delta-encoded** — one entry only when the held set
-or pointer changed. No entity appears anywhere in it. Ever.
+or pointer changed. Pointer samples store client `x`, client `y`, button bitmask, source
+viewport width, and source viewport height, so conversion can preserve coordinates across
+different browser sizes. No entity appears anywhere in it. Ever.
 
 **Implementation:**
 - [x] `replay()` returns `GamePluginHooks`; `setup(ctx, runtime)` captures seed, step and
@@ -546,10 +548,10 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,052 tests passed.
+      on 2026-08-08; 142 files / 1,059 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Chromium/WebGPU
-      runner in 22.3 seconds; the checked-in 1,800-tick scenario reported movement, a
+      runner in 24.5 seconds; the checked-in 1,800-tick scenario reported movement, a
       matching runtime fingerprint, and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean

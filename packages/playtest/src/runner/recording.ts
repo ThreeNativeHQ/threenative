@@ -3,7 +3,7 @@ import { invalidScenario, rejectUnknownKeys } from "../scenario.js";
 
 interface RecordingSample {
   keys: string[];
-  pointer?: [number, number, number];
+  pointer?: [number, number, number, number, number];
   tick: number;
 }
 
@@ -53,6 +53,21 @@ function recordTuple(value: unknown, path: string): [number, number, number] {
   return value as [number, number, number];
 }
 
+function recordPointer(value: unknown, path: string): [number, number, number, number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 5 ||
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  )
+    throw invalidScenario(path, `${path} must be [x, y, buttons, viewport width, viewport height].`);
+  const pointer = value as [number, number, number, number, number];
+  if (!Number.isInteger(pointer[2]) || pointer[2] < 0)
+    throw invalidScenario(path, `${path} buttons must be a non-negative integer.`);
+  if (!Number.isInteger(pointer[3]) || pointer[3] < 1 || !Number.isInteger(pointer[4]) || pointer[4] < 1)
+    throw invalidScenario(path, `${path} viewport dimensions must be positive integers.`);
+  return pointer;
+}
+
 function validateRecording(value: unknown, scenarioPath: string): RecordingValue {
   const root = recordObject(value, scenarioPath);
   rejectUnknownKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"], scenarioPath, "recording");
@@ -83,18 +98,11 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
     const keys = [...sample.keys];
     if (new Set(keys).size !== keys.length)
       throw invalidScenario(scenarioPath, "recording input.keys must not repeat.");
-    const pointer = sample.pointer;
-    if (
-      pointer !== undefined &&
-      (!Array.isArray(pointer) ||
-        pointer.length !== 3 ||
-        !pointer.every((item) => typeof item === "number" && Number.isFinite(item)))
-    )
-      throw invalidScenario(scenarioPath, "recording input.pointer must be a finite three-number tuple.");
-    if (pointer !== undefined && (pointer[2] < 0 || !Number.isInteger(pointer[2])))
-      throw invalidScenario(scenarioPath, "recording input.pointer buttons must be a non-negative integer.");
+    const pointer = sample.pointer === undefined
+      ? undefined
+      : recordPointer(sample.pointer, `recording.input[${index}].pointer`);
     previousTick = tick;
-    return { keys, ...(pointer === undefined ? {} : { pointer: pointer as [number, number, number] }), tick };
+    return { keys, ...(pointer === undefined ? {} : { pointer }), tick };
   });
   return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
 }
@@ -134,8 +142,8 @@ function sampleSteps(
     ? undefined
     : {
         buttons: sample.pointer[2],
-        x: sample.pointer[0] / SCENARIO_VIEWPORT.width,
-        y: sample.pointer[1] / SCENARIO_VIEWPORT.height,
+        x: sample.pointer[0] / sample.pointer[3],
+        y: sample.pointer[1] / sample.pointer[4],
       };
   if (pointerPosition !== undefined && (pointerPosition.x < 0 || pointerPosition.x > 1 || pointerPosition.y < 0 || pointerPosition.y > 1))
     throw invalidScenario(scenarioPath, "recording pointer position must fit the playtest viewport.");
