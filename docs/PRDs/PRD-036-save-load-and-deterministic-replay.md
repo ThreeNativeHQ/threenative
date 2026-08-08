@@ -433,7 +433,7 @@ interface Recording {
 ```
 
 Six top-level keys. `input` samples are **delta-encoded** — one entry only when the held set
-or pointer changed. Pointer samples store client `x`, client `y`, button bitmask, source
+or pointer changed. Pointer samples store canvas-local `x`, canvas-local `y`, button bitmask, source
 viewport width, and source viewport height, so conversion can preserve coordinates across
 different browser sizes. No entity appears anywhere in it. Ever.
 
@@ -548,10 +548,10 @@ scenario, and the CLI's subcommand test fails.
 
 **Gates:**
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` — exact chained run passed
-      on 2026-08-08; 142 files / 1,062 tests passed.
+      on 2026-08-08; 142 files / 1,073 tests passed.
 - [ ] `pnpm test:browser` — includes the generated replay scenario
 - [x] `tests/browser-replay/replay.spec.ts` — passed on a fresh isolated Chromium/WebGPU
-      runner in 22.9 seconds; the checked-in 1,800-tick scenario reported movement, a
+      runner in 19.0 seconds; the checked-in 1,800-tick scenario reported movement, a
       matching runtime fingerprint, and zero runtime errors.
 - [x] scaffold smoke test green; no `catalog:` survives scaffolding
 - [x] `pnpm sync:agents --check` clean

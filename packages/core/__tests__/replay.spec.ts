@@ -150,7 +150,11 @@ describe("replay", () => {
   it("should route pointer playback to the input map's pointer target", async () => {
     const recorded = await recordThreeTicks();
     const keyboardTarget = new EventTarget();
-    const pointerTarget = new EventTarget();
+    const pointerTarget = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+      getBoundingClientRect: () => ({ height: 180, left: 100, top: 50, width: 320 }),
+    });
     const input = new InputMap({ pulse: { pointer: true } }, keyboardTarget, pointerTarget);
     const pointerRecording = {
       ...recorded.recording,
@@ -184,10 +188,40 @@ describe("replay", () => {
     );
 
     expect(observed).toEqual([
-      [1, true, 12, 34],
-      [0, false, 12, 34],
+      [1, true, 112, 84],
+      [0, false, 112, 84],
     ]);
     recorded.input.dispose();
+    input.dispose();
+  });
+
+  it("should record pointer coordinates relative to the canvas", async () => {
+    const keyboardTarget = new EventTarget();
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+      getBoundingClientRect: () => ({ height: 180, left: 100, top: 50, width: 320 }),
+    }) as unknown as HTMLCanvasElement;
+    const input = new InputMap(undefined, keyboardTarget, canvas);
+    const plugin = replay();
+    const ctx = {
+      input,
+      random: createRandom(90210),
+      renderer: { domElement: canvas },
+    } as unknown as Ctx;
+    await plugin.setup?.(ctx, runtime());
+    canvas.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 112,
+        clientY: 74,
+        pointerId: 0,
+      }),
+    );
+    input.tick();
+    plugin.beforeUpdate?.(ctx, 1 / 60);
+
+    expect(plugin.recording?.input[0]?.pointer).toEqual([12, 24, 1, 320, 180]);
     input.dispose();
   });
 

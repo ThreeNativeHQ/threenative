@@ -25,6 +25,7 @@ interface RecordingOracle {
 }
 
 const SCENARIO_VIEWPORT = { height: 720, width: 1280 } as const;
+const SUPPORTED_POINTER_BUTTONS = 1 | 2 | 4;
 
 function recordNumber(value: unknown, path: string, integer = false): number {
   if (typeof value !== "number" || !Number.isFinite(value) || (integer && !Number.isInteger(value)))
@@ -61,8 +62,8 @@ function recordPointer(value: unknown, path: string): [number, number, number, n
   )
     throw invalidScenario(path, `${path} must be [x, y, buttons, viewport width, viewport height].`);
   const pointer = value as [number, number, number, number, number];
-  if (!Number.isInteger(pointer[2]) || pointer[2] < 0)
-    throw invalidScenario(path, `${path} buttons must be a non-negative integer.`);
+  if (!Number.isInteger(pointer[2]) || pointer[2] < 0 || (pointer[2] & ~SUPPORTED_POINTER_BUTTONS) !== 0)
+    throw invalidScenario(path, `${path} buttons must use left, right, or middle buttons only.`);
   if (!Number.isInteger(pointer[3]) || pointer[3] < 1 || !Number.isInteger(pointer[4]) || pointer[4] < 1)
     throw invalidScenario(path, `${path} viewport dimensions must be positive integers.`);
   return pointer;
@@ -72,7 +73,7 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
   const root = recordObject(value, scenarioPath);
   rejectUnknownKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"], scenarioPath, "recording");
   if (root.version !== 1) throw invalidScenario(scenarioPath, "recording.version must be 1.");
-  const seed = recordNumber(root.seed, "recording.seed", true);
+  const seed = recordNumber(root.seed, "recording.seed");
   const randomState = recordNumber(root.randomState, "recording.randomState", true);
   const ticks = recordNumber(root.ticks, "recording.ticks", true);
   if (ticks < 1) throw invalidScenario(scenarioPath, "recording.ticks must be positive.");

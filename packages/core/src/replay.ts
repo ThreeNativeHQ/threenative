@@ -31,14 +31,11 @@ function validatePointer(value: unknown, name: string): void {
   const valid =
     pointer.length === 5 &&
     pointer.every(Number.isFinite) &&
-    Number.isInteger(pointer[2]) &&
+    pointer.slice(2).every(Number.isInteger) &&
     pointer[2] >= 0 &&
-    Number.isInteger(pointer[3]) &&
     pointer[3] > 0 &&
-    Number.isInteger(pointer[4]) &&
     pointer[4] > 0;
-  if (!valid)
-    fail("TN_REPLAY_INVALID", `${name} must contain x, y, buttons, viewport width, and height`);
+  if (!valid) fail("TN_REPLAY_INVALID", `${name} pointer tuple is invalid`);
 }
 function validate(value: unknown): Recording {
   const root = object(value, "recording");
@@ -48,14 +45,12 @@ function validate(value: unknown): Recording {
     fail("TN_REPLAY_INVALID", "seed must be finite and randomState must be an integer");
   const ticks = root.ticks as number;
   if (!Number.isInteger(ticks) || ticks < 1) fail("TN_REPLAY_INVALID", "ticks must be positive");
-  if (!Array.isArray(root.input) || root.input.length === 0)
-    fail("TN_REPLAY_EMPTY", "input is empty");
+  if (!Array.isArray(root.input) || root.input.length === 0) fail("TN_REPLAY_EMPTY", "empty input");
   const rawRuntime = object(root.runtime, "runtime");
   rejectKeys(rawRuntime, ["agent", "core", "rapier", "step"]);
+  const nonEmptyString = (value: unknown) => typeof value === "string" && value.length > 0;
   const validRuntime =
-    [rawRuntime.agent, rawRuntime.core].every(
-      (item) => typeof item === "string" && item.length > 0,
-    ) &&
+    [rawRuntime.agent, rawRuntime.core].every(nonEmptyString) &&
     (rawRuntime.rapier === null || typeof rawRuntime.rapier === "string") &&
     typeof rawRuntime.step === "number" &&
     Number.isFinite(rawRuntime.step) &&
@@ -86,20 +81,24 @@ function pointerEvent(
 ): Event {
   return Object.assign(new Event(type), { buttons, clientX, clientY, pointerId: 0 });
 }
-function pointerViewport(ctx: ReplayContext): [number, number] {
+function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer {
   const canvas = ctx.renderer?.domElement;
+  const rect = canvas?.getBoundingClientRect();
   const width = canvas?.clientWidth || globalThis.innerWidth || 1;
   const height = canvas?.clientHeight || globalThis.innerHeight || 1;
-  return [width, height];
+  return [point[0] - (rect?.left ?? 0), point[1] - (rect?.top ?? 0), point[2], width, height];
 }
 function pointerType(previous: number, next: number) {
   return previous && !next ? "pointerup" : !previous && next ? "pointerdown" : "pointermove";
 }
 function targetPointerPosition(pointer: Pointer, target: EventTarget): Point {
-  const viewport = target as unknown as Partial<Record<string, number>>;
-  const width = viewport.clientWidth || viewport.innerWidth || pointer[3];
-  const height = viewport.clientHeight || viewport.innerHeight || pointer[4];
-  return [(pointer[0] * width) / pointer[3], (pointer[1] * height) / pointer[4], pointer[2]];
+  const viewport = target as unknown as HTMLCanvasElement & Window;
+  const rect = viewport.getBoundingClientRect?.();
+  const width = viewport.clientWidth || viewport.innerWidth || rect?.width || pointer[3];
+  const height = viewport.clientHeight || viewport.innerHeight || rect?.height || pointer[4];
+  const x = (pointer[0] * width) / pointer[3] + (rect?.left ?? 0);
+  const y = (pointer[1] * height) / pointer[4] + (rect?.top ?? 0);
+  return [x, y, pointer[2]];
 }
 function dispatchKeys(target: EventTarget, current: Set<string>, keys: readonly string[]): void {
   for (const key of current) if (!keys.includes(key)) target.dispatchEvent(keyEvent("keyup", key));
@@ -147,13 +146,13 @@ export function replay<
         version: 1,
       };
       samples.length = ticks = 0;
-      [previousKeys, previousPointer] = [[], [0, 0, 0, ...pointerViewport(ctx)] as Pointer];
+      [previousKeys, previousPointer] = [[], pointerViewport(ctx)];
       return undefined;
     },
     beforeUpdate: (ctx) => {
       const keys = [...ctx.input.raw.keys].sort();
       const { position, buttons } = ctx.input.raw.pointer;
-      const pointer = [...position.toArray(), buttons, ...pointerViewport(ctx)] as Pointer;
+      const pointer = pointerViewport(ctx, [position.x, position.y, buttons]);
       const pointerChanged = pointer.join() !== previousPointer.join();
       if (pointerChanged || keys.join() !== previousKeys.join()) {
         samples.push({ keys, ...(pointerChanged ? { pointer } : {}), tick: ticks });

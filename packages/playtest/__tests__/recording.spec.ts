@@ -89,6 +89,25 @@ test("should normalize pointer coordinates against the recording viewport", () =
   });
 });
 
+test("should preserve finite fractional seeds", () => {
+  const scenario = recordToScenario({ ...recording(), seed: 1.5 }, "recording.json", oracle());
+
+  expect(scenario.assert?.world).toMatchObject({ seed: 1.5 });
+});
+
+test("should reject pointer buttons outside the runner's supported mask", () => {
+  expect(() =>
+    recordToScenario(
+      {
+        ...recording(),
+        input: [{ keys: [], pointer: [0, 0, 8, 1280, 720], tick: 0 }],
+      },
+      "recording.json",
+      oracle(),
+    ),
+  ).toThrow(/buttons must use left, right, or middle/u);
+});
+
 test("should throw when the recording contains an unknown key", () => {
   expect(() => recordToScenario({ ...recording(), type: "entity" }, "recording.json", oracle())).toThrow(/Unknown key/u);
 });
