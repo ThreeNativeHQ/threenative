@@ -1,0 +1,111 @@
+import { createReplayDriver } from "@threenative/core";
+import type { Game, GamePluginRuntime, Recording } from "@threenative/core";
+import type { AbyssState } from "./scenes/Abyss.js";
+
+type ReplayPlugin = { readonly recording: Recording | undefined };
+
+type ReplayProofStep = {
+  readonly holdTicks?: number;
+  readonly press?: string;
+  readonly release?: boolean;
+  readonly waitTicks?: number;
+};
+
+type ReplayTrace = [number, number, number][];
+
+function dispatchKey(target: EventTarget, type: "keydown" | "keyup", code: string): void {
+  target.dispatchEvent(Object.assign(new Event(type), { code }));
+}
+
+function dispatchKeys(target: EventTarget, held: Set<string>, keys: readonly string[]): void {
+  for (const key of held) if (!keys.includes(key)) dispatchKey(target, "keyup", key);
+  for (const key of keys) if (!held.has(key)) dispatchKey(target, "keydown", key);
+  held.clear();
+  for (const key of keys) held.add(key);
+}
+
+function playerPosition(game: Game<AbyssState>): [number, number, number] {
+  const position = game.ctx?.entities.snapshot().player?.position;
+  if (
+    !Array.isArray(position) ||
+    position.length !== 3 ||
+    position.some((value) => typeof value !== "number" || !Number.isFinite(value))
+  ) {
+    throw new Error("Replay proof could not observe the Abyss player position.");
+  }
+  return [position[0] as number, position[1] as number, position[2] as number];
+}
+
+function proofStepTicks(step: ReplayProofStep): number {
+  const ticks = (step.holdTicks ?? 0) + (step.waitTicks ?? 0);
+  if (!Number.isInteger(ticks) || ticks < 1)
+    throw new Error("Replay proof steps must advance at least one fixed tick.");
+  return ticks;
+}
+
+export function installReplayProof(
+  game: Game<AbyssState>,
+  replayPlugin: ReplayPlugin,
+  getRuntime: () => GamePluginRuntime | undefined,
+): void {
+  Object.assign(globalThis, {
+    __THREENATIVE_REPLAY__: {
+      get recording() {
+        return replayPlugin.recording;
+      },
+      export: () => JSON.stringify(replayPlugin.recording),
+      replay: async () => {
+        const recording = replayPlugin.recording;
+        if (recording === undefined) throw new Error("No replay recording is available yet.");
+        const runtime = getRuntime();
+        if (runtime === undefined) throw new Error("The game runtime is not ready.");
+        await game.goto("play");
+        return createReplayDriver(recording, window)(runtime);
+      },
+      recordAndReplay: async (steps: readonly ReplayProofStep[]) => {
+        game.stop();
+        await game.start();
+        const runtime = getRuntime();
+        if (runtime === undefined) throw new Error("The game runtime is not ready.");
+        const sceneRandomState = runtime.random?.state;
+
+        const held = new Set<string>();
+        const recordTrace: ReplayTrace = [];
+        for (const step of steps) {
+          if (step.press !== undefined) dispatchKeys(window, held, [step.press]);
+          for (let tick = 0; tick < proofStepTicks(step); tick += 1) {
+            runtime.fixedStep(1);
+            recordTrace.push(playerPosition(game));
+          }
+          if (step.release && step.press !== undefined) dispatchKeys(window, held, []);
+        }
+        const recording = replayPlugin.recording;
+        if (recording === undefined) throw new Error("Replay proof did not produce a recording.");
+
+        if (runtime.random !== undefined) runtime.random.state = recording.randomState;
+        await game.goto("play");
+        const replayTrace: ReplayTrace = [];
+        const replayRecording =
+          sceneRandomState === undefined
+            ? recording
+            : { ...recording, randomState: sceneRandomState };
+        const driver = createReplayDriver(replayRecording, window);
+        driver({
+          ...runtime,
+          fixedStep: (ticks) => {
+            const result = runtime.fixedStep(ticks);
+            for (let tick = 0; tick < ticks; tick += 1) {
+              replayTrace.push(playerPosition(game));
+            }
+            return result;
+          },
+        });
+        return { recording, recordTrace, replayTrace } satisfies {
+          recording: Recording;
+          recordTrace: ReplayTrace;
+          replayTrace: ReplayTrace;
+        };
+      },
+    },
+  });
+}

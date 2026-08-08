@@ -69,6 +69,10 @@ export const FRAMEWORK_UNCOUNTED: readonly UncountedFrameworkFile[] = [
     reason: "UI is excluded on both arms; the vanilla equivalent is index.html and style.css.",
   },
   {
+    path: "replay-proof.ts",
+    reason: "Dev-only benchmark instrumentation is proof tooling, not authored gameplay.",
+  },
+  {
     path: "scenes/ViewportProbe.ts",
     reason: "The viewport probe is a diagnostic scene, not part of the benchmark game.",
   },

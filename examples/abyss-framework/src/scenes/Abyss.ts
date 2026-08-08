@@ -185,22 +185,22 @@ export class Abyss extends Scene<AbyssState> {
     const hunterMaterial = glowMaterial(0x8a6bff, 2);
     const spawnHunter = () => {
       const mesh = new THREE.Mesh(hunterGeometry, hunterMaterial);
-      const angle = Math.random() * Math.PI * 2;
+      const angle = ctx.random() * Math.PI * 2;
       mesh.position.set(Math.cos(angle) * field.w * 0.55, Math.sin(angle) * field.h * 0.55, 0);
       ctx.add(mesh);
-      hunters.push({ mesh, speed: 96 + Math.random() * 40, spin: Math.random() * 2 - 1 });
+      hunters.push({ mesh, speed: 96 + ctx.random() * 40, spin: ctx.random() * 2 - 1 });
     };
     const placePearl = (pearl: Pearl, index: number) => {
       if (index === 0) {
         pearl.mesh.position.set(125, 0, 0);
       } else {
         pearl.mesh.position.set(
-          (Math.random() - 0.5) * field.w * 0.86,
-          (Math.random() - 0.5) * field.h * 0.86,
+          (ctx.random() - 0.5) * field.w * 0.86,
+          (ctx.random() - 0.5) * field.h * 0.86,
           0,
         );
       }
-      pearl.drift.set((Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40);
+      pearl.drift.set((ctx.random() - 0.5) * 40, (ctx.random() - 0.5) * 40);
     };
 
     ctx.renderer.setOutputNode(createPostProcessing(ctx.scene, camera));
@@ -212,6 +212,7 @@ export class Abyss extends Scene<AbyssState> {
     let elapsed = 0;
     let nextHunter = 6;
     let best = 0;
+    let simulationTime = 0;
     const target = new THREE.Vector2();
     const temporary = new THREE.Vector3();
     // Seeded from the live pointer, not from NaN: an unequal first comparison
@@ -265,7 +266,8 @@ export class Abyss extends Scene<AbyssState> {
     return (frameCtx, dt) => {
       field.w = VIEW * 2 * frameCtx.viewport.size.aspect;
       uField.value.x = field.w;
-      const now = performance.now();
+      simulationTime += dt;
+      const now = simulationTime * 1_000;
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
 

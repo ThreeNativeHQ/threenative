@@ -5,15 +5,36 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
+const goldenPath = path.join(repoRoot, "tests/browser-replay/replay.golden.json");
 const scenarioPath = path.join(repoRoot, "examples/abyss-framework/playtests/replay.playtest.json");
+
+interface ReplayProofStep {
+  holdTicks?: number;
+  press?: string;
+  release?: boolean;
+  waitTicks?: number;
+}
+
+interface ReplayScenario {
+  assert?: { movement?: unknown };
+  steps: ReplayProofStep[];
+}
+
+interface ReplayProofResult {
+  recordTrace: Array<[number, number, number]>;
+  recording: { input: Array<{ keys: string[]; tick: number }>; ticks: number };
+  replayTrace: Array<[number, number, number]>;
+}
+
+interface ReplayGolden {
+  playerX: number;
+  tick: number;
+  tolerance: number;
+}
 
 test("executes the checked-in 30-second replay scenario", async ({ baseURL }) => {
   test.setTimeout(120_000);
-  const source = await readFile(scenarioPath, "utf8");
-  const scenario = JSON.parse(source) as {
-    assert?: { movement?: unknown };
-    steps: Array<{ holdTicks?: number; waitTicks?: number }>;
-  };
+  const scenario = await readReplayScenario();
   const ticks = scenario.steps.reduce(
     (total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0),
     0,
@@ -29,6 +50,50 @@ test("executes the checked-in 30-second replay scenario", async ({ baseURL }) =>
     await rm(artifacts, { force: true, recursive: true });
   }
 });
+
+test("compares a real Abyss record/replay trace against golden movement", async ({ page }) => {
+  test.setTimeout(120_000);
+  const scenario = await readReplayScenario();
+  const golden = JSON.parse(await readFile(goldenPath, "utf8")) as ReplayGolden;
+
+  await page.goto("/");
+  await page.waitForFunction(() => {
+    const replay = (
+      globalThis as typeof globalThis & {
+        __THREENATIVE_REPLAY__?: { recording?: unknown; recordAndReplay?: unknown };
+      }
+    ).__THREENATIVE_REPLAY__;
+    return replay?.recording !== undefined && typeof replay.recordAndReplay === "function";
+  });
+  const result = await page.evaluate(async (steps) => {
+    const replay = (
+      globalThis as typeof globalThis & {
+        __THREENATIVE_REPLAY__?: {
+          recordAndReplay?: (value: readonly ReplayProofStep[]) => Promise<ReplayProofResult>;
+        };
+      }
+    ).__THREENATIVE_REPLAY__;
+    if (replay?.recordAndReplay === undefined)
+      throw new Error("Abyss replay consumer proof hook is unavailable.");
+    return replay.recordAndReplay(steps);
+  }, scenario.steps);
+
+  const ticks = scenario.steps.reduce(
+    (total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0),
+    0,
+  );
+  expect(result.recording.ticks).toBe(ticks);
+  expect(result.recording.ticks).toBe(1_800);
+  expect(result.recordTrace).toEqual(result.replayTrace);
+
+  const observed = result.recordTrace[golden.tick];
+  if (observed === undefined) throw new Error(`Golden tick ${golden.tick} was not observed.`);
+  expect(Math.abs(observed[0] - golden.playerX)).toBeLessThanOrEqual(golden.tolerance);
+});
+
+async function readReplayScenario(): Promise<ReplayScenario> {
+  return JSON.parse(await readFile(scenarioPath, "utf8")) as ReplayScenario;
+}
 
 function runReplayScenario(
   artifacts: string,
