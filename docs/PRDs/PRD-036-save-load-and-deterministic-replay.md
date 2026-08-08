@@ -5,8 +5,8 @@ real-subject same-run replay, and 1% movement-impulse divergence checkpoint pass
 Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coefficient is the
 available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
 this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
-The implementation and checked-in replay consumer project are merged on
-`docs/opportunity-areas-prds`; the full headed browser suite and generated-scenario regression
+The implementation and checked-in replay consumer project are merged on `main`; the full
+headed browser suite and generated-scenario regression
 control now pass. The manual watch-and-diverge checkpoint and separate ≤200-line source-delta
 gate remain pending. Replay-removal, stale-artifact, and generated-scenario mutation controls
 are observed-red.
