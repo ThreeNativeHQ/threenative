@@ -2,6 +2,7 @@ import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import type { PhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
+import { recast } from "@threenative/physics/navigation";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { drainPlaytestEvents } from "./playtest-events.js";
@@ -18,7 +19,7 @@ const game = defineGame<GameState, PhysicsContext>({
     dash: { buttons: [7], down: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], down: ["Space"] },
   },
-  plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), playtest({ events })],
+  plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), recast(), playtest({ events })],
   scenes: { boot: Boot, level: Level },
   start: "boot",
 });

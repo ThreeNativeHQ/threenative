@@ -18,7 +18,10 @@ pnpm typecheck
 ## Where to work
 
 - `src/entities/Character.ts` contains every movement and feel constant.
-- `src/entities/Patrol.ts` and `src/entities/Pickup.ts` are ordinary gameplay classes.
+- `src/entities/Patrol.ts` is the ordinary scripted-route enemy; use `Chaser.ts` when an
+  enemy should pursue a target across baked level geometry. Steering, aggro rules, and
+  re-path cadence remain gameplay decisions in these classes.
+- `src/entities/Pickup.ts` is an ordinary gameplay class.
 - `src/level/` contains plain level helpers and checkpoint state.
 - `src/render/` is ordinary Three.js source. It has no framework imports. The six baseline
   files are `palette.ts`, `camera.ts`, `sky.ts`, `lighting.ts`, `materials.ts`, and

@@ -31,6 +31,38 @@ describe("starter playtest proof", () => {
     expect(player).toContain('ctx.input.vector("move")');
   });
 
+  it("should run the chase scenario in the platformer test chain", async () => {
+    const packageJson = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/platformer/package.json"),
+        "utf8",
+      ),
+    ) as { scripts: { "test:playtest": string } };
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/platformer/playtests/chase.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: { noConsoleErrors: boolean; runtimeReady: boolean };
+        movement: {
+          pathLength: number;
+          reachesPositionWithin: { maxDistance: number; position: number[] };
+        };
+      };
+    };
+
+    expect(packageJson.scripts["test:playtest"]).toContain("chase.playtest.json");
+    expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
+    expect(scenario.assert.movement).toMatchObject({
+      pathLength: 9,
+      reachesPositionWithin: { maxDistance: 1.2, position: [0, 0.66, 0] },
+    });
+  });
+
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {
     const main = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/main.ts"),

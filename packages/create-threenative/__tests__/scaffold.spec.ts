@@ -1,8 +1,12 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { createProject, parseArgs } from "../src/index.js";
+
+const run = promisify(execFile);
 
 const STARTER_PATHS = [
   "AGENTS.md",
@@ -60,6 +64,7 @@ const PLATFORMER_PATHS = [
   "src/scenes/Boot.ts",
   "src/scenes/Level.ts",
   "src/entities/Character.ts",
+  "src/entities/Chaser.ts",
   "src/entities/Patrol.ts",
   "src/entities/Pickup.ts",
   "src/level/Checkpoints.ts",
@@ -79,6 +84,8 @@ const PLATFORMER_PATHS = [
   "playtests/stomp-rise.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/oneway.playtest.json",
+  "playtests/chase.playtest.json",
+  "playtests/avoidance.playtest.json",
 ];
 
 describe("create-threenative", () => {
@@ -134,6 +141,70 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should not ship recast in a build that never imports the navigation entry", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-bundle-"));
+    try {
+      const result = await createProject(
+        { install: false, target: "minimal-bundle", template: "minimal" },
+        root,
+      );
+      const scope = path.join(result.target, "node_modules", "@threenative");
+      await mkdir(scope, { recursive: true });
+      await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
+      await symlink(path.resolve("packages/physics"), path.join(scope, "physics"), "dir");
+      const pnpmPackages = await readdir(path.resolve("node_modules/.pnpm"));
+      const vitePackage = pnpmPackages.find((entry) => entry.startsWith("vite@"));
+      const threePackage = pnpmPackages.find((entry) => entry.startsWith("three@"));
+      if (vitePackage === undefined || threePackage === undefined) {
+        throw new Error("Bundle isolation requires the workspace Vite and Three.js packages.");
+      }
+      await symlink(
+        path.resolve("node_modules/.pnpm", vitePackage, "node_modules/vite"),
+        path.join(result.target, "node_modules", "vite"),
+        "dir",
+      );
+      await symlink(
+        path.resolve("node_modules/.pnpm", threePackage, "node_modules/three"),
+        path.join(result.target, "node_modules", "three"),
+        "dir",
+      );
+      try {
+        await run(path.resolve("node_modules/.bin/vite"), ["build", result.target], {
+          cwd: process.cwd(),
+        });
+      } catch (error) {
+        const output = error as { code?: string | number; stderr?: string; stdout?: string };
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} code=${output.code ?? "unknown"}\n${output.stdout ?? ""}\n${output.stderr ?? ""}`,
+        );
+      }
+      const distRoot = path.join(result.target, "dist");
+      const entries = await readdir(distRoot, { recursive: true });
+      const files = (
+        await Promise.all(
+          entries.map(async (entry) => {
+            const relativePath = String(entry);
+            return (await stat(path.join(distRoot, relativePath))).isFile()
+              ? relativePath
+              : undefined;
+          }),
+        )
+      ).filter((entry): entry is string => entry !== undefined);
+      const artifactNames = files.filter((file) => file.toLowerCase().includes("recast"));
+      const contents = await Promise.all(
+        files.map(async (file) => {
+          const value = await readFile(path.join(result.target, "dist", file));
+          return value.toString("utf8");
+        }),
+      );
+
+      expect(artifactNames).toEqual([]);
+      expect(contents.join("\n")).not.toMatch(/recast-navigation|@recast-navigation/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

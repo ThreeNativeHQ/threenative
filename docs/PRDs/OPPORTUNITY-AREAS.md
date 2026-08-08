@@ -98,7 +98,7 @@ adoption rather than in the pair.
 diagnostics (what the *page* did). `TN_PLAYTEST_BRIDGE_MISSING` failing closed is the
 harness being right; more of the game surface should be observable through it.
 
-### 3. Navigation & pathfinding — 86 · not started
+### 3. Navigation & pathfinding — 86 · shipped in PRD-034 (browser-proven; package slot unspent)
 
 Three.js ships nothing. Godot ships `NavigationAgent3D`, `NavigationRegion3D`,
 `NavigationObstacle3D` — names already in every model's weights, so rule 4 is satisfied
@@ -110,9 +110,10 @@ without it is an ad-hoc A* on a grid it invents — which is precisely the "hund
 lines nobody wants to write" shape that made physics worth wrapping.
 
 **Cost is the honest problem:** recast is WASM, so by §9a's own logic it cannot live in
-`core` and would take the **last package slot**. That is the decision this area really
-asks for. The alternative — folding it into `@threenative/physics`, which already carries
-a WASM dep — is worth pricing before spending the slot.
+`core`. PRD-034 keeps it behind `@threenative/physics/navigation`, preserving the last
+workspace slot for `@threenative/physics-native`. The platformer proof covers islands,
+the upper overhang layer, the blocker detour and local crowd avoidance; the minimal
+physics-only bundle stays recast-free.
 
 ### 4. Hot reload with state preservation — 80 · not started, named in Roadmap Phase 2
 

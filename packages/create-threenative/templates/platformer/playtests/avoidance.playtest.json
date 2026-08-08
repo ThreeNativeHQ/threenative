@@ -1,0 +1,17 @@
+{
+  "name": "platformer-avoidance",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "chaser.avoidance",
+  "steps": [{ "kind": "wait", "waitTicks": 360, "release": true }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "chaser.avoidance",
+      "reachesPositionWithin": { "position": [0, 0.66, 0], "maxDistance": 1.2 },
+      "pathLength": 9.0
+    }
+  }
+}

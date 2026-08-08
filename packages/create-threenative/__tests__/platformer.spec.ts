@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
 
@@ -52,5 +54,19 @@ describe("platformer checkpoints", () => {
     expect(state.currentIndex).toBe(1);
     state.pass(point(26));
     expect(state.currentIndex).toBe(2);
+  });
+
+  it("should register a chaser entity and the recast plugin in the platformer template", async () => {
+    const main = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/main.ts"),
+      "utf8",
+    );
+    const level = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+      "utf8",
+    );
+
+    expect(main).toContain("recast(");
+    expect(level).toContain('id: "chaser"');
   });
 });

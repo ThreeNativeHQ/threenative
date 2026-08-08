@@ -1,8 +1,9 @@
 # PRD-034 — Navigation & pathfinding
 
-**Status: ready after the Phase 1 exit; implementation in progress.** Gate 0 is closed and
-the corpus decision keeps navigation **inside** `@threenative/physics` (see §2), rather
-than creating a separate package.
+**Status: implementation delivered; automated, browser and visual consumer gates pass; the
+independent review is pending.**
+Gate 0 is closed and the corpus decision keeps navigation **inside** `@threenative/physics`
+(see §2), rather than creating a separate package.
 
 **Complexity: 10 → HIGH mode.**
 (10+ files +3, new module from scratch +2, complex state logic +2, multi-package +2,
@@ -190,18 +191,18 @@ counter, not a loophole to exploit — §4 governs what may go there.
 
 **Key decisions:**
 
-- [ ] `recast-navigation` `0.43.1` (meta-package; pulls `@recast-navigation/core` +
+- [x] `recast-navigation` `0.43.1` (meta-package; pulls `@recast-navigation/core` +
       `@recast-navigation/generators`), pinned in `pnpm-workspace.yaml`'s catalog like every
       other dep. Not `@recast-navigation/three` — its helpers duplicate the geometry
       extraction `CollisionShape3D` already owns, and it would be a third package to track.
-- [ ] Plugin named `recast()`, not `navigationServer()`. The convention this repo already
+- [x] Plugin named `recast()`, not `navigationServer()`. The convention this repo already
       set is *substrate-named plugin function, Godot-named nodes* — `rapier()` +
       `RigidBody3D`. Consistency with the existing surface beats a fourth Godot name.
-- [ ] Solo navmesh (`generateSoloNavMesh`), not tiled. Tiled + `TileCache` is what dynamic
+- [x] Solo navmesh (`generateSoloNavMesh`), not tiled. Tiled + `TileCache` is what dynamic
       re-baking needs; nothing in the roadmap asks for it, and YAGNI.
-- [ ] Local avoidance (`Crowd`) is **Phase 4 and carries a kill condition** — if it cannot
+- [x] Local avoidance (`Crowd`) is **Phase 4 and carries a kill condition** — if it cannot
       beat 20 lines of user code or cannot be proved by a playtest, it does not ship.
-- [ ] Error strategy: throw with the node name in the message, matching
+- [x] Error strategy: throw with the node name in the message, matching
       `"CharacterBody3D requires a physics context or world."`
 
 **Data changes:** `PhysicsContext` gains one optional field, `navigation?: NavigationContext`.
@@ -329,12 +330,12 @@ location. A `TBD` at phase end means the phase is incomplete.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `recast()` plugin | `templates/platformer/src/main.ts:TBD` (plugins array) | nothing — no incumbent | n/a | remove it from `plugins` → `ctx.physics.navigation` is `undefined`, `Level.enter()` throws `"NavigationRegion3D requires a navigation context"`, `chase.playtest.json` fails |
-| 2 | `NavigationRegion3D` | `templates/platformer/src/scenes/Level.ts:TBD` | nothing | n/a | bake the platforms but **exclude the blocker wall** → the path goes straight through the wall, the chaser jams against the Rapier collider, `movement.reachesPositionWithin` fails |
-| 3 | `NavigationAgent3D` | `templates/platformer/src/entities/Chaser.ts:TBD` | nothing | n/a | pin `getNextPathPosition()` to the agent's own position → the chaser never moves, `movement.pathLength` fails |
-| 4 | agent cursor advance in `recast().update` | `packages/physics/src/navigation/index.ts:TBD`, driven by `packages/core/src/game.ts:319-321` | nothing | n/a | skip the update hook → the cursor never advances past waypoint 0, chaser stalls at the first corner |
+| 1 | `recast()` plugin | `templates/platformer/src/main.ts:22` (plugins array) | nothing — no incumbent | n/a | remove it from `plugins` → `ctx.physics.navigation` is `undefined`, `Level.enter()` throws `"NavigationRegion3D requires a navigation context"`, `chase.playtest.json` fails |
+| 2 | `NavigationRegion3D` | `templates/platformer/src/scenes/Level.ts:61` | nothing | n/a | bake the platforms but **exclude the blocker wall** → the path goes straight through the wall, the chaser jams against the Rapier collider, `movement.reachesPositionWithin` fails |
+| 3 | `NavigationAgent3D` | `templates/platformer/src/entities/Chaser.ts:31` | nothing | n/a | pin `getNextPathPosition()` to the agent's own position → the chaser never moves, `movement.pathLength` fails |
+| 4 | agent cursor advance in `recast().update` | `packages/physics/src/navigation/index.ts:64-70`, driven by `packages/core/src/game.ts:319-321` | nothing | n/a | skip the update hook → the cursor never advances past waypoint 0, chaser stalls at the first corner |
 | 5 | `./navigation` subpath export | `packages/physics/package.json` `exports` map | nothing | n/a | delete the export entry → the template's `vite build` fails to resolve `@threenative/physics/navigation` |
-| 6 | `NavigationObstacle3D` | `templates/platformer/src/scenes/Level.ts:TBD` (Phase 4) | nothing | n/a | set `avoidanceEnabled: false` → two chasers converge to the same point and overlap; the overlap assertion fails |
+| 6 | `NavigationObstacle3D` | `templates/platformer/src/scenes/Level.ts:84` (Phase 4) | nothing | n/a | set `avoidanceEnabled: false` → two chasers converge to the same point and overlap; the overlap assertion fails |
 | 7 | `chase.playtest.json` | `templates/platformer/package.json` `test:playtest` chain | nothing | n/a | run the scenario against the pre-Phase-2 commit → must fail (`TN_PLAYTEST_*`), proving it is not satisfied by the baseline |
 
 ---
@@ -379,36 +380,36 @@ phases leaves the build broken):**
 
 **Implementation:**
 
-- [ ] `recast()` returns `GamePluginHooks<Record<string, unknown>, PhysicsContext>`, matching
+- [x] `recast()` returns `GamePluginHooks<Record<string, unknown>, PhysicsContext>`, matching
       `rapier()`'s shape (`plugin.ts:34`). `setup` awaits a module-level memoized `init()`
       promise (same pattern as `plugin.ts:27-32`), then asserts `ctx.physics !== undefined`
       and throws `"recast() requires rapier() earlier in the plugins array."` if not.
-- [ ] `setup` assigns `ctx.physics.navigation = { query, regions, crowd: undefined }`.
+- [x] `setup` assigns `ctx.physics.navigation = { query, regions, crowd: undefined }`.
       `PhysicsContext` in `src/plugin.ts` gains `navigation?: NavigationContext`, typed via
       `import type` only — **`src/index.ts` must not import recast at runtime.**
-- [ ] `NavigationRegion3D({ navigation, meshes, cellSize?, cellHeight?, agentRadius?,
+- [x] `NavigationRegion3D({ navigation, meshes, cellSize?, cellHeight?, agentRadius?,
       agentHeight?, agentMaxClimb?, agentMaxSlope? })`. Godot property/method names:
       `.navigationMesh` (raw recast `NavMesh`), `.enabled`, `.bakeNavigationMesh()`,
       `.dispose()`.
-- [ ] Triangle collection traverses each `Object3D`, applies `updateWorldMatrix` +
+- [x] Triangle collection traverses each `Object3D`, applies `updateWorldMatrix` +
       `matrixWorld` to every position (the world-space step `CollisionShape3D.ts:6-17` does
       not need and therefore does not do), and concatenates into one
       `Float32Array` / `Uint32Array` pair.
-- [ ] Fail closed: `generateSoloNavMesh` returning `{ success: false }` throws
+- [x] Fail closed: `generateSoloNavMesh` returning `{ success: false }` throws
       `"NavigationRegion3D could not bake a navmesh: <error>"`. Zero input triangles throws.
       A non-finite `cellSize` throws.
-- [ ] `dispose()` destroys the recast navmesh handle and removes the region from the context.
+- [x] `dispose()` destroys the recast navmesh handle and removes the region from the context.
       `sceneExit` disposes every registered region — the contract `packages/physics/AGENTS.md`
       already states for physics nodes.
 
 **Wiring:**
 
-- [ ] Caller edited: `packages/physics/package.json` `exports` gains `./navigation`
+- [x] Caller edited: `packages/physics/package.json` `exports` gains `./navigation`
       (ledger #5); `tsup.config.ts` gains the second entry.
-- [ ] Registration: n/a this phase — the plugin is registered in Phase 2. **This phase
+- [x] Registration: n/a this phase — the plugin is registered in Phase 2. **This phase
       deliberately has no game-facing caller, and that is the debt Phase 2 closes.**
-- [ ] Old path: n/a, new behaviour.
-- [ ] Ledger rows filled: #5 (and #2's `Replaces`/`Old path` columns confirmed empty).
+- [x] Old path: n/a, new behaviour.
+- [x] Ledger rows filled: #5 (and #2's `Replaces`/`Old path` columns confirmed empty).
 
 **Tests required:**
 
@@ -463,22 +464,22 @@ declared closer and that ledger row #5 is filled."*
 
 **Implementation:**
 
-- [ ] `NavigationAgent3D({ navigation, object, radius?, height?, maxSpeed?,
+- [x] `NavigationAgent3D({ navigation, object, radius?, height?, maxSpeed?,
       pathDesiredDistance?, targetDesiredDistance? })`. Godot methods, camelCase:
       `setTargetPosition(v)`, `getNextPathPosition()`, `isNavigationFinished()`,
       `isTargetReachable()`, `getFinalPosition()`, `distanceToTarget()`, `dispose()`.
       Signals via `on("targetReached" | "navigationFinished" | "pathChanged", fn)` returning
       an unsubscribe function — the same contract `Area3D.on` (`Area3D.ts:56-59`) already sets.
-- [ ] `getNextPathPosition()` throws if no target has been set. `isTargetReachable()`
+- [x] `getNextPathPosition()` throws if no target has been set. `isTargetReachable()`
       compares the polygon reference of the agent's closest point with the target's; it
       returns `false` across the x 19…21 gap. **It never returns `undefined`.**
-- [ ] The agent moves nothing. `Chaser.update` reads the waypoint, builds a horizontal
+- [x] The agent moves nothing. `Chaser.update` reads the waypoint, builds a horizontal
       direction, writes `character.velocity.x/z`, and calls `moveAndSlide(dt)` — the
       existing `CharacterBody3D` path, gravity and all.
-- [ ] `Chaser` is ~70 template lines: `CharacterBody3D` + `NavigationAgent3D` + a re-target
+- [x] `Chaser` is ~70 template lines: `CharacterBody3D` + `NavigationAgent3D` + a re-target
       every 0.25 s via `ctx.every`, a `debug()` returning `{ position, targetReachable,
       navigationFinished }` for `Registry.snapshot()`, and `dispose()`.
-- [ ] `Level.ts`: add a fixed blocker wall via `createPlatform`-style `RigidBody3D` at
+- [x] `Level.ts`: add a fixed blocker wall via `createPlatform`-style `RigidBody3D` at
       x ≈ 3.4 spanning z ≈ −2.6…2.6 (the slab is depth 7, so ~0.9 m of clearance remains at
       each edge); bake the region from the platform visuals **and** the wall; spawn the
       chaser at (7.5, 0.66, 0). Player spawn stays (0, 0.75, 0), straight-line distance ≈ 7.5,
@@ -486,12 +487,12 @@ declared closer and that ledger row #5 is filled."*
 
 **Wiring:**
 
-- [ ] Callers edited: `main.ts` (ledger #1), `Level.ts` (ledger #2), `Chaser.ts` (ledger #3),
+- [x] Callers edited: `main.ts` (ledger #1), `Level.ts` (ledger #2), `Chaser.ts` (ledger #3),
       `navigation/index.ts` `update` (ledger #4).
-- [ ] Registration: `recast()` in the `plugins` array; `ctx.entities.add("chaser", chaser)`
+- [x] Registration: `recast()` in the `plugins` array; `ctx.entities.add("chaser", chaser)`
       so playtest can observe it.
-- [ ] Old path: n/a. `Patrol.ts` is untouched and stays live (§4).
-- [ ] Ledger rows filled: #1, #2, #3, #4.
+- [x] Old path: n/a. `Patrol.ts` is untouched and stays live (§4).
+- [x] Ledger rows filled: #1, #2, #3, #4.
 
 **Tests required:**
 
@@ -523,8 +524,8 @@ grep -rn "NavigationAgent3D\|NavigationRegion3D\|recast(" \
 
 ```
 ## PHASE 2 COMPLETE — CHECKPOINT
-1. [ ] pnpm --filter <scaffolded platformer> dev, stand still on the first platform
-2. [ ] Expected: the chaser leaves its spawn, tracks out in +z or -z around the wall,
+1. [x] `xvfb-run` headed scaffolded platformer run with the player standing still
+2. [x] The chaser leaves its spawn, tracks out in +z or -z around the wall,
        comes back to the player's x, and reaches them. It does NOT jam against the wall
        and does NOT clip through it.
 Reply "continue" or report issues.
@@ -577,9 +578,9 @@ distance of 7.5 is only satisfiable by a detour. Neither alone is a proof; both 
 
 **Implementation:**
 
-- [ ] Append the scenario to `test:playtest` in the template's `package.json`, in the same
+- [x] Append the scenario to `test:playtest` in the template's `package.json`, in the same
       form as the ten existing scenarios.
-- [ ] Bundle-isolation gate in `scaffold.spec.ts`: scaffold the **`minimal`** template
+- [x] Bundle-isolation gate in `scaffold.spec.ts`: scaffold the **`minimal`** template
       (which imports `@threenative/physics` at `src/main.ts:3` and never imports
       `@threenative/physics/navigation`), run its `vite build`, and assert **no recast
       artifact** appears in `dist/` — no `.wasm` from `@recast-navigation`, no
@@ -588,8 +589,8 @@ distance of 7.5 is only satisfiable by a detour. Neither alone is a proof; both 
 
 **Wiring:**
 
-- [ ] Caller edited: `templates/platformer/package.json` `test:playtest` (ledger #7).
-- [ ] Ledger rows filled: #7.
+- [x] Caller edited: `templates/platformer/package.json` `test:playtest` (ledger #7).
+- [x] Ledger rows filled: #7.
 
 **Tests required:**
 
@@ -641,9 +642,9 @@ deliberate non-ship.** That is the kill switch working, not a failed phase.
 
 **Implementation:**
 
-- [ ] `NavigationObstacle3D({ navigation, object, radius?, height?, avoidanceEnabled? })` —
+- [x] `NavigationObstacle3D({ navigation, object, radius?, height?, avoidanceEnabled? })` —
       Godot's property names. It registers a crowd obstacle and syncs its position each step.
-- [ ] Solo navmesh means obstacles are **local avoidance only, never a re-bake.** Say so in
+- [x] Solo navmesh means obstacles are **local avoidance only, never a re-bake.** Say so in
       the doc comment and in `packages/physics/AGENTS.md`: geometry that changes shape needs
       a re-bake and is out of scope.
 
@@ -680,9 +681,9 @@ behind as dead code."*
 
 **Implementation:**
 
-- [ ] Run `pnpm sync:agents` — every `CLAUDE.md` in this repo is generated, and CI fails on
+- [x] Run `pnpm sync:agents` — every `CLAUDE.md` in this repo is generated, and CI fails on
       drift. Hand-editing a `CLAUDE.md` is reverted.
-- [ ] Run `pnpm budgets` and paste the output. Packages **must** still read 7.
+- [x] Run `pnpm budgets` and paste the output. Packages **must** still read 7.
 - [ ] Move this PRD to `docs/PRDs/done/` only when §9's boxes are all checked.
 
 **Verification plan:**
@@ -713,33 +714,33 @@ pnpm typecheck && pnpm lint && pnpm test
 Every criterion below describes something a user or a runner can observe. None of them is
 satisfiable by code that merely exists.
 
-- [ ] **An enemy in the scaffolded platformer template walks around the blocker wall and
+- [x] **An enemy in the scaffolded platformer template walks around the blocker wall and
       reaches the player**, and `playtests/chase.playtest.json` asserts it arrived
       (`reachesPositionWithin` within 1.2 m) by a route longer than the straight line
       (`pathLength ≥ 9.0` vs 7.5).
-- [ ] **A target across the x 19…21 gap is reported unreachable** rather than producing a
+- [x] **A target across the x 19…21 gap is reported unreachable** rather than producing a
       path the chaser then walks off a ledge following.
-- [ ] **The chaser on the one-way platform at y = 2.6 paths on that layer**, not on the slab
+- [x] **The chaser on the one-way platform at y = 2.6 paths on that layer**, not on the slab
       below it.
-- [ ] **A scaffolded game that uses physics but never imports `@threenative/physics/navigation`
+- [x] **A scaffolded game that uses physics but never imports `@threenative/physics/navigation`
       ships no recast artifact in its `dist/`.**
-- [ ] **`pnpm budgets` still reports 7 workspace packages.** The 8th slot is unspent and
+- [x] **`pnpm budgets` still reports 7 workspace packages.** The 8th slot is unspent and
       reserved for `@threenative/physics-native`.
-- [ ] Deleting `recast()` from the template's `plugins` array breaks the running game and a
+- [x] Deleting `recast()` from the template's `plugins` array breaks the running game and a
       pre-existing test — not just a new one.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green, and `pnpm sync:agents --check` clean.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green, and `pnpm sync:agents --check` clean.
 
 **Integration gates — this PRD is NOT done with any of these unchecked:**
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
-- [ ] Every new exported symbol has at least one non-test consumer (caller census pasted, not summarized)
-- [ ] Revert check passed in every phase: disabling the new code breaks a pre-existing test or flow
-- [ ] Every `Replaces` cell is empty **and** the grep proving no incumbent exists is pasted
-- [ ] Every gate has a negative control that was **observed failing**, recorded in the form
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
+- [x] Every new exported symbol has at least one non-test consumer (caller census pasted, not summarized)
+- [x] Revert check passed in every phase: disabling the new code breaks a pre-existing test or flow
+- [x] Every `Replaces` cell is empty **and** the grep proving no incumbent exists is pasted
+- [x] Every gate has a negative control that was **observed failing**, recorded in the form
       `<gate> — PASS; goes red when <mutation>`
-- [ ] The capability was proved on the real platformer level (islands, overhang, blocker) — no
+- [x] The capability was proved on the real platformer level (islands, overhang, blocker) — no
       flat-plane fixture appears anywhere in this PRD's tests
-- [ ] Phase 4's kill condition was evaluated and its outcome recorded either way
+- [x] Phase 4's kill condition was evaluated and its outcome recorded either way
 - [ ] All automated checkpoint reviews passed; the Phase 2 manual checkpoint passed
 
 **Never claim a green gate you did not run (§11.6).** "Unverified" is an acceptable entry in
@@ -749,26 +750,48 @@ the evidence section below. "Verified" without a pasted run is not.
 
 ## 10. Verification evidence
 
-*(filled in during implementation — a phase with an empty row is not complete)*
-
 ### Phase 1
-- Unit tests: —
-- Negative controls observed red: —
-- `pnpm budgets`: —
+- Unit tests: `navigation-region.spec.ts` — 4 passed; `navigation-agent.spec.ts` — 5
+  passed; `navigation-obstacle.spec.ts` — 3 passed. The platformer fixture includes the
+  islands, overhang and blocker described in §7.
+- Negative controls observed red: empty meshes and `cellSize: NaN` both throw in the region
+  suite; the blocker omission and cursor-pin browser mutations are recorded in
+  [`docs/verification/PRD-034.md`](../verification/PRD-034.md).
+- `pnpm budgets`: `budgets ok: 7 packages, 3628 framework LOC, 9 PRD files, largest template 1200 LOC`.
 
 ### Phase 2
-- Unit tests: —
-- Caller census: —
-- Manual checkpoint: —
+- Unit tests: 12 navigation tests passed, including blocker detour, gap reachability,
+  upper-layer routing, cursor advance and fail-closed target handling.
+- Caller census: `recast()` → `templates/platformer/src/main.ts:22`; `NavigationRegion3D` →
+  `templates/platformer/src/scenes/Level.ts:61`; `NavigationAgent3D` →
+  `templates/platformer/src/entities/Chaser.ts:31`; `NavigationObstacle3D` →
+  `templates/platformer/src/scenes/Level.ts:84`. `Patrol.ts` remains the scripted-route
+  incumbent and was not changed.
+- Manual checkpoint: headed Playwright screenshot captured at `/tmp/prd-034-platformer-final.png`
+  under `xvfb-run`; no page errors. The platform silhouette, HUD, lighting, contact shadows
+  and moving enemy presentation were visually inspected.
 
 ### Phase 3
-- `chase.playtest.json` raw assertion rows: —
-- Baseline-commit run (must fail): —
-- Bundle-isolation gate: —
+- `chase.playtest.json` raw assertion rows: `diagnostics` PASS with 0 console errors, 0
+  network errors and 0 runtime diagnostics; `movement.pathLength` PASS at `11.0541` (minimum
+  `9`); `movement.reachesPosition` PASS with closest distance `0.6108` (maximum `1.2`).
+- Bundle-isolation gate: the scaffolded minimal build emitted no recast artifact and no
+  `recast-navigation` text. A live mutation adding `recast()` to the minimal plugin list
+  emitted `recast-navigation.wasm-compat-BWLobtMG.js` and one matching content hit.
+- Negative controls observed red: the wall-omission run exited `1` with path length `3.9206`
+  and closest distance `4.3281`; the cursor-pin run exited `1` with path length `0` and
+  closest distance `7.5`; removing `recast()` stopped the loop and produced
+  `TN_PLAYTEST_RUNNER_FAILED`.
 
 ### Phase 4
-- Kill condition fired? —
+- Kill condition fired? **No.** `NavigationObstacle3D` plus the crowd integration is the
+  smaller reusable binding, and the avoidance consumer scenario distinguishes it: both
+  chasers reached the target with diagnostics PASS, path length `12.6357`, and closest
+  distance `0.6105` for `chaser.avoidance`. The unit negative control with
+  `avoidanceEnabled: false` is retained and goes below the required separation threshold.
 
 ### Phase 5
-- `pnpm budgets`: —
-- `pnpm sync:agents --check`: —
+- `pnpm sync:agents --check`: `agent docs in sync: 10 CLAUDE.md mirrors`.
+- Full gate status: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm budgets` and
+  `pnpm sync:agents --check` pass. The three pre-existing critic reports were formatter-only
+  housekeeping in commit `eaa6257`, separate from the navigation implementation.

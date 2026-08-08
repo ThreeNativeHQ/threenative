@@ -3,6 +3,7 @@ import type { Ctx, GamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
+import type { NavigationContext } from "./navigation/index.js";
 
 export interface PhysicsOptions {
   readonly gravity?: { readonly x: number; readonly y: number; readonly z: number };
@@ -13,6 +14,7 @@ export type PhysicsBody3D = RigidBody3D | CharacterBody3D;
 export interface PhysicsContext {
   readonly world: RAPIER.World;
   readonly eventQueue: RAPIER.EventQueue;
+  navigation?: NavigationContext;
   add(body: PhysicsBody3D): void;
   kinematicMotion?(
     colliderHandle: number,

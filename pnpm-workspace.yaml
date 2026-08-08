@@ -3,6 +3,7 @@ packages: ['packages/*', 'examples/*']
 catalog:
   three: 0.185.1
   '@dimforge/rapier3d-compat': 0.19.3
+  recast-navigation: 0.43.1
   react: 19.2.0
   react-dom: 19.2.0
   react-test-renderer: 19.2.0
