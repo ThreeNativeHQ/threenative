@@ -1,10 +1,11 @@
 # PRD-035 — Hot reload with state preservation
 
-**Status: BLOCKED on Gate 0.** `docs/strategy/ROADMAP.md` Gate 0 (round 2 to completion on
-both arms, plus `round:deletions`) is unrun, and `docs/PRDs/OPPORTUNITY-AREAS.md` says
-no area starts before it closes. This PRD is the design for Roadmap **Phase 2 — "Dev loop.
-Hot reload with state preservation."** It is written now so the decision is ready; **do not
-begin Phase 1 until Gate 0 exits on its first outcome.**
+**Status: IMPLEMENTATION DELIVERED; browser consumer gate pending on a supported runner.**
+Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
+`docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; repository and visual gates
+pass, while the real starter HMR gate completes its state/flatness checks but remains
+unverified on zero console errors because this headless Chromium emits WebGPU backend errors
+before the first edit. Keep this PRD open until a supported browser runner proves that gate.
 
 **Complexity: 10 → HIGH mode.** (10+ files +3, new module +2, concurrency/lifecycle state
 +2, multi-package +2, external API — Vite's HMR contract +1.) HIGH means an automated
@@ -283,15 +284,15 @@ incomplete.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `stop()` aborts an in-flight `start()` (`#pendingStart`) | `packages/core/src/game.ts:TBD` (`stop`), reached from `ui/src/GameCanvas.tsx:42` on every unmount and from `hot.ts` on every reload | the early `if (!this.#started) return;` at `game.ts:351` | yes — replaced, not added beside | stop-during-boot test: with the guard reverted, `document.querySelectorAll("canvas").length === 2` and the loop is still running |
-| 2 | `acceptHotUpdate` | `templates/minimal/src/main.ts:TBD`, `templates/starter/src/main.ts:TBD`, `templates/platformer/src/main.ts:TBD`, `examples/abyss-framework/src/main.tsx:TBD` | Vite's default full-page reload for these entries | n/a — new behaviour; the full reload remains the fallback path on `invalidate()` | delete the call → the browser gate's `reloads` counter stays 0 and `GameState.score` resets to 0 after the edit |
-| 3 | `assertPortableState` | `packages/core/src/hot.ts:TBD` (capture path) | nothing — no incumbent | n/a | put a `Vector3` in the store, save → throws naming `state.<key>`, the overlay shows it, the page full-reloads, and **no** reload with a poisoned store occurs |
-| 4 | `window.__THREENATIVE__.hot()` diagnostics | `packages/core/src/hot.ts:TBD`; read by `<leak gate>.spec.ts:TBD` and available to any dev tool | nothing | n/a | leak a mesh on purpose (skip `clearScene`) → `sceneObjects` climbs across 10 reloads and the gate goes red |
+| 1 | `stop()` aborts an in-flight `start()` (`#pendingStart`) | `packages/core/src/game.ts:420` (`stop`), reached from `packages/ui/src/GameCanvas.tsx:42` on unmount and `packages/core/src/hot.ts:51` on reload | the early `if (!this.#started) return;` at `game.ts:351` | yes — replaced, not added beside | unit coverage exists; source-revert red control not observed |
+| 2 | `acceptHotUpdate` | `templates/minimal/src/main.ts:29`, `templates/starter/src/main.ts:26`, `templates/platformer/src/main.ts:25`, `examples/abyss-framework/src/main.tsx:31` | Vite's default full-page reload for these entries | n/a — new behaviour; the full reload remains the fallback path on `invalidate()` | real ten-write gate reaches reload 10; source-revert red control not observed |
+| 3 | `assertPortableState` | `packages/core/src/hot.ts:44` (capture path) and `packages/core/src/hot.ts:59` (restore path) | nothing — no incumbent | n/a | unit coverage names malformed state paths; real overlay/full-reload control not observed |
+| 4 | `window.__THREENATIVE__.hot()` diagnostics | `packages/core/src/hot.ts:33`; read by `tests/browser/hot-reload.spec.ts:104` and available to any dev tool | nothing | n/a | real gate observes flat counts; leak-injection red control not observed |
 | 5 | `installDevTools` merges instead of overwriting | `packages/core/src/game.ts:35` | the assignment that clobbers `hot` | yes | revert the merge → `window.__THREENATIVE__.hot` is `undefined` after `start()` and the leak gate cannot read anything |
-| 6 | `PhysicsContext.numBodies()` | `packages/physics/src/plugin.ts:TBD`; probed by `hot.ts` and asserted by the leak gate | nothing | n/a | disable `sceneExit`/`dispose` body disposal → `numBodies()` climbs across reloads |
+| 6 | `PhysicsContext.numBodies()` | `packages/physics/src/plugin.ts:19`; probed by `packages/core/src/hot.ts:82` and asserted by `tests/browser/hot-reload.spec.ts:141` | nothing | n/a | unit disposal coverage exists; disposal-revert red control not observed |
 | 7 | `ImportMeta.hot` type declaration | `packages/core/src/import-meta.d.ts` (EDIT — the file that today declares only `env.DEV`) | nothing | n/a | remove it → `pnpm typecheck` fails in `hot.ts` |
-| 8 | Scenes seed from the store in `enter()` | `templates/starter/src/scenes/Play.ts:TBD`, `templates/platformer/src/scenes/Level.ts:TBD` | hardcoded spawn positions | yes, in the same phase | revert one → the hot-reload playtest's `playerX` assertion fails because the player snaps back to spawn |
-| 9 | `hot-reload.playtest.json` + the Playwright leak gate | `playwright.config.ts:TBD` (project + webServer), `pnpm test:browser` | nothing | n/a | see the negative-control table in §6 |
+| 8 | Scenes seed from the store in `enter()` | `packages/create-threenative/templates/starter/src/scenes/Play.ts:55`, `packages/create-threenative/templates/platformer/src/scenes/Level.ts:68` | hardcoded spawn positions | yes, in the same phase | ten-write gate keeps `playerX`; source-revert red control not observed |
+| 9 | `hot-reload.playtest.json` + the Playwright leak gate | `playwright.config.ts:16-17,330-349`, `tests/browser/hot-reload.spec.ts:92` | nothing | n/a | gate runs through a temporary equivalent config; prescribed port was occupied |
 | 10 | `CHARTER.md` + `packages/core/AGENTS.md` line admitting reload to core's closed list | `pnpm sync:agents` regenerates the mirrors; `--check` runs in CI | the closed list without it | yes | skip it → `packages/core/AGENTS.md` and the shipped code disagree, and the next agent has no authority for the module |
 
 ### Reachability

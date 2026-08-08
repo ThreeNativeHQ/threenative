@@ -63,7 +63,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
 | Playtest semantic depth | [PRD-033](../PRDs/PRD-033-playtest-semantic-depth.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
-| Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **queued, gated on Phase 1 exit** |
+| Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **implementation delivered; browser consumer gate pending on a supported runner** |
 | Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **proposed, gated on Phase 1 exit** |
 | Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **open, gated on Phase 1 exit** |
 | Animation state machine / blend control | [PRD-039](../PRDs/PRD-039-animation-state-machine.md) | **closed — WONTBUILD** |
