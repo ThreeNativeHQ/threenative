@@ -1,6 +1,6 @@
 # PRD-042 — Playtest operator ergonomics: make the harness legible to the agent driving it
 
-**Status: proposed.** Evidence gathered 2026-08-07 from 131 Codex CLI sessions with
+**Status: done.** Evidence gathered 2026-08-07 from 131 Codex CLI sessions with
 `cwd = /home/joao/projects/threejs-webgpu` (`~/.codex/sessions/2026/**`), 128 of which
 touch playtest. Nothing here changes what the harness *asserts*; it changes what the
 harness *tells the operator* when a run does not reach an assertion.
