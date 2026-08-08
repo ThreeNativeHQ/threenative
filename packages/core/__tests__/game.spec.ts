@@ -331,8 +331,8 @@ describe("Game", () => {
     let enters = 0;
     let scheduled = 0;
 
-    class Restartable extends Scene {
-      static override readonly initialState = {};
+    class Restartable extends Scene<{ score: number }> {
+      static override readonly initialState = { score: 0 };
 
       override enter(ctx: Ctx): void {
         enters += 1;
@@ -341,7 +341,7 @@ describe("Game", () => {
       }
     }
 
-    const game = defineGame({
+    const game = defineGame<{ score: number }>({
       plugins: [
         {
           setup: (_ctx, runtime) => {
@@ -361,9 +361,12 @@ describe("Game", () => {
     advance(1);
     expect(scheduled).toBe(1);
 
+    game.state.set({ score: 7 });
+    game.state.flush();
     const firstScene = game.scene;
     await game.goto("play");
     expect(game.scene).not.toBe(firstScene);
+    expect(game.state.getState().score).toBe(0);
     expect(enters).toBe(2);
     expect(game.ctx?.entities.snapshot()).toEqual({ "entity-2": {} });
     advance(1);

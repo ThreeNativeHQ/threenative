@@ -190,6 +190,8 @@ describe("template contracts", () => {
     const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
     const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
     expect(play).toContain('frameCtx.goto("play")');
+    expect(play).toContain("frameCtx.state.set(Play.initialState)");
+    expect(play).toContain("frameCtx.state.flush()");
     expect(play).toContain("ctx.tween(");
     expect(play).toContain("ctx.after(");
     expect(play).toContain("pickup.monitoring = false");

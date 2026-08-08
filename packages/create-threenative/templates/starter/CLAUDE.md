@@ -185,6 +185,7 @@ The start scene owns the initial state in `static initialState`; omit a duplicat
 framework preserves only JSON-shaped store state, so `Play.enter()` must seed entities
 from the carried values such as `playerX`; the scene graph, physics world, audio voices,
 particles, and renderer are rebuilt on every update.
+The keyboard and React restart paths reset `Play.initialState` before rebuilding the scene.
 
 ## Register entities you want to inspect or test
 

@@ -20,6 +20,7 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   hot: ImportMeta["hot"],
 ): void {
   if (hot === undefined) return;
+  hot.accept();
   const carried = hot.data.threenative as HotData | undefined;
   const reloads = carried?.reloads ?? 0;
   if (carried !== undefined) restoreState(game, carried.state);

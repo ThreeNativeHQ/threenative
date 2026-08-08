@@ -113,6 +113,7 @@ export interface Game<
   readonly ctx: Ctx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
+  /** Rebuilds the requested scene from the game's declared initial state. */
   goto(name: string): Promise<void>;
   start(): Promise<void>;
   pause(): void;

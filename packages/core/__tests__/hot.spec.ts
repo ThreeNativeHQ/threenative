@@ -63,7 +63,7 @@ describe("acceptHotUpdate", () => {
     acceptHotUpdate(rebuilt, hot);
 
     expect(rebuilt.state.getState().score).toBe(7);
-    expect(hot.accepted).toBe(0);
+    expect(hot.accepted).toBe(2);
   });
 
   it("should drop keys the new state no longer declares", () => {

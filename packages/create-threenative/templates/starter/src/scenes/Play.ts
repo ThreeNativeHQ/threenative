@@ -105,8 +105,10 @@ export class Play extends Scene<GameState, PhysicsContext> {
     }
 
     return (frameCtx, dt) => {
-      // Goto to the current scene is a full restart: it clears entities and scheduled callbacks.
+      // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
+        frameCtx.state.set(Play.initialState);
+        frameCtx.state.flush();
         void frameCtx.goto("play");
         return;
       }
