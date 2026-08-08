@@ -343,13 +343,13 @@ and no plugin behind.
 - `packages/core/__tests__/game.spec.ts` — EDIT: the stop-during-boot cases.
 
 **Implementation:**
-- [ ] `#pendingStart: Promise<void> | undefined` and `#aborted: boolean`.
-- [ ] `start()` stores its own promise, and checks `#aborted` after each `await` boundary
+- [x] `#pendingStart: Promise<void> | undefined` and `#aborted: boolean`.
+- [x] `start()` stores its own promise, and checks `#aborted` after each `await` boundary
       (renderer created, plugins set up, scene loaded); on abort it disposes what it built
       and returns without starting the loop.
-- [ ] `stop()` no longer early-returns on `!#started`: it sets `#aborted`, tears down
+- [x] `stop()` no longer early-returns on `!#started`: it sets `#aborted`, tears down
       whatever exists, and is idempotent when nothing does.
-- [ ] `stop()` stays **synchronous** — `Game.stop(): void` is the published signature and
+- [x] `stop()` stays **synchronous** — `Game.stop(): void` is the published signature and
       `GameCanvas`'s effect cleanup cannot await. The abort flag is what makes a sync
       `stop()` correct against an async `start()`.
 
@@ -387,14 +387,14 @@ and the page does not reload — the score in `#score` keeps its value.
   `acceptHotUpdate(game, import.meta.hot)` line.
 
 **Implementation:**
-- [ ] Capture → `assertPortableState` → `hot.data.threenative` → `game.stop()` in `finally`.
-- [ ] Reinstate with shape reconciliation against the new declared state; one `console.info`
+- [x] Capture → `assertPortableState` → `hot.data.threenative` → `game.stop()` in `finally`.
+- [x] Reinstate with shape reconciliation against the new declared state; one `console.info`
       naming dropped/added keys.
-- [ ] Single-flight: a reload while a rebuild is in flight is queued, never interleaved.
-- [ ] On portability failure: report to the overlay, `hot.invalidate()`, preserve nothing.
-- [ ] `hot()` diagnostics: `{ reloads, entities, sceneObjects, canvases, audio, physics }`,
+- [x] Single-flight: a reload while a rebuild is in flight is queued, never interleaved.
+- [x] On portability failure: report to the overlay, `hot.invalidate()`, preserve nothing.
+- [x] `hot()` diagnostics: `{ reloads, entities, sceneObjects, canvases, audio, physics }`,
       dev-gated by the same `import.meta.env.DEV` check as `installDevTools`.
-- [ ] `physics` is read by an **agnostic duck-typed probe** — `typeof ctx.physics?.numBodies
+- [x] `physics` is read by an **agnostic duck-typed probe** — `typeof ctx.physics?.numBodies
       === "function" ? ctx.physics.numBodies() : null`. Core learns "a physics context may
       report a body count", never anything about Rapier.
 
@@ -617,25 +617,25 @@ Every criterion below describes what a developer observes, not what code exists.
 
 ### Binary done checks
 
-- [ ] All phases complete
+- [ ] All phases complete — Phase 5's supported-browser zero-console gate remains pending.
 - [ ] All specified tests pass
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` passes
-- [ ] `pnpm budgets` green — **no new package** (7/8 unchanged; the last slot stays free for
+- [x] `pnpm typecheck && pnpm lint && pnpm test` passes
+- [x] `pnpm budgets` green — **no new package** (7/8 unchanged; the last slot stays free for
       navigation), framework LOC ≈ 2,988 → ~3,110 of 15,000, core src 1,996 → ~2,115 against
       the 2,500 test cap
-- [ ] `pnpm sync:agents --check` and `pnpm tsx scripts/count-loc.ts --check` pass
+- [x] `pnpm sync:agents --check` and `pnpm tsx scripts/count-loc.ts --check` pass
 - [ ] `pnpm test:browser` includes the leak gate and passes
-- [ ] `pnpm visuals` passes
+- [x] `pnpm visuals` passes
 - [ ] All automated checkpoints passed; manual checkpoints passed on Phases 4 and 5
-- [ ] Internal/developer-facing — **no UI component**, and that is deliberate
+- [x] Internal/developer-facing — **no UI component**, and that is deliberate
 
 ### Integration gates
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test
       `file:line`
-- [ ] Caller census pasted for `acceptHotUpdate`, `assertPortableState`, `numBodies`
+- [x] Caller census pasted for `acceptHotUpdate`, `assertPortableState`, `numBodies`
 - [ ] Revert check passed: removing the template call turns the leak gate red
-- [ ] No second live reload implementation (`import.meta.hot` census clean)
+- [x] No second live reload implementation (`import.meta.hot` census clean)
 - [ ] Every gate has a negative control that was **observed failing**
 - [ ] Proved on the real production subject: a **scaffolded `starter`** with React UI,
       Rapier physics, audio and particles — not on `minimal`. Phase 2 proves on `minimal`
