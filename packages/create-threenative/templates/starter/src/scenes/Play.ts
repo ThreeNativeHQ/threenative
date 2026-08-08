@@ -28,6 +28,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+    ctx.state.set(Play.initialState);
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.ogg");
     void pickupAudio.catch(() => undefined);
@@ -67,6 +68,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickupVisual.position.set(pickupX, 0.5, 0);
     pickupVisual.castShadow = true;
     ctx.add(pickupVisual);
+    void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
     springArm.snap(player.mesh.position);
     ctx.state.set({ levelX });
     ctx.entities.add("player", player);
@@ -78,10 +80,21 @@ export class Play extends Scene<GameState, PhysicsContext> {
     pickup.on("bodyEntered", (body) => {
       if (body !== player.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
+      pickup.monitoring = false;
+      pickupVisual.visible = false;
+      ctx.after(1.2, () => {
+        pickupVisual.visible = true;
+        pickup.monitoring = true;
+      });
       void pickupAudio.then((buffer) => audio.play(buffer)).catch(() => undefined);
     });
 
     return (frameCtx, dt) => {
+      // Goto to the current scene is a full restart: it clears entities and scheduled callbacks.
+      if (frameCtx.input.justPressed("restart")) {
+        void frameCtx.goto("play");
+        return;
+      }
       player.update(frameCtx, dt);
       let respawned = false;
       if (player.mesh.position.y < KILL_PLANE) {

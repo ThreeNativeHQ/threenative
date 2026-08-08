@@ -225,6 +225,103 @@ describe("Game", () => {
     game.stop();
   });
 
+  it("exposes goto on Game, reconstructs the current scene, and clears its scheduler", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let enters = 0;
+    let scheduled = 0;
+
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: Ctx): void {
+        enters += 1;
+        ctx.entities.add(`entity-${enters}`, {});
+        ctx.every(() => scheduled++);
+      }
+    }
+
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { play: Restartable },
+      start: "play",
+    });
+
+    expect(() => game.goto("play")).toThrow("before start");
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    advance(1);
+    expect(scheduled).toBe(1);
+
+    const firstScene = game.scene;
+    await game.goto("play");
+    expect(game.scene).not.toBe(firstScene);
+    expect(enters).toBe(2);
+    expect(game.ctx?.entities.snapshot()).toEqual({ "entity-2": {} });
+    advance(1);
+    expect(scheduled).toBe(2);
+    game.stop();
+  });
+
+  it("does not run plugins against a destination during a frame navigation", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let destinationUpdates = 0;
+    let pluginUpdates = 0;
+
+    class First extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: Ctx): (ctx: Ctx, dt: number) => void {
+        return () => {
+          void ctx.goto("second");
+          return;
+        };
+      }
+    }
+
+    class Second extends Scene {
+      override enter(): (ctx: Ctx, dt: number) => void {
+        return () => {
+          destinationUpdates += 1;
+        };
+      }
+    }
+
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+          update: () => {
+            pluginUpdates += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { first: First, second: Second },
+      start: "first",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    advance(1);
+    expect(destinationUpdates).toBe(0);
+    expect(pluginUpdates).toBe(0);
+    advance(1);
+    expect(destinationUpdates).toBe(1);
+    expect(pluginUpdates).toBe(1);
+    game.stop();
+  });
+
   it("should run exit, clear, load, and enter in order on goto", async () => {
     const events: string[] = [];
     let navigate: ((name: string) => Promise<void>) | undefined;

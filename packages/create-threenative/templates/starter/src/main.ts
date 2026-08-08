@@ -11,7 +11,10 @@ import { App } from "./ui/App.js";
 import "./style.css";
 
 const game = defineGame<GameState, PhysicsContext>({
-  input: { jump: { buttons: [0], down: ["Space"] } },
+  input: {
+    jump: { buttons: [0], down: ["Space"] },
+    restart: { down: ["KeyR"] },
+  },
   plugins: [rapier(), playtest()],
   scenes: { boot: Boot, play: Play },
   seed: 90210,

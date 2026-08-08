@@ -186,6 +186,26 @@ describe("template contracts", () => {
     expect(menu).toContain("game.resume()");
   });
 
+  it("should demonstrate the complete ctx lifecycle surface", async () => {
+    const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
+    const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
+    expect(play).toContain('frameCtx.goto("play")');
+    expect(play).toContain("ctx.tween(");
+    expect(play).toContain("ctx.after(");
+    expect(play).toContain("pickup.monitoring = false");
+    expect(menu).toContain('game.goto("play")');
+
+    for (const template of templates) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents).toContain(
+        "## The `ctx` surface — you already have these, do not rebuild them",
+      );
+      expect(agents).toContain('| `ctx.goto("play")` |');
+      expect(agents).toContain("goto` and then `return`");
+      expect(agents).not.toContain("probably does not exist");
+    }
+  });
+
   it("should decay the platformer coyote timer every update", async () => {
     const character = await readFile(
       path.join(templateRoot, "platformer/src/entities/Character.ts"),

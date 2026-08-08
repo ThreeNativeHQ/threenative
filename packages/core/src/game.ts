@@ -105,6 +105,7 @@ export interface Game<
   readonly ctx: Ctx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
+  goto(name: string): Promise<void>;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -195,6 +196,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
 
   get state(): GameStore<TState> {
     return this.#state;
+  }
+
+  goto(name: string): Promise<void> {
+    if (this.#ctx === undefined) throw new Error("Cannot call game.goto() before start().");
+    return this.#goto(name, this.#ctx);
   }
 
   #goto(name: string, ctx: Ctx<TState, TPhysics>): Promise<void> {
@@ -314,8 +320,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         if (this.#paused) return;
         this.#input?.tick();
         scheduler.tick(dt);
-        if (this.#sceneFrame !== undefined) this.#sceneFrame(ctx, dt);
-        else this.#scene?.update(ctx, dt);
+        const scene = this.#scene;
+        const frame = this.#sceneFrame;
+        if (frame !== undefined) frame(ctx, dt);
+        else scene?.update(ctx, dt);
+        if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#config.plugins ?? []) {
           if (typeof plugin !== "function") plugin.update?.(ctx, dt);
         }

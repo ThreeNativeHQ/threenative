@@ -25,6 +25,56 @@ afterEach(() => {
 });
 
 describe("Area3D", () => {
+  it("monitors by default and suppresses stale exits while disabled", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
+    const body = new RigidBody3D({
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    let entered = 0;
+    let exited = 0;
+    area.on("bodyEntered", () => entered++);
+    area.on("bodyExited", () => exited++);
+
+    expect(area.monitoring).toBe(true);
+    plugin.update?.(ctx, 1 / 60);
+    expect(entered).toBe(1);
+
+    area.monitoring = false;
+    expect(area.monitoring).toBe(false);
+    body.body.setTranslation({ x: 5, y: 0, z: 0 }, true);
+    plugin.update?.(ctx, 1 / 60);
+    area.monitoring = true;
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(exited).toBe(0);
+    body.dispose();
+    area.dispose();
+  });
+
+  it("does not report a new intersection while monitoring is disabled", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
+    const body = new RigidBody3D({
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    let entered = 0;
+    area.on("bodyEntered", () => entered++);
+    area.monitoring = false;
+    plugin.update?.(ctx, 1 / 60);
+    expect(entered).toBe(0);
+
+    area.monitoring = true;
+    plugin.update?.(ctx, 1 / 60);
+    expect(entered).toBe(1);
+    body.dispose();
+    area.dispose();
+  });
+
   it("should move its sensor through the Area3D surface", async () => {
     const { ctx } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });

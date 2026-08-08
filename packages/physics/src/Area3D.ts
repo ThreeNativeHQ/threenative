@@ -34,6 +34,7 @@ export class Area3D {
   #physics: PhysicsContext | undefined;
   #entered = new Map<number, PhysicsBody3D>();
   #contacts: AreaContact[] = [];
+  #monitoring = true;
   #listeners: Record<AreaEvent, Set<AreaHandler>> = {
     bodyEntered: new Set(),
     bodyExited: new Set(),
@@ -68,13 +69,24 @@ export class Area3D {
     return () => this.#listeners[event].delete(handler);
   }
 
+  /** Mirrors Godot's Area3D.monitoring. When false the area reports no contacts. */
+  get monitoring(): boolean {
+    return this.#monitoring;
+  }
+
+  set monitoring(value: boolean) {
+    if (this.#monitoring === value) return;
+    this.#monitoring = value;
+    if (!value) this.#entered.clear();
+  }
+
   setPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
     if (this.#disposed || !this.body.isValid()) return;
     this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
   }
 
   handleCollision(body: PhysicsBody3D, started: boolean): void {
-    if (this.#disposed) return;
+    if (this.#disposed || !this.#monitoring) return;
     const handle = body.body.handle;
     if (started) {
       if (this.#entered.has(handle)) return;

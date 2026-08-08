@@ -10,6 +10,9 @@ export function Menu({ game }: { game: Game<GameState, PhysicsContext> }) {
     else game.pause();
     setPaused((value) => !value);
   };
+  const restart = () => {
+    void game.goto("play");
+  };
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -27,6 +30,13 @@ export function Menu({ game }: { game: Game<GameState, PhysicsContext> }) {
         type="button"
       >
         {paused ? "resume" : "pause"}
+      </button>
+      <button
+        className="pointer-events-auto border border-line px-2 py-1 text-text hover:border-lume"
+        onClick={restart}
+        type="button"
+      >
+        restart
       </button>
     </div>
   );
