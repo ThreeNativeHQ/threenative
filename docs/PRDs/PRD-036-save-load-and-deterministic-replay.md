@@ -1,12 +1,12 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** implementation delivered in a partial lane; the browser consumer gate is
-partially proven on a supported isolated Brave/WebGPU runner. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
-closed, but this PRD remains open until its consumer proof is complete and is not moved to
-`done/`. The implementation and checked-in replay consumer project are merged on
-`docs/opportunity-areas-prds`; automated gates passed
-on 2026-08-08; the full browser suite, manual checkpoint, and negative controls remain
-pending. See `docs/verification/PRD-036.md`.
+**Status:** implementation delivered in a partial lane; the checked-in browser consumer and
+real-subject same-run replay checkpoint pass on isolated Brave/WebGPU. Gate 0 and Phase 1
+of `docs/strategy/ROADMAP.md` are closed, but this PRD remains open until its full consumer
+proof is complete and is not moved to `done/`. The implementation and checked-in replay
+consumer project are merged on `docs/opportunity-areas-prds`; the full browser suite, 1%
+divergence checkpoint, and negative controls remain pending. See
+`docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
 ordering logic +2, multi-package changes +2). HIGH means an automated checkpoint after

@@ -185,22 +185,26 @@ export class Abyss extends Scene<AbyssState> {
     const hunterMaterial = glowMaterial(0x8a6bff, 2);
     const spawnHunter = () => {
       const mesh = new THREE.Mesh(hunterGeometry, hunterMaterial);
-      const angle = Math.random() * Math.PI * 2;
+      const angle = ctx.random.range(0, Math.PI * 2);
       mesh.position.set(Math.cos(angle) * field.w * 0.55, Math.sin(angle) * field.h * 0.55, 0);
       ctx.add(mesh);
-      hunters.push({ mesh, speed: 96 + Math.random() * 40, spin: Math.random() * 2 - 1 });
+      hunters.push({
+        mesh,
+        speed: ctx.random.range(96, 136),
+        spin: ctx.random.range(-1, 1),
+      });
     };
     const placePearl = (pearl: Pearl, index: number) => {
       if (index === 0) {
         pearl.mesh.position.set(125, 0, 0);
       } else {
         pearl.mesh.position.set(
-          (Math.random() - 0.5) * field.w * 0.86,
-          (Math.random() - 0.5) * field.h * 0.86,
+          ctx.random.range(-0.5, 0.5) * field.w * 0.86,
+          ctx.random.range(-0.5, 0.5) * field.h * 0.86,
           0,
         );
       }
-      pearl.drift.set((Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40);
+      pearl.drift.set(ctx.random.range(-0.5, 0.5) * 40, ctx.random.range(-0.5, 0.5) * 40);
     };
 
     ctx.renderer.setOutputNode(createPostProcessing(ctx.scene, camera));

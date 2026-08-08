@@ -48,6 +48,7 @@ if (import.meta.env.DEV) {
         const recording = replayPlugin.recording;
         if (recording === undefined) throw new Error("No replay recording is available yet.");
         if (gameRuntime === undefined) throw new Error("The game runtime is not ready.");
+        if (gameRuntime.random !== undefined) gameRuntime.random.state = recording.randomState;
         await game.goto("play");
         return createReplayDriver(recording, window)(gameRuntime);
       },
