@@ -19,6 +19,7 @@ import {
   MathUtils,
   Mesh,
   SphereGeometry,
+  TorusKnotGeometry,
   Vector3,
 } from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
@@ -122,6 +123,12 @@ export function spike(
 ): Mesh {
   const geometry = new ConeGeometry(radius, height, options.segments ?? 14);
   return shadowed(new Mesh(geometry, material), options);
+}
+
+/** A deliberately dense prop for the starter's editable ray-picking example. */
+export function sculpture(material: Material): Mesh {
+  const geometry = new TorusKnotGeometry(1.35, 0.38, 500, 100);
+  return shadowed(new Mesh(geometry, material), {});
 }
 
 /**

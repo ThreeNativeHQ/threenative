@@ -3,12 +3,13 @@ import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@thr
 import { Group, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
+import { pickAt } from "../pick.js";
 import { createSpringArm } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createMaterials } from "../render/materials.js";
 import { createParticles } from "../render/particles.js";
 import { setupPost } from "../render/postprocessing.js";
-import { ball, block, makeRandom, roundedBox, spike, tube } from "../render/shapes.js";
+import { ball, block, makeRandom, roundedBox, sculpture, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
@@ -20,6 +21,8 @@ export class Play extends Scene<GameState, PhysicsContext> {
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
     entityCount: 0,
+    fastPicks: 0,
+    hovered: "",
     jumps: 0,
     levelX: -99,
     peakRise: 0,
@@ -41,6 +44,10 @@ export class Play extends Scene<GameState, PhysicsContext> {
     });
 
     const materials = createMaterials();
+    const sculptureMesh = sculpture(materials.crate);
+    sculptureMesh.name = "sculpture";
+    sculptureMesh.position.set(-2, 2.6, -1.5);
+    ctx.add(sculptureMesh);
     const levelX = ctx.random.range(-1, 1);
     const pickupX = 1.2 + makeRandom(Math.round((levelX + 1) * 1000))() * 0.8;
     const floorMesh = new Mesh(roundedBox(10, 0.2, 4, 0.08), materials.floor);
@@ -120,6 +127,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         respawned = true;
       }
       springArm.follow(player.mesh.position, dt);
+      pickAt(frameCtx);
       const debug = player.debug();
       const previous = frameCtx.state.getState();
       frameCtx.state.set({
