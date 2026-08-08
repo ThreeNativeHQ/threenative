@@ -6,8 +6,9 @@ Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coef
 available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
 this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
 The implementation and checked-in replay consumer project are merged on
-`docs/opportunity-areas-prds`; the full browser suite and observed-red/revert controls remain
-pending. See
+`docs/opportunity-areas-prds`; the full browser suite, generated-scenario regression sensitivity,
+and replay removal/revert controls remain pending. Selected fail-closed controls are observed-red.
+See
 `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
@@ -589,6 +590,10 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 3. **A recording exported from a real session becomes a `.playtest.json` that runs in CI**
    and goes red when the behaviour it captured regresses. Proved by changing the impulse and
    watching `pnpm test:browser` fail.
+
+   Current evidence leaves this criterion open: the checked-in scenario runs, but its generic
+   `movement.minDistance` assertion stayed green under the temporary 1% movement-impulse
+   variant. See `docs/verification/PRD-036.md`.
 4. **A replay whose runtime fingerprint does not match refuses to run**, naming
    `TN_REPLAY_RUNTIME_MISMATCH`, rather than running and reporting a near-match.
 5. **A scaffolded project saves and loads its game state in ≤5 lines the user wrote
