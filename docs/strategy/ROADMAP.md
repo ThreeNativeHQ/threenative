@@ -63,9 +63,9 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
 | Playtest semantic depth | [done/PRD-033](../PRDs/done/PRD-033-playtest-semantic-depth.md) | **done; 11/11 platformer semantic scenarios and observed-red controls verified** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
-| Hot reload with state preservation | [PRD-035](../PRDs/PRD-035-hot-reload-state-preservation.md) | **implementation delivered; headed WebGPU hot-reload and full browser gates pass; malformed-state and negative-control evidence pending** |
+| Hot reload with state preservation | [done/PRD-035](../PRDs/done/PRD-035-hot-reload-state-preservation.md) | **done; headed WebGPU hot-reload, full browser, and manual checkpoints pass; two synthetic controls remain explicit follow-up debt** |
 | Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **partial implementation merged; replay consumer and full headed browser gate pass; generated regression sensitivity, removal controls, and the +256 vs ≤200 source-delta gate remain open** |
-| Runtime GPU transport and acceleration | [PRD-038](../PRDs/PRD-038-gpu-transport-and-acceleration.md) | **implementation delivered; starter-pick and repaired coyote/look WebGPU gates pass; repaired nine-scenario removal proof remains pending** |
+| Runtime GPU transport and acceleration | [done/PRD-038](../PRDs/done/PRD-038-gpu-transport-and-acceleration.md) | **done; starter-pick, acceleration negative control, repaired coyote/look consumers, and removable nine-scenario proof pass** |
 | Animation state machine / blend control | [done/PRD-039](../PRDs/done/PRD-039-animation-state-machine.md) | **closed — WONTBUILD; area #8 conditionally closed; reopen only on the recorded rigged-asset triggers** |
 | Terrain and open worlds | [PRD-043](../PRDs/PRD-043-terrain-and-open-world.md) | **proposed — queued for later execution; outside the 2026-08-08 execution review** |
 | Physics collision layers and masks | [done/PRD-040](../PRDs/done/PRD-040-physics-collision-layers.md) | **done; consumer scenario, review repair, and full gates verified 2026-08-08** |
@@ -74,7 +74,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current non-done inventory is PRD-035, PRD-036, PRD-038, and proposed PRD-043;
+The current non-done inventory is PRD-036 and proposed PRD-043;
 PRD-033 and PRD-039 are complete records in `done/`, and there is no PRD-037 file in
 `docs/PRDs/`.
 

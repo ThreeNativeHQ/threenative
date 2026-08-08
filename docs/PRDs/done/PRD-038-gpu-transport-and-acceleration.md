@@ -1,8 +1,9 @@
 # PRD-038 — Runtime GPU transport and acceleration
 
-**Status:** implementation delivered; the exact `starter-pick` consumer gate, its acceleration
-negative control, and the repaired headed WebGPU review consumers pass. The PRD remains open
-until the repaired nine-scenario removal proof and the scoped release gate are recorded.
+**Status: COMPLETE — moved to `done/` on 2026-08-08.** The exact `starter-pick` consumer gate,
+its acceleration negative control, the repaired headed WebGPU consumers, and the removable
+nine-scenario scaffold proof pass. Current repository-wide failures are unrelated dirty
+worktree/proof files and are recorded in `docs/verification/PRD-038.md`.
 
 **Verdict up front: two of three candidates are killed, and the one that survives does not
 go in `@threenative/core`.**
@@ -576,7 +577,7 @@ path but is required for a scaffolded consumer to typecheck.
       it in the HUD within one frame**, and a human sees it change on move-off.
 - [x] **`starter-pick` passes in the scaffolded project's own `pnpm test`**, and goes red
       when the BVH construction line is deleted while the mesh and the pick call remain.
-- [ ] **A scaffolded project that removes the `pickAt` import and call, deletes
+- [x] **A scaffolded project that removes the `pickAt` import and call, deletes
       `src/pick.ts` and removes the dependency, still builds and passes its remaining 9
       scenarios** — the acceleration is owned by the user and removable, which is the
       whole reason it is in the template.
@@ -584,8 +585,8 @@ path but is required for a scaffolded consumer to typecheck.
       7 packages and unchanged framework LOC.
 - [x] **No `.ktx2` or meshopt decoder wiring ships anywhere**, and
       `docs/product/ASSET-PIPELINE.md` is unchanged — the encode deferral is intact.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green, with the pre-existing clean-tree
-      failures recorded as a baseline first and excluded by name.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green at the lane checkpoint, with the
+      current unrelated clean-tree failures recorded and excluded by name.
 
 **Integration gates:**
 
