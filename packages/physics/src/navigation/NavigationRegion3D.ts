@@ -82,8 +82,8 @@ export class NavigationRegion3D {
   readonly navigation: NavigationContext;
   readonly meshes: readonly Object3D[];
   navigationMesh: NavMesh;
-  enabled = true;
   #options: NavigationRegion3DOptions;
+  #enabled = true;
   #disposed = false;
 
   constructor(options: NavigationRegion3DOptions) {
@@ -94,6 +94,14 @@ export class NavigationRegion3D {
     this.#options = options;
     this.navigationMesh = this.bakeNavigationMesh();
     this.navigation.regions.add(this);
+  }
+
+  get enabled(): boolean {
+    return this.#enabled;
+  }
+
+  set enabled(value: boolean) {
+    this.#enabled = value;
   }
 
   bakeNavigationMesh(): NavMesh {

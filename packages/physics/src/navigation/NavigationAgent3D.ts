@@ -43,6 +43,18 @@ function horizontalDistanceSquared(
   return (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
 }
 
+function navigationPointMatchesTarget(
+  point: Pick<Vector3, "x" | "y" | "z">,
+  target: Pick<Vector3, "x" | "y" | "z">,
+  horizontalLimit: number,
+  verticalLimit: number,
+): boolean {
+  return (
+    horizontalDistanceSquared(point, target) <= horizontalLimit ** 2 &&
+    Math.abs(point.y - target.y) <= verticalLimit
+  );
+}
+
 function crowdFor(navigation: NavigationContext, radius: number): Crowd {
   if (navigation.crowd !== undefined) return navigation.crowd;
   const crowd = new Crowd(navigation.navMesh, {
@@ -77,6 +89,8 @@ export class NavigationAgent3D {
   constructor(options: NavigationAgent3DOptions) {
     if (options.navigation === undefined)
       throw new Error("NavigationAgent3D requires a navigation context.");
+    if (options.navigation.regions.size === 0)
+      throw new Error("NavigationAgent3D requires a baked navigation region.");
     this.navigation = options.navigation;
     this.object = options.object;
     this.radius = finitePositive("radius", options.radius ?? 0.35);
@@ -142,6 +156,7 @@ export class NavigationAgent3D {
   getNextPathPosition(): Vector3 {
     if (this.#target === undefined)
       throw new Error("NavigationAgent3D.getNextPathPosition requires a target position.");
+    if (!this.#hasEnabledRegion()) return this.object.position.clone();
     const avoidance = this.#crowdAgent?.desiredVelocityObstacleAdjusted();
     if (this.#path.length === 0) return this.object.position.clone();
     if (avoidance !== undefined && Math.hypot(avoidance.x, avoidance.z) > 0.001) {
@@ -162,8 +177,14 @@ export class NavigationAgent3D {
     if (target === undefined) return false;
     const start = this.navigation.query.findClosestPoint(toNavigationVector(this.object.position));
     const end = this.navigation.query.findClosestPoint(toNavigationVector(target));
-    if (!start.success || !end.success) return false;
-    if (start.polyRef === end.polyRef) return true;
+    if (!this.#hasEnabledRegion() || !start.success || !end.success) return false;
+    if (start.polyRef === end.polyRef)
+      return navigationPointMatchesTarget(
+        end.point,
+        target,
+        this.targetDesiredDistance,
+        this.height,
+      );
     const path = this.navigation.query.computePath(
       toNavigationVector(this.object.position),
       toNavigationVector(target),
@@ -172,7 +193,7 @@ export class NavigationAgent3D {
     return (
       path.success &&
       final !== undefined &&
-      horizontalDistanceSquared(final, target) <= this.targetDesiredDistance ** 2
+      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
     );
   }
 
@@ -194,7 +215,13 @@ export class NavigationAgent3D {
   }
 
   advance(): void {
-    if (this.#disposed || this.#target === undefined || this.#path.length === 0) return;
+    if (
+      this.#disposed ||
+      this.#target === undefined ||
+      this.#path.length === 0 ||
+      !this.#hasEnabledRegion()
+    )
+      return;
     while (this.#pathIndex < this.#path.length - 1) {
       const waypoint = this.#path[this.#pathIndex];
       if (
@@ -245,5 +272,10 @@ export class NavigationAgent3D {
     if (this.#crowdAgent === undefined) return;
     this.navigation.crowd?.removeAgent(this.#crowdAgent);
     this.#crowdAgent = undefined;
+  }
+
+  #hasEnabledRegion(): boolean {
+    for (const region of this.navigation.regions) if (region.enabled) return true;
+    return false;
   }
 }

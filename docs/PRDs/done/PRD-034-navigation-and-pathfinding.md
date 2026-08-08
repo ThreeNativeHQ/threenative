@@ -741,7 +741,9 @@ satisfiable by code that merely exists.
 - [x] The capability was proved on the real platformer level (islands, overhang, blocker) — no
       flat-plane fixture appears anywhere in this PRD's tests
 - [x] Phase 4's kill condition was evaluated and its outcome recorded either way
-- [ ] All automated checkpoint reviews passed; the Phase 2 manual checkpoint passed
+- [x] The automated checkpoint review returned `REQUEST_CHANGES`; same-lane repairs were
+      manager-verified under Linchpin's no-second-review protocol, and the Phase 2 manual
+      checkpoint passed
 
 **Never claim a green gate you did not run (§11.6).** "Unverified" is an acceptable entry in
 the evidence section below. "Verified" without a pasted run is not.
@@ -751,25 +753,27 @@ the evidence section below. "Verified" without a pasted run is not.
 ## 10. Verification evidence
 
 ### Phase 1
-- Unit tests: `navigation-region.spec.ts` — 4 passed; `navigation-agent.spec.ts` — 5
+- Unit tests: `navigation-region.spec.ts` — 4 passed; `navigation-agent.spec.ts` — 6
   passed; `navigation-obstacle.spec.ts` — 3 passed. The platformer fixture includes the
   islands, overhang and blocker described in §7.
 - Negative controls observed red: empty meshes and `cellSize: NaN` both throw in the region
   suite; the blocker omission and cursor-pin browser mutations are recorded in
   [`docs/verification/PRD-034.md`](../verification/PRD-034.md).
-- `pnpm budgets`: `budgets ok: 7 packages, 3628 framework LOC, 9 PRD files, largest template 1200 LOC`.
+- `pnpm budgets`: `budgets ok: 7 packages, 3668 framework LOC, 8 PRD files, largest template 1200 LOC`.
 
 ### Phase 2
-- Unit tests: 12 navigation tests passed, including blocker detour, gap reachability,
+- Unit tests: 13 navigation tests passed, including blocker detour, gap reachability,
   upper-layer routing, cursor advance and fail-closed target handling.
 - Caller census: `recast()` → `templates/platformer/src/main.ts:22`; `NavigationRegion3D` →
   `templates/platformer/src/scenes/Level.ts:61`; `NavigationAgent3D` →
   `templates/platformer/src/entities/Chaser.ts:31`; `NavigationObstacle3D` →
   `templates/platformer/src/scenes/Level.ts:84`. `Patrol.ts` remains the scripted-route
   incumbent and was not changed.
-- Manual checkpoint: headed Playwright screenshot captured at `/tmp/prd-034-platformer-final.png`
-  under `xvfb-run`; no page errors. The platform silhouette, HUD, lighting, contact shadows
-  and moving enemy presentation were visually inspected.
+- Manual checkpoint: headed Playwright screenshot captured at
+  `/tmp/prd034-browser.vfRANX/game4/artifacts/playtest/after.png` under `xvfb-run`; no page
+  errors. The platform silhouette, HUD, lighting, contact shadows and moving enemy
+  presentation were visually inspected. A fresh chase run also proved the idle player stayed
+  at spawn while chasers reached it.
 
 ### Phase 3
 - `chase.playtest.json` raw assertion rows: `diagnostics` PASS with 0 console errors, 0
@@ -786,12 +790,14 @@ the evidence section below. "Verified" without a pasted run is not.
 ### Phase 4
 - Kill condition fired? **No.** `NavigationObstacle3D` plus the crowd integration is the
   smaller reusable binding, and the avoidance consumer scenario distinguishes it: both
-  chasers reached the target with diagnostics PASS, path length `12.6357`, and closest
-  distance `0.6105` for `chaser.avoidance`. The unit negative control with
-  `avoidanceEnabled: false` is retained and goes below the required separation threshold.
+  chasers reached the target with diagnostics PASS, path length `12.6679`, closest distance
+  `0.6104` for `chaser.avoidance`, and final separation `1.0988` (minimum `0.56`). The unit
+  negative control with `avoidanceEnabled: false` is retained and goes below the required
+  separation threshold.
 
 ### Phase 5
 - `pnpm sync:agents --check`: `agent docs in sync: 10 CLAUDE.md mirrors`.
 - Full gate status: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm budgets` and
-  `pnpm sync:agents --check` pass. The three pre-existing critic reports were formatter-only
-  housekeeping in commit `eaa6257`, separate from the navigation implementation.
+  `pnpm sync:agents --check` pass; the final Vitest summary was 119 files / 810 tests. The
+  three pre-existing critic reports were formatter-only housekeeping in commit `eaa6257`,
+  separate from the navigation implementation.

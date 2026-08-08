@@ -12,6 +12,11 @@
       "entity": "chaser.avoidance",
       "reachesPositionWithin": { "position": [0, 0.66, 0], "maxDistance": 1.2 },
       "pathLength": 9.0
-    }
+    },
+    "components": [
+      { "entity": "chaser", "component": "navigationFinished", "equals": true },
+      { "entity": "chaser.avoidance", "component": "navigationFinished", "equals": true },
+      { "entity": "chaser.avoidance", "component": "separation", "gte": 0.56, "allowTrivial": true }
+    ]
   }
 }

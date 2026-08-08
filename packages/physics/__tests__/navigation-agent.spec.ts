@@ -89,6 +89,31 @@ describe("NavigationAgent3D", () => {
 
     expect(agent.isTargetReachable(new Vector3(25, 0.75, 0))).toBe(false);
     expect(agent.isTargetReachable(new Vector3(-6, 0.75, 0))).toBe(true);
+    expect(agent.isTargetReachable(new Vector3(100, 0.75, 0))).toBe(false);
+    expect(agent.isTargetReachable(new Vector3(0, 5, 0))).toBe(false);
+  });
+
+  it("should fail closed when the baked region is disabled or absent", async () => {
+    const { ctx } = await setup();
+    expect(
+      () =>
+        new NavigationAgent3D({
+          avoidanceEnabled: false,
+          navigation: navigation(ctx),
+          object: new Object3D(),
+        }),
+    ).toThrow(/baked navigation region/);
+
+    const region = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    region.enabled = false;
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object: new Object3D(),
+    });
+    expect(agent.isTargetReachable(new Vector3(-6, 0.75, 0))).toBe(false);
+    region.enabled = true;
+    expect(agent.isTargetReachable(new Vector3(-6, 0.75, 0))).toBe(true);
   });
 
   it("should keep an agent on the one-way platform layer", async () => {

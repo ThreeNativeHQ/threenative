@@ -3,10 +3,8 @@ import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threena
 import { NavigationAgent3D, type NavigationContext } from "@threenative/physics/navigation";
 import { Group, Mesh, SphereGeometry, Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
-import type { GameState } from "../state.js";
 import type { Character } from "./Character.js";
-type GameCtx = Ctx<GameState, PhysicsContext>;
-
+type GameCtx = Ctx<Record<string, unknown>, PhysicsContext>;
 export class Chaser {
   readonly mesh: Group;
   readonly body: CharacterBody3D;
@@ -19,20 +17,18 @@ export class Chaser {
     const visual = new Mesh(new SphereGeometry(0.44, 12, 8), createMaterials().accent);
     visual.scale.y = 0.8;
     visual.castShadow = true;
-    this.mesh.add(visual);
-    ctx.add(this.mesh);
+    ctx.add(this.mesh.add(visual));
     this.body = new CharacterBody3D({
       gravity: 0,
       object: this.mesh,
       physics: ctx.physics,
-      shape: CollisionShape3D.capsule(0.35, 0.3),
+      shape: CollisionShape3D.capsule(0.35, 0.3).setSensor(true).setCollisionGroups(0x4fffc),
     });
-    this.body.collider.setSensor(true);
     this.agent = new NavigationAgent3D({
       maxSpeed: 3.4,
       navigation,
       object: this.mesh,
-      targetDesiredDistance: 0.55,
+      targetDesiredDistance: 0.7,
     });
     this.agent.setTargetPosition(player.mesh.position);
     this.#retarget = ctx.every(() => this.agent.setTargetPosition(player.mesh.position));
@@ -49,9 +45,11 @@ export class Chaser {
     this.body.moveAndSlide(dt);
   }
   debug(): Record<string, unknown> {
+    const peer = this.mesh.userData.peer;
     return {
       navigationFinished: this.agent.isNavigationFinished(),
       position: this.mesh.position.toArray(),
+      separation: this.mesh.position.distanceTo(peer?.position ?? this.mesh.position),
       targetReachable: this.agent.isTargetReachable(),
     };
   }

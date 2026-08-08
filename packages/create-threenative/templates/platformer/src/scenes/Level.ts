@@ -134,6 +134,8 @@ export class Level extends Scene<GameState, PhysicsContext> {
     ctx.entities.add("patrol", patrol);
     const chaser = new Chaser(ctx, character, navigation, new Vector3(7.5, 0.66, 0));
     const avoidanceChaser = new Chaser(ctx, character, navigation, new Vector3(8.2, 0.66, 0.7));
+    chaser.mesh.userData.peer = avoidanceChaser.mesh;
+    avoidanceChaser.mesh.userData.peer = chaser.mesh;
     chasers.push(
       { id: "chaser", value: chaser },
       { id: "chaser.avoidance", value: avoidanceChaser },
