@@ -531,6 +531,12 @@ clean pre-Phase-1 scaffold in the same isolated Brave pass produced 15
 `OperationError: Instance dropped in popErrorScope` page errors plus the existing
 deprecation warning. These are environment observations, not passing scenario results.
 
+Additional runner diagnosis used a minimal `data:` page, so it does not depend on the
+scaffold: Playwright Chromium still reported repeated `FD ownership violation` failures,
+`GPU process isn't usable`, and exited with `SIGTRAP` even with crashpad-disabled,
+`--in-process-gpu`, and SwiftShader flags. The in-process and SwiftShader variants did
+launch, but exposed no `navigator.gpu`; they cannot stand in for the required WebGPU run.
+
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
 HEAD for environmental reasons. **Baseline first:** run the existing 9 scenarios before
