@@ -4,6 +4,10 @@
       "noConsoleErrors": true,
       "runtimeReady": true
     },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.1
+    },
     "world": {
       "seed": 90210
     }
@@ -17,13 +21,17 @@
       "release": true
     },
     {
-      "holdTicks": 60,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "holdTicks": 1797,
       "press": "ArrowRight",
       "release": true
     },
     {
       "release": true,
-      "waitTicks": 29
+      "waitTicks": 1
     }
   ],
   "target": "web",

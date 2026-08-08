@@ -108,6 +108,13 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
   return steps;
 }
 
+function behaviorAssertions(recording: RecordingValue, scenarioPath: string) {
+  if (!recording.input.some((sample) => sample.keys.length > 0)) {
+    throw invalidScenario(scenarioPath, "recording produced no meaningful behavior assertions.");
+  }
+  return { movement: { entity: "player", minDistance: 0.1 } };
+}
+
 export function requireAssertions(
   value: IPlaytestScenario["assert"],
   scenarioPath: string,
@@ -120,8 +127,10 @@ export function requireAssertions(
 export function recordToScenario(value: unknown, scenarioPath = "recording.json"): IPlaytestScenario {
   const recording = validateRecording(value, scenarioPath);
   const steps = emitSteps(recording, scenarioPath);
+  const behavior = behaviorAssertions(recording, scenarioPath);
   const assert = requireAssertions({
     diagnostics: { noConsoleErrors: true, runtimeReady: true },
+    ...behavior,
     world: { seed: recording.seed },
   }, scenarioPath);
   if (steps.length === 0) throw invalidScenario(scenarioPath, "recording produced no steps.");

@@ -1,5 +1,5 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
-import type { Ctx } from "@threenative/core";
+import type { Ctx, GamePluginRuntime } from "@threenative/core";
 import { Object3D } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Area3D } from "../src/Area3D.js";
@@ -24,6 +24,23 @@ afterEach(() => {
 });
 
 describe("rapier plugin", () => {
+  it("should register the actual Rapier runtime version", async () => {
+    await RAPIER.init();
+    const plugin = rapier();
+    const ctx = { physics: undefined } as unknown as Ctx<Record<string, unknown>, PhysicsContext>;
+    const runtime = {
+      fixedStep: () => 0,
+      rapier: null,
+      seed: 1,
+      step: 1 / 60,
+    } satisfies GamePluginRuntime;
+
+    await plugin.setup?.(ctx, runtime);
+
+    expect(runtime.rapier).toBe(RAPIER.version());
+    plugin.dispose?.(ctx);
+  });
+
   it("should step exactly once per fixed tick", async () => {
     const { ctx, plugin } = await setup();
     const world = ctx.physics.world;

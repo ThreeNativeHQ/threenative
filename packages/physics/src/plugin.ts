@@ -45,8 +45,9 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
   >();
 
   return {
-    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>) => {
+    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>, runtime) => {
       await initialize();
+      if (runtime !== undefined) runtime.rapier = RAPIER.version();
       const world = new RAPIER.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
       const eventQueue = new RAPIER.EventQueue(true);
       context = {

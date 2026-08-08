@@ -25,6 +25,7 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
   ]);
   expect(scenario.steps.reduce((total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0), 0)).toBe(5);
   expect(Object.keys(scenario.assert ?? {}).length).toBeGreaterThan(0);
+  expect(scenario.assert?.movement).toEqual({ entity: "player", minDistance: 0.1 });
 });
 
 test("should throw when the recording contains an unknown key", () => {
@@ -33,6 +34,12 @@ test("should throw when the recording contains an unknown key", () => {
 
 test("should throw when the emitted scenario would carry zero assertions", () => {
   expect(() => requireAssertions(undefined, "recording.json")).toThrow(/zero assertions/u);
+});
+
+test("should throw when the recording contains no behavior to assert", () => {
+  expect(() => recordToScenario({ ...recording(), input: [{ keys: [], tick: 0 }] })).toThrow(
+    /meaningful behavior assertions/u,
+  );
 });
 
 test("should be collected by the root runner", () => {

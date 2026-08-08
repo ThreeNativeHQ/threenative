@@ -251,20 +251,21 @@ phase end means the phase is incomplete.**
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `Random.state` accessor | `packages/core/src/replay.ts:109` reads it into the recording header | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
+| 1 | `Random.state` accessor | `packages/core/src/replay.ts:129` reads it into the recording header; `packages/core/src/replay.ts:184-190` restores it before stepping | nothing (new capability) | n/a | set `state` to a known value → the next `random()` returns a value fixed by a table; **a run that never restores `state` produces a different sequence** |
 | 2 | `GameConfig.inputTarget` | `packages/core/src/game.ts:301-303` selects the configured target or the existing default | hardcoded `window`/`canvas` at `game.ts:251` | reduced to a default | omit it → behaviour byte-identical to today, pinned by the untouched existing input tests |
-| 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:25`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
-| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:46-56` dev-only replay hook | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
-| 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:146-156` validates the recording before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
+| 3 | `replay()` plugin, record mode | `examples/abyss-framework/src/main.tsx:33`; `packages/create-threenative/templates/starter/src/main.ts:19` | nothing | n/a | press a key for 10 ticks → the recording contains 2 samples (down, up); press nothing → **the recording is rejected at load as empty, not accepted as a valid zero-input replay** |
+| 4 | Replay driver (playback) | `examples/abyss-framework/src/main.tsx:52` dev-only replay hook resets `game.goto("play")` before driving | nothing | n/a | replay a recording, compare trace to the original → equal; change the jump impulse by 1% and replay the same recording → **different, by orders of magnitude more than the equality tolerance** |
+| 5 | `TN_REPLAY_RUNTIME_MISMATCH` | `packages/core/src/replay.ts:179-190` compares the live Rapier/RNG runtime before stepping | nothing | n/a | hand-edit the recording's rapier version → the replay **throws**; it must not run and report a near-match |
 | 6 | `playtest record-to-scenario` | `packages/playtest/src/runner/cli.ts:84-85,104-125` dispatches and writes the conversion | nothing | n/a | feed a recording with an unknown top-level key → **throws `invalidScenario`**, per this package's fail-closed rule |
-| 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:120-136` generates `examples/abyss-framework/playtests/replay.playtest.json` | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
+| 7 | Generated `bug.playtest.json` | `packages/playtest/src/runner/recording.ts:127-143` generates `examples/abyss-framework/playtests/replay.playtest.json`; `tests/browser-replay/replay.spec.ts:12-25` reads and executes that exact file | nothing | n/a | delete the recording and regenerate → the scenario regenerates or CI fails; it must never pass on the stale copy |
 | 8 | Physics same-seed byte-equality test | `packages/physics/__tests__/determinism.spec.ts:99-106` | the tolerance-only 30-vs-144 assertion, which stays but stops being the only one | no — kept, joined | perturb one body's initial y by `1e-9` → **snapshot bytes differ** |
 | 9 | Tripwire constraints test | `packages/core/__tests__/constraints.spec.ts:37-59` | nothing | n/a | add a `"type"` key to the recording schema → **CI red** |
 
 ### Reachability
 
 - **Entry point:** the game loop. `replay()` sits in the `plugins` array beside `rapier()`
-  and `playtest()`, and its `update` runs at `game.ts:319-321` every fixed tick.
+  and `playtest()`, and its `update` runs at `game.ts:319-321` every fixed tick. The
+  runtime carries the optional seeded random handle and the live Rapier version.
 - **Pre-existing files edited to call it:** `packages/core/src/game.ts` (`inputTarget`),
   `packages/core/src/index.ts` (export), `packages/playtest/src/runner/cli.ts`
   (subcommand), `examples/abyss-framework/src/main.tsx` and
@@ -274,8 +275,9 @@ phase end means the phase is incomplete.**
   code (§0.2). The verification path is a CLI and a CI run.
 - **Full flow:** player plays → `replay()` samples input per tick → user exports
   `recording.json` → `npx @threenative/playtest record-to-scenario recording.json` →
-  `bug.playtest.json` → `pnpm test:browser` re-runs it on every later change, and it goes red
-  when the behaviour regresses.
+  `bug.playtest.json` → the `abyss-framework-replay` Playwright project re-runs the exact
+  checked-in 1,800-tick scenario on every later change, and it goes red when the behaviour
+  regresses.
 - **Replaces:** nothing. Genuinely new — vanilla Three.js ships no answer, and neither does
   ThreeNative today.
 
@@ -555,6 +557,11 @@ this exact feature could report green while doing nothing:
   Two forms, both run: (a) the jump impulse changed by 1%; (b) one body's initial y moved by
   `1e-9`. Both must diverge by orders of magnitude more than the equality tolerance.
 - **Fail-closed:** a fingerprint mismatch throws. It never runs-and-nearly-matches.
+
+- **Checked-in recording proof:** `examples/abyss-framework/playtests/replay.playtest.json`
+  contains 1,800 fixed ticks and a movement assertion; `tests/browser-replay/replay.spec.ts`
+  reads that exact path before invoking the playtest runner, so deleting the fixture fails the
+  browser project before any stale artifact can be used.
 
 ---
 

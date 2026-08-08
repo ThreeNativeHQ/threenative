@@ -15,6 +15,8 @@ export type PluginCleanup = () => void;
 
 export interface GamePluginRuntime {
   fixedStep(ticks: number): number;
+  readonly random?: Pick<Random, "state">;
+  rapier?: string | null;
   readonly seed: number | null;
   readonly step: number;
 }
@@ -380,6 +382,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#loop = gameLoop;
     const runtime: GamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      random,
+      rapier: null,
       seed: this.#config.seed ?? null,
       step: gameLoop.step,
     };

@@ -46,6 +46,17 @@ function validate(value: unknown): Recording {
     fail("TN_REPLAY_EMPTY", "input is empty");
   const rawRuntime = object(root.runtime, "runtime");
   rejectKeys(rawRuntime, ["agent", "core", "rapier", "step"]);
+  if (
+    typeof rawRuntime.agent !== "string" ||
+    rawRuntime.agent.length === 0 ||
+    typeof rawRuntime.core !== "string" ||
+    rawRuntime.core.length === 0 ||
+    (rawRuntime.rapier !== null && typeof rawRuntime.rapier !== "string") ||
+    typeof rawRuntime.step !== "number" ||
+    !Number.isFinite(rawRuntime.step) ||
+    rawRuntime.step <= 0
+  )
+    fail("TN_REPLAY_INVALID", "runtime fingerprint is invalid");
   let previousTick = -1;
   for (const rawSample of root.input) {
     const sample = object(rawSample, "input sample");
@@ -86,7 +97,7 @@ function dispatchKeys(target: EventTarget, current: Set<string>, keys: readonly 
   for (const key of keys) current.add(key);
 }
 type ReplayPublic = { readonly recording: Recording | undefined; readonly runId: symbol };
-type ReplayDriver = (runtime: GamePluginRuntime) => number;
+type ReplayDriver = ((runtime: GamePluginRuntime) => number) & { readonly runId: symbol };
 export function replay<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -94,20 +105,36 @@ export function replay<
   const runId = Symbol("replay");
   const samples: Array<Recording["input"][number]> = [];
   let header: Omit<Recording, "input" | "ticks"> | undefined;
+  let recordRuntime: GamePluginRuntime | undefined;
   let ticks = 0;
   let previousKeys: string[] = [];
   let previousPointer: [number, number, number] = [0, 0, 0];
   return {
     get recording() {
-      return header === undefined ? undefined : { ...header, input: [...samples], ticks };
+      if (header === undefined) return undefined;
+      return {
+        ...header,
+        input: [...samples],
+        runtime: {
+          ...header.runtime,
+          rapier: recordRuntime?.rapier ?? header.runtime.rapier,
+        },
+        ticks,
+      };
     },
     runId,
     setup: (ctx, runtime) => {
       if (runtime?.seed === null || runtime?.seed === undefined)
         fail("TN_REPLAY_UNSEEDED", "replay requires a seed");
+      recordRuntime = runtime;
       header = {
         randomState: ctx.random.state,
-        runtime: { agent: currentAgent, core: CORE_VERSION, rapier: null, step: runtime.step },
+        runtime: {
+          agent: currentAgent,
+          core: CORE_VERSION,
+          rapier: runtime.rapier ?? null,
+          step: runtime.step,
+        },
         seed: runtime.seed,
         version: 1,
       };
@@ -144,37 +171,49 @@ export function replay<
 }
 export function createReplayDriver(recording: Recording, target: EventTarget): ReplayDriver {
   const value = validate(recording);
-  if (
-    value.runtime.core !== CORE_VERSION ||
-    value.runtime.rapier !== null ||
-    value.runtime.agent !== currentAgent
-  )
-    fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
   const samples = new Map(value.input.map((sample) => [sample.tick, sample]));
-  return (runtime) => {
-    if (runtime.seed !== value.seed || runtime.step !== value.runtime.step)
-      fail("TN_REPLAY_RUNTIME_MISMATCH", "recording seed or fixed step does not match");
-    const keys = new Set<string>();
-    let pointer: [number, number, number] = [0, 0, 0];
-    for (let tick = 0; tick < value.ticks; tick += 1) {
-      const sample = samples.get(tick);
-      if (sample !== undefined) {
-        dispatchKeys(target, keys, sample.keys);
-        if (sample.pointer !== undefined && pointer.join() !== sample.pointer.join()) {
-          const wasDown = pointer[2] !== 0;
-          const nextDown = sample.pointer[2] !== 0;
-          const type =
-            wasDown && !nextDown
-              ? "pointerup"
-              : !wasDown && nextDown
-                ? "pointerdown"
-                : "pointermove";
-          target.dispatchEvent(pointerEvent(type, sample.pointer));
-          pointer = [...sample.pointer];
-        }
+  const driver = Object.assign(
+    (runtime: GamePluginRuntime) => {
+      if (runtime.seed !== value.seed || runtime.step !== value.runtime.step)
+        fail("TN_REPLAY_RUNTIME_MISMATCH", "recording seed or fixed step does not match");
+      if ((runtime.rapier ?? null) !== (value.runtime.rapier ?? null))
+        fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
+      if (runtime.random === undefined)
+        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state handle is unavailable");
+      try {
+        runtime.random.state = value.randomState;
+      } catch {
+        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
       }
-      runtime.fixedStep(1);
-    }
-    return value.ticks;
-  };
+      if (runtime.random.state !== value.randomState)
+        fail("TN_REPLAY_RUNTIME_MISMATCH", "runtime random state cannot be restored");
+
+      const keys = new Set<string>();
+      let pointer: [number, number, number] = [0, 0, 0];
+      for (let tick = 0; tick < value.ticks; tick += 1) {
+        const sample = samples.get(tick);
+        if (sample !== undefined) {
+          dispatchKeys(target, keys, sample.keys);
+          if (sample.pointer !== undefined && pointer.join() !== sample.pointer.join()) {
+            const wasDown = pointer[2] !== 0;
+            const nextDown = sample.pointer[2] !== 0;
+            const type =
+              wasDown && !nextDown
+                ? "pointerup"
+                : !wasDown && nextDown
+                  ? "pointerdown"
+                  : "pointermove";
+            target.dispatchEvent(pointerEvent(type, sample.pointer));
+            pointer = [...sample.pointer];
+          }
+        }
+        runtime.fixedStep(1);
+      }
+      return value.ticks;
+    },
+    { runId: Symbol("replay-driver") },
+  ) as ReplayDriver;
+  if (value.runtime.core !== CORE_VERSION || value.runtime.agent !== currentAgent)
+    fail("TN_REPLAY_RUNTIME_MISMATCH", "recording runtime does not match the current build");
+  return driver;
 }

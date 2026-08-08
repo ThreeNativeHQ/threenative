@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const sourceDirectory = path.resolve("packages/core/src");
 const randomSource = path.join(sourceDirectory, "random.ts");
 const replaySource = path.join(sourceDirectory, "replay.ts");
+const indexSource = path.join(sourceDirectory, "index.ts");
 
 describe("core constraints", () => {
   it("should keep visual concerns out of core source", () => {
@@ -60,5 +61,11 @@ describe("core constraints", () => {
 
   it("should keep the saveable random state on the public surface", () => {
     expect(readFileSync(randomSource, "utf8")).toMatch(/state:\s*number/u);
+  });
+
+  it("should keep the replay exports on the public surface", () => {
+    const source = readFileSync(indexSource, "utf8");
+    expect(source).toContain('export { createReplayDriver, replay } from "./replay.js";');
+    expect(source).toContain('export type { Recording } from "./replay.js";');
   });
 });

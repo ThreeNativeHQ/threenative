@@ -11,8 +11,12 @@ function keyEvent(type: "keydown" | "keyup", code: string): Event {
   return event;
 }
 
-function runtime(fixedStep: (ticks: number) => number = () => 0): GamePluginRuntime {
-  return { fixedStep, seed: 90210, step: 1 / 60 };
+function runtime(
+  fixedStep: (ticks: number) => number = () => 0,
+  random = createRandom(1),
+  rapier: string | null = null,
+): GamePluginRuntime {
+  return { fixedStep, random, rapier, seed: 90210, step: 1 / 60 };
 }
 
 async function recordThreeTicks(): Promise<{
@@ -99,8 +103,31 @@ describe("replay", () => {
     strippedInput.dispose();
   });
 
-  it("should record identities that differ between the two runs", () => {
-    expect(replay().runId).not.toBe(replay().runId);
+  it("should restore random state before the replay driver's first step", async () => {
+    const recorded = await recordThreeTicks();
+    const replayRandom = createRandom(1);
+    let stateAtFirstStep: number | undefined;
+    const driver = createReplayDriver(recorded.recording, new EventTarget());
+
+    driver(
+      runtime(() => {
+        stateAtFirstStep = replayRandom.state;
+        return 1;
+      }, replayRandom),
+    );
+
+    expect(stateAtFirstStep).toBe(recorded.recording.randomState);
+    recorded.input.dispose();
+  });
+
+  it("should record identities from the record and replay-driver runs", async () => {
+    const recorded = await recordThreeTicks();
+    const driver = createReplayDriver(recorded.recording, new EventTarget());
+
+    driver(runtime());
+
+    expect(recorded.plugin.runId).not.toBe(driver.runId);
+    recorded.input.dispose();
   });
 
   it("should throw when the recording has no input samples", async () => {
@@ -118,9 +145,25 @@ describe("replay", () => {
       runtime: { ...recording.runtime, rapier: "0.19.3" },
     };
 
-    expect(() => createReplayDriver(mismatched, new EventTarget())).toThrow(
+    expect(() => createReplayDriver(mismatched, new EventTarget())(runtime())).toThrow(
       /TN_REPLAY_RUNTIME_MISMATCH/u,
     );
+    input.dispose();
+  });
+
+  it("should accept a matching non-null Rapier fingerprint", async () => {
+    const { input, recording } = await recordThreeTicks();
+    const physicsRecording = {
+      ...recording,
+      runtime: { ...recording.runtime, rapier: "0.30.1" },
+    };
+
+    expect(() =>
+      createReplayDriver(
+        physicsRecording,
+        new EventTarget(),
+      )(runtime(() => 0, undefined, "0.30.1")),
+    ).not.toThrow();
     input.dispose();
   });
 });
