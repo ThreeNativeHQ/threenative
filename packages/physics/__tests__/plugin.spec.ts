@@ -1,7 +1,7 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Ctx } from "@threenative/core";
 import { Object3D } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Area3D } from "../src/Area3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
@@ -54,5 +54,31 @@ describe("rapier plugin", () => {
     plugin.sceneExit?.(ctx);
     expect(body.body.isValid()).toBe(false);
     expect(area.body.isValid()).toBe(false);
+  });
+
+  it("should report zero bodies after dispose", async () => {
+    const { ctx, plugin } = await setup();
+    const body = new RigidBody3D({
+      object: new Object3D(),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+
+    expect(ctx.physics.numBodies()).toBe(1);
+    expect(body.body.isValid()).toBe(true);
+    plugin.dispose?.(ctx);
+    expect(ctx.physics.numBodies()).toBe(0);
+  });
+
+  it("should free one world per setup across ten reload cycles", async () => {
+    const worldFree = vi.spyOn(RAPIER.World.prototype, "free");
+    const eventQueueFree = vi.spyOn(RAPIER.EventQueue.prototype, "free");
+    for (let cycle = 0; cycle < 10; cycle += 1) {
+      const { plugin } = await setup();
+      plugin.dispose?.({} as Ctx<Record<string, unknown>, PhysicsContext>);
+    }
+
+    expect(worldFree).toHaveBeenCalledTimes(10);
+    expect(eventQueueFree).toHaveBeenCalledTimes(10);
   });
 });

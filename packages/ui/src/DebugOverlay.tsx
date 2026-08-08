@@ -3,7 +3,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 export type DebugSnapshot = Record<string, Record<string, unknown>>;
 
 type DevWindow = Window & {
-  __THREENATIVE__?: { snapshot(): DebugSnapshot };
+  __THREENATIVE__?: { snapshot?: () => DebugSnapshot };
 };
 
 const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
@@ -41,7 +41,8 @@ const lastCellStyle: CSSProperties = { textAlign: "left" };
 const valueCellStyle: CSSProperties = { overflowWrap: "anywhere", wordBreak: "break-all" };
 
 function readSnapshot(): DebugSnapshot {
-  return (globalThis.window as DevWindow | undefined)?.__THREENATIVE__?.snapshot() ?? {};
+  const snapshot = (globalThis.window as DevWindow | undefined)?.__THREENATIVE__?.snapshot;
+  return typeof snapshot === "function" ? snapshot() : {};
 }
 
 function displayValue(value: unknown): string {

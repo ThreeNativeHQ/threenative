@@ -20,7 +20,7 @@ export type GameCtx = Ctx<GameState, PhysicsContext>;
 const SPAWN = new Vector3(0, 0.75, 0);
 const KILL_PLANE = -8;
 export class Level extends Scene<GameState, PhysicsContext> {
-  static override readonly initialState: GameState = {
+  static override readonly initialState = {
     checkpoint: 0,
     coins: 0,
     coyoteJumps: 0,
@@ -29,6 +29,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     hearts: 3,
     jumps: 0,
     peakRise: 0,
+    playerX: SPAWN.x,
     respawns: 0,
     topSpeed: 0,
   };
@@ -63,16 +64,15 @@ export class Level extends Scene<GameState, PhysicsContext> {
       meshes: [...platforms.map(({ visual }) => visual), blocker],
       navigation,
     });
-    const character = new Character(ctx, SPAWN);
+    const { playerX } = ctx.state.getState() as { playerX?: number };
+    const spawn = SPAWN.clone();
+    if (Number.isFinite(playerX)) spawn.x = playerX ?? SPAWN.x;
+    const character = new Character(ctx, spawn);
     ctx.entities.add("player", character);
-    const checkpoints = new Checkpoints(
-      [new Vector3(0, 0.75, 0), new Vector3(14, 0.75, 0), new Vector3(25, 0.75, 0)],
-      3,
-      PLATFORMER_FEEL,
-    );
+    const p = (x: number) => new Vector3(x, 0.75, 0);
+    const checkpoints = new Checkpoints([SPAWN, p(14), p(25)], 3, PLATFORMER_FEEL);
     const pickups: Array<{ id: string; value: Pickup }> = [];
     const patrols: Array<{ id: string; value: Patrol }> = [];
-    const chasers: Array<{ id: string; value: Chaser }> = [];
     let coins = 0;
     let defeated = 0;
     const cameraAnchor = new Vector3();
@@ -136,12 +136,9 @@ export class Level extends Scene<GameState, PhysicsContext> {
     const avoidanceChaser = new Chaser(ctx, character, navigation, new Vector3(8.2, 0.66, 0.7));
     chaser.mesh.userData.peer = avoidanceChaser.mesh;
     avoidanceChaser.mesh.userData.peer = chaser.mesh;
-    chasers.push(
-      { id: "chaser", value: chaser },
-      { id: "chaser.avoidance", value: avoidanceChaser },
-    );
-    for (const entry of chasers) ctx.entities.add(entry.id, entry.value);
-    followCamera(SPAWN, 1);
+    ctx.entities.add("chaser", chaser);
+    ctx.entities.add("chaser.avoidance", avoidanceChaser);
+    followCamera(spawn, 1);
     return (frameCtx, dt) => {
       character.update(frameCtx, dt);
       obstacleTime += dt;
@@ -168,9 +165,10 @@ export class Level extends Scene<GameState, PhysicsContext> {
         hearts: checkpoints.hearts,
         jumps: character.jumps,
         peakRise: Math.max(previous.peakRise, rise),
+        playerX: character.mesh.position.x,
         respawns: checkpoints.respawns,
         topSpeed: Math.max(previous.topSpeed, speed),
-      });
+      } as Partial<GameState>);
       followCamera(character.mesh.position, dt);
     };
   }

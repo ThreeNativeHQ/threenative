@@ -42,6 +42,9 @@ explicitly only when removing it during play. Feel belongs in the character, not
 
 `Level.static initialState` is the single initial-state value. `defineGame` discovers it from
 the start scene, and gameplay updates use partial patches such as `ctx.state.set({ coins })`.
+`main.ts` calls `acceptHotUpdate(game, import.meta.hot)` in development; seed the player in
+`Level.enter()` from the JSON-shaped state fields you want to preserve. The scene graph,
+physics world, audio, particles, and renderer are rebuilt on every update.
 
 Keep the palette to six named colours with exactly one `accent`, and import it from materials
 and sky. Set camera framing, tonemapping and exposure deliberately; keep the rim light,

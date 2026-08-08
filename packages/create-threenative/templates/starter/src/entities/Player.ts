@@ -21,9 +21,13 @@ export class Player {
   #jumps = 0;
   #coyoteJumps = 0;
 
-  constructor(ctx: GameCtx, material: Material) {
+  constructor(
+    ctx: GameCtx,
+    material: Material,
+    spawn: { readonly x: number; readonly y: number; readonly z: number } = SPAWN,
+  ) {
     this.mesh = new Mesh(roundedBox(0.6, 1, 0.6), material);
-    this.mesh.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
+    this.mesh.position.set(spawn.x, spawn.y, spawn.z);
     this.mesh.castShadow = true;
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({

@@ -1,4 +1,5 @@
 import { defineGame } from "@threenative/core";
+import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import "./style.css";
 import { createRoot } from "react-dom/client";
@@ -26,6 +27,11 @@ const game = defineGame<AbyssState>({
   start: "play",
 });
 
+import.meta.hot?.accept();
+acceptHotUpdate(game, import.meta.hot);
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element.");
-createRoot(root).render(<App game={game} />);
+const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof createRoot> };
+const reactRoot = appRoot.__threenativeRoot ?? createRoot(appRoot);
+appRoot.__threenativeRoot = reactRoot;
+reactRoot.render(<App game={game} />);

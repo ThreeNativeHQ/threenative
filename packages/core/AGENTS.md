@@ -6,7 +6,8 @@ Read `/AGENTS.md` first. This file only covers what is different here.
 
 The wiring every game repeats and no game should write: renderer bootstrap and WebGPU
 fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, asset
-loading, animation playback, the throttled state store, and the entity registry that
+loading, animation playback, hot-reload state preservation, the throttled state store, and
+the entity registry that
 makes a running game inspectable.
 
 That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`.

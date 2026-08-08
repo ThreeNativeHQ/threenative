@@ -1,4 +1,5 @@
 import { defineGame } from "@threenative/core";
+import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import type { PhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
@@ -21,6 +22,11 @@ const game = defineGame<GameState, PhysicsContext>({
   start: "boot",
 });
 
+import.meta.hot?.accept();
+acceptHotUpdate(game, import.meta.hot);
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element.");
-createRoot(root).render(createElement(App, { game }));
+const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof createRoot> };
+const reactRoot = appRoot.__threenativeRoot ?? createRoot(appRoot);
+appRoot.__threenativeRoot = reactRoot;
+reactRoot.render(createElement(App, { game }));

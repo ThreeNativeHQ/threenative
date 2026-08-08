@@ -67,6 +67,6 @@ describe("platformer checkpoints", () => {
     );
 
     expect(main).toContain("recast(");
-    expect(level).toContain('id: "chaser"');
+    expect(level).toContain('ctx.entities.add("chaser", chaser)');
   });
 });

@@ -29,7 +29,6 @@ export class Play extends Scene<GameState, PhysicsContext> {
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
-    ctx.state.set(Play.initialState);
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.ogg");
     void pickupAudio.catch(() => undefined);
@@ -55,7 +54,12 @@ export class Play extends Scene<GameState, PhysicsContext> {
       type: "fixed",
     });
     new Crate(ctx, levelX, 4, -1.5, materials.crate);
-    const player = new Player(ctx, materials.player);
+    const state = ctx.state.getState();
+    const player = new Player(ctx, materials.player, {
+      x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
+      y: 0.5,
+      z: 0,
+    });
     const pickupBase = block(0.42, 0.14, 0.42, materials.player);
     const pickupStem = tube(0.08, 0.08, 0.3, materials.player);
     const pickupOrb = ball(0.16, materials.player);
@@ -94,6 +98,11 @@ export class Play extends Scene<GameState, PhysicsContext> {
       });
       void pickupAudio.then((buffer) => audio.play(buffer)).catch(() => undefined);
     });
+    if (state.score > 0) {
+      ctx.entities.remove("pickup");
+      pickup.monitoring = false;
+      pickupVisual.visible = false;
+    }
 
     return (frameCtx, dt) => {
       // Goto to the current scene is a full restart: it clears entities and scheduled callbacks.

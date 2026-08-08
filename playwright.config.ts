@@ -10,8 +10,22 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const starterLookServer = process.argv.includes("--starter-look-server");
 const starterLookGatePort = 4176;
 const starterLookReadyPort = 4175;
+const hotReloadPort = 4177;
 
 if (starterLookServer) await runStarterLookServer();
+const hotReloadProject = starterLookServer ? undefined : await prepareHotReloadProject();
+if (hotReloadProject !== undefined) process.env.THREENATIVE_HOT_RELOAD_PROJECT = hotReloadProject;
+
+async function prepareHotReloadProject(): Promise<string> {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-hot-reload-"));
+  const target = path.join(temporaryRoot, "starter");
+  const template = path.join(repoRoot, "packages/create-threenative/templates/starter");
+  const dependencies = path.join(repoRoot, "node_modules/.pnpm/node_modules");
+  await cp(template, target, { recursive: true });
+  await renderTemplate(target, "hot-reload");
+  await symlink(dependencies, path.join(target, "node_modules"), "dir");
+  return target;
+}
 
 async function runStarterLookServer(): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-starter-look-"));
@@ -312,6 +326,27 @@ export default defineConfig({
       url: "http://127.0.0.1:4175",
       timeout: 120_000,
       reuseExistingServer: false,
+    },
+    ...(hotReloadProject === undefined
+      ? []
+      : [
+          {
+            command: `pnpm --dir ${hotReloadProject} dev --host 127.0.0.1 --port ${hotReloadPort} --strictPort`,
+            url: `http://127.0.0.1:${hotReloadPort}`,
+            timeout: 120_000,
+            reuseExistingServer: false,
+          },
+        ]),
+  ],
+  projects: [
+    {
+      name: "abyss-vanilla",
+      testDir: "./examples/abyss-vanilla/__tests__",
+    },
+    {
+      name: "hot-reload",
+      testDir: "./tests/browser",
+      use: { baseURL: `http://127.0.0.1:${hotReloadPort}` },
     },
   ],
 });

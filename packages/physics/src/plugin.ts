@@ -16,6 +16,7 @@ export interface PhysicsContext {
   readonly eventQueue: RAPIER.EventQueue;
   navigation?: NavigationContext;
   add(body: PhysicsBody3D): void;
+  numBodies(): number;
   kinematicMotion?(
     colliderHandle: number,
   ): { readonly x: number; readonly y: number; readonly z: number } | undefined;
@@ -55,6 +56,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         },
         addArea: (area) => areas.set(area.collider.handle, area),
         kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
+        numBodies: () => bodies.size,
         eventQueue,
         remove: (body) => {
           bodies.delete(body);

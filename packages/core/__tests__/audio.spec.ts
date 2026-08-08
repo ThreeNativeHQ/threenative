@@ -1,6 +1,6 @@
 import { AudioContext, PerspectiveCamera } from "three";
 import { describe, expect, it } from "vitest";
-import { AudioBus } from "../src/audio.js";
+import { AudioBus, audioRuntimeSnapshot } from "../src/audio.js";
 
 interface FakeAudioParam {
   value: number;
@@ -90,6 +90,18 @@ describe("AudioBus", () => {
     expect(bus.voices).toBe(0);
     expect(bus.queued).toBe(0);
     bus.dispose();
+  });
+
+  it("should return the bus to the snapshot baseline after dispose", async () => {
+    audioContext();
+    const baseline = audioRuntimeSnapshot();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+    await bus.unlock();
+    bus.play(buffer);
+
+    expect(audioRuntimeSnapshot().voices).toBe(baseline.voices + 1);
+    bus.dispose();
+    expect(audioRuntimeSnapshot()).toEqual(baseline);
   });
 
   it("should re-parent the listener to the active camera", () => {

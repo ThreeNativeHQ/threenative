@@ -159,6 +159,11 @@ ships React 19 + Tailwind and `@threenative/ui`.
 The start scene owns the initial state in `static initialState`; omit a duplicate
 `initialState` literal from `defineGame`. `ctx.state.set({ playerX })` is a partial patch.
 
+For development hot reload, `main.ts` calls `acceptHotUpdate(game, import.meta.hot)`. The
+framework carries only JSON-shaped store state; rebuild the scene in `enter()` from the
+state values you want to keep. Meshes, physics bodies, audio voices, and renderer objects
+are always rebuilt.
+
 ## Register entities you want to inspect or test
 
 ```ts

@@ -181,6 +181,11 @@ The start scene owns the initial state in `static initialState`; omit a duplicat
 `initialState` literal from `defineGame`. Update only the fields that changed:
 `ctx.state.set({ score })`.
 
+`main.ts` calls `acceptHotUpdate(game, import.meta.hot)` for development reloads. The
+framework preserves only JSON-shaped store state, so `Play.enter()` must seed entities
+from the carried values such as `playerX`; the scene graph, physics world, audio voices,
+particles, and renderer are rebuilt on every update.
+
 ## Register entities you want to inspect or test
 
 ```ts

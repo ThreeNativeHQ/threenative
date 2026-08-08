@@ -46,6 +46,107 @@ class EmptyScene extends Scene {
 }
 
 describe("Game", () => {
+  it("should leave no renderer or loop when stopped during an in-flight start", async () => {
+    let disposed = 0;
+    let frames = 0;
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const canvas = testCanvas();
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: () => {
+        frames += 1;
+        return frames;
+      },
+    });
+    try {
+      const start = game.start();
+      game.stop();
+      await start;
+      expect(disposed).toBe(1);
+      expect(frames).toBe(0);
+      expect(game.ctx).toBeUndefined();
+    } finally {
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("should dispose plugins exactly once when stopped during setup", async () => {
+    let releaseSetup!: () => void;
+    let disposed = 0;
+    const setup = new Promise<undefined>((resolve) => {
+      releaseSetup = () => resolve(undefined);
+    });
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => setup,
+          dispose: () => {
+            disposed += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+
+    const start = game.start();
+    await Promise.resolve();
+    game.stop();
+    releaseSetup();
+    await start;
+    expect(disposed).toBe(1);
+  });
+
+  it("should stay idempotent when stop is called twice", async () => {
+    let disposed = 0;
+    class TestScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => undefined,
+          dispose: () => {
+            disposed += 1;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    game.stop();
+    game.stop();
+    expect(disposed).toBe(1);
+  });
+
   it("keeps the existing perspective camera when no camera config is supplied", async () => {
     const game = defineGame({
       initialState: {},
