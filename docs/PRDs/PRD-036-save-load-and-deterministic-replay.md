@@ -556,7 +556,7 @@ scenario, and the CLI's subcommand test fails.
 - [x] `pnpm budgets`: still **7 workspace packages**, with 4,196 framework LOC against the
       15,000 global cap. The benchmark count is 432 / 473 normalized LOC (91.3%); the current
       framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
-- [ ] Feature-delta gate: framework source changed by **+258/-2 = +256 net lines** in the
+- [ ] Feature-delta gate: framework source changed by **+288/-32 = +256 net lines** in the
       scoped core/physics diff, so the PRD's ≤200-line gate is open. `pnpm budgets` does not
       prove this feature-delta constraint; no false pass is recorded.
 
