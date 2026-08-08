@@ -119,7 +119,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
             return true;
           },
           RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
-          undefined,
+          area.collider.collisionGroups(),
           area.collider,
         );
         area.reconcileIntersections(current);

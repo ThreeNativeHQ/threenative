@@ -1,12 +1,11 @@
 import type { Ctx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
 import { Group, Vector3 } from "three";
-import { ONE_WAY_GROUP } from "../level/Platform.js";
+import { ONE_WAY_LAYER } from "../level/Platform.js";
 import { type CharacterRig, animateCharacter, createCharacterRig } from "../render/rig.js";
 import type { GameState } from "../state.js";
-
 type GameCtx = Ctx<GameState, PhysicsContext>;
-
+export const PLAYER_LAYER = 1;
 // Gameplay tuning belongs here. These are intentionally not defineGame options.
 export interface CheckpointFeel {
   readonly blinkRate: number;
@@ -14,13 +13,11 @@ export interface CheckpointFeel {
   readonly hurtVerticalSpeed: number;
   readonly invulnerabilityTime: number;
 }
-
 export interface PatrolFeel {
   readonly patrolSpeed: number;
   readonly stompFallSpeed: number;
   readonly stompHeight: number;
 }
-
 export const PLATFORMER_FEEL = {
   airAcceleration: 24,
   blinkRate: 18,
@@ -75,10 +72,11 @@ export class Character {
     this.mesh.add(this.visual);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.35, minWidth: 0.2 },
+      collisionLayer: PLAYER_LAYER,
       gravity: PLATFORMER_FEEL.gravity,
       maxFallSpeed: PLATFORMER_FEEL.maxFallSpeed,
       object: this.mesh,
-      oneWayGroups: ONE_WAY_GROUP,
+      oneWayLayers: ONE_WAY_LAYER,
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.35, 0.3),
       snapToGround: 0.25,

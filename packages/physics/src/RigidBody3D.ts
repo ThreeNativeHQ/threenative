@@ -1,5 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Object3D } from "three";
+import { interactionGroups } from "./collision.js";
 import type { PhysicsContext } from "./plugin.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
@@ -11,6 +12,10 @@ export interface RigidBody3DOptions {
   readonly shape: RAPIER.ColliderDesc;
   readonly mass?: number;
   readonly type?: RigidBodyType;
+  /** Godot's collision_layer — which layers this body occupies. Default 1. */
+  readonly collisionLayer?: number;
+  /** Godot's collision_mask — which layers this body scans. Default 0xffff. */
+  readonly collisionMask?: number;
 }
 
 function bodyDescription(type: RigidBodyType): RAPIER.RigidBodyDesc {
@@ -46,6 +51,9 @@ export class RigidBody3D {
     if (options.mass !== undefined) description.setAdditionalMass(options.mass);
     this.body = world.createRigidBody(description);
     this.body.userData = this;
+    options.shape.setCollisionGroups(
+      interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+    );
     this.collider = world.createCollider(options.shape, this.body);
     this.syncFromPhysics();
     this.#physics?.add(this);

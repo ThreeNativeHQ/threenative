@@ -84,6 +84,7 @@ const PLATFORMER_PATHS = [
   "playtests/stomp-rise.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/oneway.playtest.json",
+  "playtests/collision-layers.playtest.json",
   "playtests/chase.playtest.json",
   "playtests/avoidance.playtest.json",
 ];

@@ -1,5 +1,6 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Vector3 } from "three";
+import { interactionGroups } from "./collision.js";
 import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
@@ -19,6 +20,10 @@ export interface Area3DOptions {
   readonly world?: RAPIER.World;
   readonly shape: RAPIER.ColliderDesc;
   readonly position?: Pick<Vector3, "x" | "y" | "z">;
+  /** Godot's collision_layer — which layers this area occupies. Default 1. */
+  readonly collisionLayer?: number;
+  /** Godot's collision_mask — which layers this area scans. Default 0xffff. */
+  readonly collisionMask?: number;
 }
 
 export class Area3D {
@@ -47,7 +52,12 @@ export class Area3D {
     );
     this.body.userData = this;
     this.collider = world.createCollider(
-      options.shape.setSensor(true).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      options.shape
+        .setSensor(true)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+        .setCollisionGroups(
+          interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+        ),
       this.body,
     );
     this.#physics?.addArea(this);

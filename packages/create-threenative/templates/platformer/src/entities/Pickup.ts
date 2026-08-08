@@ -3,10 +3,8 @@ import { Area3D, CollisionShape3D, type PhysicsContext } from "@threenative/phys
 import { CylinderGeometry, Group, Mesh, Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
 import type { GameState } from "../state.js";
-import type { Character } from "./Character.js";
-
+import { PLAYER_LAYER } from "./Character.js";
 type GameCtx = Ctx<GameState, PhysicsContext>;
-
 export class Pickup {
   readonly mesh: Group;
   readonly area: Area3D;
@@ -16,7 +14,7 @@ export class Pickup {
   #time = 0;
   #unsubscribe: () => void;
 
-  constructor(ctx: GameCtx, player: Character, at: Vector3, onCollect: () => void) {
+  constructor(ctx: GameCtx, at: Vector3, onCollect: () => void) {
     this.#base = at.clone();
     this.mesh = new Group();
     const materials = createMaterials();
@@ -29,13 +27,14 @@ export class Pickup {
     this.mesh.position.copy(at);
     ctx.add(this.mesh);
     this.area = new Area3D({
+      collisionMask: PLAYER_LAYER,
       entity: "coin",
       physics: ctx.physics,
       position: at,
       shape: CollisionShape3D.sphere(0.68),
     });
-    this.#unsubscribe = this.area.on("bodyEntered", (body) => {
-      if (this.collected || body !== player.body) return;
+    this.#unsubscribe = this.area.on("bodyEntered", () => {
+      if (this.collected) return;
       this.collected = true;
       this.mesh.visible = false;
       onCollect();

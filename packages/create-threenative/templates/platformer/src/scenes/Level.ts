@@ -50,6 +50,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     blocker.castShadow = blocker.receiveShadow = true;
     ctx.add(blocker);
     new RigidBody3D({
+      collisionLayer: 4,
       object: blocker,
       physics: ctx.physics,
       shape: CollisionShape3D.box(0.6, 1.6, 5.2),
@@ -63,7 +64,6 @@ export class Level extends Scene<GameState, PhysicsContext> {
       navigation,
     });
     const character = new Character(ctx, SPAWN);
-    character.body.collider.setCollisionGroups((1 << 16) | 0xfffb);
     ctx.entities.add("player", character);
     const checkpoints = new Checkpoints(
       [new Vector3(0, 0.75, 0), new Vector3(14, 0.75, 0), new Vector3(25, 0.75, 0)],
@@ -84,7 +84,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     new NavigationObstacle3D({ navigation, object: avoidanceObstacle });
     const addPickup = (at: Vector3): void => {
       const id = `coin.${pickups.length}`;
-      const pickup = new Pickup(ctx, character, at, () => {
+      const pickup = new Pickup(ctx, at, () => {
         coins += 1;
         emitPlaytestEvent({ entity: "player", name: "collected" });
       });

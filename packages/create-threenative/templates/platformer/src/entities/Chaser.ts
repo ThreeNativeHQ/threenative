@@ -19,10 +19,12 @@ export class Chaser {
     visual.castShadow = true;
     ctx.add(this.mesh.add(visual));
     this.body = new CharacterBody3D({
+      collisionLayer: 4,
+      collisionMask: 0xfffc,
       gravity: 0,
       object: this.mesh,
       physics: ctx.physics,
-      shape: CollisionShape3D.capsule(0.35, 0.3).setSensor(true).setCollisionGroups(0x4fffc),
+      shape: CollisionShape3D.capsule(0.35, 0.3).setSensor(true),
     });
     this.agent = new NavigationAgent3D({
       maxSpeed: 3.4,

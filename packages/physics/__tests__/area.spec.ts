@@ -53,6 +53,29 @@ describe("Area3D", () => {
     area.dispose();
   });
 
+  it("should ignore bodies outside its collision mask", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({
+      collisionMask: 2,
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(2, 2, 2),
+    });
+    const debris = new RigidBody3D({
+      collisionLayer: 4,
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    let entered = 0;
+    area.on("bodyEntered", () => entered++);
+
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(entered).toBe(0);
+    debris.dispose();
+    area.dispose();
+  });
+
   it("should retain entered contacts for a playtest drain", async () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({

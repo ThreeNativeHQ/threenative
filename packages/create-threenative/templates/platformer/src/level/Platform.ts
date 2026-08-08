@@ -4,7 +4,7 @@ import { platform as platformMesh } from "../render/terrain.js";
 import type { GameCtx } from "../scenes/Level.js";
 
 /** Membership bit used by one-way platforms. CharacterBody3D consumes the bit. */
-export const ONE_WAY_GROUP = 2;
+export const ONE_WAY_LAYER = 2;
 
 export interface PlatformNode {
   readonly body: RigidBody3D;
@@ -24,12 +24,12 @@ export function createPlatform(
   visual.position.set(at.x, at.y - height / 2, at.z);
   ctx.add(visual);
   const body = new RigidBody3D({
+    collisionLayer: options.oneWay === true ? ONE_WAY_LAYER : undefined,
     object: visual,
     physics: ctx.physics,
     shape: CollisionShape3D.box(width, height, depth),
     type: "fixed",
   });
-  if (options.oneWay === true) body.collider.setCollisionGroups((ONE_WAY_GROUP << 16) | 0xffff);
   return {
     body,
     dispose: () => {
