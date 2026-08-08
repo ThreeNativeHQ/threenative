@@ -7,6 +7,9 @@ import { expect, test } from "@playwright/test";
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const goldenPath = path.join(repoRoot, "tests/browser-replay/replay.golden.json");
 const scenarioPath = path.join(repoRoot, "examples/abyss-framework/playtests/replay.playtest.json");
+const nestedVirtualDisplay = process.platform === "linux" && process.env.DISPLAY === undefined;
+const nestedBrowserMode =
+  nestedVirtualDisplay || process.env.DISPLAY !== undefined ? ["--headed"] : [];
 
 interface ReplayProofStep {
   holdTicks?: number;
@@ -21,14 +24,16 @@ interface ReplayScenario {
 }
 
 interface ReplayProofResult {
-  recordTrace: Array<[number, number, number]>;
+  recordTrace: Array<{ position: [number, number, number]; score: number }>;
   recording: { input: Array<{ keys: string[]; tick: number }>; ticks: number };
-  replayTrace: Array<[number, number, number]>;
+  replayTrace: Array<{ position: [number, number, number]; score: number }>;
 }
 
 interface ReplayGolden {
   playerX: number;
   tick: number;
+  finalPlayerX: number;
+  finalScore: number;
   tolerance: number;
 }
 
@@ -63,7 +68,17 @@ test("compares a real Abyss record/replay trace against golden movement", async 
         __THREENATIVE_REPLAY__?: { recording?: unknown; recordAndReplay?: unknown };
       }
     ).__THREENATIVE_REPLAY__;
-    return replay?.recording !== undefined && typeof replay.recordAndReplay === "function";
+    const devTools = (
+      globalThis as typeof globalThis & {
+        __THREENATIVE__?: { snapshot?: () => Record<string, unknown> };
+      }
+    ).__THREENATIVE__;
+    return (
+      replay?.recording !== undefined &&
+      typeof replay.recordAndReplay === "function" &&
+      typeof devTools?.snapshot === "function" &&
+      devTools.snapshot().player !== undefined
+    );
   });
   const result = await page.evaluate(async (steps) => {
     const replay = (
@@ -88,7 +103,17 @@ test("compares a real Abyss record/replay trace against golden movement", async 
 
   const observed = result.recordTrace[golden.tick];
   if (observed === undefined) throw new Error(`Golden tick ${golden.tick} was not observed.`);
-  expect(Math.abs(observed[0] - golden.playerX)).toBeLessThanOrEqual(golden.tolerance);
+  expect(Math.abs(observed.position[0] - golden.playerX)).toBeLessThanOrEqual(golden.tolerance);
+
+  const finalRecorded = result.recordTrace.at(-1);
+  const finalReplayed = result.replayTrace.at(-1);
+  if (finalRecorded === undefined || finalReplayed === undefined)
+    throw new Error("Replay proof did not observe a final player state.");
+  expect(finalRecorded.score).toBe(golden.finalScore);
+  expect(finalReplayed.score).toBe(finalRecorded.score);
+  expect(Math.abs(finalRecorded.position[0] - golden.finalPlayerX)).toBeLessThanOrEqual(
+    golden.tolerance,
+  );
 });
 
 async function readReplayScenario(): Promise<ReplayScenario> {
@@ -100,23 +125,26 @@ function runReplayScenario(
   url: string,
 ): Promise<{ code: number; stderr: string; stdout: string }> {
   return new Promise((resolve) => {
+    const runnerArgs = [
+      path.join(repoRoot, "packages/playtest/dist/runner/cli.js"),
+      scenarioPath,
+      "--project",
+      repoRoot,
+      "--url",
+      url,
+      "--artifacts",
+      artifacts,
+      "--browser-recipe",
+      "webgpu",
+      ...nestedBrowserMode,
+      "--timeout",
+      "120000",
+    ];
     const runner = spawn(
-      process.execPath,
-      [
-        path.join(repoRoot, "packages/playtest/dist/runner/cli.js"),
-        scenarioPath,
-        "--project",
-        repoRoot,
-        "--url",
-        url,
-        "--artifacts",
-        artifacts,
-        "--browser-recipe",
-        "webgpu",
-        "--headed",
-        "--timeout",
-        "120000",
-      ],
+      nestedVirtualDisplay ? "xvfb-run" : process.execPath,
+      nestedVirtualDisplay
+        ? ["-a", "-s", "-screen 0 1600x900x24", process.execPath, ...runnerArgs]
+        : runnerArgs,
       { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
     );
     const stdout: string[] = [];

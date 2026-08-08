@@ -190,17 +190,23 @@ export class Abyss extends Scene<AbyssState> {
       ctx.add(mesh);
       hunters.push({ mesh, speed: 96 + ctx.random() * 40, spin: ctx.random() * 2 - 1 });
     };
-    const placePearl = (pearl: Pearl, index: number) => {
+    const placePearl = (pearl: Pearl, index: number, randomize = true) => {
+      const phase = index * 2.3999632297;
       if (index === 0) {
         pearl.mesh.position.set(125, 0, 0);
       } else {
         pearl.mesh.position.set(
-          (ctx.random() - 0.5) * field.w * 0.86,
-          (ctx.random() - 0.5) * field.h * 0.86,
+          randomize ? (ctx.random() - 0.5) * field.w * 0.86 : Math.sin(phase) * field.w * 0.38,
+          randomize
+            ? (ctx.random() - 0.5) * field.h * 0.86
+            : Math.cos(phase * 1.17) * field.h * 0.38,
           0,
         );
       }
-      pearl.drift.set((ctx.random() - 0.5) * 40, (ctx.random() - 0.5) * 40);
+      pearl.drift.set(
+        randomize ? (ctx.random() - 0.5) * 40 : Math.cos(phase) * 18,
+        randomize ? (ctx.random() - 0.5) * 40 : Math.sin(phase * 1.17) * 18,
+      );
     };
 
     ctx.renderer.setOutputNode(createPostProcessing(ctx.scene, camera));
@@ -252,7 +258,7 @@ export class Abyss extends Scene<AbyssState> {
       for (const hunter of hunters) hunter.mesh.removeFromParent();
       hunters.length = 0;
       spawnHunter();
-      pearls.forEach(placePearl);
+      pearls.forEach((pearl, index) => placePearl(pearl, index));
       publish(false);
       // React renders on a 10Hz throttle; flush so the veil clears immediately.
       ctx.state.flush();
@@ -261,7 +267,7 @@ export class Abyss extends Scene<AbyssState> {
     this.#startCleanup = () => {
       globalThis.removeEventListener(START_EVENT, start);
     };
-    pearls.forEach(placePearl);
+    pearls.forEach((pearl, index) => placePearl(pearl, index, false));
 
     return (frameCtx, dt) => {
       field.w = VIEW * 2 * frameCtx.viewport.size.aspect;

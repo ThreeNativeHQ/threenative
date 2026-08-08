@@ -11,7 +11,7 @@ type ReplayProofStep = {
   readonly waitTicks?: number;
 };
 
-type ReplayTrace = [number, number, number][];
+type ReplayTrace = { position: [number, number, number]; score: number }[];
 
 function dispatchKey(target: EventTarget, type: "keydown" | "keyup", code: string): void {
   target.dispatchEvent(Object.assign(new Event(type), { code }));
@@ -24,16 +24,23 @@ function dispatchKeys(target: EventTarget, held: Set<string>, keys: readonly str
   for (const key of keys) held.add(key);
 }
 
-function playerPosition(game: Game<AbyssState>): [number, number, number] {
-  const position = game.ctx?.entities.snapshot().player?.position;
+function playerSnapshot(game: Game<AbyssState>): ReplayTrace[number] {
+  const player = game.ctx?.entities.snapshot().player;
+  const position = player?.position;
+  const score = player?.score;
   if (
     !Array.isArray(position) ||
     position.length !== 3 ||
-    position.some((value) => typeof value !== "number" || !Number.isFinite(value))
+    position.some((value) => typeof value !== "number" || !Number.isFinite(value)) ||
+    typeof score !== "number" ||
+    !Number.isFinite(score)
   ) {
-    throw new Error("Replay proof could not observe the Abyss player position.");
+    throw new Error("Replay proof could not observe the Abyss player position and score.");
   }
-  return [position[0] as number, position[1] as number, position[2] as number];
+  return {
+    position: [position[0] as number, position[1] as number, position[2] as number],
+    score,
+  };
 }
 
 function proofStepTicks(step: ReplayProofStep): number {
@@ -67,35 +74,28 @@ export function installReplayProof(
         await game.start();
         const runtime = getRuntime();
         if (runtime === undefined) throw new Error("The game runtime is not ready.");
-        const sceneRandomState = runtime.random?.state;
-
         const held = new Set<string>();
         const recordTrace: ReplayTrace = [];
         for (const step of steps) {
           if (step.press !== undefined) dispatchKeys(window, held, [step.press]);
           for (let tick = 0; tick < proofStepTicks(step); tick += 1) {
             runtime.fixedStep(1);
-            recordTrace.push(playerPosition(game));
+            recordTrace.push(playerSnapshot(game));
           }
           if (step.release && step.press !== undefined) dispatchKeys(window, held, []);
         }
         const recording = replayPlugin.recording;
         if (recording === undefined) throw new Error("Replay proof did not produce a recording.");
 
-        if (runtime.random !== undefined) runtime.random.state = recording.randomState;
         await game.goto("play");
         const replayTrace: ReplayTrace = [];
-        const replayRecording =
-          sceneRandomState === undefined
-            ? recording
-            : { ...recording, randomState: sceneRandomState };
-        const driver = createReplayDriver(replayRecording, window);
+        const driver = createReplayDriver(recording, window);
         driver({
           ...runtime,
           fixedStep: (ticks) => {
             const result = runtime.fixedStep(ticks);
             for (let tick = 0; tick < ticks; tick += 1) {
-              replayTrace.push(playerPosition(game));
+              replayTrace.push(playerSnapshot(game));
             }
             return result;
           },

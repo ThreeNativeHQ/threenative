@@ -25,13 +25,154 @@
       "waitTicks": 1
     },
     {
-      "holdTicks": 1797,
+      "holdTicks": 60,
       "press": "ArrowRight",
       "release": true
     },
     {
-      "release": true,
-      "waitTicks": 1
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowDown",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowLeft",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowUp",
+      "release": true
+    },
+    {
+      "holdTicks": 60,
+      "press": "ArrowRight",
+      "release": true
+    },
+    {
+      "holdTicks": 58,
+      "press": "ArrowDown",
+      "release": true
     }
   ],
   "target": "web",
