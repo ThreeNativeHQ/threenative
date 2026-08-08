@@ -67,9 +67,11 @@ Building from this list before Gate 0 closes is how v1 got to 790k lines.
 ### 1. Asset discovery & licensing — 94 · VOID pending publishable profile (`PRD-032`)
 
 Three.js ships a `GLTFLoader` and nothing that tells you *where a legally usable model
-lives*. This is the single largest 0→1 on the board and the only Tier 1 item that costs
-zero LOC and zero package slots: it runs as an external MCP server declared in the
-scaffolded project's `.mcp.json`, not as package code.
+lives*. This remains the largest 0→1 opportunity, but the proposal is void until a
+publishable bounded profile exists. Phase 2 never shipped the profile, so no current
+scaffolded project contains this `.mcp.json` integration. If the profile is published in
+the future, it should run as an external MCP server declared in the scaffolded project,
+not as package code.
 
 It also attacks the "looks good" axis without violating §5b. Real assets are the biggest
 visual delta available, and shipping *discovery* is not shipping *the look* — the agent
