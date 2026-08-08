@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { classifyRunnerError } from "../src/runner/cli.js";
+import { classifyRunnerError, exitCodeForReport } from "../src/runner/cli.js";
 import { PlaytestCliUsageError } from "../src/runner/config.js";
 import { PlaytestScenarioError } from "../src/scenario.js";
 
@@ -31,4 +31,12 @@ test("an unrecognised error gets the unrecognised fix lead", () => {
 
   expect(diagnostic.code).toBe("TN_PLAYTEST_RUNNER_FAILED");
   expect(diagnostic.fix.instruction).toContain("Unexpected runner error");
+});
+
+test.each([
+  [{ pass: true, assertionResults: [] }, 0],
+  [{ pass: false, assertionResults: [{ id: "assertion", pass: false }] }, 1],
+  [{ pass: false }, 2],
+] as const)("report %o produces exit code %i", (report, exitCode) => {
+  expect(exitCodeForReport(report)).toBe(exitCode);
 });

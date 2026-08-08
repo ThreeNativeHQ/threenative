@@ -57,6 +57,16 @@ test("a browser arg with no value fails instead of swallowing the next flag", ()
   ).toThrow(/requires a value/u);
 });
 
+test("a value-taking flag cannot swallow the next playtest flag", () => {
+  expect(() => parseStandalonePlaytestArgs(["--scenario", "--url", "http://127.0.0.1:5173"], "/project"))
+    .toThrow(/Flag '--scenario' requires a value/u);
+});
+
+test("unknown flags fail as CLI usage instead of being ignored", () => {
+  expect(() => parseStandalonePlaytestArgs(["playtests/move.json", "--future-flag"], "/project"))
+    .toThrow(/Unknown flag '--future-flag'/u);
+});
+
 test("standalone args fail with a concrete first command", () => {
   expect(
     () => parseStandalonePlaytestArgs([], "/project"),

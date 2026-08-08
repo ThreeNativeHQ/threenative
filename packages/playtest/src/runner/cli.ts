@@ -19,6 +19,11 @@ export interface IRunnerDiagnostic {
   severity: "error";
 }
 
+export function exitCodeForReport(report: { assertionResults?: readonly unknown[]; pass: boolean }): 0 | 1 | 2 {
+  if (report.pass) return 0;
+  return report.assertionResults === undefined ? 2 : 1;
+}
+
 export function classifyRunnerError(
   error: unknown,
   options: { cwd?: string; scenarioPath?: string } = {},
@@ -77,8 +82,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     config = parseStandalonePlaytestArgs(argv);
     const report = await runStandalonePlaytest(config);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    process.exitCode = report.pass ? 0 : 1;
-    return report.pass ? 0 : 1;
+    const exitCode = exitCodeForReport(report);
+    process.exitCode = exitCode;
+    return exitCode;
   } catch (error) {
     const diagnostic = classifyRunnerError(error, {
       cwd: config?.projectPath,
