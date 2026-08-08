@@ -51,9 +51,11 @@ export class RigidBody3D {
     if (options.mass !== undefined) description.setAdditionalMass(options.mass);
     this.body = world.createRigidBody(description);
     this.body.userData = this;
-    options.shape.setCollisionGroups(
-      interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
-    );
+    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
+      options.shape.setCollisionGroups(
+        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+      );
+    }
     this.collider = world.createCollider(options.shape, this.body);
     this.syncFromPhysics();
     this.#physics?.add(this);

@@ -51,15 +51,15 @@ export class Area3D {
       RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
     );
     this.body.userData = this;
-    this.collider = world.createCollider(
-      options.shape
-        .setSensor(true)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
-        .setCollisionGroups(
-          interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
-        ),
-      this.body,
-    );
+    const shape = options.shape
+      .setSensor(true)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
+      shape.setCollisionGroups(
+        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+      );
+    }
+    this.collider = world.createCollider(shape, this.body);
     this.#physics?.addArea(this);
   }
 

@@ -1,6 +1,8 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import { BoxGeometry, Mesh } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import { Area3D } from "../src/Area3D.js";
+import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { interactionGroups } from "../src/index.js";
@@ -62,6 +64,36 @@ async function fallingCrate(disjoint: boolean): Promise<number> {
 }
 
 describe("collision layers", () => {
+  it("preserves caller-owned groups when collision options are omitted", async () => {
+    await RAPIER.init();
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    worlds.push(world);
+    const groups = interactionGroups(8, 4);
+
+    const rigidShape = CollisionShape3D.box(1, 1, 1).setCollisionGroups(groups);
+    const rigid = new RigidBody3D({
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
+      shape: rigidShape,
+      world,
+    });
+    const areaShape = CollisionShape3D.box(1, 1, 1).setCollisionGroups(groups);
+    const area = new Area3D({ shape: areaShape, world });
+    const characterShape = CollisionShape3D.capsule(0.2, 0.3).setCollisionGroups(groups);
+    const character = new CharacterBody3D({
+      object: new Mesh(new BoxGeometry(0.6, 1, 0.6)),
+      shape: characterShape,
+      world,
+    });
+
+    expect(rigid.collider.collisionGroups()).toBe(groups);
+    expect(area.collider.collisionGroups()).toBe(groups);
+    expect(character.collider.collisionGroups()).toBe(groups);
+
+    character.dispose();
+    area.dispose();
+    rigid.dispose();
+  });
+
   it("keeps disjoint bodies apart while default bodies still collide", async () => {
     const disjointHeight = await fallingCrate(true);
     const defaultHeight = await fallingCrate(false);

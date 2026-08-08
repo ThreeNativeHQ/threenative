@@ -109,17 +109,19 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
       });
       for (const area of areas.values()) {
         const current = new Map<number, PhysicsBody3D>();
+        const areaMask = area.collider.collisionGroups() & 0xffff;
         physics.world.intersectionsWithShape(
           area.collider.translation(),
           area.collider.rotation(),
           area.collider.shape,
           (collider) => {
             const body = bodiesByCollider.get(collider.handle);
-            if (body !== undefined) current.set(body.body.handle, body);
+            if (body !== undefined && ((collider.collisionGroups() >>> 16) & areaMask) !== 0)
+              current.set(body.body.handle, body);
             return true;
           },
           RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
-          area.collider.collisionGroups(),
+          undefined,
           area.collider,
         );
         area.reconcileIntersections(current);

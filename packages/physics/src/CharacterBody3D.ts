@@ -64,9 +64,11 @@ export class CharacterBody3D {
       });
     this.body = world.createRigidBody(description);
     this.body.userData = this;
-    options.shape.setCollisionGroups(
-      interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
-    );
+    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
+      options.shape.setCollisionGroups(
+        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
+      );
+    }
     this.collider = world.createCollider(options.shape, this.body);
     this.controller = world.createCharacterController(options.offset ?? 0.01);
     this.controller.setMaxSlopeClimbAngle(options.maxSlopeClimbAngle ?? Math.PI / 4);
