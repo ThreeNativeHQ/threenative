@@ -1,9 +1,9 @@
 # PRD execution review — 2026-08-08
 
-Scope: the five selected PRDs (033, 035, 036, 038, 039) on branch
-`docs/opportunity-areas-prds`. PRD-043 is deliberately outside this review and is queued
-for later execution. Every current claim below is backed by a run in this working tree;
-the first failing runs remain as historical diagnosis.
+Scope: the five selected PRDs (033, 035, 036, 038, 039), integrated into `main` from
+`docs/opportunity-areas-prds` at `86a11a0`. PRD-043 is deliberately outside this review
+and is queued for later execution. Every current claim below is backed by a run in this
+working tree; the first failing runs remain as historical diagnosis.
 
 ## Current disposition
 
@@ -11,12 +11,15 @@ the first failing runs remain as historical diagnosis.
   work is committed at `12b3d3d`.
 - The PRD-036 lane is merged at `f3fe02f` (including its replay consumer, oracle, and
   pointer/replay follow-up fixes).
+- The review branch is an ancestor of `main` (`git merge-base --is-ancestor` exit 0), and the
+  PRD-036 lane is also an ancestor of `main`.
 - The full browser gate now passes under the prescribed headed WebGPU recipe: all four tests
-  passed in 1.7 minutes, including the checked-in replay scenario and real record/replay trace.
+  passed in 1.6 minutes, including the checked-in replay scenario and real record/replay trace.
 - Fresh starter proofs now pass: coyote jump `1/1`, peak rise `1.04`, and look camera
   separation `9.451` against the `9.5` limit, with zero console/network errors.
-- PRD-036's remaining release gates are now limited to the manual watch-and-diverge check,
-  replay-removal/stale-artifact controls, and its separate ≤200-line feature-delta budget.
+- PRD-036's replay-removal, stale-artifact, and generated-scenario mutation controls are
+  observed red. Its manual watch-and-diverge checkpoint and separate ≤200-line feature-delta
+  budget remain pending, so PRD-036 stays live.
 
 ---
 
@@ -291,11 +294,14 @@ either the exports really are dead and rule 2 requires deleting them, or the ins
 over-reports because a sandbox arm only exercises a genre slice — in which case the report
 needs a reach threshold and the current output is noise that trains everyone to skip it.
 
-### 5c. Unmerged work on the review branch
-`docs/opportunity-areas-prds` is ahead of `main` and `main` is not ahead at all.
-Everything in this review — PRD-033 through PRD-039, four merged lanes, the whole hot
-reload and replay implementation — exists only on one local branch with no remote. There is
-no upstream copy of any of it.
+### 5c. Branch integration status — current
+`docs/opportunity-areas-prds` is an ancestor of `main`; the review branch and the PRD-036
+lane are integrated locally, with no push performed. The old PRD-013, PRD-014, PRD-029,
+PRD-033, and PRD-035 refs are historical lane snapshots whose trees predate the review
+merge; merging them wholesale would reintroduce deleted or superseded PRD and benchmark
+files. Their current implementation and evidence are represented by later commits on
+`main`. PRD-044/045/046 point at the current base and are not-started native worktrees,
+not missing review commits.
 
 ### 5d. Verification ledgers are written once and not re-run
 Three separate ledgers assert `pnpm lint` is BLOCKED and `pnpm test` is BLOCKED. Both pass.
@@ -315,22 +321,34 @@ it is cited as a reason to keep a PRD open.
 3. ~~**Merge `linchpin/prd-036-save-load-and-deterministic-replay` into
    `docs/opportunity-areas-prds`**~~ — **done** in `f3fe02f`; the merge preserved the PRD-038
    starter transport files and the lane follow-up.
-4. **Finish the remaining PRD-036 controls, then move PRD-039, PRD-033, PRD-035 and PRD-038
-   to `docs/PRDs/done/`**, updating `OPPORTUNITY-AREAS.md` area #8 while doing it.
-5. ~~Fix `coyote` and `look` in the starter template~~ — **done**, see §7; then **close
-   round 2** (`pnpm round:next`) and decide 5b — delete the dead exports or fix the
-   instrument.
+4. ~~Move PRD-039, PRD-033, PRD-035 and PRD-038 to `docs/PRDs/done/`, updating
+   `OPPORTUNITY-AREAS.md` area #8 while doing it~~ — **done** in `fac7e94` and `cdba3cf`.
+   PRD-036 remains live because its source-delta gate is red.
+5. ~~Fix `coyote` and `look` in the starter template~~ — **done**, see §7. A fresh
+   `pnpm round:next` now returns `close round 2`; the 163 deletion candidates in 5b remain
+   a deliberate follow-up decision, not a reason to reopen these delivered PRDs.
 
 ## 7. Final evidence after review fixes
 
 | Proof | Result |
 |---|---|
-| `xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser` | **PASS** — `4 passed (1.7m)` |
+| `xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser` | **PASS** — `4 passed (1.6m)` |
 | Fresh `coyote.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — `jumps: 1`, `coyoteJumps: 1`, `peakRise: 1.04`, zero diagnostics |
 | Fresh `look.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — movement `7.27`, camera separation `9.451`, zero diagnostics |
-| PRD-036 focused tests | **PASS** — 67 tests across replay, constraints, runner, recording, scenario, and census specs |
-| `pnpm budgets` | **PASS** — 7 packages, 4,243 framework LOC, 6 PRD files |
-| `pnpm lint` / `pnpm test` | **BLOCKED outside this review lane** — lint sees broken PRD worktree symlinks plus the existing topdown proof formatting; test reports 1,084/1,086 tests with the existing missing `reload` proof assertion and sync-agent-docs timeout |
+| PRD-036 focused tests | **PASS** — 4 files, 62 tests across replay, constraints, recording, and silent-drop coverage |
+| `pnpm typecheck` | **PASS** — continuation gate at `69aeef8` |
+| `pnpm budgets` | **PASS** — 7 packages, 4,254 framework LOC |
+| `pnpm test` | **FAIL outside this review lane** — 1 sync-agent mirror test fails because user-edited template `AGENTS.md` files leave generated `CLAUDE.md` mirrors changed; no generated files were edited |
+| `pnpm lint` | **FAIL outside this review lane** — user-owned `packages/create-threenative/src/index.ts` and PRD-045 worktree `packages/core/src/playtest.ts` formatting errors; no out-of-scope files were edited |
+| PRD-036 scoped source delta | **PENDING** — `+288/-32 = +256` against the PRD's ≤200-line gate |
 
 PRD-043 is not part of these results. It remains a proposed, later execution item and must
 not be marked done from this review.
+
+## 8. Delivery verdict
+
+The review work is merged into `main`; no additional review branch merge is required. PRD-033,
+PRD-035, PRD-038, and PRD-039 are delivered in `docs/PRDs/done/`. PRD-036 is a truthful
+partial delivery: its browser consumer, real-subject replay, divergence measurement, and
+fail-closed controls pass, but the manual visual checkpoint and the declared source-delta
+budget do not. PRD-043 remains queued and was neither reviewed nor executed.
