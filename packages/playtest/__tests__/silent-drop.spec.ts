@@ -147,7 +147,7 @@ test("names an unavailable labeled movement series", async () => {
         reachesPositionWithin: { atStep: "goal", maxDistance: 1, position: [1, 0, 0] },
       },
     },
-    [{ label: "goal", release: true, waitFrames: 1 }],
+    [{ label: "goal", release: true, waitFrames: 1 }, { release: true, waitFrames: 1 }],
   );
   const scenario = await loadPlaytestScenario(directory, "scenario.json");
   let caught: unknown;

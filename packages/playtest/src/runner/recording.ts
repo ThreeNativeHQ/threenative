@@ -26,6 +26,7 @@ interface RecordingOracle {
 
 const SCENARIO_VIEWPORT = { height: 720, width: 1280 } as const;
 const SUPPORTED_POINTER_BUTTONS = 1 | 2 | 4;
+const FINAL_STEP_LABEL = "replay-final";
 
 function recordNumber(value: unknown, path: string, integer = false): number {
   if (typeof value !== "number" || !Number.isFinite(value) || (integer && !Number.isInteger(value)))
@@ -136,6 +137,7 @@ function sampleSteps(
   sample: RecordingSample,
   ticks: number,
   release: boolean,
+  label: string | undefined,
   scenarioPath: string,
 ): IPlaytestStep {
   if (ticks < 1) throw invalidScenario(scenarioPath, "recording produced a non-positive step duration.");
@@ -150,6 +152,7 @@ function sampleSteps(
     throw invalidScenario(scenarioPath, "recording pointer position must fit the playtest viewport.");
   return {
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
+    ...(label === undefined ? {} : { label }),
     holdTicks: ticks,
     press: sample.keys,
     release,
@@ -163,7 +166,13 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
   if (first.tick > 0) steps.push({ release: true, waitTicks: first.tick });
   for (const [index, sample] of recording.input.entries()) {
     const nextTick = recording.input[index + 1]?.tick ?? recording.ticks;
-    steps.push(sampleSteps(sample, nextTick - sample.tick, index === recording.input.length - 1, scenarioPath));
+    steps.push(sampleSteps(
+      sample,
+      nextTick - sample.tick,
+      index === recording.input.length - 1,
+      index === recording.input.length - 1 ? FINAL_STEP_LABEL : undefined,
+      scenarioPath,
+    ));
   }
   return steps;
 }
@@ -187,6 +196,7 @@ function behaviorAssertions(
       minDistance: minimumTraversal,
       pathLength: minimumTraversal,
       reachesPositionWithin: {
+        atStep: FINAL_STEP_LABEL,
         maxDistance: oracle.movement.tolerance,
         position: oracle.movement.position,
       },

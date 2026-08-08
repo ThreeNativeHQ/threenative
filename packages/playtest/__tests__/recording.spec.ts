@@ -27,7 +27,7 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
 
   expect(scenario.steps).toEqual([
     { holdTicks: 3, press: ["KeyW"], release: false },
-    { holdTicks: 2, press: [], release: true },
+    { holdTicks: 2, label: "replay-final", press: [], release: true },
   ]);
   expect(scenario.steps.reduce((total, step) => total + (step.holdTicks ?? step.waitTicks ?? 0), 0)).toBe(5);
   expect(Object.keys(scenario.assert ?? {}).length).toBeGreaterThan(0);
@@ -35,7 +35,7 @@ test("should emit a scenario whose steps reproduce the recorded holds", () => {
     entity: "player",
     minDistance: 0.05,
     pathLength: 0.05,
-    reachesPositionWithin: { maxDistance: 0.001, position: [0, 0, 0] },
+    reachesPositionWithin: { atStep: "replay-final", maxDistance: 0.001, position: [0, 0, 0] },
   });
   expect(scenario.assert?.world).toEqual({
     runtime: { agent: "node", core: "0.1.0", randomState: 123, rapier: null, step: 1 / 60 },
@@ -55,7 +55,7 @@ test("should preserve simultaneous keys as a held-key-set step", () => {
 
   expect(scenario.steps).toEqual([
     { holdTicks: 2, press: ["KeyW", "KeyD"], release: false },
-    { holdTicks: 1, press: [], release: true },
+    { holdTicks: 1, label: "replay-final", press: [], release: true },
   ]);
 });
 
@@ -71,7 +71,7 @@ test("should preserve pointer position and button transitions", () => {
 
   expect(scenario.steps).toEqual([
     { holdTicks: 2, pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, press: [], release: false },
-    { holdTicks: 1, pointerPosition: { buttons: 0, x: 0.5, y: 0.5 }, press: [], release: true },
+    { holdTicks: 1, label: "replay-final", pointerPosition: { buttons: 0, x: 0.5, y: 0.5 }, press: [], release: true },
   ]);
 });
 

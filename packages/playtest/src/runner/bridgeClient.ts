@@ -188,7 +188,8 @@ function requiredObservationPaths(
   kind: string,
   defaultPath: string,
 ): readonly string[] {
-  if (kind === "movement" && scenario.assert?.movement?.reachesPositionWithin?.atStep !== undefined) {
+  const movementStep = scenario.assert?.movement?.reachesPositionWithin?.atStep;
+  if (kind === "movement" && movementStep !== undefined && scenario.steps.at(-1)?.label !== movementStep) {
     return ["effectLogSeries"];
   }
   if (kind === "contacts" && scenario.assert?.contacts?.some(({ atStep }) => atStep !== undefined) === true) {

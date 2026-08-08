@@ -990,7 +990,8 @@ export function evaluateRichPlaytestAssertions(input: {
       input.report.before?.position,
       expectation.atStep,
     );
-    const finalDistance = expectation.atStep === undefined && input.report.after?.position !== undefined
+    const finalDistance = (expectation.atStep === undefined || input.scenario.steps.at(-1)?.label === expectation.atStep)
+      && input.report.after?.position !== undefined
       ? vectorDistance(input.report.after.position, expectation.position)
       : undefined;
     const candidates = [resolvedDistance, finalDistance].filter((value): value is number => value !== undefined);

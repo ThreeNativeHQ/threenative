@@ -170,6 +170,19 @@ test("movement.reachesPositionWithin considers the final observed position", asy
   expect(evaluated.assertions.find(({ id }) => id === "movement.reachesPosition")?.pass).toBe(true);
 });
 
+test("movement.reachesPositionWithin accepts a final labeled observation", async () => {
+  const evaluated = await evaluate(
+    { movement: { entity: "player", reachesPositionWithin: { atStep: "final", maxDistance: 0.25, position: [9, 0, 0] } } },
+    {
+      after: { frame: 1, position: [8.9, 0, 0], tick: 1 },
+      before: { frame: 0, position: [0, 0, 0], tick: 0 },
+    },
+    [{ label: "final", release: true, waitFrames: 1 }],
+  );
+
+  expect(evaluated.assertions.find(({ id }) => id === "movement.reachesPosition")?.pass).toBe(true);
+});
+
 test("world runtime fingerprints pass only when the complete metadata matches", async () => {
   const runtime = { agent: "browser", core: "0.1.0", randomState: 90210, rapier: null, step: 1 / 60 };
   const evaluated = await evaluate(

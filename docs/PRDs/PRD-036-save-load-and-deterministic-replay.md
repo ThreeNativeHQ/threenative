@@ -6,10 +6,10 @@ Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coef
 available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
 this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
 The implementation and checked-in replay consumer project are merged on
-`docs/opportunity-areas-prds`; the full headed browser suite now passes, while generated-scenario
-regression sensitivity, the manual watch-and-diverge checkpoint, and the separate ≤200-line
-source-delta gate remain pending. The replay-removal and stale-artifact controls are observed-red;
-the generated scenario's 1% mutation control still passes in the wrong direction.
+`docs/opportunity-areas-prds`; the full headed browser suite and generated-scenario regression
+control now pass. The manual watch-and-diverge checkpoint and separate ≤200-line source-delta
+gate remain pending. Replay-removal, stale-artifact, and generated-scenario mutation controls
+are observed-red.
 `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
@@ -645,9 +645,9 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
       constraint control remains pending
 - [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
-- [ ] Every gate has a negative control that was **observed failing**; the replay-removal and
-      stale-artifact controls are observed-red, but generated-scenario regression sensitivity
-      remains open
+- [ ] Every gate has a negative control that was **observed failing**; replay-removal,
+      stale-artifact, and generated-scenario mutation controls are observed-red, while the
+      manual watch-and-diverge and source-delta gates remain open
 - [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
       three-tick unit fixture. The replay consumer proof is recorded in
