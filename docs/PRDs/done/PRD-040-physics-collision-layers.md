@@ -1,7 +1,8 @@
 # PRD-040 — Collision layers, and what the census says about the rest of physics
 
-**Status: OPEN — one phase builds, five candidates are declined with stated triggers.** The
-build is `collisionLayer` / `collisionMask` on the three physics nodes, ~45 LOC. Every
+**Status: DONE — all three phases verified on 2026-08-08; five candidates are declined with
+stated triggers.** The build is `collisionLayer` / `collisionMask` on the three physics nodes,
+~45 LOC. Every
 other physics abstraction discussed — raycast nodes, contact hit info, collider debug draw,
 body-tuning passthrough, `Joint3D`, `VehicleBody3D`, ragdoll — is declined here, each with
 the measurement that would reopen it.
@@ -430,9 +431,9 @@ in it.
       `7 packages, 15000 LOC, 10 PRD files`. Expected reading after this PRD:
       `7 packages, ~3018 framework LOC, 9 PRD files`.
 
-**Verification status: UNVERIFIED.** This PRD writes no code, so none of the above has been
-run. The only commands executed for this document are the census in §1, the file reads
-cited in §2, and `pnpm budgets` (`budgets ok: 7 packages, 2988 framework LOC, 8 PRD files`).
+**Verification status: VERIFIED.** Final gates, the real scaffold scenario, and the review
+repair are recorded in `docs/verification/PRD-040.md`. The final budget reading was
+`7 packages, 3712 framework LOC, 8 PRD files`, under all repository caps.
 
 ### Budget note
 
