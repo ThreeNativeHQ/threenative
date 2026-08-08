@@ -27,6 +27,7 @@ const STARTER_PATHS = [
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
+  "src/pick.ts",
   "src/render/sky.ts",
   "src/entities/Crate.ts",
   "src/entities/Player.ts",
@@ -43,6 +44,7 @@ const STARTER_PATHS = [
   "playtests/pause.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/seed.playtest.json",
+  "playtests/pick.playtest.json",
   "public/pickup.ogg",
 ];
 

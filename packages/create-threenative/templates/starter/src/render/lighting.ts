@@ -22,7 +22,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
 
   // Sky above, ground bounce below. Tint the second colour toward whatever the
   // floor actually is — it is the cheapest realism in the whole rig.
-  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.6));
+  scene.add(new HemisphereLight(palette.skyHigh, palette.skyLow, 1.6));
 
   const key = new DirectionalLight(palette.accent, 3);
   key.position.set(4, 7, 3);
@@ -47,5 +47,5 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   rim.position.set(-5, 3, -6);
   scene.add(rim);
 
-  scene.add(new AmbientLight(palette.shadow, 0.28));
+  scene.add(new AmbientLight(palette.skyLow, 0.28));
 }

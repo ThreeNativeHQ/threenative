@@ -1,8 +1,8 @@
 # PRD-038 — Runtime GPU transport and acceleration
 
-**Status:** open. **Gated on Gate 0** of `docs/strategy/ROADMAP.md` — nothing below Gate 0
-starts until round 2 runs to completion on `exploration` and the gate exits on its first
-outcome. This PRD is written now so the decision is on record; it is not started now.
+**Status:** implementation delivered; the exact `starter-pick` consumer gate passes on an
+isolated Brave/WebGPU runner. The PRD remains open until the scaffold's full test/removal
+gates and remaining release evidence pass; it is not moved to `done/` yet.
 
 **Verdict up front: two of three candidates are killed, and the one that survives does not
 go in `@threenative/core`.**
@@ -289,10 +289,10 @@ rule 2, simplicity first).
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `pickAt()` in `templates/starter/src/pick.ts` | `templates/starter/src/scenes/Play.ts:TBD` (per-frame `update`, on pointer move) | nothing — `Viewport.projectPosition` is plane-only, Rapier `castRay` is collider-only (§6) | n/a, new behaviour | deleting the `computeBoundsTree()` call drops `fastPicks` below the gate |
-| 2 | `sculpture()` high-poly mesh in `templates/starter/src/render/shapes.ts` | `templates/starter/src/scenes/Play.ts:TBD` (`enter`, `ctx.add`) | nothing | n/a | removing it makes `hovered` unreachable and the scenario fails |
-| 3 | `hovered` + `fastPicks` in `GameState` | `templates/starter/src/scenes/Play.ts:TBD` via `ctx.state.set` | nothing | n/a | `triviality: reject-initial-value` (`packages/playtest/src/assertions.ts:148`) rejects the assertion if the initial value satisfies it |
-| 4 | `playtests/pick.playtest.json` | `templates/starter/package.json` `test` script | nothing | n/a | scenario must be observed red on the pre-Phase-1 tree |
+| 1 | `pickAt()` in `templates/starter/src/pick.ts` | `templates/starter/src/scenes/Play.ts:130` (per-frame `update`, on pointer move) | nothing — `Viewport.projectPosition` is plane-only, Rapier `castRay` is collider-only (§6) | n/a, new behaviour | deleting the `computeBoundsTree()` call drops `fastPicks` below the gate |
+| 2 | `sculpture()` high-poly mesh in `templates/starter/src/render/shapes.ts` | `templates/starter/src/scenes/Play.ts:50` (`enter`, `ctx.add`) | nothing | n/a | removing it makes `hovered` unreachable and the scenario fails |
+| 3 | `hovered` + `fastPicks` in `GameState` | `templates/starter/src/scenes/Play.ts:24-25` via `ctx.state.set` | nothing | n/a | `triviality: reject-initial-value` (`packages/playtest/src/assertions.ts:148`) rejects the assertion if the initial value satisfies it |
+| 4 | `playtests/pick.playtest.json` | `templates/starter/package.json:9` `test` script | nothing | n/a | scenario must be observed red on the pre-Phase-1 tree |
 
 Every `TBD` is a real `file:line` filled in during implementation. A `TBD` remaining at
 phase end means the phase is incomplete.
@@ -329,19 +329,43 @@ Not a code phase. Three claims in this document are reasoned from documentation 
 than measured, because `three-mesh-bvh` is not installed. Each is confirmed here, and if
 one fails, the phase stops and this PRD is revised rather than worked around.
 
-- [ ] Install `three-mesh-bvh@0.9.14` in the starter template. Confirm the exports are
+- [x] Install `three-mesh-bvh@0.9.14` in the starter template. Confirm the exports are
       named `acceleratedRaycast`, `computeBoundsTree`, `disposeBoundsTree`. **If the names
       differ, correct §2 and §6 in this document before continuing.**
-- [ ] Confirm it works against `three@0.185.1` (peer range claims `>= 0.159.0`) and against
+- [x] Confirm it works against `three@0.185.1` (peer range claims `>= 0.159.0`) and against
       a mesh rendered by the **WebGPU** renderer. Raycasting is CPU-side and should be
       renderer-independent; confirm rather than assume.
-- [ ] Measure the tree-shaken production bundle delta from `vite build` with and without
+- [x] Measure the tree-shaken production bundle delta from `vite build` with and without
       `pick.ts`. **Record the number in this document.** §6 estimates "tens of KB" and that
       estimate is explicitly unverified. If the real number exceeds 150 KB, the cost/benefit
       in §6 is re-argued before Phase 1 proceeds.
-- [ ] Record the **no-BVH baseline**: worst-case ms for a single `Raycaster.intersectObject`
+- [x] Record the **no-BVH baseline**: worst-case ms for a single `Raycaster.intersectObject`
       against the Phase-1 sculpture. The `fastPicks` threshold in Phase 2 is fixed from this
       measured number, not invented.
+
+**Phase 0 evidence (2026-08-08):** The cached `three-mesh-bvh@0.9.10` artifact exported
+`acceleratedRaycast`, `computeBoundsTree`, and `disposeBoundsTree`, and its declared peer
+range accepted `three@0.185.1`. The manager then fetched the required `0.9.14` tarball,
+confirmed the same exports, and imported it against `three@0.185.1`; the shipped template
+declares `three-mesh-bvh: 0.9.14`.
+
+A CPU raycast against the 100,000-triangle sculpture returned hits with the same Three.js
+geometry used by the WebGPU template; the raycast path is renderer-independent. The exact
+scaffolded consumer now also runs on Brave 150.1.92.143 with `navigator.gpu`, a non-null
+adapter, and a `webgpu` canvas context. The adapter reports the SwiftShader software
+backend, so this is WebGPU compatibility evidence, not a hardware-performance claim.
+The standard Playwright Chromium run still traps before page startup in this environment.
+
+The no-BVH warm-up baseline was 6.88 ms worst-case (12 samples, 100,000 triangles); the
+BVH build took 47.27 ms lazily, and subsequent BVH raycasts stayed below 0.10 ms after
+warm-up. `FAST_PICK_BUDGET_MS` is therefore 1 ms. The isolated `vite build` delta was
+63,161 bytes raw and 19,586 bytes gzip (with `0.9.10`), below the 150 KiB ceiling.
+
+The clean baseline attempted all 9 scenarios currently invoked by the starter `test`
+script (the PRD describes 7, but this checkout already has `restart` and `seed`). All 9
+stopped before assertions because Chromium exited with `SIGTRAP` after
+`crashpad ... setsockopt: Operation not permitted`, including the required `xvfb-run` and
+WebGPU flags. This is an environment baseline, not a scenario result.
 
 ### Phase 1 — hovering a 100k-triangle mesh names it in the HUD
 
@@ -376,19 +400,23 @@ the scaffolder, which ships to every user.
 
 **Implementation:**
 
-- [ ] Patch `BufferGeometry.prototype` and `Mesh.prototype.raycast` once, at module scope
+- [x] Patch `BufferGeometry.prototype` and `Mesh.prototype.raycast` once, at module scope
       in `pick.ts`, with a comment saying it is a global effect and how to remove it.
-- [ ] Build the BVH lazily on the first pick against a geometry, not at load time. This is
+- [x] Build the BVH lazily on the first pick against a geometry, not at load time. This is
       the design that makes the default free for games that never pick.
-- [ ] Time each raycast with `performance.now()`; increment `fastPicks` when a pick
+- [x] Time each raycast with `performance.now()`; increment `fastPicks` when a pick
       completes under the Phase-0 measured budget.
-- [ ] Write `hovered` to the object's name, or `""` on a miss.
+- [x] Write `hovered` to the object's name, or `""` on a miss.
+
+The starter's store batches ordinary state writes at 100 ms. `pick.ts` therefore keeps a
+per-sculpture counter between flushes and flushes only on a hover transition: the HUD sees
+the interaction immediately, while the acceleration counter does not lose per-frame picks.
 
 **Wiring:**
-- [ ] Caller edited: `Play.ts:TBD` calls `pickAt(ctx)` from `update`.
+- [x] Caller edited: `Play.ts:130` calls `pickAt(ctx)` from `update`.
 - [ ] Registration: none required — `Play` is the scaffolded main scene.
 - [ ] Old path: n/a, new behaviour (§6 incumbent census).
-- [ ] Ledger rows filled: #1, #2, #3.
+- [x] Ledger rows filled: #1, #2, #3.
 
 **Revert check:** delete `src/pick.ts` → `Play.ts` fails `pnpm typecheck` in the scaffolded
 project, and the scaffold smoke gate in CI goes red.
@@ -409,7 +437,7 @@ move the mouse over the sculpture, watch the HUD name it and clear on move-off.
 
 - `packages/create-threenative/templates/starter/playtests/pick.playtest.json` — NEW
 - `packages/create-threenative/templates/starter/package.json` — EDIT: append the scenario
-  to the `test` script chain alongside the seven existing scenarios.
+  to the `test` script chain alongside the nine existing scenarios.
 
 **The honest problem this phase has to solve.** A "the click registers a hit" assertion
 **does not prove the BVH is doing anything** — an unaccelerated raycast against 100k
@@ -478,14 +506,54 @@ and `changed` — **there is no `lte`** (`packages/playtest/src/assertions.ts:13
 2. **Run the scenario against the pre-Phase-1 tree.** It must fail with a missing
    `hovered` resource, confirming the gate is not already satisfied by the baseline.
 3. **Confirm the runner collected the scenario.** Check that the `test` script's scenario
-   count went from 7 to 8 and that `pick.playtest.json` appears in the run output — a
+   count went from 9 to 10 and that `pick.playtest.json` appears in the run output — a
    scenario file that exists but is never invoked is the listed-but-absent failure.
 4. **Assert something known false** (`"equals": "definitely-not-a-mesh"`) once, and
    confirm the harness reports a failure rather than skipping the key.
 
+**Phase 2 evidence (2026-08-08):** The assertion evaluator rejected the pre-feature
+observation set with missing `hovered` and `fastPicks` resources, and the deliberately
+false `definitely-not-a-mesh` equality returned `pass: false` with
+`TN_PLAYTEST_RESOURCE_ASSERTION_FAILED`. The current checkout's script count is 9 before
+this change and 10 after it (the PRD's 7/8 count predates two already-invoked scenarios).
+The direct CPU control against the same 100,000-triangle geometry and exact `0.9.14`
+artifact returned 59/60 picks under the 1 ms budget with BVH and 0/60 with that call
+removed; both variants returned all 60 hits.
+
+The earlier fresh-profile Brave run under Xvfb reached the changed scaffold's bridge and
+recorded the following historical WebGL result. The standard Playwright Chromium run traps
+during launch with `SIGTRAP`/`EPERM`. That run observed `GameState` moving from
+`fastPicks: 0, hovered: ""` to `fastPicks: 20, hovered: "sculpture"`, then to
+`hovered: ""` after moving off; bridge diagnostics stayed empty. That run also logged
+`THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend` and other
+warnings, so it does not satisfy the WebGPU or `noConsoleErrors` acceptance criteria. A
+clean pre-Phase-1 scaffold in the same isolated Brave pass produced 15
+`OperationError: Instance dropped in popErrorScope` page errors plus the existing
+deprecation warning. These are environment observations, not passing scenario results.
+
+Additional runner diagnosis used a minimal `data:` page, so it does not depend on the
+scaffold: Playwright Chromium still reported repeated `FD ownership violation` failures,
+`GPU process isn't usable`, and exited with `SIGTRAP` even with crashpad-disabled,
+`--in-process-gpu`, and SwiftShader flags. The in-process and SwiftShader variants did
+launch, but exposed no `navigator.gpu`; they cannot stand in for the required WebGPU run.
+An isolated Brave 150.1.92.143 process connected over localhost CDP on the real X11
+display, but `navigator.gpu` remained absent under default, explicit Vulkan, and
+SwiftShader flags. That confirms a browser with a working page transport is still not a
+WebGPU-capable consumer runner in this environment.
+
+The supported consumer gate was then rerun on real X11 with a fresh Brave profile and the
+exact checked-in `playtests/pick.playtest.json`. The app's WebGPU canvas rendered the
+starter scene and its HUD showed `HOVER sculpture`. The runner observed `hovered: ""` at
+the `idle` checkpoint, `hovered: "sculpture"` at `settle`, `fastPicks: 310` against the
+`gte: 50` threshold, zero console errors, zero network errors, and zero runtime
+diagnostics; the process exited 0. Removing only the `computeBoundsTree()` line kept the
+hover assertion green but produced `fastPicks: 0`, exit 1, and
+`TN_PLAYTEST_RESOURCE_ASSERTION_FAILED`. The exact screenshot is non-blank and includes
+the sculpture, particles, lighting, and HUD.
+
 **Environmental honesty.** Per prior sessions on this machine, headless Chromium renders
 WebGPU as a blank canvas, and several playtest scenarios already fail on a clean tree at
-HEAD for environmental reasons. **Baseline first:** run the existing 7 scenarios before
+HEAD for environmental reasons. **Baseline first:** run the existing 9 scenarios before
 touching anything, record which already fail, and never attribute a pre-existing failure
 to this change. Run headed under `xvfb-run` with `--enable-unsafe-webgpu`. This scenario
 asserts no `visual` or screenshot criteria specifically so it does not depend on the
@@ -493,7 +561,12 @@ canvas actually painting — `resources` reads `window.__THREENATIVE__`, which p
 whether or not the GPU produced pixels.
 
 **Revert check:** remove the scenario from the `test` script → the scaffolded project's
-`pnpm test` scenario count drops from 8 to 7.
+`pnpm test` scenario count drops from 10 to 9.
+
+The fresh scaffold typecheck and Vite build pass after a pre-existing template defect was
+repaired: `lighting.ts` referenced an undeclared `palette.shadow`; both shadow-light uses
+now use the existing `palette.skyLow` role. This repair is unrelated to the acceleration
+path but is required for a scaffolded consumer to typecheck.
 
 ---
 
@@ -503,9 +576,10 @@ whether or not the GPU produced pixels.
       it in the HUD within one frame**, and a human sees it change on move-off.
 - [ ] **`starter-pick` passes in the scaffolded project's own `pnpm test`**, and goes red
       when the BVH construction line is deleted while the mesh and the pick call remain.
-- [ ] **A scaffolded project that deletes `src/pick.ts` and removes the dependency still
-      builds and passes its remaining 7 scenarios** — the acceleration is owned by the
-      user and removable, which is the whole reason it is in the template.
+- [ ] **A scaffolded project that removes the `pickAt` import and call, deletes
+      `src/pick.ts` and removes the dependency, still builds and passes its remaining 9
+      scenarios** — the acceleration is owned by the user and removable, which is the
+      whole reason it is in the template.
 - [ ] **`@threenative/core` gains no dependency and no line of code.** `pnpm budgets` shows
       7 packages and unchanged framework LOC.
 - [ ] **No `.ktx2` or meshopt decoder wiring ships anywhere**, and
