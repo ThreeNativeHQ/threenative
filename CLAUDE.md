@@ -89,6 +89,12 @@ These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignorin
 `pnpm budgets` enforces: 8 workspace packages, 15,000 framework LOC (`packages/*/src`,
 excluding salvage), and 10 files in `docs/PRDs/`.
 
+It also fails if any `packages/*/package.json` claims `threenative-asset-mcp`. That server is
+the asset-discovery MCP each template pins and each generated project installs; it is an
+external process, and vendoring its ~10.8k lines would break the LOC and package caps at
+once. Its surface of record is `packages/create-threenative/asset-mcp-tools.json`, recorded
+by running the pinned version — update it by running the server, never by reading its docs.
+
 ## Layout
 
 ```

@@ -84,6 +84,52 @@ async function applyPackageSources(
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+const NODE_MODULES_PREFIX = "./node_modules/";
+
+function mcpPackageName(entry: string): string {
+  const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");
+  return entry.startsWith(`${NODE_MODULES_PREFIX}@`)
+    ? segments.slice(0, 2).join("/")
+    : (segments[0] ?? "");
+}
+
+/** Fails closed: a project whose MCP config is missing, empty, or points at a package it does
+ * not install would silently hand the user's agent no asset tools at all. */
+async function assertMcpConfig(target: string): Promise<void> {
+  const configPath = path.join(target, ".mcp.json");
+  const raw = await readFile(configPath, "utf8").catch(() => {
+    throw new Error(`Scaffold produced no .mcp.json at '${configPath}'.`);
+  });
+  const { mcpServers } = JSON.parse(raw) as {
+    mcpServers?: Record<string, { args?: string[]; command?: string }>;
+  };
+  if (mcpServers === undefined || Object.keys(mcpServers).length === 0) {
+    throw new Error(`'${configPath}' declares no mcpServers.`);
+  }
+  const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ]);
+  for (const [name, server] of Object.entries(mcpServers)) {
+    const entry = server.args?.[0];
+    if (entry === undefined || !entry.startsWith(NODE_MODULES_PREFIX)) {
+      throw new Error(
+        `MCP server '${name}' must launch from '${NODE_MODULES_PREFIX}', not '${entry ?? "nothing"}'.`,
+      );
+    }
+    const dependency = mcpPackageName(entry);
+    if (!declared.has(dependency)) {
+      throw new Error(
+        `MCP server '${name}' launches '${dependency}', which this project does not depend on.`,
+      );
+    }
+  }
+}
+
 async function runInstall(target: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("pnpm", ["install"], { cwd: target, stdio: "inherit" });
@@ -114,6 +160,7 @@ export async function createProject(
   await cp(source, target, { recursive: true, errorOnExist: true });
   await renderTemplate(target, packageName(target));
   await applyPackageSources(target, options.packageSources);
+  await assertMcpConfig(target);
 
   const installed = options.install ?? true;
   if (installed) await runInstall(target);

@@ -91,6 +91,68 @@ jobs:
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
             --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
           pnpm --dir "$target" install
+          ASSET_MCP_TARGET="$target" node --input-type=module - <<'NODE'
+          import { spawn } from "node:child_process";
+          import { readFile } from "node:fs/promises";
+
+          const target = process.env.ASSET_MCP_TARGET;
+          const surface = JSON.parse(
+            await readFile("packages/create-threenative/asset-mcp-tools.json", "utf8"),
+          );
+          const { mcpServers } = JSON.parse(await readFile(`${target}/.mcp.json`, "utf8"));
+          const server = mcpServers["threenative-assets"];
+          const child = spawn(server.command, server.args, {
+            cwd: target,
+            stdio: ["pipe", "pipe", "inherit"],
+          });
+          let buffer = "";
+          const listed = new Promise((resolve, reject) => {
+            child.stdout.on("data", (chunk) => {
+              buffer += chunk.toString();
+              for (const line of buffer.split("\n")) {
+                if (!line.trim().startsWith("{")) continue;
+                let message;
+                try {
+                  message = JSON.parse(line);
+                } catch {
+                  continue;
+                }
+                if (message.id === 2 && message.result?.tools)
+                  resolve(message.result.tools.map((tool) => tool.name).sort());
+              }
+            });
+            setTimeout(
+              () => reject(new Error(`tools/list never answered. Saw: ${buffer.slice(0, 500)}`)),
+              30_000,
+            );
+          });
+          const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
+          send({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2025-06-18",
+              capabilities: {},
+              clientInfo: { name: "scaffold-smoke", version: "0" },
+            },
+          });
+          setTimeout(() => {
+            send({ jsonrpc: "2.0", method: "notifications/initialized" });
+            send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+          }, 1_000);
+          const names = await listed;
+          child.kill();
+          const expected = [...surface.tools].sort();
+          // Set equality, never `length > 0`: a host that lists nothing, or the full surface
+          // when a bounded profile is pinned, must both fail here.
+          if (JSON.stringify(names) !== JSON.stringify(expected)) {
+            throw new Error(
+              `Asset MCP surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
+            );
+          }
+          console.log(`asset MCP ok: ${names.length} tools from ${surface.version}`);
+          NODE
           pnpm exec playwright install --with-deps chromium
           pnpm --dir "$target" test
           test -f "$target/src/render/lighting.ts"

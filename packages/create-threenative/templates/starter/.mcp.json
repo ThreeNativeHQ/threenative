@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "threenative-assets": {
+      "command": "node",
+      "args": ["./node_modules/threenative-asset-mcp/dist/index.js"]
+    }
+  }
+}

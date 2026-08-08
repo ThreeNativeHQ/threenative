@@ -265,6 +265,16 @@ describe("template contracts", () => {
     }
   });
 
+  it("should keep the asset MCP out of every workspace package", async () => {
+    const packagesRoot = path.resolve("packages");
+    for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = path.join(packagesRoot, entry.name, "package.json");
+      const manifest = await readFile(manifestPath, "utf8").catch(() => undefined);
+      expect(manifest ?? "", entry.name).not.toContain("threenative-asset-mcp");
+    }
+  });
+
   it("should list @types/three in every template that runs tsc", async () => {
     for (const template of typecheckTemplates) {
       const packageJson = JSON.parse(

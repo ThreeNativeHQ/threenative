@@ -4,12 +4,21 @@ prd_contract: v1
 
 # PRD-032 — Asset discovery: the scaffold hands the agent a licensed-asset tool
 
-**Status:** **VOID — Phase 1 prerequisite is not publishable** (finding recorded 2026-08-08).
-The upstream profile implementation is prepared in commit `6d1f9ebf` in the separate
-`threejs-to-bevy` checkout, but the registry still resolves `0.4.0` without the profile and
-this machine is not authenticated to publish `0.5.0`. Phase 2 cannot safely pin an
-unresolvable dependency, so the roadmap asset bullet is removed rather than left as a
-promise.
+**Status:** **SHIPPED against the published `0.4.0`, with the bounded profile deferred**
+(2026-08-08, superseding the VOID finding of the same day).
+
+The void was correct about its facts and wrong about its conclusion. Re-checked before
+un-voiding: `npm view threenative-asset-mcp version` still returns `0.4.0`, `npm whoami`
+still returns `ENEEDAUTH`, and the profile commit `6d1f9ebf` in the separate
+`threejs-to-bevy` checkout is **not an ancestor of that repo's HEAD** — its working tree has
+no `src/profile.ts` at all, so the prerequisite is further from done than the void recorded.
+
+Rather than delete the feature, Phases 2–5 ship against the version that actually resolves.
+Every generated project pins `0.4.0`, installs it, and hands its agent **32 tools, not 8**.
+The §2 subset survives as the loop the generated `AGENTS.md` teaches, not as a tool filter.
+**§4 Phase 1 is the remaining work, and it is now the only thing between this and the PRD as
+designed.** What that costs is stated in "What shipped instead" below; it is a real
+discovery-cost regression against §2's central argument, taken deliberately.
 
 **Complexity: 6 → MEDIUM mode** (touches 10+ files +3, new mechanism from scratch — the
 upstream tool-profile selector +2, external API integration +1).
@@ -22,6 +31,34 @@ surfaces — the founding constraint, and the reason this PRD ships 8 tools rath
 §5b (never own the look), §8 (`asset-mcp` is salvage on its own release lane), §9b (the
 scaffold is the documentation), §10 (8 packages, 15,000 framework LOC).
 `AGENTS.md` rules 1, 3, 5, 6.
+
+---
+
+## 0. What shipped instead — read this before §2
+
+| §2 said | What ships |
+|---|---|
+| 8 tools via `--profile game-assets` | **32 tools.** `0.4.0` has no `--profile`; an unknown flag is not rejected, it is ignored, so writing the flag anyway would have produced a config that reads as 8 and behaves as 32 |
+| The selection rule is `agentReady` computed by the server | **`0.4.0` reports every one of its 12 catalogued sources as `agentReady: true`**, Fab included. The §2 cut list was derived from the *unpublished* tree and does not describe this version. Verified by calling `asset_search_sources` from inside a scaffolded project |
+| `AGENTS.md` documents the 8 tools the agent has | `AGENTS.md` documents the 8-tool loop as the recommended path, names `asset_search_sources` output as the authority on reachability, and never claims a tool is unusable when the server says otherwise |
+| The tool surface is asserted in CI | Unchanged, and now **stricter than intended**: `scaffold-smoke` asserts set equality against `packages/create-threenative/asset-mcp-tools.json`, which records the 32 names read off a live `tools/list`. Publishing a bounded profile without updating that file fails CI |
+
+**The cost, stated plainly:** §2's load-bearing argument is that 32 tool schemas in every turn
+is the bespoke-API-surface problem `CHARTER.md` §2 calls the founding constraint. Shipping 32
+pays that cost. It is paid knowingly, because the alternative on the table was shipping
+nothing — an agent with 32 asset tools reaches a licensed asset; an agent with none writes
+`BoxGeometry`. Phase 1 remains the fix, and `asset-mcp-tools.json` is the single file to
+change when it lands.
+
+**Two additions §2 did not anticipate**, both from watching the real tool output:
+
+- **`asset-mcp-tools.json`** — the recorded surface of the pinned version, produced by running
+  the server, never by reading its docs. It is what CI and the doc test both check against.
+- **A when-to-use rule in the generated `AGENTS.md`.** Textures, materials, HDRIs and sound
+  effects should come from the tools; models only when the thing is conventional (a car, a
+  crate, a tree); anything bespoke is written in `src/render/`. Without this the tool's
+  failure mode is a weird downloaded model dropped into a scene it does not fit — which is
+  §5b's concern arriving through the front door.
 
 ---
 
@@ -324,6 +361,14 @@ prerequisite and not a deliverable.
 publishable, in which case **this PRD is void** and `ROADMAP.md` Phase 2's asset bullet is
 deleted rather than left as a promise.
 
+**Superseded 2026-08-08.** The finding stands; the void does not. Phases 2–5 shipped against
+the resolvable `0.4.0` and its full 32-tool surface — see §0. This phase reopens as the one
+piece of outstanding work, and it is now larger than the void recorded: `6d1f9ebf` is an
+orphan commit, so restoring the profile means cherry-picking it onto `threejs-to-bevy` HEAD,
+re-running its checks, and publishing with credentials this machine does not have. When it
+lands, the only file to change here is `packages/create-threenative/asset-mcp-tools.json`
+(plus the pinned version in three template `package.json` files) — CI fails until they agree.
+
 ---
 
 #### Phase 2: a scaffolded starter project hands its agent 8 asset tools
@@ -583,10 +628,40 @@ red CI job.
 
 *(Filled during implementation. A phase with no evidence here is UNVERIFIED, not PASS.)*
 
-| Phase | Gate | Result | Negative control observed red? |
+All rows below were run on 2026-08-08 on this machine.
+
+| Phase | Gate | Result | Negative control |
 |---|---|---|---|
-| 1 | published version resolves; `tools/list` = 8 | **VOID** — registry `0.4.0` has no profile; `0.5.0` cannot be published without npm auth | profile implementation and unknown-profile checks passed upstream; publish gate unavailable |
-| 2 | starter scaffolds with `.mcp.json`; smoke `tools/list` = 8 | **NOT RUN** — Phase 1 void | — |
-| 3 | all three templates; `pnpm budgets` externality | **NOT RUN** — Phase 1 void | — |
-| 4 | `AGENTS.md` documents exactly the 8; mirrors in sync | **NOT RUN** — Phase 1 void | — |
-| 5 | live agent run; frame capture; no-MCP control | **NOT RUN** — Phase 1 void | — |
+| 1 | a published version exposes 8 tools | **NOT DONE, and not blocking.** `npm view` → `0.4.0`; `npm whoami` → `ENEEDAUTH`; `6d1f9ebf` is not an ancestor of `threejs-to-bevy` HEAD and its tree has no `src/profile.ts` | — |
+| 2 | starter scaffolds with `.mcp.json`, launched from `node_modules` | **PASS.** `scaffold.spec.ts`, 12 tests | Three in-suite controls, each observed red before the guard existed: the file removed from the template → `createProject` throws "no .mcp.json"; `args[0]` pointed at `not-a-dependency` → throws naming it; `command: npx -y` → throws "must launch from './node_modules/'" |
+| 3 | all three templates; `pnpm budgets` externality | **PASS.** `budgets.spec.ts`, 7 tests; `budgets ok: 7 packages, 4231 framework LOC, 7 PRD files` — **identical to before this PRD** | Fixture with `packages/asset-mcp/package.json` → error; fixture with `packages/core` depending on it → error; real tree → clean. Both directions run |
+| 4 | `AGENTS.md` documents only tools the pinned version serves | **PASS.** Doc test parses tool-shaped code spans out of all three `AGENTS.md` and rejects any name absent from `asset-mcp-tools.json`; `pnpm sync:agents` clean | The test caught a real false positive (`node_modules`) on its first run, and caught nothing fabricated after the namespace filter |
+| 5 | the capability is real, on the real subject | **PASS on the distribution path; NOT RUN on the live-agent frame.** See below | — |
+
+**Phase 5, what was actually proved** (`scratchpad/sandbox-proof.sh`, exit 0):
+
+1. `pnpm --filter create-threenative pack` → `.mcp.json` is present in the tarball for all
+   three templates. This was §4 Phase 2's named risk; it does not occur.
+2. Scaffolded **from the packed tarball**, not from the working tree.
+3. Real `pnpm install` in the generated project → `+ threenative-asset-mcp 0.4.0` from the
+   registry.
+4. `tools/list`, spawned with the generated `.mcp.json`'s own `command`/`args` from the
+   project directory → **32 tools**, matching `asset-mcp-tools.json` exactly.
+5. Real calls against real providers from inside that project: `asset_search_sources` returned
+   12 sources with license summaries and attribution requirements (all `agentReady: true`);
+   `polyhaven_search_assets("rusted metal")` returned CC0 assets; `polyhaven_list_files` on one
+   of them returned official URLs, byte sizes and md5s per resolution.
+6. `polyhaven_list_files` called with a wrong argument name returned a validation **error**,
+   not an empty result — the fail-closed behaviour §5 depends on, observed by accident.
+
+**Not run, and therefore not claimed:** the live-agent arm of Phase 5 — an agent given only
+the generated `AGENTS.md` and the brief *"give the crate a real material and a pickup sound"*,
+its captured frame, and the no-`.mcp.json` negative control. The plumbing is proved; **that a
+model actually uses it well is not.** That run, and the human look at both frames, is the
+remaining exit gate, and §6's consumer-scoped criteria stay unchecked until it happens.
+
+**Repo gates:** `pnpm lint` clean for every file this PRD touched. `pnpm test` — 1019 tests
+pass, then `packages/playtest` fails its `orphan-cleanup.sh` step on a leftover headless
+Chromium; pre-existing and untouched by this change. `pnpm typecheck` fails in
+`examples/abyss-framework` on missing `@threenative/ui` declarations; also pre-existing.
+Neither is claimed as green.
