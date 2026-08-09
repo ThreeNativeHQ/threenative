@@ -11,7 +11,7 @@
 
 ```bash
 # From the repository root
-cd /path/to/threejs-mystral
+cd packages/runtime-native
 
 # Download Android-specific dependencies
 node scripts/download-deps.mjs --android
@@ -35,29 +35,29 @@ This downloads:
 
 ```bash
 # From the repository root. The gate discovers adb, Android SDK, and JDK 17.
-npm run test:android:first-proof
+node packages/runtime-native/scripts/verify-android-first-proof.mjs
 ```
 
 The gate performs the complete first-proof sequence:
 
-1. Builds the debug APK and reproducible upstream Three.js WebGPU bundle.
+1. Builds the debug APK from the public-API `examples/native-smoke` bundle at catalog Three.js 0.185.1.
 2. Installs and launches `com.mystral.engine/.MystralActivity` on the only online device.
 3. Captures app logcat to `artifacts/android/first-proof-logcat.txt`.
-4. Requires the exact `first proof cube ready` marker and a live process after a 3-second stability window.
-5. Rejects fatal signals, `RangeError`, WebGPU validation failures, and shader errors.
+4. Requires ordered ready, first-frame, and 300-frame markers plus a live 3-second stability window.
+5. Rejects JS/WebGPU failures and always captures a screenshot with dimensions and SHA-256.
 
 When more than one device is online, select one explicitly:
 
 ```bash
-npm run test:android:first-proof -- --device emulator-5554
+node packages/runtime-native/scripts/verify-android-first-proof.mjs --device emulator-5554
 ```
 
 The gate checks `THREENATIVE_ADB`, `THREENATIVE_ANDROID_SDK`, and
-`THREENATIVE_JAVA_HOME` before standard SDK/JDK locations. To capture a visual
-proof with PNG dimensions and SHA-256 metadata in the JSON report:
+`THREENATIVE_JAVA_HOME` before standard SDK/JDK locations. The default screenshot is
+`artifacts/android/first-proof.png`; override its path with:
 
 ```bash
-npm run test:android:first-proof -- \
+node packages/runtime-native/scripts/verify-android-first-proof.mjs \
   --screenshot artifacts/android/first-proof.png
 ```
 
@@ -130,7 +130,8 @@ adb logcat --pid=$(adb shell pidof com.mystral.engine)
 Run the gate's emulator-free unit coverage with:
 
 ```bash
-npm run test:android:first-proof:unit
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/android-first-proof-gate.test.mjs tests/runtime-next-contract.test.mjs
 ```
 
 ## Known Issues

@@ -3834,6 +3834,81 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
             dispatchResizeEvent(e);
         });
 
+        // Host-neutral device playtest input. The JS bridge invokes this while
+        // the normal SDL input path remains unchanged for players.
+        auto nativeHost = jsEngine_->getGlobalProperty("__THREENATIVE_NATIVE__");
+        if (jsEngine_->isUndefined(nativeHost)) nativeHost = jsEngine_->newObject();
+        auto playtestHost = jsEngine_->newObject();
+        jsEngine_->setProperty(playtestHost, "keyboard",
+            jsEngine_->newFunction("keyboard", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 3) return jsEngine_->newUndefined();
+                platform::KeyboardEventData event{};
+                event.type = jsEngine_->toString(args[0]);
+                event.key = jsEngine_->toString(args[1]);
+                event.code = jsEngine_->toString(args[2]);
+                dispatchKeyboardEvent(event);
+                return jsEngine_->newUndefined();
+            })
+        );
+        jsEngine_->setProperty(playtestHost, "pointer",
+            jsEngine_->newFunction("pointer", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 4) return jsEngine_->newUndefined();
+                platform::PointerEventData event{};
+                event.type = jsEngine_->toString(args[0]);
+                event.clientX = jsEngine_->toNumber(args[1]);
+                event.clientY = jsEngine_->toNumber(args[2]);
+                event.buttons = static_cast<int>(jsEngine_->toNumber(args[3]));
+                event.button = event.buttons == 0 ? 0 : event.buttons - 1;
+                event.pointerId = 1;
+                event.pointerType = "mouse";
+                event.isPrimary = true;
+                event.width = 1;
+                event.height = 1;
+                event.pressure = event.buttons == 0 ? 0 : 0.5;
+                dispatchPointerEvent(event);
+                return jsEngine_->newUndefined();
+            })
+        );
+        jsEngine_->setProperty(nativeHost, "playtestInput", playtestHost);
+        auto playtestMailbox = jsEngine_->newObject();
+        jsEngine_->setProperty(playtestMailbox, "receive",
+            jsEngine_->newFunction("receive", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newUndefined();
+                const std::string path = jsEngine_->toString(args[0]);
+                std::ifstream input(path, std::ios::binary | std::ios::ate);
+                if (!input.is_open()) return jsEngine_->newUndefined();
+                const auto size = input.tellg();
+                if (size < 0 || size > 1000000) {
+                    input.close();
+                    std::remove(path.c_str());
+                    return jsEngine_->newUndefined();
+                }
+                std::string payload(static_cast<size_t>(size), '\0');
+                input.seekg(0);
+                input.read(payload.data(), size);
+                input.close();
+                std::remove(path.c_str());
+                return jsEngine_->newString(payload.c_str());
+            })
+        );
+        jsEngine_->setProperty(playtestMailbox, "respond",
+            jsEngine_->newFunction("respond", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 2) return jsEngine_->newBoolean(false);
+                const std::string path = jsEngine_->toString(args[0]);
+                const std::string payload = jsEngine_->toString(args[1]);
+                if (payload.size() > 1000000) return jsEngine_->newBoolean(false);
+                const std::string temporary = path + ".tmp";
+                std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+                if (!output.is_open()) return jsEngine_->newBoolean(false);
+                output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+                output.close();
+                std::remove(path.c_str());
+                return jsEngine_->newBoolean(std::rename(temporary.c_str(), path.c_str()) == 0);
+            })
+        );
+        jsEngine_->setProperty(nativeHost, "playtest", playtestMailbox);
+        jsEngine_->setGlobalProperty("__THREENATIVE_NATIVE__", nativeHost);
+
         // Set up navigator.getGamepads()
         auto navigator = jsEngine_->getGlobalProperty("navigator");
         if (jsEngine_->isUndefined(navigator)) {

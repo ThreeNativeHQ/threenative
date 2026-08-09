@@ -123,4 +123,28 @@ describe("AudioBus", () => {
     expect(() => bus.play(null as unknown as AudioBuffer)).toThrow(/non-null/u);
     bus.dispose();
   });
+
+  it("should use an injected optional gesture source without reading window", async () => {
+    audioContext();
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "window");
+    const gestures = new EventTarget();
+    const bus = new AudioBus({
+      camera: new PerspectiveCamera(),
+      source: () => gestures,
+    });
+
+    try {
+      bus.play(buffer);
+      expect(bus.queued).toBe(1);
+      gestures.dispatchEvent(new Event("pointerdown"));
+      await Promise.resolve();
+      expect(bus.queued).toBe(0);
+      expect(bus.voices).toBe(1);
+    } finally {
+      bus.dispose();
+      if (windowDescriptor !== undefined)
+        Object.defineProperty(globalThis, "window", windowDescriptor);
+    }
+  });
 });

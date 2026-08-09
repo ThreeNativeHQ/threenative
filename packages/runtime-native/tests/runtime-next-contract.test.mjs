@@ -127,21 +127,20 @@ test('conformance registry and gate docs cover migrated M0-M11 and M15-M16', () 
 });
 
 
-test('Android default gate is generated from exact shared first proof source and upstream Three.js', () => {
-  const sharedPath = 'conformance/scenes/shared/first-proof-game.js';
+test('Android default gate is generated from the public core native smoke at catalog Three.js', () => {
+  const smokePath = 'examples/native-smoke/src/main.ts';
 
   const buildScript = read('scripts/build-android-first-proof.mjs');
-  assert.match(buildScript, new RegExp(sharedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Android bundle build must import the exact shared scene path');
-  assert.match(buildScript, /node_modules\/\.bin\/esbuild|from ['"]esbuild['"]/, 'Android bundle must be generated with the pinned esbuild dependency');
-  assert.match(buildScript, /metafile/, 'Android bundle build must produce traceable input metadata');
+  assert.match(buildScript, new RegExp(smokePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Android bundle build must use the public core smoke path');
+  assert.match(buildScript, /@threenative\/core/, 'Android bundle must enforce the public core API import');
+  assert.match(buildScript, /EXPECTED_THREE_VERSION = '0\.185\.1'/, 'Android bundle must close the catalog Three.js gap');
+  assert.match(buildScript, /executable\(runtimeRoot, 'esbuild'\)/, 'Android bundle must be generated with the pinned runtime-package esbuild dependency');
+  assert.match(buildScript, /metadataOutput/, 'Android bundle build must produce traceable input metadata');
 
   const gradle = read('android/app/build.gradle.kts');
   assert.match(gradle, /buildAndroidFirstProofBundle/, 'Android Gradle build must invoke reproducible first proof bundling');
   assert.match(gradle, /preBuild[\s\S]*buildAndroidFirstProofBundle/, 'Android preBuild must depend on generated bundle task');
-
-  const entry = read('conformance/android/first-proof-entry.js');
-  assert.match(entry, /startFirstProofGame/);
-  assert.match(entry, /globalThis\.canvas|\bcanvas\b/);
+  assert.match(gradle, /examples\/native-smoke\/src/, 'Android Gradle inputs must track the public core smoke');
 });
 
 const generatedAndroidBundle = 'android/app/src/main/assets/scripts/main.js';
@@ -149,20 +148,24 @@ const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
 test.skipIf(
   !existsSync(join(root, generatedAndroidBundle)) || !existsSync(join(root, generatedAndroidMeta)),
 )('generated Android bundle provenance [requires the generated Android first-proof artifacts]', async () => {
-  const shared = read('conformance/scenes/shared/first-proof-game.js');
+  const smoke = read('../../examples/native-smoke/src/main.ts');
   const crypto = await import('node:crypto');
-  const expectedHash = crypto.createHash('sha256').update(shared).digest('hex');
+  const expectedHash = crypto.createHash('sha256').update(smoke).digest('hex');
 
   const generated = read(generatedAndroidBundle);
-  assert.match(generated, new RegExp(`THREENATIVE_ANDROID_FIRST_PROOF_SOURCE_SHA256:${expectedHash}`));
-  assert.match(generated, /THREENATIVE_ANDROID_FIRST_PROOF_ENTRY:conformance\/android\/first-proof-entry\.js/);
-  assert.match(generated, /THREENATIVE_ANDROID_FIRST_PROOF_SHARED:conformance\/scenes\/shared\/first-proof-game\.js/);
-  assert.match(generated, /three\/webgpu|WebGPURenderer|BoxGeometry|MeshStandardMaterial|DirectionalLight/, 'generated Android bundle must include upstream Three.js WebGPU cube code');
+  assert.match(generated, new RegExp(`THREENATIVE_ANDROID_NATIVE_SMOKE_SOURCE_SHA256:${expectedHash}`));
+  assert.match(generated, /THREENATIVE_ANDROID_NATIVE_SMOKE_ENTRY:examples\/native-smoke\/src\/main\.ts/);
+  for (const marker of ['TN_NATIVE_SMOKE_THREE:0.185.1', 'TN_NATIVE_SMOKE_READY:webgpu', 'TN_NATIVE_SMOKE_FIRST_FRAME', 'TN_NATIVE_SMOKE_300_FRAMES:300']) {
+    assert.match(generated, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
 
   const meta = JSON.parse(read(generatedAndroidMeta));
   const inputPaths = Object.keys(meta.inputs || {}).join('\n');
-  assert.match(inputPaths, /conformance\/scenes\/shared\/first-proof-game\.js/);
-  assert.match(inputPaths, /node_modules\/three\//);
+  assert.equal(meta.publicApiPackage, '@threenative/core');
+  assert.equal(meta.catalogThree, '0.185.1');
+  assert.equal(meta.installedThree, '0.185.1');
+  assert.match(inputPaths, /examples\/native-smoke\/src\/main\.ts/);
+  assert.match(inputPaths, /node_modules\/three\/package\.json/);
 
   assert.doesNotMatch(generated, /glb-parser|parseGLB|loadGLB|DamagedHelmet|PBR shader|textureSample\(baseColorTexture/i, 'Android default gate must not be the custom raw-WebGPU/GLB-parser sample');
 });
@@ -190,6 +193,12 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'QuickJS must use no more than half of the requested Android SDLThread stack');
 
   const deps = read('scripts/download-deps.mjs');
+  assert.match(deps, /process\.exitCode = 1/,
+    'dependency downloader must fail closed when a download throws');
+  assert.match(deps, /Dependency download failed:/,
+    'dependency downloader must fail closed when any dependency reports failure');
+  assert.match(deps, /gradle-8\.5-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
+    'Android dependency reconstruction must restore and verify the excluded Gradle wrapper');
   assert.match(deps, /'wgpu-android':[\s\S]*version: 'v24\.0\.3\.1'/,
     'Android must use the first verified modern wgpu-native release that accepts Three.js WGSL on the emulator');
   assert.doesNotMatch(deps, /wgpu-android[\s\S]{0,800}v22\.1\.0\.5/,

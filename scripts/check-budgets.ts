@@ -33,6 +33,15 @@ const NATIVE_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
 const NATIVE_RUNTIME_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle|js|mjs|ts|json|xml)$/;
+const GENERATED_ANDROID_BUNDLE = path.join(
+  "android",
+  "app",
+  "src",
+  "main",
+  "assets",
+  "scripts",
+  "main.js",
+);
 const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
   "mystralnative",
   "threejsmystral",
@@ -221,9 +230,10 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   const nativeRuntimeFiles = await filesUnder(
     nativeRuntimeRoot,
     (candidate) =>
-      NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
-      path.basename(candidate) === "CMakeLists.txt",
-    new Set(["third_party", "build", ".runtime", "artifacts"]),
+      !candidate.endsWith(GENERATED_ANDROID_BUNDLE) &&
+      (NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
+        path.basename(candidate) === "CMakeLists.txt"),
+    new Set(["third_party", "build", ".runtime", "artifacts", ".cxx", ".gradle", ".test-tmp"]),
   );
   const templateRoot = path.join(root, "packages", "create-threenative", "templates");
   const templates: { name: string; loc: number }[] = [];

@@ -7,7 +7,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import type { RendererLike } from "./renderer.js";
+import { type RendererLike, observeCanvasResize, readCanvasSize } from "./renderer.js";
 
 export interface ViewportSize {
   readonly aspect: number;
@@ -18,19 +18,20 @@ export interface ViewportSize {
 export interface ViewportOptions {
   readonly camera: Camera;
   readonly renderer: RendererLike;
+  readonly source?: ViewportPlatformSource;
 }
 
 export type ViewportResizeHandler = (size: ViewportSize) => void;
 
-function canvasSize(renderer: RendererLike): ViewportSize {
-  const width = Math.max(1, renderer.domElement.clientWidth || globalThis.innerWidth || 1);
-  const height = Math.max(1, renderer.domElement.clientHeight || globalThis.innerHeight || 1);
-  return { aspect: width / height, height, width };
+export interface ViewportPlatformSource {
+  observeResize(canvas: HTMLCanvasElement, resize: () => void): () => void;
+  readSize(canvas: HTMLCanvasElement): ViewportSize;
 }
 
 export class Viewport {
   readonly camera: Camera;
   readonly renderer: RendererLike;
+  #source: ViewportPlatformSource | undefined;
   #listeners = new Set<ViewportResizeHandler>();
   #size: ViewportSize = { aspect: 1, height: 1, width: 1 };
   #stopObserving: () => void = () => undefined;
@@ -42,14 +43,10 @@ export class Viewport {
   constructor(options: ViewportOptions) {
     this.camera = options.camera;
     this.renderer = options.renderer;
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => this.resize());
-      observer.observe(this.renderer.domElement);
-      this.#stopObserving = () => observer.disconnect();
-    } else if (typeof globalThis.addEventListener === "function") {
-      globalThis.addEventListener("resize", this.#resize);
-      this.#stopObserving = () => globalThis.removeEventListener("resize", this.#resize);
-    }
+    this.#source = options.source;
+    this.#stopObserving =
+      this.#source?.observeResize(this.renderer.domElement, this.#resize) ??
+      observeCanvasResize(this.renderer.domElement, this.#resize);
     this.resize();
   }
 
@@ -84,7 +81,11 @@ export class Viewport {
 
   resize(): void {
     if (this.#disposed) return;
-    const next = canvasSize(this.renderer);
+    let next = this.#source?.readSize(this.renderer.domElement);
+    if (next === undefined) {
+      const [width, height] = readCanvasSize(this.renderer.domElement);
+      next = { aspect: width / height, height, width };
+    }
     const changed =
       next.width !== this.#size.width ||
       next.height !== this.#size.height ||

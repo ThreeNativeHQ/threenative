@@ -36,7 +36,7 @@ class ManagedServerError extends Error {
 export interface IStandalonePlaytestReport extends IPlaytestReport {
   artifactDirectory: string;
   pass: boolean;
-  runtime: "web";
+  runtime: "native" | "web";
   scenario: string;
   target: string;
   url: string;

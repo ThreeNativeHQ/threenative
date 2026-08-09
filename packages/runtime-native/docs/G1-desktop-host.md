@@ -15,3 +15,22 @@
 
 Imported screenshots and generated artifacts are deliberately not tracked. A new in-repo
 evidence run must record its dated command, log checks, screenshot path, host and GPU here.
+
+## Absorbed-source desktop proof — 2026-08-08
+
+Command:
+
+```sh
+SDL_VIDEODRIVER=x11 xvfb-run -a -s '-screen 0 1600x900x24' \
+  packages/runtime-native/build/tn-linux/mystral run \
+  examples/native-smoke/dist/native-smoke.js \
+  --screenshot packages/runtime-native/artifacts/desktop-core-2026-08-08.png \
+  --frames 300
+```
+
+- `pnpm native:build`: PASS, 379/379 build steps completed from the absorbed source.
+- Runtime: V8 13.1.201.22, Dawn/Vulkan, NVIDIA GeForce RTX 2080.
+- Markers: exact `TN_NATIVE_SMOKE_READY:webgpu` and `TN_NATIVE_SMOKE_FIRST_FRAME` present.
+- Liveness: 300 frames rendered in 8,986 ms; no WebGPU or JavaScript error was reported.
+- Screenshot: 1280×720 RGBA, visually inspected as a nonblank rotating blue cube;
+  SHA-256 `d07780b0b89207ed646f25eba3b0268240b49ef9a9f5d4cb227401b72c9bfcfa`.

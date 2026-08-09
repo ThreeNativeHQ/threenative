@@ -18,6 +18,7 @@
     "lint": "biome check .",
     "budgets": "tsx scripts/check-budgets.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
+    "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",

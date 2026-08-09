@@ -6,15 +6,36 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { PNG } from 'pngjs';
+import {
+  EXPECTED_THREE_VERSION,
+  FIRST_FRAME_MARKER,
+  FRAME_MARKER,
+  READY_MARKER,
+  THREE_VERSION_MARKER,
+  sourceTreeSha256,
+} from './build-android-first-proof.mjs';
+
+export { FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
 export const APP_ID = 'com.mystral.engine';
 export const ACTIVITY = `${APP_ID}/.MystralActivity`;
-export const SUCCESS_MARKER = '[ThreeNative Android] first proof cube ready';
+export const SUCCESS_MARKER = FRAME_MARKER;
+export const REQUIRED_MARKERS = [
+  THREE_VERSION_MARKER,
+  READY_MARKER,
+  FIRST_FRAME_MARKER,
+  FRAME_MARKER,
+];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const workspace = resolve(root, '..', '..');
 const defaultApk = join(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
 const defaultLogPath = join(root, 'artifacts/android/first-proof-logcat.txt');
 const defaultReportPath = join(root, 'artifacts/android/first-proof-report.json');
+const defaultScreenshotPath = join(root, 'artifacts/android/first-proof.png');
+const bundlePath = join(root, 'android/app/src/main/assets/scripts/main.js');
+const bundleMetadataPath = `${bundlePath}.meta.json`;
 
 class GateError extends Error {
   constructor(message, details = {}) {
@@ -36,7 +57,7 @@ Options:
   --apk PATH            APK to install (default: android/app/build/outputs/apk/debug/app-debug.apk)
   --logcat PATH         Captured app log output (default: artifacts/android/first-proof-logcat.txt)
   --report PATH         JSON proof report (default: artifacts/android/first-proof-report.json)
-  --screenshot PATH     Optionally capture a PNG and record its dimensions/hash
+  --screenshot PATH     Required PNG proof path (default: artifacts/android/first-proof.png)
   --skip-build          Reuse the existing debug APK
   --skip-install        Reuse the currently installed app
   --help                Show this help
@@ -54,7 +75,7 @@ export function parseArgs(argv) {
     apk: defaultApk,
     logPath: defaultLogPath,
     reportPath: defaultReportPath,
-    screenshotPath: null,
+    screenshotPath: defaultScreenshotPath,
     skipBuild: false,
     skipInstall: false,
     help: false,
@@ -239,8 +260,10 @@ export function selectDevice(devices, requestedSerial = null) {
 
 const failureMatchers = [
   { kind: 'first-proof-failure', pattern: /\[ThreeNative Android\]\s+first proof failed:/i },
+  { kind: 'native-smoke-failure', pattern: /TN_NATIVE_SMOKE_FAILED:/i },
   { kind: 'fatal-signal', pattern: /\bFatal signal\b|\bSIG(?:ABRT|BUS|FPE|ILL|SEGV|TRAP)\b/i },
   { kind: 'range-error', pattern: /\bRangeError\b/i },
+  { kind: 'javascript-error', pattern: /\b(?:Uncaught|Unhandled promise rejection|SyntaxError|TypeError|ReferenceError|EvalError|URIError)\b/i },
   { kind: 'webgpu-error', pattern: /(?:WebGPU|wgpu(?:-native)?|GPUValidationError)[^\r\n]{0,180}\b(?:error|failed|failure|invalid|validation)\b/i },
   { kind: 'webgpu-error', pattern: /\b(?:error|failed|failure|invalid|validation)\b[^\r\n]{0,180}(?:WebGPU|wgpu(?:-native)?|GPUValidationError)/i },
   { kind: 'shader-error', pattern: /Device::create_shader_module error|Shader parsing error/i },
@@ -250,7 +273,7 @@ export function filterAppLog(log, pid) {
   if (!pid) return log;
   const pidPattern = new RegExp(`^\\S+\\s+\\S+\\s+${pid}\\s+\\d+\\s+[VDIWEF]\\s`, 'm');
   return log.split(/\r?\n/).filter((line) => {
-    return line.includes(APP_ID) || line.includes(SUCCESS_MARKER) || pidPattern.test(line);
+    return line.includes(APP_ID) || REQUIRED_MARKERS.some((marker) => line.includes(marker)) || pidPattern.test(line);
   }).join('\n');
 }
 
@@ -263,8 +286,18 @@ export function analyzeAppLog(log) {
       failures.push({ kind: matcher.kind, line, excerpt: log.split(/\r?\n/)[line - 1]?.trim() || match[0] });
     }
   }
+  const markerIndexes = REQUIRED_MARKERS.map((marker) => log.indexOf(marker));
+  const missingMarkers = REQUIRED_MARKERS.filter((_marker, index) => markerIndexes[index] === -1);
+  if (missingMarkers.length === 0 && markerIndexes.some((value, index) => index > 0 && value <= markerIndexes[index - 1])) {
+    failures.push({
+      kind: 'marker-order',
+      line: 1,
+      excerpt: `Expected marker order: ${REQUIRED_MARKERS.join(' -> ')}`,
+    });
+  }
   return {
-    markerFound: log.includes(SUCCESS_MARKER),
+    markerFound: missingMarkers.length === 0,
+    missingMarkers,
     failures,
   };
 }
@@ -296,9 +329,69 @@ function pngDimensions(buffer) {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
+export function inspectScreenshot(buffer) {
+  const dimensions = pngDimensions(buffer);
+  const png = PNG.sync.read(buffer);
+  const colors = new Set();
+  let opaquePixels = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    if (png.data[index + 3] === 0) continue;
+    opaquePixels += 1;
+    colors.add(`${png.data[index]},${png.data[index + 1]},${png.data[index + 2]}`);
+    if (colors.size >= 2) break;
+  }
+  if (opaquePixels === 0 || colors.size < 2) {
+    throw new GateError('Android screenshot is blank; expected at least two opaque colors.');
+  }
+  return dimensions;
+}
+
 function writeText(path, contents) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, contents);
+}
+
+function sha256(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+export function verifyAndroidBundle() {
+  for (const path of [bundlePath, bundleMetadataPath]) {
+    if (!existsSync(path)) {
+      throw new GateError(`Android native smoke asset is missing: ${path}. Build without --skip-build.`);
+    }
+  }
+  const bundle = readFileSync(bundlePath);
+  let metadata;
+  try {
+    metadata = JSON.parse(readFileSync(bundleMetadataPath, 'utf8'));
+  } catch (error) {
+    throw new GateError(`Android native smoke metadata is invalid: ${error instanceof Error ? error.message : error}`);
+  }
+  if (metadata.schemaVersion !== 1 || metadata.publicApiPackage !== '@threenative/core') {
+    throw new GateError('Android asset metadata does not identify the public @threenative/core smoke.');
+  }
+  if (metadata.catalogThree !== EXPECTED_THREE_VERSION || metadata.installedThree !== EXPECTED_THREE_VERSION) {
+    throw new GateError(
+      `Android asset Three.js mismatch: expected=${EXPECTED_THREE_VERSION}, catalog=${metadata.catalogThree}, installed=${metadata.installedThree}`,
+    );
+  }
+  if (metadata.outputSha256 !== sha256(bundle)) {
+    throw new GateError('Android asset hash does not match its fail-closed metadata.');
+  }
+  const sourcePath = join(workspace, metadata.entry || '');
+  if (!existsSync(sourcePath) || metadata.sourceSha256 !== sha256(readFileSync(sourcePath))) {
+    throw new GateError('Android asset does not match the current examples/native-smoke source.');
+  }
+  if (metadata.coreSourceSha256 !== sourceTreeSha256(join(workspace, 'packages', 'core', 'src'))) {
+    throw new GateError('Android asset does not match the current @threenative/core source tree.');
+  }
+  for (const marker of REQUIRED_MARKERS) {
+    if (!bundle.includes(marker) || !metadata.markers?.includes(marker)) {
+      throw new GateError(`Android asset is missing exact proof marker ${marker}.`);
+    }
+  }
+  return metadata;
 }
 
 function buildApk(tools) {
@@ -324,7 +417,7 @@ function buildFailureMessage(analysis, logPath) {
     const failure = analysis.failures[0];
     return `Android first proof failed: ${failure.kind} at captured log line ${failure.line}: ${failure.excerpt}\nFull log: ${logPath}`;
   }
-  return `Android first proof timed out before the exact success marker ${JSON.stringify(SUCCESS_MARKER)}.\nFull log: ${logPath}`;
+  return `Android first proof timed out with missing exact markers: ${analysis.missingMarkers.join(', ')}.\nFull log: ${logPath}`;
 }
 
 export async function verifyAndroidFirstProof(options, dependencies = {}) {
@@ -338,6 +431,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   if (!existsSync(options.apk)) {
     throw new GateError(`Debug APK not found at ${options.apk}. Remove --skip-build so the gate builds it.`);
   }
+  const bundleMetadata = verifyAndroidBundle();
 
   const devicesOutput = run(tools.adb, ['devices', '-l'], { timeoutMs: 10000 }).stdout;
   const serial = selectDevice(parseAdbDevices(String(devicesOutput)), options.device);
@@ -362,7 +456,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   let pid = null;
   let rawLog = '';
   let appLog = '';
-  let analysis = { markerFound: false, failures: [] };
+  let analysis = { markerFound: false, missingMarkers: [...REQUIRED_MARKERS], failures: [] };
   const deadline = Date.now() + options.timeoutMs;
   while (Date.now() <= deadline) {
     pid ||= getPid(tools.adb, serial);
@@ -393,29 +487,34 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     throw new GateError(`Android process ${APP_ID} exited during the ${options.settleMs} ms stability window. Full log: ${options.logPath}`);
   }
 
-  let screenshot = null;
-  if (options.screenshotPath) {
-    const png = run(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
-    const dimensions = pngDimensions(png);
-    mkdirSync(dirname(options.screenshotPath), { recursive: true });
-    writeFileSync(options.screenshotPath, png);
-    const displaySize = String(common('shell', 'wm', 'size').stdout).trim();
-    const displayDensity = String(common('shell', 'wm', 'density').stdout).trim();
-    screenshot = {
-      path: options.screenshotPath,
-      bytes: png.length,
-      sha256: createHash('sha256').update(png).digest('hex'),
-      ...dimensions,
-      displaySize,
-      displayDensity,
-    };
-  }
+  if (!options.screenshotPath) throw new GateError('Android proof requires a screenshot path.');
+  const png = run(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
+  const dimensions = inspectScreenshot(png);
+  mkdirSync(dirname(options.screenshotPath), { recursive: true });
+  writeFileSync(options.screenshotPath, png);
+  const displaySize = String(common('shell', 'wm', 'size').stdout).trim();
+  const displayDensity = String(common('shell', 'wm', 'density').stdout).trim();
+  const screenshot = {
+    path: options.screenshotPath,
+    bytes: png.length,
+    sha256: sha256(png),
+    ...dimensions,
+    displaySize,
+    displayDensity,
+  };
 
   const finishedAt = now();
   const report = {
     schemaVersion: 1,
     passed: true,
-    marker: SUCCESS_MARKER,
+    markers: REQUIRED_MARKERS,
+    frames: 300,
+    threeVersion: EXPECTED_THREE_VERSION,
+    bundle: {
+      entry: bundleMetadata.entry,
+      outputSha256: bundleMetadata.outputSha256,
+      publicApiPackage: bundleMetadata.publicApiPackage,
+    },
     appId: APP_ID,
     activity: ACTIVITY,
     deviceSerial: serial,
@@ -435,7 +534,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
       marker: 'passed',
       processAlive: 'passed',
       logScan: 'passed',
-      screenshot: screenshot ? 'captured' : 'not-requested',
+      screenshot: 'captured',
     },
     tools: {
       adb: tools.adb,
@@ -446,7 +545,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     },
   };
   writeText(options.reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  console.log(`4/4 PASS: marker found and process ${pid} remained alive for ${options.settleMs} ms.`);
+  console.log(`4/4 PASS: ${report.frames} frames, clean logs, screenshot captured, and process ${pid} remained alive for ${options.settleMs} ms.`);
   console.log(JSON.stringify({ report: options.reportPath, logcat: options.logPath, screenshot }, null, 2));
   return report;
 }

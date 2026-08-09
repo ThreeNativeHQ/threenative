@@ -1473,32 +1473,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         RUNTIME DESTINATION bin
     )
 
-    # ============================================================================
-    # Examples (desktop only)
-    # ============================================================================
-
-    # Embed Example - Shows how to embed the runtime in a C++ application
-    # For most development, use the CLI instead: mystral run game.js
-    add_executable(embed-example examples/embed-example/main.cpp)
-    target_link_libraries(embed-example PRIVATE mystral-runtime)
-
-    # macOS: Set rpath for redistributable binary
-    if(APPLE)
-        set_target_properties(embed-example PROPERTIES
-            MACOSX_RPATH ON
-            BUILD_WITH_INSTALL_RPATH ON
-            INSTALL_RPATH "@executable_path"
-        )
-    endif()
-
-    # On Linux, the GNU linker needs help finding zlib (curl's transitive dependency).
-    # Also allow multiple definitions because wgpu-native and swc both contain Rust runtime symbols.
-    if(UNIX AND NOT APPLE)
-        target_link_options(embed-example PRIVATE
-            "LINKER:--copy-dt-needed-entries"
-            "LINKER:--allow-multiple-definition"
-        )
-    endif()
 endif()
 
 # ============================================================================

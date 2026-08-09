@@ -1,6 +1,6 @@
 import { Mesh, OrthographicCamera, PerspectiveCamera, SphereGeometry } from "three";
 import { describe, expect, it } from "vitest";
-import { defineGame } from "../src/game.js";
+import { type GamePlatformSource, defineGame } from "../src/game.js";
 import { type Ctx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -695,6 +695,102 @@ describe("Game", () => {
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "ResizeObserver");
       else Object.defineProperty(globalThis, "ResizeObserver", descriptor);
+    }
+  });
+
+  it("starts and stops through injected platform sources without DOM globals", async () => {
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "document");
+    Reflect.deleteProperty(globalThis, "window");
+
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    const inputTarget = new EventTarget();
+    let size = { aspect: 16 / 9, height: 180, width: 320 };
+    let rendererResize: (() => void) | undefined;
+    let viewportResize: (() => void) | undefined;
+    let mounted = 0;
+    let unmounted = 0;
+    let disposed = 0;
+    let resizeDisposals = 0;
+    const rendererSizes: Array<[number, number]> = [];
+    const platform: GamePlatformSource = {
+      input: () => [{ axes: [0.5, -0.25], buttons: [{ pressed: true }] }],
+      inputTarget,
+      mountCanvas: (mountedCanvas) => {
+        expect(mountedCanvas).toBe(canvas);
+        mounted += 1;
+      },
+      renderer: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        observeResize: (_canvas, resize) => {
+          rendererResize = resize;
+          return () => {
+            resizeDisposals += 1;
+          };
+        },
+        readSize: () => [size.width, size.height],
+      },
+      unmountCanvas: (unmountedCanvas) => {
+        expect(unmountedCanvas).toBe(canvas);
+        unmounted += 1;
+      },
+      viewport: {
+        observeResize: (_canvas, resize) => {
+          viewportResize = resize;
+          return () => {
+            resizeDisposals += 1;
+          };
+        },
+        readSize: () => size,
+      },
+    };
+    const game = defineGame({
+      input: { jump: { buttons: [0] } },
+      platform,
+      renderer: {
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: (width: number, height: number) => rendererSizes.push([width, height]),
+        }),
+      },
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      expect(mounted).toBe(1);
+      expect(rendererSizes).toEqual([[320, 180]]);
+      expect(game.ctx?.viewport.size).toEqual(size);
+
+      game.ctx?.input.tick();
+      expect(game.ctx?.input.pressed("jump")).toBe(true);
+      expect(game.ctx?.input.vector("move").toArray()).toEqual([0.5, 0.25]);
+
+      size = { aspect: 2, height: 320, width: 640 };
+      rendererResize?.();
+      viewportResize?.();
+      expect(rendererSizes.at(-1)).toEqual([640, 320]);
+      expect(game.ctx?.viewport.size).toEqual(size);
+
+      game.stop();
+      expect(game.ctx).toBeUndefined();
+      expect(disposed).toBe(1);
+      expect(resizeDisposals).toBe(2);
+      expect(unmounted).toBe(1);
+    } finally {
+      game.stop();
+      if (documentDescriptor !== undefined)
+        Object.defineProperty(globalThis, "document", documentDescriptor);
+      if (windowDescriptor !== undefined)
+        Object.defineProperty(globalThis, "window", windowDescriptor);
     }
   });
 });

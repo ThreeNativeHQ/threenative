@@ -112,6 +112,19 @@ export interface IPlaytestBridgeV1 {
   sample(request: IPlaytestSampleRequest): IPlaytestObservationSnapshot | Promise<IPlaytestObservationSnapshot>;
 }
 
+/** Request/response envelope used by the host-neutral device transport. */
+export interface IPlaytestDeviceRequest {
+  argument?: JsonValue;
+  id: string;
+  method: string;
+}
+
+export interface IPlaytestDeviceResponse {
+  error?: { message: string };
+  id: string;
+  result?: JsonValue;
+}
+
 export interface IPlaytestBridgeHost {
   [PLAYTEST_BRIDGE_GLOBAL]?: IPlaytestBridgeV1;
 }

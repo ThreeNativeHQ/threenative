@@ -11,6 +11,13 @@ export interface InputAction {
 
 export type InputBindings = Record<string, InputAction>;
 
+export interface InputGamepad {
+  readonly axes: ArrayLike<number>;
+  readonly buttons: readonly { readonly pressed: boolean }[];
+}
+
+export type InputPlatformSource = () => readonly (InputGamepad | null)[];
+
 export interface RawInputState {
   readonly keys: ReadonlySet<string>;
   readonly pointer: {
@@ -38,6 +45,9 @@ function eventCode(event: Event): string | undefined {
   return candidate.code ?? candidate.key;
 }
 
+const browserGamepads: InputPlatformSource = () =>
+  (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
+
 export class InputMap {
   readonly raw: RawInputState;
   #bindings: InputBindings;
@@ -52,16 +62,19 @@ export class InputMap {
   #justPressed = new Set<string>();
   #justReleased = new Set<string>();
   #pointerTarget: EventTarget;
+  #source: InputPlatformSource;
   #listeners: Array<[EventTarget, string, EventListener]> = [];
 
   constructor(
     bindings: InputBindings = DEFAULT_BINDINGS,
     target: EventTarget = globalThis,
     pointerTarget: EventTarget = target,
+    source: InputPlatformSource = browserGamepads,
   ) {
     this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
     this.#target = target;
     this.#pointerTarget = pointerTarget;
+    this.#source = source;
     this.raw = {
       gamepad: { axes: this.#gamepadAxes, buttons: this.#gamepadButtons },
       keys: this.#heldKeys,
@@ -125,13 +138,8 @@ export class InputMap {
   }
 
   tick(): void {
-    const getGamepads = (
-      globalThis.navigator as Navigator & {
-        getGamepads?: () => readonly (Gamepad | null)[];
-      }
-    )?.getGamepads;
-    const gamepad = getGamepads?.call(globalThis.navigator)?.find((item) => item !== null);
-    this.#gamepadAxes = gamepad?.axes ? [...gamepad.axes] : [];
+    const gamepad = this.#source().find((item) => item !== null);
+    this.#gamepadAxes = gamepad?.axes ? Array.from(gamepad.axes) : [];
     this.#gamepadButtons = gamepad?.buttons.map((button) => button.pressed) ?? [];
     this.raw.gamepad.axes = this.#gamepadAxes;
     this.raw.gamepad.buttons = this.#gamepadButtons;
@@ -194,6 +202,7 @@ export function input(
   bindings?: InputBindings,
   target?: EventTarget,
   pointerTarget?: EventTarget,
+  source?: InputPlatformSource,
 ): InputMap {
-  return new InputMap(bindings, target, pointerTarget);
+  return new InputMap(bindings, target, pointerTarget, source);
 }

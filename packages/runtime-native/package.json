@@ -20,10 +20,12 @@
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
+    "native:verify:desktop": "node scripts/verify-desktop-core.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
     "esbuild": "catalog:",
+    "pngjs": "catalog:",
     "three": "catalog:",
     "vitest": "catalog:"
   }

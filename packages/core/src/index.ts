@@ -14,6 +14,7 @@ export type {
   GamePluginFunction,
   GamePluginHooks,
   GamePluginRuntime,
+  GamePlatformSource,
   CameraConfig,
   OrthogonalCameraConfig,
   PerspectiveCameraConfig,

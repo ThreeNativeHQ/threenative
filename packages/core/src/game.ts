@@ -9,7 +9,7 @@ import { type RendererLike, type RendererOptions, createRenderer } from "./rende
 import type { Ctx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
-import { Viewport } from "./viewport.js";
+import { Viewport, type ViewportOptions } from "./viewport.js";
 
 export type PluginCleanup = () => void;
 
@@ -25,26 +25,32 @@ interface DevTools {
   snapshot(): EntitySnapshot;
 }
 
-declare global {
-  interface Window {
-    __THREENATIVE__?: DevTools;
-  }
+type DevToolsHost = Record<string, unknown> & { __THREENATIVE__?: DevTools };
+
+export interface GamePlatformSource {
+  readonly devToolsHost?: Record<string, unknown>;
+  readonly input: NonNullable<ConstructorParameters<typeof InputMap>[3]>;
+  readonly inputTarget?: EventTarget;
+  readonly renderer: NonNullable<RendererOptions["source"]>;
+  readonly viewport: NonNullable<ViewportOptions["source"]>;
+  mountCanvas(canvas: HTMLCanvasElement, container?: HTMLElement): void;
+  unmountCanvas(canvas: HTMLCanvasElement): void;
 }
 
-function installDevTools(entities: Registry): PluginCleanup {
+function installDevTools(entities: Registry, host: DevToolsHost | undefined): PluginCleanup {
   const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
-  if (!isDev || typeof window === "undefined") return () => undefined;
+  if (!isDev || host === undefined) return () => undefined;
   const devTools: DevTools = {
-    ...(window.__THREENATIVE__ as (DevTools & Record<string, unknown>) | undefined),
+    ...(host.__THREENATIVE__ as (DevTools & Record<string, unknown>) | undefined),
     snapshot: () => entities.snapshot(),
   };
-  window.__THREENATIVE__ = devTools;
+  host.__THREENATIVE__ = devTools;
   return () => {
-    if (window.__THREENATIVE__ !== devTools) return;
+    if (host.__THREENATIVE__ !== devTools) return;
     const remaining = Object.fromEntries(
       Object.entries(devTools).filter(([key]) => key !== "snapshot"),
     );
-    window.__THREENATIVE__ =
+    host.__THREENATIVE__ =
       Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as DevTools);
   };
 }
@@ -85,6 +91,7 @@ export interface GameConfig<
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
   readonly maxSteps?: number;
+  readonly platform?: GamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
   readonly render?: Pick<RendererOptions, "preferWebGPU">;
   readonly renderer?: RendererOptions;
@@ -288,6 +295,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
+      source: this.#config.renderer?.source ?? this.#config.platform?.renderer,
     });
     if (this.#aborted) {
       renderer.dispose();
@@ -295,19 +303,28 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     }
     this.#renderer = renderer;
     const canvas = renderer.domElement;
-    if (this.#config.container !== undefined && canvas.parentElement !== this.#config.container) {
+    const platform = this.#config.platform;
+    if (platform !== undefined) platform.mountCanvas(canvas, this.#config.container);
+    else if (
+      this.#config.container !== undefined &&
+      canvas.parentElement !== this.#config.container
+    )
       this.#config.container.append(canvas);
-    } else if (canvas.parentElement === null && typeof document !== "undefined") {
+    else if (canvas.parentElement === null && typeof document !== "undefined")
       document.body.append(canvas);
-    }
 
     const inputTarget =
-      this.#config.inputTarget ?? (typeof window === "undefined" ? canvas : window);
-    this.#input = new InputMap(this.#config.input, inputTarget, canvas);
+      this.#config.inputTarget ??
+      (platform === undefined
+        ? typeof window === "undefined"
+          ? canvas
+          : window
+        : (platform.inputTarget ?? canvas));
+    this.#input = new InputMap(this.#config.input, inputTarget, canvas, platform?.input);
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = createCamera(this.#config.camera);
-    const viewport = new Viewport({ camera, renderer: this.#renderer });
+    const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
     this.#viewport = viewport;
     const assets = createAssetLoader(this.#config.assets);
     const entities = new Registry();
@@ -348,7 +365,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#entities = entities;
     this.#random = random;
     this.#scheduler = scheduler;
-    this.#cleanup.push(installDevTools(entities));
+    const devToolsHost =
+      platform === undefined
+        ? typeof window === "undefined"
+          ? undefined
+          : window
+        : platform.devToolsHost;
+    this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
     const gameLoop = new FixedStepLoop({
       maxSteps: this.#config.maxSteps,
@@ -454,9 +477,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#viewport?.dispose();
     const renderer = this.#renderer;
     renderer?.dispose();
-    const removeCanvas = renderer?.domElement.remove;
-    if (renderer !== undefined && typeof removeCanvas === "function")
-      removeCanvas.call(renderer.domElement);
+    if (renderer !== undefined) {
+      if (this.#config.platform === undefined) renderer.domElement.remove?.();
+      else this.#config.platform.unmountCanvas(renderer.domElement);
+    }
     this.#renderer = undefined;
     this.#viewport = undefined;
     this.#input = undefined;

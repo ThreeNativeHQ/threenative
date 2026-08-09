@@ -1,4 +1,5 @@
 import { type Ctx, Scene, defineGame } from "@threenative/core";
+import { playtest } from "@threenative/core/playtest";
 import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 
 interface SmokeState extends Record<string, unknown> {
@@ -30,11 +31,13 @@ class NativeSmoke extends Scene<SmokeState> {
   override enter(ctx: Ctx<SmokeState>) {
     ctx.camera.position.z = 3;
     const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
+    ctx.entities.add("cube", cube);
     return (_ctx: Ctx<SmokeState>, dt: number) => {
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
       status.frames += 1;
       if (status.frames === 1) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
+      if (status.frames === 300) console.info("TN_NATIVE_SMOKE_300_FRAMES:300");
     };
   }
 }
@@ -42,6 +45,7 @@ class NativeSmoke extends Scene<SmokeState> {
 const game = defineGame<SmokeState>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
+  plugins: [playtest()],
   scenes: { smoke: NativeSmoke },
   start: "smoke",
 });

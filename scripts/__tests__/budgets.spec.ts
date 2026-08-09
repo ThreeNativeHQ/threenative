@@ -164,6 +164,26 @@ describe("budget gate", () => {
     );
   });
 
+  it("should exclude only the ignored generated Android bundle from native LOC", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(
+      root,
+      "packages",
+      "runtime-native",
+      "android",
+      "app",
+      "src",
+      "main",
+      "assets",
+      "scripts",
+    );
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "main.js"), "generated\n".repeat(60_000));
+    await writeFile(path.join(directory, "bridge.js"), "owned\n");
+    const report = await collectBudgets(root);
+    expect(report.nativeRuntimeLoc).toBe(2);
+  });
+
   it("should fail when native third_party content is tracked", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "runtime-native", "third_party");

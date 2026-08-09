@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   requireFiles,
+  requireGpuTestOptIn,
   runCommand,
   runtimeBinary,
   runtimeRoot,
@@ -41,6 +42,7 @@ describe("Fetch API", () => {
 
   it("should fetch local JSON file", async ({ skip }) => {
     requireFiles(skip, binaryRequirement);
+    requireGpuTestOptIn(skip);
 
     // Create a test script that fetches the JSON file
     const testScript = `
@@ -82,6 +84,7 @@ describe("Fetch API", () => {
 
   it("should fetch local text file", async ({ skip }) => {
     requireFiles(skip, binaryRequirement);
+    requireGpuTestOptIn(skip);
 
     const testScript = `
       async function main() {
@@ -122,6 +125,7 @@ describe("Fetch API", () => {
 
   it("should return 404 for nonexistent file", async ({ skip }) => {
     requireFiles(skip, binaryRequirement);
+    requireGpuTestOptIn(skip);
 
     const testScript = `
       async function main() {
@@ -157,6 +161,7 @@ describe("Fetch API", () => {
 
   it("should support arrayBuffer()", async ({ skip }) => {
     requireFiles(skip, binaryRequirement);
+    requireGpuTestOptIn(skip);
 
     const testScript = `
       async function main() {

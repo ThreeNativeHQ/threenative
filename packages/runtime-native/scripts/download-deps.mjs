@@ -18,6 +18,7 @@
  */
 
 import { execSync } from 'child_process';
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import { join, dirname } from 'path';
@@ -26,6 +27,9 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const THIRD_PARTY = join(ROOT, 'third_party');
+const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
+const GRADLE_WRAPPER_URL = 'https://services.gradle.org/distributions/gradle-8.5-wrapper.jar';
+const GRADLE_WRAPPER_SHA256 = 'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
 
 // Detect platform
 const PLATFORM = process.platform; // 'darwin', 'win32', 'linux'
@@ -454,6 +458,21 @@ async function downloadFile(url, destPath) {
   return destPath;
 }
 
+function sha256(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+async function ensureGradleWrapper() {
+  if (existsSync(GRADLE_WRAPPER) && sha256(GRADLE_WRAPPER) === GRADLE_WRAPPER_SHA256) return;
+  if (existsSync(GRADLE_WRAPPER)) rmSync(GRADLE_WRAPPER);
+  await downloadFile(GRADLE_WRAPPER_URL, GRADLE_WRAPPER);
+  const actual = sha256(GRADLE_WRAPPER);
+  if (actual !== GRADLE_WRAPPER_SHA256) {
+    rmSync(GRADLE_WRAPPER);
+    throw new Error(`Gradle wrapper checksum mismatch: expected ${GRADLE_WRAPPER_SHA256}, got ${actual}`);
+  }
+}
+
 // Convert Windows path to MSYS/Git-bash compatible path
 // D:\path\to\file -> /d/path/to/file
 function toUnixPath(windowsPath) {
@@ -813,6 +832,8 @@ async function main() {
   console.log('==============================================');
   console.log(`Dependencies to download: ${depsToDownload.join(', ')}`);
 
+  if (depsToDownload.some((name) => androidDeps.includes(name))) await ensureGradleWrapper();
+
   const results = {};
   for (const dep of depsToDownload) {
     results[dep] = await downloadDep(dep);
@@ -823,6 +844,9 @@ async function main() {
     console.log(`  ${name}: ${success ? 'OK' : 'FAILED'}`);
   }
 
+  const failed = Object.entries(results).filter(([, success]) => !success).map(([name]) => name);
+  if (failed.length > 0) throw new Error(`Dependency download failed: ${failed.join(', ')}`);
+
   // Print next steps
   console.log('\n=== Next Steps ===');
   console.log('1. Run: npm run configure');
@@ -830,4 +854,7 @@ async function main() {
   console.log('3. Run: npm run example:triangle');
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

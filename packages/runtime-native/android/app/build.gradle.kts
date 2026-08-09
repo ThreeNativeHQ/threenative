@@ -29,11 +29,15 @@ tasks.register("extractSdl3JniLibs") {
 tasks.register<Exec>("buildAndroidFirstProofBundle") {
     workingDir = layout.projectDirectory.dir("../..").asFile
     commandLine("node", "scripts/build-android-first-proof.mjs")
-    inputs.file(layout.projectDirectory.file("../../conformance/scenes/shared/first-proof-game.js"))
-    inputs.file(layout.projectDirectory.file("../../conformance/android/first-proof-entry.js"))
     inputs.file(layout.projectDirectory.file("../../scripts/build-android-first-proof.mjs"))
-    inputs.file(layout.projectDirectory.file("../../package.json"))
-    inputs.dir(layout.projectDirectory.dir("../../node_modules/three"))
+    inputs.file(layout.projectDirectory.file("../../../../pnpm-workspace.yaml"))
+    inputs.file(layout.projectDirectory.file("../../../../pnpm-lock.yaml"))
+    inputs.file(layout.projectDirectory.file("../../../../examples/native-smoke/package.json"))
+    inputs.file(layout.projectDirectory.file("../../../../examples/native-smoke/vite.config.ts"))
+    inputs.file(layout.projectDirectory.file("../../../../examples/native-smoke/scripts/verify-bundle.mjs"))
+    inputs.dir(layout.projectDirectory.dir("../../../../examples/native-smoke/src"))
+    inputs.dir(layout.projectDirectory.dir("../../../../examples/native-smoke/node_modules/three"))
+    inputs.dir(layout.projectDirectory.dir("../../../core/src"))
     outputs.file(layout.projectDirectory.file("src/main/assets/scripts/main.js"))
     outputs.file(layout.projectDirectory.file("src/main/assets/scripts/main.js.meta.json"))
 }

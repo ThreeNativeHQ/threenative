@@ -4,6 +4,7 @@ export interface AudioBusOptions {
   readonly camera: Object3D;
   readonly gestureTarget?: EventTarget;
   readonly listener?: AudioListener;
+  readonly source?: () => EventTarget | undefined;
 }
 
 export interface AudioPlayOptions {
@@ -32,8 +33,8 @@ export class AudioBus {
   constructor(options: AudioBusOptions) {
     this.#camera = options.camera;
     this.listener = options.listener ?? new AudioListener();
-    this.#gestureTarget =
-      options.gestureTarget ?? (typeof window === "undefined" ? undefined : window);
+    const source = options.source ?? (() => (typeof window === "undefined" ? undefined : window));
+    this.#gestureTarget = options.gestureTarget ?? source();
     this.setCamera(options.camera);
     this.#gesture = () => {
       void this.unlock().catch(() => undefined);

@@ -21,6 +21,19 @@ test("standalone args support existing-server and managed-server flows", () => {
   expect(managed.server?.timeoutMs).toBe(20_000);
 });
 
+test("device args select Android and preserve an explicit endpoint", () => {
+  const config = parseStandalonePlaytestArgs([
+    "playtests/move.json",
+    "--target", "android",
+    "--endpoint", "http://127.0.0.1:43123/playtest",
+    "--device", "emulator-5554",
+  ], "/project");
+
+  expect(config.target).toBe("android");
+  expect(config.endpoint).toBe("http://127.0.0.1:43123/playtest");
+  expect(config.device).toBe("emulator-5554");
+});
+
 test("browser args are repeatable and absent when unused", () => {
   // A WebGPU target needs several chromium flags at once, so one flag per
   // occurrence rather than a delimited string.

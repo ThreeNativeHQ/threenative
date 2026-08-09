@@ -402,7 +402,14 @@ export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): Playt
   }
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
     if (scenario.assert?.[entry.kind] !== undefined) {
-      entry.requiredCapabilities.forEach((capability) => required.add(capability));
+      if (entry.kind === "diagnostics") {
+        const policy = scenario.assert.diagnostics;
+        if (policy?.noConsoleErrors === true) required.add("browser.console");
+        if (policy?.noNetworkErrors === true) required.add("browser.network");
+        if (policy?.noRuntimeDiagnostics !== false) required.add("runtime.diagnostics");
+      } else {
+        entry.requiredCapabilities.forEach((capability) => required.add(capability));
+      }
     }
   }
   for (const entry of PLAYTEST_SETUP_REGISTRY) {

@@ -1286,6 +1286,12 @@ static int compileBundle(const CLIOptions& opts) {
 }
 
 int runScript(const CLIOptions& opts) {
+    std::ifstream script(opts.scriptPath);
+    if (!script.is_open() && opts.scriptPath != mystral::vfs::getEmbeddedEntryPath()) {
+        std::cerr << "Error: Cannot open file: " << opts.scriptPath << std::endl;
+        return 1;
+    }
+
     // Enable headless mode via environment variable (SDL3 uses this)
     if (opts.headless) {
         #ifdef _WIN32

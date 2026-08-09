@@ -4,9 +4,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const runtimeRoot = fileURLToPath(new URL("../", import.meta.url));
-export const runtimeBinary = join(runtimeRoot, "build", "mystral");
+export const runtimeBinary = join(runtimeRoot, "build", "tn-linux", "mystral");
 
 type Skip = (note?: string) => never;
+
+export function requireGpuTestOptIn(skip: Skip): void {
+  if (process.env.TN_RUNTIME_GPU_TESTS !== "1") {
+    skip("requires TN_RUNTIME_GPU_TESTS=1 and a working native GPU/display");
+  }
+}
 
 export function requireFiles(
   skip: Skip,

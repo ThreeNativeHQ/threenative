@@ -272,6 +272,9 @@ importers:
       esbuild:
         specifier: 'catalog:'
         version: 0.27.0
+      pngjs:
+        specifier: 'catalog:'
+        version: 7.0.0
       three:
         specifier: 'catalog:'
         version: 0.185.1

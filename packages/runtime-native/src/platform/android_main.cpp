@@ -122,6 +122,31 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
 
     LOGI("Runtime created successfully");
 
+    if (argc > 2 && argv[2] && argv[2][0] != '\0') {
+        std::string endpoint = argv[2];
+        std::string escaped;
+        escaped.reserve(endpoint.size());
+        for (char value : endpoint) {
+            if (value == '\\' || value == '\'') escaped.push_back('\\');
+            escaped.push_back(value);
+        }
+        runtime->evalScript(
+            "globalThis.TN_PLAYTEST_ENDPOINT='" + escaped + "';",
+            "threenative-playtest-endpoint.js"
+        );
+        LOGI("Device playtest endpoint configured");
+    }
+    if (argc > 3 && argv[3] && argv[3][0] != '\0') {
+        std::string root = argv[3];
+        runtime->evalScript(
+            "globalThis.TN_PLAYTEST_MAILBOX={request:'" + root +
+                "/tn-playtest-request.json',response:'" + root +
+                "/tn-playtest-response.json'};",
+            "threenative-playtest-mailbox.js"
+        );
+        LOGI("Device playtest mailbox configured");
+    }
+
     // Execute the script
     LOGI("About to call evalScript...");
     bool success = runtime->evalScript(scriptContent, scriptPath);

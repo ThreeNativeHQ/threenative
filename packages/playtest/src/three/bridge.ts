@@ -13,6 +13,11 @@ import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
 import { sampleThreeObservations, type ThreePlaytestRenderer } from "./observations.js";
+import {
+  connectDevicePlaytestBridge,
+  type IDeviceBridgeInstallation,
+  readPlaytestEndpoint,
+} from "./device.js";
 
 export interface IThreePlaytestResources {
   read(): Record<string, JsonValue>;
@@ -112,9 +117,13 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     },
   };
   host[PLAYTEST_BRIDGE_GLOBAL] = bridge;
+  const endpoint = readPlaytestEndpoint();
+  let device: IDeviceBridgeInstallation | undefined;
+  if (endpoint !== undefined) device = connectDevicePlaytestBridge(bridge, endpoint);
   return {
     bridge,
     dispose: () => {
+      device?.close();
       if (host[PLAYTEST_BRIDGE_GLOBAL] !== bridge) return;
       if (previous === undefined) delete host[PLAYTEST_BRIDGE_GLOBAL];
       else host[PLAYTEST_BRIDGE_GLOBAL] = previous;

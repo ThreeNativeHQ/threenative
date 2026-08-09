@@ -14,9 +14,17 @@ export interface RendererLike {
   dispose(): void;
 }
 
+export interface RendererPlatformSource {
+  createCanvas(): HTMLCanvasElement;
+  hasWebGPU(): boolean;
+  observeResize(canvas: HTMLCanvasElement, resize: () => void): () => void;
+  readSize(canvas: HTMLCanvasElement): readonly [width: number, height: number];
+}
+
 export interface RendererOptions {
   canvas?: HTMLCanvasElement;
   preferWebGPU?: boolean;
+  source?: RendererPlatformSource;
   webgpuFactory?: (canvas: HTMLCanvasElement) => Promise<unknown> | unknown;
   webgl2Factory?: (canvas: HTMLCanvasElement) => unknown;
 }
@@ -30,10 +38,22 @@ type RendererInstance = {
   dispose?: () => void;
 };
 
-function canvasSize(canvas: HTMLCanvasElement): [number, number] {
-  const width = canvas.clientWidth || globalThis.innerWidth || 1;
-  const height = canvas.clientHeight || globalThis.innerHeight || 1;
-  return [Math.max(1, width), Math.max(1, height)];
+export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, number] {
+  return [
+    Math.max(1, canvas.clientWidth || globalThis.innerWidth || 1),
+    Math.max(1, canvas.clientHeight || globalThis.innerHeight || 1),
+  ];
+}
+
+export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => void): () => void {
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }
+  if (typeof globalThis.addEventListener !== "function") return () => undefined;
+  globalThis.addEventListener("resize", resize);
+  return () => globalThis.removeEventListener("resize", resize);
 }
 
 function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
@@ -71,32 +91,29 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
   };
 }
 
-function addResizeHandling(renderer: RendererLike): () => void {
+function addResizeHandling(
+  renderer: RendererLike,
+  source: RendererPlatformSource | undefined,
+): () => void {
   const resize = () => {
-    const [width, height] = canvasSize(renderer.domElement);
+    const [width, height] =
+      source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
     renderer.setSize(width, height, false);
   };
   resize();
-
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver(resize);
-    observer.observe(renderer.domElement);
-    return () => observer.disconnect();
-  }
-
-  if (typeof globalThis.addEventListener === "function") {
-    globalThis.addEventListener("resize", resize);
-    return () => globalThis.removeEventListener("resize", resize);
-  }
-  return () => undefined;
+  return (
+    source?.observeResize(renderer.domElement, resize) ??
+    observeCanvasResize(renderer.domElement, resize)
+  );
 }
 
 export async function createRenderer(options: RendererOptions = {}): Promise<RendererLike> {
-  const canvas = options.canvas ?? document.createElement("canvas");
+  const source = options.source;
+  const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
   const preferWebGPU = options.preferWebGPU ?? true;
   let renderer: RendererLike | undefined;
 
-  if (preferWebGPU && "gpu" in (globalThis.navigator ?? {})) {
+  if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas)
@@ -116,7 +133,7 @@ export async function createRenderer(options: RendererOptions = {}): Promise<Ren
     renderer = wrapRenderer(raw as RendererInstance, "webgl2");
   }
 
-  const stopResize = addResizeHandling(renderer);
+  const stopResize = addResizeHandling(renderer, source);
   const dispose = renderer.dispose;
   renderer.dispose = () => {
     stopResize();

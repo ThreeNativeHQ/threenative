@@ -33,6 +33,14 @@ const BROWSER_CAPABILITIES = [
   "runtime.ui",
 ] as const;
 
+/** The only seam between assertion orchestration and an application bridge. */
+export interface BridgeTransport {
+  readonly capabilities: readonly string[];
+  call<T>(method: string, argument?: unknown): Promise<T>;
+  close(): Promise<void>;
+  waitForBridge(timeoutMs: number): Promise<boolean>;
+}
+
 export class PlaytestBridgeError extends Error {
   constructor(readonly diagnostic: IPlaytestProtocolDiagnostic) {
     super(diagnostic.message);
@@ -42,15 +50,45 @@ export class PlaytestBridgeError extends Error {
 export interface IPlaytestBridgeClient {
   advance(ticks: number): Promise<void>;
   applySetup(request: IPlaytestSetupRequest): Promise<void>;
+  close(): Promise<void>;
   drainEvents(limit?: number): Promise<import("../protocol.js").JsonValue[]>;
   description: IPlaytestBridgeDescription;
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
+export class PlaywrightTransport implements BridgeTransport {
+  readonly capabilities = BROWSER_CAPABILITIES;
+
+  constructor(private readonly page: Page) {}
+
+  async call<T>(method: string, argument?: unknown): Promise<T> {
+    return bridgeCall<T>(this.page, method, argument);
+  }
+
+  async close(): Promise<void> {}
+
+  async waitForBridge(timeoutMs: number): Promise<boolean> {
+    return this.page
+      .waitForFunction((globalName) => globalName in globalThis, PLAYTEST_BRIDGE_GLOBAL, {
+        timeout: timeoutMs,
+      })
+      .then(() => true)
+      .catch(() => false);
+  }
+}
+
 export async function connectPlaytestBridge(
   page: Page,
   scenario: IPlaytestScenario,
-  timeoutMs = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+  timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+): Promise<IPlaytestBridgeClient | undefined> {
+  return connectPlaytestBridgeTransport(new PlaywrightTransport(page), scenario, timeoutMs);
+}
+
+export async function connectPlaytestBridgeTransport(
+  transport: BridgeTransport,
+  scenario: IPlaytestScenario,
+  timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
 ): Promise<IPlaytestBridgeClient | undefined> {
   const required = requiredPlaytestCapabilities(scenario);
   const semanticRequired = required.filter(
@@ -58,10 +96,7 @@ export async function connectPlaytestBridge(
       && capability !== "runtime.ui"
       && (capability !== "runtime.diagnostics" || scenario.assert?.diagnostics?.noRuntimeDiagnostics === true),
   );
-  const exists = await page
-    .waitForFunction((globalName) => globalName in globalThis, PLAYTEST_BRIDGE_GLOBAL, { timeout: timeoutMs })
-    .then(() => true)
-    .catch(() => false);
+  const exists = await transport.waitForBridge(timeoutMs);
   if (!exists) {
     if (semanticRequired.length === 0) {
       return undefined;
@@ -72,7 +107,7 @@ export async function connectPlaytestBridge(
       "Install an adapter before application startup and register the asserted entities.",
     ));
   }
-  const description = await bridgeCall<IPlaytestBridgeDescription>(page, "describe");
+  const description = await transport.call<IPlaytestBridgeDescription>("describe");
   const unknown = unknownPlaytestCapabilities(description.capabilities);
   if (unknown.length > 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
@@ -89,7 +124,7 @@ export async function connectPlaytestBridge(
       "Install matching @threenative/playtest and adapter package versions.",
     ));
   }
-  const ready = await bridgeCall<{ ready: boolean; reason?: string }>(page, "ready");
+  const ready = await transport.call<{ ready: boolean; reason?: string }>("ready");
   if (!ready.ready) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_BRIDGE_NOT_READY",
@@ -97,7 +132,10 @@ export async function connectPlaytestBridge(
       "Wait for scene, camera, renderer, and entity registration before exposing bridge readiness.",
     ));
   }
-  const missing = missingPlaytestCapabilities(required, [...BROWSER_CAPABILITIES, ...description.capabilities]);
+  const missing = missingPlaytestCapabilities(required, [
+    ...transport.capabilities,
+    ...description.capabilities,
+  ]);
   if (missing.length > 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_CAPABILITY_MISSING",
@@ -117,14 +155,15 @@ export async function connectPlaytestBridge(
   }
   return {
     advance: async (ticks) => {
-      await bridgeCall(page, "advance", ticks);
+      await transport.call("advance", ticks);
     },
     applySetup: async (request) => {
       assertBoundedPayload(request);
-      await bridgeCall(page, "applySetup", request);
+      await transport.call("applySetup", request);
     },
+    close: () => transport.close(),
     drainEvents: async (limit) => {
-      const events = await bridgeCall<import("../protocol.js").JsonValue[]>(page, "drainEvents", limit);
+      const events = await transport.call<import("../protocol.js").JsonValue[]>("drainEvents", limit);
       if (!Array.isArray(events)) throw new Error("Bridge drainEvents must return an array.");
       assertBoundedPayload(events);
       return events;
@@ -132,7 +171,7 @@ export async function connectPlaytestBridge(
     description,
     sample: async (request) => {
       assertBoundedPayload(request);
-      const snapshot = await bridgeCall<IPlaytestObservationSnapshot>(page, "sample", request);
+      const snapshot = await transport.call<IPlaytestObservationSnapshot>("sample", request);
       assertBoundedPayload(snapshot);
       return snapshot;
     },

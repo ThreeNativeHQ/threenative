@@ -49,10 +49,11 @@ public class MystralActivity extends SDLActivity {
      */
     @Override
     protected String[] getArguments() {
-        // TODO: Read script path from intent extras or assets
-        // For now, load a default script from assets
+        String endpoint = getIntent().getStringExtra("TN_PLAYTEST_ENDPOINT");
         return new String[] {
-            "asset://scripts/main.js"
+            "asset://scripts/main.js",
+            endpoint == null ? "" : endpoint,
+            getFilesDir().getAbsolutePath()
         };
     }
 }

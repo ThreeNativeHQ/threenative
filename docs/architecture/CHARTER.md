@@ -342,7 +342,7 @@ is a host, not a renderer: it must not own Three's renderer, fork Three.js, or r
 JavaScript `GLTFLoader`. Exact Three.js compatibility must equal the workspace catalog.
 
 Rapier still cannot depend on WebAssembly on Android because Mystral uses QuickJS there.
-Native physics is compiled into the external runtime and exposed through a coarse,
+Native physics is compiled into the owned runtime and exposed through a coarse,
 host-neutral typed-array ABI. JSI is no longer the contract; it was specific to the
 superseded React Native host. The TypeScript API stays in `@threenative/physics`, with
 bulk `step`/`readVisibleTransforms` crossings rather than per-object frame calls.

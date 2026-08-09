@@ -13,6 +13,7 @@ for (const marker of [
   "globalThis.canvas",
   "TN_NATIVE_SMOKE_READY",
   "TN_NATIVE_SMOKE_FIRST_FRAME",
+  "TN_NATIVE_SMOKE_300_FRAMES:300",
 ]) {
   if (!bundle.includes(marker)) throw new Error(`Native bundle is missing ${marker}`);
 }
