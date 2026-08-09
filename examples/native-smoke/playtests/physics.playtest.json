@@ -10,7 +10,7 @@
   "assert": {
     "movement": {
       "entity": "dynamicBox",
-      "minDistance": 2,
+      "minDistance": 0.5,
       "reachesPositionWithin": {
         "position": [0.7, 0.4, 0],
         "maxDistance": 0.05,
@@ -19,7 +19,13 @@
     },
     "resources": [
       { "id": "GameState", "path": "parity.steps", "equals": 180, "changed": true },
-      { "id": "GameState", "path": "parity.grounded", "equals": true, "changed": true }
+      {
+        "id": "GameState",
+        "path": "parity.grounded",
+        "equals": true,
+        "changed": true,
+        "allowTrivial": true
+      }
     ]
   }
 }

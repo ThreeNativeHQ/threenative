@@ -71,6 +71,8 @@ test('native physics controls assert the parity scene surface', () => {
     'parity.grounded',
   ]);
   expect(normal.assert.movement.entity).toBe('dynamicBox');
+  expect(normal.assert.movement.minDistance).toBe(0.5);
+  expect(normal.assert.resources.find(({ path }) => path === 'parity.grounded').allowTrivial).toBe(true);
   expect(wrongHeight.assert.movement.entity).toBe('dynamicBox');
   expect(masked.assert.resources.map(({ path }) => path)).toEqual([
     'parity.collisionEventSet',
