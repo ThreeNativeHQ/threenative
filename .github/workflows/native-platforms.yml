@@ -47,6 +47,7 @@ jobs:
           call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           set "CC=cl"
           set "CXX=cl"
+          set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           where cl
           pnpm --filter @threenative/runtime-native native:build
       - if: runner.os != 'Windows'

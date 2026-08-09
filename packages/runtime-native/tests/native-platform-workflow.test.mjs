@@ -30,6 +30,7 @@ test('desktop platform lanes build and retain executable evidence', () => {
     expect(source).toContain('vswhere.exe');
     expect(source).toContain('set "CC=cl"');
     expect(source).toContain('set "CXX=cl"');
+    expect(source).toContain('set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"');
     expect(source).toContain('where cl');
     expect(source).toContain('shell: cmd');
     expect(source).toContain("if: runner.os != 'Windows'");
