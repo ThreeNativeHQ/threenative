@@ -56,6 +56,20 @@ describe("platformer checkpoints", () => {
     expect(state.currentIndex).toBe(2);
   });
 
+  it("keeps the navigation blocker out of the player's collision mask", async () => {
+    const character = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/entities/Character.ts"),
+      "utf8",
+    );
+    const level = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+      "utf8",
+    );
+
+    expect(level).toContain("collisionLayer: 4");
+    expect(character).toContain("collisionMask: 0xfffb");
+  });
+
   it("should register a mobile-safe steering chaser without Recast", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/platformer/src/game.ts"),

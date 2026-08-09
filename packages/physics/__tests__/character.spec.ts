@@ -212,6 +212,37 @@ describe("CharacterBody3D", () => {
     character.dispose();
   });
 
+  it("should ignore colliders outside its collision mask while moving", async () => {
+    const { ctx, plugin } = await setup();
+    const wallMesh = new Mesh(new BoxGeometry(0.6, 2, 4));
+    const wall = new RigidBody3D({
+      collisionLayer: 4,
+      object: wallMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(wallMesh),
+      type: "fixed",
+    });
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.x = -2;
+    const character = new CharacterBody3D({
+      collisionLayer: 1,
+      collisionMask: 0xfffb,
+      gravity: 0,
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      character.move({ x: 2 / 60, y: 0, z: 0 });
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(mesh.position.x).toBeGreaterThan(1.5);
+    character.dispose();
+    wall.dispose();
+  });
+
   it("should clear the filter predicate after step() and land on a one-way platform", async () => {
     const { ctx, plugin } = await setup();
     fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);

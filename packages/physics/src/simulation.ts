@@ -410,10 +410,14 @@ export function createWebPhysicsSimulation(
               y: target.y - current.y,
               z: target.z - current.z,
             };
+            const characterGroups = entry.collider.collisionGroups();
             const filterGroups =
               config.oneWayLayers !== 0 && desired.y > 0
-                ? interactionGroups(0xffff, 0xffff ^ config.oneWayLayers)
-                : undefined;
+                ? interactionGroups(
+                    characterGroups >>> 16,
+                    characterGroups & 0xffff & (0xffff ^ config.oneWayLayers),
+                  )
+                : characterGroups;
             const filterPredicate =
               config.oneWayLayers !== 0 && desired.y > 0
                 ? (collider: RAPIER.Collider) =>

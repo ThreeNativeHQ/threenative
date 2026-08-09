@@ -73,6 +73,7 @@ export class Character {
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.35, minWidth: 0.2 },
       collisionLayer: PLAYER_LAYER,
+      collisionMask: 0xfffb,
       gravity: PLATFORMER_FEEL.gravity,
       maxFallSpeed: PLATFORMER_FEEL.maxFallSpeed,
       object: this.mesh,
