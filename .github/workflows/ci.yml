@@ -27,7 +27,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @threenative/playtest build
+      - name: Build workspace packages consumed through export maps
+        run: |
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
       - run: pnpm typecheck
 
   lint:
