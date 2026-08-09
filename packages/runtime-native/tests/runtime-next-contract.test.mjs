@@ -144,7 +144,7 @@ test('conformance registry and gate docs cover migrated M0-M11 and M15-M16', () 
 
 
 test('Android default gate is generated from the public core native smoke at catalog Three.js', () => {
-  const smokePath = 'examples/native-smoke/src/main.ts';
+  const smokePath = 'examples/native-smoke/src/game.ts';
 
   const buildScript = read('scripts/build-android-first-proof.mjs');
   assert.match(buildScript, new RegExp(smokePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Android bundle build must use the public core smoke path');
@@ -169,13 +169,13 @@ const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
 test.skipIf(
   !existsSync(join(root, generatedAndroidBundle)) || !existsSync(join(root, generatedAndroidMeta)),
 )('generated Android bundle provenance [requires the generated Android first-proof artifacts]', async () => {
-  const smoke = read('../../examples/native-smoke/src/main.ts');
+  const smoke = read('../../examples/native-smoke/src/game.ts');
   const crypto = await import('node:crypto');
   const expectedHash = crypto.createHash('sha256').update(smoke).digest('hex');
 
   const generated = read(generatedAndroidBundle);
   assert.match(generated, new RegExp(`THREENATIVE_ANDROID_NATIVE_SMOKE_SOURCE_SHA256:${expectedHash}`));
-  assert.match(generated, /THREENATIVE_ANDROID_NATIVE_SMOKE_ENTRY:examples\/native-smoke\/src\/main\.ts/);
+  assert.match(generated, /THREENATIVE_ANDROID_NATIVE_SMOKE_ENTRY:examples\/native-smoke\/src\/game\.ts/);
   for (const marker of ['TN_NATIVE_SMOKE_THREE:0.185.1', 'TN_NATIVE_SMOKE_READY:webgpu', 'TN_NATIVE_SMOKE_FIRST_FRAME', 'TN_NATIVE_SMOKE_300_FRAMES:300']) {
     assert.match(generated, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
@@ -185,7 +185,7 @@ test.skipIf(
   assert.equal(meta.publicApiPackage, '@threenative/core');
   assert.equal(meta.catalogThree, '0.185.1');
   assert.equal(meta.installedThree, '0.185.1');
-  assert.match(inputPaths, /examples\/native-smoke\/src\/main\.ts/);
+  assert.match(inputPaths, /examples\/native-smoke\/src\/game\.ts/);
   assert.match(inputPaths, /node_modules\/three\/package\.json/);
 
   assert.doesNotMatch(generated, /glb-parser|parseGLB|loadGLB|DamagedHelmet|PBR shader|textureSample\(baseColorTexture/i, 'Android default gate must not be the custom raw-WebGPU/GLB-parser sample');

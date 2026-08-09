@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 export const EXPECTED_THREE_VERSION = '0.185.1';
-export const EXAMPLE_ENTRY = 'examples/native-smoke/src/main.ts';
+export const EXAMPLE_ENTRY = 'examples/native-smoke/src/game.ts';
 export const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 export const FIRST_FRAME_MARKER = 'TN_NATIVE_SMOKE_FIRST_FRAME';
 export const FRAME_MARKER = 'TN_NATIVE_SMOKE_300_FRAMES:300';
