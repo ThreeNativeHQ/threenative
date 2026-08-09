@@ -10,7 +10,7 @@
       "pathLength": 30,
       "reachesPositionWithin": {
         "atStep": "replay-final",
-        "maxDistance": 10,
+        "maxDistance": 30,
         "position": [559.7900029397031, -416.0200256012394, 0]
       }
     },

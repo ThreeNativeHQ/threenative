@@ -59,10 +59,13 @@ export interface IPlaytestBridgeClient {
 export class PlaywrightTransport implements BridgeTransport {
   readonly capabilities = BROWSER_CAPABILITIES;
 
-  constructor(private readonly page: Page) {}
+  constructor(
+    private readonly page: Page,
+    private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+  ) {}
 
   async call<T>(method: string, argument?: unknown): Promise<T> {
-    return bridgeCall<T>(this.page, method, argument);
+    return bridgeCall<T>(this.page, method, argument, this.operationTimeoutMs);
   }
 
   async close(): Promise<void> {}
@@ -82,7 +85,7 @@ export async function connectPlaytestBridge(
   scenario: IPlaytestScenario,
   timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
 ): Promise<IPlaytestBridgeClient | undefined> {
-  return connectPlaytestBridgeTransport(new PlaywrightTransport(page), scenario, timeoutMs);
+  return connectPlaytestBridgeTransport(new PlaywrightTransport(page, timeoutMs), scenario, timeoutMs);
 }
 
 export async function connectPlaytestBridgeTransport(
@@ -248,7 +251,12 @@ function assertBoundedPayload(value: unknown): void {
   }
 }
 
-async function bridgeCall<T = void>(page: Page, method: string, argument?: unknown): Promise<T> {
+async function bridgeCall<T = void>(
+  page: Page,
+  method: string,
+  argument?: unknown,
+  timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -266,9 +274,9 @@ async function bridgeCall<T = void>(page: Page, method: string, argument?: unkno
       new Promise<T>((_resolve, reject) => {
         timeout = setTimeout(() => reject(new PlaytestBridgeError(playtestDiagnostic(
           "TN_PLAYTEST_OPERATION_TIMEOUT",
-          `Bridge operation '${method}' exceeded ${PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs}ms.`,
+          `Bridge operation '${method}' exceeded ${timeoutMs}ms.`,
           "Bound the provider work or return a smaller observation payload.",
-        ))), PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs);
+        ))), timeoutMs);
       }),
     ]);
   } finally {
