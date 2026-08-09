@@ -12,25 +12,30 @@ jobs:
       matrix:
         include:
           - platform: macOS
-            runner: macos-14
+            runner: macos-15
           - platform: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      - name: Build native-smoke workspace dependencies
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/physics build
       - run: pnpm --filter threenative-native-smoke build
       - run: pnpm --filter @threenative/runtime-native native:build
       - run: pnpm --filter @threenative/runtime-native native:verify:desktop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-desktop-${{ matrix.platform }}
@@ -39,15 +44,20 @@ jobs:
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build iOS proof workspace dependencies
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/physics build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Archive the scenario-verified unsigned simulator host
@@ -143,7 +153,7 @@ jobs:
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts
           packages/playtest/__tests__/ios-device-playtest.spec.ts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-ios-simulator

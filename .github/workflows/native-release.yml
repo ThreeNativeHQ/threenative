@@ -12,8 +12,8 @@ jobs:
   validate-tag:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
       - name: Match the tag to the runtime package version
@@ -52,20 +52,26 @@ jobs:
             asset: threenative-runtime-win32-x64.exe
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      - name: Build native-smoke workspace dependencies
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/physics build
       - run: pnpm --filter threenative-native-smoke build
       - run: pnpm --filter @threenative/runtime-native native:build
       - run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - name: Stage the verified runtime
+        shell: bash
         env:
           ASSET_NAME: ${{ matrix.asset }}
           EXECUTABLE_NAME: ${{ matrix.executable }}
@@ -80,7 +86,7 @@ jobs:
           copyFileSync(source, output);
           if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
           NODE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: runtime-${{ matrix.key }}
           path: release/${{ matrix.asset }}
@@ -90,19 +96,24 @@ jobs:
     needs: validate-tag
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - run: sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
       - run: pnpm install --frozen-lockfile
+      - name: Build Android proof workspace dependencies
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/physics build
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs
@@ -129,7 +140,7 @@ jobs:
           NODE
           nm -D release/threenative-runtime-android-arm64-v8a.so | grep -F 'tn_physics_step'
           nm -D release/threenative-runtime-android-x86_64.so | grep -F 'tn_physics_step'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: runtime-android
           path: release/*
@@ -139,13 +150,18 @@ jobs:
     needs: validate-tag
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build iOS proof workspace dependencies
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/physics build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Stage the scenario-verified unsigned simulator host
@@ -156,7 +172,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$app" \
             release/threenative-ios-simulator-arm64.zip
           test -s release/threenative-ios-simulator-arm64.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: runtime-ios-simulator-arm64
           path: release/threenative-ios-simulator-arm64.zip
@@ -166,7 +182,7 @@ jobs:
     needs: [build, build-android, build-ios-simulator]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: runtime-*
           path: release
@@ -215,9 +231,9 @@ jobs:
     needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -349,7 +365,7 @@ jobs:
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: clean-consumer-linux-x64
@@ -370,9 +386,9 @@ jobs:
     needs: publish
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -480,7 +496,7 @@ jobs:
             packages/runtime-native/artifacts/ios/release-physics-wrong-gravity \
             TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-physics-wrong-gravity.log"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: clean-consumer-ios-simulator-arm64

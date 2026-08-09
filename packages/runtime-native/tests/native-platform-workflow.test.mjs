@@ -9,7 +9,7 @@ const workflow = readFileSync(
 
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [
-    'runner: macos-14',
+    'runner: macos-15',
     'runner: windows-2025',
     'native:build',
     'native:verify:desktop',
@@ -21,7 +21,7 @@ test('desktop platform lanes build and retain executable evidence', () => {
 });
 
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {
-  expect(workflow).toMatch(/ios-simulator:[\s\S]*runs-on: macos-14/);
+  expect(workflow).toMatch(/ios-simulator:[\s\S]*runs-on: macos-15/);
   expect(workflow).toContain('rustup target add aarch64-apple-ios-sim');
   expect(workflow).toContain('verify-ios-simulator.mjs');
   expect(workflow).toContain('ios-driver.spec.ts');
