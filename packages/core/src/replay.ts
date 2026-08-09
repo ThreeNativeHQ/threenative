@@ -1,4 +1,4 @@
-import { parseReplayRecording, type IReplayRecording } from "@threenative/playtest";
+import { type IReplayRecording, parseReplayRecording } from "@threenative/playtest";
 import type { GamePluginHooks, GamePluginRuntime } from "./game.js";
 const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
