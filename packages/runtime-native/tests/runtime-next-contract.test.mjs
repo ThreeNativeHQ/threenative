@@ -33,6 +33,11 @@ test('official ThreeNative CMake presets and feature flags exist', () => {
   ]) {
     assert.match(cmake, new RegExp(`option\\(${option}\\b`), `missing ${option}`);
   }
+  assert.match(
+    cmake,
+    /elseif\(WIN32\)[\s\S]*?if\(TN_ENABLE_VIDEO\)[\s\S]*?windows_graphics_capture_impl\.cpp/u,
+    'Windows capture sources must remain behind TN_ENABLE_VIDEO',
+  );
 });
 
 test('default builds do not compile/register deprecated native GLTF path', () => {

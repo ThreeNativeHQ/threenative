@@ -1212,24 +1212,26 @@ if(APPLE)
 elseif(WIN32)
     target_sources(mystral-runtime PRIVATE
         src/platform/surface_win32.cpp
-        src/video/windows_graphics_capture.cpp
-        src/video/windows_graphics_capture_impl.cpp
     )
-    # Windows.Graphics.Capture uses C++/WinRT with namespace aliases to avoid
-    # conflicts with Windows SDK interop headers, plus Media Foundation for H.264
-    # RuntimeObject.lib provides WINRT_IMPL_* symbols required by C++/WinRT
     target_link_libraries(mystral-runtime PRIVATE
         d3d11.lib
         dxgi.lib
-        mfplat.lib
-        mfuuid.lib
-        mfreadwrite.lib
-        RuntimeObject.lib
     )
-    # C++/WinRT needs /await for coroutine support when using MSVC. MinGW
-    # implements C++20 coroutines without accepting the MSVC-only flag.
-    if(MSVC)
-        target_compile_options(mystral-runtime PRIVATE /await)
+    if(TN_ENABLE_VIDEO)
+        target_sources(mystral-runtime PRIVATE
+            src/video/windows_graphics_capture.cpp
+            src/video/windows_graphics_capture_impl.cpp
+        )
+        # Windows.Graphics.Capture uses C++/WinRT, plus Media Foundation for H.264.
+        target_link_libraries(mystral-runtime PRIVATE
+            mfplat.lib
+            mfuuid.lib
+            mfreadwrite.lib
+            RuntimeObject.lib
+        )
+        if(MSVC)
+            target_compile_options(mystral-runtime PRIVATE /await)
+        endif()
     endif()
 elseif(ANDROID)
     target_sources(mystral-runtime PRIVATE
