@@ -10,6 +10,10 @@ const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
 );
+const smokeScenario = (name) => JSON.parse(readFileSync(
+  fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
+  'utf8',
+));
 
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [
@@ -56,4 +60,20 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
   ]) {
     expect(workflow).toContain(token);
   }
+});
+
+test('native physics controls assert the parity scene surface', () => {
+  const normal = smokeScenario('physics.playtest.json');
+  const wrongHeight = smokeScenario('physics-wrong-height.playtest.json');
+  const masked = smokeScenario('physics-mask.playtest.json');
+  expect(normal.assert.resources.map(({ path }) => path)).toEqual([
+    'parity.steps',
+    'parity.grounded',
+  ]);
+  expect(normal.assert.movement.entity).toBe('dynamicBox');
+  expect(wrongHeight.assert.movement.entity).toBe('dynamicBox');
+  expect(masked.assert.resources.map(({ path }) => path)).toEqual([
+    'parity.collisionEventSet',
+    'parity.control',
+  ]);
 });
