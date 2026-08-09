@@ -14,7 +14,7 @@
  *
  * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, skia, swc
  * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
- * Android deps: wgpu-android, sdl3-android
+ * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -779,14 +779,14 @@ async function main() {
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];
 
   // Android deps (only downloaded with --only or --android)
-  const androidDeps = ['wgpu-android', 'sdl3-android', 'quiche-android'];
+  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android'];
 
   // Windows-specific deps (only downloaded with --only)
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
   const windowsDeps = ['skia-win-static'];
 
   // All available deps
-  const allDeps = [...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps];
+  const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {

@@ -222,6 +222,8 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'archive extraction must pass native Windows paths directly to tar without shell rewriting');
   assert.match(deps, /archivePath\.endsWith\('\.zip'\) \|\| archivePath\.endsWith\('\.aar'\)/,
     'Android SDL AARs must be extracted as ZIP archives before CMake configures');
+  assert.match(deps, /const androidDeps = \['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android'\]/,
+    'a clean Android build must download the SDL Java glue as well as the Android AAR');
   const nativeBuild = read('scripts/native-build.mjs');
   assert.match(nativeBuild, /VCPKG_INSTALLATION_ROOT[\s\S]*x64-windows-static/,
     'Windows builds must consume the static-CRT HTTP dependencies installed by the platform lane');
