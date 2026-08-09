@@ -74,6 +74,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      - name: Install Linux desktop build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libpulse-dev libudev-dev libx11-dev libxext-dev
+          libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev
+          libxkbcommon-dev
       - name: Build and pack the scaffold dependencies
         run: |
           pnpm --filter @threenative/playtest build
