@@ -94,6 +94,21 @@ test('clean Android consumer exposes late-installed emulator SDK directories', (
   );
 });
 
+test('clean Android emulator script is compatible with line-by-line action execution', () => {
+  const script = releaseWorkflow.match(
+    /- name: Run packed Android physics and negative controls on an emulator[\s\S]*?script: \|\n([\s\S]*?)\n {6}- name:/u,
+  )?.[1];
+  expect(script).toBeDefined();
+  expect(script).not.toContain('expect_android_failure');
+  expect(script).not.toMatch(/\\\s*$/mu);
+  expect(script).not.toMatch(/\n\s+(?:cli|scenario_root)=/u);
+  expect(
+    script.match(
+      /set \+e; node .*status=\$\?; set -e; test "\$status" -eq 1; grep -F/gu,
+    ),
+  ).toHaveLength(3);
+});
+
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
   const wrongHeight = smokeScenario('physics-wrong-height.playtest.json');

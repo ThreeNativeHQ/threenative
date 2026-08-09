@@ -362,37 +362,15 @@ jobs:
           arch: x86_64
           script: |
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            cli="$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js"
-            scenario_root="$GITHUB_WORKSPACE/examples/native-smoke/playtests"
-            expect_android_failure() {
-              scenario=$1
-              artifacts=$2
-              expected=$3
-              log=$4
-              set +e
-              node "$cli" "$scenario" --target android --artifacts "$artifacts" --timeout 30000 > "$log" 2>&1
-              status=$?
-              set -e
-              test "$status" -eq 1
-              grep -F "$expected" "$log"
-            }
-            node "$cli" "$scenario_root/physics.playtest.json" --target android \
-              --artifacts "$RUNNER_TEMP/packed-android-physics" --timeout 30000
-            expect_android_failure "$scenario_root/physics-wrong-height.playtest.json" \
-              "$RUNNER_TEMP/packed-android-wrong-height" TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED \
-              "$RUNNER_TEMP/android-wrong-height.log"
-            expect_android_failure "$scenario_root/physics-mask.playtest.json" \
-              "$RUNNER_TEMP/packed-android-mask-control" TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED \
-              "$RUNNER_TEMP/android-mask-control.log"
+            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-physics" --timeout 30000
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-wrong-height.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-wrong-height" --timeout 30000 > "$RUNNER_TEMP/android-wrong-height.log" 2>&1; status=$?; set -e; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-height.log"
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-mask-control" --timeout 30000 > "$RUNNER_TEMP/android-mask-control.log" 2>&1; status=$?; set -e; test "$status" -eq 1; grep -F TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED "$RUNNER_TEMP/android-mask-control.log"
             THREENATIVE_PHYSICS_CONTROL=masked pnpm --dir "$CONSUMER_TARGET" build --target android
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            node "$cli" "$scenario_root/physics-mask.playtest.json" --target android \
-              --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000
+            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000
             THREENATIVE_PHYSICS_CONTROL=wrong-gravity pnpm --dir "$CONSUMER_TARGET" build --target android
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            expect_android_failure "$scenario_root/physics.playtest.json" \
-              "$RUNNER_TEMP/packed-android-wrong-gravity" TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED \
-              "$RUNNER_TEMP/android-wrong-gravity.log"
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-wrong-gravity" --timeout 30000 > "$RUNNER_TEMP/android-wrong-gravity.log" 2>&1; status=$?; set -e; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-gravity.log"
             test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
