@@ -118,7 +118,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
       ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
       pickup.monitoring = false;
       pickupVisual.visible = false;
-      ctx.after(1.2, () => {
+      ctx.after(3, () => {
         ctx.entities.add("pickup", pickupVisual);
         pickupVisual.visible = true;
         pickup.monitoring = true;
