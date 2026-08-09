@@ -28,5 +28,5 @@ if (!available(cmake)) {
   cmake = tool('cmake');
 }
 
-run(cmake, ['--preset', 'tn-linux']);
+run(cmake, ['--preset', 'tn-linux', `-DCMAKE_MAKE_PROGRAM=${tool('ninja')}`]);
 run(cmake, ['--build', '--preset', 'tn-linux', '--parallel']);
