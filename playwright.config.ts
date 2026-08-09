@@ -166,7 +166,12 @@ async function runStarterLookServer(): Promise<void> {
   } finally {
     exposedServer?.kill();
     server.kill();
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, {
+      force: true,
+      maxRetries: 10,
+      recursive: true,
+      retryDelay: 100,
+    });
   }
 }
 
