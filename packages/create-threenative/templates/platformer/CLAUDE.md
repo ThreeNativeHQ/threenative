@@ -22,6 +22,11 @@ this template; native navigation or a mobile-safe route is still required. Linux
 source-machine evidence, not a clean-machine distribution proof; macOS, Windows, iOS, and
 physical hardware remain OPEN.
 
+If you care about the desktop target, keep the game portable: no real DOM there (`document`
+is a Three.js compatibility stub), no dynamic `import()`, and `.raw` on a physics handle is
+a Rapier object on web but opaque on native. Writing against `ctx`, `three`, and the
+Godot-named nodes keeps that correct without thinking about it.
+
 ## Where to work
 
 - `src/entities/Character.ts` contains every movement and feel constant.

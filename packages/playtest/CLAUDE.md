@@ -2,7 +2,8 @@
 
 # AGENTS.md — @threenative/playtest
 
-Read `/AGENTS.md` first. This file only covers what is different here.
+Read `/AGENTS.md` first. This file covers only what is different here. The operator CLI,
+its flags and its exit codes are documented there; this file is about changing the harness.
 
 ## The rule that outranks everything else in this package
 
@@ -15,16 +16,30 @@ failure mode in an agent loop, because the agent optimizes against the report.
 
 Concretely, when you touch this package:
 
-- A malformed assertion **throws at load** (`invalidScenario(...)`). It is never dropped,
-  coerced, or defaulted.
+- A malformed assertion **throws at load** (`invalidScenario(...)`). Never dropped, coerced,
+  or defaulted.
 - Never add a `.filter()` that removes an assertion, an observation, or a step.
-- A missing entity, an absent resource, an empty effect log, or a scenario with no
-  assertions is a **failure**, not a pass.
-- A run only reports `pass` when at least one assertion was evaluated against an observation
+- A missing entity, an absent resource, an empty effect log, or a scenario with no assertions
+  is a **failure**, not a pass.
+- A run reports `pass` only when at least one assertion was evaluated against an observation
   that actually arrived.
-- New assertion types need a test proving the wrong-typed case fails. `__tests__/`
-  already holds the shape: `vacuous-assertion.spec.ts`, `silent-drop.spec.ts`,
-  `evidence-required.spec.ts`. Add to them rather than starting a new pattern.
+- New assertion types need a test proving the wrong-typed case fails. `__tests__/` already
+  holds the shape: `vacuous-assertion.spec.ts`, `silent-drop.spec.ts`,
+  `evidence-required.spec.ts`. Add to those rather than starting a new pattern.
+
+## One scenario, three targets
+
+`--target browser|android|ios` runs the same scenario file against a browser, an Android
+device or emulator, and an iOS simulator or device (`runner/androidRunner.ts`,
+`runner/iosRunner.ts`, `runner/deviceTransport.ts`). Keep it that way: an assertion that only
+means something on one target is a fork of the harness.
+
+A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
+to a browser run. Where a target genuinely lacks an observer — device transport has no CDP
+network observer — the assertion **errors and names the working target**, it does not skip.
+The negative-control scenarios in `examples/native-smoke/playtests/` (`-misspelled`,
+`-wrong-value`) prove the device path still fails closed; run them when you change transport
+or observation code.
 
 ## Determinism
 
@@ -39,19 +54,11 @@ with zero ThreeNative dependencies**, and that independence is a product decisio
 accident. `three` and `playwright` are optional peers. Do not add a `@threenative/core`
 dependency.
 
-It is also excluded from the framework LOC budget and from `biome.json`, so its style
-differs from the rest of the repo. Match the file you are editing, not the root convention.
+It is also excluded from the framework LOC budget and from `biome.json`, so its style differs
+from the rest of the repo. Match the file you are editing, not the root convention.
 
 ## Test layout, and a trap
 
 Vitest at the root only collects `packages/**/__tests__/**/*.spec.ts`. The co-located
 `src/**/*.test.ts` files here are **not** run by `pnpm test`. Put anything that must gate CI
 in `__tests__/`, or run the co-located ones explicitly and say that you did.
-
-## Running the operator CLI
-
-Use `--browser-recipe webgpu` for the current Chromium WebGPU flags. For screenshot or
-`visual` assertions on a headless Linux machine, prefix the command with
-`xvfb-run -a -s '-screen 0 1600x900x24'`. `--browser-arg` remains the escape hatch for
-custom Chromium flags. Exit code `0` means pass, `1` means assertions failed, and `2`
-means the run never reached assertions.

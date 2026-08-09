@@ -1,35 +1,65 @@
 # AGENTS.md — @threenative/runtime-native
 
-Read `/AGENTS.md` first. This file only covers what is different here.
+Read `/AGENTS.md` first. This file covers only what is different here. This package is the
+native half of the "web and native are one codebase" rule stated there.
 
 ## Product contract
 
-ThreeNative is a native-first Three.js games runtime with no Chromium/WebView/Electron/Tauri
-WebView. Upstream Three.js `WebGPURenderer` remains the primary renderer; this program must
-not introduce a custom C++ renderer or deep Three.js fork. Runtime/native may keep Mystral
-internals recognizable during the fork, but public contracts should expose ThreeNative
-names and concepts.
+A native-first Three.js games runtime with no Chromium, WebView, Electron or Tauri WebView.
+It is **a host, not a renderer**: upstream Three.js `WebGPURenderer` stays the primary
+renderer, at exactly the workspace catalog version. Runtime internals may keep Mystral names
+recognizable during the fork, but public contracts expose ThreeNative names.
 
-Official targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android
-QuickJS+wgpu-native bootstrap, and iOS JSC+wgpu-native bootstrap. Heavy systems must use
-native/GPU/thread architectures and batched transfer surfaces. The JavaScript runtime that
-owns `THREE.Scene` also owns the renderer; do not mirror the `Object3D` tree across threads.
+Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android QuickJS+wgpu-native,
+iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns the renderer —
+never mirror the `Object3D` tree across threads. Heavy systems use native/GPU/thread
+architectures and batched transfer surfaces.
 
-Ordering: correctness → compatibility → platform stability → threading → native systems →
-DX → profiling → optimization.
+Priority order: correctness → compatibility → platform stability → threading → native systems
+→ DX → profiling → optimization.
 
-## Non-goals before evidence
+## Non-goals until evidence says otherwise
 
-No custom renderer, no deep Three.js fork, no native GLTF replacement for JavaScript
-`GLTFLoader`, no mandatory ECS/React/editor/multiplayer, no optimization fast paths before
-profiling evidence, and no claims for unexecuted platforms.
+No custom C++ renderer, no deep Three.js fork, no native GLTF replacement for the JavaScript
+`GLTFLoader` (the deprecated native GLTF files stay disabled, retained only as upstream
+history), no mandatory ECS/React/editor/multiplayer, no optimization fast path before
+profiling evidence, and no claim for a platform that has not executed.
+
+## The host surface is a contract with the TypeScript side
+
+Every global this runtime installs is something framework code is allowed to use, and
+everything else is a native break waiting to happen. `document` and `window` are **Three.js
+compatibility stubs** — `body.appendChild` is a no-op, `createElement('canvas')` returns a
+fake. Widening that stub to make a web-only feature work is the wrong fix; the fix is in the
+TypeScript package.
+
+When you add a shim, say so in the owning gate doc so the other half of the repo can rely on
+it. When you remove or narrow one, grep `packages/*/src` first.
 
 ## Package boundaries
 
-- `third_party/`, `build/`, `.runtime/`, and `artifacts/` stay untracked.
+- `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked; a tracked file under
+  `third_party/` fails `pnpm budgets`.
 - `scripts/download-deps.mjs` is the only supported dependency reconstruction path.
-- Native compilation is opt-in through `pnpm native:build`; the default repository gate
-  must not require CMake, an NDK, or Xcode.
-- Deprecated native GLTF files are retained only as upstream history and must remain
-  disabled. Use upstream JavaScript `GLTFLoader`.
-- Update the five files in `docs/` when a native evidence run changes a gate.
+- Native compilation is opt-in via `pnpm native:build`. The default repository gate must not
+  require CMake, an NDK, or Xcode.
+- A native runtime tree anywhere but this package is a hard budget failure.
+
+## Gates and evidence
+
+`docs/G1-desktop-host.md` … `G5-profiling.md` are the evidence record. Update the affected
+file whenever a native run changes a gate — a gate result that lives only in a commit message
+does not exist.
+
+```sh
+pnpm native:build                             # download deps + compile
+pnpm native:verify:desktop                    # 300 frames, markers, non-blank screenshot
+node conformance/run-conformance.mjs          # same scene, browser reference vs native
+```
+
+`conformance/registry.json` is the versioned public test registry: a row that was not
+selected by `--only-tests` is reported **blocked**, never passed and never omitted. Keep it
+that way.
+
+Report what ran. Desktop and the Android emulator are green; iOS, physical hardware and
+performance parity are open. Never write mobile-ready while those rows are open.

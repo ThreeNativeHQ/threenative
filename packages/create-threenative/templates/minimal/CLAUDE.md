@@ -29,6 +29,22 @@ ship Android or iOS until signed prebuilt runtime assets and their checksum mani
 so those targets fail closed for consumers. Linux desktop is source-machine evidence, not a
 clean-machine distribution proof; macOS, Windows, iOS, and physical hardware remain OPEN.
 
+## Keep the game portable to native
+
+`pnpm build --target desktop` runs this same source on a native host with **no browser**.
+Three things break there, and none of them fail on the web build:
+
+1. **No real DOM.** `document` exists only as a Three.js compatibility stub. The DOM HUD in
+   `main.ts` is web-only, so keep gameplay, scoring and state transitions in the scene and
+   let the HUD be a read-only view of `ctx.state`.
+2. **No dynamic `import()` and no `window.localStorage` reach.** The native build is one
+   bundled file; save games go through your own JSON via `ctx.state`.
+3. **`.raw` is web-only.** `ctx.physics.world.raw` is a Rapier object in the browser and
+   opaque on native. Anything reading it is a web-only code path by contract.
+
+Writing against `ctx`, `three`, and the Godot-named physics nodes keeps all three correct
+without thinking about it. If you only ever ship to the web, ignore this section.
+
 ## The layout
 
 ```
@@ -47,16 +63,19 @@ threenative.config.ts   renderer + plugins. No visual options, by design.
 A scene is a class with optional `load`, `enter`, `update`, `exit`, and `render`. That is
 the whole lifecycle — there is nothing else to register.
 
-`ctx` hands you the real objects. There is no wrapper to unwrap:
+`ctx` hands you real Three.js objects and backend-neutral physics handles:
 
 ```ts
 ctx.scene          // THREE.Scene
 ctx.camera         // THREE.PerspectiveCamera
 ctx.renderer       // the renderer
-ctx.physics.world  // Rapier World
-player.body        // Rapier body (via CharacterBody3D)
+ctx.physics.world  // PhysicsWorldHandle
+player.body        // PhysicsBodyHandle (via CharacterBody3D)
 player.mesh        // THREE.Mesh
 ```
+
+The physics handles expose `.raw` as an explicitly backend-specific escape hatch: Rapier on
+web, opaque on native. Code that reads `.raw` is not portable between those targets.
 
 Any Three.js tutorial, StackOverflow answer, or snippet you already know works unchanged
 inside a scene. Prefer that over hunting for a framework wrapper — **for anything Three.js

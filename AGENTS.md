@@ -1,159 +1,182 @@
 # AGENTS.md — ThreeNative
 
-Instructions for any AI agent here. Nested `AGENTS.md` files add package rules; closest wins.
+Instructions for any AI agent working here. Nested `AGENTS.md` files add rules for their
+subtree; the closest one wins.
 
-**Every `CLAUDE.md` in this repo is generated** by `scripts/sync-agent-docs.ts` from the
-`AGENTS.md` beside it. Edit `AGENTS.md`, then run `pnpm sync:agents`. CI runs `--check` and
-fails on drift, so a hand-edited `CLAUDE.md` will be reverted.
-
-## Our main mantra
-
-- Build a system that builds itself. Whenever you build some piece of this system, remember to playtest it and verify that it works as expected. If it doesn't, fix it before moving on.
+**Every `CLAUDE.md` in this repo is generated** from the `AGENTS.md` beside it by
+`scripts/sync-agent-docs.ts`. Edit `AGENTS.md`, then run `pnpm sync:agents`. CI runs
+`--check`, so a hand-edited `CLAUDE.md` gets reverted.
 
 ## What this is
 
-An application framework for Three.js games. WebGPU by default, Godot-shaped conventions,
-React/Tailwind for UI, vanilla `three` on every surface underneath. **The framework ships
-the plumbing. The user's agent ships the gameplay.**
+An application framework for Three.js games that runs **the same source on web and native**
+— browser WebGPU, plus an owned C++ runtime for desktop/Android/iOS. Godot-shaped
+conventions, React/Tailwind for UI, vanilla `three` on every surface underneath.
+**The framework ships the plumbing. The user's agent ships the gameplay.**
 
-`docs/architecture/CHARTER.md` is the only binding document, and it wins if anything here
-contradicts it — say so instead of quietly following this file. **Do not read it by
-default.** Everything it binds that applies to ordinary work is already restated below.
-Open it only when you are changing what the framework *is*: adding or removing a package,
-moving a budget, or reopening a closed question. `docs/README.md` maps the rest, and labels
-which docs are proposals rather than commitments.
-
-Work in `examples/` — anything a screenshot shows — needs neither file. See
-`examples/AGENTS.md`.
+Mantra: *build a system that builds itself.* Every piece you build gets playtested against
+the real build before you move on. If it fails, fix it before continuing.
 
 ## How you work
 
-1. **Think before coding.** State assumptions explicitly. If the request is ambiguous, ask
-   rather than guess — a silent interpretation costs more than a question.
-2. **Simplicity first.** Nothing beyond what was asked. No speculative abstraction, no
-   option nobody requested. This is the 20-line rule applied to your own diff.
-3. **Surgical changes.** Touch only what you must, and clean up only your own mess.
-   Unrelated tidying belongs in its own change.
-4. **Goal-driven execution.** Turn the task into success criteria that can be _run_, then
-   loop until they pass. Criteria beat instructions: `pnpm test` green and a playtest
-   scenario asserting the behaviour is a goal; "make it work" is not.
+1. **Think first.** State assumptions. Ask when the request is ambiguous — a silent
+   interpretation costs more than a question.
+2. **Simplicity.** Nothing beyond what was asked. No speculative abstraction, no option
+   nobody requested.
+3. **Surgical.** Touch only what you must. Unrelated tidying is its own change.
+4. **Goal-driven.** Turn the task into criteria you can _run_, then loop until they pass.
+   `pnpm test` green plus a playtest asserting the behaviour is a goal; "make it work" is not.
+5. **Never claim a gate you did not run.** Paste the failure. "Unverified" is an acceptable
+   answer; "verified" without a run is not.
+
+## Where a change goes
+
+| What you are adding | Where it belongs |
+| --- | --- |
+| Anything a screenshot shows — materials, shaders, TSL, lights, tonemapping, post, camera framing | `packages/create-threenative/templates/*/src/render/`, as generated user source |
+| Gameplay | an example or a template — never a package |
+| Plumbing every game repeats and no game should write | `packages/core/src/` |
+| Physics or navigation (carries the WASM dep) | `packages/physics/src/` |
+| React HUD/menu bindings (carries the React dep) | `packages/ui/src/` |
+| C++ host, platform bring-up, native systems | `packages/runtime-native/` |
+| Scenario harness / assertions | `packages/playtest/` |
+| Proof that any of it works | `<package>/__tests__/*.spec.ts` **and** a playtest scenario |
+
+```
+examples/abyss-vanilla/    FROZEN benchmark control — do not edit
+examples/abyss-framework/  the framework arm of the same benchmark
+examples/native-smoke/     the native bundle contract (one import-free ESM file)
+docs/                      PRDs, verification, strategy, architecture, product
+scripts/                   budgets, LOC classifier, sweeps, blind scoring
+```
+
+`docs/architecture/CHARTER.md` is the only binding document and wins if anything here
+contradicts it — say so rather than quietly following this file. **Do not read it by
+default**; everything it binds for ordinary work is restated here. Open it only when you
+change what the framework *is*: adding or removing a package, moving a budget, reopening a
+closed question. `docs/README.md` maps the rest and labels proposals versus commitments.
+
+## Web and native are one codebase
+
+**A feature that works on web only is an unfinished feature.** Before you add anything to a
+package, work out what the native host does with it.
+
+- **One file per public class.** `RigidBody3D`, `Area3D`, `CharacterBody3D`,
+  `CollisionShape3D` are each a single source file shared by both targets. The
+  `threenative-native` export condition may swap **only** the `PhysicsSimulation` backend
+  beneath them — never a node, scene, entity, or anything a game writes against. Two copies
+  of a class is a fork, and a fork diverges silently: a feature added to one is simply
+  missing from the other and no gate reports it.
+- **Browser globals exist only insofar as the host shims them.** See
+  `packages/runtime-native/src/` — `canvas`, `input`, `storage`, `http`, `fs`, `audio`,
+  `video`, `workers`, `webgpu`. Reaching for one that is not shimmed breaks native silently.
+- **No WASM on native.** Android runs QuickJS. A WASM dependency is web-only by
+  construction; its native equivalent compiles into `runtime-native` and is reached through
+  a coarse bulk typed-array ABI (`step`, `readVisibleTransforms`), never per-object frame
+  calls.
+- **A backend that cannot honour an option throws at construction.** Accepting it and
+  discarding it becomes a gameplay bug on one platform only.
+- **The native bundle is one import-free ESM file.** No code splitting, no dynamic
+  `import()`; `examples/native-smoke` asserts this on every build.
+- **Never claim a platform you did not execute.** Desktop and the Android emulator are
+  green; iOS, physical hardware and performance parity are open. A result may say
+  desktop-ready or Android-emulator plumbing-ready — it must not say mobile-ready.
+
+Native compilation is opt-in: the default repo gate must never require CMake, an NDK or
+Xcode. `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked.
 
 ## Commands
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm typecheck                          # tsc across root + every package
-pnpm lint                               # biome check . (add --write to fix)
-pnpm test                               # package builds + vitest run
-pnpm test:browser                       # playwright, examples/abyss-vanilla
-pnpm budgets                            # §10 limits — hard invariants fail; LOC triggers report
-pnpm sync:agents                        # regenerate CLAUDE.md mirrors (--check in CI)
-pnpm tsx scripts/count-loc.ts           # regenerates the README LOC table
-pnpm --filter abyss-framework dev       # run the framework example
+pnpm typecheck                     # tsc across root + every package
+pnpm lint                          # biome check . (--write to fix)
+pnpm test                          # package builds + publint + vitest run
+pnpm test:browser                  # playwright, boots abyss-vanilla
+pnpm test:playtest                 # playtest scenarios against abyss-framework
+pnpm test:templates                # playtests against each scaffolded template
+pnpm budgets                       # hard invariants fail; LOC triggers report
+pnpm sync:agents                   # regenerate CLAUDE.md mirrors (--check in CI)
+pnpm tsx scripts/count-loc.ts      # regenerates the README LOC table
+pnpm --filter abyss-framework dev  # run the framework example
+
+pnpm native:build                  # opt-in; downloads deps, compiles the C++ host
+pnpm native:verify:desktop         # 300-frame desktop run + non-blank screenshot
 ```
 
-The self-improvement loop resumes from `docs/verification/round-*.md`. Run
-`pnpm round:next` to compute the single next action; run `pnpm round:deletions` after a
-completed pair to report exports unreached across consecutive rounds. Move a completed PRD
-to `docs/PRDs/done/` and keep the round ledger as the evidence record.
+CI chains `install → typecheck → lint → test → scaffold-smoke → visuals`, with `benchmark`,
+`build → budgets` branching off `test`; each link blocks the next. Native platforms run in a
+separate workflow. Run `pnpm typecheck && pnpm lint && pnpm test` before calling a change done.
 
-CI runs typecheck → lint → test → scaffold smoke, in that order, and each gate blocks the
-next. Run `pnpm typecheck && pnpm lint && pnpm test` before claiming a change is done.
+The self-improvement loop resumes from `docs/verification/round-*.md`: `pnpm round:next`
+computes the single next action, `pnpm round:deletions` reports exports unreached across
+consecutive rounds. Move a finished PRD to `docs/PRDs/done/` and keep the round ledger as
+the evidence record.
 
 ## Rules that get a change rejected
 
-These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignoring them.
+From `CHARTER.md` §11 and from the 790k-line v1 that died of ignoring them.
 
 1. **The 20-line rule.** If a competent developer could write it in under 20 lines, it does
-   not go in the framework. Write it in the example or the template instead.
-2. **The kill switch.** Any abstraction that costs more code than plain Three.js is
-   deleted, however much work it took. `scripts/count-loc.ts` scores this in CI.
-3. **Never own the look.** Materials, shaders, TSL, lighting, tonemapping, post-processing,
-   camera framing — anything a screenshot shows — ships as generated source in the user's
-   `src/render/`, never as package code or a `defineGame` option.
-4. **Vocabulary is borrowed, never invented.** Godot for nodes (`RigidBody3D`, `Area3D`,
-   `CharacterBody3D`, `CollisionShape3D`), Three.js for rendering, Rapier for physics,
-   Tailwind for UI. A new name is a discovery cost for every model; that is what killed v1.
-   **Godot is the only node source — not Unity, not Unreal.** Every new abstraction copies
-   Godot's class name, method names (`move_and_slide` → `moveAndSlide`), property names and
-   signal semantics, in camelCase. When Godot has no equivalent, borrow from Three.js or
-   Rapier before inventing. Mixing conventions costs more than either one alone.
-5. **A package exists only when it carries a dependency the others must not inherit.** This
-   rule governs package count; there is no package number to argue with.
-6. **Never claim a green gate you did not run.** Paste the failure instead.
+   not go in the framework. Write it in the example or the template.
+2. **The kill switch.** Any abstraction that costs more code than plain Three.js is deleted,
+   however much work it took. `scripts/count-loc.ts` scores this in CI.
+3. **Never own the look.** Anything a screenshot shows ships as generated source in the
+   user's `src/render/` — never as package code, never as a `defineGame` option.
+4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering,
+   Rapier for physics, Tailwind for UI. **Godot is the only node source — not Unity, not
+   Unreal.** Copy its class names, method names (`move_and_slide` → `moveAndSlide`),
+   properties and signal semantics, in camelCase. Where Godot has no equivalent, borrow from
+   Three.js or Rapier before inventing. A new name is a discovery cost for every model.
+5. **A package exists only when it carries a dependency the others must not inherit.** That
+   rule governs package count; there is no number to argue with.
+
+`CHARTER.md` §2 also closes these with evidence: an IR, a scene format, an editor, a preset
+system, a code-first ECS, a bespoke CLI vocabulary. Do not reopen them in a feature.
 
 ## Budgets
 
-`pnpm budgets` reports two kinds of limit, per `CHARTER.md` §10b.
+`pnpm budgets` (`CHARTER.md` §10b) reports two kinds of limit.
 
-**Hard — these fail CI:** a native runtime tree anywhere but `packages/runtime-native/`, any
-tracked file under `packages/runtime-native/third_party/`, a template over 1,200 LOC, and a
-vendored asset MCP. They are the invariants that keep a C++ runtime from leaking into the
-TypeScript framework.
+**Hard — fails CI:** a native runtime tree outside `packages/runtime-native/`, any tracked
+file under `packages/runtime-native/third_party/`, a template over 1,200 LOC, a vendored
+asset MCP, and any `packages/*/package.json` claiming `threenative-asset-mcp`.
 
 **Review triggers — reported, never fatal:** 15,000 framework LOC (`packages/*/src`,
 excluding salvage and native) and 50,000 native runtime LOC. Crossing one obliges a
-justification in the owning PRD and a kill-switch pass over what was added. Do not silence a
-trigger; a number that is routed around is worse than no number.
+justification in the owning PRD and a kill-switch pass over what you added. Never silence a
+trigger; a number routed around is worse than no number.
 
-It also fails if any `packages/*/package.json` claims `threenative-asset-mcp`. That server is
-the asset-discovery MCP each template pins and each generated project installs; it is an
-external process, and vendoring its ~10.8k lines would blow the LOC trigger and add a package
-that carries nothing the others must not inherit. Its surface of record is
-`packages/create-threenative/asset-mcp-tools.json`, recorded by running the pinned version —
-update it by running the server, never by reading its docs.
-
-## Layout
-
-```
-packages/core/                 loop, scenes, input, assets, renderer bootstrap, state, registry
-packages/physics/             Rapier bindings — separate only because of the WASM dep
-packages/ui/                  React bindings — separate only because of the React dep
-packages/playtest/            salvaged scenario harness; runs on plain Three.js
-packages/create-threenative/  scaffolder; templates/ is shipped to users
-examples/abyss-vanilla/       FROZEN benchmark control — do not edit
-examples/abyss-framework/     the framework arm of the same benchmark
-docs/                         PRDs, verification, strategy, architecture, product
-scripts/                      budgets, LOC classifier, blind scoring
-```
+`threenative-asset-mcp` is the asset-discovery server each template pins and each generated
+project installs — an external process, never vendored. Its surface of record is
+`packages/create-threenative/asset-mcp-tools.json`, updated by running the pinned server,
+never by reading its docs.
 
 ## Code conventions
 
-- TypeScript 5.9, `strict`, **ESM only**. Relative imports carry a `.js` extension even
-  when the file on disk is `.ts` — `import { Play } from "./scenes/Play.js"`.
-- Dependency versions come from the `catalog:` in `pnpm-workspace.yaml`, never a literal
-  version in a package. Template `package.json` files are the exception: they ship real
-  versions, and CI asserts no `catalog:` survives scaffolding.
-- Formatting and lint are Biome (100 columns, spaces, organized imports). Do not hand-format.
-- Unit tests live in `<package>/__tests__/*.spec.ts` and run under vitest in a node
-  environment. `examples/**` is excluded — browser proof goes through Playwright or playtest.
+- TypeScript 5.9, `strict`, **ESM only**. Relative imports carry a `.js` extension even when
+  the file on disk is `.ts` — `import { Play } from "./scenes/Play.js"`.
+- Dependency versions come from the `catalog:` in `pnpm-workspace.yaml`, never a literal in a
+  package. Template `package.json` files are the exception: they ship real versions, and CI
+  asserts no `catalog:` survives scaffolding.
+- Biome owns formatting and lint (100 columns, spaces, organized imports). Do not hand-format.
+- Unit tests are `<package>/__tests__/*.spec.ts`, vitest, node environment — anything
+  touching the DOM or a GPU needs a stub. `examples/**` is excluded; browser proof goes
+  through Playwright or a playtest.
 - Every package's `test` script is its build plus `publint`, so a broken export map fails
   `pnpm test`.
-
-## When you add a feature
-
-1. Check `CHARTER.md` §2's "what it is not" list. An IR, a scene format, an editor, a preset
-   system, a code-first ECS and a bespoke CLI vocabulary are closed questions, decided
-   against with evidence.
-2. Check the 20-line rule. Most "framework features" are user-space code.
-3. Put visual behaviour in `packages/create-threenative/templates/`, not in a package.
-4. Add the test with the change, in the same commit.
-5. Run `pnpm budgets`. If a hard invariant fails, fix it; if a review trigger fires,
-   justify the addition and run the kill switch over it.
-6. Whenever you finish a PRD, move it to `docs/PRDs/done/`.
+- Add the test with the change, in the same commit.
 
 ## Verification honesty, and how you prove it
 
-The most dangerous failure here is a check that reports green while asserting nothing —
-v1's harness had 19 validators returning `undefined` on a wrong-typed value and 13
-`.filter()` calls dropping them silently, so a scenario asserting nothing reported pass.
-The rule everywhere is **fail closed**: malformed input throws, a missing observation
-fails, an empty assertion set is a failure. It applies to your own reporting too —
-"unverified" is an acceptable answer, "verified" without a run is not.
+The most dangerous failure here is a check that reports green while asserting nothing — v1's
+harness silently dropped malformed assertions, so a scenario asserting nothing reported pass.
+The rule everywhere is **fail closed**: malformed input throws, a missing observation fails,
+an empty assertion set is a failure.
 
 `pnpm test` proves the units. **A playtest scenario proves the game**, by driving the real
 build in a browser and asserting what happened. Any change with runtime behaviour gets one,
-re-run on every later change to that behaviour — this is what rule 4 loops against.
+re-run on every later change to that behaviour.
 
 ```sh
 pnpm --filter @threenative/playtest build          # the CLI is built, not checked in
@@ -162,16 +185,19 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
   --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu
 ```
 
-For screenshot or `visual` assertions on a headless Linux machine, prefix the command
-with `xvfb-run -a -s '-screen 0 1600x900x24'`. The current WebGPU flags are supplied by
-`--browser-recipe webgpu`; `--browser-arg` remains the escape hatch for custom Chromium
-flags. Exit code `0` means the playtest passed, `1` means assertions failed, and `2` means
-the run never reached assertions.
+Exit `0` passed, `1` assertions failed, `2` never reached assertions. `--browser-recipe
+webgpu` supplies the current Chromium WebGPU flags; `--browser-arg` is the escape hatch. For
+screenshot or `visual` assertions on headless Linux, prefix with
+`xvfb-run -a -s '-screen 0 1600x900x24'`.
 
-In a scaffolded project the same CLI is `npx @threenative/playtest`. Working today:
-`diagnostics`, console, network, screenshot and trace assertions work against any URL. The
-framework template installs the bridge with `playtest()` in `defineGame`; a plain Three.js
-project installs the same observation surface with `installThreePlaytestBridge` from
-`@threenative/playtest/three`. Semantic assertions (`movement`, `camera`, `visibility`) against
-a project with neither bridge fail `TN_PLAYTEST_BRIDGE_MISSING`; that is the harness being
-right. Install the bridge or narrow the scenario, never delete the assertion to get green.
+The same scenario runs on device with `--target android|ios` (`--device`, `--ios-transport`).
+That is how a behaviour change gets proved on both halves of the codebase rather than
+asserted on one.
+
+In a scaffolded project the same CLI is `npx @threenative/playtest`. `diagnostics`, console,
+network, screenshot and trace assertions work against any URL. The framework template
+installs the bridge with `playtest()` in `defineGame`; a plain Three.js project uses
+`installThreePlaytestBridge` from `@threenative/playtest/three`. Semantic assertions
+(`movement`, `camera`, `visibility`) against a project with neither bridge fail
+`TN_PLAYTEST_BRIDGE_MISSING` — that is the harness being right. Install the bridge or narrow
+the scenario; never delete the assertion to get green.

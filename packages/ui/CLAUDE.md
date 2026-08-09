@@ -2,7 +2,7 @@
 
 # AGENTS.md — @threenative/ui
 
-Read `/AGENTS.md` first. This file only covers what is different here.
+Read `/AGENTS.md` first. This file covers only what is different here.
 
 ## The one rule
 
@@ -10,6 +10,17 @@ Read `/AGENTS.md` first. This file only covers what is different here.
 
 No JSX for meshes, lights, materials, or cameras. No R3F dependency. If a component would
 render something the camera sees, it belongs in a scene, not here.
+
+## This package is web-only, and that constrains what may live in it
+
+The native host has no DOM and no React Native layer — `document` is a Three.js
+compatibility stub whose `body.appendChild` is a no-op, so neither `react-dom` nor NativeWind
+applies. **A native build ships the game without this package.** `CHARTER.md` §6b keeps the
+native UI stack an open question; do not answer it in a feature.
+
+That makes one mistake fatal: gameplay, state transitions, or scoring written inside a
+component are simply missing on native, with no gate reporting it. Components read state and
+draw; the game writes state. A HUD is a view of `ctx.state`, never its owner.
 
 ## The 60fps problem
 
@@ -20,9 +31,9 @@ writes to and React subscribes to via `useSyncExternalStore` (zustand backs it):
 const { hull, score } = useGameState();   // throttled, ~10Hz, not 60Hz
 ```
 
-`ctx.state.set()` writes at whatever rate the game wants; the store coalesces and notifies
-on an interval. Any change that makes a subscriber fire per frame is a regression — even if
-the profiler still looks fine on a small scene.
+`ctx.state.set()` writes at whatever rate the game wants; the store coalesces and notifies on
+an interval. Any change that makes a subscriber fire per frame is a regression — even if the
+profiler still looks fine on a small scene.
 
 ## Surface
 
@@ -33,5 +44,5 @@ styled HUD, for the same reason it must not ship a lighting rig.
 ## Tests
 
 `__tests__/*.spec.tsx`, vitest + `react-test-renderer` in a node environment. React and
-`@threenative/core` are peer dependencies; they must stay peers, so the game and the UI
-never end up with two copies of the store.
+`@threenative/core` are peer dependencies and must stay peers, so the game and the UI never
+end up with two copies of the store.

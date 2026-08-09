@@ -2,18 +2,18 @@
 
 # AGENTS.md — create-threenative
 
-Read `/AGENTS.md` first. This file only covers what is different here.
+Read `/AGENTS.md` first. This file covers only what is different here.
 
 ## The scaffold is the documentation
 
 Models learn an API from the code in front of them, not from a help page. Everything the
-framework wants a user's agent to do correctly must be visible in
-`templates/starter/src/`. If an API needs explaining, the fix is usually a clearer template
-file, not a longer doc.
+framework wants a user's agent to do correctly must be visible in `templates/starter/src/`.
+If an API needs explaining, the fix is usually a clearer template file, not a longer doc.
 
-Each template also ships an `AGENTS.md` and a `CLAUDE.md` into the generated project. Those
-are the instructions the *user's* agent reads, and they are part of the product — update
-them whenever the template's shape changes.
+Each template also ships an `AGENTS.md` and `CLAUDE.md` into the generated project. Those are
+the instructions the *user's* agent reads, they are part of the product, and they are the one
+place a user's agent learns the web/native rules — update them whenever the template's shape
+or a platform's status changes. `pnpm sync:agents` mirrors them like every other pair.
 
 ## `src/render/` is load-bearing
 
@@ -30,11 +30,17 @@ output look worse than vanilla.
 
 ## Templates
 
-- `minimal` — no React, no UI folder. Core + physics only.
-- `starter` — adds React 19, Tailwind 4, `src/ui/`, and the default template.
+- `minimal` — no React, no UI folder. Core + physics, DOM HUD.
+- `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
+- `platformer` — adds navigation; its Recast WASM dependency makes it web/desktop only.
 
 Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. Any new
-placeholder needs the same treatment in `renderTemplate`.
+placeholder needs the same treatment in `renderTemplate`. A template over 1,200 LOC fails
+`pnpm budgets`.
+
+**A template's platform claims must match what was executed.** The status paragraph under
+each template's Commands block is a fail-closed statement, not marketing; narrow it when a
+dependency (like Recast WASM on QuickJS) rules a target out.
 
 ## Keep the tests in sync
 
@@ -51,5 +57,9 @@ claiming the scaffold works.
 
 Four commands, ever: `dev`, `build`, `test`, `ship`. v1 shipped 178 command forms and a
 2,477-word root help, in a product whose founding constraint is that models are bad at
-discovering novel APIs. Flags here stay boring: `--template`, `--no-install`, and the
+discovering novel APIs. Flags stay boring: `--template`, `--no-install`, and the
 `--*-package` overrides CI uses to test against local tarballs.
+
+`threenative-asset-mcp` is pinned by each template and installed into each generated project
+as an external process. Never vendor it. Its recorded surface is `asset-mcp-tools.json`,
+updated by running the pinned server — never by reading its docs.
