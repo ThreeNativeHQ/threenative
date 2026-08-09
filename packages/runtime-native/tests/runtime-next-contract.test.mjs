@@ -202,6 +202,8 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'dependency downloader must fail closed when a download throws');
   assert.match(deps, /Dependency download failed:/,
     'dependency downloader must fail closed when any dependency reports failure');
+  assert.match(deps, /execFileSync\('tar', \['-x(?:z|J)f', archivePath, '-C', destDir\]/,
+    'archive extraction must pass native Windows paths directly to tar without shell rewriting');
   assert.match(deps, /gradle-8\.5-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
     'Android dependency reconstruction must restore and verify the excluded Gradle wrapper');
   assert.match(deps, /'wgpu-android':[\s\S]*version: 'v24\.0\.3\.1'/,
