@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const dist = resolve(import.meta.dirname, "../dist");
@@ -9,11 +9,17 @@ if (scripts.length !== 1 || scripts[0] !== "native-smoke.js") {
 }
 
 const bundle = readFileSync(resolve(dist, scripts[0]), "utf8");
-for (const marker of ["globalThis.canvas", "TN_NATIVE_SMOKE_READY", "TN_NATIVE_SMOKE_FIRST_FRAME"]) {
+for (const marker of [
+  "globalThis.canvas",
+  "TN_NATIVE_SMOKE_READY",
+  "TN_NATIVE_SMOKE_FIRST_FRAME",
+]) {
   if (!bundle.includes(marker)) throw new Error(`Native bundle is missing ${marker}`);
 }
-if (/\bimport\s*(?:\(|[\w*{])/.test(bundle)) {
+if (/^\s*import\s+/m.test(bundle) || /\bimport\s*\(/.test(bundle)) {
   throw new Error("Native bundle contains a runtime import; code splitting must remain disabled");
 }
 
-console.info(`Verified ${scripts[0]} (${Buffer.byteLength(bundle)} bytes), one file with no imports`);
+console.info(
+  `Verified ${scripts[0]} (${Buffer.byteLength(bundle)} bytes), one file with no imports`,
+);

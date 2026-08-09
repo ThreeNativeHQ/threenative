@@ -1,4 +1,4 @@
-import { Scene, type Ctx, defineGame } from "@threenative/core";
+import { type Ctx, Scene, defineGame } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 
 interface SmokeState extends Record<string, unknown> {
@@ -17,20 +17,19 @@ declare global {
   var canvas: HTMLCanvasElement | undefined;
 }
 
-const canvas = globalThis.canvas;
-if (canvas === undefined) throw new Error("TN_NATIVE_CANVAS_MISSING: globalThis.canvas is required");
+const runtimeCanvas = globalThis.canvas;
+if (runtimeCanvas === undefined)
+  throw new Error("TN_NATIVE_CANVAS_MISSING: globalThis.canvas is required");
 
 const status: SmokeStatus = { frames: 0, ready: false };
 globalThis.__THREENATIVE_NATIVE_SMOKE__ = status;
 
 class NativeSmoke extends Scene<SmokeState> {
-  static readonly initialState: SmokeState = { frames: 0 };
+  static override readonly initialState: SmokeState = { frames: 0 };
 
-  enter(ctx: Ctx<SmokeState>) {
+  override enter(ctx: Ctx<SmokeState>) {
     ctx.camera.position.z = 3;
-    const cube = ctx.add(
-      new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })),
-    );
+    const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
     return (_ctx: Ctx<SmokeState>, dt: number) => {
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
@@ -41,8 +40,8 @@ class NativeSmoke extends Scene<SmokeState> {
 }
 
 const game = defineGame<SmokeState>({
-  canvas,
-  inputTarget: canvas,
+  canvas: runtimeCanvas,
+  inputTarget: runtimeCanvas,
   scenes: { smoke: NativeSmoke },
   start: "smoke",
 });

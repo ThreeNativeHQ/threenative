@@ -9,7 +9,7 @@ export default defineConfig({
       formats: ["es"],
     },
     minify: false,
-    rollupOptions: { output: { inlineDynamicImports: true } },
+    rollupOptions: { output: { codeSplitting: false } },
     target: "es2022",
   },
 });
