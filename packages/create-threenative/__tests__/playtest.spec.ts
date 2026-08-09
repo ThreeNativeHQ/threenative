@@ -46,6 +46,7 @@ describe("starter playtest proof", () => {
         "utf8",
       ),
     ) as {
+      warmupFrames: number;
       assert: {
         diagnostics: { noConsoleErrors: boolean; runtimeReady: boolean };
         movement: {
@@ -54,8 +55,17 @@ describe("starter playtest proof", () => {
         };
       };
     };
+    const avoidance = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/platformer/playtests/avoidance.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as { warmupFrames: number };
 
     expect(packageJson.scripts["test:playtest"]).toContain("chase.playtest.json");
+    expect([scenario.warmupFrames, avoidance.warmupFrames]).toEqual([0, 0]);
     expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
     expect(scenario.assert.movement).toMatchObject({
       pathLength: 6,

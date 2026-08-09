@@ -132,10 +132,11 @@ The original `chase` and `avoidance` scenarios now assert steering facts:
 `routeComplete`, `steeringFinished`, arrival, a six-unit detour, and 0.56 minimum peer
 separation. They passed in headed Chromium and through the Android device playtest transport.
 
-Removing the two route waypoints was observed red: the chaser remained 4.03 units from the
-goal, traversed only 1.01 units, never finished, and the already-true route assertion failed
-as vacuous. This proves the test observes the detour rather than accepting direct steering
-into the blocker.
+Both steering scenarios observe from frame zero so device startup cannot consume part of the
+measured route. Removing the two route waypoints was observed red: the chaser remained 4.03
+units from the goal, traversed only 3.55 units, never finished, and the already-true route
+assertion failed as vacuous. This proves the test observes the detour rather than accepting
+direct steering into the blocker.
 
 All three scaffoldable templates were executed on Android: starter under PRD-050, and fresh
 platformer and minimal scaffolds under this PRD. The iOS-target platformer bundle passed its

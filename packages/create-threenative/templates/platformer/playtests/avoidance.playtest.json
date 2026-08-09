@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "target": "web",
   "viewport": { "width": 1280, "height": 720 },
-  "warmupFrames": 10,
+  "warmupFrames": 0,
   "subject": "chaser.avoidance",
   "steps": [{ "kind": "wait", "waitTicks": 360, "release": true }],
   "assert": {
