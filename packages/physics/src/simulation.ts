@@ -92,6 +92,7 @@ export interface PhysicsSimulation {
   createBody(options: PhysicsBodyCreateOptions): PhysicsBodyRegistration;
   configureCharacter(id: number, options: PhysicsCharacterOptions): void;
   removeBody(id: number): void;
+  /** Cold-path repositioning for teleport/setup. Per-frame kinematics use `step()` input. */
   setBodyTransform(
     id: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
@@ -109,7 +110,9 @@ export interface PhysicsSimulation {
         };
       }
     | undefined;
+  /** Reflects the most recently completed step, independent of visible-transform reads. */
   readCharacterState?(id: number): PhysicsCharacterState | undefined;
+  /** Reflects the most recently completed step, independent of visible-transform reads. */
   areaIntersections?(id: number): ReadonlySet<number>;
   drainCollisionEvents(buffer: Uint32Array): number;
   dispose(): void;
@@ -161,39 +164,49 @@ interface WebPhysicsSimulationOptions {
   readonly version: string;
 }
 
-function requireFiniteDelta(deltaTime: number): void {
+export function requirePhysicsStepInput(
+  deltaTime: number,
+  inputSnapshot: PhysicsInputSnapshot | undefined,
+  bodyExists: (id: number) => boolean,
+): void {
   if (!Number.isFinite(deltaTime) || deltaTime <= 0)
     throw new Error("PhysicsSimulation.step requires a positive finite deltaTime.");
-}
-
-function requireInputSnapshot(inputSnapshot: PhysicsInputSnapshot): void {
+  if (inputSnapshot === undefined) return;
   if (!(inputSnapshot.kinematicTransforms instanceof Float32Array))
     throw new Error("PhysicsSimulation input must use a Float32Array.");
   if (
-    !Number.isInteger(inputSnapshot.kinematicCount) ||
+    !Number.isSafeInteger(inputSnapshot.kinematicCount) ||
     inputSnapshot.kinematicCount < 0 ||
-    inputSnapshot.kinematicCount * PHYSICS_TRANSFORM_STRIDE >
-      inputSnapshot.kinematicTransforms.length
+    inputSnapshot.kinematicCount >
+      Math.floor(inputSnapshot.kinematicTransforms.length / PHYSICS_TRANSFORM_STRIDE)
   ) {
     throw new Error("PhysicsSimulation input has an invalid kinematic record count.");
   }
+  for (let index = 0; index < inputSnapshot.kinematicCount; index += 1) {
+    const offset = index * PHYSICS_TRANSFORM_STRIDE;
+    for (let scalar = 0; scalar < PHYSICS_TRANSFORM_STRIDE; scalar += 1) {
+      if (!Number.isFinite(inputSnapshot.kinematicTransforms[offset + scalar]))
+        throw new Error("PhysicsSimulation input contains a non-finite transform.");
+    }
+    const id = inputSnapshot.kinematicTransforms[offset] as number;
+    if (!Number.isInteger(id) || id < 0)
+      throw new Error("PhysicsSimulation input contains an invalid body id.");
+    if (!bodyExists(id))
+      throw new Error("PhysicsSimulation input contains an unknown body id.");
+  }
 }
 
-function inputValue(buffer: Readonly<Float32Array>, index: number): number {
-  const value = buffer[index];
-  if (value === undefined || !Number.isFinite(value))
-    throw new Error("PhysicsSimulation input contains a non-finite transform.");
-  return value;
-}
-
-function requireRenderBuffer(renderBuffer: Float32Array, bodyCount: number): void {
+export function requirePhysicsRenderBuffer(
+  renderBuffer: Float32Array,
+  bodyCount: number,
+): void {
   if (!(renderBuffer instanceof Float32Array))
     throw new Error("PhysicsSimulation output must use a Float32Array.");
   if (renderBuffer.length < bodyCount * PHYSICS_TRANSFORM_STRIDE)
     throw new Error("PhysicsSimulation output buffer is too small for visible transforms.");
 }
 
-function requireEventBuffer(buffer: Uint32Array): void {
+export function requirePhysicsEventBuffer(buffer: Uint32Array): void {
   if (!(buffer instanceof Uint32Array))
     throw new Error("PhysicsSimulation events must use a Uint32Array.");
 }
@@ -371,27 +384,23 @@ export function createWebPhysicsSimulation(
     },
     step: (deltaTime, inputSnapshot) => {
       requireLive();
-      requireFiniteDelta(deltaTime);
+      requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodies.has(id));
       if (inputSnapshot !== undefined) {
-        requireInputSnapshot(inputSnapshot);
         for (let index = 0; index < inputSnapshot.kinematicCount; index += 1) {
           const offset = index * PHYSICS_TRANSFORM_STRIDE;
-          const id = inputValue(inputSnapshot.kinematicTransforms, offset);
-          if (!Number.isInteger(id) || id < 0)
-            throw new Error("PhysicsSimulation input contains an invalid body id.");
+          const id = inputSnapshot.kinematicTransforms[offset] as number;
           const entry = bodies.get(id);
-          if (entry === undefined)
-            throw new Error("PhysicsSimulation input contains an unknown body id.");
+          if (entry === undefined) throw new Error("PhysicsSimulation input body disappeared.");
           const target = {
-            x: inputValue(inputSnapshot.kinematicTransforms, offset + 1),
-            y: inputValue(inputSnapshot.kinematicTransforms, offset + 2),
-            z: inputValue(inputSnapshot.kinematicTransforms, offset + 3),
+            x: inputSnapshot.kinematicTransforms[offset + 1] as number,
+            y: inputSnapshot.kinematicTransforms[offset + 2] as number,
+            z: inputSnapshot.kinematicTransforms[offset + 3] as number,
           };
           const rotation = {
-            x: inputValue(inputSnapshot.kinematicTransforms, offset + 4),
-            y: inputValue(inputSnapshot.kinematicTransforms, offset + 5),
-            z: inputValue(inputSnapshot.kinematicTransforms, offset + 6),
-            w: inputValue(inputSnapshot.kinematicTransforms, offset + 7),
+            x: inputSnapshot.kinematicTransforms[offset + 4] as number,
+            y: inputSnapshot.kinematicTransforms[offset + 5] as number,
+            z: inputSnapshot.kinematicTransforms[offset + 6] as number,
+            w: inputSnapshot.kinematicTransforms[offset + 7] as number,
           };
           if (entry.type === "character") {
             const controller = entry.controller;
@@ -439,7 +448,7 @@ export function createWebPhysicsSimulation(
     },
     readVisibleTransforms: (renderBuffer) => {
       requireLive();
-      requireRenderBuffer(renderBuffer, bodies.size);
+      requirePhysicsRenderBuffer(renderBuffer, bodies.size);
       let index = 0;
       for (const entry of bodies.values()) {
         if (!entry.body.isValid()) continue;
@@ -500,7 +509,7 @@ export function createWebPhysicsSimulation(
     },
     drainCollisionEvents: (buffer) => {
       requireLive();
-      requireEventBuffer(buffer);
+      requirePhysicsEventBuffer(buffer);
       const pending: number[][] = [];
       options.eventQueue.drainCollisionEvents((first, second, started) => {
         const left = byCollider.get(first)?.id;

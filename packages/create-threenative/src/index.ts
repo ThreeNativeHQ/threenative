@@ -95,6 +95,7 @@ async function applyPackageSources(
 }
 
 const NODE_MODULES_PREFIX = "./node_modules/";
+const REQUIRED_MCP_SERVERS = ["threenative-assets", "threenative-sculpt"] as const;
 
 function mcpPackageName(entry: string): string {
   const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");
@@ -103,8 +104,8 @@ function mcpPackageName(entry: string): string {
     : (segments[0] ?? "");
 }
 
-/** Fails closed: a project whose MCP config is missing, empty, or points at a package it does
- * not install would silently hand the user's agent no asset tools at all. */
+/** Fails closed: a project whose MCP config is missing, incomplete, or points at a package it
+ * does not install would silently hand the user's agent none of its authoring tools. */
 async function assertMcpConfig(target: string): Promise<void> {
   const configPath = path.join(target, ".mcp.json");
   const raw = await readFile(configPath, "utf8").catch(() => {
@@ -118,6 +119,11 @@ async function assertMcpConfig(target: string): Promise<void> {
   };
   if (mcpServers === undefined || Object.keys(mcpServers).length === 0) {
     throw new Error(`'${configPath}' declares no mcpServers.`);
+  }
+  for (const name of REQUIRED_MCP_SERVERS) {
+    if (mcpServers[name] === undefined) {
+      throw new Error(`'${configPath}' is missing required MCP server '${name}'.`);
+    }
   }
   const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;

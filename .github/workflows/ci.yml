@@ -91,25 +91,35 @@ jobs:
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
             --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
           pnpm --dir "$target" install
-          ASSET_MCP_TARGET="$target" node --input-type=module - <<'NODE'
+          MCP_TARGET="$target" node --input-type=module - <<'NODE'
           import { spawn } from "node:child_process";
           import { readFile } from "node:fs/promises";
 
-          const target = process.env.ASSET_MCP_TARGET;
-          const surface = JSON.parse(
-            await readFile("packages/create-threenative/asset-mcp-tools.json", "utf8"),
-          );
+          const target = process.env.MCP_TARGET;
           const { mcpServers } = JSON.parse(await readFile(`${target}/.mcp.json`, "utf8"));
-          const server = mcpServers["threenative-assets"];
-          const child = spawn(server.command, server.args, {
-            cwd: target,
-            stdio: ["pipe", "pipe", "inherit"],
-          });
-          let buffer = "";
-          const listed = new Promise((resolve, reject) => {
+          const surfaces = [
+            ["threenative-assets", "asset-mcp-tools.json"],
+            ["threenative-sculpt", "sculpt-mcp-tools.json"],
+          ];
+
+          async function probe(serverName, surfaceFile) {
+            const surface = JSON.parse(
+              await readFile(`packages/create-threenative/${surfaceFile}`, "utf8"),
+            );
+            const server = mcpServers[serverName];
+            if (!server) throw new Error(`Generated project is missing MCP server ${serverName}`);
+            const child = spawn(server.command, server.args, {
+              cwd: target,
+              stdio: ["pipe", "pipe", "inherit"],
+            });
+            let buffer = "";
+            let nextId = 1;
+            const pending = new Map();
             child.stdout.on("data", (chunk) => {
               buffer += chunk.toString();
-              for (const line of buffer.split("\n")) {
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
                 if (!line.trim().startsWith("{")) continue;
                 let message;
                 try {
@@ -117,41 +127,60 @@ jobs:
                 } catch {
                   continue;
                 }
-                if (message.id === 2 && message.result?.tools)
-                  resolve(message.result.tools.map((tool) => tool.name).sort());
+                const waiter = pending.get(message.id);
+                if (waiter) {
+                  pending.delete(message.id);
+                  message.error ? waiter.reject(new Error(JSON.stringify(message.error))) : waiter.resolve(message.result);
+                }
               }
             });
-            setTimeout(
-              () => reject(new Error(`tools/list never answered. Saw: ${buffer.slice(0, 500)}`)),
-              30_000,
-            );
-          });
-          const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
-          send({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "initialize",
-            params: {
+            const exited = new Promise((_, reject) => {
+              child.once("error", reject);
+              child.once("exit", (code) => reject(new Error(`${serverName} exited early (${code})`)));
+            });
+            const request = (method, params = {}) => {
+              const id = nextId++;
+              const response = new Promise((resolve, reject) => {
+                pending.set(id, { resolve, reject });
+                setTimeout(() => {
+                  pending.delete(id);
+                  reject(new Error(`${serverName} ${method} timed out; saw ${buffer.slice(0, 500)}`));
+                }, 30_000);
+              });
+              child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+              return Promise.race([response, exited]);
+            };
+            await request("initialize", {
               protocolVersion: "2025-06-18",
               capabilities: {},
               clientInfo: { name: "scaffold-smoke", version: "0" },
-            },
-          });
-          setTimeout(() => {
-            send({ jsonrpc: "2.0", method: "notifications/initialized" });
-            send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-          }, 1_000);
-          const names = await listed;
-          child.kill();
-          const expected = [...surface.tools].sort();
-          // Set equality, never `length > 0`: a host that lists nothing, or the full surface
-          // when a bounded profile is pinned, must both fail here.
-          if (JSON.stringify(names) !== JSON.stringify(expected)) {
-            throw new Error(
-              `Asset MCP surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
-            );
+            });
+            child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+            const listed = await request("tools/list");
+            const names = listed.tools.map((tool) => tool.name).sort();
+            const expected = [...surface.tools].sort();
+            if (JSON.stringify(names) !== JSON.stringify(expected)) {
+              throw new Error(
+                `${serverName} surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
+              );
+            }
+            if (serverName === "threenative-sculpt") {
+              const listedResources = await request("resources/list");
+              if (!listedResources.resources?.length)
+                throw new Error("Sculpt MCP listed no technique resources");
+              for (const resource of listedResources.resources) {
+                const read = await request("resources/read", { uri: resource.uri });
+                const text = read.contents?.map((content) => content.text ?? "").join("\n") ?? "";
+                const concreteBlock = /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
+                if (concreteBlock.test(text))
+                  throw new Error(`Sculpt grimoire resource owns the look: ${resource.uri}`);
+              }
+            }
+            child.kill();
+            console.log(`${serverName} ok: ${names.length} tools from ${surface.version}`);
           }
-          console.log(`asset MCP ok: ${names.length} tools from ${surface.version}`);
+
+          for (const [serverName, surfaceFile] of surfaces) await probe(serverName, surfaceFile);
           NODE
           pnpm exec playwright install --with-deps chromium
           pnpm --dir "$target" test

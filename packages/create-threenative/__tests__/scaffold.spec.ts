@@ -10,6 +10,7 @@ const run = promisify(execFile);
 
 const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
 const ASSET_MCP = "threenative-asset-mcp";
+const SCULPT_MCP = "threenative-sculpt-mcp";
 const ALL_TEMPLATES = ["starter", "minimal", "platformer"] as const;
 
 /** Edits a template in place, runs the body, and always puts the file back. The scaffolder
@@ -270,7 +271,7 @@ describe("create-threenative", () => {
     }
   });
 
-  it("should launch the asset MCP from the project's own node_modules", async () => {
+  it("should launch both MCP servers from the project's own node_modules", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-"));
     try {
       const result = await createProject(
@@ -282,19 +283,23 @@ describe("create-threenative", () => {
       const config = JSON.parse(raw) as {
         mcpServers: Record<string, { args: string[]; command: string }>;
       };
-      const server = config.mcpServers["threenative-assets"];
-      expect(server?.command).toBe("node");
-      expect(server?.args[0]).toBe(`./node_modules/${ASSET_MCP}/dist/index.js`);
+      const assetServer = config.mcpServers["threenative-assets"];
+      expect(assetServer?.command).toBe("node");
+      expect(assetServer?.args[0]).toBe(`./node_modules/${ASSET_MCP}/dist/index.js`);
+      const sculptServer = config.mcpServers["threenative-sculpt"];
+      expect(sculptServer?.command).toBe("node");
+      expect(sculptServer?.args[0]).toBe(`./node_modules/${SCULPT_MCP}/dist/server.js`);
       const manifest = JSON.parse(
         await readFile(path.join(result.target, "package.json"), "utf8"),
       ) as { devDependencies?: Record<string, string> };
       expect(manifest.devDependencies?.[ASSET_MCP]).toBeDefined();
+      expect(manifest.devDependencies?.[SCULPT_MCP]).toBe("0.1.0");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("should ship the same asset MCP config and pin in every template", async () => {
+  it("should ship the same MCP config and pins in every template", async () => {
     const configs = await Promise.all(
       ALL_TEMPLATES.map((template) => readFile(path.join(TEMPLATE_ROOT, template, ".mcp.json"))),
     );
@@ -303,12 +308,17 @@ describe("create-threenative", () => {
         const manifest = JSON.parse(
           await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
         ) as { devDependencies?: Record<string, string> };
-        return manifest.devDependencies?.[ASSET_MCP];
+        return {
+          asset: manifest.devDependencies?.[ASSET_MCP],
+          sculpt: manifest.devDependencies?.[SCULPT_MCP],
+        };
       }),
     );
     expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
-    expect(pins[0]).toMatch(/^\d+\.\d+\.\d+$/u);
-    expect(new Set(pins).size, JSON.stringify(pins)).toBe(1);
+    expect(pins[0]?.asset).toMatch(/^\d+\.\d+\.\d+$/u);
+    expect(new Set(pins.map(({ asset }) => asset)).size, JSON.stringify(pins)).toBe(1);
+    expect(pins[0]?.sculpt).toBe("0.1.0");
+    expect(new Set(pins.map(({ sculpt }) => sculpt)).size, JSON.stringify(pins)).toBe(1);
   });
 
   it("should document only tools the pinned asset MCP actually serves", async () => {
@@ -347,12 +357,37 @@ describe("create-threenative", () => {
     }
   });
 
+  it("should throw when .mcp.json omits the sculpt server", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-sculpt-missing-"));
+    try {
+      const broken = JSON.stringify({
+        mcpServers: {
+          "threenative-assets": {
+            command: "node",
+            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+          },
+        },
+      });
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+        await expect(
+          createProject({ install: false, target: "my-game", template: "starter" }, root),
+        ).rejects.toThrow(/missing required MCP server 'threenative-sculpt'/u);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("should throw when .mcp.json names a package the project does not depend on", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-undeclared-"));
     try {
       const broken = JSON.stringify({
         mcpServers: {
           "threenative-assets": {
+            command: "node",
+            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+          },
+          "threenative-sculpt": {
             command: "node",
             args: ["./node_modules/not-a-dependency/dist/index.js"],
           },
@@ -373,7 +408,11 @@ describe("create-threenative", () => {
     try {
       const broken = JSON.stringify({
         mcpServers: {
-          "threenative-assets": { command: "npx", args: ["-y", ASSET_MCP] },
+          "threenative-assets": {
+            command: "node",
+            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+          },
+          "threenative-sculpt": { command: "npx", args: ["-y", SCULPT_MCP] },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {

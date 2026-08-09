@@ -287,10 +287,6 @@ impl Simulation {
         let body = &mut self.bodies[entry.body];
         body.set_translation(vector![x, y, z], true);
         body.set_next_kinematic_translation(vector![x, y, z]);
-        if let Some(character) = self.characters.get_mut(&id) {
-            character.grounded = false;
-            character.ground_collider = None;
-        }
         true
     }
 

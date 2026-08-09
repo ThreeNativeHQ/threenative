@@ -33,6 +33,7 @@
     "create-threenative": "0.1.0",
     "tailwindcss": "4.3.3",
     "threenative-asset-mcp": "0.4.0",
+    "threenative-sculpt-mcp": "0.1.0",
     "typescript": "5.9.3",
     "vite": "8.2.0"
   },

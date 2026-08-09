@@ -132,6 +132,18 @@ Each is the honest form of a prohibition the previous revision made absolutely.
    framework trigger and gets its own: **`nativeRuntimeLoc: 50,000`**, measured over
    `packages/runtime-native` excluding `third_party/`. Crossing it requires a PRD
    justification and a kill-switch pass; it is not a CI outage or permission to hide lines.
+
+   **Trigger review — 2026-08-08.** The integrated runtime is 51,756 measured lines, 1,756
+   (3.5%) above the review trigger. The overage is accepted because the package now contains
+   the shared host plus Android native physics, iOS host/playtest plumbing, executable
+   conformance, checksum-locked no-Xcode simulator handoff, and distribution-contract tests;
+   splitting those files would not remove a
+   dependency boundary and would violate the one-package decision. The kill-switch pass found
+   no second renderer, Three.js fork, native GLTF execution path, or per-object physics hot
+   path. Deprecated native GLTF sources remain disabled as required by the package contract;
+   downloaded dependencies, generated Android bundles, builds, artifacts, and Rust targets
+   remain excluded rather than hidden in the measurement. This is a review-trigger
+   justification, not a raised limit.
 3. **The C++ toolchain never enters the default gate.** `pnpm typecheck && pnpm lint &&
    pnpm test` must stay green on a machine with no CMake, no NDK and no Xcode. The native
    build is a separate opt-in lane.
@@ -333,7 +345,8 @@ on its own; it can only be closed as "the runtime runs our code."
 
 - The default gate cannot stay green without a C++ toolchain.
 - `third_party/` has to be tracked to make a build reproducible.
-- Native source exceeds 50,000 lines, or `core` needs a runtime-specific branch.
+- Native source exceeds 50,000 lines without the §2.3 review, justification, and kill-switch
+  pass, or `core` needs a runtime-specific branch.
 - The runtime requires a custom renderer, a Three.js fork, or a native GLTF path to hit its
   targets.
 - The native physics boundary requires per-object calls in the frame hot path.

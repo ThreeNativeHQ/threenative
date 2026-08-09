@@ -97,12 +97,23 @@ function installedRuntime(runtimeRoot: string): string {
 
 async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Promise<void> {
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  if (target === "ios") {
-    throw new Error(
-      "iOS target is OPEN: @threenative/runtime-native contains no verified Xcode project or simulator artifact.",
-    );
-  }
   const bundle = await bundleNative(cwd, runtimeRoot);
+  if (target === "ios") {
+    await assertMobileBundleCompatible(bundle);
+    const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
+    await run(
+      process.execPath,
+      [
+        path.join(runtimeRoot, "scripts", "package-ios.mjs"),
+        "--bundle",
+        bundle,
+        "--output",
+        output,
+      ],
+      runtimeRoot,
+    );
+    return;
+  }
   if (target === "android") {
     await assertMobileBundleCompatible(bundle);
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.apk`);
@@ -141,7 +152,14 @@ async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Pr
 export async function build(options: BuildOptions): Promise<void> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   if (options.target === "web") await buildWeb(cwd, options.viteArgs);
-  else await buildNative(options.target, cwd);
+  else {
+    if ((options.viteArgs?.length ?? 0) > 0) {
+      throw new Error(
+        `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
+      );
+    }
+    await buildNative(options.target, cwd);
+  }
 }
 
 export function parseBuildArgs(argv: readonly string[]): BuildOptions {

@@ -136,6 +136,9 @@ function validateScreenshot(path) {
 validateScaffold();
 const threeVersion = validateThreeVersion();
 if (checkOnly) {
+  run(process.execPath, ['scripts/build-native-physics.mjs', '--ios-simulator', '--check'], {
+    cwd: runtimeRoot,
+  });
   console.log(JSON.stringify({ checked: true, execution: false, reason: 'static scaffold validation only', threeVersion }));
   process.exit(0);
 }
@@ -147,6 +150,7 @@ run('pnpm', ['--filter', 'threenative-native-smoke', 'build']);
 run('pnpm', ['--filter', '@threenative/playtest', 'build']);
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'sdl3'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'wgpu-ios'], { cwd: runtimeRoot });
+run(process.execPath, ['scripts/build-native-physics.mjs', '--ios-simulator'], { cwd: runtimeRoot });
 run('cmake', [
   '-S', runtimeRoot,
   '-B', buildRoot,
@@ -158,9 +162,22 @@ run('cmake', [
   '-DTN_ENABLE_RAYTRACING=OFF',
   '-DTN_ENABLE_WEBTRANSPORT=OFF',
   '-DTN_ENABLE_NATIVE_GLTF=OFF',
+  '-DTN_ENABLE_NATIVE_PHYSICS=ON',
   '-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO',
 ]);
-run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel']);
+const rebuildApp = () =>
+  run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel']);
+const rebuildProof = (control, physics) => {
+  run('pnpm', ['--filter', 'threenative-native-smoke', 'build'], {
+    env: {
+      ...process.env,
+      THREENATIVE_PHYSICS_CONTROL: control,
+      THREENATIVE_PHYSICS_PROOF: physics ? 'enabled' : 'disabled',
+    },
+  });
+  rebuildApp();
+};
+rebuildApp();
 const app = findApp(buildRoot);
 if (!app) throw new Error('CMake succeeded but threenative-ios.app was not produced.');
 if (!existsSync(join(app, 'native-smoke.js'))) throw new Error('Built iOS app omitted native-smoke.js.');
@@ -225,8 +242,47 @@ try {
     'TN_PLAYTEST_BRIDGE_MISSING',
   );
 } finally {
-  run('pnpm', ['--filter', 'threenative-native-smoke', 'build']);
-  run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel']);
+  rebuildProof('normal', false);
+}
+const nativePhysics = {};
+try {
+  rebuildProof('normal', true);
+  nativePhysics.pass = runExpected(
+    process.execPath,
+    playtestArgs('physics.playtest.json', 'physics-pass'),
+    0,
+    '"pass": true',
+  );
+  nativePhysics.wrongHeight = runExpected(
+    process.execPath,
+    playtestArgs('physics-wrong-height.playtest.json', 'physics-wrong-height'),
+    1,
+    'TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED',
+  );
+  nativePhysics.maskAgainstNormal = runExpected(
+    process.execPath,
+    playtestArgs('physics-mask.playtest.json', 'physics-mask-normal'),
+    1,
+    'TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED',
+  );
+
+  rebuildProof('masked', true);
+  nativePhysics.masked = runExpected(
+    process.execPath,
+    playtestArgs('physics-mask.playtest.json', 'physics-mask-pass'),
+    0,
+    '"pass": true',
+  );
+
+  rebuildProof('wrong-gravity', true);
+  nativePhysics.wrongGravity = runExpected(
+    process.execPath,
+    playtestArgs('physics.playtest.json', 'physics-wrong-gravity'),
+    1,
+    'TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED',
+  );
+} finally {
+  rebuildProof('normal', false);
 }
 const report = {
   app: relative(workspaceRoot, app),
@@ -238,6 +294,7 @@ const report = {
   devicePlaytest,
   markers: requiredMarkers,
   pass: true,
+  nativePhysics,
   threeVersion,
   screenshot: {
     ...image,

@@ -69,3 +69,22 @@ WebView, custom renderer, or iOS-only scenario format.
 bundle link, Metal requirement, and mailbox wiring. Executable mode is macOS-only and fails
 explicitly elsewhere. `xcrun` is unavailable here, so build, install, launch, unified-log
 markers, nonblank screenshot, and simulator negative controls remain **UNEXECUTED**.
+
+The executable verifier also builds the Rust physics archive for
+`aarch64-apple-ios-sim`, enables the native CMake binding, and rebuilds the exact shared
+bundle for normal, masked, and wrong-gravity controls. It runs the normal physics pass,
+wrong-height failure, mask-against-normal failure, masked pass, and wrong-gravity failure
+through the iOS device driver. Contract tests prove those steps stay wired; none is called a
+pass until a macOS runner executes them.
+
+## Prebuilt simulator consumer handoff — implementation only
+
+The producer archives that unsigned, physics-enabled arm64 simulator `.app` only after the
+verifier scenarios pass. `package-ios.mjs` consumes the `ios-simulator-arm64` checksum-lock
+entry, replaces only the embedded `native-smoke.js`, and rejects corrupt archives,
+non-`darwin-arm64` hosts, and device/signing requests. The CLI therefore needs no CMake,
+Xcodebuild, or Rust in the consumer.
+
+Both native workflows contain a packed-scaffold proof with those toolchain commands masked;
+the release lane additionally launches core and native-physics pass/failure scenarios from
+the repackaged `.app`. Those lanes remain **UNEXECUTED** until the workflow reaches GitHub.

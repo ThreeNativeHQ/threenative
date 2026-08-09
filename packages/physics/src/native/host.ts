@@ -6,6 +6,11 @@ import type {
   PhysicsShapeDescriptor,
   PhysicsSimulation,
 } from "../simulation.js";
+import {
+  requirePhysicsEventBuffer,
+  requirePhysicsRenderBuffer,
+  requirePhysicsStepInput,
+} from "../simulation.js";
 
 export interface NativeShapeDescriptor {
   readonly kind: "box" | "capsule" | "sphere";
@@ -123,6 +128,49 @@ export function createNativePhysicsSimulation(
   let characterStates = new Float32Array(48);
   let areaPairs = new Uint32Array(32);
   const areaIntersections = new Map<number, Set<number>>();
+  let characterStateDirty = true;
+  let areaIntersectionsDirty = true;
+  const invalidateObservations = () => {
+    characterStateDirty = true;
+    areaIntersectionsDirty = true;
+  };
+  const refreshCharacterState = () => {
+    if (!characterStateDirty) return;
+    const required = Math.max(1, characterIds.size) * 3;
+    if (characterStates.length < required) characterStates = new Float32Array(required);
+    const stateCount = raw.readCharacterStates(characterStates);
+    characterState.clear();
+    for (let index = 0; index < stateCount; index += 1) {
+      const offset = index * 3;
+      const id = characterStates[offset];
+      const grounded = characterStates[offset + 1];
+      const groundCollider = characterStates[offset + 2];
+      if (id === undefined || grounded === undefined || groundCollider === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed character state");
+      characterState.set(id, {
+        grounded: grounded === 1,
+        groundCollider: groundCollider < 0 ? undefined : groundCollider,
+      });
+    }
+    characterStateDirty = false;
+  };
+  const refreshAreaIntersections = () => {
+    if (!areaIntersectionsDirty) return;
+    const pairCapacity = Math.max(16, bodyIds.size * bodyIds.size * 2);
+    if (areaPairs.length < pairCapacity) areaPairs = new Uint32Array(pairCapacity);
+    const pairCount = raw.readAreaIntersections(areaPairs);
+    areaIntersections.clear();
+    for (const areaId of areaIds) areaIntersections.set(areaId, new Set());
+    for (let index = 0; index < pairCount; index += 1) {
+      const offset = index * 2;
+      const areaId = areaPairs[offset];
+      const bodyId = areaPairs[offset + 1];
+      if (areaId === undefined || bodyId === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed area intersection");
+      areaIntersections.get(areaId)?.add(bodyId);
+    }
+    areaIntersectionsDirty = false;
+  };
   const simulation: PhysicsRuntimeSimulation = {
     version,
     rawEventQueue: raw,
@@ -145,6 +193,7 @@ export function createNativePhysicsSimulation(
       bodyIds.add(id);
       if (options.sensor) areaIds.add(id);
       if (options.type === "character") characterIds.add(id);
+      invalidateObservations();
       return {
         body: physicsBodyHandle(id, rawHandle),
         collider: physicsColliderHandle(id, rawHandle),
@@ -152,56 +201,44 @@ export function createNativePhysicsSimulation(
         rawShape: shape,
       };
     },
-    configureCharacter: (id, options) => raw.configureCharacter(id, options),
+    configureCharacter: (id, options) => {
+      raw.configureCharacter(id, options);
+      invalidateObservations();
+    },
     removeBody: (id) => {
       raw.removeBody(id);
       bodyIds.delete(id);
       areaIds.delete(id);
       characterIds.delete(id);
       characterState.delete(id);
+      invalidateObservations();
     },
     setBodyTransform: (id, position) => {
       if (raw.setBodyTransform === undefined)
         throw new Error("TN_NATIVE_PHYSICS_SET_TRANSFORM_MISSING: runtime ABI is too old");
       raw.setBodyTransform(id, position);
     },
-    step: (deltaTime, inputSnapshot) => raw.step(deltaTime, inputSnapshot),
-    readVisibleTransforms: (buffer) => {
-      const count = raw.readVisibleTransforms(buffer);
-      const required = Math.max(1, characterIds.size) * 3;
-      if (characterStates.length < required) characterStates = new Float32Array(required);
-      const stateCount = raw.readCharacterStates(characterStates);
-      characterState.clear();
-      for (let index = 0; index < stateCount; index += 1) {
-        const offset = index * 3;
-        const id = characterStates[offset];
-        const grounded = characterStates[offset + 1];
-        const groundCollider = characterStates[offset + 2];
-        if (id === undefined || grounded === undefined || groundCollider === undefined)
-          throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed character state");
-        characterState.set(id, {
-          grounded: grounded === 1,
-          groundCollider: groundCollider < 0 ? undefined : groundCollider,
-        });
-      }
-      const pairCapacity = Math.max(16, bodyIds.size * bodyIds.size * 2);
-      if (areaPairs.length < pairCapacity) areaPairs = new Uint32Array(pairCapacity);
-      const pairCount = raw.readAreaIntersections(areaPairs);
-      areaIntersections.clear();
-      for (const areaId of areaIds) areaIntersections.set(areaId, new Set());
-      for (let index = 0; index < pairCount; index += 1) {
-        const offset = index * 2;
-        const areaId = areaPairs[offset];
-        const bodyId = areaPairs[offset + 1];
-        if (areaId === undefined || bodyId === undefined)
-          throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed area intersection");
-        areaIntersections.get(areaId)?.add(bodyId);
-      }
-      return count;
+    step: (deltaTime, inputSnapshot) => {
+      requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodyIds.has(id));
+      raw.step(deltaTime, inputSnapshot);
+      invalidateObservations();
     },
-    readCharacterState: (id) => characterState.get(id),
-    areaIntersections: (id) => areaIntersections.get(id) ?? new Set(),
-    drainCollisionEvents: (buffer) => raw.drainCollisionEvents(buffer),
+    readVisibleTransforms: (buffer) => {
+      requirePhysicsRenderBuffer(buffer, bodyIds.size);
+      return raw.readVisibleTransforms(buffer);
+    },
+    readCharacterState: (id) => {
+      refreshCharacterState();
+      return characterState.get(id);
+    },
+    areaIntersections: (id) => {
+      refreshAreaIntersections();
+      return areaIntersections.get(id) ?? new Set();
+    },
+    drainCollisionEvents: (buffer) => {
+      requirePhysicsEventBuffer(buffer);
+      return raw.drainCollisionEvents(buffer);
+    },
     dispose: () => {
       raw.dispose();
       bodyIds.clear();
@@ -209,6 +246,8 @@ export function createNativePhysicsSimulation(
       characterIds.clear();
       characterState.clear();
       areaIntersections.clear();
+      characterStateDirty = false;
+      areaIntersectionsDirty = false;
     },
   };
   return simulation;

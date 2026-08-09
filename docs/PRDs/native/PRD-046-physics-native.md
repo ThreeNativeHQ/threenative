@@ -302,18 +302,20 @@ or an integration setting is mismatched.
 
 ### Native LOC trigger review — 2026-08-08
 
-`pnpm budgets` reports **50,373 native lines**, 373 above the 50,000 review trigger. This is
+`pnpm budgets` reports **51,756 native lines**, 1,756 above the 50,000 review trigger. This is
 not silenced or treated as a hard-gate failure. The increase is the smallest ABI completion
 needed by the shared node correction: native character configuration/state records, body
-transform transport, and their C++/Rust validation. It adds no package and tracks no
-`third_party/` source.
+transform transport, their C++/Rust validation, and the Apple-target builder plus iOS
+physics-control wiring needed to make Phase 3 executable on a macOS runner. Integrated
+runtime/distribution evidence added by PRD-047 and PRD-048 is also counted in the same native
+total. It adds no package and tracks no `third_party/` source.
 
 Kill-switch pass completed with the same change:
 
 ```text
-pnpm --filter @threenative/runtime-native test       PASS — 13 files, 40 passed, 30 skipped
+pnpm --filter @threenative/runtime-native test       PASS — 16 files, 55 passed, 30 skipped
 pnpm --filter @threenative/runtime-native native:physics:cross PASS — arm64 + x86_64
-pnpm exec vitest run packages/physics/__tests__     PASS — 11 files, 64 tests
+pnpm exec vitest run packages/physics/__tests__     PASS — 12 files, 65 tests
 ```
 
 The conformance test reaches the shared adapter methods, the native runtime test suite

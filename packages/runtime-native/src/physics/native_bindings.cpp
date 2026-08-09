@@ -275,11 +275,10 @@ js::JSValueHandle makeSimulationObject(
                 return fail(engine, "removeBody requires a numeric id");
               const double id = engine->toNumber(args[0]);
               if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
-                  std::floor(id) != id ||
-                  !tn_physics_remove_body(owner->simulation,
-                                          static_cast<uint32_t>(id))) {
-                return fail(engine, "removeBody received an unknown id");
-              }
+                  std::floor(id) != id)
+                return fail(engine, "removeBody received an invalid id");
+              tn_physics_remove_body(owner->simulation,
+                                     static_cast<uint32_t>(id));
               return engine->newUndefined();
             }));
     engine->setProperty(

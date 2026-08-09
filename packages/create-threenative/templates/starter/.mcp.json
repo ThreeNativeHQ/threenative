@@ -7,6 +7,10 @@
         "ASSET_DOWNLOAD_DIR": "./public/assets",
         "AUDIO_DOWNLOAD_DIR": "./public/audio"
       }
+    },
+    "threenative-sculpt": {
+      "command": "node",
+      "args": ["./node_modules/threenative-sculpt-mcp/dist/server.js"]
     }
   }
 }

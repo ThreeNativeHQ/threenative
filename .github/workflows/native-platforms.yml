@@ -38,7 +38,7 @@ jobs:
           if-no-files-found: error
 
   ios-simulator:
-    name: iOS simulator core and device-playtest plumbing
+    name: iOS simulator runtime and no-Xcode consumer handoff
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +48,97 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
+      - name: Archive the scenario-verified unsigned simulator host
+        run: |
+          app=$(find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app -type d -print -quit)
+          test -n "$app"
+          archive="$RUNNER_TEMP/threenative-ios-simulator-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          sha=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+          echo "THREENATIVE_IOS_SIMULATOR_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "THREENATIVE_IOS_SIMULATOR_SHA256=$sha" >> "$GITHUB_ENV"
+          cp "$archive" packages/runtime-native/artifacts/ios/
+      - name: Pack and install the exact consumer packages without lifecycle compilation
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter create-threenative build
+          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          target="$RUNNER_TEMP/threenative-ios-consumer"
+          core=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          runtime=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli=$(find "$RUNNER_TEMP/ios-packages" -name 'create-threenative-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
+            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --runtime-native-package "$runtime" --cli-package "$cli"
+          cp examples/native-smoke/src/physics.ts "$target/src/main.ts"
+          cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
+          pnpm --dir "$target" install --ignore-scripts
+          echo "IOS_CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
+      - name: Build and run the consumer app without CMake, Xcodebuild, or Rust
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-toolchain-mask"
+          for command in cargo cmake ninja rustc xcodebuild; do
+            printf '#!/bin/sh\nprintf "%%s\\n" "$0 $*" >> "$TN_IOS_TOOLCHAIN_LOG"\nexit 97\n' \
+              > "$RUNNER_TEMP/ios-toolchain-mask/$command"
+            chmod +x "$RUNNER_TEMP/ios-toolchain-mask/$command"
+          done
+          export TN_IOS_TOOLCHAIN_LOG="$RUNNER_TEMP/ios-toolchain-invocations.log"
+          export PATH="$RUNNER_TEMP/ios-toolchain-mask:$PATH"
+          app="$IOS_CONSUMER_TARGET/dist-native/threenative-ios-consumer.app"
+          run_ios() {
+            scenario=$1
+            artifacts=$2
+            node packages/playtest/dist/runner/cli.js "$scenario" \
+              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --artifacts "$artifacts"
+          }
+          expect_ios_failure() {
+            scenario=$1
+            artifacts=$2
+            expected=$3
+            log=$4
+            set +e
+            run_ios "$scenario" "$artifacts" > "$log" 2>&1
+            status=$?
+            set -e
+            test "$status" -eq 1
+            grep -F "$expected" "$log"
+          }
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=normal \
+            pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          test -d "$app"
+          run_ios examples/native-smoke/playtests/physics.playtest.json \
+            packages/runtime-native/artifacts/ios/consumer-physics-pass
+          expect_ios_failure examples/native-smoke/playtests/physics-wrong-height.playtest.json \
+            packages/runtime-native/artifacts/ios/consumer-physics-wrong-height \
+            TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-consumer-wrong-height.log"
+          expect_ios_failure examples/native-smoke/playtests/physics-mask.playtest.json \
+            packages/runtime-native/artifacts/ios/consumer-physics-mask-normal \
+            TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED "$RUNNER_TEMP/ios-consumer-mask-normal.log"
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=masked \
+            pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          run_ios examples/native-smoke/playtests/physics-mask.playtest.json \
+            packages/runtime-native/artifacts/ios/consumer-physics-mask-pass
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=wrong-gravity \
+            pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          expect_ios_failure examples/native-smoke/playtests/physics.playtest.json \
+            packages/runtime-native/artifacts/ios/consumer-physics-wrong-gravity \
+            TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-consumer-wrong-gravity.log"
+          test ! -e "$TN_IOS_TOOLCHAIN_LOG"
       - run: >-
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts
@@ -57,5 +147,7 @@ jobs:
         if: always()
         with:
           name: native-ios-simulator
-          path: packages/runtime-native/artifacts/ios/
+          path: |
+            packages/runtime-native/artifacts/ios/
+            ${{ runner.temp }}/ios-consumer-*.log
           if-no-files-found: error

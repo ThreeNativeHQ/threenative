@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "expectedRapierVersions": {
+    "web": "0.19.3",
+    "rust": "0.30.0"
+  },
+  "gravity": [0, -9.81, 0],
+  "deltaTime": 0.016666667,
+  "steps": 180,
+  "removeAtStep": 90,
+  "removeBodyId": 6,
+  "teleportAtStep": 150,
+  "teleportBodyId": 3,
+  "teleportPosition": [1.75, 0.8, 0],
+  "bodies": [
+    {
+      "id": 0,
+      "name": "floor",
+      "type": "fixed",
+      "shape": "box",
+      "shapeSize": [6, 0.25, 6],
+      "position": [0, -0.25, 0],
+      "mass": 0,
+      "collisionLayer": 1,
+      "collisionMask": 65535,
+      "sensor": false
+    },
+    {
+      "id": 1,
+      "name": "dynamicBox",
+      "type": "dynamic",
+      "shape": "box",
+      "shapeSize": [0.4, 0.4, 0.4],
+      "position": [0, 3, 0],
+      "mass": 1,
+      "collisionLayer": 2,
+      "collisionMask": 65535,
+      "sensor": false
+    },
+    {
+      "id": 2,
+      "name": "movingPlatform",
+      "type": "kinematic",
+      "shape": "box",
+      "shapeSize": [0.9, 0.15, 0.9],
+      "position": [-1.5, 0.35, 0],
+      "mass": 0,
+      "collisionLayer": 4,
+      "collisionMask": 65535,
+      "sensor": false
+    },
+    {
+      "id": 3,
+      "name": "character",
+      "type": "character",
+      "shape": "capsule",
+      "shapeSize": [0.25, 0.35, 0],
+      "position": [-3, 0.55, 0],
+      "mass": 0,
+      "collisionLayer": 4,
+      "collisionMask": 65535,
+      "sensor": false
+    },
+    {
+      "id": 4,
+      "name": "oneWayLayer",
+      "type": "fixed",
+      "shape": "box",
+      "shapeSize": [0.8, 0.08, 0.8],
+      "position": [-3, 1.15, 0],
+      "mass": 0,
+      "collisionLayer": 16,
+      "collisionMask": 65535,
+      "sensor": false
+    },
+    {
+      "id": 5,
+      "name": "boxOnlyArea",
+      "type": "kinematic",
+      "shape": "box",
+      "shapeSize": [1.1, 1.5, 1.1],
+      "position": [0, 1.7, 0],
+      "mass": 0,
+      "collisionLayer": 8,
+      "collisionMask": 2,
+      "sensor": true
+    },
+    {
+      "id": 6,
+      "name": "overlapRemovalTarget",
+      "type": "fixed",
+      "shape": "box",
+      "shapeSize": [0.2, 0.2, 0.2],
+      "position": [0.6, 1.7, 0],
+      "mass": 0,
+      "collisionLayer": 2,
+      "collisionMask": 8,
+      "sensor": false
+    }
+  ],
+  "character": {
+    "bodyId": 3,
+    "offset": 0.01,
+    "maxSlopeClimbAngle": 0.785398163,
+    "autostep": [0.4, 0.2, 0],
+    "snapToGround": 0.15,
+    "oneWayLayers": 16
+  },
+  "motions": [
+    {
+      "bodyId": 2,
+      "startStep": 0,
+      "endStep": 180,
+      "delta": [0.005, 0, 0]
+    },
+    {
+      "bodyId": 3,
+      "startStep": 0,
+      "endStep": 35,
+      "delta": [0, 0.035, 0]
+    },
+    {
+      "bodyId": 3,
+      "startStep": 35,
+      "endStep": 150,
+      "delta": [0.03, -0.02, 0]
+    },
+    {
+      "bodyId": 3,
+      "startStep": 151,
+      "endStep": 180,
+      "delta": [0.015, -0.02, 0]
+    }
+  ],
+  "checkpoints": [1, 35, 90, 149, 150, 179]
+}

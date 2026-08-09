@@ -1,9 +1,11 @@
 # PRD-048 — shipping a native game: the CLI and distribution lane
 
 **Status: IN PROGRESS. Phases 0–2 and 5 are complete. Phase 3's fail-closed installer and
-packed-consumer lifecycle are locally proven, but real release assets/checksum lock and the
-clean-machine build remain open. Android Phase 4 is source-workspace emulator-proven; iOS
-and the prebuilt consumer handoff remain open.** Split out of PRD-047 §4 Phase 6
+packed-consumer lifecycle are locally proven and its tag-gated release/clean-consumer lane
+is implemented, but that lane has not run: real assets, the checksum lock, registry packages,
+and the clean-machine build remain open. Android Phase 4 has a locally proven packed
+no-toolchain APK handoff and a prepared released-consumer emulator lane; the release run,
+iOS execution, and physical-device handoff remain open.** Split out of PRD-047 §4 Phase 6
 on 2026-08-08, because that phase turned out to contain more unbuilt surface than the five
 phases before it combined. Phase 0 evidence is in `docs/verification/PRD-048.md`.
 
@@ -160,20 +162,49 @@ current bug, not the design.
 **No lock is accepted until matching release assets actually exist.** A manifest pointing at
 URLs that 404 is worse than no manifest, because it passes review.
 
+The prepared `native-release.yml` lane builds and executes the desktop hosts, builds both
+Android ABIs with exported native-physics symbols, and produces the iOS simulator archive.
+It publishes only verified outputs with one checksum lock, then runs fresh packed desktop,
+Android, and iOS consumers. The installer bootstraps that release lock from its package
+version. This is **prepared, not evidence** until the workflow runs.
+
+Registry publication is a separate external gate. `create-threenative`, runtime-native,
+core, physics, and playtest are absent from npm; the local core/physics/playtest/UI packages
+are private, and the registry UI version does not match the templates. Release order is
+runtime assets + lock, the complete template dependency set, runtime-native, then
+`create-threenative`. A local-tarball consumer proves the contract but does not satisfy the
+literal `pnpm create threenative` criterion.
+
 **Gate:** on a clean machine with **no CMake, no NDK, no Xcode and no Rust**,
 `pnpm create threenative` followed by `pnpm build --target desktop` produces a running
 binary. Separately, a deliberately corrupted checksum **fails the install**, and an
 unsupported `platform-arch` fails with that string in the message. Both failures are shown,
 not asserted.
 
-### Phase 4 — `--target android` and `--target ios` — **ANDROID SOURCE HANDOFF COMPLETE;
-PREBUILT CONSUMER AND iOS OPEN**
+### Phase 4 — `--target android` and `--target ios` — **ANDROID PACKED ASSEMBLY LOCALLY
+COMPLETE; RELEASED DEVICE CONSUMER AND iOS EXECUTION OPEN**
 
 Hand the bundle to the Gradle and Xcode projects PRD-047 Phase 1 imported.
 
 **Gate:** a scaffolded project builds an APK that launches on the emulator and passes a
 PRD-045 device scenario. **iOS is blocked** on PRD-047 Phase 5 producing any simulator
 evidence at all; it does not start on the strength of the Android result.
+
+The packed Android runtime downloads five checksum-locked release entries before writing
+anything: runtime + SDL JNI libraries for `arm64-v8a` and `x86_64`, plus SDL's Java AAR.
+Gradle detects that complete set, disables CMake/externalNativeBuild and Rust physics builds,
+and packages the four JNI libraries directly. Missing, partial, or checksum-mismatched sets
+fail closed. The prepared release consumer uses an SDK view containing no `ndk/` or `cmake/`,
+builds normal/masked/wrong-gravity variants, and drives the normal plus four control outcomes
+on an x86_64 emulator. It remains open until that workflow actually runs against released
+assets.
+
+The current budget measurement is 51,756 native-runtime lines, 1,756 above the nonfatal
+50,000-line review trigger. The crossing stays visible. Phase 0 deleted 1,159 unreachable
+demo-distribution lines, and the distribution additions that remain are each exercised by a
+consumer boundary: the five-asset transaction, the no-toolchain Gradle branch, or their
+fail-closed tests. No C++ was added by this PRD; deleting any of those paths would reopen the
+consumer or checksum gates, so the kill-switch pass retains them.
 
 ### Phase 5 — templates, docs, and the WASM trap
 

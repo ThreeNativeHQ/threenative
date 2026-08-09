@@ -98,7 +98,7 @@ describe("budget gate", () => {
       JSON.stringify({ name: "threenative-asset-mcp" }),
     );
     const report = await collectBudgets(root);
-    expect(report.vendoredAssetMcp).toEqual(["asset-mcp"]);
+    expect(report.vendoredExternalMcp).toEqual(["asset-mcp"]);
     expect(budgetErrors(report).join("\n")).toContain("must stay external");
   });
 
@@ -114,9 +114,34 @@ describe("budget gate", () => {
     expect(budgetErrors(report).join("\n")).toContain("must stay external");
   });
 
-  it("should keep the asset MCP external in the real tree", async () => {
+  it("should fail when the sculpt MCP is vendored into packages", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "sculpt-mcp");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify({ name: "threenative-sculpt-mcp" }),
+    );
+    const report = await collectBudgets(root);
+    expect(report.vendoredExternalMcp).toEqual(["sculpt-mcp"]);
+    expect(budgetErrors(report).join("\n")).toContain("must stay external");
+  });
+
+  it("should fail when a workspace package depends on the sculpt MCP", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "core");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify({ dependencies: { "threenative-sculpt-mcp": "0.1.0" }, name: "core" }),
+    );
+    const report = await collectBudgets(root);
+    expect(budgetErrors(report).join("\n")).toContain("must stay external");
+  });
+
+  it("should keep external MCPs out of the real tree", async () => {
     const report = await collectBudgets(process.cwd());
-    expect(report.vendoredAssetMcp).toEqual([]);
+    expect(report.vendoredExternalMcp).toEqual([]);
   });
 
   it("should allow the Mystral native runtime only in its owned package", async () => {

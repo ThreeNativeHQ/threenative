@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
@@ -50,6 +51,8 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   const bundle = join(workspace, 'examples', 'native-smoke', 'dist', 'native-smoke.js');
   const date = new Date().toISOString().slice(0, 10);
   const screenshot = join(root, 'artifacts', `desktop-core-${date}.png`);
+  const logPath = join(root, 'artifacts', `desktop-${process.platform}.log`);
+  const reportPath = join(root, 'artifacts', `desktop-${process.platform}-report.json`);
   for (const [label, path] of [['runtime binary', binary], ['core bundle', bundle]]) {
     if (!existsSync(path)) throw new Error(`${label} is missing: ${path}`);
   }
@@ -66,13 +69,15 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   const args = process.platform === 'linux'
     ? ['-a', '-s', '-screen 0 1600x900x24', binary, ...runtimeArgs]
     : runtimeArgs;
+  const runtimeEnv = { ...process.env };
+  if (process.platform === 'linux') runtimeEnv.SDL_VIDEODRIVER = 'x11';
   const result = spawnSync(
     command,
     args,
     {
       cwd: workspace,
       encoding: 'utf8',
-      env: { ...process.env, SDL_VIDEODRIVER: 'x11' },
+      env: runtimeEnv,
       timeout: 120_000,
     },
   );
@@ -82,7 +87,23 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   const failures = analyzeDesktopLog(log, frames);
   if (failures.length > 0) throw new Error(`desktop core gate failed:\n${failures.join('\n')}`);
   const image = inspectScreenshot(screenshot);
-  return { ...image, frames, host: process.platform, log, preset, screenshot };
+  const report = {
+    completedAt: new Date().toISOString(),
+    frames,
+    host: { arch: process.arch, platform: process.platform },
+    log: relative(workspace, logPath),
+    markers: [READY_MARKER, FIRST_FRAME_MARKER, `Rendered ${frames} frames`],
+    pass: true,
+    preset,
+    screenshot: {
+      ...image,
+      path: relative(workspace, screenshot),
+      sha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
+    },
+  };
+  writeFileSync(logPath, log);
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  return { ...image, frames, host: process.platform, log, preset, reportPath, screenshot };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

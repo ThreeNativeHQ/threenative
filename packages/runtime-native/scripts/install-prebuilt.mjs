@@ -6,10 +6,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const packageVersion = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
 const supported = new Set([
   'darwin-arm64',
-  'darwin-x64',
-  'linux-arm64',
   'linux-x64',
   'win32-x64',
 ]);
@@ -31,11 +30,7 @@ export function verifyChecksum(contents, expected, key) {
   }
 }
 
-export function readRelease(manifestPath, key) {
-  if (!existsSync(manifestPath)) {
-    throw new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
-  }
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+function releaseFromManifest(manifest, key) {
   const release = manifest.artifacts?.[key];
   if (!release?.url || !release?.sha256) {
     throw new Error(`No prebuilt release asset is recorded for '${key}'.`);
@@ -47,18 +42,44 @@ export function readRelease(manifestPath, key) {
   return release;
 }
 
-export async function installPrebuilt(options = {}) {
-  const key = platformKey(options.platform, options.arch);
-  const manifestPath = resolve(
-    options.manifestPath ??
-      process.env.THREENATIVE_PREBUILT_MANIFEST ??
-      join(packageRoot, 'prebuilt-lock.json'),
-  );
-  const release = readRelease(manifestPath, key);
+export function readRelease(manifestPath, key) {
+  if (!existsSync(manifestPath)) {
+    throw new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
+  }
+  return releaseFromManifest(JSON.parse(readFileSync(manifestPath, 'utf8')), key);
+}
+
+export function releaseManifestUrl(version = packageVersion) {
+  return `https://github.com/jonit-dev/threenative/releases/download/runtime-native-v${encodeURIComponent(version)}/prebuilt-lock.json`;
+}
+
+async function fetchRelease(manifestUrl, key) {
+  const url = new URL(manifestUrl);
+  if (url.protocol !== 'https:' && process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT !== '1') {
+    throw new Error(`Prebuilt release manifest for '${key}' must use HTTPS.`);
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Prebuilt release manifest fetch failed for '${key}': HTTP ${response.status}.`);
+  }
+  return releaseFromManifest(await response.json(), key);
+}
+
+export async function downloadReleaseArtifact(key, options = {}) {
+  const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
+  const release = manifestPath
+    ? readRelease(resolve(manifestPath), key)
+    : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key);
   const response = await fetch(release.url);
   if (!response.ok) throw new Error(`Prebuilt release fetch failed for '${key}': HTTP ${response.status}.`);
   const contents = Buffer.from(await response.arrayBuffer());
   verifyChecksum(contents, release.sha256, key);
+  return contents;
+}
+
+export async function installPrebuilt(options = {}) {
+  const key = platformKey(options.platform, options.arch);
+  const contents = await downloadReleaseArtifact(key, options);
   const filename = process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime';
   const output = resolve(options.output ?? join(packageRoot, 'prebuilt', key, filename));
   mkdirSync(dirname(output), { recursive: true });

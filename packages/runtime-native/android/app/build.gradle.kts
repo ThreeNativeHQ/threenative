@@ -4,7 +4,25 @@ plugins {
     id("com.android.application")
 }
 
-val sdl3Aar = layout.projectDirectory.file("../../third_party/sdl3-android/SDL3-3.2.8.aar")
+val runtimeRoot = layout.projectDirectory.dir("../..")
+val prebuiltRoot = layout.projectDirectory.dir("../prebuilt")
+val prebuiltFiles = listOf(
+    prebuiltRoot.file("SDL3-3.2.8.aar"),
+    prebuiltRoot.file("jniLibs/arm64-v8a/libSDL3.so"),
+    prebuiltRoot.file("jniLibs/arm64-v8a/libmystral-runtime.so"),
+    prebuiltRoot.file("jniLibs/x86_64/libSDL3.so"),
+    prebuiltRoot.file("jniLibs/x86_64/libmystral-runtime.so")
+)
+val prebuiltCount = prebuiltFiles.count { it.asFile.isFile }
+if (prebuiltCount != 0 && prebuiltCount != prebuiltFiles.size) {
+    throw GradleException("Android prebuilt runtime is incomplete: $prebuiltCount/${prebuiltFiles.size} files")
+}
+val usePrebuiltRuntime = prebuiltCount == prebuiltFiles.size
+if (!usePrebuiltRuntime && !runtimeRoot.file("CMakeLists.txt").asFile.isFile) {
+    throw GradleException("Android prebuilt runtime is missing and source compilation is unavailable")
+}
+val sdl3Aar = if (usePrebuiltRuntime) prebuiltRoot.file("SDL3-3.2.8.aar")
+    else runtimeRoot.file("third_party/sdl3-android/SDL3-3.2.8.aar")
 val extractedSdl3JniLibs = layout.buildDirectory.dir("generated/sdl3-jniLibs")
 
 tasks.register("extractSdl3JniLibs") {
@@ -67,7 +85,12 @@ val buildNativePhysics by tasks.registering(Exec::class) {
 }
 
 tasks.named("preBuild") {
-    dependsOn("extractSdl3JniLibs", "buildAndroidFirstProofBundle", buildNativePhysics)
+    dependsOn("buildAndroidFirstProofBundle")
+    if (!usePrebuiltRuntime) dependsOn("extractSdl3JniLibs", buildNativePhysics)
+}
+
+dependencies {
+    if (usePrebuiltRuntime) implementation(files(sdl3Aar))
 }
 
 android {
@@ -89,7 +112,7 @@ android {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
 
-        externalNativeBuild {
+        if (!usePrebuiltRuntime) externalNativeBuild {
             cmake {
                 // CMake arguments for the Mystral native build
                 val nativeArguments = mutableListOf(
@@ -124,7 +147,7 @@ android {
         }
     }
 
-    externalNativeBuild {
+    if (!usePrebuiltRuntime) externalNativeBuild {
         cmake {
             // Point to the main CMakeLists.txt (parent of android directory)
             path = file("../../CMakeLists.txt")
@@ -136,12 +159,19 @@ android {
         getByName("main") {
             // Compile the vendored SDL Java glue so ThreeNative can request a
             // larger SDLThread stack while retaining the official SDL native libs.
-            java.srcDir("../../third_party/sdl3/SDL3-3.2.8/android-project/app/src/main/java")
+            if (!usePrebuiltRuntime) {
+                java.srcDir("../../third_party/sdl3/SDL3-3.2.8/android-project/app/src/main/java")
+            }
             // SDLActivity loads libSDL3.so before libmystral-runtime.so. The SDL3 AAR
             // stores native libs under prefab/, so extract and package both official
             // arm64-v8a and emulator x86_64 ABIs as jniLibs.
-            jniLibs.srcDir(extractedSdl3JniLibs)
+            if (usePrebuiltRuntime) jniLibs.srcDir(prebuiltRoot.dir("jniLibs"))
+            else jniLibs.srcDir(extractedSdl3JniLibs)
         }
+    }
+
+    packaging {
+        jniLibs.keepDebugSymbols.add("**/*.so")
     }
 
     compileOptions {
@@ -150,6 +180,6 @@ android {
     }
 
     buildFeatures {
-        prefab = true  // Enable prefab for SDL3 AAR if we use it
+        prefab = !usePrebuiltRuntime
     }
 }

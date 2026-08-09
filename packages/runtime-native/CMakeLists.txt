@@ -1071,7 +1071,8 @@ if(TN_ENABLE_NATIVE_PHYSICS)
     if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
         message(FATAL_ERROR
             "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
-            "Run pnpm native:physics:cross or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+            "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
+            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
         )
     endif()
     add_library(threenative-native-physics STATIC IMPORTED)

@@ -40,3 +40,20 @@ test('Linux can validate the iOS lane without claiming simulator execution', () 
   assert.equal(report.execution, false);
   assert.equal(report.threeVersion, '0.185.1');
 });
+
+test('iOS executable verifier builds and exercises native physics fail closed', () => {
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+  assert.match(verifier, /build-native-physics\.mjs', '--ios-simulator'/u);
+  assert.match(verifier, /TN_ENABLE_NATIVE_PHYSICS=ON/u);
+  for (const scenario of [
+    'physics.playtest.json',
+    'physics-wrong-height.playtest.json',
+    'physics-mask.playtest.json',
+  ]) {
+    assert.match(verifier, new RegExp(scenario.replaceAll('.', '\\.')));
+  }
+  assert.match(verifier, /rebuildProof\('masked', true\)/u);
+  assert.match(verifier, /rebuildProof\('wrong-gravity', true\)/u);
+  assert.match(verifier, /TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED/u);
+  assert.match(verifier, /TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED/u);
+});

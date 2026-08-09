@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
@@ -40,4 +40,16 @@ test('desktop screenshot rejects a single-color image and accepts visible pixels
   png.data.set([0, 0, 0, 255, 68, 170, 255, 255]);
   writeFileSync(path, PNG.sync.write(png));
   expect(inspectScreenshot(path)).toEqual({ height: 1, width: 2 });
+});
+
+test('desktop verifier preserves evidence and only forces X11 on Linux', () => {
+  const source = readFileSync(
+    new URL('../scripts/verify-desktop-core.mjs', import.meta.url),
+    'utf8',
+  );
+  expect(source).toMatch(/desktop-\$\{process\.platform\}-report\.json/);
+  expect(source).toMatch(/desktop-\$\{process\.platform\}\.log/);
+  expect(source).toMatch(/sha256/);
+  expect(source).toMatch(/if \(process\.platform === 'linux'\) runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  expect(source).not.toMatch(/env: \{ \.\.\.process\.env, SDL_VIDEODRIVER: 'x11' \}/);
 });

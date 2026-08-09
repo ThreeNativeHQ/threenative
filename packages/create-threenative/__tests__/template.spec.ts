@@ -9,6 +9,7 @@ import { createProject } from "../src/index.js";
 const templates = ["starter", "minimal"] as const;
 const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
 
 async function filesUnder(directory: string): Promise<string[]> {
@@ -265,13 +266,36 @@ describe("template contracts", () => {
     }
   });
 
-  it("should keep the asset MCP out of every workspace package", async () => {
+  it("should keep external MCPs out of every workspace package", async () => {
     const packagesRoot = path.resolve("packages");
     for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const manifestPath = path.join(packagesRoot, entry.name, "package.json");
       const manifest = await readFile(manifestPath, "utf8").catch(() => undefined);
-      expect(manifest ?? "", entry.name).not.toContain("threenative-asset-mcp");
+      for (const packageName of externalMcps)
+        expect(manifest ?? "", `${entry.name}/${packageName}`).not.toContain(packageName);
+    }
+  });
+
+  it("should document only tools the pinned sculpt MCP serves", async () => {
+    const surface = JSON.parse(
+      await readFile(path.resolve("packages/create-threenative/sculpt-mcp-tools.json"), "utf8"),
+    ) as { recommended: string[]; tools: string[]; version: string };
+    const served = new Set(surface.tools);
+    for (const template of typecheckTemplates) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      const mentioned = [...agents.matchAll(/`(sculpt_[a-z0-9_]+)`/gu)].map(
+        (match) => match[1] as string,
+      );
+      expect(
+        mentioned.filter((name) => !served.has(name)),
+        template,
+      ).toEqual([]);
+      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
+      const manifest = JSON.parse(
+        await readFile(path.join(templateRoot, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string> };
+      expect(manifest.devDependencies?.["threenative-sculpt-mcp"], template).toBe(surface.version);
     }
   });
 

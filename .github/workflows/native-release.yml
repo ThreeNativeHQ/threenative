@@ -1,0 +1,493 @@
+name: Native runtime release
+
+on:
+  push:
+    tags:
+      - "runtime-native-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Match the tag to the runtime package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const manifest = JSON.parse(readFileSync("packages/runtime-native/package.json", "utf8"));
+          const expected = `runtime-native-v${manifest.version}`;
+          if (process.env.RELEASE_TAG !== expected) {
+            throw new Error(`Expected tag ${expected}, received ${process.env.RELEASE_TAG}.`);
+          }
+          NODE
+
+  build:
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: linux-x64
+            runner: ubuntu-24.04
+            preset: tn-linux
+            executable: mystral
+            asset: threenative-runtime-linux-x64
+          - key: darwin-arm64
+            runner: macos-15
+            preset: tn-macos
+            executable: mystral
+            asset: threenative-runtime-darwin-arm64
+          - key: win32-x64
+            runner: windows-2025
+            preset: tn-windows
+            executable: mystral.exe
+            asset: threenative-runtime-win32-x64.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter threenative-native-smoke build
+      - run: pnpm --filter @threenative/runtime-native native:build
+      - run: pnpm --filter @threenative/runtime-native native:verify:desktop
+      - name: Stage the verified runtime
+        env:
+          ASSET_NAME: ${{ matrix.asset }}
+          EXECUTABLE_NAME: ${{ matrix.executable }}
+          PRESET: ${{ matrix.preset }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { copyFileSync, mkdirSync, statSync } from "node:fs";
+          import { join } from "node:path";
+          const source = join("packages", "runtime-native", "build", process.env.PRESET, process.env.EXECUTABLE_NAME);
+          const output = join("release", process.env.ASSET_NAME);
+          mkdirSync("release", { recursive: true });
+          copyFileSync(source, output);
+          if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.key }}
+          path: release/${{ matrix.asset }}
+          if-no-files-found: error
+
+  build-android:
+    needs: validate-tag
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
+      - run: pnpm install --frozen-lockfile
+      - run: node packages/runtime-native/scripts/download-deps.mjs --android
+      - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
+      - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs
+      - run: node packages/runtime-native/scripts/build-android-physics-proof.mjs
+      - name: Build both Android release ABIs
+        working-directory: packages/runtime-native/android
+        run: sh ./gradlew assembleRelease -x buildAndroidFirstProofBundle --no-daemon
+      - name: Stage Android runtime payloads
+        run: |
+          node --input-type=module <<'NODE'
+          import { copyFileSync, mkdirSync, statSync } from "node:fs";
+          const assets = {
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
+            "packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar": "release/threenative-sdl3-android.aar",
+          };
+          mkdirSync("release", { recursive: true });
+          for (const [source, output] of Object.entries(assets)) {
+            copyFileSync(source, output);
+            if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
+          }
+          NODE
+          nm -D release/threenative-runtime-android-arm64-v8a.so | grep -F 'tn_physics_step'
+          nm -D release/threenative-runtime-android-x86_64.so | grep -F 'tn_physics_step'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-android
+          path: release/*
+          if-no-files-found: error
+
+  build-ios-simulator:
+    needs: validate-tag
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: rustup target add aarch64-apple-ios-sim
+      - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
+      - name: Stage the scenario-verified unsigned simulator host
+        run: |
+          app=$(find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app -type d -print -quit)
+          test -n "$app"
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent "$app" \
+            release/threenative-ios-simulator-arm64.zip
+          test -s release/threenative-ios-simulator-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-ios-simulator-arm64
+          path: release/threenative-ios-simulator-arm64.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [build, build-android, build-ios-simulator]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-*
+          path: release
+          merge-multiple: true
+      - name: Generate the checksum lock from the verified assets
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          const names = {
+            "android-arm64-v8a-runtime": "threenative-runtime-android-arm64-v8a.so",
+            "android-arm64-v8a-sdl3": "threenative-sdl3-android-arm64-v8a.so",
+            "android-sdl3-aar": "threenative-sdl3-android.aar",
+            "android-x86_64-runtime": "threenative-runtime-android-x86_64.so",
+            "android-x86_64-sdl3": "threenative-sdl3-android-x86_64.so",
+            "darwin-arm64": "threenative-runtime-darwin-arm64",
+            "ios-simulator-arm64": "threenative-ios-simulator-arm64.zip",
+            "linux-x64": "threenative-runtime-linux-x64",
+            "win32-x64": "threenative-runtime-win32-x64.exe",
+          };
+          const expected = Object.values(names).sort();
+          const actual = readdirSync("release").sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Expected ${expected.join(", ")}; received ${actual.join(", ")}.`);
+          }
+          const artifacts = Object.fromEntries(Object.entries(names).map(([key, name]) => [key, {
+            sha256: createHash("sha256").update(readFileSync(`release/${name}`)).digest("hex"),
+            url: `https://github.com/${process.env.RELEASE_REPOSITORY}/releases/download/${process.env.RELEASE_TAG}/${name}`,
+          }]));
+          writeFileSync("release/prebuilt-lock.json", `${JSON.stringify({ artifacts }, null, 2)}\n`);
+          NODE
+      - name: Publish runtimes and checksum lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}" release/*
+          --repo "${{ github.repository }}"
+          --verify-tag
+          --title "ThreeNative runtime ${{ github.ref_name }}"
+          --generate-notes
+
+  clean-consumer:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pack the exact scaffold consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter create-threenative build
+          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/packages"
+          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/packages"
+          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/packages"
+          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/packages"
+          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/packages"
+      - name: Scaffold from local tarballs
+        run: |
+          target="$RUNNER_TEMP/threenative-consumer-proof"
+          core=$(find "$RUNNER_TEMP/packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics=$(find "$RUNNER_TEMP/packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest=$(find "$RUNNER_TEMP/packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          runtime=$(find "$RUNNER_TEMP/packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli=$(find "$RUNNER_TEMP/packages" -name 'create-threenative-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
+            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --runtime-native-package "$runtime" --cli-package "$cli"
+          CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
+          import { copyFileSync } from "node:fs";
+          copyFileSync("examples/native-smoke/src/main.ts", `${process.env.CONSUMER_TARGET}/src/main.ts`);
+          NODE
+          echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
+      - name: Expose an Android SDK with no NDK or CMake installation
+        run: |
+          source_sdk="$ANDROID_HOME"
+          clean_sdk="$RUNNER_TEMP/android-sdk-no-native-toolchain"
+          mkdir -p "$clean_sdk"
+          for directory in build-tools cmdline-tools emulator licenses platform-tools platforms system-images; do
+            if test -e "$source_sdk/$directory"; then ln -s "$source_sdk/$directory" "$clean_sdk/$directory"; fi
+          done
+          test ! -e "$clean_sdk/ndk"
+          test ! -e "$clean_sdk/cmake"
+          echo "ANDROID_HOME=$clean_sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$clean_sdk" >> "$GITHUB_ENV"
+      - name: Mask every native toolchain entry point
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolchain-mask"
+          TOOLCHAIN_MASK="$RUNNER_TEMP/toolchain-mask" node --input-type=module <<'NODE'
+          import { chmodSync, writeFileSync } from "node:fs";
+          const commands = ["cargo", "cc", "clang", "clang++", "cmake", "c++", "g++", "gcc", "ndk-build", "ninja", "rustc", "xcodebuild"];
+          for (const command of commands) {
+            const path = `${process.env.TOOLCHAIN_MASK}/${command}`;
+            writeFileSync(path, '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$TN_TOOLCHAIN_LOG"\nexit 97\n');
+            chmodSync(path, 0o755);
+          }
+          NODE
+          echo "$RUNNER_TEMP/toolchain-mask" >> "$GITHUB_PATH"
+          echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
+      - name: Install and build without a native toolchain
+        run: |
+          pnpm --dir "$CONSUMER_TARGET" install
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Build the packed Android target without NDK, CMake, or Rust
+        run: |
+          cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/main.ts"
+          cp examples/native-smoke/vite.config.ts "$CONSUMER_TARGET/vite.config.ts"
+          pnpm --dir "$CONSUMER_TARGET" build --target android
+          apk="$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
+          test -s "$apk"
+          unzip -l "$apk" > "$RUNNER_TEMP/threenative-consumer-android.txt"
+          grep -F 'lib/arm64-v8a/libmystral-runtime.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
+          grep -F 'lib/arm64-v8a/libSDL3.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
+          grep -F 'lib/x86_64/libmystral-runtime.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
+          grep -F 'lib/x86_64/libSDL3.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Run packed Android physics and negative controls on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          script: |
+            adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
+            cli="$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js"
+            scenario_root="$GITHUB_WORKSPACE/examples/native-smoke/playtests"
+            expect_android_failure() {
+              scenario=$1
+              artifacts=$2
+              expected=$3
+              log=$4
+              set +e
+              node "$cli" "$scenario" --target android --artifacts "$artifacts" --timeout 30000 > "$log" 2>&1
+              status=$?
+              set -e
+              test "$status" -eq 1
+              grep -F "$expected" "$log"
+            }
+            node "$cli" "$scenario_root/physics.playtest.json" --target android \
+              --artifacts "$RUNNER_TEMP/packed-android-physics" --timeout 30000
+            expect_android_failure "$scenario_root/physics-wrong-height.playtest.json" \
+              "$RUNNER_TEMP/packed-android-wrong-height" TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED \
+              "$RUNNER_TEMP/android-wrong-height.log"
+            expect_android_failure "$scenario_root/physics-mask.playtest.json" \
+              "$RUNNER_TEMP/packed-android-mask-control" TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED \
+              "$RUNNER_TEMP/android-mask-control.log"
+            THREENATIVE_PHYSICS_CONTROL=masked pnpm --dir "$CONSUMER_TARGET" build --target android
+            adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
+            node "$cli" "$scenario_root/physics-mask.playtest.json" --target android \
+              --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000
+            THREENATIVE_PHYSICS_CONTROL=wrong-gravity pnpm --dir "$CONSUMER_TARGET" build --target android
+            adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
+            expect_android_failure "$scenario_root/physics.playtest.json" \
+              "$RUNNER_TEMP/packed-android-wrong-gravity" TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED \
+              "$RUNNER_TEMP/android-wrong-gravity.log"
+            test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Launch the packed desktop game for 300 frames
+        run: |
+          log="$RUNNER_TEMP/threenative-consumer.log"
+          screenshot="$RUNNER_TEMP/threenative-consumer.png"
+          xvfb-run -a -s '-screen 0 1600x900x24' \
+            "$CONSUMER_TARGET/dist-native/threenative-consumer-proof" \
+            --screenshot "$screenshot" --frames 300 > "$log" 2>&1
+          grep -F 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
+          grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$log"
+          grep -F 'TN_NATIVE_SMOKE_300_FRAMES:300' "$log"
+          grep -E 'Rendered 300 frames in [0-9]+ms' "$log"
+          SCREENSHOT="$screenshot" node --input-type=module <<'NODE'
+          import { inspectScreenshot } from "./packages/runtime-native/scripts/verify-desktop-core.mjs";
+          console.log(inspectScreenshot(process.env.SCREENSHOT));
+          NODE
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clean-consumer-linux-x64
+          path: |
+            ${{ runner.temp }}/threenative-consumer.log
+            ${{ runner.temp }}/threenative-consumer.png
+            ${{ runner.temp }}/threenative-consumer-android.txt
+            ${{ runner.temp }}/toolchain-invocations.log
+            ${{ runner.temp }}/packed-android-physics/
+            ${{ runner.temp }}/packed-android-wrong-height/
+            ${{ runner.temp }}/packed-android-mask-control/
+            ${{ runner.temp }}/packed-android-mask-pass/
+            ${{ runner.temp }}/packed-android-wrong-gravity/
+            ${{ runner.temp }}/android-*.log
+          if-no-files-found: ignore
+
+  clean-consumer-ios:
+    needs: publish
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pack and install the exact iOS consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/playtest build
+          pnpm --filter create-threenative build
+          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          target="$RUNNER_TEMP/threenative-ios-release-consumer"
+          core=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          runtime=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli=$(find "$RUNNER_TEMP/ios-packages" -name 'create-threenative-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
+            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --runtime-native-package "$runtime" --cli-package "$cli"
+          cp examples/native-smoke/src/main.ts "$target/src/main.ts"
+          cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
+          pnpm --dir "$target" install --ignore-scripts
+          echo "IOS_RELEASE_CONSUMER=$target" >> "$GITHUB_ENV"
+      - name: Build the released host without a native compiler
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-toolchain-mask"
+          for command in cargo cmake ninja rustc xcodebuild; do
+            printf '#!/bin/sh\nprintf "%%s\\n" "$0 $*" >> "$TN_IOS_TOOLCHAIN_LOG"\nexit 97\n' \
+              > "$RUNNER_TEMP/ios-toolchain-mask/$command"
+            chmod +x "$RUNNER_TEMP/ios-toolchain-mask/$command"
+          done
+          export TN_IOS_TOOLCHAIN_LOG="$RUNNER_TEMP/ios-toolchain-invocations.log"
+          export PATH="$RUNNER_TEMP/ios-toolchain-mask:$PATH"
+          echo "TN_IOS_TOOLCHAIN_LOG=$TN_IOS_TOOLCHAIN_LOG" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/ios-toolchain-mask" >> "$GITHUB_PATH"
+          pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
+          test -d "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
+          test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+      - name: Launch packed-consumer pass and wrong-value scenarios
+        run: |
+          app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
+          node packages/playtest/dist/runner/cli.js \
+            examples/native-smoke/playtests/device-smoke.playtest.json \
+            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --artifacts packages/runtime-native/artifacts/ios/release-consumer-pass
+          set +e
+          node packages/playtest/dist/runner/cli.js \
+            examples/native-smoke/playtests/device-smoke-wrong-value.playtest.json \
+            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --artifacts packages/runtime-native/artifacts/ios/release-consumer-wrong \
+            > "$RUNNER_TEMP/ios-wrong-value.log" 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 1
+          grep -F TN_PLAYTEST_VISIBILITY_FAILED "$RUNNER_TEMP/ios-wrong-value.log"
+      - name: Run packed-consumer native physics and negative controls
+        run: |
+          cp examples/native-smoke/src/physics.ts "$IOS_RELEASE_CONSUMER/src/main.ts"
+          app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
+          run_ios() {
+            scenario=$1
+            artifacts=$2
+            node packages/playtest/dist/runner/cli.js "$scenario" \
+              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --artifacts "$artifacts"
+          }
+          expect_ios_failure() {
+            scenario=$1
+            artifacts=$2
+            expected=$3
+            log=$4
+            set +e
+            run_ios "$scenario" "$artifacts" > "$log" 2>&1
+            status=$?
+            set -e
+            test "$status" -eq 1
+            grep -F "$expected" "$log"
+          }
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=normal \
+            pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
+          run_ios examples/native-smoke/playtests/physics.playtest.json \
+            packages/runtime-native/artifacts/ios/release-physics-pass
+          expect_ios_failure examples/native-smoke/playtests/physics-wrong-height.playtest.json \
+            packages/runtime-native/artifacts/ios/release-physics-wrong-height \
+            TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-physics-wrong-height.log"
+          expect_ios_failure examples/native-smoke/playtests/physics-mask.playtest.json \
+            packages/runtime-native/artifacts/ios/release-physics-mask-normal \
+            TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED "$RUNNER_TEMP/ios-physics-mask-normal.log"
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=masked \
+            pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
+          run_ios examples/native-smoke/playtests/physics-mask.playtest.json \
+            packages/runtime-native/artifacts/ios/release-physics-mask-pass
+
+          THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=wrong-gravity \
+            pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
+          expect_ios_failure examples/native-smoke/playtests/physics.playtest.json \
+            packages/runtime-native/artifacts/ios/release-physics-wrong-gravity \
+            TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-physics-wrong-gravity.log"
+          test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clean-consumer-ios-simulator-arm64
+          path: |
+            packages/runtime-native/artifacts/ios/release-consumer-*/
+            packages/runtime-native/artifacts/ios/release-physics-*/
+            ${{ runner.temp }}/ios-wrong-value.log
+            ${{ runner.temp }}/ios-physics-*.log
+            ${{ runner.temp }}/ios-toolchain-invocations.log
+          if-no-files-found: ignore

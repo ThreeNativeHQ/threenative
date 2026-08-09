@@ -1,0 +1,19 @@
+{
+  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.0 installed from the packed server in the clean PRD-049 sandbox. `recommended` is the complete ordered authoring loop documented by every template.",
+  "version": "0.1.0",
+  "profile": null,
+  "recommended": [
+    "sculpt_plan",
+    "sculpt_spec_gate",
+    "sculpt_compare",
+    "sculpt_pass_gate",
+    "sculpt_grimoire"
+  ],
+  "tools": [
+    "sculpt_compare",
+    "sculpt_grimoire",
+    "sculpt_pass_gate",
+    "sculpt_plan",
+    "sculpt_spec_gate"
+  ]
+}

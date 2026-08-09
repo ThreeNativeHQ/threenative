@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertMobileBundleCompatible, buildWeb, parseBuildArgs } from "../src/build.js";
+import { assertMobileBundleCompatible, build, buildWeb, parseBuildArgs } from "../src/build.js";
 import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -113,5 +113,16 @@ describe("threenative build", () => {
     await writeFile(wasm, "WebAssembly.instantiate(bytes); // rapier_wasm\n");
     await expect(assertMobileBundleCompatible(native)).resolves.toBeUndefined();
     await expect(assertMobileBundleCompatible(wasm)).rejects.toThrow(/WebAssembly.*Rapier WASM/u);
+  });
+
+  it("routes iOS through the verified simulator packager instead of a source build", async () => {
+    const source = await readFile("packages/create-threenative/src/build.ts", "utf8");
+    expect(source).toContain('path.join(runtimeRoot, "scripts", "package-ios.mjs")');
+    expect(source).toContain("`${await projectName(cwd)}.app`");
+    expect(source).not.toMatch(/iOS target is OPEN/u);
+    expect(source).not.toMatch(/target === "ios"[\s\S]{0,500}(?:cmake|xcodebuild|cargo)/u);
+    await expect(
+      build({ cwd: "/unused", target: "ios", viteArgs: ["--device", "phone"] }),
+    ).rejects.toThrow(/simulator-only.*device signing remains OPEN/u);
   });
 });

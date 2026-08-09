@@ -21,6 +21,7 @@
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",
     "scripts/package-desktop.mjs",
+    "scripts/package-ios.mjs",
     "LICENSE",
     "NOTICE"
   ],
@@ -29,9 +30,10 @@
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
     "native:physics:cross": "node scripts/build-native-physics.mjs",
     "native:physics:measure": "node scripts/measure-physics-divergence.mjs",
+    "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --test parity -- --nocapture",
     "native:verify:desktop": "node scripts/verify-desktop-core.mjs",
     "install": "node scripts/install-prebuilt.mjs",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity"
   },
   "devDependencies": {
     "esbuild": "catalog:",

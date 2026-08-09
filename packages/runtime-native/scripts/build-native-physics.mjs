@@ -9,36 +9,94 @@ import { spawnSync } from 'node:child_process';
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = join(runtimeRoot, 'native', 'physics', 'Cargo.toml');
 const targetDir = join(runtimeRoot, '.runtime', 'physics-target');
-const gradleProperties = readFileSync(join(runtimeRoot, 'android', 'gradle.properties'), 'utf8');
-const ndkVersion = gradleProperties.match(/^android\.ndkVersion=(.+)$/m)?.[1];
-if (!ndkVersion) throw new Error('android/gradle.properties has no android.ndkVersion');
+const requested = new Set(process.argv.slice(2));
+const checkOnly = requested.delete('--check');
+const supported = new Set(['--android', '--ios', '--ios-device', '--ios-simulator']);
+for (const argument of requested) {
+  if (!supported.has(argument)) {
+    throw new Error(`Unknown native physics target option: ${argument}`);
+  }
+}
+if (requested.size === 0) requested.add('--android');
+if (requested.has('--ios')) {
+  requested.add('--ios-device');
+  requested.add('--ios-simulator');
+}
 
-const sdkRoot = process.env.ANDROID_HOME
-  ?? process.env.ANDROID_SDK_ROOT
-  ?? join(homedir(), 'Android', 'Sdk');
-const ndkRoot = process.env.ANDROID_NDK_HOME
-  ?? process.env.ANDROID_NDK_ROOT
-  ?? join(sdkRoot, 'ndk', ndkVersion);
-const host = process.platform === 'darwin' ? 'darwin-x86_64'
-  : process.platform === 'win32' ? 'windows-x86_64'
-    : 'linux-x86_64';
-const bin = join(ndkRoot, 'toolchains', 'llvm', 'prebuilt', host, 'bin');
-if (!existsSync(bin)) throw new Error(`Android NDK toolchain not found: ${bin}`);
+const targets = [];
+if (requested.has('--android')) {
+  const gradleProperties = readFileSync(join(runtimeRoot, 'android', 'gradle.properties'), 'utf8');
+  const ndkVersion = gradleProperties.match(/^android\.ndkVersion=(.+)$/m)?.[1];
+  if (!ndkVersion) throw new Error('android/gradle.properties has no android.ndkVersion');
+  const sdkRoot = process.env.ANDROID_HOME
+    ?? process.env.ANDROID_SDK_ROOT
+    ?? join(homedir(), 'Android', 'Sdk');
+  const ndkRoot = process.env.ANDROID_NDK_HOME
+    ?? process.env.ANDROID_NDK_ROOT
+    ?? join(sdkRoot, 'ndk', ndkVersion);
+  const host = process.platform === 'darwin' ? 'darwin-x86_64'
+    : process.platform === 'win32' ? 'windows-x86_64'
+      : 'linux-x86_64';
+  const bin = join(ndkRoot, 'toolchains', 'llvm', 'prebuilt', host, 'bin');
+  if (!checkOnly && !existsSync(bin)) throw new Error(`Android NDK toolchain not found: ${bin}`);
+  targets.push(
+    [
+      'aarch64-linux-android',
+      join(bin, `aarch64-linux-android21-clang${process.platform === 'win32' ? '.cmd' : ''}`),
+    ],
+    [
+      'x86_64-linux-android',
+      join(bin, `x86_64-linux-android21-clang${process.platform === 'win32' ? '.cmd' : ''}`),
+    ],
+  );
+}
+if (requested.has('--ios-simulator')) targets.push(['aarch64-apple-ios-sim']);
+if (requested.has('--ios-device')) targets.push(['aarch64-apple-ios']);
 
-const targets = [
-  ['aarch64-linux-android', 'aarch64-linux-android21-clang'],
-  ['x86_64-linux-android', 'x86_64-linux-android21-clang'],
-];
-for (const [target, linkerName] of targets) {
-  const linker = join(bin, `${linkerName}${process.platform === 'win32' ? '.cmd' : ''}`);
+if (
+  !checkOnly
+  && targets.some(([target]) => target.includes('apple'))
+  && process.platform !== 'darwin'
+) {
+  throw new Error(
+    'Apple native physics artifacts require macOS with Xcode. Use --check for static validation.',
+  );
+}
+
+for (const [target, linker] of targets) {
+  const artifact = join(targetDir, target, 'release', 'libthreenative_native_physics.a');
+  if (checkOnly) {
+    console.log(`${target}: ${artifact}`);
+    continue;
+  }
+  if (target.includes('apple')) {
+    const rustTarget = spawnSync('rustup', ['target', 'add', target], {
+      cwd: runtimeRoot,
+      encoding: 'utf8',
+    });
+    if (rustTarget.status !== 0) {
+      throw new Error(
+        rustTarget.stderr || rustTarget.stdout
+          || `rustup could not install the required Apple Rust target ${target}`,
+      );
+    }
+  }
   const envName = `CARGO_TARGET_${target.toUpperCase().replaceAll('-', '_')}_LINKER`;
   const result = spawnSync(
     'cargo',
     ['build', '--release', '--manifest-path', manifest, '--target', target, '--target-dir', targetDir],
-    { cwd: runtimeRoot, encoding: 'utf8', env: { ...process.env, [envName]: linker } },
+    {
+      cwd: runtimeRoot,
+      encoding: 'utf8',
+      env: linker === undefined ? process.env : { ...process.env, [envName]: linker },
+    },
   );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `cargo exited ${result.status}`);
-  const artifact = join(targetDir, target, 'release', 'libthreenative_native_physics.a');
+  if (result.status !== 0) {
+    throw new Error(
+      result.stderr || result.stdout
+        || `cargo failed for ${target}; install it with rustup target add ${target}`,
+    );
+  }
   if (!existsSync(artifact)) throw new Error(`Cargo reported success without ${artifact}`);
   console.log(`${target}: ${basename(artifact)} ${statSync(artifact).size} bytes`);
 }

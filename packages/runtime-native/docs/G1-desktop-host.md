@@ -42,3 +42,16 @@ real-runner jobs. The build and verifier select the matching host preset and ret
 exact 300-frame/log/screenshot gate. Neither job has executed: this checkout is on Linux,
 there are no self-hosted runners, and no remote workflow was dispatched. Windows and macOS
 remain **UNEXECUTED**, not configured-pass.
+
+## Evidence retention hardening — 2026-08-08
+
+`verify-desktop-core.mjs` now writes the complete runtime log and a JSON report containing
+the host architecture, selected preset, exact marker/frame requirements, screenshot
+dimensions and screenshot SHA-256. The platform workflow uploads that directory with
+`if-no-files-found: error`. The verifier also limits `SDL_VIDEODRIVER=x11` to Linux; carrying
+it into the Apple or Windows process environment would invalidate those real-runner lanes.
+
+A fresh Linux x64 run passed 300 frames in 8,779 ms and produced a nonblank 1280×720 PNG with
+SHA-256 `52700257102d3105715ce4dfb20e95806c3990b69ad7a9e72d7653f550554335`.
+Windows and macOS remain **UNEXECUTED** until the opt-in workflow is present on the remote
+default branch and dispatched.

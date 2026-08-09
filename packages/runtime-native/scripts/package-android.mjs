@@ -1,20 +1,44 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export function packageAndroid(bundle, requestedOutput) {
-  const gradlew = join(runtimeRoot, 'android', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
-  if (!existsSync(gradlew) || !existsSync(join(runtimeRoot, 'CMakeLists.txt'))) {
-    throw new Error(
-      'Android target is OPEN: no prebuilt Gradle runtime is published; the source project requires an NDK.',
-    );
+export const ANDROID_PREBUILT_ASSETS = {
+  'android-arm64-v8a-runtime': 'jniLibs/arm64-v8a/libmystral-runtime.so',
+  'android-arm64-v8a-sdl3': 'jniLibs/arm64-v8a/libSDL3.so',
+  'android-sdl3-aar': 'SDL3-3.2.8.aar',
+  'android-x86_64-runtime': 'jniLibs/x86_64/libmystral-runtime.so',
+  'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
+};
+
+export async function prepareAndroidPrebuilts(options = {}) {
+  const downloads = await Promise.all(
+    Object.keys(ANDROID_PREBUILT_ASSETS).map(async (key) => [
+      key,
+      await downloadReleaseArtifact(key, options),
+    ]),
+  );
+  const prebuiltRoot = resolve(options.outputRoot ?? join(runtimeRoot, 'android', 'prebuilt'));
+  for (const [key, contents] of downloads) {
+    const output = join(prebuiltRoot, ANDROID_PREBUILT_ASSETS[key]);
+    mkdirSync(dirname(output), { recursive: true });
+    writeFileSync(output, contents);
   }
+  return prebuiltRoot;
+}
+
+export async function packageAndroid(bundle, requestedOutput) {
+  const gradlew = join(runtimeRoot, 'android', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
+  if (!existsSync(gradlew)) throw new Error(`Android Gradle wrapper is missing: ${gradlew}`);
   if (!existsSync(bundle)) throw new Error(`Missing native bundle: ${bundle}`);
+  const sourceCheckout = existsSync(join(runtimeRoot, 'CMakeLists.txt')) &&
+    existsSync(join(runtimeRoot, 'third_party', 'sdl3-android', 'SDL3-3.2.8.aar'));
+  if (!sourceCheckout) await prepareAndroidPrebuilts();
   const assetBundle = join(runtimeRoot, 'android', 'app', 'src', 'main', 'assets', 'scripts', 'main.js');
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
@@ -48,7 +72,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exitCode = 1;
   } else {
     try {
-      packageAndroid(
+      await packageAndroid(
         resolve(process.argv[bundleIndex + 1]),
         outputIndex === -1 ? undefined : process.argv[outputIndex + 1],
       );

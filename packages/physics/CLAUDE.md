@@ -55,8 +55,12 @@ compiled in rather than shipped as WASM. See `CHARTER.md` §7,
   same machine and in a fresh worker; do not claim cross-browser, cross-OS or cross-version
   replay portability.
 - `Area3D.on('bodyEntered', ...)` returns an unsubscribe function. Callers store it.
-- `__tests__/native-contract.spec.ts` runs both backends against one contract. It is the gate
-  that catches a web-only feature; extend it with every node change.
+- The parity gate must resolve web and native to genuinely different Rapier builds and assert
+  both identities. `__tests__/parity.spec.ts` writes the web observation from Rapier `0.19.3`;
+  `runtime-native/native/physics/tests/parity.rs` links the shipping Rust `Simulation` at
+  Rapier `0.30.0` and enforces the shared scenario tolerances. A simulation-delegating fake is
+  a self-comparison and is forbidden. `__tests__/native-contract.spec.ts` only proves shared
+  class identity and TypeScript-side native ABI guards.
 
 ## Navigation
 

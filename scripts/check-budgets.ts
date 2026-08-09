@@ -31,13 +31,16 @@ const LIMITS = {
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
 
 /**
- * The asset MCP is an npm dependency of the *generated* project, never of this workspace:
- * vendoring its ~10.8k lines would take 72% of the framework LOC trigger and add a package
- * that carries no dependency boundary.
+ * Authoring MCPs are npm dependencies of the *generated* project, never of this workspace.
+ * Vendoring them would consume framework LOC and add packages that carry no runtime dependency
+ * boundary.
  * Salvage already exempts an `asset-mcp` directory from the LOC count, so nothing else here
  * would notice it arriving.
  */
-const EXTERNAL_ASSET_MCP = "threenative-asset-mcp";
+const EXTERNAL_MCPS: ReadonlySet<string> = new Set([
+  "threenative-asset-mcp",
+  "threenative-sculpt-mcp",
+]);
 const NATIVE_RUNTIME_PACKAGE = path.join("packages", "runtime-native");
 const NATIVE_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
@@ -75,7 +78,7 @@ export type BudgetReport = {
   nativeRuntimeLoc: number;
   prdFiles: number;
   templates: { name: string; loc: number }[];
-  vendoredAssetMcp: string[];
+  vendoredExternalMcp: string[];
   vendoredNativeRuntime: string[];
   trackedNativeThirdParty: string[];
 };
@@ -190,7 +193,7 @@ async function trackedNativeThirdParty(root: string): Promise<string[]> {
   }
 }
 
-async function vendoredAssetMcp(root: string): Promise<string[]> {
+async function vendoredExternalMcp(root: string): Promise<string[]> {
   const directory = path.join(root, "packages");
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
   const offenders: string[] = [];
@@ -209,7 +212,10 @@ async function vendoredAssetMcp(root: string): Promise<string[]> {
       ...Object.keys(manifest.devDependencies ?? {}),
       ...Object.keys(manifest.peerDependencies ?? {}),
     ];
-    if (manifest.name === EXTERNAL_ASSET_MCP || dependencies.includes(EXTERNAL_ASSET_MCP))
+    if (
+      (manifest.name !== undefined && EXTERNAL_MCPS.has(manifest.name)) ||
+      dependencies.some((dependency) => EXTERNAL_MCPS.has(dependency))
+    )
       offenders.push(entry.name);
   }
   return offenders;
@@ -273,7 +279,7 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     frameworkLoc: await countLines([...sourceFiles]),
     nativeRuntimeLoc: await countLines(nativeRuntimeFiles),
     templates,
-    vendoredAssetMcp: await vendoredAssetMcp(root),
+    vendoredExternalMcp: await vendoredExternalMcp(root),
     vendoredNativeRuntime: await vendoredNativeRuntime(root),
     trackedNativeThirdParty: await trackedNativeThirdParty(root),
     prdFiles: (
@@ -310,9 +316,9 @@ export function budgetErrors(report: BudgetReport): string[] {
       );
     }
   }
-  if (report.vendoredAssetMcp.length > 0) {
+  if (report.vendoredExternalMcp.length > 0) {
     errors.push(
-      `${EXTERNAL_ASSET_MCP} must stay external: ${report.vendoredAssetMcp.join(", ")} claims it. It is a dependency of the generated project, and vendoring it blows the framework LOC trigger while adding a package with no dependency boundary.`,
+      `External MCPs (${[...EXTERNAL_MCPS].join(", ")}) must stay external: ${report.vendoredExternalMcp.join(", ")} claims one. They are dependencies of generated projects, and vendoring them consumes framework LOC while adding packages with no runtime dependency boundary.`,
     );
   }
   if (report.vendoredNativeRuntime.length > 0) {

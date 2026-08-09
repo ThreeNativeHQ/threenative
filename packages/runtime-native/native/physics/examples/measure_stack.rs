@@ -15,21 +15,15 @@ fn main() {
 
     let x = 0.01;
     let floor = bodies.insert(RigidBodyBuilder::fixed().translation(vector![x, -0.6, 0.0]));
-    colliders.insert_with_parent(
-        ColliderBuilder::cuboid(4.0, 0.1, 4.0),
-        floor,
-        &mut bodies,
-    );
+    colliders.insert_with_parent(ColliderBuilder::cuboid(4.0, 0.1, 4.0), floor, &mut bodies);
     let boxes: Vec<_> = (0..5)
         .map(|index| {
-            let body = bodies.insert(
-                RigidBodyBuilder::dynamic().translation(vector![x, index as f32, 0.0]),
-            );
-            colliders.insert_with_parent(
-                ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-                body,
-                &mut bodies,
-            );
+            let body = bodies.insert(RigidBodyBuilder::dynamic().translation(vector![
+                x,
+                index as f32,
+                0.0
+            ]));
+            colliders.insert_with_parent(ColliderBuilder::cuboid(0.5, 0.5, 0.5), body, &mut bodies);
             body
         })
         .collect();
