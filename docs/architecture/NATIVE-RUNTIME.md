@@ -1,24 +1,28 @@
 # Native runtime
 
-**Status:** research resolved, implementation unstarted. **Charter authority:**
-`CHARTER.md` §6b, §7.
+**Status:** external-host decision active. Desktop framework smoke and Android emulator
+runtime proof pass; Android framework-version parity, physics, iOS and physical hardware
+remain open. **Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
 
 ## The path
 
 ```
 Shared TypeScript game code
         ├── browser WebGPU ──────────────► web
-        └── react-native-webgpu / Dawn ──► Metal (iOS) / Vulkan (Android)
+        └── pinned external Mystral ─────► desktop / Android / iOS
 ```
 
-One codebase. The renderer bootstrap in `packages/core/src/renderer.ts` already isolates
-this: `createRenderer()` takes `webgpuFactory` and `webgl2Factory` overrides and returns a
-`RendererLike` with `domElement`, `kind`, `raw`, `render`, `setSize`, `dispose`. The RN
-adapter is a factory, not a fork.
+One game codebase, two release lanes. Mystral is downloaded as an immutable,
+checksum-verified artifact into a gitignored cache. Its C++, CMake/Gradle/NDK/Xcode and
+third-party trees never enter this repository. Native builds produce one import-free
+bundle and use Mystral's browser-compatible globals. Runtime/catalog Three.js
+compatibility is exact and fail-closed.
 
 ## Why physics needs a native binding
 
-Rapier ships as WebAssembly. WASM is not viable across React Native's JS engines:
+Rapier ships as WebAssembly. That is not viable on Mystral Android because QuickJS has no
+WebAssembly implementation. The earlier React Native engine research remains historical
+support for the same conclusion:
 
 | Engine | WebAssembly | Evidence |
 |---|---|---|
@@ -35,15 +39,15 @@ for a 60 Hz step; and every workaround library is dead — `react-native-webasse
 Best case is "maybe on iOS 18.4+, definitely not on Android, at interpreter speed." That
 is not a foundation.
 
-> **`@threenative/physics-native`: a JSI binding to Rapier's Rust.** Not a fallback — the
-> only path. Nobody else ships it, which makes it the single strongest reason ThreeNative
-> exists.
+> **Rapier compiled into the external runtime, exposed through a versioned bulk typed-array
+> ABI and selected from the existing `@threenative/physics` package.** No JSI, no WASM,
+> no per-object hot-path crossing, and no additional workspace package.
 
 ## Thread and process split
 
 ```
 ┌────────────────────────────────────────────┐
-│ React Native / web UI runtime              │
+│ Web / platform UI runtime                  │
 │ HUD, menus, navigation, accessibility      │
 └──────────────────┬─────────────────────────┘
                    │ bounded semantic events
@@ -73,7 +77,7 @@ type GameUIEvent =
   | { type: "game-over"; score: number };
 ```
 
-Never thousands of transforms per frame. React renders the HUD; it never touches
+Never thousands of transforms per frame. The UI renders the HUD; it never touches
 `THREE.Scene`.
 
 **Native boundary — design it the same way.** Bulk in, bulk out:
@@ -92,22 +96,21 @@ for (const entity of entities) nativePhysics.setPosition(entity.id, entity.posit
 Otherwise the JS↔native crossing becomes the next bottleneck, and the binding that was
 supposed to buy performance spends it back per call.
 
-## Spikes, in order
+## Evidence gates, in order
 
-**0a — rendering (~1 day).** Spinning cube via `three/webgpu` under `react-native-webgpu`
-on a physical phone. Ugly, unstyled, no template, no CLI, no docs. It answers whether
-Three.js's WebGPU path survives outside a browser at all.
+**0a — rendering.** Upstream `three/webgpu` now runs on desktop and the Android emulator.
+The unchanged framework core bundle runs 300 desktop frames. The next gate is that exact
+catalog-version bundle on Android, followed by iOS simulator and physical hardware.
 
-**0b — physics (~1–2 weeks).** `@threenative/physics-native` via JSI, enough to drop a
-cube onto a plane in the same scene.
+**0b — physics.** Native Rapier drops a cube onto a plane through the versioned bulk ABI,
+then PRD-045 asserts the trajectory and demonstrates a deliberately broken run failing.
 
-If 0a fails, ThreeNative is a web framework and §7's mobile promise is deleted. If 0b
-fails, mobile ships without physics, or not at all. Either way it is learned in three
-weeks rather than 790k lines.
+No mobile-ready claim exists until Android framework parity, fail-closed device playtest,
+native physics and iOS evidence all pass. Emulator results never claim physical-driver,
+arm64 performance or phone frame-rate evidence.
 
 ## Explicitly not doing
 
-A second full rendering backend maintained in parallel. Dual-renderer parity is a
-permanent ~2x tax on every feature — in v1, 32% of 1,707 commits went to a runtime no
-benchmark ever measured. Prove the react-native-webgpu path first; add native modules
-only where profiling shows a genuine need.
+A framework-owned or forked rendering backend. Dual-renderer parity is a permanent ~2x
+tax. Mystral remains external, pinned and replaceable; native modules are added there only
+for capabilities such as physics that cannot run through the JavaScript engine.

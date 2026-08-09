@@ -1,7 +1,12 @@
 # PRD-044 — Native render adapter
 
-**Status: NOT STARTED — GATED. Does not begin until spike 0a records a PROVISIONAL PASS on
-the Android emulator.** `docs/spikes/0a-mobile-render.md` §6 currently records
+**Status: SUPERSEDED by PRD-047.** The React Native host and `@threenative/native` package
+described below are no longer the selected architecture. This file is retained as the
+historical seam analysis; active work follows the pinned external Mystral runtime in
+`PRD-047-mystral-runtime-absorption.md`.
+
+**Historical gate:** Does not begin until spike 0a records a PROVISIONAL PASS on
+the Android emulator. `docs/spikes/0a-mobile-render.md` §6 currently records
 *"Unresolved / FAIL — 2026-08-02"* for environmental reasons (emulator
 `VK_ERROR_INCOMPATIBLE_DRIVER`, `react-native-webgpu` absent). No device render has ever
 been observed. Starting this PRD before that answer exists is building an adapter for a

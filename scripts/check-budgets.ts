@@ -23,13 +23,32 @@ const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
  * would notice it arriving.
  */
 const EXTERNAL_ASSET_MCP = "threenative-asset-mcp";
+const NATIVE_SOURCE_PATTERN =
+  /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
+const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
+  "mystralnative",
+  "threejsmystral",
+  "mystralruntime",
+  "nativeruntime",
+]);
+const WALK_EXCLUSIONS = new Set([
+  ".cache",
+  ".git",
+  "artifacts",
+  "coverage",
+  "dist",
+  "docs",
+  "node_modules",
+]);
 
 export type BudgetReport = {
-  packages: number;
+  frameworkPackages: number;
+  exampleWorkspaces: number;
   frameworkLoc: number;
   prdFiles: number;
   templates: { name: string; loc: number }[];
   vendoredAssetMcp: string[];
+  vendoredNativeRuntime: string[];
 };
 
 async function filesUnder(root: string, predicate: (file: string) => boolean): Promise<string[]> {
@@ -54,18 +73,61 @@ async function countLines(files: string[]): Promise<number> {
   return total;
 }
 
-async function workspacePackageCount(root: string): Promise<number> {
+async function packageCount(root: string, group: "examples" | "packages"): Promise<number> {
   let count = 0;
-  for (const group of ["packages", "examples"]) {
-    const directory = path.join(root, group);
-    if (!existsSync(directory)) continue;
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && existsSync(path.join(directory, entry.name, "package.json")))
-        count += 1;
-    }
+  const directory = path.join(root, group);
+  if (!existsSync(directory)) return count;
+  const entries = await readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory() && existsSync(path.join(directory, entry.name, "package.json")))
+      count += 1;
   }
   return count;
+}
+
+function normalizedDirectoryName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function vendoredNativeRuntime(root: string): Promise<string[]> {
+  const offenders = new Set<string>();
+
+  async function walk(directory: string, relative: string): Promise<void> {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    const names = new Set(entries.map((entry) => entry.name));
+    const runtimeSignature =
+      existsSync(path.join(directory, "include", "mystral")) ||
+      existsSync(path.join(directory, "src", "js", "quickjs_engine.cpp")) ||
+      (names.has("CMakeLists.txt") &&
+        existsSync(path.join(directory, "src", "runtime.cpp")) &&
+        existsSync(path.join(directory, "third_party")));
+    if (runtimeSignature) {
+      offenders.add(relative || ".");
+      return;
+    }
+
+    if (
+      path.basename(directory) === "third_party" &&
+      names.has("dawn") &&
+      (names.has("quickjs") || names.has("sdl3") || names.has("v8"))
+    ) {
+      offenders.add(path.dirname(relative));
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || WALK_EXCLUSIONS.has(entry.name)) continue;
+      const childRelative = relative ? path.join(relative, entry.name) : entry.name;
+      if (NATIVE_RUNTIME_DIRECTORY_NAMES.has(normalizedDirectoryName(entry.name))) {
+        offenders.add(childRelative);
+        continue;
+      }
+      await walk(path.join(directory, entry.name), childRelative);
+    }
+  }
+
+  await walk(root, "");
+  return [...offenders].sort();
 }
 
 async function vendoredAssetMcp(root: string): Promise<string[]> {
@@ -97,14 +159,21 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   const packageEntries = await readdir(path.join(root, "packages"), { withFileTypes: true }).catch(
     () => [],
   );
-  const sourceFiles: string[] = [];
+  const sourceFiles = new Set<string>();
   for (const entry of packageEntries) {
     if (!entry.isDirectory() || SALVAGE_PACKAGES.has(entry.name)) continue;
-    sourceFiles.push(
-      ...(await filesUnder(path.join(root, "packages", entry.name, "src"), (file) =>
-        /\.(?:ts|tsx|js|jsx)$/.test(file),
-      )),
-    );
+    const packageRoot = path.join(root, "packages", entry.name);
+    for (const file of await filesUnder(
+      path.join(packageRoot, "src"),
+      (candidate) =>
+        /\.(?:ts|tsx|js|jsx)$/.test(candidate) || NATIVE_SOURCE_PATTERN.test(candidate),
+    ))
+      sourceFiles.add(file);
+    for (const file of await filesUnder(packageRoot, (candidate) => {
+      const basename = path.basename(candidate);
+      return NATIVE_SOURCE_PATTERN.test(candidate) || basename === "CMakeLists.txt";
+    }))
+      sourceFiles.add(file);
   }
   const templateRoot = path.join(root, "packages", "create-threenative", "templates");
   const templates: { name: string; loc: number }[] = [];
@@ -120,10 +189,12 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     });
   }
   return {
-    packages: await workspacePackageCount(root),
-    frameworkLoc: await countLines(sourceFiles),
+    frameworkPackages: await packageCount(root, "packages"),
+    exampleWorkspaces: await packageCount(root, "examples"),
+    frameworkLoc: await countLines([...sourceFiles]),
     templates,
     vendoredAssetMcp: await vendoredAssetMcp(root),
+    vendoredNativeRuntime: await vendoredNativeRuntime(root),
     prdFiles: (
       await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
     ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,
@@ -132,9 +203,9 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
 
 export function budgetErrors(report: BudgetReport): string[] {
   const errors: string[] = [];
-  if (report.packages > LIMITS.packages) {
+  if (report.frameworkPackages > LIMITS.packages) {
     errors.push(
-      `workspace package cap exceeded: ${report.packages} packages (limit ${LIMITS.packages}, +${report.packages - LIMITS.packages})`,
+      `framework package cap exceeded: ${report.frameworkPackages} packages (limit ${LIMITS.packages}, +${report.frameworkPackages - LIMITS.packages})`,
     );
   }
   if (report.frameworkLoc > LIMITS.frameworkLoc) {
@@ -152,6 +223,11 @@ export function budgetErrors(report: BudgetReport): string[] {
   if (report.vendoredAssetMcp.length > 0) {
     errors.push(
       `${EXTERNAL_ASSET_MCP} must stay external: ${report.vendoredAssetMcp.join(", ")} claims it. It is a dependency of the generated project, and vendoring it breaks both the LOC and package caps at once.`,
+    );
+  }
+  if (report.vendoredNativeRuntime.length > 0) {
+    errors.push(
+      `Mystral native runtime must stay external: ${report.vendoredNativeRuntime.join(", ")} contains a vendored runtime tree. Pin and checksum downloaded runtime artifacts instead of committing their source or toolchain.`,
     );
   }
   if (report.prdFiles > LIMITS.prdFiles) {
@@ -176,7 +252,7 @@ if (
   enforceBudgets(process.cwd())
     .then((report) => {
       console.log(
-        `budgets ok: ${report.packages} packages, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
+        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
       );
     })
     .catch((error: unknown) => {

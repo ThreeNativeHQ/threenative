@@ -1,7 +1,8 @@
 # PRD-045 — Playtest on device
 
-**Status: NOT STARTED — GATED on PRD-044 Phase 3 (a scaffolded starter renders on the
-Android emulator).**
+**Status: NOT STARTED — GATED on PRD-047's unchanged core bundle rendering 300+ frames on
+the Android emulator.** The transport targets Mystral rather than React Native; its
+fail-closed scenario semantics and negative controls are unchanged.
 
 **The emulator is fully sufficient for this PRD, unlike PRD-044.** Everything here is a
 JS-environment and host-tooling question: can the runner reach the bridge, does an
@@ -14,7 +15,7 @@ PRD-044 caveat leaked down the chain.
 `xcrun simctl` +2, cross-process/async lifecycle +2, touches the one package whose whole
 value is fail-closed correctness +2.) HIGH means an automated checkpoint after every phase.
 
-**Depends on:** PRD-044 (the app must run on device before it can be observed there);
+**Depends on:** PRD-047 (the app must run on the external runtime before it can be observed);
 PRD-033 (playtest semantic depth — the assertion surface this carries across).
 **Blocks:** PRD-046 (`@threenative/physics-native` must not ship without a device proof
 mechanism).

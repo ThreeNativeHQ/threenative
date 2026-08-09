@@ -44,7 +44,7 @@ Every item here is something the previous attempt built, and something that help
 | Not building | Why |
 |---|---|
 | An IR, a compiler, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. |
-| A second runtime (Bevy, native rendering) | 32% of 1,707 commits went to a runtime no benchmark ever measured. Parity is a permanent ~2x tax on every feature. |
+| A framework-owned or forked second runtime | 32% of 1,707 commits went to a runtime no benchmark ever measured. A pinned, replaceable external host is allowed only when its own evidence and release lane stay outside this repository. |
 | A JSON/structured-source ECS | Cost **14x vanilla Three.js** on greenfield work (8.27x cost-weighted) *and* scored lower on playability and visuals. |
 | An editor | Not in v1. The Studio dogfood found Share and Export did literally nothing. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces; that was the business model, inverted. |
@@ -322,63 +322,41 @@ NativeWind means the same class strings work on device.
 
 ---
 
-## 7. The gate — mobile physics — **RESOLVED 2026-08-02**
+## 7. The gate — external native runtime and mobile physics — **AMENDED 2026-08-08**
 
 ```
 Shared TypeScript game code
         ├── browser WebGPU ──────────────► web
-        └── react-native-webgpu / Dawn ──► Metal (iOS) / Vulkan (Android)
+        └── pinned external Mystral ─────► desktop / Android / iOS
+                                             │
+                                             └── native Rapier, coarse bulk ABI
 ```
 
-Rapier ships as **WebAssembly**. Researched the state of WASM in React Native's JS
-engines. Verdict: **WASM Rapier is not viable cross-platform. Build the JSI binding.**
+Mystral is a real, separately released C++ runtime. Desktop V8 + Dawn evidence is green;
+Android QuickJS + wgpu-native renders upstream Three.js on the emulator. It remains an
+external toolchain artifact: immutable digest, checksum-verified download, gitignored
+cache, zero workspace package slots, and no source/submodule/sibling dependency.
 
-| Engine | WebAssembly | Evidence |
-|---|---|---|
-| **Hermes** (RN default) | **No, and never** | `facebook/hermes#429` open since 2020-12-04. Maintainer, 2023-10-04: *"the consensus is that adding a Wasm interpreter or a JIT to Hermes does not fit with the goals of the project."* |
-| **JSC on iOS 18.4+** | **Yes** (unverified in RN) | WebKit removed the JIT gate in commit `b01e7b6920` (2025-02-17); wasm now runs on the IPInt interpreter. Documented in *WebKit Features in Safari 18.4*. RN's `React-jsc.podspec` uses `weak_framework "JavaScriptCore"` — the system framework — so RN inherits it free. **Nobody has empirically confirmed it in an RN app.** |
-| **JSC on iOS ≤18.3** | No | `safari-7620-branch`: `if (!useWasm() \|\| !useJIT()) disableAllWasmOptions();` |
-| **JSC on Android** | **No, deliberately** | `jsc-android-buildscripts/scripts/compile/jsc.sh:62` passes `--no-webassembly`. Pinned to WebKitGTK **2.26.4 (2019)**. Issue #113 still open. |
+The framework supplies host-neutral TypeScript seams and an import-free bundle. It does
+not own or fork Mystral, Three's renderer, Dawn, V8, QuickJS, SDL or wgpu-native. Exact
+Three.js compatibility is part of the runtime lock and must equal the workspace catalog.
 
-Three further findings:
+Rapier still cannot depend on WebAssembly on Android because Mystral uses QuickJS there.
+Native physics is compiled into the external runtime and exposed through a coarse,
+host-neutral typed-array ABI. JSI is no longer the contract; it was specific to the
+superseded React Native host. The TypeScript API stays in `@threenative/physics`, with
+bulk `step`/`readVisibleTransforms` crossings rather than per-object frame calls.
 
-- `WebAssembly.instantiateStreaming` does not exist in bare JSC — ArrayBuffer path only.
-- Even where it works, it's **interpreter-tier throughput**, not near-native. Wrong for
-  a 60Hz physics step.
-- Every workaround library is dead or stalled: `react-native-webassembly` (abandoned
-  2023-11), `polygen` (stalled, iOS-only), `react-native-wasm` (archived).
+Release readiness requires, in order:
 
-**Conclusion.** The best case is "maybe works on iOS 18.4+, definitely not on Android,
-at interpreter speed." That is not a foundation. **Option 1 is not a fallback — it is
-the only path:**
+1. the unchanged core bundle renders 300+ frames on Android at the catalog Three version;
+2. PRD-045's device harness demonstrates all fail-closed negative controls;
+3. native physics passes those device scenarios;
+4. iOS simulator evidence exists; and
+5. physical-driver, arm64 physics and phone-performance debt remains open until measured.
 
-> **A JSI native binding to Rapier's Rust, shipped as `@threenative/physics-native`.**
-
-v1 already compiled Rapier natively (web `0.19.3`, native `0.33`) — the same trick,
-minus Bevy. Since nobody else ships this, it is the single most valuable artifact in
-the repo and the strongest reason ThreeNative exists at all.
-
-*Optional 10-line confirmation, if curiosity demands it: on a physical iOS 18.4+ device
-in a Release build with `@react-native-community/javascriptcore`, log
-`typeof WebAssembly`. It does not change the plan — Android settles it regardless.*
-
-### Phase 0 — de-risk before building anything
-
-Two spikes, in order, both ugly and unstyled. No template, no CLI, no docs, no
-framework.
-
-**0a — rendering on device (~1 day).** A spinning cube via `three/webgpu` under
-`react-native-webgpu`, on a physical phone. Answers whether three.js's WebGPU path
-survives outside a browser at all: `document`, `HTMLCanvasElement`, `Image`, `fetch`,
-`TextDecoder`, and `requestAnimationFrame` are all assumed by three and absent in RN.
-Cheap, and it gates everything.
-
-**0b — physics on device (~1–2 weeks).** `@threenative/physics-native`: a JSI binding
-to Rapier's Rust, enough to drop a cube onto a plane. Same scene as 0a, now simulated.
-
-If 0a fails, ThreeNative is a web framework and §7's mobile promise is deleted. If 0b
-fails, mobile ships without physics or not at all. Either way we learn it in three
-weeks instead of 790k lines.
+The binding execution record is PRD-047. A result may say desktop-ready or Android-emulator
+plumbing-ready; it must not say mobile-ready while physics, iOS or hardware rows are open.
 
 ---
 

@@ -3,6 +3,7 @@
   "files": {
     "ignore": [
       "**/dist/**",
+      ".worktrees/**",
       "packages/playtest/**",
       "test-results/**",
       "examples/abyss-vanilla/index.html",

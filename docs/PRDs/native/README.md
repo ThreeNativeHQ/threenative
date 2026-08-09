@@ -1,28 +1,29 @@
 # Native / mobile PRDs — the sequence
 
-**Status:** all three NOT STARTED. The whole group is gated on spike 0a producing an
-answer, which it has never done (`docs/spikes/0a-mobile-render.md` §6 records
-*"Unresolved / FAIL — 2026-08-02"*, for environmental reasons).
+**Status:** PRD-047 is IN PROGRESS. Mystral now supplies the answer spike 0a could not:
+upstream `three/webgpu` runs outside a browser on desktop and on the Android emulator.
+Desktop framework absorption is proven; Android framework-version parity, device playtest,
+native physics, iOS and physical-hardware evidence remain open.
 
 **Roadmap position:** `ROADMAP.md` **Phase 3**, whose gate to start is *"Phase 2 exit gate
 green."* Phase 2 is not green — PRDs 033, 035, 036 and 038 are all "partial, release
 evidence pending." **Nothing in this folder starts before that.** Phases are gated, not
 scheduled.
 
-## The sequence, and why it is this order
+## The active sequence
 
 ```
-spike 0a  ──►  PRD-044  ──►  PRD-045  ──►  PRD-046
-(no PRD)      adapter       playtest      physics-native
-                            on device
+PRD-047  ──►  PRD-045  ──►  PRD-046
+external      playtest      physics-native
+runtime       on device
 ```
 
 | # | PRD | What it buys | Cost |
 |---|---|---|---|
-| — | **spike 0a** | Does `three/webgpu` run outside a browser at all | ~1 wk |
-| 1 | [PRD-044](PRD-044-native-render-adapter.md) | `@threenative/native`; five `core` seams de-DOMed | 2–4 wk |
-| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | 1–3 wk |
-| 3 | [PRD-046](PRD-046-physics-native.md) | JSI Rapier binding — `CHARTER.md` §7's "crown jewel" | 4–8 wk |
+| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | in progress |
+| — | [PRD-044](PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | historical |
+| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | open |
+| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | blocked on 045 |
 
 **Why physics is last, not first.** It is the most valuable artifact and the most dangerous
 to ship unproven: its failure mode is a subtly wrong simulation, invisible to a screenshot.
@@ -34,16 +35,18 @@ failures *are* visible; that exception does not extend to physics.
 docs, no framework." It is a throwaway app outside the repo and only its answer merges.
 Keeping that framing costs zero charter amendments and zero package slots.
 
-## Two decisions that must be made before any code
+## Decisions now binding
 
-1. **The package cap.** `pnpm budgets` reports 7/8, and `scripts/check-budgets.ts:50`
-   counts `examples/*` as packages. PRD-044 needs one slot, PRD-046 needs a second — that
-   is 9. `CHARTER.md` §9a's own eight-package list contains both, so the list and the
-   counter disagree. Resolved in PRD-044 Phase 0, and §10 says exceeding a cap is not a
-   signal to raise it.
-2. **No hardware exists (2026-08-08).** Everything here runs on the Android emulator. That
-   is fully sufficient for PRD-045 and PRD-046's plumbing, and **only partly sufficient for
-   PRD-044** — the real GPU driver and the real frame rate stay OPEN. See PRD-044 §0.
+1. **The package cap.** The cap applies to distributable `packages/*`; private examples
+   are reported separately. **Reversed 2026-08-08:** the runtime is absorbed as
+   `packages/runtime-native/`, taking framework packages 5 → 6 of 8. It is the only new
+   package — there is no `@threenative/native`, and the ten-package split proposed by the
+   runtime's own PRD is rejected under rule 5. Native source is exempt from the 15,000-line
+   framework cap and bounded by its own 50,000-line cap.
+2. **Web is unchanged.** The runtime serves desktop and mobile only. The browser keeps
+   Vite + `three/webgpu`.
+3. **No hardware exists (2026-08-08).** Android emulator evidence closes JS/runtime
+   plumbing only. Real GPU drivers, arm64 physics and phone performance stay OPEN.
 
 ## A note on this folder and the PRD budget
 

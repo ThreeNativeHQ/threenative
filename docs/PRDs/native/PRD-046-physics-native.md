@@ -1,6 +1,12 @@
-# PRD-046 — `@threenative/physics-native`
+# PRD-046 — native physics (historical JSI design)
 
-**Status: NOT STARTED — GATED on PRD-044 (the app runs on device) and PRD-045 (the app can
+**Status: SUPERSEDED IN PART by PRD-047.** The correctness gates and coarse-boundary
+requirement remain binding. The JSI transport, separate `@threenative/physics-native`
+package, and concrete Rapier-object cross-platform escape hatch below are historical; the
+active design compiles Rapier into external Mystral and selects a host-neutral adapter from
+the existing `@threenative/physics` package.
+
+**Execution remains gated on PRD-047 (the app runs on Mystral) and PRD-045 (the app can
 be *proven* on device).** Both gates are hard. §0 says why the second one is not
 negotiable.
 
@@ -10,7 +16,7 @@ correctness with invisible failure modes +2, two platforms +2.) HIGH means an au
 checkpoint after every phase and a manual checkpoint on every phase with simulation
 behaviour.
 
-**Depends on:** PRD-044 Phase 3, PRD-045 Phase 3 (the negative controls, specifically),
+**Depends on:** PRD-047 Phase 3, PRD-045 Phase 3 (the negative controls, specifically),
 PRD-036 (the determinism measurement this must not oversell), PRD-040 (collision layers —
 the API surface being mirrored).
 **Blocks:** nothing. This is the end of the native sequence.

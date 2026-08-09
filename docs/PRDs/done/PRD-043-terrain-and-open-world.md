@@ -1,7 +1,8 @@
 # PRD-043 — Terrain and open worlds: what is missing, and how little of it is ours
 
-**Status: IN PROGRESS — Phases 0–3 implemented; repository gates pending.** Two framework
-builds, one sealed open-world pair, and **ten declines each with a stated reopening trigger**.
+**Status: COMPLETE — Phases 0–3 and all repository gates verified on 2026-08-08.** Two
+framework builds, one sealed open-world pair, and **ten declines each with a stated
+reopening trigger**.
 
 **The headline finding, stated before the evidence so it can be checked against it:** a
 WoW-like world needs twelve distinct capabilities. Exactly **two** are framework plumbing.
@@ -28,7 +29,7 @@ borrowed, never invented — this is what kills row 9, which has no Godot node t
 from), rule 5 (**this PRD adds no package**; 7 of 8 are in use and the 8th is reserved for
 `physics-native`, `CHARTER.md:426`).
 
-**Sibling PRDs:** world persistence is [PRD-036](PRD-036-save-load-and-deterministic-replay.md)'s
+**Sibling PRDs:** world persistence is [PRD-036](../PRD-036-save-load-and-deterministic-replay.md)'s
 subject, not this one's — row 12 defers to it rather than restating it. Row 6 restates,
 without contradicting, `OPPORTUNITY-AREAS.md:158` (area #9, score 48: *"`InstancedMesh` and
 `LOD` both ship. Owning batching caps what the user can render. Ship as template source,
@@ -93,7 +94,7 @@ given**, and the brief is the point.
 
 ### 1c. Read the census asymmetrically — it is a missing input, not a rejection
 
-This borrows [PRD-040](done/PRD-040-physics-collision-layers.md) §1d's rule verbatim,
+This borrows [PRD-040](PRD-040-physics-collision-layers.md) §1d's rule verbatim,
 because the same failure mode is available here in a stronger form.
 
 `docs/benchmark/genres/exploration/brief.md:5` asks for *"a compact hub that leads to at
@@ -106,7 +107,7 @@ So the census supports exactly one inference, and it is a negative one:
 
 > **No agent in this corpus has ever been asked to build terrain, so the corpus says
 > nothing about whether they can.** It is the `AnimationPlayer` situation from
-> [PRD-039](PRD-039-animation-state-machine.md) §4b — a missing input, not a rejected
+> [PRD-039](../PRD-039-animation-state-machine.md) §4b — a missing input, not a rejected
 > abstraction — and the correct response is §5's measurement, not a build.
 
 Phase 1's two builds do **not** rest on this census. They rest on the 20-line rule and on a
@@ -133,7 +134,7 @@ row 9 is declined precisely because inventing one would be the only option.
 | 9 | Floating origin / large-world coordinates | **none exists** | Genuinely >20 lines, and it must rebase the camera, every `Object3D`, and every Rapier body together | **DECLINE — for vocabulary and for evidence, not for size.** See below |
 | 10 | Navmesh across streamed chunks | recast `generateTiledNavMesh` / `generateTileCache` | `NavigationRegion3D.ts:2` imports `generateSoloNavMesh` — a single bake over a fixed mesh list. Both tiled generators exist in `recast-navigation@0.43.1`, already a dependency | **DECLINE with trigger** — §6 |
 | 11 | Terrain height / ground query | Rapier `world.castRay` | 3 lines against the row-1 collider once it exists | **DECLINE** — rule 1 |
-| 12 | Persistent world state | — | [PRD-036](PRD-036-save-load-and-deterministic-replay.md)'s subject | **OUT OF SCOPE** — deferred, not declined |
+| 12 | Persistent world state | — | [PRD-036](../PRD-036-save-load-and-deterministic-replay.md)'s subject | **OUT OF SCOPE** — deferred, not declined |
 
 **Row 9 deserves its own paragraph, because it is the row most likely to be rebuilt later
 by someone who skims this table.** Float32 loses sub-centimetre precision past roughly
@@ -193,7 +194,7 @@ static heightfield(rows: number, columns: number, heights: Float32Array,
 it is one call. What they cannot do in under 20 lines is get the `rows - 1` / `columns - 1`
 segment-vs-vertex convention right on the first try, and a wrong one produces terrain
 whose collision is silently offset from its mesh. That is exactly the class of defect
-[PRD-040](done/PRD-040-physics-collision-layers.md) built `collisionLayer` for: a
+[PRD-040](PRD-040-physics-collision-layers.md) built `collisionLayer` for: a
 one-call escape hatch that three independent authors got wrong the same way. **This claim
 is currently an argument, not a measurement — §5 turns it into one, and §6 states the
 number that would retract it.**
@@ -334,7 +335,7 @@ everything else, and to test the one claim in §3 that is currently an argument.
 
 **One trap to record in advance.** 0.5 will report both new exports as unreached unless
 0.1 lands first — the same self-justifying deletion described in
-[PRD-039](PRD-039-animation-state-machine.md) §4b. Neither export may be deleted under rule 2
+[PRD-039](../PRD-039-animation-state-machine.md) §4b. Neither export may be deleted under rule 2
 until an `open-world` brief has existed for two full rounds. Record that stay in the ledger
 with this reason attached.
 
@@ -375,7 +376,7 @@ output pasted (`AGENTS.md`, "Verification honesty").
 - [x] An agent asked to add terrain to a scaffolded project writes §4's `Chunk.ts` and the
       only unfamiliar identifier is `CollisionShape3D.heightfield`, which sits beside
       `.box`, `.sphere` and `.capsule` in the same class it already imports. Verified by the
-      scaffolded framework arm and [TerrainProbe.ts](../../examples/abyss-framework/src/scenes/TerrainProbe.ts).
+      scaffolded framework arm and [TerrainProbe.ts](../../../examples/abyss-framework/src/scenes/TerrainProbe.ts).
 - [x] `CollisionShape3D.heightfield` fails closed on a heights buffer whose length is not
       `rows * columns`, and the unit test asserts the throw — not `toBeDefined()`.
       **Negative control, must be observed red before this is claimed:** delete the length
@@ -391,14 +392,15 @@ output pasted (`AGENTS.md`, "Verification honesty").
       streaming loop; the "absent" assertion must go red. A scenario that passes with
       unloading disabled is asserting nothing, which is the exact v1 failure `AGENTS.md`
       names.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green, output pasted.
-- [ ] `pnpm budgets` green. Current baseline, run 2026-08-08:
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green; the exact chain passed on
+      2026-08-08. See [verification/PRD-043.md](../../verification/PRD-043.md).
+- [x] `pnpm budgets` green. Result on 2026-08-08:
       ```
       $ pnpm budgets
-      budgets ok: 7 packages, 4184 framework LOC, 6 PRD files, largest template 1200 LOC
+      budgets ok: 5 framework packages, 3 example workspaces, 4280 framework LOC, 3 PRD files, largest template 1200 LOC
       ```
-      After this PRD: **7 PRD files** (cap 10), **~4204 framework LOC** (cap 15,000),
-      **7 packages** (cap 8, unchanged — this PRD adds none).
+      This PRD adds no workspace package and remains within the 15,000 framework-LOC and
+      10-PRD caps.
 
 ### Budget note — the template cap is the binding constraint, not the LOC cap
 
