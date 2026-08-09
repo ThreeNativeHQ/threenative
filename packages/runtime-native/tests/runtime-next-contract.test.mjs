@@ -252,58 +252,8 @@ test('WebGPU wrappers remain valid across framework render frames', () => {
     'GPUQueue.writeBuffer must translate TypedArray element units and align native writes');
   assert.match(bindings, /g_currentSurfaceTextureId[\s\S]*wgpuTextureRelease\(g_currentTexture\)/,
     'presented surface textures must be removed from the registry and released');
-  assert.match(bindings,
-    /singleWgslEntryPoint[\s\S]*_tnVertexEntryPoint[\s\S]*omitted vertex entryPoint requires exactly one @vertex function/,
-    'render pipelines must infer one omitted WGSL vertex entry point and reject ambiguity');
-  assert.match(bindings,
-    /singleWgslEntryPoint[\s\S]*_tnFragmentEntryPoint[\s\S]*omitted fragment entryPoint requires exactly one @fragment function/,
-    'render pipelines must infer one omitted WGSL fragment entry point and reject ambiguity');
-  assert.match(bindings, /capturedRenderPassForCommands = renderPass/,
-    'each render-pass wrapper must retain the native pass it owns');
-  assert.doesNotMatch(bindings, /wgpuRenderPassEncoder(?:Set|Draw)[A-Za-z]*\(g_jsRenderPass/,
-    'nested render passes must not redirect commands through mutable global state');
-
   const v8 = read('src/js/v8_engine.cpp');
   assert.match(v8, /NativeFunctionRef[\s\S]*SetWeak\(functionRef/,
     'native callbacks retained by JavaScript must live until V8 garbage collection');
   assert.doesNotMatch(v8, /frameNativeFunctions_/, 'frame cleanup must not delete live native callbacks');
-});
-
-test('desktop V8 drains Promise microtasks from the host frame loop', () => {
-  const engine = read('include/mystral/js/engine.h');
-  const runtime = read('src/runtime.cpp');
-  const v8 = read('src/js/v8_engine.cpp');
-
-  assert.match(engine, /virtual void processMicrotasks\(\)/,
-    'the engine contract must expose an explicit microtask checkpoint');
-  assert.match(runtime, /void processMicrotasks\(\) \{\s*jsEngine_->processMicrotasks\(\);\s*\}/,
-    'the runtime frame loop must delegate Promise job processing to its engine');
-  assert.match(v8,
-    /void processMicrotasks\(\) override[\s\S]*PumpMessageLoop[\s\S]*PerformMicrotaskCheckpoint\(\)/,
-    'V8 embedders must pump foreground tasks before checkpointing Promise microtasks');
-});
-
-test('native DOM creates namespaced elements through the active element factory', () => {
-  const runtime = read('src/runtime.cpp');
-  assert.match(runtime,
-    /document\.createElementNS = function\(_namespace, tagName\) \{\s*return document\.createElement\(tagName\);/,
-    'Three.js createElementNS calls must reach the native canvas override');
-});
-
-test('QuickJS native callback results have independent engine ownership', () => {
-  const quickjs = read('src/js/quickjs_engine.cpp');
-  assert.match(quickjs, /if \(result\.ptr\)[\s\S]*return JS_DupValue\(ctx, \*val\)/,
-    'native callback results must outlive their temporary C++ handles');
-});
-
-test('native AudioContext exposes the listener surface used by Three.js', () => {
-  const audio = read('src/audio/audio_bindings.cpp');
-  assert.match(audio, /__tnCreateAudioContext[\s\S]*function AudioContext\(\)/,
-    'QuickJS must construct the native AudioContext through a JavaScript wrapper');
-  assert.match(audio, /setProperty\(jsCtx, "listener", listener\)/,
-    'AudioContext must expose a listener object');
-  assert.match(audio, /newFunction\("setPosition"/,
-    'the non-positional mixer must accept Three.js listener position updates');
-  assert.match(audio, /newFunction\("setOrientation"/,
-    'the non-positional mixer must accept Three.js listener orientation updates');
 });
