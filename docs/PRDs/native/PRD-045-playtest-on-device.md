@@ -1,8 +1,9 @@
 # PRD-045 — Playtest on device
 
-**Status: NOT STARTED — GATED on PRD-047's unchanged core bundle rendering 300+ frames on
-the Android emulator.** The transport targets Mystral rather than React Native; its
-fail-closed scenario semantics and negative controls are unchanged.
+**Status: IN PROGRESS — transport seam and in-process device proof pass; Android emulator
+execution remains open because `adb` is unavailable on this machine.** The transport targets
+Mystral rather than React Native; its fail-closed scenario semantics and negative controls are
+unchanged.
 
 **The emulator is fully sufficient for this PRD, unlike PRD-044.** Everything here is a
 JS-environment and host-tooling question: can the runner reach the bridge, does an

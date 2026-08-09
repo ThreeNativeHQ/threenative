@@ -40,7 +40,7 @@ with transport changed from JSI to a host-neutral native ABI.
 | Upstream `three/webgpu`, V8 + Dawn, Linux/Vulkan | Cube, PBR helmet and JS GLTF/GLB screenshots on an RTX 2080 | **PASS** |
 | Unchanged `@threenative/core` bundle on the runtime | One import-free ESM bundle, 300 frames, ready/first-frame markers, screenshot | **PASS (desktop)** |
 | Android upstream Three.js cube | QuickJS + wgpu-native, both packaged ABIs, emulator launch/log/liveness/screenshot gate | **PASS (emulator)** |
-| Android `@threenative/core` | Core uses Three 0.185.1; Android evidence uses runtime Three 0.182.0 | **OPEN** |
+| Android `@threenative/core` | Build proof now requires catalog/installed Three 0.185.1 and emits an import-free core bundle; emulator execution is not available on this machine | **OPEN (execution)** |
 | Android physics | QuickJS has no WebAssembly and the runtime has no native physics ABI | **BLOCKED** |
 | iOS | Preset and static-library scaffolding only; no simulator app, launch, log or screenshot | **OPEN** |
 | Physical mobile GPU / performance | No physical hardware evidence | **OPEN** |
