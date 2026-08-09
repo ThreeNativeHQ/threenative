@@ -133,7 +133,6 @@ async function runStarterLookServer(): Promise<void> {
   try {
     await waitForUrl(`http://127.0.0.1:${starterLookGatePort}/`, server, 120_000);
     await runStarterLookScenario(artifacts, starterLookGatePort);
-    await measureFrameCost(starterLookGatePort);
     exposedServer = startStarterServer(target, starterLookReadyPort);
     exposedServer.stdout?.on("data", (chunk) => serverOutput.push(String(chunk)));
     exposedServer.stderr?.on("data", (chunk) => serverOutput.push(String(chunk)));
@@ -329,37 +328,6 @@ function readPixel(image: PNG, x: number, y: number): [number, number, number] {
 
 function pixelLuminance(red: number, green: number, blue: number): number {
   return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
-}
-
-async function measureFrameCost(port: number): Promise<void> {
-  const browser = await chromium.launch({
-    args: ["--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
-  });
-  try {
-    const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
-    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector("canvas");
-    const result = (await page.evaluate(
-      `new Promise((resolve) => {
-        const start = performance.now();
-        let frames = 0;
-        function next() {
-          frames += 1;
-          if (frames === 120) resolve({ elapsedMs: performance.now() - start, frames });
-          else requestAnimationFrame(next);
-        }
-        requestAnimationFrame(next);
-      })`,
-    )) as { elapsedMs: number; frames: number };
-    const msPerFrame = result.elapsedMs / result.frames;
-    if (!Number.isFinite(msPerFrame) || msPerFrame <= 0)
-      throw new Error("Frame-cost measurement was not finite.");
-    process.stdout.write(
-      `starter-look frame cost: ${msPerFrame.toFixed(3)} ms/frame over ${result.frames} frames\n`,
-    );
-  } finally {
-    await browser.close();
-  }
 }
 
 async function keepServerAlive(server: ChildProcess): Promise<void> {

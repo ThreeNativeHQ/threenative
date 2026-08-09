@@ -222,7 +222,7 @@ async function waitForServer(
   throw new Error(`Visual server did not become ready within ${timeoutMs}ms.`);
 }
 
-async function packageLocalFramework(root: string): Promise<Record<string, string>> {
+export async function packageLocalFramework(root: string): Promise<Record<string, string>> {
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
   const packages = [

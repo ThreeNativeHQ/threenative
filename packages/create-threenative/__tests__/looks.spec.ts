@@ -110,6 +110,13 @@ describe("starter visual floor", () => {
     expect(shapes).not.toContain("Math.random(");
   });
 
+  it("should keep the pick sculpture inside a real-time geometry budget", async () => {
+    const shapes = await readFile(path.join(starter, "src/render/shapes.ts"), "utf8");
+    const segments = shapes.match(/new TorusKnotGeometry\([^)]*?,\s*(\d+),\s*(\d+)\)/u);
+    expect(segments).not.toBeNull();
+    expect(Number(segments?.[1]) * Number(segments?.[2])).toBeLessThanOrEqual(3_072);
+  });
+
   it("should light silhouettes with a rim, not just a key", async () => {
     for (const root of [starter, minimal, platformer]) {
       const lighting = await readFile(path.join(root, "src/render/lighting.ts"), "utf8");

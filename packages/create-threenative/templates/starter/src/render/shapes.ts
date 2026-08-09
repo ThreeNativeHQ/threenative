@@ -125,9 +125,11 @@ export function spike(
   return shadowed(new Mesh(geometry, material), options);
 }
 
-/** A deliberately dense prop for the starter's editable ray-picking example. */
+/** A smooth prop for the starter's editable accelerated ray-picking example. */
 export function sculpture(material: Material): Mesh {
-  const geometry = new TorusKnotGeometry(1.35, 0.38, 500, 100);
+  // 128 × 24 is 6,144 triangles. The old 500 × 100 mesh pushed 100k triangles
+  // through the colour, shadow and bloom passes for no visible gain.
+  const geometry = new TorusKnotGeometry(1.35, 0.38, 128, 24);
   return shadowed(new Mesh(geometry, material), {});
 }
 

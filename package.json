@@ -29,7 +29,8 @@
     "sweep:judge": "tsx scripts/sweep-judge.ts",
     "sweep:pair": "tsx scripts/sweep-pair.ts",
     "round:next": "tsx scripts/round-next.ts",
-    "round:deletions": "tsx scripts/round-deletions.ts"
+    "round:deletions": "tsx scripts/round-deletions.ts",
+    "profile:starter": "tsx scripts/profile-starter.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
