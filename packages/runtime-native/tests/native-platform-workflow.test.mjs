@@ -75,6 +75,14 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
   }
 });
 
+test('Android release lane installs both Rust cross-compilation targets before Gradle', () => {
+  const rustTargets = 'rustup target add aarch64-linux-android x86_64-linux-android';
+  expect(releaseWorkflow).toContain(rustTargets);
+  expect(releaseWorkflow.indexOf(rustTargets)).toBeLessThan(
+    releaseWorkflow.indexOf('sh ./gradlew assembleRelease'),
+  );
+});
+
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
   const wrongHeight = smokeScenario('physics-wrong-height.playtest.json');

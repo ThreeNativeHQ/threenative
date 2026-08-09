@@ -56,7 +56,7 @@ test('a missing release lock and a missing platform asset both fail closed', () 
 test('the default checksum lock URL is tied to the installed package version', () => {
   assert.equal(
     releaseManifestUrl(),
-    'https://github.com/jonit-dev/threenative/releases/download/runtime-native-v0.1.6/prebuilt-lock.json',
+    'https://github.com/jonit-dev/threenative/releases/download/runtime-native-v0.1.7/prebuilt-lock.json',
   );
 });
 

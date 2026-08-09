@@ -139,6 +139,7 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v4
       - run: sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
+      - run: rustup target add aarch64-linux-android x86_64-linux-android
       - run: pnpm install --frozen-lockfile
       - name: Build Android proof workspace dependencies
         run: |
