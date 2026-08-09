@@ -201,9 +201,12 @@ describe("create-threenative", () => {
         "dir",
       );
       try {
-        await run(path.resolve("node_modules/.bin/vite"), ["build", result.target], {
-          cwd: process.cwd(),
-        });
+        const viteCli = path.resolve(
+          "node_modules/.pnpm",
+          vitePackage,
+          "node_modules/vite/bin/vite.js",
+        );
+        await run(process.execPath, [viteCli, "build", result.target], { cwd: process.cwd() });
       } catch (error) {
         const output = error as { code?: string | number; stderr?: string; stdout?: string };
         throw new Error(
