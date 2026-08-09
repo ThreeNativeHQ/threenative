@@ -21,8 +21,8 @@ import { execFileSync, execSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'fs';
 import { pipeline } from 'stream/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join, dirname, relative, resolve } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -49,12 +49,15 @@ const ARCH_MAP = {
 const platformName = PLATFORM_MAP[PLATFORM] || PLATFORM;
 const archName = ARCH_MAP[ARCH] || ARCH;
 
-console.log(`Platform: ${platformName}-${archName}`);
+export const DEFAULT_WGPU_VERSION = 'v25.0.2.2';
+export const WGPU_REGRESSION_VERSIONS = Object.freeze(['v24.0.3.1', DEFAULT_WGPU_VERSION]);
+const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
+let wgpuVersionOverride = null;
 
 // Dependency versions and URLs
 const DEPS = {
   wgpu: {
-    version: 'v25.0.2.2',
+    version: DEFAULT_WGPU_VERSION,
     getUrl: () => {
       // wgpu-native releases: https://github.com/gfx-rs/wgpu-native/releases
       // Windows releases include toolchain suffix: wgpu-windows-x86_64-msvc-release.zip
@@ -70,7 +73,7 @@ const DEPS = {
   'wgpu-ios': {
     // wgpu-native iOS builds for cross-compilation from macOS
     // Downloads both device (arm64) and simulator (arm64 + x86_64) builds
-    version: 'v25.0.2.2',
+    version: DEFAULT_WGPU_VERSION,
     getUrl: () => {
       // This is a special multi-file download - handled separately
       return null;
@@ -78,9 +81,9 @@ const DEPS = {
     extractTo: 'wgpu-ios',
     // Individual archive URLs for iOS
     archives: {
-      device: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-release.zip`,
-      simulatorArm64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-simulator-release.zip`,
-      simulatorX64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-x86_64-simulator-release.zip`,
+      device: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-ios-aarch64-release.zip`,
+      simulatorArm64: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-ios-aarch64-simulator-release.zip`,
+      simulatorX64: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-ios-x86_64-simulator-release.zip`,
     },
   },
   sdl3: {
@@ -421,8 +424,8 @@ const DEPS = {
     },
     extractTo: 'wgpu-android',
     archives: {
-      aarch64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-aarch64-release.zip`,
-      x86_64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-x86_64-release.zip`,
+      aarch64: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-android-aarch64-release.zip`,
+      x86_64: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-android-x86_64-release.zip`,
     },
   },
   'sdl3-android': {
@@ -437,6 +440,111 @@ const DEPS = {
     needsAarExtraction: true,
   },
 };
+
+function valueAfter(args, flag) {
+  const index = args.indexOf(flag);
+  if (index === -1) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+  return value;
+}
+
+export function normalizeWgpuVersion(value) {
+  if (!WGPU_REGRESSION_VERSIONS.includes(value)) {
+    throw new Error(
+      `Unsupported --wgpu-version ${value}; supported regression versions: ${WGPU_REGRESSION_VERSIONS.join(', ')}`,
+    );
+  }
+  return value;
+}
+
+export function wgpuOverrideRoot(version, dependency) {
+  if (!WGPU_DEPS.has(dependency)) throw new Error(`${dependency} is not a wgpu-native dependency`);
+  const normalized = normalizeWgpuVersion(version);
+  return join(ROOT, '.runtime', 'wgpu-version-matrix', normalized, DEPS[dependency].extractTo);
+}
+
+function configureWgpuOverride(version) {
+  wgpuVersionOverride = normalizeWgpuVersion(version);
+  for (const name of WGPU_DEPS) {
+    const dep = DEPS[name];
+    dep.version = wgpuVersionOverride;
+    if (dep.archives) {
+      dep.archives = Object.fromEntries(
+        Object.entries(dep.archives).map(([variant, url]) => [
+          variant,
+          url.replace(`/download/${DEFAULT_WGPU_VERSION}/`, `/download/${wgpuVersionOverride}/`),
+        ]),
+      );
+    }
+  }
+}
+
+function destinationFor(name, dep) {
+  return wgpuVersionOverride && WGPU_DEPS.has(name)
+    ? wgpuOverrideRoot(wgpuVersionOverride, name)
+    : join(THIRD_PARTY, dep.extractTo);
+}
+
+function findFilesRecursive(rootDir, predicate, found = []) {
+  for (const entry of readdirSync(rootDir)) {
+    const fullPath = join(rootDir, entry);
+    const stats = statSync(fullPath);
+    if (stats.isDirectory()) findFilesRecursive(fullPath, predicate, found);
+    else if (predicate(entry, fullPath)) found.push(fullPath);
+  }
+  return found;
+}
+
+export function inspectWgpuInstallation(name, destDir, expectedVersion) {
+  if (!WGPU_DEPS.has(name)) throw new Error(`${name} is not a wgpu-native dependency`);
+  if (!existsSync(destDir)) throw new Error(`${name} is missing at ${destDir}`);
+  const tagFiles = findFilesRecursive(destDir, (entry) => entry === 'wgpu-native-git-tag').sort();
+  const expectedArtifacts = DEPS[name].archives ? Object.keys(DEPS[name].archives).length : 1;
+  if (tagFiles.length !== expectedArtifacts) {
+    throw new Error(
+      `${name} must contain ${expectedArtifacts} wgpu-native-git-tag file(s), found ${tagFiles.length} at ${destDir}`,
+    );
+  }
+  const tags = tagFiles.map((path) => readFileSync(path, 'utf8').trim());
+  const mismatches = tags.filter((tag) => tag !== expectedVersion);
+  if (mismatches.length > 0) {
+    throw new Error(`${name} version mismatch at ${destDir}: expected ${expectedVersion}, found ${[...new Set(tags)].join(', ')}`);
+  }
+  const libraryNames = new Set([
+    'libwgpu_native.a',
+    'libwgpu_native.so',
+    'libwgpu_native.dylib',
+    'wgpu_native.dll',
+    'wgpu_native.dll.lib',
+    'wgpu_native.lib',
+  ]);
+  const libraries = findFilesRecursive(destDir, (entry) => libraryNames.has(entry)).sort();
+  if (libraries.length < expectedArtifacts) {
+    throw new Error(`${name} must contain at least ${expectedArtifacts} wgpu-native library artifact(s), found ${libraries.length}`);
+  }
+  return {
+    schemaVersion: 1,
+    dependency: name,
+    version: expectedVersion,
+    root: resolve(destDir),
+    tags: tagFiles.map((path, index) => ({
+      path: relative(destDir, path).replaceAll('\\', '/'),
+      value: tags[index],
+    })),
+    libraries: libraries.map((path) => ({
+      path: relative(destDir, path).replaceAll('\\', '/'),
+      bytes: statSync(path).size,
+      sha256: sha256(path),
+    })),
+  };
+}
+
+function verifyAndRecordWgpuInstallation(name, destDir, expectedVersion) {
+  const manifest = inspectWgpuInstallation(name, destDir, expectedVersion);
+  writeFileSync(join(destDir, '.threenative-wgpu.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifest;
+}
 
 async function downloadFile(url, destPath) {
   console.log(`Downloading: ${url}`);
@@ -551,13 +659,22 @@ function normalizeSwcLayout(destDir) {
 
 async function downloadIosDep(name, dep) {
   // Special handler for iOS dependencies with multiple archives
-  const destDir = join(THIRD_PARTY, dep.extractTo);
+  const destDir = destinationFor(name, dep);
 
   if (existsSync(destDir)) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
-      console.log('Skipping (use --force to re-download)');
-      return true;
+      if (!WGPU_DEPS.has(name)) {
+        console.log('Skipping (use --force to re-download)');
+        return true;
+      }
+      try {
+        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+        console.log(`Verified installed ${name} ${dep.version}`);
+        return true;
+      } catch (error) {
+        console.warn(`${error.message}; replacing the stale dependency cache`);
+      }
     }
     rmSync(destDir, { recursive: true });
   }
@@ -568,7 +685,10 @@ async function downloadIosDep(name, dep) {
     for (const [variant, url] of Object.entries(dep.archives)) {
       console.log(`\nDownloading ${name} (${variant})...`);
       const archiveName = url.split('/').pop();
-      const archivePath = join(THIRD_PARTY, archiveName);
+      const archiveRoot = wgpuVersionOverride && WGPU_DEPS.has(name)
+        ? join(dirname(destDir), '.downloads')
+        : THIRD_PARTY;
+      const archivePath = join(archiveRoot, archiveName);
       const variantDir = join(destDir, variant);
 
       await downloadFile(url, archivePath);
@@ -577,6 +697,10 @@ async function downloadIosDep(name, dep) {
       rmSync(archivePath);
 
       console.log(`Extracted ${variant} to ${variantDir}`);
+    }
+    if (WGPU_DEPS.has(name)) {
+      const manifest = verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+      console.log(`Verified ${name} ${manifest.version}: ${manifest.libraries.length} library artifact(s)`);
     }
     console.log(`Successfully installed ${name}`);
     return true;
@@ -600,7 +724,7 @@ async function downloadDep(name) {
     return downloadIosDep(name, dep);
   }
 
-  const destDir = join(THIRD_PARTY, dep.extractTo);
+  const destDir = destinationFor(name, dep);
 
   // Special handling for stb (individual header downloads)
   if (name === 'stb' && dep.headers) {
@@ -660,10 +784,18 @@ async function downloadDep(name) {
   // Check if already downloaded
   if (existsSync(destDir)) {
     console.log(`${name} already exists at ${destDir}`);
-    const answer = process.argv.includes('--force') ? 'y' : 'n';
-    if (answer !== 'y') {
-      console.log('Skipping (use --force to re-download)');
-      return true;
+    if (!process.argv.includes('--force')) {
+      if (!WGPU_DEPS.has(name)) {
+        console.log('Skipping (use --force to re-download)');
+        return true;
+      }
+      try {
+        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+        console.log(`Verified installed ${name} ${dep.version}`);
+        return true;
+      } catch (error) {
+        console.warn(`${error.message}; replacing the stale dependency cache`);
+      }
     }
     rmSync(destDir, { recursive: true });
   }
@@ -673,7 +805,10 @@ async function downloadDep(name) {
   const archiveName = url.includes('.tar.') ?
     url.split('/').pop() :
     `${name}.${ext}`;
-  const archivePath = join(THIRD_PARTY, archiveName);
+  const archiveRoot = wgpuVersionOverride && WGPU_DEPS.has(name)
+    ? join(dirname(destDir), '.downloads')
+    : THIRD_PARTY;
+  const archivePath = join(archiveRoot, archiveName);
 
   try {
     await downloadFile(url, archivePath);
@@ -741,6 +876,11 @@ async function downloadDep(name) {
       }
     }
 
+    if (WGPU_DEPS.has(name)) {
+      const manifest = verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+      console.log(`Verified ${name} ${manifest.version}: ${manifest.libraries.length} library artifact(s)`);
+    }
+
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
       const aarFiles = await import('fs/promises').then(fs => fs.readdir(destDir));
@@ -763,6 +903,7 @@ async function downloadDep(name) {
 }
 
 async function main() {
+  console.log(`Platform: ${platformName}-${archName}`);
   // Ensure third_party directory exists
   if (!existsSync(THIRD_PARTY)) {
     mkdirSync(THIRD_PARTY, { recursive: true });
@@ -771,6 +912,8 @@ async function main() {
   // Parse arguments
   const args = process.argv.slice(2);
   const onlyIndex = args.indexOf('--only');
+  const requestedWgpuVersion = valueAfter(args, '--wgpu-version');
+  if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Desktop deps (downloaded by default)
   const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'draco', 'quiche'];
@@ -815,9 +958,16 @@ async function main() {
     depsToDownload = desktopDeps;
   }
 
+  if (requestedWgpuVersion && !depsToDownload.some((name) => WGPU_DEPS.has(name))) {
+    throw new Error('--wgpu-version requires downloading wgpu, wgpu-ios, or wgpu-android');
+  }
+
   console.log('Mystral Native Runtime - Dependency Downloader');
   console.log('==============================================');
   console.log(`Dependencies to download: ${depsToDownload.join(', ')}`);
+  if (requestedWgpuVersion) {
+    console.log(`wgpu-native override: ${requestedWgpuVersion} (isolated under .runtime/wgpu-version-matrix)`);
+  }
 
   if (depsToDownload.some((name) => androidDeps.includes(name))) await ensureGradleWrapper();
 
@@ -829,6 +979,9 @@ async function main() {
   console.log('\n=== Summary ===');
   for (const [name, success] of Object.entries(results)) {
     console.log(`  ${name}: ${success ? 'OK' : 'FAILED'}`);
+    if (success && requestedWgpuVersion && WGPU_DEPS.has(name)) {
+      console.log(`    THREENATIVE_WGPU_ROOT=${destinationFor(name, DEPS[name])}`);
+    }
   }
 
   const failed = Object.entries(results).filter(([, success]) => !success).map(([name]) => name);
@@ -841,7 +994,9 @@ async function main() {
   console.log('3. Run: npm run example:triangle');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

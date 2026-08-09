@@ -7,6 +7,16 @@ function keyEvent(type: string, code: string): Event {
   return event;
 }
 
+function pointerEvent(
+  type: string,
+  id: number,
+  x: number,
+  y: number,
+  buttons = type === "pointerup" || type === "pointercancel" ? 0 : 1,
+): Event {
+  return Object.assign(new Event(type), { buttons, clientX: x, clientY: y, pointerId: id });
+}
+
 describe("InputMap", () => {
   it("should report (-1, 0) when KeyA is held", () => {
     const target = new EventTarget();
@@ -22,14 +32,71 @@ describe("InputMap", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);
     target.dispatchEvent(keyEvent("keydown", "KeyA"));
-    target.dispatchEvent(
-      Object.assign(new Event("pointermove"), { clientX: 12, clientY: 34, buttons: 0 }),
-    );
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 12, 34));
 
     target.dispatchEvent(new Event("blur"));
 
     expect(input.vector("move").toArray()).toEqual([0, 0]);
     expect(input.raw.pointer.position.toArray()).toEqual([0, 0]);
+    expect(input.raw.pointers.size).toBe(0);
+    input.dispose();
+  });
+
+  it("reports held pointers in arrival order and moves only the matching pointer", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 20));
+    target.dispatchEvent(pointerEvent("pointerdown", 3, 80, 90));
+    target.dispatchEvent(pointerEvent("pointermove", 3, 81, 92));
+
+    expect([...input.raw.pointers.keys()]).toEqual([7, 3]);
+    expect(input.raw.pointers.get(7)?.position.toArray()).toEqual([10, 20]);
+    expect(input.raw.pointers.get(3)?.position.toArray()).toEqual([81, 92]);
+    expect(input.raw.pointer).toMatchObject({ buttons: 1, down: true });
+    expect(input.raw.pointer.position.toArray()).toEqual([10, 20]);
+    input.dispose();
+  });
+
+  it("releases one pointer without disturbing the other and promotes the next primary", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { pointer: true } }, target);
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 20));
+    target.dispatchEvent(pointerEvent("pointerdown", 3, 80, 90));
+
+    target.dispatchEvent(pointerEvent("pointerup", 7, 12, 22));
+
+    expect([...input.raw.pointers.keys()]).toEqual([3]);
+    expect(input.raw.pointer.down).toBe(true);
+    expect(input.raw.pointer.position.toArray()).toEqual([80, 90]);
+    expect(input.pressed("fire")).toBe(true);
+    target.dispatchEvent(pointerEvent("pointerup", 3, 80, 90));
+    expect(input.raw.pointers.size).toBe(0);
+    expect(input.raw.pointer.down).toBe(false);
+    input.dispose();
+  });
+
+  it("releases a cancelled pointer and leaves other held pointers active", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 20));
+    target.dispatchEvent(pointerEvent("pointerdown", 3, 80, 90));
+
+    target.dispatchEvent(pointerEvent("pointercancel", 3, 80, 90));
+
+    expect([...input.raw.pointers.keys()]).toEqual([7]);
+    expect(input.raw.pointer.position.toArray()).toEqual([10, 20]);
+    input.dispose();
+  });
+
+  it("updates legacy hover position only when no pointer is held", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    target.dispatchEvent(pointerEvent("pointermove", 1, 5, 6, 0));
+    expect(input.raw.pointer.position.toArray()).toEqual([5, 6]);
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 20));
+    target.dispatchEvent(pointerEvent("pointermove", 1, 50, 60, 0));
+    expect(input.raw.pointer.position.toArray()).toEqual([10, 20]);
     input.dispose();
   });
 

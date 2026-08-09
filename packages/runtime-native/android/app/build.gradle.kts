@@ -75,6 +75,35 @@ tasks.register<Exec>("buildAndroidFirstProofBundle") {
     outputs.file(generatedThreeNativeAssets.map { it.file("scripts/main.js.meta.json") })
 }
 
+val conformanceBundle = providers.gradleProperty("threenativeConformanceBundle")
+val conformanceBundleSha256 = providers.gradleProperty("threenativeConformanceBundleSha256")
+if (conformanceBundle.isPresent != conformanceBundleSha256.isPresent) {
+    throw GradleException(
+        "Android conformance override requires both -PthreenativeConformanceBundle and " +
+            "-PthreenativeConformanceBundleSha256"
+    )
+}
+
+tasks.register<Exec>("buildAndroidConformanceBundle") {
+    onlyIf { conformanceBundle.isPresent }
+    workingDir = layout.projectDirectory.dir("../..").asFile
+    commandLine(
+        "node",
+        "scripts/build-android-conformance.mjs",
+        "--bundle",
+        conformanceBundle.getOrElse(""),
+        "--sha256",
+        conformanceBundleSha256.getOrElse(""),
+        "--out",
+        generatedThreeNativeAssets.get().file("scripts/main.js").asFile.absolutePath
+    )
+    inputs.file(layout.projectDirectory.file("../../scripts/build-android-conformance.mjs"))
+    inputs.file(conformanceBundle)
+    inputs.property("conformanceBundleSha256", conformanceBundleSha256)
+    outputs.file(generatedThreeNativeAssets.map { it.file("scripts/main.js") })
+    outputs.file(generatedThreeNativeAssets.map { it.file("scripts/main.js.meta.json") })
+}
+
 val buildNativePhysics by tasks.registering(Exec::class) {
     workingDir = layout.projectDirectory.dir("../..").asFile
     environment("ANDROID_HOME", android.sdkDirectory.absolutePath)
@@ -86,7 +115,8 @@ val buildNativePhysics by tasks.registering(Exec::class) {
 }
 
 tasks.named("preBuild") {
-    dependsOn("buildAndroidFirstProofBundle")
+    if (conformanceBundle.isPresent) dependsOn("buildAndroidConformanceBundle")
+    else dependsOn("buildAndroidFirstProofBundle")
     if (!usePrebuiltRuntime) dependsOn("extractSdl3JniLibs", buildNativePhysics)
 }
 

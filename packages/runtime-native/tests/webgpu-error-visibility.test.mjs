@@ -56,3 +56,11 @@ test('adapter and device request failures reach the platform log', () => {
     }
   }
 });
+
+test('quiet startup proves the Android WebGPU error channel is observable', () => {
+  assert.match(
+    contextSource,
+    /wgpuSetLogCallback\(onWgpuLog, nullptr\);[\s\S]*?TN_CONTEXT_LOGI\("channel ready"\)/,
+    'callback registration must be followed by a deterministic ThreeNativeWGPU heartbeat',
+  );
+});

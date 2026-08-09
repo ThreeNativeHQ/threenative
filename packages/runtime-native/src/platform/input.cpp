@@ -5,7 +5,9 @@
  */
 
 #include "mystral/platform/input.h"
+#include "mystral/platform/window.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
@@ -33,6 +35,27 @@ static bool g_metaKey = false;
 
 // Mouse button state
 static int g_mouseButtons = 0;
+
+struct TouchKey {
+    SDL_TouchID touchId;
+    SDL_FingerID fingerId;
+
+    bool operator==(const TouchKey& other) const {
+        return touchId == other.touchId && fingerId == other.fingerId;
+    }
+};
+
+struct TouchKeyHash {
+    size_t operator()(const TouchKey& key) const {
+        const auto touch = std::hash<SDL_TouchID>{}(key.touchId);
+        const auto finger = std::hash<SDL_FingerID>{}(key.fingerId);
+        return touch ^ (finger + 0x9e3779b9 + (touch << 6) + (touch >> 2));
+    }
+};
+
+static std::unordered_map<TouchKey, int, TouchKeyHash> g_touchPointers;
+static std::vector<int> g_touchOrder;
+static int g_nextTouchPointerId = 2;
 
 /**
  * SDL key to DOM "key" property
@@ -333,7 +356,7 @@ void processMouseMotion(const SDL_MouseMotionEvent& event) {
     }
 
     // Dispatch pointer event
-    if (g_pointerCallback) {
+    if (g_pointerCallback && event.which != SDL_TOUCH_MOUSEID) {
         PointerEventData data;
         data.type = "pointermove";
         data.clientX = event.x;
@@ -404,7 +427,7 @@ void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown) {
     }
 
     // Dispatch pointer event
-    if (g_pointerCallback) {
+    if (g_pointerCallback && event.which != SDL_TOUCH_MOUSEID) {
         PointerEventData data;
         data.type = isDown ? "pointerdown" : "pointerup";
         data.clientX = event.x;
@@ -425,6 +448,60 @@ void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown) {
         data.pressure = isDown ? 0.5 : 0;
 
         g_pointerCallback(data);
+    }
+}
+
+/**
+ * Process a normalized SDL touch contact as a DOM PointerEvent. SDL may also synthesize a
+ * mouse event for the same contact; the mouse handlers keep MouseEvent compatibility but
+ * suppress only that duplicate PointerEvent.
+ */
+void processTouchEvent(const SDL_TouchFingerEvent& event) {
+    if (!g_pointerCallback) return;
+
+    const TouchKey key{event.touchID, event.fingerID};
+    auto entry = g_touchPointers.find(key);
+    if (entry == g_touchPointers.end()) {
+        entry = g_touchPointers.emplace(key, g_nextTouchPointerId++).first;
+        g_touchOrder.push_back(entry->second);
+    }
+    const int pointerId = entry->second;
+    const bool isPrimary = !g_touchOrder.empty() && g_touchOrder.front() == pointerId;
+    const bool released = event.type == SDL_EVENT_FINGER_UP ||
+                          event.type == SDL_EVENT_FINGER_CANCELED;
+
+    int width = 0;
+    int height = 0;
+    getWindowSize(&width, &height);
+
+    PointerEventData data{};
+    if (event.type == SDL_EVENT_FINGER_DOWN) data.type = "pointerdown";
+    else if (event.type == SDL_EVENT_FINGER_MOTION) data.type = "pointermove";
+    else if (event.type == SDL_EVENT_FINGER_UP) data.type = "pointerup";
+    else if (event.type == SDL_EVENT_FINGER_CANCELED) data.type = "pointercancel";
+    else return;
+    data.clientX = event.x * width;
+    data.clientY = event.y * height;
+    data.movementX = event.dx * width;
+    data.movementY = event.dy * height;
+    data.button = 0;
+    data.buttons = released ? 0 : 1;
+    data.ctrlKey = g_ctrlKey;
+    data.shiftKey = g_shiftKey;
+    data.altKey = g_altKey;
+    data.metaKey = g_metaKey;
+    data.pointerId = pointerId;
+    data.pointerType = "touch";
+    data.isPrimary = isPrimary;
+    data.width = 1;
+    data.height = 1;
+    data.pressure = released ? 0 : event.pressure;
+    g_pointerCallback(data);
+
+    if (released) {
+        g_touchPointers.erase(entry);
+        g_touchOrder.erase(std::remove(g_touchOrder.begin(), g_touchOrder.end(), pointerId),
+                           g_touchOrder.end());
     }
 }
 

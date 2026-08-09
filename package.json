@@ -20,6 +20,7 @@
     "budgets": "tsx scripts/check-budgets.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
+    "parity": "xvfb-run -a -s '-screen 0 1600x900x24' node packages/runtime-native/conformance/run-conformance.mjs",
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",

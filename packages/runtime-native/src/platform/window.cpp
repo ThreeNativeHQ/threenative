@@ -18,6 +18,7 @@ void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
 void processMouseMotion(const SDL_MouseMotionEvent& event);
 void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown);
 void processMouseWheel(const SDL_MouseWheelEvent& event);
+void processTouchEvent(const SDL_TouchFingerEvent& event);
 void processGamepadConnected(SDL_JoystickID id);
 void processGamepadDisconnected(SDL_JoystickID id);
 void processResize(int width, int height);
@@ -173,6 +174,13 @@ bool pollEvents() {
 
             case SDL_EVENT_MOUSE_WHEEL:
                 processMouseWheel(event.wheel);
+                break;
+
+            case SDL_EVENT_FINGER_DOWN:
+            case SDL_EVENT_FINGER_MOTION:
+            case SDL_EVENT_FINGER_UP:
+            case SDL_EVENT_FINGER_CANCELED:
+                processTouchEvent(event.tfinger);
                 break;
 
             case SDL_EVENT_GAMEPAD_ADDED:

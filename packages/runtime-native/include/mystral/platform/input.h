@@ -11,6 +11,8 @@
 #include <string>
 #include <cstdint>
 
+struct SDL_TouchFingerEvent;
+
 namespace mystral {
 namespace platform {
 
@@ -136,6 +138,9 @@ void setPointerCallback(PointerCallback callback);
 void setWheelCallback(WheelCallback callback);
 void setGamepadCallback(GamepadCallback callback);
 void setResizeCallback(ResizeCallback callback);
+
+/** Translate an SDL touch contact into a DOM-compatible pointer event. */
+void processTouchEvent(const SDL_TouchFingerEvent& event);
 
 /**
  * Get current gamepad state

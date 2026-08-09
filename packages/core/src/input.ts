@@ -18,6 +18,12 @@ export interface InputGamepad {
 
 export type InputPlatformSource = () => readonly (InputGamepad | null)[];
 
+export interface RawInputPointer {
+  readonly id: number;
+  buttons: number;
+  readonly position: Vector2;
+}
+
 export interface RawInputState {
   readonly keys: ReadonlySet<string>;
   readonly pointer: {
@@ -25,6 +31,7 @@ export interface RawInputState {
     down: boolean;
     readonly position: Vector2;
   };
+  readonly pointers: ReadonlyMap<number, RawInputPointer>;
   readonly gamepad: {
     axes: readonly number[];
     buttons: readonly boolean[];
@@ -54,8 +61,8 @@ export class InputMap {
   #target: EventTarget;
   #heldKeys = new Set<string>();
   #pointerPosition = new Vector2();
-  #pointerDown = false;
   #pointerButtons = 0;
+  #pointers = new Map<number, RawInputPointer>();
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
   #previousPressed = new Map<string, boolean>();
@@ -80,9 +87,10 @@ export class InputMap {
       keys: this.#heldKeys,
       pointer: {
         buttons: this.#pointerButtons,
-        down: this.#pointerDown,
+        down: false,
         position: this.#pointerPosition,
       },
+      pointers: this.#pointers,
     };
     this.#listen(this.#target, "keydown", (event) => {
       const code = eventCode(event);
@@ -93,10 +101,9 @@ export class InputMap {
       if (code !== undefined) this.#heldKeys.delete(code);
     });
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, true));
-    this.#listen(this.#pointerTarget, "pointermove", (event) =>
-      this.#pointerEvent(event, this.#pointerDown),
-    );
+    this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, false));
+    this.#listen(this.#pointerTarget, "pointercancel", (event) => this.#pointerEvent(event, false));
     this.#listen(this.#target, "blur", () => this.clear());
   }
 
@@ -124,7 +131,7 @@ export class InputMap {
       this.#isHeld(binding.left) ||
       this.#isHeld(binding.right) ||
       this.#isHeld(binding.up) ||
-      (binding.pointer === true && this.#pointerDown) ||
+      (binding.pointer === true && this.#pointers.size > 0) ||
       (binding.buttons?.some((button) => this.#gamepadButtons[button] === true) ?? false)
     );
   }
@@ -156,7 +163,7 @@ export class InputMap {
 
   clear(): void {
     this.#heldKeys.clear();
-    this.#pointerDown = false;
+    this.#pointers.clear();
     this.#pointerButtons = 0;
     this.#pointerPosition.set(0, 0);
     this.raw.pointer.buttons = 0;
@@ -182,19 +189,42 @@ export class InputMap {
     this.#listeners.push([target, type, listener]);
   }
 
-  #pointerEvent(event: Event, down: boolean): void {
+  #pointerEvent(event: Event, down?: boolean): void {
     const pointer = event as PointerEvent;
-    this.#pointerDown = down;
-    this.#pointerButtons = pointer.buttons ?? 0;
-    this.#pointerPosition.set(pointer.clientX ?? 0, pointer.clientY ?? 0);
+    const id = pointer.pointerId ?? 0;
+    const buttons = pointer.buttons ?? 0;
+    const x = pointer.clientX ?? 0;
+    const y = pointer.clientY ?? 0;
+    const tracked = this.#pointers.get(id);
+    if (down === true) {
+      if (tracked === undefined) {
+        this.#pointers.set(id, { buttons, id, position: new Vector2(x, y) });
+      } else {
+        tracked.buttons = buttons;
+        tracked.position.set(x, y);
+      }
+    } else if (down === false) {
+      this.#pointers.delete(id);
+    } else if (tracked !== undefined) {
+      tracked.buttons = buttons;
+      tracked.position.set(x, y);
+    }
+    const primary = this.#pointers.values().next().value as RawInputPointer | undefined;
+    if (primary !== undefined) {
+      this.#pointerButtons = primary.buttons;
+      this.#pointerPosition.copy(primary.position);
+    } else if (down !== false || tracked !== undefined) {
+      this.#pointerButtons = buttons;
+      this.#pointerPosition.set(x, y);
+    }
     this.raw.pointer.buttons = this.#pointerButtons;
-    this.raw.pointer.down = down;
+    this.raw.pointer.down = primary !== undefined;
     const capture = this.#pointerTarget as EventTarget & {
       releasePointerCapture?: (id: number) => void;
       setPointerCapture?: (id: number) => void;
     };
-    if (down) capture.setPointerCapture?.(pointer.pointerId ?? 0);
-    else capture.releasePointerCapture?.(pointer.pointerId ?? 0);
+    if (down === true) capture.setPointerCapture?.(id);
+    if (down === false) capture.releasePointerCapture?.(id);
   }
 }
 

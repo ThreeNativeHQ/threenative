@@ -31,7 +31,7 @@ export type { Recording } from "./replay.js";
 export { autoFields, Registry } from "./entities.js";
 export type { Debuggable, EntitySnapshot } from "./entities.js";
 export { input, InputMap } from "./input.js";
-export type { InputAction, InputBindings, RawInputState } from "./input.js";
+export type { InputAction, InputBindings, RawInputPointer, RawInputState } from "./input.js";
 export { createRenderer } from "./renderer.js";
 export type { RendererKind, RendererLike, RendererOptions } from "./renderer.js";
 export { Scene } from "./scene.js";

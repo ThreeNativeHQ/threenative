@@ -129,6 +129,19 @@
       "desktopGate": false
     },
     {
+      "id": "15-mesh-toon-material-gradientmap",
+      "title": "mesh toon material gradient map",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/mesh-toon-material-gradientmap.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "20-ambient-light",
       "title": "ambient light",
       "category": "lights",

@@ -289,6 +289,9 @@ bool Context::initialize() {
     // Use Error level to suppress noisy warnings like "Depth slice on color attachments is not implemented"
     wgpuSetLogCallback(onWgpuLog, nullptr);
     wgpuSetLogLevel(WGPULogLevel_Error);
+    // Quiet startup produces no callback, so publish one deterministic heartbeat. Android
+    // conformance uses this to prove that an empty error log is observable rather than lost.
+    TN_CONTEXT_LOGI("channel ready");
 
     // Create instance with Metal backend on macOS
     WGPUInstanceExtras instanceExtras = {};
