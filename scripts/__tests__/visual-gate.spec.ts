@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  LOCAL_FRAMEWORK_PACKAGES,
   RENDER_LAYER_FILES,
   TEMPLATE_NAMES,
   VISUAL_SCORE_FLOOR,
@@ -8,6 +9,11 @@ import {
 } from "../visual-gate.js";
 
 describe("visual gate", () => {
+  it("builds playtest before packages that import its export map", () => {
+    const names = LOCAL_FRAMEWORK_PACKAGES.map(([name]) => name);
+    expect(names.indexOf("@threenative/playtest")).toBeLessThan(names.indexOf("@threenative/core"));
+  });
+
   it("finds the six live render files and quality floor in every template", () => {
     const results = inspectAllTemplates();
     expect(results).toHaveLength(TEMPLATE_NAMES.length);

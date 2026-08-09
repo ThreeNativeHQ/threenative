@@ -27,6 +27,14 @@ export const RENDER_LAYER_FILES = [
   "postprocessing.ts",
 ] as const;
 export const VISUAL_SCORE_FLOOR = 4;
+export const LOCAL_FRAMEWORK_PACKAGES = [
+  ["@threenative/playtest", "threenative-playtest-"],
+  ["@threenative/core", "threenative-core-"],
+  ["@threenative/physics", "threenative-physics-"],
+  ["@threenative/runtime-native", "threenative-runtime-native-"],
+  ["@threenative/ui", "threenative-ui-"],
+  ["create-threenative", "create-threenative-"],
+] as const;
 
 export interface TemplateStructureResult {
   readonly errors: readonly string[];
@@ -225,14 +233,7 @@ async function waitForServer(
 export async function packageLocalFramework(root: string): Promise<Record<string, string>> {
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
-  const packages = [
-    ["@threenative/core", "threenative-core-"],
-    ["@threenative/physics", "threenative-physics-"],
-    ["@threenative/playtest", "threenative-playtest-"],
-    ["@threenative/runtime-native", "threenative-runtime-native-"],
-    ["@threenative/ui", "threenative-ui-"],
-    ["create-threenative", "create-threenative-"],
-  ] as const;
+  const packages = LOCAL_FRAMEWORK_PACKAGES;
   const archives = new Map<string, string>();
   for (const [name] of packages) {
     await runCommand("pnpm", ["--filter", name, "build"], REPO_ROOT);
