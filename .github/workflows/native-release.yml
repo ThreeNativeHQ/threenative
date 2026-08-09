@@ -6,7 +6,7 @@ on:
       - "runtime-native-v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate-tag:
@@ -64,8 +64,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build native-smoke workspace dependencies
         run: |
-          pnpm --filter @threenative/core build
           pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: pnpm --filter threenative-native-smoke build
       - run: pnpm --filter @threenative/runtime-native native:build
@@ -91,6 +91,11 @@ jobs:
           name: runtime-${{ matrix.key }}
           path: release/${{ matrix.asset }}
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: evidence-desktop-${{ matrix.key }}
+          path: packages/runtime-native/artifacts/
+          if-no-files-found: error
 
   build-android:
     needs: validate-tag
@@ -111,8 +116,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build Android proof workspace dependencies
         run: |
-          pnpm --filter @threenative/core build
           pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
@@ -159,8 +164,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
         run: |
-          pnpm --filter @threenative/core build
           pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
@@ -177,10 +182,17 @@ jobs:
           name: runtime-ios-simulator-arm64
           path: release/threenative-ios-simulator-arm64.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: evidence-ios-simulator-arm64
+          path: packages/runtime-native/artifacts/ios/
+          if-no-files-found: error
 
   publish:
     needs: [build, build-android, build-ios-simulator]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -225,6 +237,8 @@ jobs:
           --repo "${{ github.repository }}"
           --verify-tag
           --title "ThreeNative runtime ${{ github.ref_name }}"
+          --prerelease
+          --latest=false
           --generate-notes
 
   clean-consumer:
@@ -241,9 +255,9 @@ jobs:
       - name: Pack the exact scaffold consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/packages"
+          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/playtest build
           pnpm --filter create-threenative build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/packages"
@@ -366,7 +380,7 @@ jobs:
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: success()
         with:
           name: clean-consumer-linux-x64
           path: |
@@ -380,7 +394,7 @@ jobs:
             ${{ runner.temp }}/packed-android-mask-pass/
             ${{ runner.temp }}/packed-android-wrong-gravity/
             ${{ runner.temp }}/android-*.log
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   clean-consumer-ios:
     needs: publish
@@ -396,9 +410,9 @@ jobs:
       - name: Pack and install the exact iOS consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/playtest build
           pnpm --filter create-threenative build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"
@@ -497,7 +511,7 @@ jobs:
             TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-physics-wrong-gravity.log"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: success()
         with:
           name: clean-consumer-ios-simulator-arm64
           path: |
@@ -506,4 +520,36 @@ jobs:
             ${{ runner.temp }}/ios-wrong-value.log
             ${{ runner.temp }}/ios-physics-*.log
             ${{ runner.temp }}/ios-toolchain-invocations.log
-          if-no-files-found: ignore
+          if-no-files-found: error
+
+  finalize:
+    needs: [clean-consumer, clean-consumer-ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Promote the consumer-verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release edit "${{ github.ref_name }}"
+          --repo "${{ github.repository }}"
+          --prerelease=false
+          --latest
+
+  cleanup-failed-release:
+    if: >-
+      ${{ always() && needs.publish.result == 'success' &&
+      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
+    needs: [publish, clean-consumer, clean-consumer-ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Remove a release that failed consumer verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release delete "${{ github.ref_name }}"
+          --repo "${{ github.repository }}"
+          --yes

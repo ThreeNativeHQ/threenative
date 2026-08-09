@@ -29,8 +29,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build native-smoke workspace dependencies
         run: |
-          pnpm --filter @threenative/core build
           pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: pnpm --filter threenative-native-smoke build
       - run: pnpm --filter @threenative/runtime-native native:build
@@ -55,8 +55,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
         run: |
-          pnpm --filter @threenative/core build
           pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
@@ -73,9 +73,9 @@ jobs:
       - name: Pack and install the exact consumer packages without lifecycle compilation
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
+          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/playtest build
           pnpm --filter create-threenative build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"

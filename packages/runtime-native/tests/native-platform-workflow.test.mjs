@@ -18,6 +18,9 @@ test('desktop platform lanes build and retain executable evidence', () => {
   ]) {
     expect(workflow).toContain(token);
   }
+  expect(workflow.indexOf('pnpm --filter @threenative/playtest build')).toBeLessThan(
+    workflow.indexOf('pnpm --filter @threenative/core build'),
+  );
 });
 
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {

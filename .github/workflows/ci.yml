@@ -8,9 +8,9 @@ jobs:
   install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -20,22 +20,23 @@ jobs:
     needs: install
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @threenative/playtest build
       - run: pnpm typecheck
 
   lint:
     needs: typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -46,9 +47,9 @@ jobs:
     needs: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -62,9 +63,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -73,9 +74,9 @@ jobs:
       - name: Pack local framework packages
         run: |
           mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/ui build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
@@ -130,6 +131,7 @@ jobs:
                 const waiter = pending.get(message.id);
                 if (waiter) {
                   pending.delete(message.id);
+                  clearTimeout(waiter.timer);
                   message.error ? waiter.reject(new Error(JSON.stringify(message.error))) : waiter.resolve(message.result);
                 }
               }
@@ -141,43 +143,46 @@ jobs:
             const request = (method, params = {}) => {
               const id = nextId++;
               const response = new Promise((resolve, reject) => {
-                pending.set(id, { resolve, reject });
-                setTimeout(() => {
+                const timer = setTimeout(() => {
                   pending.delete(id);
                   reject(new Error(`${serverName} ${method} timed out; saw ${buffer.slice(0, 500)}`));
                 }, 30_000);
+                pending.set(id, { resolve, reject, timer });
               });
               child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
               return Promise.race([response, exited]);
             };
-            await request("initialize", {
-              protocolVersion: "2025-06-18",
-              capabilities: {},
-              clientInfo: { name: "scaffold-smoke", version: "0" },
-            });
-            child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-            const listed = await request("tools/list");
-            const names = listed.tools.map((tool) => tool.name).sort();
-            const expected = [...surface.tools].sort();
-            if (JSON.stringify(names) !== JSON.stringify(expected)) {
-              throw new Error(
-                `${serverName} surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
-              );
-            }
-            if (serverName === "threenative-sculpt") {
-              const listedResources = await request("resources/list");
-              if (!listedResources.resources?.length)
-                throw new Error("Sculpt MCP listed no technique resources");
-              for (const resource of listedResources.resources) {
-                const read = await request("resources/read", { uri: resource.uri });
-                const text = read.contents?.map((content) => content.text ?? "").join("\n") ?? "";
-                const concreteBlock = /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
-                if (concreteBlock.test(text))
-                  throw new Error(`Sculpt grimoire resource owns the look: ${resource.uri}`);
+            try {
+              await request("initialize", {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "scaffold-smoke", version: "0" },
+              });
+              child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+              const listed = await request("tools/list");
+              const names = listed.tools.map((tool) => tool.name).sort();
+              const expected = [...surface.tools].sort();
+              if (JSON.stringify(names) !== JSON.stringify(expected)) {
+                throw new Error(
+                  `${serverName} surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
+                );
               }
+              if (serverName === "threenative-sculpt") {
+                const listedResources = await request("resources/list");
+                if (!listedResources.resources?.length)
+                  throw new Error("Sculpt MCP listed no technique resources");
+                for (const resource of listedResources.resources) {
+                  const read = await request("resources/read", { uri: resource.uri });
+                  const text = read.contents?.map((content) => content.text ?? "").join("\n") ?? "";
+                  const concreteBlock = /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
+                  if (concreteBlock.test(text))
+                    throw new Error(`Sculpt grimoire resource owns the look: ${resource.uri}`);
+                }
+              }
+              console.log(`${serverName} ok: ${names.length} tools from ${surface.version}`);
+            } finally {
+              child.kill();
             }
-            child.kill();
-            console.log(`${serverName} ok: ${names.length} tools from ${surface.version}`);
           }
 
           for (const [serverName, surfaceFile] of surfaces) await probe(serverName, surfaceFile);
@@ -229,9 +234,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -248,9 +253,9 @@ jobs:
     needs: scaffold-smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -262,9 +267,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -280,9 +285,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm

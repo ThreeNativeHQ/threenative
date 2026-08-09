@@ -82,4 +82,9 @@ test('release lane locks and launches the packed simulator host with physics con
   ]) {
     assert.match(workflow, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
+  assert.match(workflow, /^permissions:\n  contents: read$/mu);
+  assert.match(workflow, /publish:[\s\S]*permissions:\n      contents: write/u);
+  assert.match(workflow, /gh release create[\s\S]*--prerelease[\s\S]*--latest=false/u);
+  assert.match(workflow, /finalize:[\s\S]*needs: \[clean-consumer, clean-consumer-ios\]/u);
+  assert.match(workflow, /cleanup-failed-release:[\s\S]*gh release delete/u);
 });
