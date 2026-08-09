@@ -104,6 +104,10 @@ pnpm native:build                  # opt-in; downloads deps, compiles the C++ ho
 pnpm native:verify:desktop         # 300-frame desktop run + non-blank screenshot
 ```
 
+Registry commands use the repository-local `.npmrc` (copied from
+`~/projects/threejs-to-bevy/.npmrc`). Keep it ignored and untracked, never print its
+contents, and pass it explicitly when needed: `npm --userconfig .npmrc <command>`.
+
 CI chains `install → typecheck → lint → test → scaffold-smoke → visuals`, with `benchmark`,
 `build → budgets` branching off `test`; each link blocks the next. Native platforms run in a
 separate workflow. Run `pnpm typecheck && pnpm lint && pnpm test` before calling a change done.
