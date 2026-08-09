@@ -101,7 +101,10 @@ async function assertMcpConfig(target: string): Promise<void> {
     throw new Error(`Scaffold produced no .mcp.json at '${configPath}'.`);
   });
   const { mcpServers } = JSON.parse(raw) as {
-    mcpServers?: Record<string, { args?: string[]; command?: string }>;
+    mcpServers?: Record<
+      string,
+      { args?: string[]; command?: string; env?: Record<string, string> }
+    >;
   };
   if (mcpServers === undefined || Object.keys(mcpServers).length === 0) {
     throw new Error(`'${configPath}' declares no mcpServers.`);
@@ -126,6 +129,17 @@ async function assertMcpConfig(target: string): Promise<void> {
       throw new Error(
         `MCP server '${name}' launches '${dependency}', which this project does not depend on.`,
       );
+    }
+    // Without a download directory the server writes into ~/Downloads, so a downloaded asset
+    // never reaches the game and the agent cannot tell. An absolute or escaping path is the
+    // same bug with a different destination.
+    for (const [key, value] of Object.entries(server.env ?? {})) {
+      if (!key.endsWith("_DOWNLOAD_DIR")) continue;
+      if (!value.startsWith("./") || value.includes("..")) {
+        throw new Error(
+          `MCP server '${name}' sets ${key}='${value}'; it must be a './' path inside the project.`,
+        );
+      }
     }
   }
 }

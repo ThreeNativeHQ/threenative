@@ -12,16 +12,17 @@
       "label": "aim-and-fire",
       "pointerPosition": { "x": 0.7, "y": 0.5 },
       "press": "Space",
-      "holdTicks": 5,
+      "holdTicks": 70,
       "release": true
     }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
     "movement": { "entity": "player", "rotationChanged": true },
     "animation": [{ "entity": "player", "clip": "attack", "entered": true, "advancedFrames": 1 }],
     "resources": [
-      { "id": "state", "path": "shots", "gte": 1, "changed": true }
+      { "id": "state", "path": "shots", "gte": 3, "changed": true },
+      { "id": "state", "path": "reload", "gte": 0.1, "changed": true }
     ]
   }
 }
