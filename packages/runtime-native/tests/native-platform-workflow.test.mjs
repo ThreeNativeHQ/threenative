@@ -48,6 +48,9 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
   expect(workflow).toContain('ios-driver.spec.ts');
   expect(workflow).toContain('ios-device-playtest.spec.ts');
   expect(workflow).toContain('native-ios-simulator');
+  for (const source of [workflow, releaseWorkflow]) {
+    expect(source).toContain('physics-parity.scenario.json');
+  }
   for (const token of [
     'threenative-ios-simulator-arm64.zip',
     'pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios',

@@ -333,6 +333,8 @@ jobs:
         run: |
           cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/main.ts"
           cp examples/native-smoke/vite.config.ts "$CONSUMER_TARGET/vite.config.ts"
+          cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
+            "$CONSUMER_TARGET/physics-parity.scenario.json"
           pnpm --dir "$CONSUMER_TARGET" build --target android
           apk="$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
           test -s "$apk"
@@ -448,6 +450,8 @@ jobs:
             --runtime-native-package "$runtime" --cli-package "$cli"
           cp examples/native-smoke/src/main.ts "$target/src/main.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
+          cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
+            "$target/physics-parity.scenario.json"
           pnpm --dir "$target" install --ignore-scripts
           echo "IOS_RELEASE_CONSUMER=$target" >> "$GITHUB_ENV"
       - name: Build the released host without a native compiler

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
@@ -9,11 +9,14 @@ const physicsScene =
 const nativeBackend =
   process.env.THREENATIVE_NATIVE_BACKEND === "enabled" ||
   process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
+const packedFixture = resolve(import.meta.dirname, "physics-parity.scenario.json");
 const fixture = readFileSync(
-  resolve(
-    import.meta.dirname,
-    "../../packages/physics/__tests__/fixtures/physics-parity.scenario.json",
-  ),
+  existsSync(packedFixture)
+    ? packedFixture
+    : resolve(
+        import.meta.dirname,
+        "../../packages/physics/__tests__/fixtures/physics-parity.scenario.json",
+      ),
   "utf8",
 );
 

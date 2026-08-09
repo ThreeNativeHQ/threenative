@@ -111,6 +111,8 @@ jobs:
             --runtime-native-package "$runtime" --cli-package "$cli"
           cp examples/native-smoke/src/physics.ts "$target/src/main.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
+          cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
+            "$target/physics-parity.scenario.json"
           pnpm --dir "$target" install --ignore-scripts
           echo "IOS_CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
       - name: Build and run the consumer app without CMake, Xcodebuild, or Rust
