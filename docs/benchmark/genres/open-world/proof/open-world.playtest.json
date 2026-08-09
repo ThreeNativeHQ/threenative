@@ -1,0 +1,31 @@
+{
+  "name": "open-world-brief-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 15,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "cross-three-chunk-boundaries",
+      "press": "ArrowRight",
+      "holdTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": { "entity": "player", "minDistance": 300, "pathLength": 300 },
+    "visibility": [
+      { "entity": "chunk.0", "present": false },
+      { "entity": "chunk.7", "minProjectedPixels": 1, "present": true }
+    ]
+  }
+}

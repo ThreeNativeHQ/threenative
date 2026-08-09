@@ -8,6 +8,12 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module">
+      if (new URLSearchParams(globalThis.location.search).has("terrain")) {
+        void import("/src/terrain-main.tsx");
+      } else {
+        void import("/src/main.tsx");
+      }
+    </script>
   </body>
 </html>

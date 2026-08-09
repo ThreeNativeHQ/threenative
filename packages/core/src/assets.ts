@@ -11,6 +11,7 @@ export interface AssetLoader {
   model<T = unknown>(path: string): Promise<T>;
   texture(path: string): Promise<Texture>;
   audio(path: string): Promise<AudioBuffer>;
+  release(kind: "audio" | "model" | "texture", path: string): boolean;
   clear(): void;
 }
 
@@ -19,7 +20,6 @@ function resolvePath(basePath: string, path: string): string {
   if (basePath.length === 0) return path;
   return `${basePath.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`;
 }
-
 type LoaderLike<T> = {
   load: (
     url: string,
@@ -34,7 +34,6 @@ function loadWith<T>(loader: LoaderLike<T>, url: string): Promise<T> {
     loader.load(url, resolve, undefined, reject);
   });
 }
-
 export function createAssetLoader(options: AssetLoaderOptions = {}): AssetLoader {
   const basePath = options.basePath ?? "";
   const cache = new Map<string, Promise<unknown>>();
@@ -63,6 +62,7 @@ export function createAssetLoader(options: AssetLoaderOptions = {}): AssetLoader
         const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
         return (await loadWith(new GLTFLoader(), url)) as T;
       }),
+    release: (kind, path) => cache.delete(`${kind}:${resolvePath(basePath, path)}`),
     texture: (path) =>
       cached("texture", path, async (url) => {
         if (options.texture !== undefined) return options.texture(url);

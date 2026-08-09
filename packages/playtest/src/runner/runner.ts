@@ -641,6 +641,7 @@ function normalizedRuntimeDiagnostics(snapshot: IPlaytestObservationSnapshot | u
       renderedEntities: (snapshot?.entities ?? []).map((entity) => ({
         id: entity.id,
         projectedBounds: entity.bounds === undefined ? undefined : pixelBoundsToNdc(entity.bounds, scenario.viewport),
+        visible: entity.visible,
       })),
     },
   };

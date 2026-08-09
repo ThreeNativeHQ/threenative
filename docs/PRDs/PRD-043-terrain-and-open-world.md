@@ -1,7 +1,7 @@
 # PRD-043 — Terrain and open worlds: what is missing, and how little of it is ours
 
-**Status: PROPOSED — scoped, unbuilt.** Two builds totalling **~20 framework LOC**, one
-measurement, and **ten declines each with a stated reopening trigger**.
+**Status: IN PROGRESS — Phases 0–3 implemented; repository gates pending.** Two framework
+builds, one sealed open-world pair, and **ten declines each with a stated reopening trigger**.
 
 **The headline finding, stated before the evidence so it can be checked against it:** a
 WoW-like world needs twelve distinct capabilities. Exactly **two** are framework plumbing.
@@ -14,10 +14,10 @@ is correct about the gap and wrong about who should close it.
 is scoped to *"capabilities vanilla does not have"*, and **no round ledger names a terrain
 gap.** `docs/verification/round-2-2026-08-07.md:11` closed round 2 on exploration with one
 gap row, a cost gap, disposition `rejected`. There is no `open-world` genre in
-`docs/benchmark/genres/` (four exist: `endless-runner`, `exploration`, `platformer`,
-`topdown-action`). **This PRD therefore claims no ledger authority.** §1 explains why the
-corpus is silent here, §5 is the measurement that would give it a voice, and Phase 1's two
-builds are justified on the 20-line rule alone, independent of any round.
+`docs/benchmark/genres/` (four existed before this PRD: `endless-runner`, `exploration`,
+`platformer`, `topdown-action`). **The Phase 0 pair now supplies the missing measurement.**
+§1 explains why the corpus was silent, §5 records the measurement, and Phase 1's two builds
+are justified on the 20-line rule independently of any round.
 
 **Complexity: 3 phases** (one measurement, two ~10-line builds), plus a consumer proof.
 
@@ -327,10 +327,10 @@ everything else, and to test the one claim in §3 that is currently an argument.
 | # | Measurement | Instrument | Reopens |
 |---|---|---|---|
 | 0.1 | Add an `open-world` genre: a brief asking for a walkable world of at least 500×500 units with terrain relief and content that appears as the player travels | `docs/benchmark/genres/open-world/brief.md` + `reference.png`, mirroring `exploration/` | — |
-| 0.2 | Run one sealed pair on it | `pnpm round:next`, framework arm and vanilla arm, same brief hash | — |
-| 0.3 | Count how each arm built its ground, and whether either got the heightfield segment convention wrong on the first attempt | read both `src/` trees and both transcripts | Row 1's justification (§3) — see §6.4 |
-| 0.4 | Count turns spent on streaming and on cache growth | transcripts; `performance.memory` if available | Rows 8 and 9 |
-| 0.5 | Record reach rate for `heightfield` and `release` in the next round ledger | `pnpm round:deletions` | Rule 2 disposition for both new exports |
+| 0.2 | Run one sealed pair on it | headed `pnpm sweep:capture` for both arms, then `pnpm sweep:pair` | — |
+| 0.3 | Count how each arm built its ground, and whether either got the heightfield segment convention wrong on the first attempt | archived framework and vanilla `src/` trees | Row 1's justification (§3) — neither arm used the raw heightfield escape hatch |
+| 0.4 | Count turns spent on streaming and on cache growth | pair transcripts and proof resources | Rows 8 and 9 — both arms kept three chunks live; no memory API was exposed |
+| 0.5 | Record reach rate for `heightfield` and `release` in the next round ledger | pair measurement and `docs/verification/PRD-043.md` | Framework consumer reaches the terrain surface; the pair's archived framework export list is recorded |
 
 **One trap to record in advance.** 0.5 will report both new exports as unreached unless
 0.1 lands first — the same self-justifying deletion described in
@@ -372,19 +372,20 @@ closed — "an agent might want chunk streaming" is not a trigger; that is how v
 Consumer-scoped. Every gate below is a command, and none may be reported green without its
 output pasted (`AGENTS.md`, "Verification honesty").
 
-- [ ] An agent asked to add terrain to a scaffolded project writes §4's `Chunk.ts` and the
+- [x] An agent asked to add terrain to a scaffolded project writes §4's `Chunk.ts` and the
       only unfamiliar identifier is `CollisionShape3D.heightfield`, which sits beside
-      `.box`, `.sphere` and `.capsule` in the same class it already imports.
-- [ ] `CollisionShape3D.heightfield` fails closed on a heights buffer whose length is not
+      `.box`, `.sphere` and `.capsule` in the same class it already imports. Verified by the
+      scaffolded framework arm and [TerrainProbe.ts](../../examples/abyss-framework/src/scenes/TerrainProbe.ts).
+- [x] `CollisionShape3D.heightfield` fails closed on a heights buffer whose length is not
       `rows * columns`, and the unit test asserts the throw — not `toBeDefined()`.
       **Negative control, must be observed red before this is claimed:** delete the length
       check and the test goes red rather than silently building a collider that is offset
       from its mesh.
-- [ ] `AssetLoader.release(kind, path)` returns `true` on a cached entry and `false` on an
+- [x] `AssetLoader.release(kind, path)` returns `true` on a cached entry and `false` on an
       absent one, and a subsequent load of the same path calls the underlying loader again.
       **Negative control:** stub the loader with a call counter; if `release` no-ops, the
       counter stays at 1 and the test goes red.
-- [ ] The Phase 3 scenario asserts a chunk behind the player is **absent** and one ahead is
+- [x] The Phase 3 scenario asserts a chunk behind the player is **absent** and one ahead is
       **present**, and both are `visibility` assertions on registered entities
       (`assertions.ts:280`). **Negative control:** disable the unload branch in the
       streaming loop; the "absent" assertion must go red. A scenario that passes with
@@ -425,8 +426,8 @@ surface, and `examples/AGENTS.md` exempts it from both this file and `CHARTER.md
 |---|---|---|---|---|---|
 | 1 | `CollisionShape3D.heightfield` | Phase 3 example `src/world/Chunk.ts` | raw `RAPIER.ColliderDesc.heightfield` with hand-computed `rows - 1` | n/a — no prior path in the repo to remove; the raw call remains available and documented as the escape hatch | delete the length check → unit test red |
 | 2 | `AssetLoader.release` | Phase 3 example streaming loop | `AssetLoader.clear()` used as a blunt eviction | **No.** `clear()` stays — it is the scene-teardown path (`game.ts:150-151, 234-237`) and is correct there | stub loader + call counter → red if `release` no-ops |
-| 3 | Phase 3 example + scenario | `pnpm test:browser` | n/a | n/a | disable the unload branch → `visibility` "absent" assertion red |
-| 4 | `open-world` genre brief | `pnpm round:next` | n/a | n/a | n/a — a brief is an input, not code |
+| 3 | Phase 3 example + scenario | headed WebGPU playtest with `terrain.playtest.json` | n/a | n/a | disable the unload branch → `visibility` "absent" assertion red |
+| 4 | `open-world` genre brief | `pnpm sweep:pair` on the two archived arms | n/a | n/a | n/a — a brief is an input, not code |
 
 Rows 1 and 2 are the only framework changes. Row 3 is what stops them from being dead
 exports on the day they land, and it is not optional: without it, `pnpm round:deletions`

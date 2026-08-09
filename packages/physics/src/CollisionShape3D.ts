@@ -1,7 +1,13 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Mesh } from "three";
 
-export type CollisionShapeKind = "box" | "sphere" | "capsule" | "trimesh" | "convexHull";
+export type CollisionShapeKind =
+  | "box"
+  | "sphere"
+  | "capsule"
+  | "trimesh"
+  | "convexHull"
+  | "heightfield";
 
 function geometryVertices(mesh: Mesh): Float32Array {
   const position = mesh.geometry.getAttribute("position");
@@ -38,6 +44,23 @@ export class CollisionShape3D {
 
   static capsule(halfHeight: number, radius: number): RAPIER.ColliderDesc {
     return RAPIER.ColliderDesc.capsule(halfHeight, radius);
+  }
+
+  static heightfield(
+    rows: number,
+    columns: number,
+    heights: Float32Array,
+    scale: { x: number; y: number; z: number },
+  ): RAPIER.ColliderDesc {
+    if (!Number.isInteger(rows) || rows < 2)
+      throw new Error("CollisionShape3D.heightfield requires at least 2 rows.");
+    if (!Number.isInteger(columns) || columns < 2)
+      throw new Error("CollisionShape3D.heightfield requires at least 2 columns.");
+    if (heights.length !== rows * columns)
+      throw new Error(
+        `CollisionShape3D.heightfield expected ${rows * columns} heights, received ${heights.length}.`,
+      );
+    return RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale);
   }
 
   static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): RAPIER.ColliderDesc {

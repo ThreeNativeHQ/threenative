@@ -66,6 +66,39 @@ test("runner carries a supplied HUD observation into the evaluated report", () =
   expect(result.pass).toBe(true);
 });
 
+test("visibility can prove a streamed entity is absent or present", () => {
+  const currentScenario = scenario({
+    visibility: [
+      { entity: "chunk.0", present: false },
+      { entity: "chunk.7", minProjectedPixels: 1, present: true },
+    ],
+  });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 1 },
+    entities: [{ bounds: { height: 100, width: 100, x: 100, y: 100 }, id: "chunk.7", visible: true }],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.0", pass: true }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.7", pass: true }));
+  expect(result.pass).toBe(true);
+});
+
+test("visibility presence fails when an unloaded entity remains registered", () => {
+  const currentScenario = scenario({ visibility: [{ entity: "chunk.0", present: false }] });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 1 },
+    entities: [{ id: "chunk.0", visible: false }],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.0", pass: false }));
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_VISIBILITY_FAILED");
+  expect(result.pass).toBe(false);
+});
+
 test("rotationChanged falls back to before/after bridge quaternions", () => {
   const currentScenario = scenario({ movement: { entity: "player", rotationChanged: true } });
   const snapshot = (rotation: [number, number, number, number]): IPlaytestObservationSnapshot => ({

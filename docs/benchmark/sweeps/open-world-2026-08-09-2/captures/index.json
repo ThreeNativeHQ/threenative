@@ -1,0 +1,27 @@
+{
+  "recipe": "webgpu-xvfb-headed",
+  "captures": [
+    {
+      "distinctColors": 17,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.05084813748619942,
+      "width": 1280,
+      "bytes": 8715,
+      "capture": "open-world-brief-proof-after.png",
+      "scenario": "open-world-brief-proof",
+      "source": "proof-artifacts/0/after.png"
+    },
+    {
+      "distinctColors": 18,
+      "brightPixelRatio": 1,
+      "height": 720,
+      "luminanceStdDev": 0.054430653316834984,
+      "width": 1280,
+      "bytes": 9036,
+      "capture": "open-world-brief-proof-before.png",
+      "scenario": "open-world-brief-proof",
+      "source": "proof-artifacts/0/before.png"
+    }
+  ]
+}

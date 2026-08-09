@@ -187,6 +187,7 @@ export interface IPlaytestVisibilityAssertion {
   entity?: string;
   maxOffscreenRatio?: number;
   minProjectedPixels?: number;
+  present?: boolean;
 }
 
 export interface IPlaytestDiagnosticsAssertion {
@@ -1339,6 +1340,7 @@ function validateVisibilityAssertion(value: unknown): IPlaytestVisibilityAsserti
     ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
     ...(typeof value.maxOffscreenRatio === "number" && Number.isFinite(value.maxOffscreenRatio) ? { maxOffscreenRatio: value.maxOffscreenRatio } : {}),
     ...(typeof value.minProjectedPixels === "number" && Number.isFinite(value.minProjectedPixels) ? { minProjectedPixels: value.minProjectedPixels } : {}),
+    ...(typeof value.present === "boolean" ? { present: value.present } : {}),
   };
 }
 

@@ -1,0 +1,20 @@
+{
+  "name": "threenative-native-smoke",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test": "pnpm run build && node scripts/verify-bundle.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

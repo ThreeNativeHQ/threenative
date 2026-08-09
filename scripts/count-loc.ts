@@ -76,6 +76,14 @@ export const FRAMEWORK_UNCOUNTED: readonly UncountedFrameworkFile[] = [
     path: "scenes/ViewportProbe.ts",
     reason: "The viewport probe is a diagnostic scene, not part of the benchmark game.",
   },
+  {
+    path: "scenes/TerrainProbe.ts",
+    reason: "The terrain consumer is a PRD proof scene, not part of the frozen benchmark game.",
+  },
+  {
+    path: "terrain-main.tsx",
+    reason: "The terrain entry point is a PRD proof route, not part of the frozen benchmark game.",
+  },
 ] as const;
 
 const PLATFORMER_SOURCE_EXTENSIONS = new Set([".css", ".ts", ".tsx"]);

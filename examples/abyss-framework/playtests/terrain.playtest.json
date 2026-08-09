@@ -1,0 +1,43 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 300,
+      "pathLength": 300
+    },
+    "visibility": [
+      {
+        "entity": "chunk.0",
+        "present": false
+      },
+      {
+        "entity": "chunk.7",
+        "minProjectedPixels": 1,
+        "present": true
+      }
+    ]
+  },
+  "name": "terrain-streaming",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 180,
+      "label": "cross-three-chunk-boundaries",
+      "press": ["ArrowRight"],
+      "release": true
+    }
+  ],
+  "subject": "player",
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 10
+}

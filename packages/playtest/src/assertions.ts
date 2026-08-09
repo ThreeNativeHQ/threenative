@@ -275,6 +275,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
       { description: "Minimum projected pixel area.", name: "minProjectedPixels", type: "number" },
       { description: "Maximum allowed offscreen ratio.", name: "maxOffscreenRatio", type: "number" },
+      { description: "Require the entity to be registered in the sampled scene.", name: "present", type: "boolean" },
     ],
     cardinality: "array",
     kind: "visibility",
@@ -1061,7 +1062,7 @@ export function evaluateRichPlaytestAssertions(input: {
   }
   for (const assertion of scenarioAssertions.visibility ?? []) {
     const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
-    const result = evaluateVisibilityAssertion(entity, assertion.minProjectedPixels, assertion.maxOffscreenRatio, input.scenario.viewport, input.report.observations?.runtimeDiagnostics);
+    const result = evaluateVisibilityAssertion(entity, assertion.minProjectedPixels, assertion.maxOffscreenRatio, assertion.present, input.scenario.viewport, input.report.observations?.runtimeDiagnostics);
     assertions.push(result.assertion);
     if (result.diagnostic !== undefined) {
       diagnostics.push(result.diagnostic);
@@ -1838,12 +1839,29 @@ function evaluateVisibilityAssertion(
   entity: string,
   minProjectedPixels: number | undefined,
   maxOffscreenRatio: number | undefined,
+  present: boolean | undefined,
   viewport: { height: number; width: number },
   runtimeDiagnosticsValue: unknown,
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
   const diagnosticsSnapshot = runtimeDiagnosticsSnapshot(runtimeDiagnosticsValue);
   const rendered = renderedEntity(diagnosticsSnapshot, entity);
   const supportsProjectedBounds = renderedEntitiesAreReported(diagnosticsSnapshot);
+  if (present !== undefined) {
+    const observed = rendered !== undefined;
+    const pass = observed === present;
+    const assertion = { details: { entity, observed, present }, id: `visibility.${entity}`, pass };
+    return pass
+      ? { assertion }
+      : {
+        assertion,
+        diagnostic: {
+          code: "TN_PLAYTEST_VISIBILITY_FAILED",
+          message: `Entity '${entity}' presence did not match the expected value.`,
+          severity: "error",
+          suggestion: "Check entity registration and streaming unload decisions.",
+        },
+      };
+  }
   if (!supportsProjectedBounds && hasNativeReadinessSamples(diagnosticsSnapshot)) {
     return {
       assertion: {

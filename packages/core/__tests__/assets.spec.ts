@@ -32,6 +32,25 @@ describe("AssetLoader", () => {
     expect(requests).toEqual(["/assets/a.glb"]);
   });
 
+  it("should release one cached asset and reload it on the next request", async () => {
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      model: async (url) => {
+        requests.push(url);
+        return { url };
+      },
+    });
+
+    await assets.model("a.glb");
+
+    expect(assets.release("model", "a.glb")).toBe(true);
+    expect(assets.release("model", "a.glb")).toBe(false);
+    await assets.model("a.glb");
+
+    expect(requests).toEqual(["/assets/a.glb", "/assets/a.glb"]);
+  });
+
   it("should enter the scene only after load resolves", async () => {
     const events: string[] = [];
     class OrderedScene extends Scene<{ loaded: boolean }> {

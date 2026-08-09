@@ -29,6 +29,28 @@ describe("interactionGroups", () => {
   });
 });
 
+describe("CollisionShape3D.heightfield", () => {
+  it("rejects a height buffer with the wrong number of samples", () => {
+    expect(() =>
+      CollisionShape3D.heightfield(3, 4, new Float32Array(11), { x: 1, y: 1, z: 1 }),
+    ).toThrow("expected 12 heights, received 11");
+  });
+
+  it("maps vertex counts to Rapier segment counts", () => {
+    const shape = CollisionShape3D.heightfield(3, 4, new Float32Array(12), {
+      x: 2,
+      y: 3,
+      z: 4,
+    });
+
+    expect(shape.shape).toMatchObject({
+      nrows: 2,
+      ncols: 3,
+      scale: { x: 2, y: 3, z: 4 },
+    });
+  });
+});
+
 async function fallingCrate(disjoint: boolean): Promise<number> {
   await RAPIER.init();
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
