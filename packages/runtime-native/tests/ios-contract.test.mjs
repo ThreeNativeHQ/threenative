@@ -27,6 +27,8 @@ test('iOS scaffold is root-linked to the exact shared core proof', () => {
     'TN_PLAYTEST_SCENARIO_INVALID',
     'TN_PLAYTEST_UNSUPPORTED_ON_TARGET',
   ]) assert.match(verifier, new RegExp(diagnostic));
+  assert.match(verifier, /simctl', 'launch', '--terminate-running-process'/u);
+  assert.doesNotMatch(verifier, /simctl', 'terminate'/u);
 });
 
 test('Linux can validate the iOS lane without claiming simulator execution', () => {

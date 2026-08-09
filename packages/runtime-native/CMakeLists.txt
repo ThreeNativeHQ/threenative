@@ -1333,13 +1333,16 @@ if(MYSTRAL_USE_DAWN AND TARGET dawn::webgpu)
         )
     elseif(WIN32)
         # Dawn D3D11/D3D12 SharedFence uses CompareObjectHandles from kernelbase.
-        # OneCoreUap.lib is the umbrella library for Windows 10+ APIs that includes
-        # all the necessary API sets. It's always available in the Windows SDK.
-        target_link_libraries(mystral-runtime PUBLIC OneCoreUap.lib)
-        # Dawn and V8 both include Abseil library, causing duplicate symbol errors.
-        # Use /FORCE:MULTIPLE to ignore duplicate definitions on MSVC.
-        if(MYSTRAL_USE_V8)
+        if(MSVC)
+            target_link_libraries(mystral-runtime PUBLIC OneCoreUap.lib)
+        else()
+            target_link_libraries(mystral-runtime PUBLIC kernelbase)
+        endif()
+        # Prebuilt Rust and Abseil archives carry overlapping runtime symbols.
+        if(MSVC)
             target_link_options(mystral-runtime PUBLIC "/FORCE:MULTIPLE")
+        else()
+            target_link_options(mystral-runtime PUBLIC "-Wl,--allow-multiple-definition")
         endif()
     elseif(UNIX)
         # Dawn and V8 both include Abseil library, causing multiple definition errors.
