@@ -565,7 +565,7 @@ describe("native adapter freshness", () => {
 });
 
 describe("physics adapter fail-closed symmetry", () => {
-  const rejectedInputs: readonly [string, (simulation: PhysicsSimulation) => void][] = [
+  const rejectedInputs: readonly (readonly [string, (simulation: PhysicsSimulation) => void])[] = [
     ["non-finite delta", (simulation) => simulation.step(Number.NaN)],
     [
       "Float64 input",
