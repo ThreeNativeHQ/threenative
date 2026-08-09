@@ -16,7 +16,7 @@
   "dependencies": {
     "@threenative/core": "0.1.0",
     "@threenative/physics": "0.1.0",
-    "@threenative/ui": "0.1.0",
+    "@threenative/ui": "0.1.12",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "three": "0.185.1",

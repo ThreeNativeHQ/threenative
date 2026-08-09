@@ -1,7 +1,6 @@
 {
   "name": "@threenative/playtest",
   "version": "0.1.0",
-  "private": true,
   "description": "Scenario-driven playtest harness for Three.js games. Runs on plain Three.js with zero ThreeNative dependencies.",
   "type": "module",
   "files": ["dist"],
@@ -15,6 +14,9 @@
     "./package.json": "./package.json"
   },
   "bin": { "threenative-playtest": "./dist/runner/cli.js" },
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",

@@ -1,7 +1,6 @@
 {
   "name": "@threenative/core",
   "version": "0.1.0",
-  "private": true,
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
   "files": ["dist"],
@@ -17,11 +16,14 @@
       "types": "./dist/playtest.d.ts",
       "import": "./dist/playtest.js"
     },
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*.js"
+    "./hot": {
+      "types": "./dist/hot.d.ts",
+      "import": "./dist/hot.js"
     },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "sideEffects": false,
   "dependencies": {

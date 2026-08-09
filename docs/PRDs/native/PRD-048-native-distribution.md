@@ -169,11 +169,14 @@ Android, and iOS consumers. The installer bootstraps that release lock from its 
 version. This is **prepared, not evidence** until the workflow runs.
 
 Registry publication is a separate external gate. `create-threenative`, runtime-native,
-core, physics, and playtest are absent from npm; the local core/physics/playtest/UI packages
-are private, and the registry UI version does not match the templates. Release order is
-runtime assets + lock, the complete template dependency set, runtime-native, then
-`create-threenative`. A local-tarball consumer proves the contract but does not satisfy the
-literal `pnpm create threenative` criterion.
+core, physics, and playtest are absent from npm. The local JavaScript package manifests are
+now pack- and publish-ready: scoped packages explicitly request public access, the four
+formerly-private packages are public, and UI reserves `0.1.12` because the registry's
+`0.1.0`–`0.1.11` releases are an incompatible predecessor. The templates still need their UI
+pin coordinated to `0.1.12`; their concurrent PRD-049 `threenative-sculpt-mcp@0.1.0` pin is
+also absent from npm. Release order is runtime assets + lock, the complete template
+dependency set, runtime-native, then `create-threenative`. A local-tarball consumer proves
+the contract but does not satisfy the literal `pnpm create threenative` criterion.
 
 **Gate:** on a clean machine with **no CMake, no NDK, no Xcode and no Rust**,
 `pnpm create threenative` followed by `pnpm build --target desktop` produces a running
