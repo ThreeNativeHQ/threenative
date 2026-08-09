@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { test } from 'vitest';
 
@@ -41,4 +43,17 @@ test('native workflow verifies a freshly scaffolded starter on Linux', () => {
   const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
   assert.match(workflow, /starter-linux:[\s\S]*--template starter[\s\S]*test:native/);
   assert.match(workflow, /native-starter-linux/);
+});
+
+test('starter verifier executes through a pnpm-style symlink', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'starter-desktop-cli-'));
+  const entrypoint = join(directory, 'verify-starter-desktop.mjs');
+  symlinkSync(
+    fileURLToPath(new URL('../scripts/verify-starter-desktop.mjs', import.meta.url)),
+    entrypoint,
+  );
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'starter' }));
+  const result = spawnSync(process.execPath, [entrypoint], { cwd: directory, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_ARTIFACT_MISSING/u);
 });
