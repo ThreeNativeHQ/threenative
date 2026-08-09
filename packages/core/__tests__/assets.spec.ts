@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { defineGame } from "../src/game.js";
 import { type Ctx, Scene } from "../src/scene.js";
@@ -14,6 +14,8 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("AssetLoader", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("should return the same promise for a repeated model request", async () => {
     const requests: string[] = [];
     const assets = createAssetLoader({
@@ -49,6 +51,24 @@ describe("AssetLoader", () => {
     await assets.model("a.glb");
 
     expect(requests).toEqual(["/assets/a.glb", "/assets/a.glb"]);
+  });
+
+  it("loads textures through fetch and createImageBitmap when Image is unavailable", async () => {
+    const bitmap = { height: 16, width: 16 } as ImageBitmap;
+    const createBitmap = vi.fn(async () => bitmap);
+    const fetchAsset = vi.fn(
+      async () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200 }),
+    );
+    vi.stubGlobal("Image", undefined);
+    vi.stubGlobal("createImageBitmap", createBitmap);
+    vi.stubGlobal("fetch", fetchAsset);
+
+    const texture = await createAssetLoader().texture("native-proof.png");
+
+    expect(fetchAsset).toHaveBeenCalledWith("native-proof.png");
+    expect(createBitmap).toHaveBeenCalledOnce();
+    expect(texture.image).toBe(bitmap);
+    expect(texture.version).toBe(1);
   });
 
   it("should enter the scene only after load resolves", async () => {

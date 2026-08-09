@@ -1,4 +1,4 @@
-import type { AudioLoader, Texture, TextureLoader } from "three";
+import { type AudioLoader, Texture, type TextureLoader } from "three";
 
 export interface AssetLoaderOptions {
   readonly basePath?: string;
@@ -30,9 +30,7 @@ type LoaderLike<T> = {
 };
 
 function loadWith<T>(loader: LoaderLike<T>, url: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    loader.load(url, resolve, undefined, reject);
-  });
+  return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
 }
 export function createAssetLoader(options: AssetLoaderOptions = {}): AssetLoader {
   const basePath = options.basePath ?? "";
@@ -66,6 +64,12 @@ export function createAssetLoader(options: AssetLoaderOptions = {}): AssetLoader
     texture: (path) =>
       cached("texture", path, async (url) => {
         if (options.texture !== undefined) return options.texture(url);
+        if (typeof Image === "undefined" && typeof createImageBitmap === "function") {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Failed to load texture '${url}': ${response.status}.`);
+          const bitmap = await createImageBitmap(new Blob([await response.arrayBuffer()]));
+          return Object.assign(new Texture(bitmap), { needsUpdate: true });
+        }
         const { TextureLoader: Loader } = await import("three");
         return loadWith(new Loader() as TextureLoader, url);
       }),

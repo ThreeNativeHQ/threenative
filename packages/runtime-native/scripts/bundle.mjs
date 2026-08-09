@@ -150,7 +150,7 @@ function generateVFSHeader(files, outputPath) {
 /**
  * Main
  */
-async function bundleProject(project, entryPoint, outputPath) {
+async function bundleProject(project, entryPoint, outputPath, target) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
@@ -173,7 +173,7 @@ document.querySelector = (selector) =>
 document.createElement = (tag) =>
   String(tag).toLowerCase() === "canvas" ? globalThis.canvas : nativeCreateElement(tag);
 for (const id of ["app", "root"]) {
-  if (document.getElementById(id) == null) {
+  if (nativeGetElementById(id) == null) {
     const element = document.createElement("div");
     element.id = id;
     element.nodeType = 1;
@@ -197,30 +197,32 @@ if (typeof globalThis.requestAnimationFrame === "function") {
     return result;
   });
 }`;
+  const virtualEntry = 'virtual:threenative-native-entry';
+  const resolvedVirtualEntry = `\0${virtualEntry}`;
   const nativeEntryPlugin = {
     name: 'threenative-native-entry',
     enforce: 'pre',
-    transform(source, id) {
-      if (resolve(id) !== absoluteEntry) return null;
-      let nativeSource = source;
-      const reactRoot = nativeSource.indexOf('const root = document.getElementById("root");');
-      if (reactRoot !== -1) nativeSource = nativeSource.slice(0, reactRoot);
-      const start = `void game.start().catch((error) => console.error(
-        \`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`,
-      ));`;
-      if (nativeSource.includes('void game.start();')) {
-        nativeSource = nativeSource.replace('void game.start();', start);
-      } else if (/^const game = defineGame/m.test(nativeSource) && !/\bgame\.start\s*\(/u.test(nativeSource)) {
-        nativeSource = `${nativeSource}\n${start}\n`;
+    resolveId(id) {
+      return id === virtualEntry ? resolvedVirtualEntry : null;
+    },
+    load(id) {
+      if (id !== resolvedVirtualEntry) return null;
+      return `import game from ${JSON.stringify(absoluteEntry)};
+void game.start().catch((error) => console.error(
+  \`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`,
+));`;
+    },
+    moduleParsed(info) {
+      if (resolve(info.id) === absoluteEntry && !info.exports.includes('default')) {
+        this.error(`TN_NATIVE_ENTRY_NO_DEFAULT: ${entryPoint} must default-export the game.`);
       }
-      return { code: nativeSource, map: null };
     },
   };
   mkdirSync(dirname(absoluteOutput), { recursive: true });
   await build({
     root: absoluteProject,
     plugins: [nativeEntryPlugin],
-    resolve: { conditions: ['threenative-native'] },
+    resolve: target === 'desktop' ? undefined : { conditions: ['threenative-native'] },
     configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
       ? join(absoluteProject, 'vite.config.ts')
       : undefined,
@@ -233,7 +235,14 @@ if (typeof globalThis.requestAnimationFrame === "function") {
       },
       minify: false,
       outDir: dirname(absoluteOutput),
-      rollupOptions: { output: { banner: nativePrelude, codeSplitting: false } },
+      rollupOptions: {
+        input: virtualEntry,
+        output: {
+          banner: `/* TN_NATIVE_BUNDLE_SCOPE */\n(() => {\n${nativePrelude}`,
+          codeSplitting: false,
+          footer: '})();',
+        },
+      },
       target: 'es2022',
     },
   });
@@ -252,6 +261,7 @@ async function main() {
   let assetsDir = null;
   let outputDir = 'dist';
   let project = null;
+  let target = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -262,12 +272,17 @@ async function main() {
       outputDir = args[++i];
     } else if (args[i] === '--project' && args[i + 1]) {
       project = args[++i];
+    } else if (args[i] === '--target' && args[i + 1]) {
+      target = args[++i];
     }
   }
 
   if (project) {
     if (!entryPoint) throw new Error('--project requires --entry.');
-    await bundleProject(project, entryPoint, outputDir);
+    if (!['android', 'desktop', 'ios'].includes(target)) {
+      throw new Error('--project requires --target android|desktop|ios.');
+    }
+    await bundleProject(project, entryPoint, outputDir, target);
     return;
   }
 

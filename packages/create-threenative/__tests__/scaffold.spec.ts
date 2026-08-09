@@ -41,6 +41,7 @@ const STARTER_PATHS = [
   "tailwind.config.ts",
   "tsconfig.json",
   "src/style.css",
+  "src/game.ts",
   "src/main.ts",
   "src/scenes/Boot.ts",
   "src/scenes/Play.ts",
@@ -69,6 +70,8 @@ const STARTER_PATHS = [
   "playtests/respawn.playtest.json",
   "playtests/seed.playtest.json",
   "playtests/pick.playtest.json",
+  "public/native-proof.glb",
+  "public/native-proof.png",
   "public/pickup.ogg",
 ];
 
@@ -85,6 +88,7 @@ const PLATFORMER_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
   "package.json",
+  "src/game.ts",
   "src/main.ts",
   "src/state.ts",
   "src/scenes/Boot.ts",
@@ -168,6 +172,9 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      await expect(readFile(path.join(result.target, "src/game.ts"), "utf8")).resolves.toContain(
+        "export default game",
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

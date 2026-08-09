@@ -55,3 +55,30 @@ A fresh Linux x64 run passed 300 frames in 8,779 ms and produced a nonblank 1280
 SHA-256 `52700257102d3105715ce4dfb20e95806c3990b69ad7a9e72d7653f550554335`.
 Windows and macOS remain **UNEXECUTED** until the opt-in workflow is present on the remote
 default branch and dispatched.
+
+## Scaffolded starter artifact proof — 2026-08-09
+
+The proof subject is a freshly scaffolded `starter`, not `examples/native-smoke`. Its
+declared `src/game.ts` entry was bundled with its texture, GLB and existing public assets,
+then packaged with the rebuilt Linux host.
+
+```sh
+THREENATIVE_RUNTIME_BINARY=$PWD/packages/runtime-native/build/tn-linux/mystral \
+  pnpm build:desktop
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
+```
+
+- Runtime: Linux x64, V8 13.1.201.22, Dawn/Vulkan, NVIDIA GeForce RTX 2080.
+- Liveness: exact ready, first-frame, asset-loaded and 300-frame markers; 300 frames in
+  9,203 ms with no `TN_NATIVE_START_FAILED`, validation error or `TypeError`.
+- Asset reads: `native-proof.png` (150 bytes) and `native-proof.glb` (624 bytes) came from
+  the embedded bundle with no network fallback.
+- Screenshot: 1280×720, 49,979 colors and 963 cyan proof-asset pixels; SHA-256
+  `9c00d1364e6789bbb5cb28c91a9751f9ef7441c21a8e4fa8600fbef14129d962`.
+- Negative control: repackaging the same bundle without `--assets` emitted
+  `TN_NATIVE_START_FAILED:...native-proof.png` and never emitted the asset-loaded marker.
+
+The starter's OGG pickup playback was not exercised by this visual gate; the host logged
+its pre-existing unsupported-decode path. This row does not claim audio parity. The new
+`starter-linux` workflow job rebuilds this same scaffold and retains its log, screenshot and
+JSON report.

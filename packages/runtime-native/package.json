@@ -25,6 +25,7 @@
     "scripts/package-android.mjs",
     "scripts/package-desktop.mjs",
     "scripts/package-ios.mjs",
+    "scripts/verify-starter-desktop.mjs",
     "LICENSE",
     "NOTICE"
   ],
@@ -41,8 +42,10 @@
   },
   "devDependencies": {
     "esbuild": "catalog:",
-    "pngjs": "catalog:",
     "three": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "pngjs": "catalog:"
   }
 }

@@ -160,7 +160,7 @@ describe("starter visual floor", () => {
     // An unpositioned canvas appended after a full-height wrapper renders
     // below the fold: a black page with nothing logged anywhere.
     const main = await readFile(path.join(minimal, "src/main.ts"), "utf8");
-    expect(main).toContain("container:");
+    expect(main).toContain("app.prepend(canvas)");
     const css = await readFile(path.join(minimal, "src/style.css"), "utf8");
     expect(css).toContain("#app canvas");
   });

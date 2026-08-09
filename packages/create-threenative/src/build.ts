@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
+type NativeBuildTarget = Exclude<BuildTarget, "web">;
 
 export interface BuildOptions {
   cwd?: string;
@@ -52,16 +53,29 @@ async function projectName(cwd: string): Promise<string> {
   return name;
 }
 
-export async function assertMobileBundleCompatible(bundle: string): Promise<void> {
+export async function assertNativeBundleCompatible(
+  bundle: string,
+  target: NativeBuildTarget,
+): Promise<void> {
   const source = await readFile(bundle, "utf8");
-  const incompatible = [
+  const webOnlyUi = [
+    ["React DOM", /\breact-dom(?:\/client)?\b|\bcreateRoot\s*\(/u],
+    ["document.getElementById", /\bdocument\.getElementById\s*\(/u],
+  ].filter(([, pattern]) => (pattern as RegExp).test(source));
+  if (webOnlyUi.length > 0) {
+    throw new Error(
+      `TN_NATIVE_WEB_ONLY_UI: ${target} bundle contains ${webOnlyUi.map(([label]) => label).join(", ")}. Keep the portable game in src/game.ts and move DOM or React mounting to src/main.ts; native UI is owned by PRD-051.`,
+    );
+  }
+  if (target === "desktop") return;
+  const wasm = [
     ["WebAssembly", /\bWebAssembly\b/u],
     ["Rapier WASM", /rapier_wasm|RAPIER_VERSION|rawrapier/u],
     ["Recast WASM", /recast-navigation\.wasm|recastnavigationwasm/u],
   ].filter(([, pattern]) => (pattern as RegExp).test(source));
-  if (incompatible.length === 0) return;
+  if (wasm.length === 0) return;
   throw new Error(
-    `Mobile target rejected: native bundle contains ${incompatible.map(([label]) => label).join(", ")}. Use a threenative-native conditional backend; Android QuickJS and iOS JSC cannot execute these WASM paths.`,
+    `TN_NATIVE_WASM_ON_MOBILE: ${target} bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
   );
 }
 
@@ -69,7 +83,30 @@ export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): P
   await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
 }
 
-async function bundleNative(cwd: string, runtimeRoot: string): Promise<string> {
+async function nativeEntry(cwd: string): Promise<string> {
+  const manifest = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8")) as {
+    threenative?: { nativeEntry?: unknown };
+  };
+  const configured = manifest.threenative?.nativeEntry;
+  if (configured !== undefined && (typeof configured !== "string" || configured.length === 0)) {
+    throw new Error("TN_NATIVE_ENTRY_MISSING: threenative.nativeEntry must name a source file.");
+  }
+  const relative = configured ?? "src/game.ts";
+  const entry = path.resolve(cwd, relative);
+  try {
+    if (!(await stat(entry)).isFile()) throw new Error("not a file");
+  } catch {
+    throw new Error(`TN_NATIVE_ENTRY_MISSING: ${relative} does not exist.`);
+  }
+  return entry;
+}
+
+async function bundleNative(
+  cwd: string,
+  runtimeRoot: string,
+  entry: string,
+  target: NativeBuildTarget,
+): Promise<string> {
   const output = path.join(cwd, ".threenative", "build", "game.js");
   await run(
     process.execPath,
@@ -78,7 +115,9 @@ async function bundleNative(cwd: string, runtimeRoot: string): Promise<string> {
       "--project",
       cwd,
       "--entry",
-      "src/main.ts",
+      entry,
+      "--target",
+      target,
       "--output",
       output,
     ],
@@ -95,11 +134,13 @@ function installedRuntime(runtimeRoot: string): string {
   return path.join(runtimeRoot, "prebuilt", key, filename);
 }
 
-async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Promise<void> {
+async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
+  const entry = await nativeEntry(cwd);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(cwd, runtimeRoot);
+  const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
+  await assertNativeBundleCompatible(bundle, target);
+  const assets = path.join(cwd, "public");
   if (target === "ios") {
-    await assertMobileBundleCompatible(bundle);
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
     await run(
       process.execPath,
@@ -107,6 +148,8 @@ async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Pr
         path.join(runtimeRoot, "scripts", "package-ios.mjs"),
         "--bundle",
         bundle,
+        "--assets",
+        assets,
         "--output",
         output,
       ],
@@ -115,7 +158,6 @@ async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Pr
     return;
   }
   if (target === "android") {
-    await assertMobileBundleCompatible(bundle);
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.apk`);
     await run(
       process.execPath,
@@ -123,6 +165,8 @@ async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Pr
         path.join(runtimeRoot, "scripts", "package-android.mjs"),
         "--bundle",
         bundle,
+        "--assets",
+        assets,
         "--output",
         output,
       ],
@@ -131,7 +175,6 @@ async function buildNative(target: Exclude<BuildTarget, "web">, cwd: string): Pr
     return;
   }
   const output = path.join(cwd, "dist-native", await projectName(cwd));
-  const assets = path.join(cwd, "public");
   await run(
     process.execPath,
     [

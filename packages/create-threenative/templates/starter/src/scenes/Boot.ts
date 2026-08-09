@@ -7,7 +7,7 @@ export class Boot extends Scene<GameState, GameCtx["physics"]> {
   static override readonly initialState = Play.initialState;
 
   override async load(ctx: GameCtx): Promise<void> {
-    await ctx.assets.texture("favicon.svg");
+    await ctx.assets.texture("native-proof.png");
   }
 
   override enter(ctx: GameCtx): void {

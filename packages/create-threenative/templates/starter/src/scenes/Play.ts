@@ -1,6 +1,6 @@
 import { AudioBus, type Ctx, Scene, type SceneFrame } from "@threenative/core";
 import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
-import { Group, Mesh, type PerspectiveCamera, Vector3 } from "three";
+import { DoubleSide, Group, Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
 import { pickAt } from "../pick.js";
@@ -18,6 +18,8 @@ export type GameCtx = Ctx<GameState, PhysicsContext>;
 const KILL_PLANE = -4;
 
 export class Play extends Scene<GameState, PhysicsContext> {
+  #assetProof: Group | undefined;
+
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
     entityCount: 0,
@@ -31,7 +33,25 @@ export class Play extends Scene<GameState, PhysicsContext> {
     score: 0,
   };
 
+  override async load(ctx: GameCtx): Promise<void> {
+    const [texture, model] = await Promise.all([
+      ctx.assets.texture("native-proof.png"),
+      ctx.assets.model<{ scene: Group }>("native-proof.glb"),
+    ]);
+    model.scene.traverse((object) => {
+      if (object instanceof Mesh) {
+        object.material = new MeshBasicMaterial({ map: texture, side: DoubleSide });
+      }
+    });
+    model.scene.name = "native-proof-assets";
+    this.#assetProof = model.scene;
+    console.info("TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb");
+  }
+
   override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+    if (this.#assetProof === undefined) throw new Error("Starter proof assets did not load.");
+    this.#assetProof.position.set(0, 1.7, -1.5);
+    ctx.add(this.#assetProof);
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.ogg");
     void pickupAudio.catch(() => undefined);

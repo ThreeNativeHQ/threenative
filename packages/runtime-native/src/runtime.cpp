@@ -102,8 +102,56 @@ namespace mystral { namespace webgpu {
 
 // SDL3 for window property access (Android ANativeWindow, Windows HWND, etc.)
 #include <SDL3/SDL.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 namespace mystral {
+
+static std::string resolveFetchFilePath(std::string path) {
+    const bool fileUrl = path.rfind("file://", 0) == 0;
+    if (fileUrl) {
+        path = path.substr(7);
+    }
+#if defined(__ANDROID__)
+    if (!fileUrl) {
+        const std::string normalized = vfs::normalizeBundlePath(path);
+        if (normalized.rfind("game/", 0) == 0) return normalized;
+        return "game/" + normalized;
+    }
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    if (!fileUrl && !path.empty() && path.front() == '/') {
+        return vfs::normalizeBundlePath(path);
+    }
+#endif
+    return path;
+}
+
+#if defined(__ANDROID__)
+static bool readAndroidAsset(const std::string& path, std::vector<uint8_t>& data,
+                             std::string& error) {
+    SDL_IOStream* io = SDL_IOFromFile(path.c_str(), "rb");
+    if (!io) {
+        error = "Failed to open Android asset: " + path + " - " + SDL_GetError();
+        return false;
+    }
+    const Sint64 size = SDL_GetIOSize(io);
+    if (size < 0) {
+        error = "Failed to get Android asset size: " + path;
+        SDL_CloseIO(io);
+        return false;
+    }
+    data.resize(static_cast<size_t>(size));
+    const size_t bytesRead = SDL_ReadIO(io, data.data(), data.size());
+    SDL_CloseIO(io);
+    if (bytesRead != data.size()) {
+        error = "Failed to read Android asset: " + path;
+        data.clear();
+        return false;
+    }
+    return true;
+}
+#endif
 
 // Android has no desktop crash dialog to suppress. Preserve the original signal
 // there so debuggerd can write a tombstone with the failing native frame.
@@ -1486,12 +1534,7 @@ private:
                     return jsEngine_->newNull();
                 }
 
-                std::string path = jsEngine_->toString(args[0]);
-
-                // Handle file:// prefix
-                if (path.substr(0, 7) == "file://") {
-                    path = path.substr(7);
-                }
+                std::string path = resolveFetchFilePath(jsEngine_->toString(args[0]));
 
                 // Check embedded bundle first (if present)
                 std::vector<uint8_t> embeddedData;
@@ -1502,29 +1545,14 @@ private:
 
 #if defined(__ANDROID__)
                 // On Android, use SDL_IOFromFile which can read from assets
-                SDL_IOStream* io = SDL_IOFromFile(path.c_str(), "rb");
-                if (!io) {
-                    std::cerr << "[Fetch] Failed to open file (SDL): " << path << " - " << SDL_GetError() << std::endl;
+                std::vector<uint8_t> buffer;
+                std::string error;
+                if (!readAndroidAsset(path, buffer, error)) {
+                    std::cerr << "[Fetch] " << error << std::endl;
                     return jsEngine_->newNull();
                 }
 
-                Sint64 size = SDL_GetIOSize(io);
-                if (size < 0) {
-                    std::cerr << "[Fetch] Failed to get file size: " << path << std::endl;
-                    SDL_CloseIO(io);
-                    return jsEngine_->newNull();
-                }
-
-                std::vector<uint8_t> buffer(static_cast<size_t>(size));
-                size_t bytesRead = SDL_ReadIO(io, buffer.data(), static_cast<size_t>(size));
-                SDL_CloseIO(io);
-
-                if (bytesRead != static_cast<size_t>(size)) {
-                    std::cerr << "[Fetch] Failed to read file: " << path << std::endl;
-                    return jsEngine_->newNull();
-                }
-
-                std::cout << "[Fetch] Read " << size << " bytes from (SDL): " << path << std::endl;
+                std::cout << "[Fetch] Read " << buffer.size() << " bytes from Android asset: " << path << std::endl;
                 return jsEngine_->newArrayBuffer(buffer.data(), buffer.size());
 #else
                 // On other platforms, use std::ifstream
@@ -1558,12 +1586,7 @@ private:
                     return jsEngine_->newUndefined();
                 }
 
-                std::string path = jsEngine_->toString(args[0]);
-
-                // Handle file:// prefix
-                if (path.substr(0, 7) == "file://") {
-                    path = path.substr(7);
-                }
+                std::string path = resolveFetchFilePath(jsEngine_->toString(args[0]));
 
                 // Get and protect the callback so it survives until we call it
                 auto callback = args[1];
@@ -1585,6 +1608,16 @@ private:
                     });
                     return jsEngine_->newUndefined();
                 }
+
+#if defined(__ANDROID__)
+                std::string error;
+                if (readAndroidAsset(path, embeddedData, error)) {
+                    pendingFileCallbacks_.push({callback, std::move(embeddedData), ""});
+                } else {
+                    pendingFileCallbacks_.push({callback, {}, std::move(error)});
+                }
+                return jsEngine_->newUndefined();
+#endif
 
                 // Use the async file reader with libuv thread pool
                 // The callback will be queued and invoked during processCompletedReads()
@@ -3371,22 +3404,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     }
 
     void processMicrotasks() {
-        // Process the microtask queue (for Promises)
-        // This is engine-specific:
-        // - QuickJS: Call js_std_loop or execute pending jobs
-        // - V8: Microtasks are usually auto-processed
-        // - JSC: Promises resolve through runloop integration
-
-        // For now, QuickJS needs explicit job execution
-        if (jsEngine_ && jsEngine_->getType() == js::EngineType::QuickJS) {
-            // QuickJS has a job queue for promises
-            // We can run pending jobs by evaluating a small script that triggers the queue
-            // Note: A proper implementation would call JS_ExecutePendingJob directly
-            // but that requires access to the raw context
-        }
-
-        // V8 and JSC handle microtasks automatically in their runloops
-        // So we don't need to do anything special for them
+        jsEngine_->processMicrotasks();
     }
 
     RuntimeConfig config_;
@@ -3773,6 +3791,9 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                     };
                 }
                 return { tagName: (tagName || '').toUpperCase(), style: {} };
+            };
+            document.createElementNS = function(_namespace, tagName) {
+                return document.createElement(tagName);
             };
         )";
         jsEngine_->eval(createElementSetup, "createElement-setup");

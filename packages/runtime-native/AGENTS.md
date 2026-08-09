@@ -36,6 +36,13 @@ TypeScript package.
 When you add a shim, say so in the owning gate doc so the other half of the repo can rely on
 it. When you remove or narrow one, grep `packages/*/src` first.
 
+Native bundles enter through the project's declared `threenative.nativeEntry` (default
+`src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
+`TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the
+portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or iOS reached
+WASM. Do not weaken these guards. Every packager stages `public/` beside the game bundle,
+and a missing runtime asset must reject game startup rather than fall back to the network.
+
 ## Package boundaries
 
 - `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked; a tracked file under

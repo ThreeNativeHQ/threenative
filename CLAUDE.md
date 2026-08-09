@@ -80,6 +80,9 @@ package, work out what the native host does with it.
   discarding it becomes a gameplay bug on one platform only.
 - **The native bundle is one import-free ESM file.** No code splitting, no dynamic
   `import()`; `examples/native-smoke` asserts this on every build.
+- **`src/game.ts` is the portable entry; `src/main.ts` is the web entry.** Native builds
+  read `threenative.nativeEntry` (default `src/game.ts`), import its default game export,
+  and start it. Keep React mounts and other browser-only UI in `src/main.ts`.
 - **Never claim a platform you did not execute.** Desktop and the Android emulator are
   green; iOS, physical hardware and performance parity are open. A result may say
   desktop-ready or Android-emulator plumbing-ready — it must not say mobile-ready.

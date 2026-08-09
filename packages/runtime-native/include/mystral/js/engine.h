@@ -238,6 +238,12 @@ public:
     virtual void gc() = 0;
 
     /**
+     * Run pending Promise jobs for engines whose embedders must explicitly
+     * checkpoint the microtask queue.
+     */
+    virtual void processMicrotasks() {}
+
+    /**
      * Signal the start of a new animation frame.
      * Enables per-frame allocation tracking (e.g., NativeFunction objects).
      * Must be called before executeAnimationFrameCallbacks().

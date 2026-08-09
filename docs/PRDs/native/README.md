@@ -1,10 +1,9 @@
 # Native / mobile PRDs — the sequence
 
-**Status (2026-08-09):** the Linux and Android-emulator lanes are implemented and proven;
-Apple/Windows execution and published prebuilt consumer distribution remain open. **New this
-date:** the native artifact does not yet match the game the author wrote — PRD-050 records
-three divergences that all fail open, and PRD-051 and PRD-052 own the two design gaps behind
-them.
+**Status (2026-08-09):** Linux and Android-emulator starter artifact parity is proven;
+Apple/Windows execution and published prebuilt consumer distribution remain open. PRD-050
+closed the native entry and packaged-asset divergences. PRD-051 and PRD-052 still own HUD
+rendering and mobile navigation.
 
 **Every Apple row below is blocked on hardware, not on work.** The operator has no Apple
 machine as of 2026-08-08 — no Xcode, no `xcrun`, no simulator, no physical device. iOS
@@ -19,11 +18,12 @@ requirement. A blocked row is still an open row: do not move one to the Proven c
 | Android device playtest with all fail-closed controls | Windows/macOS desktop lanes never run on a real runner |
 | Normal public native physics API: x86_64 emulator + negative controls; both ABIs compile | Published runtime assets/checksum lock and clean-machine consumer build |
 | Web CLI parity plus all 25 packed-template scenarios | Physical mobile hardware: no GPU, arm64 execution or frame-rate evidence |
-| — | Artifact parity: the bundler deletes the author's UI, string-matches the start call, and ships no `public/` assets to either phone (PRD-050) |
+| Scaffolded starter artifact: declared entry, texture + GLB on Linux and Android emulator | — |
 | — | A HUD that renders on native at all, and navmesh pathfinding on mobile — both undecided (PRD-051, PRD-052) |
 
 Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`,
-`docs/verification/PRD-046.md`, and `docs/verification/PRD-049.md`. **Never summarize this
+`docs/verification/PRD-046.md`, `docs/verification/PRD-049.md`, and
+`docs/verification/PRD-050.md`. **Never summarize this
 folder as "mobile works" while the right column has rows in it.**
 
 **Roadmap position:** `ROADMAP.md` **Phase 3**, whose gate to start is *"Phase 2 exit gate
@@ -50,18 +50,16 @@ runtime       on device     physics       distribution  tells the truth
 | 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web + Android closed; iOS and published consumer proof open |
 | 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
 | 5 | [PRD-049](done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |
-| 6 | [PRD-050](PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **proposed** — not started |
+| 6 | [PRD-050](done/PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **done** — Linux desktop + Android emulator executed; iOS packaging-only |
 | 7 | [PRD-051](PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **proposed** — Phase 0 is a spike; nothing built until it answers |
 | 8 | [PRD-052](PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 §255 opened and nobody owned | **proposed** — Phase 0 is a measurement |
 | — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
 
-**PRD-050 is where "write once, run everywhere" is currently false.** Three divergences, each
-failing open: the bundler deletes the author's UI at a string literal
-(`bundle.mjs:203-205`), it finds the game's start call by string match (`bundle.mjs:211-217`),
-and `public/` assets reach desktop but neither phone (`package-android.mjs:42`,
-`package-ios.mjs:56`). No gate catches any of them, because every native gate to date has
-been proved on `examples/native-smoke`, which has no UI and no assets. PRD-051 and PRD-052
-exist so PRD-050 can stay a build fix instead of smuggling in a UI system and a Recast port.
+**PRD-050 closed the fail-open artifact divergences.** Native builds now use a declared
+portable entry, reject unsupported graphs, and stage `public/` on every target. The durable
+proof is the scaffolded starter on Linux and the Android emulator, with missing-asset
+controls. PRD-051 and PRD-052 remain open because this build fix does not invent a native
+HUD system or a Recast port.
 
 **PRD-048 is last in the diagram but not gated behind PRD-046.** It depends on PRD-047
 Phases 2 and 5, not on physics. Its Phase 0 — deleting 1,159 lines of dead Mystral demo

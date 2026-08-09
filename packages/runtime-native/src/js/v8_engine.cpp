@@ -797,6 +797,16 @@ public:
         isolate_->LowMemoryNotification();
     }
 
+    void processMicrotasks() override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+        while (v8::platform::PumpMessageLoop(g_platform.get(), isolate_)) {
+        }
+        isolate_->PerformMicrotaskCheckpoint();
+    }
+
     void beginFrame() override {
         inFrame_ = true;
         isolate_->SetIdle(false);

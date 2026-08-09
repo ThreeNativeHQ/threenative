@@ -808,7 +808,9 @@ private:
 
         if (result.ptr) {
             JSValue* val = (JSValue*)result.ptr;
-            return *val;
+            // The handle retains its own reference until frame cleanup. Return
+            // a duplicate so QuickJS owns the callback result independently.
+            return JS_DupValue(ctx, *val);
         }
         return JS_UNDEFINED;
     }

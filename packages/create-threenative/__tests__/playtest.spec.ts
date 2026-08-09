@@ -64,8 +64,8 @@ describe("starter playtest proof", () => {
   });
 
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {
-    const main = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/src/main.ts"),
+    const game = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/game.ts"),
       "utf8",
     );
     const menu = await readFile(
@@ -80,10 +80,29 @@ describe("starter playtest proof", () => {
       path.resolve("packages/create-threenative/templates/starter/public/pickup.ogg"),
     );
 
-    expect(main).toContain("seed: 90210");
+    expect(game).toContain("seed: 90210");
     expect(menu).toContain("game.pause()");
     expect(seed).toContain('"path": "levelX"');
     expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
+  });
+
+  it("should load the packaged texture and GLB through the starter scene", async () => {
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/scenes/Play.ts"),
+      "utf8",
+    );
+    const texture = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/public/native-proof.png"),
+    );
+    const model = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/public/native-proof.glb"),
+    );
+
+    expect(play).toContain('ctx.assets.texture("native-proof.png")');
+    expect(play).toContain('ctx.assets.model<{ scene: Group }>("native-proof.glb")');
+    expect(play).toContain("TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb");
+    expect(texture.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect(model.subarray(0, 4).toString("ascii")).toBe("glTF");
   });
 
   it("should ship JSON scenarios for both templates and no legacy TypeScript scenario", async () => {
@@ -107,8 +126,8 @@ describe("starter playtest proof", () => {
   });
 
   it("should ship a boot-to-play jump scenario", async () => {
-    const main = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/src/main.ts"),
+    const game = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/game.ts"),
       "utf8",
     );
     const boot = await readFile(
@@ -124,8 +143,8 @@ describe("starter playtest proof", () => {
       "utf8",
     );
 
-    expect(main).toContain("scenes: { boot: Boot, play: Play }");
-    expect(main).toContain("buttons: [0]");
+    expect(game).toContain("scenes: { boot: Boot, play: Play }");
+    expect(game).toContain("buttons: [0]");
     expect(boot).toContain('ctx.goto("play")');
     expect(player).toContain('ctx.input.justPressed("jump")');
     expect(scenario).toContain('"axis": "+y"');

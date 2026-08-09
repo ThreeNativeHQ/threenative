@@ -222,6 +222,22 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
     engine->setProperty(destNode, "maxChannelCount", engine->newNumber(2));
     engine->setProperty(jsCtx, "destination", destNode);
 
+    // Three.js falls back to the legacy listener methods when AudioParam
+    // coordinates are unavailable. The native mixer is non-positional today,
+    // but the listener object must still exist for ordinary AudioListener use.
+    auto listener = engine->newObject();
+    engine->setProperty(listener, "setPosition",
+        engine->newFunction("setPosition", [](void*, const std::vector<js::JSValueHandle>&) {
+            return g_jsEngine->newUndefined();
+        })
+    );
+    engine->setProperty(listener, "setOrientation",
+        engine->newFunction("setOrientation", [](void*, const std::vector<js::JSValueHandle>&) {
+            return g_jsEngine->newUndefined();
+        })
+    );
+    engine->setProperty(jsCtx, "listener", listener);
+
     // createBuffer(numberOfChannels, length, sampleRate)
     engine->setProperty(jsCtx, "createBuffer",
         engine->newFunction("createBuffer", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) -> js::JSValueHandle {
@@ -338,10 +354,18 @@ void initializeAudioBindings(js::Engine* engine) {
         }
     );
 
-    engine->setGlobalProperty("AudioContext", audioContextCtor);
-
-    // Also support webkitAudioContext for compatibility
-    engine->setGlobalProperty("webkitAudioContext", audioContextCtor);
+    // QuickJS native callbacks used directly with `new` keep their empty
+    // constructor receiver. Copy the native context surface onto a JavaScript
+    // receiver so Three.js gets the browser constructor contract on every engine.
+    engine->setGlobalProperty("__tnCreateAudioContext", audioContextCtor);
+    if (!engine->evalScript(
+            "globalThis.AudioContext = function AudioContext() { "
+            "return Object.defineProperties(this, Object.getOwnPropertyDescriptors("
+            "globalThis.__tnCreateAudioContext())); }; "
+            "globalThis.webkitAudioContext = globalThis.AudioContext;",
+            "audio-context-constructor.js")) {
+        std::cerr << "[Audio] Failed to install AudioContext constructor" << std::endl;
+    }
 
     std::cout << "[Audio] Web Audio API bindings initialized" << std::endl;
 }

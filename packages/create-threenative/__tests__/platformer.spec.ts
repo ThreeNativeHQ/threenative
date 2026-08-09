@@ -57,8 +57,8 @@ describe("platformer checkpoints", () => {
   });
 
   it("should register a chaser entity and the recast plugin in the platformer template", async () => {
-    const main = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/main.ts"),
+    const game = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/game.ts"),
       "utf8",
     );
     const level = await readFile(
@@ -66,7 +66,7 @@ describe("platformer checkpoints", () => {
       "utf8",
     );
 
-    expect(main).toContain("recast(");
+    expect(game).toContain("recast(");
     expect(level).toContain('ctx.entities.add("chaser", chaser)');
   });
 });

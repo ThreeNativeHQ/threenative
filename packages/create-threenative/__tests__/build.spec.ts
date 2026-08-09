@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertMobileBundleCompatible, build, buildWeb, parseBuildArgs } from "../src/build.js";
+import { assertNativeBundleCompatible, build, buildWeb, parseBuildArgs } from "../src/build.js";
 import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -84,6 +84,7 @@ describe("threenative build", () => {
         optionalDependencies?: Record<string, string>;
         pnpm?: { onlyBuiltDependencies?: string[] };
         scripts?: Record<string, string>;
+        threenative?: { nativeEntry?: string };
       };
       expect(manifest.scripts?.build, template).toBe("threenative build");
       expect(manifest.scripts?.["build:web"], template).toBe("threenative build --target web");
@@ -101,18 +102,44 @@ describe("threenative build", () => {
       expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
         "@threenative/runtime-native",
       );
+      expect(manifest.threenative?.nativeEntry, template).toBe("src/game.ts");
     }
   });
 
-  it("accepts a native-safe backend and rejects WASM bundles", async () => {
+  it("guards web-only UI on every native target and WASM on mobile only", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mobile-bundle-"));
     roots.push(root);
     const native = path.join(root, "native.js");
     const wasm = path.join(root, "wasm.js");
+    const react = path.join(root, "react.js");
     await writeFile(native, "globalThis.__THREENATIVE_NATIVE__.physics.createSimulation();\n");
     await writeFile(wasm, "WebAssembly.instantiate(bytes); // rapier_wasm\n");
-    await expect(assertMobileBundleCompatible(native)).resolves.toBeUndefined();
-    await expect(assertMobileBundleCompatible(wasm)).rejects.toThrow(/WebAssembly.*Rapier WASM/u);
+    await writeFile(react, 'createRoot(document.getElementById("root")).render(app);\n');
+    for (const target of ["desktop", "android", "ios"] as const) {
+      await expect(assertNativeBundleCompatible(native, target)).resolves.toBeUndefined();
+      await expect(assertNativeBundleCompatible(react, target)).rejects.toThrow(
+        /TN_NATIVE_WEB_ONLY_UI.*src\/main\.ts.*PRD-051/u,
+      );
+    }
+    await expect(assertNativeBundleCompatible(wasm, "desktop")).resolves.toBeUndefined();
+    for (const target of ["android", "ios"] as const) {
+      await expect(assertNativeBundleCompatible(wasm, target)).rejects.toThrow(
+        /TN_NATIVE_WASM_ON_MOBILE.*src\/game\.ts.*PRD-052/u,
+      );
+    }
+  });
+
+  it("fails closed when the declared native entry is missing", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-missing-entry-"));
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "missing-entry", threenative: { nativeEntry: "src/portable.ts" } }),
+    );
+
+    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
+      /TN_NATIVE_ENTRY_MISSING: src\/portable\.ts/u,
+    );
   });
 
   it("routes iOS through the verified simulator packager instead of a source build", async () => {

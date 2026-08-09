@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import {
+  chmodSync,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export function parseArgs(args) {
@@ -33,14 +44,48 @@ export function packageDesktop(options) {
     ? `${options.output}.exe`
     : options.output;
   mkdirSync(dirname(output), { recursive: true });
-  const args = ['compile', options.bundle, '--out', output];
-  if (options.assets && existsSync(options.assets)) args.push('--include', options.assets);
-  const result = spawnSync(options.runtime, args, { encoding: 'utf8', stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
+  const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-'));
+  try {
+    const stagedEntry = stageDesktopFiles(options.bundle, options.assets, staging);
+    const args = [
+      'compile',
+      stagedEntry,
+      '--root',
+      staging,
+      '--include',
+      staging,
+      '--out',
+      output,
+    ];
+    const result = spawnSync(options.runtime, args, { encoding: 'utf8', stdio: 'inherit' });
+    if (result.error) throw result.error;
+    if (result.status !== 0)
+      throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
+  } finally {
+    rmSync(staging, { force: true, recursive: true });
+  }
   if (process.platform !== 'win32') chmodSync(output, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
   return output;
+}
+
+export function stageDesktopFiles(bundle, assets, staging) {
+  mkdirSync(staging, { recursive: true });
+  if (assets && existsSync(assets)) {
+    if (!statSync(assets).isDirectory()) {
+      throw new Error(`Desktop assets path is not a directory: ${assets}`);
+    }
+    for (const entry of readdirSync(assets)) {
+      if (entry === '.threenative') {
+        throw new Error('TN_NATIVE_ASSET_RESERVED_PATH: public/.threenative is reserved.');
+      }
+      cpSync(join(assets, entry), join(staging, entry), { recursive: true });
+    }
+  }
+  const entry = join(staging, '.threenative', 'game.js');
+  mkdirSync(dirname(entry), { recursive: true });
+  copyFileSync(bundle, entry);
+  return entry;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

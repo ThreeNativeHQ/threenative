@@ -60,6 +60,57 @@ jobs:
           path: packages/runtime-native/artifacts/
           if-no-files-found: error
 
+  starter-linux:
+    name: Scaffolded starter desktop artifact
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - name: Build and pack the scaffold dependencies
+        run: |
+          pnpm --filter @threenative/playtest build
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/ui build
+          pnpm --filter create-threenative build
+          pnpm --filter @threenative/runtime-native native:build
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          for package in @threenative/playtest @threenative/core @threenative/physics \
+            @threenative/ui @threenative/runtime-native create-threenative; do
+            pnpm --filter "$package" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          done
+      - name: Build and verify the scaffolded starter
+        run: |
+          target="$RUNNER_TEMP/threenative-starter-native"
+          core=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
+          physics=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
+          playtest=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          ui=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          runtime=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
+          node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
+            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --ui-package "$ui" --runtime-native-package "$runtime" --cli-package "$cli"
+          pnpm --dir "$target" install --ignore-scripts
+          THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
+            pnpm --dir "$target" test:native
+          mkdir -p packages/runtime-native/artifacts/starter-linux
+          cp "$target/artifacts/native/"* packages/runtime-native/artifacts/starter-linux/
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-starter-linux
+          path: packages/runtime-native/artifacts/starter-linux/
+          if-no-files-found: error
+
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
     runs-on: macos-15

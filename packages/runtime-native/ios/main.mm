@@ -54,6 +54,13 @@ int main(int, char**) {
             NSLog(@"TN_IOS_PROOF_FAILED: native-smoke.js is empty or unreadable");
             return 2;
         }
+        NSString* gamePath = [[[NSBundle mainBundle] resourceURL]
+            URLByAppendingPathComponent:@"game" isDirectory:YES].path;
+        const BOOL hasGameAssets = [[NSFileManager defaultManager] fileExistsAtPath:gamePath];
+        if (hasGameAssets && ![[NSFileManager defaultManager] changeCurrentDirectoryPath:gamePath]) {
+            NSLog(@"TN_IOS_PROOF_FAILED: packaged game asset directory is unreadable");
+            return 2;
+        }
 
         mystral::RuntimeConfig config;
         config.width = 0;

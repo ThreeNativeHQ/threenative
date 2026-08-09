@@ -9,22 +9,36 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
 function valueAfter(args, flag) {
   const index = args.indexOf(flag);
-  if (index === -1 || !args[index + 1]) throw new Error(`${flag} requires a value.`);
+  if (index === -1 || !args[index + 1] || args[index + 1].startsWith('--')) {
+    throw new Error(`${flag} requires a value.`);
+  }
   return resolve(args[index + 1]);
 }
 
 function checksum(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function listFiles(directory, relative = '') {
+  const files = [];
+  for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
+    const path = relative ? posix.join(relative, entry.name) : entry.name;
+    if (entry.isDirectory()) files.push(...listFiles(directory, path));
+    else if (entry.isFile()) files.push(path);
+    else throw new Error(`Unsupported iOS asset entry: ${join(directory, path)}`);
+  }
+  return files.sort();
 }
 
 function findApp(directory) {
@@ -40,7 +54,7 @@ function findApp(directory) {
   return undefined;
 }
 
-export function stageIosSimulatorApp({ bundle, output, templateApp }) {
+export function stageIosSimulatorApp({ assets, bundle, output, templateApp }) {
   for (const [label, path] of [
     ['native bundle', bundle],
     ['verified iOS simulator host', templateApp],
@@ -56,7 +70,23 @@ export function stageIosSimulatorApp({ bundle, output, templateApp }) {
   mkdirSync(dirname(output), { recursive: true });
   cpSync(templateApp, output, { recursive: true });
   cpSync(bundle, join(output, 'native-smoke.js'));
+  const game = join(output, 'game');
+  rmSync(game, { force: true, recursive: true });
+  mkdirSync(game, { recursive: true });
+  let assetFiles = [];
+  if (assets && existsSync(assets)) {
+    if (!statSync(assets).isDirectory()) {
+      throw new Error(`iOS assets path is not a directory: ${assets}`);
+    }
+    assetFiles = listFiles(assets);
+    for (const file of assetFiles) {
+      const staged = join(game, file);
+      mkdirSync(dirname(staged), { recursive: true });
+      cpSync(join(assets, file), staged);
+    }
+  }
   const report = {
+    assets: assetFiles.map((path) => ({ path, sha256: checksum(join(game, path)) })),
     bundleSha256: checksum(bundle),
     host: 'ios-simulator-arm64',
     output,
@@ -86,7 +116,9 @@ export async function packageIosSimulator(options) {
       }
       const actual = checksum(archive);
       if (actual !== expected) {
-        throw new Error(`iOS simulator host checksum mismatch: expected ${expected}, received ${actual}.`);
+        throw new Error(
+          `iOS simulator host checksum mismatch: expected ${expected}, received ${actual}.`,
+        );
       }
     } else {
       archive = join(temporary, 'threenative-ios.zip');
@@ -98,11 +130,14 @@ export async function packageIosSimulator(options) {
     });
     if (result.error) throw result.error;
     if (result.status !== 0) {
-      throw new Error(`ditto failed to unpack ${basename(archive)}: ${result.stderr || result.stdout}`);
+      throw new Error(
+        `ditto failed to unpack ${basename(archive)}: ${result.stderr || result.stdout}`,
+      );
     }
     const templateApp = findApp(temporary);
     if (!templateApp) throw new Error('Verified iOS simulator archive contains no .app bundle.');
     return stageIosSimulatorApp({
+      assets: options.assets ? resolve(options.assets) : undefined,
       bundle: resolve(options.bundle),
       output: resolve(options.output),
       templateApp,
@@ -117,6 +152,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     const args = process.argv.slice(2);
     const report = await packageIosSimulator({
       archive: process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE,
+      assets: args.includes('--assets') ? valueAfter(args, '--assets') : undefined,
       bundle: valueAfter(args, '--bundle'),
       output: valueAfter(args, '--output'),
       sha256: process.env.THREENATIVE_IOS_SIMULATOR_SHA256,
