@@ -18,6 +18,7 @@ export class FixedStepLoop {
   #lastTime: number | undefined;
   #frameHandle: number | undefined;
   #running = false;
+  #manualClock = false;
   #fps = 0;
   #lastRenderTime: number | undefined;
 
@@ -63,12 +64,13 @@ export class FixedStepLoop {
     this.#frameHandle = undefined;
     this.#lastTime = undefined;
     this.#accumulator = 0;
+    this.#manualClock = false;
   }
 
   stepFrame(now: number): number {
     const last = this.#lastTime ?? now;
-    const elapsed = Math.max(0, (now - last) / 1000);
-    this.#lastTime = now;
+    const elapsed = this.#manualClock ? 0 : Math.max(0, (now - last) / 1000);
+    if (!this.#manualClock) this.#lastTime = now;
     this.#accumulator += elapsed;
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
@@ -92,6 +94,7 @@ export class FixedStepLoop {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
+    this.#manualClock = true;
     for (let index = 0; index < ticks; index += 1) {
       this.#lastTime = (this.#lastTime ?? 0) + this.step * 1_000;
       this.#onUpdate(this.step);

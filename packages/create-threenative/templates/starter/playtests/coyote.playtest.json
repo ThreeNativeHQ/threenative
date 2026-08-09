@@ -17,7 +17,7 @@
       "kind": "input",
       "label": "off-ledge",
       "press": "ArrowLeft",
-      "holdTicks": 12,
+      "holdTicks": 3,
       "release": false
     },
     { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },

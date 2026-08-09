@@ -501,7 +501,13 @@ async function runStep(
     // Let the game loop observe the release before a following step presses the
     // same key again. Without this frame, adjacent steps are indistinguishable
     // from one continuous hold to input latches.
-    if (!finalStep) await waitFrames(page, 1);
+    if (!finalStep) {
+      if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
+        await bridge.advance(1);
+      } else {
+        await waitFrames(page, 1);
+      }
+    }
   }
   if (step.pointerPosition?.buttons !== undefined && step.release) {
     await setPointerButtons(page, inputState, 0);

@@ -75,4 +75,17 @@ describe("FixedStepLoop", () => {
     expect(loop.advance(3)).toBe(3);
     expect(updates).toBe(3);
   });
+
+  it("should ignore live frames after switching to the advanced clock", () => {
+    let updates = 0;
+    const loop = new FixedStepLoop({ onUpdate: () => updates++ });
+    loop.start(0);
+
+    loop.advance(10);
+    expect(loop.stepFrame(20)).toBe(0);
+    expect(loop.stepFrame(37)).toBe(0);
+    expect(loop.stepFrame(10_000)).toBe(0);
+
+    expect(updates).toBe(10);
+  });
 });
