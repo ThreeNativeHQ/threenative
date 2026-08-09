@@ -480,7 +480,7 @@ async function extractArchive(archivePath, destDir) {
     mkdirSync(destDir, { recursive: true });
   }
 
-  if (archivePath.endsWith('.zip')) {
+  if (archivePath.endsWith('.zip') || archivePath.endsWith('.aar')) {
     execSync(`unzip -o "${archivePath}" -d "${destDir}"`, { stdio: 'inherit' });
   } else if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
     execFileSync('tar', ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });
