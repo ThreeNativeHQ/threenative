@@ -1,8 +1,9 @@
 # PRD-046 — native physics
 
-**Status: IN PROGRESS. Phases 0–2 and 5 complete; Phase 3 is implemented but blocked on
-Apple execution, and Phase 4's local artifact/install contract is complete while the real
-published clean-machine consumer proof remains open. Retargeted by PRD-047 — transport and packaging
+**Status: IN PROGRESS. Phases 0–3 and 5 complete; Phase 3 passed on current SHA `e38439c`
+in GitHub run `31313092745`. Phase 4's
+local artifact/install contract is complete while the real published clean-machine consumer
+proof remains open. Retargeted by PRD-047 — transport and packaging
 revised, correctness gates unchanged.** Three things in the original design are now historical and are marked
 inline where they appear: the **JSI transport**, the separate **`@threenative/physics-native`
 package**, and the **concrete-Rapier-object escape hatch**. The active design compiles Rapier
@@ -22,8 +23,8 @@ are in `docs/verification/PRD-046.md`.
 
 **Execution gate is now open on the Android side.** PRD-045's negative controls passed on
 `emulator-5554` (`docs/verification/PRD-045.md`), which was the hard prerequisite in §0.
-PRD-047's Android runtime rows are also green. iOS is still zero-evidence on both, so Phase 3
-below stays blocked where Phase 2 does not.
+PRD-047's Android runtime rows are also green. Hosted iOS simulator execution passed again on
+current SHA `e38439c` after the device-scenario tick-batching change, so Phase 3 is closed.
 
 **Complexity: 11 → HIGH mode, top of the scale.** (new language/toolchain — Rust
 cross-compilation +2, host-neutral native ABI +2, binary distribution +2, numerical
@@ -232,12 +233,12 @@ hardware exists, and the docs must not claim otherwise.
 scaffolding pins `rapier3d =0.30.0`. That delta is §1.1's whole subject and Phase 0 has to
 quantify it before this phase can interpret its own numbers.
 
-### Phase 3 — iOS native binding — **IMPLEMENTED; EXECUTION BLOCKED**
+### Phase 3 — iOS native binding — **PASS**
 
-Same, via `xcrun simctl`. The root-linked app, simulator verifier and device transport now
-exist and pass static/contract checks. **Execution remains blocked** because this Linux host
-has no Xcode, `xcrun`, Apple runner or simulator result. It does not close on the strength of
-the Android result.
+Same, via `xcrun simctl`. The root-linked app, simulator verifier and device transport passed
+on the hosted Apple runner in run `31313092745` at `e38439c`, including normal/masked
+physics and three deliberate failures. The same run exercised a packed consumer with CMake,
+Xcodebuild and Rust masked from its PATH.
 
 ### Phase 4 — binary distribution — **ARTIFACT CONTRACT COMPLETE; CONSUMER PROOF OPEN**
 
@@ -327,7 +328,7 @@ deleted rather than routed around this trigger.
   spent back what it bought. Stop and re-read `NATIVE-RUNTIME.md`'s boundary rule.
 - Distribution requires users to build from source → does not ship.
 - PRD-045's negative controls are not green on device → this PRD does not start. See §0.
-  *(Met on Android 2026-08-08; still unmet on iOS, which is why Phase 3 is blocked.)*
+  *(Met on Android 2026-08-08 and iOS simulator 2026-08-09.)*
 - The API needs a per-object setter to be usable → the design is wrong, not the rule.
 - The backend-neutral handle rewrite (§2.2) breaks a sealed web proof → the contract change
   is wrong; do not edit the baseline to absorb it.

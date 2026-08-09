@@ -116,6 +116,9 @@ CI chains `install → typecheck → lint → test → scaffold-smoke → visual
 `build → budgets` branching off `test`; each link blocks the next. Native platforms run in a
 separate workflow. Run `pnpm typecheck && pnpm lint && pnpm test` before calling a change done.
 
+**Validate locally on the Android emulator, not by pushing to CI** — this repo runs on a free
+GitHub plan, so CI minutes are scarce; use CI only when a check cannot run locally.
+
 The self-improvement loop resumes from `docs/verification/round-*.md`: `pnpm round:next`
 computes the single next action, `pnpm round:deletions` reports exports unreached across
 consecutive rounds. Keep the round ledger as the evidence record.

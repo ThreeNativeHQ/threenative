@@ -74,6 +74,7 @@ describe("FixedStepLoop", () => {
 
     expect(loop.advance(3)).toBe(3);
     expect(updates).toBe(3);
+    expect(loop.tick()).toBe(3);
   });
 
   it("should ignore live frames after switching to the advanced clock", () => {
@@ -87,5 +88,16 @@ describe("FixedStepLoop", () => {
     expect(loop.stepFrame(10_000)).toBe(0);
 
     expect(updates).toBe(10);
+    expect(loop.tick()).toBe(10);
+  });
+
+  it("should count wall-clock updates before the manual clock engages", () => {
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    loop.start(0);
+
+    loop.stepFrame(20);
+    loop.advance(2);
+
+    expect(loop.tick()).toBe(3);
   });
 });

@@ -276,7 +276,7 @@ export function buildReport(
       ...(afterSnapshot?.gameplay === undefined
         ? {}
         : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
-      runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario),
+      runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
       ...(visual === undefined ? {} : { visual }),
     }),
   };
@@ -644,9 +644,16 @@ function resourceObservations(before: IPlaytestObservationSnapshot | undefined, 
   return Object.fromEntries([...ids].map((id) => [id, { before: before?.resources?.[id], after: after?.resources?.[id] }]));
 }
 
-function normalizedRuntimeDiagnostics(snapshot: IPlaytestObservationSnapshot | undefined, scenario: IPlaytestScenario): unknown {
+function normalizedRuntimeDiagnostics(
+  snapshot: IPlaytestObservationSnapshot | undefined,
+  scenario: IPlaytestScenario,
+  consoleEntries: Array<{ text: string; type: string }>,
+): unknown {
   return {
-    recentRuntimeErrors: snapshot?.diagnostics ?? [],
+    recentRuntimeErrors: [
+      ...(snapshot?.diagnostics ?? []),
+      ...consoleEntries.filter(({ type }) => ["assert", "error", "pageerror"].includes(type)),
+    ],
     scene: {
       renderedEntities: (snapshot?.entities ?? []).map((entity) => ({
         id: entity.id,

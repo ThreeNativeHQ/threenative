@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-032 — Asset discovery: the scaffold hands the agent a licensed-asset tool
 
-**Status:** **SHIPPED against the published `0.4.0`, with the bounded profile deferred**
-(2026-08-08, superseding the VOID finding of the same day).
+**Status:** **REOPENED — the live-agent exit gate failed and the kill switch fired**
+(2026-08-09). The generated wiring still exists pending explicit confirmation before its
+destructive removal; it must not be described as proved or done.
 
 The void was correct about its facts and wrong about its conclusion. Re-checked before
 un-voiding: `npm view threenative-asset-mcp version` still returns `0.4.0`, `npm whoami`
@@ -16,9 +17,10 @@ no `src/profile.ts` at all, so the prerequisite is further from done than the vo
 Rather than delete the feature, Phases 2–5 ship against the version that actually resolves.
 Every generated project pins `0.4.0`, installs it, and hands its agent **32 tools, not 8**.
 The §2 subset survives as the loop the generated `AGENTS.md` teaches, not as a tool filter.
-**§4 Phase 1 is the remaining work, and it is now the only thing between this and the PRD as
-designed.** What that costs is stated in "What shipped instead" below; it is a real
-discovery-cost regression against §2's central argument, taken deliberately.
+The bounded profile in §4 Phase 1 is still unpublished, but it is no longer the decisive
+gap. Phase 5's matched live-agent control produced a better frame without the MCP. Under the
+gate written before implementation, that result rejects the feature's premise and calls for
+deletion. Evidence is in `docs/verification/PRD-032-asset-proof/`.
 
 **Complexity: 6 → MEDIUM mode** (touches 10+ files +3, new mechanism from scratch — the
 upstream tool-profile selector +2, external API integration +1).
@@ -637,6 +639,26 @@ All rows below were run on 2026-08-08 on this machine.
 | 3 | all three templates; `pnpm budgets` externality | **PASS.** `budgets.spec.ts`, 7 tests; `budgets ok: 7 packages, 4231 framework LOC, 7 PRD files` — **identical to before this PRD** | Fixture with `packages/asset-mcp/package.json` → error; fixture with `packages/core` depending on it → error; real tree → clean. Both directions run |
 | 4 | `AGENTS.md` documents only tools the pinned version serves | **PASS.** Doc test parses tool-shaped code spans out of all three `AGENTS.md` and rejects any name absent from `asset-mcp-tools.json`; `pnpm sync:agents` clean | The test caught a real false positive (`node_modules`) on its first run, and caught nothing fabricated after the namespace filter |
 | 5 | the capability is real, on the real subject | **PASS on the distribution path; NOT RUN on the live-agent frame.** See below | — |
+
+That historical row is superseded by the 2026-08-09 rerun below.
+
+### 2026-08-09 live-agent exit gate
+
+**FAIL; kill switch fired.** A scaffolded positive arm used the installed MCP to discover,
+license, download and hash-verify a Poly Haven rust material and a Kenney sound without
+leaving the project. A separately isolated control had `.mcp.json` disabled, obtained no
+external asset, authored a wood-and-steel crate in ordinary Three.js, and reused the local
+starter sound. Both matched initial-state frames were captured headed at 1600×900 with
+WebGPU and zero console/page errors.
+
+A fresh read-only critic preferred the no-MCP frame: crate readability `5/5` versus `2/5`,
+scene fit `4/5` versus `3/5`, and overall improvement `4/5` versus `3/5`. The MCP texture won
+material credibility (`4/5` versus `3/5`) but made the target crate harder to identify. This
+meets Phase 5's predeclared deletion condition: the no-MCP arm produced a good frame and won.
+
+Exact hashes, commands, attribution, screenshots and the blind verdict are preserved in
+`docs/verification/PRD-032-asset-proof/README.md`. Removal is pending confirmation because
+it deletes a currently generated capability; no acceptance box is closed.
 
 **Phase 5, what was actually proved** (`scratchpad/sandbox-proof.sh`, exit 0):
 

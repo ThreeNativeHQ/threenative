@@ -53,10 +53,12 @@ test("duplicate ids fail with both conflicting object paths", () => {
 
 test("fixed-step and resource providers advertise only installed capabilities", async () => {
   const state = { score: 0 };
+  let tick = 0;
   const installation = installThreePlaytestBridge({
     camera: new PerspectiveCamera(),
     fixedStep: (ticks) => {
       state.score += ticks;
+      tick += ticks;
     },
     renderer,
     resources: {
@@ -67,6 +69,7 @@ test("fixed-step and resource providers advertise only installed capabilities", 
       },
     },
     scene: new Scene(),
+    tick: () => tick,
   });
 
   await installation.bridge.advance?.(3);

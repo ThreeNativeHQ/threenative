@@ -48,7 +48,7 @@ missing code and data the same source produces on web, and reports success.
 `packages/ui/src/GameCanvas.tsx`; `packages/runtime-native/src/cli/main.cpp`,
 `src/runtime.cpp`, `src/platform/android_main.cpp`, `include/mystral/vfs/embedded_bundle.h`,
 `android/app/build.gradle.kts`; `examples/native-smoke/src/`;
-`docs/PRDs/native/PRD-047-mystral-runtime-absorption.md`,
+`docs/PRDs/native/done/PRD-047-mystral-runtime-absorption.md`,
 `PRD-048-native-distribution.md`, `docs/verification/PRD-048.md`.
 
 ### 1.1 What the inspection found

@@ -1,9 +1,11 @@
 # PRD-048 — shipping a native game: the CLI and distribution lane
 
 **Status: IN PROGRESS. Phases 0–2 and 5 are complete. Phase 3's fail-closed installer and
-packed-consumer lifecycle are locally proven and its tag-gated release/clean-consumer lane
-is implemented, but that lane has not run: real assets, the checksum lock, registry packages,
-and the clean-machine build remain open. Android Phase 4 has a locally proven packed
+packed-consumer lifecycle are locally proven. The first tag-gated release run executed on
+2026-08-09: all three desktop builders passed, while Android failed because the clean runner
+downloaded the SDL AAR but not SDL's Java glue. The `0.1.9` fix is locally proven; its release
+rerun, real assets, checksum lock, registry packages, and clean-machine build remain open.
+Android Phase 4 has a locally proven packed
 no-toolchain APK handoff and a prepared released-consumer emulator lane; the release run,
 iOS execution, and physical-device handoff remain open.** Split out of PRD-047 §4 Phase 6
 on 2026-08-08, because that phase turned out to contain more unbuilt surface than the five
@@ -166,7 +168,10 @@ The prepared `native-release.yml` lane builds and executes the desktop hosts, bu
 Android ABIs with exported native-physics symbols, and produces the iOS simulator archive.
 It publishes only verified outputs with one checksum lock, then runs fresh packed desktop,
 Android, and iOS consumers. The installer bootstraps that release lock from its package
-version. This is **prepared, not evidence** until the workflow runs.
+version. Run `31314171195` supplied real desktop build evidence but did not reach publication:
+the Android source build lacked `SDLActivity.java`. Version `0.1.9` now includes `sdl3` in the
+clean Android dependency transaction; an isolated download and uncached Java compilation
+pass locally. This remains **prepared, not release evidence** until the corrected tag runs.
 
 Registry publication is a separate external gate. `create-threenative`, runtime-native,
 core, physics, and playtest are absent from npm. The local JavaScript package manifests are

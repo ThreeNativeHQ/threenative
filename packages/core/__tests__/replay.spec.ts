@@ -16,7 +16,7 @@ function runtime(
   random = createRandom(1),
   rapier: string | null = null,
 ): GamePluginRuntime {
-  return { fixedStep, random, rapier, seed: 90210, step: 1 / 60 };
+  return { fixedStep, random, rapier, seed: 90210, step: 1 / 60, tick: () => 0 };
 }
 
 async function recordThreeTicks(): Promise<{

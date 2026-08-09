@@ -1,24 +1,25 @@
 # Native / mobile PRDs — the sequence
 
-**Status (2026-08-09):** Linux and Android-emulator starter artifact parity is proven;
-Apple/Windows execution and published prebuilt consumer distribution remain open. PRD-050
-closed the native entry and packaged-asset divergences. PRD-051 closed with no native HUD
-abstraction; PRD-052 replaced the platformer's Recast dependency with portable steering.
+**Status (2026-08-09):** Linux and Android-emulator starter artifact parity is proven.
+[GitHub run 31313092745](https://github.com/jonit-dev/threenative/actions/runs/31313092745)
+also executed iOS simulator/no-Xcode consumer, macOS and Windows successfully on current SHA
+`e38439c`. Release run `31314171195` then passed all three desktop builders but failed the
+Android clean-source build before publication; the missing SDL Java dependency is fixed and
+locally re-proven at `aecd0a5`. Published prebuilt consumer distribution remains open.
 
-**Every Apple row below is blocked on hardware, not on work.** The operator has no Apple
-machine as of 2026-08-08 — no Xcode, no `xcrun`, no simulator, no physical device. iOS
-implementation still proceeds and merges on its fail-closed contract tests; what waits is
-the executed evidence. Linux and Android lanes are unaffected and keep their executed-run
-requirement. A blocked row is still an open row: do not move one to the Proven column.
+Apple simulator evidence now exists through the hosted runner. Physical Apple hardware, real
+mobile GPU/arm64 execution and performance evidence still do not. Do not turn simulator proof
+into a physical-device or release-readiness claim.
 
 | Proven | Open |
 |---|---|
-| Desktop framework absorption, 300 frames + screenshot | iOS: no simulator app, launch, log or screenshot |
-| Android framework-version parity at catalog Three 0.185.1 | iOS: app/verifier implemented, no Xcode/simulator execution |
-| Android device playtest with all fail-closed controls | Windows/macOS desktop lanes never run on a real runner |
-| Normal public native physics API: x86_64 emulator + negative controls; both ABIs compile | Published runtime assets/checksum lock and clean-machine consumer build |
-| Web CLI parity plus all 25 packed-template scenarios | Physical mobile hardware: no GPU, arm64 execution or frame-rate evidence |
+| Desktop framework absorption, 300 frames + screenshot on Linux/macOS/Windows | Published prebuilt desktop consumer distribution |
+| Android framework-version parity at catalog Three 0.185.1 | Published runtime assets/checksum lock and clean-machine consumer build |
+| Android device playtest with all fail-closed controls | Physical mobile hardware: no GPU, arm64 execution or frame-rate evidence |
+| Normal public native physics API: Android + iOS simulator and negative controls; both Android ABIs compile | Physical arm64 hardware/performance |
+| Web CLI parity plus all 25 packed-template scenarios | — |
 | Scaffolded starter artifact: declared entry, texture + GLB on Linux and Android emulator | — |
+| Current iOS simulator + macOS + Windows run on `e38439c` | — |
 | Native HUD decision: no framework abstraction; game-authored Three.js source only | — |
 | Platformer steering: browser, Linux desktop, and Android emulator | Navmesh pathfinding remains browser-only; no native backend |
 
@@ -28,10 +29,9 @@ Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`,
 `docs/verification/PRD-052.md`. **Never summarize this folder as "mobile works" while the
 right column has rows in it.**
 
-**Roadmap position:** `ROADMAP.md` **Phase 3**, whose gate to start is *"Phase 2 exit gate
-green."* Phase 2 is not green — PRDs 033, 035, 036 and 038 are all "partial, release
-evidence pending." **Nothing in this folder starts before that.** Phases are gated, not
-scheduled.
+**Roadmap position:** `ROADMAP.md` **Phase 3**. That work has already started and produced the
+executed rows above; the remaining gates are the explicit physical-device and
+published-distribution rows, not the old calendar phase label.
 
 ## The active sequence
 
@@ -47,9 +47,9 @@ runtime       on device     physics       distribution  tells the truth
 
 | # | PRD | What it buys | State |
 |---|---|---|---|
-| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **in progress** — Phases 0–4 closed; Apple/Windows execution open; 6 split out |
-| 2 | [PRD-045](blocked/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **blocked** — in `blocked/`; criteria 1–6 and 8 met, only the iOS simulator run is left and no Apple machine exists |
-| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web + Android closed; iOS and published consumer proof open |
+| 1 | [PRD-047](done/PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **done** — Phases 0–5 closed on current cross-platform evidence; 6 split out |
+| 2 | [PRD-045](blocked/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **simulator/emulator pass** — physical mobile hardware remains open |
+| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web, Android and iOS simulator closed; published consumer proof open |
 | 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
 | 5 | [PRD-049](done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |
 | 6 | [PRD-050](done/PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **done** — Linux desktop + Android emulator executed; iOS packaging-only |

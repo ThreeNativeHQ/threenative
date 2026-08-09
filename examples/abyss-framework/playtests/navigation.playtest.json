@@ -1,0 +1,46 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "navigator",
+      "pathLength": 9,
+      "reachesPositionWithin": {
+        "maxDistance": 0.7,
+        "position": [0, 0.75, 0]
+      }
+    },
+    "visibility": [
+      {
+        "entity": "navigator",
+        "minProjectedPixels": 100,
+        "present": true
+      }
+    ]
+  },
+  "name": "navigation-routes-around-blocker",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "route-around-blocker",
+      "waitTicks": 210
+    },
+    {
+      "kind": "wait",
+      "label": "settle-renderer",
+      "waitFrames": 2
+    }
+  ],
+  "subject": "navigator",
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 0
+}

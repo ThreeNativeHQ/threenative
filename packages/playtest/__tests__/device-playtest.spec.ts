@@ -32,10 +32,13 @@ class FakeAndroidDriver implements IAndroidDriver {
   installation?: IDeviceBridgeInstallation;
   prepared = false;
 
-  constructor(private readonly bridge?: IPlaytestBridgeV1) {}
+  constructor(
+    private readonly bridge?: IPlaytestBridgeV1,
+    private readonly consoleEntries: Array<{ text: string; type: string }> = [],
+  ) {}
 
   async captureConsole() {
-    return [];
+    return this.consoleEntries;
   }
 
   async prepare(endpoint: string) {
@@ -93,6 +96,31 @@ test("a deliberately wrong value fails on the device path with exit code 1", asy
 
     expect(result.pass).toBe(false);
     expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: false }));
+    expect(exitCodeForReport(result)).toBe(1);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("an Android runtime error reaches the diagnostics assertion with exit code 1", async () => {
+  const host = globalThis as typeof globalThis & NativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: { keyboard: () => undefined, pointer: () => undefined },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true } },
+      new FakeAndroidDriver(movingBridge().bridge, [{ text: "android boom", type: "error" }]),
+    );
+
+    expect(result.assertionResults).toContainEqual({
+      details: { consoleErrors: 1, networkErrors: 0, runtimeDiagnostics: 1 },
+      id: "diagnostics",
+      pass: false,
+    });
+    expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
     expect(exitCodeForReport(result)).toBe(1);
   } finally {
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;

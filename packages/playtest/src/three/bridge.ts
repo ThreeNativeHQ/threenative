@@ -29,13 +29,14 @@ export interface IThreePlaytestBridgeOptions {
   components?: () => Record<string, Record<string, JsonValue>>;
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
-  fixedStep?: (ticks: number) => Promise<void> | void;
+  fixedStep?: (ticks: number) => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
   events?: () => JsonValue[];
   renderer: ThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
+  tick?: () => number;
 }
 
 export interface IThreePlaytestBridgeInstallation {
@@ -46,11 +47,12 @@ export interface IThreePlaytestBridgeInstallation {
 }
 
 export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions): IThreePlaytestBridgeInstallation {
+  if ((options.fixedStep === undefined) !== (options.tick === undefined))
+    throw new Error("fixedStep and its authoritative tick provider must be installed together.");
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
   syncEntities(registry, options.entities);
-  let tick = 0;
   const capabilities = () => [
     "camera.observe",
     "entity.bounds",
@@ -71,10 +73,13 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       : {
           advance: async (ticks) => {
             if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
+            const startTick = options.tick!();
             await options.fixedStep!(ticks);
-            const startTick = tick;
-            tick += ticks;
-            return { clock: { mode: "fixed-step" as const, tick }, ticks: tick - startTick };
+            const tick = options.tick!();
+            const advanced = tick - startTick;
+            if (advanced !== ticks)
+              throw new Error(`fixedStep advanced ${advanced} actual ticks; expected ${ticks}.`);
+            return { clock: { mode: "fixed-step" as const, tick }, ticks: advanced };
           },
         }),
     applySetup: async (request) => applySetup(registry, options.resources, request),
@@ -106,7 +111,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         renderer: options.renderer,
         resources: options.resources === undefined ? undefined : () => options.resources!.read(),
         scene: options.scene,
-        tick: options.fixedStep === undefined ? undefined : tick,
+        tick: options.tick?.(),
       }, request);
       const components = options.components?.();
       const result = components === undefined || Object.keys(components).length === 0

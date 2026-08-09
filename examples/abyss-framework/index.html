@@ -9,7 +9,9 @@
   <body>
     <div id="root"></div>
     <script type="module">
-      if (new URLSearchParams(globalThis.location.search).has("terrain")) {
+      if (new URLSearchParams(globalThis.location.search).has("navigation")) {
+        void import("/src/navigation-main.tsx");
+      } else if (new URLSearchParams(globalThis.location.search).has("terrain")) {
         void import("/src/terrain-main.tsx");
       } else {
         void import("/src/main.tsx");

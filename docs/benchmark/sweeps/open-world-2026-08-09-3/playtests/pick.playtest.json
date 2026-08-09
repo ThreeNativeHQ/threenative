@@ -1,0 +1,25 @@
+{
+  "name": "starter-pick",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "idle", "waitFrames": 30 },
+    { "kind": "input", "label": "hover-sculpture", "pointerPosition": { "x": 0.5, "y": 0.5 } },
+    { "kind": "wait", "label": "settle", "waitFrames": 60 }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "hovered",
+        "changed": true,
+        "atSteps": [{ "label": "idle", "equals": "" }, { "label": "settle", "equals": "sculpture" }]
+      },
+      { "id": "GameState", "path": "fastPicks", "gte": 50 }
+    ]
+  }
+}

@@ -59,7 +59,7 @@ The self-improvement loop is recorded in
 ## Product
 
 - [product/PERFORMANCE-BUDGETS.md](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
-- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start; asset *discovery* shipped separately in [PRDs/done/PRD-032-asset-discovery-mcp.md](PRDs/done/PRD-032-asset-discovery-mcp.md)
+- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start; asset *discovery* was reopened after its live gate failed in [PRDs/PRD-032-asset-discovery-mcp.md](PRDs/PRD-032-asset-discovery-mcp.md)
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
 ## Spikes

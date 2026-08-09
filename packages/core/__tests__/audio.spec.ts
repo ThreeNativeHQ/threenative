@@ -24,7 +24,7 @@ function parameter(value = 1): FakeAudioParam {
   };
 }
 
-function audioContext(): void {
+function audioContext(): globalThis.AudioContext {
   const context = {
     createBufferSource: () => ({
       connect: () => undefined,
@@ -57,6 +57,7 @@ function audioContext(): void {
     resume: async () => undefined,
   } as unknown as globalThis.AudioContext;
   AudioContext.setContext(context);
+  return context;
 }
 
 const buffer = { duration: 1 } as AudioBuffer;
@@ -121,6 +122,31 @@ describe("AudioBus", () => {
     const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
 
     expect(() => bus.play(null as unknown as AudioBuffer)).toThrow(/non-null/u);
+    bus.dispose();
+  });
+
+  it("should attach positional playback to its source", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+    const source = new PerspectiveCamera();
+
+    const voice = bus.playAt(buffer, source);
+
+    expect(voice.parent).toBe(source);
+    expect(bus.queued).toBe(1);
+    bus.dispose();
+  });
+
+  it("should fail closed when the runtime has no positional audio", () => {
+    const context = audioContext();
+    Reflect.deleteProperty(context, "createPanner");
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+
+    expect(() => bus.playAt(buffer, new PerspectiveCamera())).toThrowError(
+      "AudioBus.playAt needs createPanner(); this runtime has none.",
+    );
+    expect(bus.queued).toBe(0);
+    expect(bus.voices).toBe(0);
     bus.dispose();
   });
 

@@ -841,6 +841,9 @@ public:
         // Process file watch events (for hot reload)
         fs::getFileWatcher().processPendingEvents();
 
+        // Dispatch source completion callbacks outside the SDL audio thread.
+        audio::processAudioEvents();
+
         // Check if hot reload was requested
         if (reloadRequested_) {
             reloadRequested_ = false;

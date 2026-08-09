@@ -18,6 +18,7 @@ export class FixedStepLoop {
   #lastTime: number | undefined;
   #frameHandle: number | undefined;
   #running = false;
+  #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
 
@@ -43,20 +44,19 @@ export class FixedStepLoop {
   get running(): boolean {
     return this.#running;
   }
-
   get fps(): number {
     return this.#fps;
   }
-
+  readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
     this.#lastTime = now;
     this.#lastRenderTime = undefined;
+    this.#tick = 0;
     this.#fps = 0;
     this.#frameHandle = this.#requestFrame((time) => this.#frame(time));
   }
-
   stop(): void {
     this.#running = false;
     if (this.#frameHandle !== undefined) this.#cancelFrame(this.#frameHandle);
@@ -72,6 +72,7 @@ export class FixedStepLoop {
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
       this.#onUpdate(this.step);
+      this.#tick += 1;
       this.#accumulator -= this.step;
       updates += 1;
     }
@@ -93,8 +94,8 @@ export class FixedStepLoop {
       throw new Error("advance ticks must be a positive integer.");
     this.#lastTime = Number.POSITIVE_INFINITY;
     for (let index = 0; index < ticks; index += 1) {
-      this.#lastTime = (this.#lastTime ?? 0) + this.step * 1_000;
       this.#onUpdate(this.step);
+      this.#tick += 1;
     }
     return ticks;
   }

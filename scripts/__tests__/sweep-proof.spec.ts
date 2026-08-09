@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { sealedProofHash } from "../make-sandbox";
 import {
+  SWEEP_PROOF_REPORT_MAX_BYTES,
   ensureArchiveIndex,
   proofArtifactDirectory,
   reportFromOutput,
+  runBufferedRunner,
   verifySealedProof,
 } from "../sweep-proof";
 
@@ -149,5 +151,41 @@ describe("sealed proof runner", () => {
     expect(result.diagnostics[0]).toMatchObject({
       message: expect.stringContaining("TN_PLAYTEST_BRIDGE_MISSING"),
     });
+  });
+
+  it("keeps runner reports larger than Node's default one MiB child-process buffer parseable", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-buffer-"));
+    temporaryRoots.push(root);
+    const fixture = path.join(root, "large-report.mjs");
+    await writeFile(
+      fixture,
+      `process.stdout.write(JSON.stringify({ pass: true, assertionResults: [{ id: "movement.player", pass: true }], diagnostics: [], padding: "${"x".repeat(1_100_000)}" }));\n`,
+    );
+
+    const output = runBufferedRunner(process.execPath, [fixture], root, { cwd: root });
+    expect(Buffer.byteLength(output.stdout)).toBeGreaterThan(1024 * 1024);
+    expect(
+      reportFromOutput("fixture", output.stdout, output.stderr, output.status === 0),
+    ).toMatchObject({
+      assertions: [{ id: "movement.player", pass: true }],
+      verdict: "pass",
+    });
+  });
+
+  it("fails closed and retains the artifact when runner output exceeds the explicit limit", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-limit-"));
+    temporaryRoots.push(root);
+    const fixture = path.join(root, "oversize-report.mjs");
+    await writeFile(
+      fixture,
+      `process.stdout.write("x".repeat(${SWEEP_PROOF_REPORT_MAX_BYTES + 1}));\n`,
+    );
+
+    expect(() => runBufferedRunner(process.execPath, [fixture], root, { cwd: root })).toThrow(
+      /fail-closed limit/u,
+    );
+    await expect(readFile(path.join(root, "runner-report.json"))).resolves.toHaveLength(
+      SWEEP_PROOF_REPORT_MAX_BYTES + 1,
+    );
   });
 });

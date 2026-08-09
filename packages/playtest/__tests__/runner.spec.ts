@@ -178,6 +178,17 @@ test("a browser pageerror fails noConsoleErrors", () => {
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_CONSOLE_ERROR");
 });
 
+test("a browser pageerror is also a real runtime diagnostic", () => {
+  const result = report(
+    scenario({ diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true } }),
+    {},
+    { consoleEntries: [{ text: "boom", type: "pageerror" }] },
+  );
+
+  expect(result.pass).toBe(false);
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
+});
+
 test("runtimeReady fails when the page never exposes a canvas", () => {
   const result = report(
     scenario({ diagnostics: { runtimeReady: true } }),

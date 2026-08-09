@@ -26,7 +26,6 @@ export function playtest<
   let contactHistory: IPlaytestContactObservation[] = [];
   return {
     setup: (ctx, runtime) => {
-      const diagnostics: JsonValue[] = [];
       const seed = runtime?.seed ?? null;
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
@@ -40,10 +39,9 @@ export function playtest<
             };
       const installation = installThreePlaytestBridge({
         camera: ctx.camera,
-        diagnostics: () => [...diagnostics],
         entities: () => bridgeEntities(ctx),
         components: () => componentObservations(ctx.entities.snapshot()),
-        ...(runtime === undefined ? {} : { fixedStep: (ticks: number) => advance(runtime, ticks) }),
+        ...(runtime === undefined ? {} : { fixedStep: runtime.fixedStep, tick: runtime.tick }),
         ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime),
         gameplayChannels: () => gameplayChannels(ctx),
@@ -90,9 +88,6 @@ function runtimeObservation(
       ...(replayRuntime === undefined ? {} : { runtime: replayRuntime }),
     },
   };
-}
-function advance(runtime: GamePluginRuntime, ticks: number): void {
-  runtime.fixedStep(ticks);
 }
 function bridgeEntities<TState extends Record<string, unknown>, TPhysics>(
   ctx: Ctx<TState, TPhysics>,

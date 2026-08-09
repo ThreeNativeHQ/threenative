@@ -15,6 +15,7 @@ export const ANDROID_TRANSPORT_CAPABILITIES = [
   "browser.console",
   "browser.input",
   "browser.screenshot",
+  "runtime.diagnostics",
 ] as const;
 
 export interface IDeviceMailbox {

@@ -86,6 +86,8 @@ export class AudioBus {
     options: AudioPlayOptions = {},
   ): PositionalAudio {
     assertBuffer(buffer);
+    if (typeof (this.listener.context as { createPanner?: unknown }).createPanner !== "function")
+      throw new Error("AudioBus.playAt needs createPanner(); this runtime has none.");
     const voice = new PositionalAudio(this.listener);
     configureVoice(voice, options);
     voice.setBuffer(buffer);
@@ -108,9 +110,7 @@ export class AudioBus {
     for (const voice of this.#voices) {
       try {
         voice.stop();
-      } catch {
-        // A voice that already ended is still safe to remove from the bus.
-      }
+      } catch {}
       voice.removeFromParent();
     }
     this.#voices.clear();

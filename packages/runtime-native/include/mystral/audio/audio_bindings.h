@@ -16,6 +16,9 @@ namespace audio {
  */
 void initializeAudioBindings(js::Engine* engine);
 
+/** Dispatch audio-thread completion events to JavaScript on the main thread. */
+void processAudioEvents();
+
 /**
  * Cleanup all audio resources (call before destroying JS engine)
  */

@@ -35,6 +35,7 @@ describe("rapier plugin", () => {
       rapier: null,
       seed: 1,
       step: 1 / 60,
+      tick: () => 0,
     } satisfies GamePluginRuntime;
 
     await plugin.setup?.(ctx, runtime);

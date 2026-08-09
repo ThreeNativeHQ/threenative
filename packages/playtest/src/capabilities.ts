@@ -46,7 +46,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.audio", "Samples application-owned audio runtime state."),
   capability("runtime.components", "Samples registered JSON-safe component state."),
   capability("runtime.contacts", "Samples bounded collision and trigger contacts."),
-  capability("runtime.diagnostics", "Samples application-owned runtime diagnostics."),
+  capability("runtime.diagnostics", "Captures application runtime errors."),
   capability("runtime.events", "Drains bounded application event observations."),
   capability("runtime.fixedStep", "Advances an application-owned deterministic tick."),
   capability("runtime.physics", "Samples bounded application-owned physics observations."),

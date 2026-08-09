@@ -60,11 +60,11 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Capture, judge, blind bundle | `done/PRD-020-seeing-the-game.md` | shipped |
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
-| Asset discovery MCP | [done/PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **void — upstream profile prepared, but npm registry remains 0.4.0 and publish requires auth** |
+| Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **reopened — 2026-08-09 live-agent gate lost to the no-MCP control; kill-switch deletion pending confirmation** |
 | Playtest semantic depth | [done/PRD-033](../PRDs/done/PRD-033-playtest-semantic-depth.md) | **done; 11/11 platformer semantic scenarios and observed-red controls verified** |
-| Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **done; review repairs manager-verified; 7 packages, slot unspent** |
-| Hot reload with state preservation | [done/PRD-035](../PRDs/done/PRD-035-hot-reload-state-preservation.md) | **done; headed WebGPU hot-reload, full browser, and manual checkpoints pass; two synthetic controls remain explicit follow-up debt** |
-| Save/load and deterministic replay | [PRD-036](../PRDs/PRD-036-save-load-and-deterministic-replay.md) | **partial implementation merged; replay consumer and full headed browser gate pass; generated regression sensitivity, removal controls, and the +256 vs ≤200 source-delta gate remain open** |
+| Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **shipped browser-only; its original platformer caller was later removed, so restore a real consumer or apply the kill switch before growth** |
+| Hot reload with state preservation | [done/PRD-035](../PRDs/done/PRD-035-hot-reload-state-preservation.md) | **done; ten-reload cadence and both load-bearing removal controls pass** |
+| Save/load and deterministic replay | [done/PRD-036](../PRDs/done/PRD-036-save-load-and-deterministic-replay.md) | **done; replay consumer, regression sensitivity, removal controls and full headed browser gate pass** |
 | Runtime GPU transport and acceleration | [done/PRD-038](../PRDs/done/PRD-038-gpu-transport-and-acceleration.md) | **done; starter-pick, acceleration negative control, repaired coyote/look consumers, and removable nine-scenario proof pass** |
 | Animation state machine / blend control | [done/PRD-039](../PRDs/done/PRD-039-animation-state-machine.md) | **closed — WONTBUILD; area #8 conditionally closed; reopen only on the recorded rigged-asset triggers** |
 | Terrain and open worlds | [done/PRD-043](../PRDs/done/PRD-043-terrain-and-open-world.md) | **done — Phase 0 pair, Phases 1–3, headed WebGPU proof, negative controls, and full gates verified 2026-08-08** |
@@ -74,9 +74,8 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current non-done inventory is PRD-036;
-PRD-033 and PRD-039 are complete records in `done/`, and there is no PRD-037 file in
-`docs/PRDs/`.
+The current root non-done inventory is PRD-032, reopened after its live-agent kill switch.
+PRD-033, PRD-036 and PRD-039 are complete records in `done/`, and there is no PRD-037 file.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
 says a spike is a throwaway app whose only output is an answer; and the build-time asset

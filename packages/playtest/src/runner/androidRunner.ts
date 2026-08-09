@@ -187,13 +187,6 @@ export async function runDevicePlaytest(
       ), target.name);
     }
     const consoleEntries = await target.driver.captureConsole();
-    if (consoleEntries.some(({ type }) => type === "error" || type === "pageerror")) {
-      return failureReport(config, scenario, playtestDiagnostic(
-        "TN_PLAYTEST_DEVICE_FAILED",
-        `${targetLabel(target.name)} logs contained a runtime error before assertions were evaluated.`,
-        `Inspect ${target.name === "android" ? "logcat" : "unified logs"}, fix the first native or JavaScript error, then rerun the same scenario.`,
-      ), target.name);
-    }
     const report = buildReport(
       config,
       scenario,

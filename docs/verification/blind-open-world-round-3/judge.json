@@ -1,0 +1,26 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "high",
+    "rationale": "sample-01 visibly presents the player, traversable trail, terrain relief, props, destination guidance, and distant landmarks, while sample-02 exposes only HUD over an empty sky-colored field."
+  },
+  "samples": [
+    {
+      "biggestGap": "The terrain lacks the reference's dense vegetation, detailed relief, and expansive layered valley depth.",
+      "evidence": "A readable third-person character stands on a continuous trail, with visible directional controls, a next-landmark panel, distance and chunk counters, rolling terrain, trees, rocks, mountains, and a distant tower. The low-poly scene has deliberate depth, hierarchy, lighting, and navigation cues, though it is much sparser and simpler than the reference.",
+      "label": "sample-01",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4
+    },
+    {
+      "biggestGap": "The world geometry and playable subject are absent from view, leaving no visual match to the reference landscape.",
+      "evidence": "The HUD shows input instructions, 134m walked, and 1/2 landmarks, suggesting an interaction loop, but the visible playfield is almost entirely flat blue sky with no player, terrain, trail, destination, or landmark readable. The rendered world is therefore unusable from the supplied frame.",
+      "label": "sample-02",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 1
+    }
+  ],
+  "verdict": "ready"
+}

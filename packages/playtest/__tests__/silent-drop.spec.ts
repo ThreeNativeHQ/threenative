@@ -191,6 +191,22 @@ test("keeps a supported observation kind connected", async () => {
   expect(client?.description.capabilities).toContain("runtime.resources");
 });
 
+test("browser transport satisfies runtime diagnostics when no application bridge exists", async () => {
+  const directory = await writeScenario({
+    diagnostics: { noConsoleErrors: true, noRuntimeDiagnostics: true },
+  });
+  const scenario = await loadPlaytestScenario(directory, "scenario.json");
+  const page = {
+    waitForFunction: async () => {
+      throw new Error("bridge missing");
+    },
+  } as unknown as Page;
+
+  const client = await connectPlaytestBridge(page, scenario);
+
+  expect(client).toBeUndefined();
+});
+
 test("reports a missing component observation as a capability defect", async () => {
   const directory = await writeScenario({ components: [{ component: "health", entity: "player", gte: 1 }] });
   const scenario = await loadPlaytestScenario(directory, "scenario.json");

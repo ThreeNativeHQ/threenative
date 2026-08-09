@@ -55,10 +55,12 @@ test("duplicate ids fail with both conflicting object paths", () => {
 
 test("fixed-step and resource providers advertise only installed capabilities", async () => {
   const state = { score: 0 };
+  let tick = 0;
   const installation = installThreePlaytestBridge({
     camera: new PerspectiveCamera(),
     fixedStep: (ticks) => {
       state.score += ticks;
+      tick += ticks;
     },
     renderer,
     resources: {
@@ -69,6 +71,7 @@ test("fixed-step and resource providers advertise only installed capabilities", 
       },
     },
     scene: new Scene(),
+    tick: () => tick,
   });
 
   await installation.bridge.advance?.(3);
@@ -79,6 +82,32 @@ test("fixed-step and resource providers advertise only installed capabilities", 
   expect(capabilities).toContain("runtime.fixedStep");
   expect(capabilities).toContain("runtime.resources");
   installation.dispose();
+});
+
+test("fixed-step fails closed when actual updates differ from requested ticks", async () => {
+  let tick = 2;
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => { tick += 2; },
+    renderer,
+    scene: new Scene(),
+    tick: () => tick,
+  });
+
+  expect((await installation.bridge.sample({})).clock.tick).toBe(2);
+  await expect(installation.bridge.advance?.(1)).rejects.toThrow(
+    "fixedStep advanced 2 actual ticks; expected 1.",
+  );
+  installation.dispose();
+});
+
+test("fixed-step refuses to advertise without an authoritative tick provider", () => {
+  expect(() => installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => undefined,
+    renderer,
+    scene: new Scene(),
+  })).toThrow("fixedStep and its authoritative tick provider must be installed together.");
 });
 
 test("gameplay providers advertise and return animation and state channels together", async () => {

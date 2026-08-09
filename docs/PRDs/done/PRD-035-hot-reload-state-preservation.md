@@ -1,16 +1,17 @@
 # PRD-035 — Hot reload with state preservation
 
-**Status: COMPLETE — moved to `done/` on 2026-08-08.** The supported headed WebGPU consumer,
-full browser suite, and manual jump/fall checkpoints pass. The current repository-wide lint
-and test blockers are unrelated dirty proof/worktree files. Two synthetic negative controls
-(template-call removal and deliberate leak mutation) remain explicitly unrun and are recorded
-as follow-up evidence debt; no result is claimed for them.
+**Status: COMPLETE — moved to `done/` on 2026-08-08; follow-up evidence closed 2026-08-09.**
+The supported headed WebGPU consumer, full browser suite, and manual jump/fall checkpoints
+pass. Removing the template call now fails before runtime diagnostics become ready. Removing
+`scene.clear()` now fails before HMR reload 1 because `Game` checks that teardown left no scene
+children; the previous current-scene counter could not observe that mutation. Both
+controls were restored and the ten-reload gate passed again, including the specified 5% fall-
+cadence comparison.
 Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
 `docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; the implementation
 checkpoint gates pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11
 runner, including zero console errors, and a manual jump/fall probe shows the edited
-`JUMP_SPEED` taking effect while the player lands cleanly. The full browser suite and
-remaining manual/negative-control evidence are still open.
+`JUMP_SPEED` taking effect while the player lands cleanly.
 
 **Complexity: 10 → HIGH mode.** (10+ files +3, new module +2, concurrency/lifecycle state
 +2, multi-package +2, external API — Vite's HMR contract +1.) HIGH means an automated
@@ -587,7 +588,7 @@ A gate that has never failed is not evidence. Each row is broken on purpose and 
 | `hot.spec.ts` collected at all | Test file not picked up by vitest (`__tests__/*.spec.ts` glob) | Insert a deliberate `expect(true).toBe(false)`; confirm the run **names the file** and the test count rises by the expected number |
 | state reinstated | Assertion already satisfied by the baseline — a cold-start game also has the right score if the scenario never scored | The gate records score **> 0 before** the edit and asserts equality after; running it at the pre-change commit must fail |
 | reload actually happened | `reloads` read from a literal / the page silently full-reloaded and re-scored | `hot().reloads` comes from `hot.data`, which a full page reload resets to 0; the gate also asserts `performance.getEntriesByType("navigation").length === 1` — one navigation for the whole run |
-| leak counters mean something | Manufactured evidence — counters that always report the same number | Deliberately leak: comment out `clearScene`'s `scene.clear()`, re-run, confirm `sceneObjects` climbs and the gate goes red. Restore. |
+| leak counters mean something | Manufactured evidence — counters that always report the same number | Deliberately remove `clearScene`'s `scene.clear()`. `Game` detects remaining children during teardown and the browser gate fails before reload 1. Restore and rerun green. |
 | physics not leaked | Real implementation mocked out | The 10-cycle unit test spies on the **real** `World.free`; the browser cadence check runs against the real WASM world |
 | portability contract enforced | Assertion kind silently ignored | Put a `Vector3` in the starter's store, save, and confirm the overlay shows the thrown key path and the page **full-reloads** rather than reloading with a poisoned store |
 | boot-race fix | Assertion the previous commit already satisfied | Run the Phase 1 tests at the parent commit — they must fail |
@@ -625,9 +626,8 @@ Every criterion below describes what a developer observes, not what code exists.
 - [x] All phases complete — supported-browser consumer, full suite, and manual release evidence
       pass; unrelated root-worktree blockers are recorded in `docs/verification/PRD-035.md`.
 - [x] All specified lane tests pass at the implementation checkpoint
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` passes — the implementation checkpoint passed;
-      the current root run is blocked by unrelated dirty proof/worktree files recorded in
-      `docs/verification/PRD-035.md`
+- [x] `pnpm typecheck && pnpm lint && pnpm test` passes — reverified against the combined
+      worktree on 2026-08-09; root Vitest passed 572/572
 - [x] `pnpm budgets` green — **no new package** (7/8 unchanged; the last slot stays free for
       navigation), framework LOC ≈ 2,988 → ~3,110 of 15,000, core src 1,996 → ~2,115 against
       the 2,500 test cap
@@ -642,11 +642,11 @@ Every criterion below describes what a developer observes, not what code exists.
 - [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test
       `file:line`
 - [x] Caller census pasted for `acceptHotUpdate`, `assertPortableState`, `numBodies`
-- [ ] Revert check passed: removing the template call turns the leak gate red (follow-up debt;
-      the controlled run hung before assertions and was restored)
+- [x] Revert check passed: removing the template call prevents runtime diagnostics from
+      becoming ready; the controlled run timed out red and the call was restored
 - [x] No second live reload implementation (`import.meta.hot` census clean)
-- [ ] Every gate has a negative control that was **observed failing** (two synthetic controls
-      remain follow-up debt)
+- [x] Every gate has a negative control that was **observed failing**; the last two synthetic
+      controls were run and restored on 2026-08-09
 - [x] Proved on the real production subject: a **scaffolded `starter`** with React UI,
       Rapier physics, audio and particles — not on `minimal`. Phase 2 proves on `minimal`
       and declares the debt below.

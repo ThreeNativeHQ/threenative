@@ -313,16 +313,29 @@ test('wgpu-native caps sampler LOD without changing sampler filtering', () => {
   );
 });
 
-test('native AudioContext exposes the listener surface used by Three.js', () => {
+test('native AudioContext exposes the positional graph used by Three.js', () => {
   const audio = read('src/audio/audio_bindings.cpp');
-  assert.match(audio, /function AudioContext\(\)[\s\S]*Object\.defineProperties\(this,[\s\S]*__tnCreateAudioContext/,
+  assert.match(audio, /function AudioContext\(\)[\s\S]*__tnCreateAudioContext/,
+    'the JavaScript constructor must call the native AudioContext factory');
+  assert.match(audio, /Object\.defineProperties\(this, Object\.getOwnPropertyDescriptors\(native\)\)/,
     'QuickJS must copy the native AudioContext surface onto a JavaScript constructor receiver');
   assert.match(audio, /engine->evalScript\(/,
     'the constructor shim must execute as a classic script before game modules load');
   assert.match(audio, /setProperty\(jsCtx, "listener", listener\)/,
     'AudioContext must expose a listener object');
+  assert.match(audio, /setProperty\(jsCtx, "createPanner"/,
+    'AudioContext must expose createPanner for Three.js PositionalAudio');
+  assert.match(audio, /installAudioNodeBindings\(engine, jsNode, nodePtr\)/,
+    'native audio nodes must route connect and disconnect to the C++ graph');
+  assert.match(audio, /setTargetAtTime[\s\S]*setValueAtTime[\s\S]*linearRampToValueAtTime/,
+    'GainNode AudioParam must expose the methods used by Three.js and AudioBus fades');
   assert.match(audio, /newFunction\("setPosition"/,
-    'the non-positional mixer must accept Three.js listener position updates');
+    'the mixer must accept Three.js listener position updates');
   assert.match(audio, /newFunction\("setOrientation"/,
-    'the non-positional mixer must accept Three.js listener orientation updates');
+    'the mixer must accept Three.js listener orientation updates');
+  assert.match(audio, /void processAudioEvents\(\)[\s\S]*getProperty\(handle->second, "onended"\)/,
+    'source completion must be dispatched to JavaScript outside the SDL audio callback');
+  const runtime = read('src/runtime.cpp');
+  assert.match(runtime, /audio::processAudioEvents\(\)/,
+    'the main loop must drain native audio completion events');
 });

@@ -1490,6 +1490,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(mystral src/cli/main.cpp)
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
+    add_executable(threenative-audio-graph-test EXCLUDE_FROM_ALL tests/audio_graph_test.cpp)
+    target_link_libraries(threenative-audio-graph-test PRIVATE mystral-runtime)
+
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)
         target_include_directories(mystral PRIVATE ${WEBP_INCLUDE_DIR})

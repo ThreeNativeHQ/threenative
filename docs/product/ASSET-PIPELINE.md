@@ -4,13 +4,13 @@
 §11.1, §11.5 (a package exists only when it carries a dependency the others must not
 inherit).
 
-## Discovery shipped; the pipeline did not
+## Discovery is under its kill switch; the pipeline did not ship
 
 Asset **discovery** — finding a licensed model, texture, HDRI or sound and recording its
-attribution — is a separate problem from the build-time pipeline below, and it shipped in
-PRD-032. It runs beside the agent as an external MCP process (`threenative-asset-mcp`,
-pinned in every template's `package.json` and launched by the generated `.mcp.json`), so it
-costs 0 framework LOC and 0 package slots; `pnpm budgets` fails if it is ever vendored.
+attribution — is separate from the build-time pipeline below. Its scaffold integration
+exists, but PRD-032's 2026-08-09 live-agent gate lost to the no-MCP control and fired its
+deletion condition. The external process remains pinned in generated projects only while
+that destructive removal awaits confirmation; it must not be described as proved.
 
 The deferral below still binds discovery in one direction: `smithsonian_*` returns
 scan-resolution photogrammetry that this project has no way to decimate, so the generated

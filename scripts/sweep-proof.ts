@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +14,7 @@ import {
 const REPO = path.resolve(import.meta.dirname, "..");
 const RUNNER = path.join(REPO, "packages", "playtest", "dist", "runner", "cli.js");
 const PROOF_PORT = 5190;
+export const SWEEP_PROOF_REPORT_MAX_BYTES = 16 * 1024 * 1024;
 
 interface PlaytestReport {
   readonly assertionResults: readonly unknown[];
@@ -40,6 +41,52 @@ export interface ProofResult {
 
 export interface ProofOptions {
   readonly headed?: boolean;
+}
+
+export interface BufferedRunnerResult {
+  readonly status: number | null;
+  readonly stderr: string;
+  readonly stdout: string;
+}
+
+export function runBufferedRunner(
+  command: string,
+  args: readonly string[],
+  artifactDirectory: string,
+  options: { cwd: string; env?: NodeJS.ProcessEnv },
+): BufferedRunnerResult {
+  fs.mkdirSync(artifactDirectory, { recursive: true });
+  const stdoutPath = path.join(artifactDirectory, "runner-report.json");
+  const stderrPath = path.join(artifactDirectory, "runner-stderr.log");
+  const stdoutFd = fs.openSync(stdoutPath, "w");
+  const stderrFd = fs.openSync(stderrPath, "w");
+  let result: ReturnType<typeof spawnSync>;
+  try {
+    result = spawnSync(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["ignore", stdoutFd, stderrFd],
+    });
+  } finally {
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
+  }
+  if (result.error !== undefined) throw result.error;
+  return {
+    status: result.status,
+    stderr: readBoundedRunnerOutput(stderrPath),
+    stdout: readBoundedRunnerOutput(stdoutPath),
+  };
+}
+
+function readBoundedRunnerOutput(file: string): string {
+  const bytes = fs.statSync(file).size;
+  if (bytes > SWEEP_PROOF_REPORT_MAX_BYTES) {
+    throw new Error(
+      `Runner output '${file}' is ${bytes} bytes; the fail-closed limit is ${SWEEP_PROOF_REPORT_MAX_BYTES} bytes.`,
+    );
+  }
+  return fs.readFileSync(file, "utf8");
 }
 
 function isDirectory(directory: string): boolean {
@@ -279,21 +326,13 @@ function runScenario(
   environment.WAYLAND_DISPLAY = undefined;
   environment.XDG_SESSION_TYPE = undefined;
   try {
-    const stdout = execFileSync("node", args, {
+    const result = runBufferedRunner("node", args, artifactDirectory, {
       cwd: REPO,
-      encoding: "utf8",
       env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
     });
-    return reportFromOutput(name, stdout, "", true);
+    return reportFromOutput(name, result.stdout, result.stderr, result.status === 0);
   } catch (error) {
-    const failure = error as { stderr?: string; stdout?: string; status?: number };
-    return reportFromOutput(
-      name,
-      failure.stdout ?? "",
-      failure.stderr ?? String(error),
-      failure.status === 0,
-    );
+    return reportFromOutput(name, "", String(error), false);
   }
 }
 

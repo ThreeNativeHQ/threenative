@@ -230,6 +230,28 @@ describe("Game", () => {
     expect(disposed).toBe(1);
   });
 
+  it("should fail closed after completing teardown when scene objects remain", async () => {
+    class LeakyScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: Ctx): void {
+        ctx.add(new Mesh());
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: LeakyScene },
+      start: "test",
+    });
+    await game.start();
+    const scene = game.ctx?.scene;
+    if (scene === undefined) throw new Error("Game did not expose its scene.");
+    scene.clear = () => scene;
+
+    expect(() => game.stop()).toThrow("Game teardown leaked scene objects.");
+    expect(game.ctx).toBeUndefined();
+  });
+
   it("keeps the existing perspective camera when no camera config is supplied", async () => {
     const game = defineGame({
       initialState: {},

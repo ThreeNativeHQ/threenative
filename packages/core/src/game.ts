@@ -14,7 +14,8 @@ import { Viewport, type ViewportOptions } from "./viewport.js";
 export type PluginCleanup = () => void;
 
 export interface GamePluginRuntime {
-  fixedStep(ticks: number): number;
+  readonly fixedStep: (ticks: number) => number;
+  readonly tick: () => number;
   readonly random?: Pick<Random, "state">;
   rapier?: string | null;
   readonly seed: number | null;
@@ -262,9 +263,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     if (frame !== undefined && typeof frame !== "function") {
       throw new Error("Scene.enter() must return a frame function or undefined.");
     }
-    // A boot scene may synchronously navigate to its destination from enter().
-    // In that case, #goto() has already installed the destination frame; do not
-    // overwrite it with the boot scene's undefined return value.
+    // A boot scene may navigate synchronously; do not replace the frame installed by #goto().
     if (this.#scene !== scene) return;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
@@ -405,6 +404,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#loop = gameLoop;
     const runtime: GamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      tick: gameLoop.tick,
       random,
       rapier: null,
       seed: this.#config.seed ?? null,
@@ -492,6 +492,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#disposedPlugins.clear();
     this.#paused = false;
     this.#started = false;
+    if ((ctx?.scene.children.length ?? 0) > 0)
+      throw new Error("Game teardown leaked scene objects.");
   }
 }
 

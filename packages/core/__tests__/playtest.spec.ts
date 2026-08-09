@@ -66,7 +66,6 @@ describe("playtest plugin", () => {
         "entity.setup",
         "runtime.fixedStep",
         "runtime.resources",
-        "runtime.diagnostics",
         "runtime.animation",
         "runtime.state",
         "runtime.contacts",

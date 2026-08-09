@@ -20,8 +20,11 @@ class FakeIosDriver implements IDevicePlaytestDriver {
   installation?: IDeviceBridgeInstallation;
   prepared = false;
 
-  constructor(private readonly bridge?: IPlaytestBridgeV1) {}
-  async captureConsole() { return []; }
+  constructor(
+    private readonly bridge?: IPlaytestBridgeV1,
+    private readonly consoleEntries: Array<{ text: string; type: string }> = [],
+  ) {}
+  async captureConsole() { return this.consoleEntries; }
   async isAlive() { return true; }
   async prepare(endpoint: string) {
     this.prepared = true;
@@ -42,6 +45,21 @@ test("a deliberately wrong iOS value exits 1", async () => {
   const result = await runIos({ movement: { entity: "player", minDistance: 2 } }, new FakeIosDriver(bridge()));
   expect(result.pass).toBe(false);
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ pass: false }));
+  expect(exitCodeForReport(result)).toBe(1);
+});
+
+test("an iOS runtime error reaches the diagnostics assertion with exit code 1", async () => {
+  const result = await runIos(
+    { diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true } },
+    new FakeIosDriver(bridge(), [{ text: "ios boom", type: "error" }]),
+  );
+
+  expect(result.assertionResults).toContainEqual({
+    details: { consoleErrors: 1, networkErrors: 0, runtimeDiagnostics: 1 },
+    id: "diagnostics",
+    pass: false,
+  });
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
   expect(exitCodeForReport(result)).toBe(1);
 });
 

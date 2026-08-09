@@ -1,6 +1,7 @@
 # Opportunity areas — where abstraction pays and where it taxes
 
-**Status:** proposal, 2026-08-07. Not binding. `CHARTER.md` wins on any conflict.
+**Status:** proposal, re-audited 2026-08-09. Scores are historical prioritization inputs,
+not current completion states. `CHARTER.md` wins on any conflict.
 **Companion to:** `ROADMAP.md` (which phase), this doc (which area, and why).
 
 ## The rule this whole document applies
@@ -32,25 +33,21 @@ numbers are comparable rather than vibes.
 
 ### The constraint that actually binds
 
-`pnpm budgets` today: **2,988 / 15,000 framework LOC (20%)** and **7 / 8 workspace
-packages**. The counter includes `examples/*`, so the two benchmark examples occupy two of
-the seven.
+`pnpm budgets` on 2026-08-09: **5,815 / 15,000 framework LOC**, **53,768 / 50,000 native
+runtime LOC**, **6 framework packages**, and **3 example workspaces**. The native review
+trigger is exceeded by 3,768 LOC; it is reported, not silently routed around.
 
-**LOC is not the scarce resource. The package slot is** — there is exactly one left, and
-it is only spendable on something carrying a dependency the others must not inherit
-(WASM, native binding). Any area below whose cost is "a new package" is competing for that
-single slot. Score `Cost fit` accordingly.
+**LOC is not the scarce resource. Package boundaries are dependency boundaries.** Rule 5 no
+longer defines a numeric slot: any new package still has to carry a dependency the others must
+not inherit. Score `Cost fit` against that rule and the current native LOC trigger.
 
 ---
 
 ## Prerequisite — this gates everything below
 
-**Gate 0 of `ROADMAP.md` is unrun.** Two of five axes read `0` because they have *never
-been measured*, not because they failed. No area in this document should be started before
-round 2 completes on both arms — otherwise we would be adding capability to a framework
-whose core claim is still unverified.
-
-Building from this list before Gate 0 closes is how v1 got to 790k lines.
+**Gate 0 closed on 2026-08-08.** Round 2 ran both arms and moved the work from speculative
+scoring to measured PRDs. Use the current round ledger and each area's PRD status below;
+do not treat this original score table as an execution queue.
 
 ---
 
@@ -64,14 +61,16 @@ Building from this list before Gate 0 closes is how v1 got to 790k lines.
 | 4 | Hot reload with state preservation | **80** | 28 | 24 | 12 | 16 |
 | 5 | Save/load & deterministic replay | **82** | 30 | 18 | 20 | 14 |
 
-### 1. Asset discovery & licensing — 94 · VOID pending publishable profile (`PRD-032`)
+### 1. Asset discovery & licensing — 94 · live gate failed; kill switch pending
 
 Three.js ships a `GLTFLoader` and nothing that tells you *where a legally usable model
-lives*. This remains the largest 0→1 opportunity, but the proposal is void until a
-publishable bounded profile exists. Phase 2 never shipped the profile, so no current
-scaffolded project contains this `.mcp.json` integration. If the profile is published in
-the future, it should run as an external MCP server declared in the scaffolded project,
-not as package code.
+lives*. All three current templates now contain `.mcp.json` and install the external asset
+MCP; no server code is vendored. The live surface is still 32 tools, not the bounded eight-tool
+profile proposed by PRD-032. The 2026-08-09 live-agent gate completed: the positive arm
+downloaded and credited real Poly Haven and Kenney assets, but a blind critic preferred the
+no-MCP control `4/5` to `3/5` overall because its authored crate was clearer and fit the scene
+better. PRD-032's predeclared kill switch fired. Deletion of the generated asset-MCP surface
+is pending explicit confirmation; the smaller-profile publication is no longer the next move.
 
 It also attacks the "looks good" axis without violating §5b. Real assets are the biggest
 visual delta available, and shipping *discovery* is not shipping *the look* — the agent
@@ -82,7 +81,7 @@ still writes its own materials and lighting around what it found.
 even outside the budget, and 25 tools is a discovery cost of its own. Ship the subset that
 the paired arm actually reaches for.
 
-### 2. Agent self-verification — 90 · shipped, under-exploited
+### ✅ 2. Agent self-verification — 90 · shipped; arm-neutral diagnostics repaired
 
 `packages/playtest` already drives a real browser and asserts what happened. Vanilla
 Three.js has no answer at all — an agent building vanilla cannot tell whether its game
@@ -94,11 +93,17 @@ remaining effort has gone.
 wins no benchmark comparison even though it is enormously valuable to a real user. That is
 a scoring artifact, not a reason to underinvest — it just means the points show up in
 adoption rather than in the pair.
+**2026-08-09 proof repair:** browser and device transports now advertise the runtime-error
+evidence they actually capture; core no longer supplies a never-written empty diagnostics
+provider. `sweep:proof` persists runner stdout/stderr to artifacts behind a 16 MiB fail-closed
+limit, so the round-3 vanilla replay retained a 4.08 MB report and reached all five sealed
+assertions instead of truncating JSON at Node's default 1 MiB child-process buffer. Replaying
+both unchanged arms produced a valid functional tie at 0/1.
 **Highest-value next move:** widen semantic assertions (what the *game* did) rather than
 diagnostics (what the *page* did). `TN_PLAYTEST_BRIDGE_MISSING` failing closed is the
 harness being right; more of the game surface should be observable through it.
 
-### 3. Navigation & pathfinding — 86 · shipped in PRD-034 (browser-proven; no new package)
+### ✅ 3. Navigation & pathfinding — 86 · retained browser-only; live caller verified
 
 Three.js ships nothing. Godot ships `NavigationAgent3D`, `NavigationRegion3D`,
 `NavigationObstacle3D` — names already in every model's weights, so rule 4 is satisfied
@@ -109,24 +114,29 @@ Every brief with an enemy, an NPC or a follower needs this, and what a model wri
 without it is an ad-hoc A* on a grid it invents — which is precisely the "hundreds of
 lines nobody wants to write" shape that made physics worth wrapping.
 
-**Cost is the honest problem:** recast is WASM, so by §9a's own logic it cannot live in
-`core`. PRD-034 keeps it behind `@threenative/physics/navigation`, which costs no workspace
-package. PRD-047 later deleted the proposed `@threenative/physics-native` package too, so
-native physics remains behind the existing dependency boundary. The platformer proof
-covers islands,
-the upper overhang layer, the blocker detour and local crowd avoidance; the minimal
-physics-only bundle stays recast-free.
+**Cost is the honest problem:** Recast is WASM, so it remains behind
+`@threenative/physics/navigation` and is browser-only. PRD-052 measured zero corpus demand
+and replaced the platformer's Recast caller with 31 lines of portable steering. On 2026-08-09
+a new web-only `abyss-framework` caller and a temporary direct-Recast control ran the same
+headed WebGPU route-around-blocker playtest. Both passed; the framework caller was 127
+nonblank source lines versus 187 direct lines, a 60-line/32.1% reduction. The direct arm was
+then removed and the framework caller retained at `?navigation`, leaving the portable
+platformer and native entry Recast-free. The surface may stay, but further framework growth
+still requires measured caller demand.
 
-### 4. Hot reload with state preservation — 80 · not started, named in Roadmap Phase 2
+### ✅ 4. Hot reload with state preservation — 80 · shipped and leak-controlled (`PRD-035`)
 
 Vite gives you module reload; nothing gives you "the player is still standing where they
-were." Look-neutral, several hundred vanilla lines, and it never touches a screenshot.
+were." The shipped boundary preserves JSON-shaped store state and rebuilds the world. On
+2026-08-09 the final two negative controls were observed red and restored, teardown gained a
+scene-release postcondition, and the browser gate passed ten reloads plus the specified
+5% fall-cadence comparison.
 
 **Scored down on agent leverage only.** An agent restarts the process cheaply and does not
 feel the pain a human does. This is the strongest *human-adoption* item on the list and a
 weak benchmark item — worth building, worth not expecting the pair to reward.
 
-### 5. Save/load & deterministic replay — 82 · Phase 0 measured, implementation in progress
+### ✅ 5. Save/load & deterministic replay — 82 · shipped (`PRD-036`)
 
 Three.js has `toJSON` for the scene graph and nothing for game state. A seeded RNG already
 ships (`createRandom`), which is half of determinism.
@@ -134,6 +144,10 @@ ships (`createRandom`), which is half of determinism.
 The compounding reason to want this: **deterministic replay is a verification
 multiplier.** A replay that reproduces a bug is a playtest scenario that costs nothing to
 write, which feeds directly into area 2.
+
+The fixed-step bridge now reports the loop's cumulative update count and fails when a
+requested advance differs from actual updates, so wall-clock ticks cannot be hidden behind a
+scripted counter.
 
 **Ceiling risk is the real one here (18/25):** a save format is one refactor away from a
 serialized scene format, and that is a closed question in §2 with 25,898 LOC of evidence
@@ -154,8 +168,8 @@ fail-closed playtest scenario; the package cost remains 14.
 
 | # | Area | Score | Note |
 |---|---|---:|---|
-| 6 | Spatial audio buses | **64** | Partly shipped (`AudioBus`). `PositionalAudio` exists but is awkward; the gap is buses/ducking, not playback. Keep it small. |
-| 7 | Mobile & on-device | **61** | Score is stale — it priced an unrun spike. PRD-047 answered 0a: desktop and Android emulator render, evidence in `docs/verification/`. Cost is still brutal (a C++ runtime is now owned) but the variance that justified the 61 is gone. Re-score against `docs/PRDs/native/README.md`. |
+| 6 | Spatial audio buses | **64** | Partly shipped (`AudioBus`). A fresh no-MCP starter control naturally called `playAt`, so the API is discoverable. On 2026-08-09 the Linux native mixer gained a real source → panner → gain graph: compiled samples proved gain `0.5`, inverse-distance right pan `0.1`, and listener-relative left flip `0.1`; the actual V8/SDL host then ran `AudioBus.playAt()`, dispatched `onended` on the JS main thread, and proved the bus released its ended voice. Core still fails closed on hosts without `createPanner`. Android/iOS and physical audio output remain unexecuted, so no portable template caller yet; buses/ducking remain premature. |
+| 7 | Mobile & on-device | **61** | Score is stale. Linux, Android emulator, iOS simulator, macOS, and Windows have executed evidence. The first release run passed all desktop builders but failed before publication because its Android dependency set omitted SDL's Java glue; `0.1.9` fixes and locally proves that boundary. Corrected released-consumer and physical-hardware evidence remain open. Re-score against `docs/PRDs/native/README.md`. |
 | 8 | Animation state machines | **57** | **Conditionally closed — PRD-039 is WONTBUILD.** `AnimationMixer` already ships and is decent. Godot's `AnimationTree` is opinionated — real ceiling risk. Reopen only if the round-2 ledger names crossfade/root-motion as a measured gap. |
 | 9 | Perf: instancing, LOD, streaming | **48** | `InstancedMesh` and `LOD` both ship. Owning batching caps what the user can render. Ship as template source, not package code. |
 | 10 | React/UI bindings | **49** | 22 LOC of `useGameState` is the 20-line rule working correctly. React and Tailwind are already in every model's weights. **Do not grow this.** |
@@ -167,7 +181,7 @@ fail-closed playtest scenario; the package cost remains 14.
 | Area | Score | Why |
 |---|---:|---|
 | Materials, shaders, TSL, lighting, camera, post | **8** | The measured negative. v1 owned these and scored *worse* than vanilla blind. §5b makes this permanent. |
-| GPU particles as package code | **30** | ⚠️ `GPUParticles3D` is in `packages/core` today and it is the one thing there that a screenshot shows. Worth an explicit §5b review: does it decide the look, or only move the buffers? |
+| GPU particles as package code | **30** | Reviewed and bounded by PRD-027: core owns dispatch, buffer lifetime and release; generated `src/render/particles.ts` owns material, TSL behavior and the look. Do not grow the node without a new measured caller. |
 | Multiplayer / netcode | **25** | Gap is genuinely 30/30, cost fit is ~0. Explicitly off the roadmap because it can absorb the entire company. |
 | Tweens, timers, event bus, math helpers | **5** | The 20-line rule. A model writes each of these correctly on the first try. |
 | Scene format · editor · ECS · presets · genre recipes · bespoke CLI | **0** | Closed questions in §2, each decided against *with evidence*. Reopening one needs new evidence, not a new argument. |
@@ -176,10 +190,7 @@ fail-closed playtest scenario; the package cost remains 14.
 
 ## How to use this list
 
-1. Close Gate 0. Nothing here starts first.
-2. Read the round-2 ledger. A gap row that names a Tier 2 area promotes it; a Tier 1 area
-   the ledger never mentions is a hypothesis, not a finding.
-3. Decide the navigation package slot **before** writing navigation code — it is the last
-   slot and spending it wrong is unrecoverable under §10.
-4. Re-score anything whose inputs moved. The rubric is the point; the numbers are just
-   this week's reading of it.
+1. Read the latest completed round ledger; an area the ledger never names remains a hypothesis.
+2. Execute the named PRD's next unmet criterion, not this score table.
+3. For navigation, restore a real browser caller and direct comparison before adding API.
+4. Re-score inputs that moved; mobile, package count, LOC and shipped status all moved here.

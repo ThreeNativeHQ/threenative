@@ -18,6 +18,12 @@
       const params = new URLSearchParams(location.search);
       const mode = params.get("mode") ?? "good";
 
+      if (mode === "no-bridge-error") {
+        setTimeout(() => {
+          throw new Error("transport-only-boom");
+        }, 0);
+      }
+
       // Lets a test observe a browser launch flag that reached this page.
       if (params.get("report") === "ua") {
         console.log(`playtest-ua:${navigator.userAgent}`);
@@ -103,7 +109,7 @@
         }),
       };
 
-      if (mode !== "no-bridge") {
+      if (!mode.startsWith("no-bridge")) {
         globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = bridge;
       }
     </script>

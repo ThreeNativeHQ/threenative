@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
+import { exitCodeForReport } from "../src/runner/cli.js";
 import { runStandalonePlaytest } from "../src/runner/runner.js";
 import type { IStandalonePlaytestReport } from "../src/runner/runner.js";
 
@@ -126,6 +127,21 @@ test("true positive: a missing bridge fails the run rather than skipping the ass
 
   expect(report.pass).toBe(false);
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_BRIDGE_MISSING");
+}, 60_000);
+
+test("transport-only browser errors reach runtime diagnostics without a bridge", async () => {
+  const report = await run("no-bridge-error", {
+    diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true },
+  });
+
+  expect(report.assertionResults).toContainEqual({
+    details: { consoleErrors: 1, networkErrors: 0, runtimeDiagnostics: 1 },
+    id: "diagnostics",
+    pass: false,
+  });
+  expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
+  expect(report.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_BRIDGE_MISSING");
+  expect(exitCodeForReport(report)).toBe(1);
 }, 60_000);
 
 test("true positive: a bridge that reports itself unready fails with its own reason", async () => {

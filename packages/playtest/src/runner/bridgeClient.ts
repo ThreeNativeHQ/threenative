@@ -30,6 +30,7 @@ const BROWSER_CAPABILITIES = [
   "browser.network",
   "browser.screenshot",
   "browser.trace",
+  "runtime.diagnostics",
   "runtime.ui",
 ] as const;
 
@@ -94,14 +95,10 @@ export async function connectPlaytestBridgeTransport(
   timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
 ): Promise<IPlaytestBridgeClient | undefined> {
   const required = requiredPlaytestCapabilities(scenario);
-  const semanticRequired = required.filter(
-    (capability) => !capability.startsWith("browser.")
-      && capability !== "runtime.ui"
-      && (capability !== "runtime.diagnostics" || scenario.assert?.diagnostics?.noRuntimeDiagnostics === true),
-  );
+  const bridgeRequired = missingPlaytestCapabilities(required, transport.capabilities);
   const exists = await transport.waitForBridge(timeoutMs);
   if (!exists) {
-    if (semanticRequired.length === 0) {
+    if (bridgeRequired.length === 0) {
       return undefined;
     }
     throw new PlaytestBridgeError(playtestDiagnostic(

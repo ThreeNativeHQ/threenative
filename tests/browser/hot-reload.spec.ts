@@ -64,6 +64,37 @@ async function heapSize(page: import("@playwright/test").Page): Promise<number> 
   return heap;
 }
 
+async function fallDistance(page: import("@playwright/test").Page): Promise<number> {
+  await page.keyboard.down("Space");
+  await page.waitForTimeout(50);
+  await page.keyboard.up("Space");
+  return page.evaluate(async () => {
+    const playerY = (): number => {
+      const position = (
+        window as Window & {
+          __THREENATIVE__?: { snapshot?: () => Record<string, { position?: number[] }> };
+        }
+      ).__THREENATIVE__?.snapshot?.().player?.position;
+      if (position?.[1] === undefined) throw new Error("Player Y was not observable.");
+      return position[1];
+    };
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    let peak = playerY();
+    for (let index = 0; index < 240; index += 1) {
+      await frame();
+      const y = playerY();
+      peak = Math.max(peak, y);
+      if (peak - y < 0.08) continue;
+      const start = y;
+      for (let fallingFrame = 0; fallingFrame < 10; fallingFrame += 1) await frame();
+      const distance = start - playerY();
+      while (playerY() > 0.52) await frame();
+      return distance;
+    }
+    throw new Error("Player never entered the measured fall window.");
+  });
+}
+
 async function waitForHotReload(
   page: import("@playwright/test").Page,
   expected: number,
@@ -139,6 +170,8 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   }
   const before = await runtimeSnapshot(page);
   expect(before.score).toBeGreaterThan(0);
+  const fallBefore = await fallDistance(page);
+  expect(fallBefore).toBeGreaterThan(0);
   const heapBefore = await heapSize(page);
   const playerFile = path.join(project, "src/entities/Player.ts");
   const original = await readFile(playerFile, "utf8");
@@ -147,10 +180,9 @@ test("preserves starter state and stays flat across ten real HMR updates", async
 
   try {
     for (let reload = 1; reload <= 10; reload += 1) {
-      const nextSpeed = (5 + reload / 10).toFixed(1);
       await writeFile(
         playerFile,
-        original.replace(jumpPattern, `const JUMP_SPEED = ${nextSpeed};`),
+        original.replace(jumpPattern, (speed) => `${speed} // HMR cycle ${reload}`),
       );
       await waitForHotReload(page, reload);
       const after = await runtimeSnapshot(page);
@@ -166,6 +198,8 @@ test("preserves starter state and stays flat across ten real HMR updates", async
     const after = await runtimeSnapshot(page);
     expect(after.diagnostics.reloads).toBe(10);
     expect(after.navigationEntries).toBe(1);
+    const fallAfter = await fallDistance(page);
+    expect(Math.abs(fallAfter - fallBefore) / fallBefore).toBeLessThanOrEqual(0.05);
     expect(await heapSize(page)).toBeLessThanOrEqual(
       Math.max(heapBefore * 1.5, heapBefore + 10_000_000),
     );
