@@ -1226,8 +1226,11 @@ elseif(WIN32)
         mfreadwrite.lib
         RuntimeObject.lib
     )
-    # C++/WinRT needs /await for coroutine support
-    target_compile_options(mystral-runtime PRIVATE /await)
+    # C++/WinRT needs /await for coroutine support when using MSVC. MinGW
+    # implements C++20 coroutines without accepting the MSVC-only flag.
+    if(MSVC)
+        target_compile_options(mystral-runtime PRIVATE /await)
+    endif()
 elseif(ANDROID)
     target_sources(mystral-runtime PRIVATE
         src/platform/surface_android.cpp

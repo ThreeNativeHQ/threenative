@@ -22,6 +22,7 @@ function run(command, args, options = {}) {
     encoding: 'utf8',
     env: options.env ?? process.env,
     maxBuffer: 32 * 1024 * 1024,
+    stdio: options.stdio,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -169,7 +170,9 @@ run('cmake', [
   '-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO',
 ]);
 const rebuildApp = () =>
-  run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel']);
+  run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel'], {
+    stdio: 'inherit',
+  });
 const rebuildProof = (control, physics) => {
   run('pnpm', ['--filter', 'threenative-native-smoke', 'build'], {
     env: {
@@ -237,7 +240,7 @@ try {
   run('pnpm', ['--filter', 'threenative-native-smoke', 'build'], {
     env: { ...process.env, THREENATIVE_PLAYTEST_BRIDGE: 'disabled' },
   });
-  run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel']);
+  rebuildApp();
   devicePlaytest.missingBridge = runExpected(
     process.execPath,
     playtestArgs('device-smoke.playtest.json', 'playtest-missing-bridge'),
