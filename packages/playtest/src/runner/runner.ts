@@ -480,8 +480,12 @@ async function runStep(
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
   if (ticks > 0 && bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-    for (let index = 0; index < ticks; index += 1) {
-      await bridge.advance(1);
+    // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
+    // path sample cadence. One browser round-trip per tick lets live frames race the
+    // deterministic clock on loaded runners and makes long recordings nondeterministic.
+    const sampleTicks = 10;
+    for (let index = 0; index < ticks; index += sampleTicks) {
+      await bridge.advance(Math.min(sampleTicks, ticks - index));
       await samplePathPosition(bridge, pathEntity, pathPositions);
     }
   } else {
