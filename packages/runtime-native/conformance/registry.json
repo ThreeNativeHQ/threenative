@@ -1,0 +1,612 @@
+{
+  "schemaVersion": "0.1.0",
+  "threeVersion": "0.185.1",
+  "policy": {
+    "renderer": "three/webgpu WebGPURenderer",
+    "noCustomCppRenderer": true,
+    "gltf": "JavaScript Three.js GLTFLoader only"
+  },
+  "tests": [
+    {
+      "id": "01-basic-cube",
+      "title": "basic cube",
+      "category": "core",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/first-proof-game.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "02-buffer-geometry",
+      "title": "buffer geometry",
+      "category": "core",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "03-perspective-camera",
+      "title": "perspective camera",
+      "category": "core",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "04-orthographic-camera",
+      "title": "orthographic camera",
+      "category": "core",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "05-hierarchy",
+      "title": "hierarchy",
+      "category": "core",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "10-mesh-basic-material",
+      "title": "mesh basic material",
+      "category": "materials",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true
+    },
+    {
+      "id": "11-mesh-standard-material",
+      "title": "mesh standard material",
+      "category": "materials",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "12-pbr-material",
+      "title": "pbr material",
+      "category": "materials",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "13-texture-material",
+      "title": "texture material",
+      "category": "materials",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "14-transparent-material",
+      "title": "transparent material",
+      "category": "materials",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "20-ambient-light",
+      "title": "ambient light",
+      "category": "lights",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "21-directional-light",
+      "title": "directional light",
+      "category": "lights",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "22-hemisphere-light",
+      "title": "hemisphere light",
+      "category": "lights",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "23-point-light",
+      "title": "point light",
+      "category": "lights",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "24-spot-light",
+      "title": "spot light",
+      "category": "lights",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "30-basic-shadow-map",
+      "title": "basic shadow map",
+      "category": "shadows",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true
+    },
+    {
+      "id": "31-pbr-shadow-receiver",
+      "title": "pbr shadow receiver",
+      "category": "shadows",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "32-animated-shadows",
+      "title": "animated shadows",
+      "category": "shadows",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "40-texture-png",
+      "title": "texture png",
+      "category": "assets",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/texture-blob-imagebitmap.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "41-texture-jpeg",
+      "title": "texture jpeg",
+      "category": "assets",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "42-gltf-glb-static",
+      "title": "gltf glb static",
+      "category": "assets",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gltf-loader-glb.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "43-gltf-external-buffers",
+      "title": "gltf external buffers",
+      "category": "assets",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gltf-loader-external.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "44-gltf-external-textures",
+      "title": "gltf external textures",
+      "category": "assets",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gltf-loader-external.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "45-gltf-pbr-helmet",
+      "title": "gltf pbr helmet",
+      "category": "assets",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true
+    },
+    {
+      "id": "46-gltf-animation-clip",
+      "title": "gltf animation clip",
+      "category": "assets",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "50-raf-rotation",
+      "title": "raf rotation",
+      "category": "animation",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true
+    },
+    {
+      "id": "51-mixer-animation",
+      "title": "mixer animation",
+      "category": "animation",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "52-skinned-mesh-animation",
+      "title": "skinned mesh animation",
+      "category": "animation",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "53-morph-target-animation",
+      "title": "morph target animation",
+      "category": "animation",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "60-resize-render-target",
+      "title": "resize render target",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/runtime-events.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "61-offscreen-screenshot",
+      "title": "offscreen screenshot",
+      "category": "rendering",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "62-postprocessing-pass",
+      "title": "postprocessing pass",
+      "category": "rendering",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "63-color-management",
+      "title": "color management",
+      "category": "rendering",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "64-depth-precision",
+      "title": "depth precision",
+      "category": "rendering",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "70-webgpu-renderer-init",
+      "title": "webgpu renderer init",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/module-resolution.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "71-tsl-color-node",
+      "title": "tsl color node",
+      "category": "webgpu-tsl",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "72-tsl-time-node",
+      "title": "tsl time node",
+      "category": "webgpu-tsl",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "73-storage-buffer-smoke",
+      "title": "storage buffer smoke",
+      "category": "webgpu-tsl",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "74-compute-smoke",
+      "title": "compute smoke",
+      "category": "webgpu-tsl",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "80-request-animation-frame",
+      "title": "request animation frame",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/runtime-events.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "81-performance-now",
+      "title": "performance now",
+      "category": "runtime",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "82-fetch-local-asset",
+      "title": "fetch local asset",
+      "category": "runtime",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "83-blob-url-image",
+      "title": "blob url image",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/texture-blob-imagebitmap.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "84-abort-controller",
+      "title": "abort controller",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gltf-loader-glb.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "85-canvas-dimensions",
+      "title": "canvas dimensions",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/runtime-events.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "86-input-event-placeholder",
+      "title": "input event placeholder",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/runtime-events.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "87-gpu-validation-scope",
+      "title": "gpu validation scope",
+      "category": "runtime",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "88-screenshot-completion",
+      "title": "screenshot completion",
+      "category": "runtime",
+      "status": "planned",
+      "scene": null,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false
+    },
+    {
+      "id": "89-module-import",
+      "title": "module import",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/module-resolution.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    }
+  ]
+}

@@ -1,10 +1,13 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { budgetErrors, collectBudgets } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   await Promise.all(
@@ -113,19 +116,86 @@ describe("budget gate", () => {
     expect(report.vendoredAssetMcp).toEqual([]);
   });
 
-  it("should fail when the Mystral native runtime is vendored", async () => {
+  it("should allow the Mystral native runtime only in its owned package", async () => {
     const root = await fixtureRoot();
-    const directory = path.join(root, "vendor", "engine", "include", "mystral");
+    const directory = path.join(root, "packages", "runtime-native", "include", "mystral");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
+    await writeFile(path.join(directory, "runtime.h"), "#pragma once\n");
+    const report = await collectBudgets(root);
+    expect(report.vendoredNativeRuntime).toEqual([]);
+    expect(budgetErrors(report)).not.toContainEqual(
+      expect.stringContaining("runtime is allowed only"),
+    );
+  });
+
+  it("should fail when the Mystral native runtime is outside its owned package", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "anything-else", "include", "mystral");
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "runtime.h"), "#pragma once\n");
     const report = await collectBudgets(root);
-    expect(report.vendoredNativeRuntime).toEqual([path.join("vendor", "engine")]);
-    expect(budgetErrors(report).join("\n")).toContain("native runtime must stay external");
+    expect(report.vendoredNativeRuntime).toEqual([path.join("packages", "anything-else")]);
+    expect(budgetErrors(report).join("\n")).toContain("runtime is allowed only");
   });
 
-  it("should keep the Mystral native runtime external in the real tree", async () => {
+  it("should fail when native runtime LOC exceeds 50000 and not charge framework LOC", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "runtime-native", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
+    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(50_000));
+    const report = await collectBudgets(root);
+    expect(report.frameworkLoc).toBe(0);
+    expect(report.nativeRuntimeLoc).toBeGreaterThan(50_000);
+    expect(budgetErrors(report).join("\n")).toContain("native runtime LOC cap exceeded");
+  });
+
+  it("should allow native runtime LOC below 50000", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "runtime-native", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
+    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(49_998));
+    const report = await collectBudgets(root);
+    expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
+    expect(budgetErrors(report)).not.toContainEqual(
+      expect.stringContaining("native runtime LOC cap exceeded"),
+    );
+  });
+
+  it("should fail when native third_party content is tracked", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "runtime-native", "third_party");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
+    await writeFile(path.join(directory, "dependency.cpp"), "x\n");
+    await execFileAsync("git", ["-C", root, "init"]);
+    await execFileAsync("git", ["-C", root, "add", "-f", "packages/runtime-native/third_party"]);
+    const report = await collectBudgets(root);
+    expect(report.trackedNativeThirdParty).toEqual([
+      "packages/runtime-native/third_party/dependency.cpp",
+    ]);
+    expect(budgetErrors(report).join("\n")).toContain("third_party must stay untracked");
+  });
+
+  it("should allow untracked native third_party content", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "runtime-native", "third_party");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "dependency.cpp"), "x\n");
+    const report = await collectBudgets(root);
+    expect(report.trackedNativeThirdParty).toEqual([]);
+    expect(budgetErrors(report)).not.toContainEqual(
+      expect.stringContaining("third_party must stay untracked"),
+    );
+  });
+
+  it("should keep the Mystral native runtime bounded in the real tree", async () => {
     const report = await collectBudgets(process.cwd());
     expect(report.vendoredNativeRuntime).toEqual([]);
+    expect(report.trackedNativeThirdParty).toEqual([]);
+    expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
   });
 
   it("should keep the real tree under every cap", async () => {

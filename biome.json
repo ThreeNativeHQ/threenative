@@ -5,6 +5,7 @@
       "**/dist/**",
       ".worktrees/**",
       "packages/playtest/**",
+      "packages/runtime-native/**",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
       "examples/abyss-vanilla/src/main.js",

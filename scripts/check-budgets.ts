@@ -1,10 +1,15 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const LIMITS = {
   packages: 8,
   frameworkLoc: 15_000,
+  nativeRuntimeLoc: 50_000,
   prdFiles: 10,
   /**
    * A sweep charges the framework arm only for what it authors above its starter, so every
@@ -23,8 +28,11 @@ const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
  * would notice it arriving.
  */
 const EXTERNAL_ASSET_MCP = "threenative-asset-mcp";
+const NATIVE_RUNTIME_PACKAGE = path.join("packages", "runtime-native");
 const NATIVE_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
+const NATIVE_RUNTIME_SOURCE_PATTERN =
+  /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle|js|mjs|ts|json|xml)$/;
 const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
   "mystralnative",
   "threejsmystral",
@@ -45,20 +53,33 @@ export type BudgetReport = {
   frameworkPackages: number;
   exampleWorkspaces: number;
   frameworkLoc: number;
+  nativeRuntimeLoc: number;
   prdFiles: number;
   templates: { name: string; loc: number }[];
   vendoredAssetMcp: string[];
   vendoredNativeRuntime: string[];
+  trackedNativeThirdParty: string[];
 };
 
-async function filesUnder(root: string, predicate: (file: string) => boolean): Promise<string[]> {
+async function filesUnder(
+  root: string,
+  predicate: (file: string) => boolean,
+  excludedDirectories = new Set<string>(),
+): Promise<string[]> {
   if (!existsSync(root)) return [];
   const entries = await readdir(root, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist") continue;
+    if (
+      entry.name === "node_modules" ||
+      entry.name === ".git" ||
+      entry.name === "dist" ||
+      excludedDirectories.has(entry.name)
+    )
+      continue;
     const absolute = path.join(root, entry.name);
-    if (entry.isDirectory()) files.push(...(await filesUnder(absolute, predicate)));
+    if (entry.isDirectory())
+      files.push(...(await filesUnder(absolute, predicate, excludedDirectories)));
     else if (predicate(absolute)) files.push(absolute);
   }
   return files;
@@ -102,7 +123,7 @@ async function vendoredNativeRuntime(root: string): Promise<string[]> {
         existsSync(path.join(directory, "src", "runtime.cpp")) &&
         existsSync(path.join(directory, "third_party")));
     if (runtimeSignature) {
-      offenders.add(relative || ".");
+      if (relative !== NATIVE_RUNTIME_PACKAGE) offenders.add(relative || ".");
       return;
     }
 
@@ -119,7 +140,7 @@ async function vendoredNativeRuntime(root: string): Promise<string[]> {
       if (!entry.isDirectory() || WALK_EXCLUSIONS.has(entry.name)) continue;
       const childRelative = relative ? path.join(relative, entry.name) : entry.name;
       if (NATIVE_RUNTIME_DIRECTORY_NAMES.has(normalizedDirectoryName(entry.name))) {
-        offenders.add(childRelative);
+        if (childRelative !== NATIVE_RUNTIME_PACKAGE) offenders.add(childRelative);
         continue;
       }
       await walk(path.join(directory, entry.name), childRelative);
@@ -128,6 +149,26 @@ async function vendoredNativeRuntime(root: string): Promise<string[]> {
 
   await walk(root, "");
   return [...offenders].sort();
+}
+
+async function trackedNativeThirdParty(root: string): Promise<string[]> {
+  if (!existsSync(path.join(root, ".git"))) return [];
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", root, "ls-files", "--", path.join(NATIVE_RUNTIME_PACKAGE, "third_party")],
+      { encoding: "utf8" },
+    );
+    return stdout
+      .split(/\r?\n/)
+      .map((file) => file.trim())
+      .filter(Boolean)
+      .sort();
+  } catch (error) {
+    throw new Error(
+      `could not inspect tracked native dependencies: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function vendoredAssetMcp(root: string): Promise<string[]> {
@@ -161,7 +202,8 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   );
   const sourceFiles = new Set<string>();
   for (const entry of packageEntries) {
-    if (!entry.isDirectory() || SALVAGE_PACKAGES.has(entry.name)) continue;
+    if (!entry.isDirectory() || SALVAGE_PACKAGES.has(entry.name) || entry.name === "runtime-native")
+      continue;
     const packageRoot = path.join(root, "packages", entry.name);
     for (const file of await filesUnder(
       path.join(packageRoot, "src"),
@@ -175,6 +217,14 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     }))
       sourceFiles.add(file);
   }
+  const nativeRuntimeRoot = path.join(root, NATIVE_RUNTIME_PACKAGE);
+  const nativeRuntimeFiles = await filesUnder(
+    nativeRuntimeRoot,
+    (candidate) =>
+      NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
+      path.basename(candidate) === "CMakeLists.txt",
+    new Set(["third_party", "build", ".runtime", "artifacts"]),
+  );
   const templateRoot = path.join(root, "packages", "create-threenative", "templates");
   const templates: { name: string; loc: number }[] = [];
   for (const entry of await readdir(templateRoot, { withFileTypes: true }).catch(() => [])) {
@@ -192,9 +242,11 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     frameworkPackages: await packageCount(root, "packages"),
     exampleWorkspaces: await packageCount(root, "examples"),
     frameworkLoc: await countLines([...sourceFiles]),
+    nativeRuntimeLoc: await countLines(nativeRuntimeFiles),
     templates,
     vendoredAssetMcp: await vendoredAssetMcp(root),
     vendoredNativeRuntime: await vendoredNativeRuntime(root),
+    trackedNativeThirdParty: await trackedNativeThirdParty(root),
     prdFiles: (
       await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
     ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,
@@ -213,6 +265,11 @@ export function budgetErrors(report: BudgetReport): string[] {
       `framework LOC cap exceeded: ${report.frameworkLoc} lines (limit ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc})`,
     );
   }
+  if (report.nativeRuntimeLoc > LIMITS.nativeRuntimeLoc) {
+    errors.push(
+      `native runtime LOC cap exceeded: ${report.nativeRuntimeLoc} lines (limit ${LIMITS.nativeRuntimeLoc}, +${report.nativeRuntimeLoc - LIMITS.nativeRuntimeLoc})`,
+    );
+  }
   for (const template of report.templates) {
     if (template.loc > LIMITS.templateLoc) {
       errors.push(
@@ -227,7 +284,12 @@ export function budgetErrors(report: BudgetReport): string[] {
   }
   if (report.vendoredNativeRuntime.length > 0) {
     errors.push(
-      `Mystral native runtime must stay external: ${report.vendoredNativeRuntime.join(", ")} contains a vendored runtime tree. Pin and checksum downloaded runtime artifacts instead of committing their source or toolchain.`,
+      `Mystral native runtime is allowed only at ${NATIVE_RUNTIME_PACKAGE}: ${report.vendoredNativeRuntime.join(", ")} contains another runtime tree.`,
+    );
+  }
+  if (report.trackedNativeThirdParty.length > 0) {
+    errors.push(
+      `native runtime third_party must stay untracked: ${report.trackedNativeThirdParty.join(", ")}`,
     );
   }
   if (report.prdFiles > LIMITS.prdFiles) {
@@ -252,7 +314,7 @@ if (
   enforceBudgets(process.cwd())
     .then((report) => {
       console.log(
-        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc} framework LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
+        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
       );
     })
     .catch((error: unknown) => {

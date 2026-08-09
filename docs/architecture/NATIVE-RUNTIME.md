@@ -1,6 +1,6 @@
 # Native runtime
 
-**Status:** external-host decision active. Desktop framework smoke and Android emulator
+**Status:** owned-host absorption in progress. Desktop framework smoke and Android emulator
 runtime proof pass; Android framework-version parity, physics, iOS and physical hardware
 remain open. **Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
 
@@ -9,14 +9,15 @@ remain open. **Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
 ```
 Shared TypeScript game code
         ├── browser WebGPU ──────────────► web
-        └── pinned external Mystral ─────► desktop / Android / iOS
+        └── owned Mystral runtime ───────► desktop / Android / iOS
 ```
 
-One game codebase, two release lanes. Mystral is downloaded as an immutable,
-checksum-verified artifact into a gitignored cache. Its C++, CMake/Gradle/NDK/Xcode and
-third-party trees never enter this repository. Native builds produce one import-free
-bundle and use Mystral's browser-compatible globals. Runtime/catalog Three.js
-compatibility is exact and fail-closed.
+One game codebase, two release lanes. Mystral's host source, CMake and platform projects
+live in the single `packages/runtime-native/` workspace package. Its third-party dependency
+trees never enter git: `scripts/download-deps.mjs` reconstructs them in the package's
+gitignored `third_party/`. Native builds are opt-in, produce one import-free bundle and use
+the runtime's browser-compatible globals. Runtime/catalog Three.js compatibility is exact
+and fail-closed.
 
 ## Why physics needs a native binding
 
@@ -39,7 +40,7 @@ for a 60 Hz step; and every workaround library is dead — `react-native-webasse
 Best case is "maybe on iOS 18.4+, definitely not on Android, at interpreter speed." That
 is not a foundation.
 
-> **Rapier compiled into the external runtime, exposed through a versioned bulk typed-array
+> **Rapier compiled into the owned runtime, exposed through a versioned bulk typed-array
 > ABI and selected from the existing `@threenative/physics` package.** No JSI, no WASM,
 > no per-object hot-path crossing, and no additional workspace package.
 
@@ -112,5 +113,6 @@ arm64 performance or phone frame-rate evidence.
 ## Explicitly not doing
 
 A framework-owned or forked rendering backend. Dual-renderer parity is a permanent ~2x
-tax. Mystral remains external, pinned and replaceable; native modules are added there only
-for capabilities such as physics that cannot run through the JavaScript engine.
+tax. Mystral remains a host for upstream Three.js, and native modules are added there only
+for capabilities such as physics that cannot run through the JavaScript engine. Its source
+is owned here; Dawn, V8, QuickJS, SDL3, wgpu-native and other dependencies are not vendored.

@@ -17,4 +17,6 @@ catalog:
   '@vitejs/plugin-react': 6.0.5
   typescript: 5.9.3
   vite: 8.2.0
+  vitest: 4.1.10
+  esbuild: 0.27.0
   zustand: 5.x

@@ -322,24 +322,24 @@ NativeWind means the same class strings work on device.
 
 ---
 
-## 7. The gate — external native runtime and mobile physics — **AMENDED 2026-08-08**
+## 7. The gate — owned native runtime and mobile physics — **AMENDED 2026-08-08**
 
 ```
 Shared TypeScript game code
         ├── browser WebGPU ──────────────► web
-        └── pinned external Mystral ─────► desktop / Android / iOS
+        └── owned Mystral runtime ───────► desktop / Android / iOS
                                              │
                                              └── native Rapier, coarse bulk ABI
 ```
 
-Mystral is a real, separately released C++ runtime. Desktop V8 + Dawn evidence is green;
-Android QuickJS + wgpu-native renders upstream Three.js on the emulator. It remains an
-external toolchain artifact: immutable digest, checksum-verified download, gitignored
-cache, zero workspace package slots, and no source/submodule/sibling dependency.
+Mystral is absorbed as the owned `packages/runtime-native/` fork. Desktop V8 + Dawn
+evidence is green; Android QuickJS + wgpu-native renders upstream Three.js on the emulator.
+Its C++/platform source lives in one workspace package, while Dawn, V8, QuickJS, SDL3,
+wgpu-native and other dependency trees stay downloaded into an untracked `third_party/`.
 
-The framework supplies host-neutral TypeScript seams and an import-free bundle. It does
-not own or fork Mystral, Three's renderer, Dawn, V8, QuickJS, SDL or wgpu-native. Exact
-Three.js compatibility is part of the runtime lock and must equal the workspace catalog.
+The framework supplies host-neutral TypeScript seams and an import-free bundle. The runtime
+is a host, not a renderer: it must not own Three's renderer, fork Three.js, or replace the
+JavaScript `GLTFLoader`. Exact Three.js compatibility must equal the workspace catalog.
 
 Rapier still cannot depend on WebAssembly on Android because Mystral uses QuickJS there.
 Native physics is compiled into the external runtime and exposed through a coarse,
@@ -391,7 +391,7 @@ pnpm workspace is the right tool; **11 packages was not.** v1 had 27, and packag
 proliferation was a symptom of the disease. A 15k-LOC framework split 11 ways is
 ~1.4k LOC per package — all boilerplate, no boundary.
 
-**Seven packages, four of them framework, capped at eight forever.** Modularity comes
+**Six framework packages, capped at eight forever.** Modularity comes
 from subpath exports, not from more `package.json` files.
 
 ```
@@ -401,12 +401,10 @@ threenative/
     core/                  # loop, lifecycle, scenes, input, assets, web platform,
                            #   renderer bootstrap (~40 lines), state store, hot reload
     physics/               # Rapier binding — separate ONLY because of the WASM dep
-    physics-native/        # JSI binding to Rapier's Rust (§7). The crown jewel.
     ui/                    # React bindings — separate ONLY because of the React dep
-    native/                # react-native-webgpu adapter — gated on §7
+    runtime-native/        # owned C++ host; separate ONLY because of its native toolchains
     create-threenative/    # scaffolder
     playtest/              # salvaged
-    asset-mcp/             # salvaged, independent release lane
   examples/
     abyss/                 # the benchmark, in both forms
 ```
@@ -489,7 +487,7 @@ and Tailwind.
 | Playtest | **Playwright** | What the salvaged harness already uses |
 | Lint + format | **Biome** | One tool, one config, replaces two + plugins |
 | Releases | **Changesets** | Standard for pnpm monorepos |
-| Mobile | **react-native-webgpu** + Expo prebuild | **Gated on §7** |
+| Native host | **owned Mystral fork** | Desktop/mobile only; **gated on §7** |
 | CI | GitHub Actions | Must be green (§11.5) |
 
 Biome over ESLint+Prettier is the one low-confidence call here — cheap to reverse.
@@ -505,6 +503,7 @@ Hard caps. v1 had none and added ~250k lines in its final nine days while CI wen
 |---|---:|---:|
 | Workspace packages | **8** | 27 |
 | Framework source (excl. examples, salvage) | **15,000 LOC** | 441,811 TS + 129,247 Rust |
+| Native runtime source (excl. downloaded `third_party/`) | **50,000 LOC** | — |
 | Charter/PRD documents | **10** | 435 |
 | CLI commands | **4** | 178 forms |
 | Public API surface | **one page** | — |

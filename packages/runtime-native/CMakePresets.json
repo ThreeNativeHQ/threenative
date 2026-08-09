@@ -1,0 +1,131 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "tn-linux",
+      "displayName": "ThreeNative Linux x64 V8 + Dawn",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tn-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MYSTRAL_USE_V8": "ON",
+        "MYSTRAL_USE_DAWN": "ON",
+        "MYSTRAL_USE_QUICKJS": "OFF",
+        "MYSTRAL_USE_WGPU": "OFF",
+        "TN_ENABLE_CANVAS2D": "ON",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "ON",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF"
+      }
+    },
+    {
+      "name": "tn-windows",
+      "displayName": "ThreeNative Windows x64 V8 + Dawn",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tn-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
+        "MYSTRAL_USE_V8": "ON",
+        "MYSTRAL_USE_DAWN": "ON",
+        "MYSTRAL_USE_QUICKJS": "OFF",
+        "MYSTRAL_USE_WGPU": "OFF",
+        "TN_ENABLE_CANVAS2D": "ON",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "ON",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "tn-macos",
+      "displayName": "ThreeNative macOS arm64 V8 + Dawn",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tn-macos",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "MYSTRAL_USE_V8": "ON",
+        "MYSTRAL_USE_DAWN": "ON",
+        "MYSTRAL_USE_QUICKJS": "OFF",
+        "MYSTRAL_USE_WGPU": "OFF",
+        "TN_ENABLE_CANVAS2D": "ON",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "ON",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "tn-android",
+      "displayName": "ThreeNative Android QuickJS + wgpu-native bootstrap",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tn-android",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "Android",
+        "ANDROID_ABI": "arm64-v8a",
+        "MYSTRAL_USE_V8": "OFF",
+        "MYSTRAL_USE_JSC": "OFF",
+        "MYSTRAL_USE_QUICKJS": "ON",
+        "MYSTRAL_USE_DAWN": "OFF",
+        "MYSTRAL_USE_WGPU": "ON",
+        "TN_ENABLE_CANVAS2D": "OFF",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "OFF",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF"
+      }
+    },
+    {
+      "name": "tn-ios",
+      "displayName": "ThreeNative iOS JSC + wgpu-native bootstrap",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tn-ios",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "MYSTRAL_USE_V8": "OFF",
+        "MYSTRAL_USE_JSC": "ON",
+        "MYSTRAL_USE_QUICKJS": "OFF",
+        "MYSTRAL_USE_DAWN": "OFF",
+        "MYSTRAL_USE_WGPU": "ON",
+        "TN_ENABLE_CANVAS2D": "OFF",
+        "TN_ENABLE_VIDEO": "OFF",
+        "TN_ENABLE_RAYTRACING": "OFF",
+        "TN_ENABLE_WEBTRANSPORT": "OFF",
+        "TN_ENABLE_NATIVE_GLTF": "OFF",
+        "TN_ENABLE_DRACO": "OFF",
+        "TN_ENABLE_DEBUG_SERVER": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "tn-linux", "configurePreset": "tn-linux" },
+    { "name": "tn-windows", "configurePreset": "tn-windows" },
+    { "name": "tn-macos", "configurePreset": "tn-macos" },
+    { "name": "tn-android", "configurePreset": "tn-android" },
+    { "name": "tn-ios", "configurePreset": "tn-ios" }
+  ],
+  "testPresets": [
+    { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "inputs": {
+    "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.core.js": {
+      "bytes": 1443056,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.webgpu.js": {
+      "bytes": 2172442,
+      "imports": [
+        {
+          "path": "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.core.js",
+          "kind": "import-statement",
+          "original": "./three.core.js"
+        },
+        {
+          "path": "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.core.js",
+          "kind": "import-statement",
+          "original": "./three.core.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "conformance/scenes/shared/first-proof-game.js": {
+      "bytes": 1165,
+      "imports": [
+        {
+          "path": "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.webgpu.js",
+          "kind": "import-statement",
+          "original": "three/webgpu"
+        }
+      ],
+      "format": "esm"
+    },
+    "conformance/android/first-proof-entry.js": {
+      "bytes": 848,
+      "imports": [
+        {
+          "path": "conformance/scenes/shared/first-proof-game.js",
+          "kind": "import-statement",
+          "original": "../scenes/shared/first-proof-game.js"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "android/app/src/main/assets/scripts/main.js": {
+      "imports": [],
+      "exports": [],
+      "entryPoint": "conformance/android/first-proof-entry.js",
+      "inputs": {
+        "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.core.js": {
+          "bytesInOutput": 202334
+        },
+        "../../node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.webgpu.js": {
+          "bytesInOutput": 568699
+        },
+        "conformance/scenes/shared/first-proof-game.js": {
+          "bytesInOutput": 556
+        },
+        "conformance/android/first-proof-entry.js": {
+          "bytesInOutput": 580
+        }
+      },
+      "bytes": 772844
+    }
+  }
+}

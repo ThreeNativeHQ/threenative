@@ -1,0 +1,894 @@
+/**
+ * QuickJS JavaScript Engine Implementation
+ *
+ * QuickJS is a tiny (~600KB) JavaScript engine with no JIT,
+ * making it ideal for consoles, embedded systems, and fallback on all platforms.
+ */
+
+#include "mystral/js/engine.h"
+#include "mystral/js/module_system.h"
+#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <algorithm>
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <pthread.h>
+#define ANDROID_LOG_TAG "MystralJS"
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, ANDROID_LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, ANDROID_LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, ANDROID_LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, ANDROID_LOG_TAG, __VA_ARGS__)
+#else
+#define LOGD(...) do { } while(0)
+#define LOGI(...) do { } while(0)
+#define LOGW(...) do { } while(0)
+#define LOGE(...) do { } while(0)
+#endif
+
+#if defined(MYSTRAL_JS_QUICKJS)
+#include "quickjs.h"
+
+namespace mystral {
+namespace js {
+
+// Store native function callbacks
+static std::unordered_map<JSValue*, NativeFunction> g_nativeFunctions;
+
+// Global set of protected handles that should not be deleted by nativeCallback cleanup
+static std::unordered_set<void*> g_protectedHandles;
+
+static char* quickjsModuleNormalize(JSContext* ctx,
+                                    const char* module_base_name,
+                                    const char* module_name,
+                                    void* opaque) {
+    (void)opaque;
+    auto* moduleSystem = getModuleSystem();
+    if (!moduleSystem) {
+        return js_strdup(ctx, module_name);
+    }
+
+    ResolvedModule resolved;
+    std::string error;
+    std::string referrer = module_base_name ? module_base_name : "";
+    if (!moduleSystem->resolveForImport(module_name, referrer, resolved, error)) {
+        JS_ThrowReferenceError(ctx, "%s", error.c_str());
+        return nullptr;
+    }
+    return js_strdup(ctx, resolved.resolved.path.c_str());
+}
+
+static JSModuleDef* quickjsModuleLoader(JSContext* ctx,
+                                        const char* module_name,
+                                        void* opaque) {
+    (void)opaque;
+    auto* moduleSystem = getModuleSystem();
+    if (!moduleSystem) {
+        JS_ThrowReferenceError(ctx, "Module system not initialized");
+        return nullptr;
+    }
+
+    ResolvedModule resolved;
+    std::string error;
+    if (!moduleSystem->resolver().resolveResolvedPath(module_name, resolved, error)) {
+        JS_ThrowReferenceError(ctx, "%s", error.c_str());
+        return nullptr;
+    }
+
+    std::string source;
+    std::string filename;
+    if (!moduleSystem->getEsmSource(resolved, module_name, source, filename, error)) {
+        JS_ThrowReferenceError(ctx, "%s", error.c_str());
+        return nullptr;
+    }
+
+    JSValue result = JS_Eval(ctx, source.c_str(), source.size(),
+        filename.c_str(), JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(result)) {
+        return nullptr;
+    }
+
+    JSModuleDef* module = (JSModuleDef*)JS_VALUE_GET_PTR(result);
+    JS_FreeValue(ctx, result);
+    return module;
+}
+
+class QuickJSEngine : public Engine {
+public:
+    QuickJSEngine() {
+        std::cout << "[QuickJS] Creating engine..." << std::endl;
+
+        runtime_ = JS_NewRuntime();
+        if (!runtime_) {
+            std::cerr << "[QuickJS] Failed to create runtime" << std::endl;
+            return;
+        }
+
+        // Keep the effective defaults explicit and observable. A zero memory
+        // limit means allocations are bounded by the host process. The native
+        // stack guard is set explicitly below for each host platform.
+        JS_SetMemoryLimit(runtime_, 0);
+        size_t quickJsStackLimit = JS_DEFAULT_STACK_SIZE;
+#ifdef __ANDROID__
+        // SDL_main runs on a Java-created Android thread whose native stack is
+        // commonly only 1 MiB. Reserving that entire amount for QuickJS leaves
+        // no room for C++ browser/WebGPU callbacks and turns deep Three.js work
+        // into an uncatchable native SIGSEGV. ThreeNative's SDL Java glue asks
+        // Android for an 8 MiB stack; cap QuickJS at half the measured stack so
+        // deep shader graphs and native WebGPU callbacks both have headroom.
+        pthread_attr_t threadAttributes;
+        void* threadStackAddress = nullptr;
+        size_t threadStackSize = 0;
+        if (pthread_getattr_np(pthread_self(), &threadAttributes) == 0) {
+            pthread_attr_getstack(&threadAttributes, &threadStackAddress, &threadStackSize);
+            pthread_attr_destroy(&threadAttributes);
+        }
+        if (threadStackSize > 0) {
+            constexpr size_t androidQuickJsStackLimit = 4 * 1024 * 1024;
+            quickJsStackLimit = std::min(androidQuickJsStackLimit, threadStackSize / 2);
+        } else {
+            quickJsStackLimit = JS_DEFAULT_STACK_SIZE;
+        }
+        LOGI("Host thread stack: address=%p size=%zu bytes", threadStackAddress, threadStackSize);
+#endif
+        JS_SetMaxStackSize(runtime_, quickJsStackLimit);
+        LOGI("Runtime limits: memory=unlimited stack=%zu bytes", quickJsStackLimit);
+
+        context_ = JS_NewContext(runtime_);
+        if (!context_) {
+            std::cerr << "[QuickJS] Failed to create context" << std::endl;
+            return;
+        }
+
+        JS_SetModuleLoaderFunc(runtime_, quickjsModuleNormalize, quickjsModuleLoader, nullptr);
+
+        // Set up standard globals
+        setupGlobals();
+
+        std::cout << "[QuickJS] Engine created successfully" << std::endl;
+    }
+
+    ~QuickJSEngine() override {
+        std::cout << "[QuickJS] Destroying engine..." << std::endl;
+
+        if (context_ && runtime_) {
+            // Execute all pending promise jobs
+            JSContext* ctx;
+            while (JS_ExecutePendingJob(runtime_, &ctx) > 0) {
+                // Keep running until no more jobs
+            }
+
+            // Free all remaining protected handles
+            for (void* ptr : g_protectedHandles) {
+                JSValue* val = (JSValue*)ptr;
+                JS_FreeValue(context_, *val);
+                delete val;
+            }
+            g_protectedHandles.clear();
+
+            // Clean up native function pointers stored in g_nativeFunctions
+            g_nativeFunctions.clear();
+
+            // Delete all allocated function objects
+            for (auto* fn : allocatedFunctions_) {
+                delete fn;
+            }
+            allocatedFunctions_.clear();
+
+            // Clear private data map
+            privateDataMap_.clear();
+
+            // Run garbage collection multiple times to clean up cycles
+            JS_RunGC(runtime_);
+            JS_RunGC(runtime_);
+            JS_RunGC(runtime_);
+        }
+
+        if (context_) {
+            JS_FreeContext(context_);
+        }
+        if (runtime_) {
+            JS_FreeRuntime(runtime_);
+        }
+
+        engineInstance_ = nullptr;
+    }
+
+    EngineType getType() const override { return EngineType::QuickJS; }
+    const char* getName() const override { return "QuickJS"; }
+
+    // ========================================================================
+    // Script Evaluation
+    // ========================================================================
+
+    bool eval(const char* code, const char* filename) override {
+        // Use JS_EVAL_TYPE_MODULE to support import.meta
+        JSValue result = JS_Eval(context_, code, strlen(code), filename, JS_EVAL_TYPE_MODULE);
+
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            JS_FreeValue(context_, exception);
+            JS_FreeValue(context_, result);
+            return false;
+        }
+
+        JS_FreeValue(context_, result);
+
+        // Execute any pending Promise jobs (microtasks)
+        executePendingJobs();
+
+        return true;
+    }
+
+    // Execute pending Promise jobs (microtasks)
+    bool executePendingJobs() {
+        JSContext* ctx;
+        int ret;
+        int executed = 0;
+        while ((ret = JS_ExecutePendingJob(runtime_, &ctx)) > 0) {
+            ++executed;
+        }
+        if (ret < 0) {
+            // An exception occurred during job execution
+            LOGE("Pending job failed after %d completed job(s)", executed);
+            JSValue exception = JS_GetException(ctx);
+            reportException(exception);
+            JS_FreeValue(ctx, exception);
+            return false;
+        }
+        return true;
+    }
+
+    JSValueHandle evalWithResult(const char* code, const char* filename) override {
+        // Use JS_EVAL_TYPE_MODULE to support import.meta
+        JSValue result = JS_Eval(context_, code, strlen(code), filename, JS_EVAL_TYPE_MODULE);
+
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            lastException_ = exception;
+            JS_FreeValue(context_, result);
+            return {nullptr, context_};
+        }
+
+        // Store the result (caller must free)
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    bool evalScript(const char* code, const char* filename) override {
+        const size_t codeLength = strlen(code);
+        LOGI("evalScript compile begin: file=%s bytes=%zu", filename, codeLength);
+        JSValue compiled = JS_Eval(context_, code, codeLength, filename,
+                                   JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+
+        if (JS_IsException(compiled)) {
+            LOGE("evalScript compile failed: file=%s", filename);
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            JS_FreeValue(context_, exception);
+            JS_FreeValue(context_, compiled);
+            return false;
+        }
+
+        JSMemoryUsage usage{};
+        JS_ComputeMemoryUsage(runtime_, &usage);
+        LOGI("evalScript compile complete: memory_used=%lld malloc_size=%lld",
+             static_cast<long long>(usage.memory_used_size),
+             static_cast<long long>(usage.malloc_size));
+
+        LOGI("evalScript execute begin: file=%s", filename);
+        // JS_EvalFunction consumes the compiled function value.
+        JSValue result = JS_EvalFunction(context_, compiled);
+        if (JS_IsException(result)) {
+            LOGE("evalScript execute failed: file=%s", filename);
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            JS_FreeValue(context_, exception);
+            JS_FreeValue(context_, result);
+            return false;
+        }
+        JS_FreeValue(context_, result);
+        LOGI("evalScript execute complete: file=%s", filename);
+
+        LOGI("evalScript pending jobs begin: file=%s", filename);
+        const bool jobsSucceeded = executePendingJobs();
+        LOGI("evalScript pending jobs complete: file=%s success=%s",
+             filename, jobsSucceeded ? "true" : "false");
+        return jobsSucceeded;
+    }
+
+    JSValueHandle evalScriptWithResult(const char* code, const char* filename) override {
+        JSValue result = JS_Eval(context_, code, strlen(code), filename, JS_EVAL_TYPE_GLOBAL);
+
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            lastException_ = exception;
+            JS_FreeValue(context_, result);
+            return {nullptr, context_};
+        }
+
+        executePendingJobs();
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    // ========================================================================
+    // Global Object Access
+    // ========================================================================
+
+    JSValueHandle getGlobal() override {
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue* stored = new JSValue(global);
+        return {stored, context_};
+    }
+
+    bool setGlobalProperty(const char* name, JSValueHandle value) override {
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue* val = (JSValue*)value.ptr;
+        JS_SetPropertyStr(context_, global, name, JS_DupValue(context_, *val));
+        JS_FreeValue(context_, global);
+        return true;
+    }
+
+    JSValueHandle getGlobalProperty(const char* name) override {
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue result = JS_GetPropertyStr(context_, global, name);
+        JS_FreeValue(context_, global);
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    // ========================================================================
+    // Value Creation
+    // ========================================================================
+
+    JSValueHandle newUndefined() override {
+        JSValue* val = new JSValue(JS_UNDEFINED);
+        return {val, context_};
+    }
+
+    JSValueHandle newNull() override {
+        JSValue* val = new JSValue(JS_NULL);
+        return {val, context_};
+    }
+
+    JSValueHandle newBoolean(bool value) override {
+        JSValue* val = new JSValue(JS_NewBool(context_, value));
+        return {val, context_};
+    }
+
+    JSValueHandle newNumber(double value) override {
+        JSValue* val = new JSValue(JS_NewFloat64(context_, value));
+        return {val, context_};
+    }
+
+    JSValueHandle newString(const char* value) override {
+        JSValue* val = new JSValue(JS_NewString(context_, value));
+        return {val, context_};
+    }
+
+    JSValueHandle newObject() override {
+        JSValue* val = new JSValue(JS_NewObject(context_));
+        return {val, context_};
+    }
+
+    JSValueHandle newArray(size_t length) override {
+        JSValue* val = new JSValue(JS_NewArray(context_));
+        return {val, context_};
+    }
+
+    JSValueHandle newArrayBuffer(const uint8_t* data, size_t length) override {
+        JSValue* val = new JSValue(JS_NewArrayBufferCopy(context_, data, length));
+        return {val, context_};
+    }
+
+    JSValueHandle newArrayBufferExternal(void* data, size_t length) override {
+        // Create an ArrayBuffer that directly references external memory (no copy)
+        // Pass nullptr for free_func since we don't own this memory (GPU manages it)
+        JSValue* val = new JSValue(JS_NewArrayBuffer(context_, (uint8_t*)data, length, nullptr, nullptr, false));
+        return {val, context_};
+    }
+
+    void* getArrayBufferData(JSValueHandle value, size_t* size) override {
+        JSValue* val = (JSValue*)value.ptr;
+        if (!val) return nullptr;
+
+        size_t len = 0;
+        uint8_t* data = JS_GetArrayBuffer(context_, &len, *val);
+
+        if (!data) {
+            // Try getting from TypedArray
+            // Note: JS_GetTypedArrayBuffer returns byte_offset and byte_length, NOT element count!
+            size_t byteOffset = 0;
+            size_t byteLength = 0;
+            size_t bytesPerElement = 0;
+            JSValue buffer = JS_GetTypedArrayBuffer(context_, *val, &byteOffset, &byteLength, &bytesPerElement);
+            if (!JS_IsException(buffer)) {
+                size_t bufferLen = 0;
+                data = JS_GetArrayBuffer(context_, &bufferLen, buffer);
+                JS_FreeValue(context_, buffer);
+                if (data) {
+                    data += byteOffset;
+                    len = byteLength;  // byteLength is already the byte count, don't multiply!
+                }
+            }
+        }
+
+        if (size) *size = len;
+        return data;
+    }
+
+    JSValueHandle createFloat32Array(const float* data, size_t count) override {
+        // Create ArrayBuffer with the data
+        size_t byteLength = count * sizeof(float);
+        JSValue buffer = JS_NewArrayBufferCopy(context_, (const uint8_t*)data, byteLength);
+
+        // Create Float32Array from the buffer using JS_NewTypedArray
+        // Signature: JS_NewTypedArray(ctx, count, buffer, byte_offset, buffer_provided)
+        // We need to get the Float32Array constructor and call it manually
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue float32ArrayCtor = JS_GetPropertyStr(context_, global, "Float32Array");
+        JS_FreeValue(context_, global);
+
+        JSValue args[1] = { buffer };
+        JSValue typedArray = JS_CallConstructor(context_, float32ArrayCtor, 1, args);
+
+        JS_FreeValue(context_, float32ArrayCtor);
+        JS_FreeValue(context_, buffer);
+
+        JSValue* val = new JSValue(typedArray);
+        return {val, context_};
+    }
+
+    JSValueHandle createFloat32ArrayView(float* data, size_t count) override {
+        // Create ArrayBuffer backed by external memory (no copy)
+        // Pass NULL for free_func since the caller (AudioBuffer) manages lifetime
+        size_t byteLength = count * sizeof(float);
+        JSValue buffer = JS_NewArrayBuffer(context_, (uint8_t*)data, byteLength, nullptr, nullptr, 0);
+
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue float32ArrayCtor = JS_GetPropertyStr(context_, global, "Float32Array");
+        JS_FreeValue(context_, global);
+
+        JSValue args[1] = { buffer };
+        JSValue typedArray = JS_CallConstructor(context_, float32ArrayCtor, 1, args);
+
+        JS_FreeValue(context_, float32ArrayCtor);
+        JS_FreeValue(context_, buffer);
+
+        JSValue* val = new JSValue(typedArray);
+        return {val, context_};
+    }
+
+    JSValueHandle createUint32Array(const uint32_t* data, size_t count) override {
+        size_t byteLength = count * sizeof(uint32_t);
+        JSValue buffer = JS_NewArrayBufferCopy(context_, (const uint8_t*)data, byteLength);
+
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue uint32ArrayCtor = JS_GetPropertyStr(context_, global, "Uint32Array");
+        JS_FreeValue(context_, global);
+
+        JSValue args[1] = { buffer };
+        JSValue typedArray = JS_CallConstructor(context_, uint32ArrayCtor, 1, args);
+
+        JS_FreeValue(context_, uint32ArrayCtor);
+        JS_FreeValue(context_, buffer);
+
+        JSValue* val = new JSValue(typedArray);
+        return {val, context_};
+    }
+
+    JSValueHandle createUint8Array(const uint8_t* data, size_t count) override {
+        JSValue buffer = JS_NewArrayBufferCopy(context_, data, count);
+
+        JSValue global = JS_GetGlobalObject(context_);
+        JSValue uint8ArrayCtor = JS_GetPropertyStr(context_, global, "Uint8Array");
+        JS_FreeValue(context_, global);
+
+        JSValue args[1] = { buffer };
+        JSValue typedArray = JS_CallConstructor(context_, uint8ArrayCtor, 1, args);
+
+        JS_FreeValue(context_, uint8ArrayCtor);
+        JS_FreeValue(context_, buffer);
+
+        JSValue* val = new JSValue(typedArray);
+        return {val, context_};
+    }
+
+    JSValueHandle newFunction(const char* name, NativeFunction fn) override {
+        // Store the callback as a heap-allocated function
+        auto* fnPtr = new NativeFunction(fn);
+        allocatedFunctions_.push_back(fnPtr);  // Track for cleanup
+
+        // Wrap the pointer in a BigInt64 JSValue so it can be passed through JS_NewCFunctionData
+        JSValue ptrValue = JS_NewBigInt64(context_, (int64_t)(uintptr_t)fnPtr);
+
+        JSValue func = JS_NewCFunctionData(context_, &nativeCallback, 0, 0, 1, &ptrValue);
+        JS_FreeValue(context_, ptrValue);  // JS_NewCFunctionData dups the values
+
+        JSValue* stored = new JSValue(func);
+        g_nativeFunctions[stored] = fn;
+        return {stored, context_};
+    }
+
+    // ========================================================================
+    // Value Conversion
+    // ========================================================================
+
+    bool toBoolean(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_ToBool(context_, *val);
+    }
+
+    double toNumber(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        double result;
+        JS_ToFloat64(context_, &result, *val);
+        return result;
+    }
+
+    std::string toString(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        const char* str = JS_ToCString(context_, *val);
+        if (!str) return "";
+        std::string result(str);
+        JS_FreeCString(context_, str);
+        return result;
+    }
+
+    bool isUndefined(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsUndefined(*val);
+    }
+
+    bool isNull(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsNull(*val);
+    }
+
+    bool isBoolean(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsBool(*val);
+    }
+
+    bool isNumber(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsNumber(*val);
+    }
+
+    bool isString(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsString(*val);
+    }
+
+    bool isObject(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsObject(*val);
+    }
+
+    bool isArray(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsArray(*val);  // quickjs-ng: only takes value, not context
+    }
+
+    bool isFunction(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        return JS_IsFunction(context_, *val);
+    }
+
+    // ========================================================================
+    // Object Operations
+    // ========================================================================
+
+    bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
+        JSValue* objVal = (JSValue*)obj.ptr;
+        JSValue* val = (JSValue*)value.ptr;
+        JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val));
+        return true;
+    }
+
+    JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
+        JSValue* objVal = (JSValue*)obj.ptr;
+        JSValue result = JS_GetPropertyStr(context_, *objVal, name);
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
+        JSValue* arrVal = (JSValue*)arr.ptr;
+        JSValue* val = (JSValue*)value.ptr;
+        JS_SetPropertyUint32(context_, *arrVal, index, JS_DupValue(context_, *val));
+        return true;
+    }
+
+    JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {
+        JSValue* arrVal = (JSValue*)arr.ptr;
+        JSValue result = JS_GetPropertyUint32(context_, *arrVal, index);
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    JSValueHandle call(JSValueHandle func, JSValueHandle thisArg, const std::vector<JSValueHandle>& args) override {
+        JSValue* funcVal = (JSValue*)func.ptr;
+        JSValue* thisVal = thisArg.ptr ? (JSValue*)thisArg.ptr : nullptr;
+
+        std::vector<JSValue> jsArgs;
+        jsArgs.reserve(args.size());
+        for (const auto& arg : args) {
+            jsArgs.push_back(*(JSValue*)arg.ptr);
+        }
+
+        JSValue result = JS_Call(context_, *funcVal,
+            thisVal ? *thisVal : JS_UNDEFINED,
+            (int)jsArgs.size(), jsArgs.data());
+
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(context_);
+            reportException(exception);
+            lastException_ = exception;
+            return {nullptr, context_};
+        }
+
+        // Execute any pending Promise jobs (microtasks)
+        executePendingJobs();
+
+        JSValue* stored = new JSValue(result);
+        return {stored, context_};
+    }
+
+    // ========================================================================
+    // Memory Management
+    // ========================================================================
+
+    void protect(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        JS_DupValue(context_, *val);
+        // Mark this handle as protected so nativeCallback won't clean it up
+        g_protectedHandles.insert(value.ptr);
+    }
+
+    void unprotect(JSValueHandle value) override {
+        JSValue* val = (JSValue*)value.ptr;
+        JS_FreeValue(context_, *val);
+        // Remove from protected set and clean up
+        g_protectedHandles.erase(value.ptr);
+        delete val;
+    }
+
+    void gc() override {
+        JS_RunGC(runtime_);
+    }
+
+    // ========================================================================
+    // Error Handling
+    // ========================================================================
+
+    bool hasException() override {
+        return !JS_IsNull(lastException_) && !JS_IsUndefined(lastException_);
+    }
+
+    std::string getException() override {
+        if (JS_IsNull(lastException_) || JS_IsUndefined(lastException_)) {
+            return "";
+        }
+
+        const char* str = JS_ToCString(context_, lastException_);
+        std::string result = str ? str : "";
+        if (str) JS_FreeCString(context_, str);
+
+        JS_FreeValue(context_, lastException_);
+        lastException_ = JS_UNDEFINED;
+        return result;
+    }
+
+    void throwException(const char* message) override {
+        lastException_ = JS_ThrowInternalError(context_, "%s", message);
+    }
+
+    // ========================================================================
+    // Private Data
+    // ========================================================================
+
+    void setPrivateData(JSValueHandle obj, void* data) override {
+        JSValue* val = (JSValue*)obj.ptr;
+        // Use JS_VALUE_GET_PTR to get the actual object pointer as a unique key
+        void* objPtr = JS_VALUE_GET_PTR(*val);
+        privateDataMap_[objPtr] = data;
+    }
+
+    void* getPrivateData(JSValueHandle obj) override {
+        JSValue* val = (JSValue*)obj.ptr;
+        void* objPtr = JS_VALUE_GET_PTR(*val);
+        auto it = privateDataMap_.find(objPtr);
+        return it != privateDataMap_.end() ? it->second : nullptr;
+    }
+
+    // ========================================================================
+    // Raw Context Access
+    // ========================================================================
+
+    void* getRawContext() override {
+        return context_;
+    }
+
+private:
+    void setupGlobals() {
+        JSValue global = JS_GetGlobalObject(context_);
+
+        // console object
+        JSValue console = JS_NewObject(context_);
+        JS_SetPropertyStr(context_, console, "log",
+            JS_NewCFunction(context_, js_console_log, "log", 1));
+        JS_SetPropertyStr(context_, console, "warn",
+            JS_NewCFunction(context_, js_console_warn, "warn", 1));
+        JS_SetPropertyStr(context_, console, "error",
+            JS_NewCFunction(context_, js_console_error, "error", 1));
+        JS_SetPropertyStr(context_, console, "info",
+            JS_NewCFunction(context_, js_console_log, "info", 1));
+        JS_SetPropertyStr(context_, console, "debug",
+            JS_NewCFunction(context_, js_console_log, "debug", 1));
+        JS_SetPropertyStr(context_, global, "console", console);
+
+        // performance.now()
+        startTime_ = std::chrono::high_resolution_clock::now();
+        JSValue performance = JS_NewObject(context_);
+
+        // Store engine pointer for performance.now
+        engineInstance_ = this;
+        JS_SetPropertyStr(context_, performance, "now",
+            JS_NewCFunction(context_, js_performance_now, "now", 0));
+        JS_SetPropertyStr(context_, global, "performance", performance);
+
+        // setTimeout/clearTimeout (basic)
+        JS_SetPropertyStr(context_, global, "setTimeout",
+            JS_NewCFunction(context_, js_set_timeout, "setTimeout", 2));
+        JS_SetPropertyStr(context_, global, "clearTimeout",
+            JS_NewCFunction(context_, js_clear_timeout, "clearTimeout", 1));
+
+        JS_FreeValue(context_, global);
+    }
+
+    void reportException(JSValue exception) {
+        const char* str = JS_ToCString(context_, exception);
+        std::cerr << "[QuickJS] Error: " << (str ? str : "unknown") << std::endl;
+        if (str) JS_FreeCString(context_, str);
+
+        // Also try to get stack trace
+        JSValue stack = JS_GetPropertyStr(context_, exception, "stack");
+        if (!JS_IsUndefined(stack)) {
+            const char* stackStr = JS_ToCString(context_, stack);
+            if (stackStr) {
+                std::cerr << "[QuickJS] Stack:\n" << stackStr << std::endl;
+                JS_FreeCString(context_, stackStr);
+            }
+            JS_FreeValue(context_, stack);
+        }
+    }
+
+    static JSValue nativeCallback(JSContext* ctx, JSValueConst this_val,
+                                  int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+        // Extract the NativeFunction pointer from the BigInt64 stored in func_data[0]
+        int64_t ptrVal;
+        if (JS_ToBigInt64(ctx, &ptrVal, func_data[0]) < 0) {
+            return JS_UNDEFINED;
+        }
+        NativeFunction* fn = (NativeFunction*)(uintptr_t)ptrVal;
+        if (!fn) {
+            return JS_UNDEFINED;
+        }
+
+        // Convert arguments
+        std::vector<JSValueHandle> args;
+        args.reserve(argc);
+        for (int i = 0; i < argc; i++) {
+            JSValue* stored = new JSValue(JS_DupValue(ctx, argv[i]));
+            args.push_back({stored, ctx});
+        }
+
+        // Call the native function
+        JSValueHandle result = (*fn)(ctx, args);
+
+        // Clean up argument copies (skip protected handles)
+        for (auto& arg : args) {
+            // Skip handles that were protected during the callback
+            if (g_protectedHandles.find(arg.ptr) != g_protectedHandles.end()) {
+                continue;
+            }
+            JSValue* val = (JSValue*)arg.ptr;
+            JS_FreeValue(ctx, *val);
+            delete val;
+        }
+
+        if (result.ptr) {
+            JSValue* val = (JSValue*)result.ptr;
+            return *val;
+        }
+        return JS_UNDEFINED;
+    }
+
+    // Console functions - helper to build message string
+    static std::string buildConsoleMessage(JSContext* ctx, int argc, JSValueConst* argv) {
+        std::ostringstream oss;
+        for (int i = 0; i < argc; i++) {
+            const char* str = JS_ToCString(ctx, argv[i]);
+            if (str) {
+                oss << str;
+                if (i < argc - 1) oss << " ";
+                JS_FreeCString(ctx, str);
+            }
+        }
+        return oss.str();
+    }
+
+    static JSValue js_console_log(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        std::string msg = buildConsoleMessage(ctx, argc, argv);
+        std::cout << "[log] " << msg << std::endl;
+#ifdef __ANDROID__
+        LOGI("[log] %s", msg.c_str());
+#endif
+        return JS_UNDEFINED;
+    }
+
+    static JSValue js_console_warn(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        std::string msg = buildConsoleMessage(ctx, argc, argv);
+        std::cout << "[warn] " << msg << std::endl;
+#ifdef __ANDROID__
+        LOGW("[warn] %s", msg.c_str());
+#endif
+        return JS_UNDEFINED;
+    }
+
+    static JSValue js_console_error(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        std::string msg = buildConsoleMessage(ctx, argc, argv);
+        std::cerr << "[error] " << msg << std::endl;
+#ifdef __ANDROID__
+        LOGE("[error] %s", msg.c_str());
+#endif
+        return JS_UNDEFINED;
+    }
+
+    static JSValue js_performance_now(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        if (!engineInstance_) return JS_NewFloat64(ctx, 0);
+        auto now = std::chrono::high_resolution_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(now - engineInstance_->startTime_).count();
+        return JS_NewFloat64(ctx, ms);
+    }
+
+    static JSValue js_set_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        // TODO: Proper timer implementation with event loop integration
+        static int nextId = 1;
+        return JS_NewInt32(ctx, nextId++);
+    }
+
+    static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+        return JS_UNDEFINED;
+    }
+
+    JSRuntime* runtime_ = nullptr;
+    JSContext* context_ = nullptr;
+    JSValue lastException_ = JS_UNDEFINED;
+    std::chrono::high_resolution_clock::time_point startTime_;
+    std::unordered_map<void*, void*> privateDataMap_;  // Map JS object ptr to native data
+    std::vector<NativeFunction*> allocatedFunctions_;  // Track allocated function pointers
+
+    static QuickJSEngine* engineInstance_;  // For performance.now access
+};
+
+QuickJSEngine* QuickJSEngine::engineInstance_ = nullptr;
+
+// Factory function
+std::unique_ptr<Engine> createQuickJSEngine() {
+    return std::make_unique<QuickJSEngine>();
+}
+
+}  // namespace js
+}  // namespace mystral
+
+#endif  // MYSTRAL_JS_QUICKJS

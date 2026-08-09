@@ -1,0 +1,51 @@
+# Build directories
+build/
+build-*/
+*/build/
+*/build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# Dependencies (downloaded by scripts)
+deps/
+third_party/
+
+# Runtime-local output and downloaded release artifacts
+.runtime/
+artifacts/
+
+# OS
+.DS_Store
+
+# Android build artifacts
+android/.gradle/
+android/.cxx/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+*.apk
+*.aab
+
+# Gradle
+.gradle/
+gradle-app.setting
+.gradletasknamecache
+
+# Android Studio
+*.iml
+.navigation/
+captures/
+output.json
+
+# Dependencies
+node_modules/
