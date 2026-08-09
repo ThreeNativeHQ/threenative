@@ -90,7 +90,7 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
     if (this.pid === undefined) return false;
     try {
       if (this.options.transport === "simulator") {
-        await this.run(["simctl", "spawn", this.device(), "kill", "-0", this.pid]);
+        process.kill(Number(this.pid), 0);
       } else {
         const output = await this.run(["devicectl", "device", "info", "processes", "--device", this.device()]);
         if (!new RegExp(`\\b${this.pid}\\b`, "u").test(output)) return false;

@@ -19,11 +19,12 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
   }, async (args, options) => {
     calls.push({ args, env: options?.env });
     if (args[1] === "get_app_container") return `${container}\n`;
-    if (args[1] === "launch") return "dev.threenative.runtime: 4242\n";
+    if (args[1] === "launch") return `dev.threenative.runtime: ${process.pid}\n`;
     return "";
   });
 
   await driver.prepare("http://127.0.0.1:41777/playtest");
+  await expect(driver.isAlive()).resolves.toBe(true);
 
   expect(driver.getMailboxRoot()).toBe(join(container, "Documents"));
   expect(calls.map(({ args }) => args.slice(0, 2))).toEqual([
