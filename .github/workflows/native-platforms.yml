@@ -77,7 +77,7 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libasound2-dev libpulse-dev libudev-dev libx11-dev libxext-dev
+          libasound2-dev libcurl4-openssl-dev libpulse-dev libudev-dev libx11-dev libxext-dev
           libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev
           libxkbcommon-dev
       - name: Build and pack the scaffold dependencies
