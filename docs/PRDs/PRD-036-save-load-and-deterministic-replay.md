@@ -8,8 +8,8 @@ this PRD remains open until its full consumer proof is complete and is not moved
 The implementation and checked-in replay consumer project are merged on `main`; the full
 headed browser suite and generated-scenario regression
 control now pass. The manual watch-and-diverge checkpoint is closed by the headed continuation
-run; the separate ≤200-line source-delta gate remains pending. Replay-removal, stale-artifact,
-and generated-scenario mutation controls
+run; the separate ≤200-line source-delta gate now closes at +199 net lines after the replay
+validator extraction. Replay-removal, stale-artifact, and generated-scenario mutation controls
 are observed-red.
 `docs/verification/PRD-036.md`.
 
@@ -564,9 +564,10 @@ scenario, and the CLI's subcommand test fails.
 - [x] `pnpm budgets`: still **7 workspace packages**, with 4,196 framework LOC against the
       15,000 global cap. The benchmark count is 432 / 473 normalized LOC (91.3%); the current
       framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
-- [ ] Feature-delta gate: framework source changed by **+288/-32 = +256 net lines** in the
-      scoped core/physics diff, so the PRD's ≤200-line gate is open. `pnpm budgets` does not
-      prove this feature-delta constraint; no false pass is recorded.
+- [x] Feature-delta gate: the original scoped core/physics diff was **+288/-32 = +256 net
+      lines**; commit `7034246` reduces `packages/core/src/replay.ts` from 231 to 174 lines,
+      yielding **+231/-32 = +199 net lines**. This is under the ≤200-line gate and is recorded
+      separately from `pnpm budgets`.
 
 ---
 
@@ -648,14 +649,14 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
       `InputMap` path as real input, by construction (§2)
 - [ ] Every gate has a negative control that was **observed failing**; replay-removal,
       stale-artifact, generated-scenario mutation, and 1% movement-divergence controls are
-      observed-red, while the source-delta gate remains open
+      observed-red, while the repository-wide constraint control remains pending
 - [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
       three-tick unit fixture. The replay consumer proof is recorded in
-      `docs/verification/PRD-036.md`; the source-delta gate remains open.
+      `docs/verification/PRD-036.md`; the source-delta gate is closed.
 - [x] Package count still 7/8.
-- [ ] Framework LOC delta ≤ 200 and recorded: +256 net core/physics source lines; global
-      budgets pass but this scoped gate does not.
+- [x] Framework LOC delta ≤ 200 and recorded: +199 net core/physics source lines; global
+      budgets and this scoped gate are separate checks.
 
 ### Honesty note for whoever files this
 
