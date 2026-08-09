@@ -64,10 +64,11 @@ bool createWindow(const char* title, int width, int height, bool fullscreen, boo
         std::cout << "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)" << std::endl;
     }
 
-    // Platform-specific: need Metal on macOS, Vulkan on others
+    // Platform-specific presentation flags. Win32 WebGPU uses the HWND directly, so
+    // requiring SDL's Vulkan surface support would reject D3D12-only hosts.
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
-#else
+#elif !defined(_WIN32)
     flags |= SDL_WINDOW_VULKAN;
 #endif
 
