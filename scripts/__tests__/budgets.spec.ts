@@ -191,7 +191,7 @@ describe("budget gate", () => {
     expect(budgetTriggers(report)).toEqual([]);
   });
 
-  it("should exclude only the ignored generated Android bundle from native LOC", async () => {
+  it("should exclude only the ignored generated Android bundle artifacts from native LOC", async () => {
     const root = await fixtureRoot();
     const directory = path.join(
       root,
@@ -206,6 +206,7 @@ describe("budget gate", () => {
     );
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "main.js"), "generated\n".repeat(60_000));
+    await writeFile(path.join(directory, "main.js.meta.json"), "generated\n".repeat(60_000));
     await writeFile(path.join(directory, "bridge.js"), "owned\n");
     const report = await collectBudgets(root);
     expect(report.nativeRuntimeLoc).toBe(2);

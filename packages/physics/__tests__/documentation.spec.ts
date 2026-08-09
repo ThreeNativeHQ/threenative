@@ -10,4 +10,14 @@ describe("published physics portability documentation", () => {
     expect(readme).toMatch(/replays and snapshots[\s\S]*not portable/i);
     expect(readme).toMatch(/raw[\s\S]*backend-specific/i);
   });
+
+  it("keeps the parity evidence linked from the native PRD index", async () => {
+    const [report, nativeIndex] = await Promise.all([
+      readFile(new URL("../../../docs/verification/PRD-049.md", import.meta.url), "utf8"),
+      readFile(new URL("../../../docs/PRDs/native/README.md", import.meta.url), "utf8"),
+    ]);
+
+    expect(report).toContain("# PRD-049 — physics parity verification");
+    expect(nativeIndex).toContain("docs/verification/PRD-049.md");
+  });
 });

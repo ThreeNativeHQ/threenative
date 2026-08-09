@@ -55,6 +55,10 @@ const GENERATED_ANDROID_BUNDLE = path.join(
   "scripts",
   "main.js",
 );
+const GENERATED_ANDROID_BUNDLE_FILES = [
+  GENERATED_ANDROID_BUNDLE,
+  `${GENERATED_ANDROID_BUNDLE}.meta.json`,
+] as const;
 const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
   "mystralnative",
   "threejsmystral",
@@ -246,7 +250,7 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   const nativeRuntimeFiles = await filesUnder(
     nativeRuntimeRoot,
     (candidate) =>
-      !candidate.endsWith(GENERATED_ANDROID_BUNDLE) &&
+      !GENERATED_ANDROID_BUNDLE_FILES.some((generated) => candidate.endsWith(generated)) &&
       (NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
         path.basename(candidate) === "CMakeLists.txt"),
     new Set([

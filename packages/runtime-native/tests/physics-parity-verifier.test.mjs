@@ -1,15 +1,33 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  artifactPaths,
   clearOutputs,
   compareObservations,
+  generateOperatorScenario,
   normalizeReport,
+  parseArgs,
   parsePlaytestStdout,
+  readFreshObservation,
 } from "../scripts/verify-android-physics-parity.mjs";
 
-const sha = "c5f9c14ec977ee05e00c4662208fb5d8f1707ff5b64cb41b86bfbc6875330b4d";
+const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const workspaceRoot = resolve(runtimeRoot, "..", "..");
+const fixtureBytes = readFileSync(
+  join(workspaceRoot, "packages/physics/__tests__/fixtures/physics-parity.scenario.json"),
+);
+const fixture = JSON.parse(fixtureBytes.toString("utf8"));
+const templatePath = join(
+  workspaceRoot,
+  "examples/native-smoke/playtests/physics-parity.playtest.json",
+);
+const templateBytes = readFileSync(templatePath);
+const template = JSON.parse(templateBytes.toString("utf8"));
+const sha = createHash("sha256").update(fixtureBytes).digest("hex");
 const web = {
   areaMembership: ["dynamicBox"],
   areaMembershipSnapshots: [
@@ -33,7 +51,12 @@ const web = {
   restingPosition: [0.698946, 0.398779, 0.005188],
   runtime: "web",
   scenarioSha256: sha,
-  steps: 180,
+  scenarioCoverage: {
+    areaExcludedCharacter: true,
+    oneWayPassedUpward: true,
+    platformGroundedObserved: true,
+  },
+  steps: fixture.steps,
 };
 const device = { ...web, rapierVersion: "0.30.0", runtime: "native" };
 
@@ -64,13 +87,35 @@ describe("Android physics parity verifier negative controls", () => {
     ).toThrow(/device runtime identity|same Rapier identity/);
   });
 
+  it("fails when one-way, platform, or area coverage is absent", () => {
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        scenarioCoverage: { ...device.scenarioCoverage, platformGroundedObserved: false },
+      }),
+    ).toThrow(/scenario coverage platformGroundedObserved/);
+  });
+
   it("deletes stale observations and fails when fresh device stdout is missing", () => {
     const directory = mkdtempSync(join(tmpdir(), "tn-physics-parity-"));
     const path = join(directory, "device-observation.json");
     writeFileSync(path, "stale");
     clearOutputs([path]);
-    expect(() => readFileSync(path)).toThrow();
+    expect(() => readFreshObservation(path, "device")).toThrow(/stale observations/);
     expect(() => parsePlaytestStdout("", "device")).toThrow(/stdout is missing/);
+  });
+
+  it("accepts every executable full-lane control and isolates its raw artifacts", () => {
+    for (const control of [
+      "missing-device",
+      "normal",
+      "same-web",
+      "wrong-gravity",
+      "zero-tolerance",
+    ]) {
+      expect(parseArgs(["--control", control]).control).toBe(control);
+      expect(artifactPaths(control, "/tmp/parity").rawDevice).toContain(`/${control}/`);
+    }
   });
 });
 
@@ -83,5 +128,29 @@ describe("Android physics parity verifier report parsing", () => {
     expect(normalizeReport(parsePlaytestStdout(JSON.stringify(report), "web"), "web")).toEqual(
       web,
     );
+  });
+
+  it("generates wait and SHA assertions only from the current fixture bytes", () => {
+    const generated = generateOperatorScenario(template, fixtureBytes);
+    expect(generated.steps).toEqual([{ label: "complete", waitTicks: fixture.steps }]);
+    expect(generated.assert.resources).toContainEqual({
+      allowTrivial: true,
+      equals: sha,
+      id: "GameState",
+      path: "parity.scenarioSha256",
+    });
+    expect(templateBytes.toString("utf8")).not.toContain(sha);
+    expect(templateBytes.toString("utf8")).not.toContain(`"waitTicks": ${fixture.steps}`);
+
+    const changedBytes = Buffer.from(JSON.stringify({ ...fixture, steps: fixture.steps + 7 }));
+    const changed = generateOperatorScenario(template, changedBytes);
+    const changedSha = createHash("sha256").update(changedBytes).digest("hex");
+    expect(changed.steps[0].waitTicks).toBe(fixture.steps + 7);
+    expect(changed.assert.resources).toContainEqual({
+      allowTrivial: true,
+      equals: changedSha,
+      id: "GameState",
+      path: "parity.scenarioSha256",
+    });
   });
 });

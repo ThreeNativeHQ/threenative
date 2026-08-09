@@ -12,7 +12,7 @@ const exampleRoot = join(workspaceRoot, "examples/native-smoke");
 const bundle = join(exampleRoot, "dist/native-smoke.js");
 const output = join(runtimeRoot, "android/app/src/main/assets/scripts/main.js");
 const control = process.env.THREENATIVE_PHYSICS_CONTROL ?? "normal";
-if (!["normal", "masked", "wrong-gravity"].includes(control))
+if (!["normal", "masked", "offset-box", "wrong-gravity"].includes(control))
   throw new Error(`Unsupported THREENATIVE_PHYSICS_CONTROL=${control}`);
 
 function run(command, args, options = {}) {

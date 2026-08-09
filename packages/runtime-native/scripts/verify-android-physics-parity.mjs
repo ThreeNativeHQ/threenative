@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
-const scenarioPath = join(
+const scenarioTemplatePath = join(
   workspaceRoot,
   "examples/native-smoke/playtests/physics-parity.playtest.json",
 );
@@ -24,17 +24,89 @@ const fixturePath = join(
   "packages/physics/__tests__/fixtures/physics-parity.scenario.json",
 );
 const outputRoot = join(runtimeRoot, "artifacts/android/physics-parity");
-const rawWebPath = join(outputRoot, "web-playtest.json");
-const rawDevicePath = join(outputRoot, "device-playtest.json");
-const webObservationPath = join(outputRoot, "web-observation.json");
-const deviceObservationPath = join(outputRoot, "device-observation.json");
-const comparisonPath = join(outputRoot, "comparison.json");
+const controls = new Set([
+  "missing-device",
+  "normal",
+  "same-web",
+  "wrong-gravity",
+  "zero-tolerance",
+]);
 
 export class ParityError extends Error {
-  constructor(message) {
+  constructor(message, details) {
     super(message);
     this.name = "ParityError";
+    this.details = details;
   }
+}
+
+export function generateOperatorScenario(template, fixtureBytes) {
+  const source = requireObject(template, "playtest scenario template");
+  const fixture = requireObject(
+    JSON.parse(Buffer.from(fixtureBytes).toString("utf8")),
+    "physics parity fixture",
+  );
+  if (!Number.isInteger(fixture.steps) || fixture.steps <= 0)
+    throw new ParityError("physics parity fixture steps must be a positive integer.");
+  const scenarioSha256 = createHash("sha256").update(fixtureBytes).digest("hex");
+  return {
+    ...source,
+    name: "native-physics-observable-parity",
+    steps: [{ label: "complete", waitTicks: fixture.steps }],
+    assert: {
+      resources: [
+        {
+          changed: true,
+          equals: fixture.steps,
+          id: "GameState",
+          path: "parity.steps",
+        },
+        {
+          allowTrivial: true,
+          equals: true,
+          id: "GameState",
+          path: "parity.grounded",
+        },
+        {
+          allowTrivial: true,
+          equals: "floor",
+          id: "GameState",
+          path: "parity.groundCollider",
+        },
+        {
+          allowTrivial: true,
+          equals: scenarioSha256,
+          id: "GameState",
+          path: "parity.scenarioSha256",
+        },
+        ...[
+          "areaExcludedCharacter",
+          "oneWayPassedUpward",
+          "platformGroundedObserved",
+        ].map((coverage) => ({
+          allowTrivial: true,
+          equals: true,
+          id: "GameState",
+          path: `parity.scenarioCoverage.${coverage}`,
+        })),
+      ],
+    },
+  };
+}
+
+export function artifactPaths(control, root = outputRoot) {
+  if (!controls.has(control)) throw new ParityError(`Unknown parity control ${control}.`);
+  const directory = join(root, control);
+  return {
+    comparison: join(directory, "comparison.json"),
+    deviceArtifacts: join(directory, "device-artifacts"),
+    deviceObservation: join(directory, "device-observation.json"),
+    generatedScenario: join(directory, "physics-parity.generated.playtest.json"),
+    rawDevice: join(directory, "device-playtest.json"),
+    rawWeb: join(directory, "web-playtest.json"),
+    webArtifacts: join(directory, "web-artifacts"),
+    webObservation: join(directory, "web-observation.json"),
+  };
 }
 
 function requireObject(value, label) {
@@ -51,6 +123,11 @@ function requireString(value, label) {
 function requireNumber(value, label) {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new ParityError(`${label} must be a finite number.`);
+  return value;
+}
+
+function requireBoolean(value, label) {
+  if (typeof value !== "boolean") throw new ParityError(`${label} must be boolean.`);
   return value;
 }
 
@@ -84,6 +161,7 @@ export function normalizeReport(report, label) {
   const gameState = requireObject(resources.GameState, `${label}.GameState`);
   const after = requireObject(gameState.after, `${label}.GameState.after`);
   const parity = requireObject(after.parity, `${label}.GameState.after.parity`);
+  const coverage = requireObject(parity.scenarioCoverage, `${label}.scenarioCoverage`);
   return {
     areaMembership: requireStringArray(parity.areaMembership, `${label}.areaMembership`).sort(),
     areaMembershipSnapshots: requireStringArray(
@@ -113,6 +191,20 @@ export function normalizeReport(report, label) {
     restingPosition: requireVector(parity.restingPosition, `${label}.restingPosition`),
     runtime: requireString(parity.runtime, `${label}.runtime`),
     scenarioSha256: requireString(parity.scenarioSha256, `${label}.scenarioSha256`),
+    scenarioCoverage: {
+      areaExcludedCharacter: requireBoolean(
+        coverage.areaExcludedCharacter,
+        `${label}.scenarioCoverage.areaExcludedCharacter`,
+      ),
+      oneWayPassedUpward: requireBoolean(
+        coverage.oneWayPassedUpward,
+        `${label}.scenarioCoverage.oneWayPassedUpward`,
+      ),
+      platformGroundedObserved: requireBoolean(
+        coverage.platformGroundedObserved,
+        `${label}.scenarioCoverage.platformGroundedObserved`,
+      ),
+    },
     steps: requireNumber(parity.steps, `${label}.steps`),
   };
 }
@@ -170,6 +262,17 @@ export function compareObservations(web, device, options = {}) {
     failures.push("logical collision event set differs");
   if (!equalSet(web.areaMembershipSnapshots, device.areaMembershipSnapshots))
     failures.push("logical area membership checkpoints differ");
+  const coverageKeys = [
+    "areaExcludedCharacter",
+    "oneWayPassedUpward",
+    "platformGroundedObserved",
+  ];
+  for (const coverage of coverageKeys) {
+    if (web.scenarioCoverage[coverage] !== device.scenarioCoverage[coverage])
+      failures.push(`scenario coverage ${coverage} differs`);
+    if (web.scenarioCoverage[coverage] !== true)
+      failures.push(`scenario coverage ${coverage} was not observed`);
+  }
   const expectedArea = ["dynamicBox"];
   const expectedEvents = [
     "boxOnlyArea-dynamicBox-1",
@@ -191,17 +294,13 @@ export function compareObservations(web, device, options = {}) {
     restingTolerance,
     scenarioSha256,
   };
-  if (failures.length > 0) throw new ParityError(failures.join("; "));
+  if (failures.length > 0) throw new ParityError(failures.join("; "), comparison);
   return comparison;
 }
 
-export function clearOutputs(paths = [
-  rawWebPath,
-  rawDevicePath,
-  webObservationPath,
-  deviceObservationPath,
-  comparisonPath,
-]) {
+export function clearOutputs(paths) {
+  if (!Array.isArray(paths) || paths.length === 0)
+    throw new ParityError("clearOutputs requires explicit run-scoped paths.");
   for (const path of paths) rmSync(path, { force: true });
 }
 
@@ -218,14 +317,14 @@ function run(command, args, options = {}) {
     timeout: options.timeout ?? 600_000,
   });
   if (result.error) throw result.error;
-  if (result.status !== 0)
+  if (result.status !== 0 && options.allowFailure !== true)
     throw new ParityError(
       `${commandText(command, args)} failed (${result.status}).\n${result.stderr || result.stdout}`,
     );
   return result.stdout;
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const result = { control: "normal", device: null, skipBuild: false, skipInstall: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -238,8 +337,8 @@ function parseArgs(argv) {
       index += 1;
     } else throw new ParityError(`Unknown option ${arg}.`);
   }
-  if (!new Set(["normal", "wrong-gravity"]).has(result.control))
-    throw new ParityError("--control must be normal or wrong-gravity.");
+  if (!controls.has(result.control))
+    throw new ParityError(`--control must be one of ${[...controls].join(", ")}.`);
   return result;
 }
 
@@ -272,10 +371,77 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+export function readFreshObservation(path, label) {
+  if (!existsSync(path))
+    throw new ParityError(`${label} observation is missing; stale observations are forbidden.`);
+  try {
+    return requireObject(JSON.parse(readFileSync(path, "utf8")), `${label} observation`);
+  } catch (error) {
+    if (error instanceof ParityError) throw error;
+    throw new ParityError(`${label} observation is not valid JSON.`);
+  }
+}
+
+function generatedScenario(paths) {
+  const template = JSON.parse(readFileSync(scenarioTemplatePath, "utf8"));
+  const fixtureBytes = readFileSync(fixturePath);
+  const scenario = generateOperatorScenario(template, fixtureBytes);
+  writeJson(paths.generatedScenario, scenario);
+  return paths.generatedScenario;
+}
+
+function comparisonInputs(control, paths) {
+  if (control === "missing-device") rmSync(paths.deviceObservation, { force: true });
+  return {
+    device: readFreshObservation(
+      control === "same-web" ? paths.webObservation : paths.deviceObservation,
+      "device",
+    ),
+    web: readFreshObservation(paths.webObservation, "web"),
+  };
+}
+
+function compareControl(control, paths) {
+  try {
+    const input = comparisonInputs(control, paths);
+    const comparison = compareObservations(
+      input.web,
+      input.device,
+      control === "zero-tolerance"
+        ? { displacementTolerance: 0, restingTolerance: 0 }
+        : undefined,
+    );
+    if (control !== "normal")
+      throw new ParityError(
+        `${control} negative control unexpectedly stayed green.`,
+        comparison,
+      );
+    writeJson(paths.comparison, { ...comparison, control });
+    return comparison;
+  } catch (error) {
+    writeJson(paths.comparison, {
+      ...(error instanceof ParityError && error.details !== undefined ? error.details : {}),
+      control,
+      error: error instanceof Error ? error.message : String(error),
+      pass: false,
+    });
+    throw error;
+  }
+}
+
 export function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
-  mkdirSync(outputRoot, { recursive: true });
-  clearOutputs();
+  const paths = artifactPaths(options.control);
+  mkdirSync(dirname(paths.comparison), { recursive: true });
+  clearOutputs([
+    paths.comparison,
+    paths.deviceObservation,
+    paths.generatedScenario,
+    paths.rawDevice,
+    paths.rawWeb,
+    paths.webObservation,
+  ]);
+  const scenarioPath = generatedScenario(paths);
   const cli = join(workspaceRoot, "packages/playtest/dist/runner/cli.js");
   if (!existsSync(cli))
     throw new ParityError("Playtest CLI is missing; run pnpm --filter @threenative/playtest build.");
@@ -291,13 +457,16 @@ export function main(argv = process.argv.slice(2)) {
       "--browser-recipe",
       "webgpu",
       "--artifacts",
-      join(outputRoot, "web-artifacts"),
+      paths.webArtifacts,
     ],
-    { env: { ...process.env, THREENATIVE_PHYSICS_SCENE: "enabled" } },
+    {
+      allowFailure: true,
+      env: { ...process.env, THREENATIVE_PHYSICS_SCENE: "enabled" },
+    },
   );
-  writeFileSync(rawWebPath, webStdout);
+  writeFileSync(paths.rawWeb, webStdout);
   const web = normalizeReport(parsePlaytestStdout(webStdout, "web"), "web");
-  writeJson(webObservationPath, web);
+  writeJson(paths.webObservation, web);
 
   const { adb, sdk } = discoverAdb();
   const device = selectDevice(adb, options.device);
@@ -307,7 +476,12 @@ export function main(argv = process.argv.slice(2)) {
     ANDROID_HOME: sdk,
     JAVA_HOME: javaHome,
     THREENATIVE_ANDROID_SDK: sdk,
-    THREENATIVE_PHYSICS_CONTROL: options.control,
+    THREENATIVE_PHYSICS_CONTROL:
+      options.control === "wrong-gravity"
+        ? "wrong-gravity"
+        : options.control === "zero-tolerance"
+          ? "offset-box"
+          : "normal",
   };
   if (!options.skipBuild) {
     run(process.execPath, [join(runtimeRoot, "scripts/build-android-physics-proof.mjs")], {
@@ -339,17 +513,16 @@ export function main(argv = process.argv.slice(2)) {
       "--adb",
       adb,
       "--artifacts",
-      join(outputRoot, "device-artifacts"),
+      paths.deviceArtifacts,
       "--timeout",
       "60000",
     ],
-    { env: androidEnv },
+    { allowFailure: true, env: androidEnv },
   );
-  writeFileSync(rawDevicePath, deviceStdout);
+  writeFileSync(paths.rawDevice, deviceStdout);
   const native = normalizeReport(parsePlaytestStdout(deviceStdout, "device"), "device");
-  writeJson(deviceObservationPath, native);
-  const comparison = compareObservations(web, native);
-  writeJson(comparisonPath, comparison);
+  writeJson(paths.deviceObservation, native);
+  const comparison = compareControl(options.control, paths);
   process.stdout.write(`${JSON.stringify({ comparison, device, pass: true }, null, 2)}\n`);
 }
 

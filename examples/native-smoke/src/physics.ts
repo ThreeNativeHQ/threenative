@@ -66,6 +66,11 @@ interface ParityObservation extends Record<string, unknown> {
   restingPosition: VectorTuple;
   runtime: "native" | "web";
   scenarioSha256: string;
+  scenarioCoverage: {
+    areaExcludedCharacter: boolean;
+    oneWayPassedUpward: boolean;
+    platformGroundedObserved: boolean;
+  };
   steps: number;
 }
 interface PhysicsState extends Record<string, unknown> {
@@ -75,7 +80,7 @@ interface PhysicsState extends Record<string, unknown> {
 declare global {
   var canvas: HTMLCanvasElement | undefined;
 }
-declare const __TN_PHYSICS_CONTROL__: "masked" | "normal" | "wrong-gravity";
+declare const __TN_PHYSICS_CONTROL__: "masked" | "normal" | "offset-box" | "wrong-gravity";
 declare const __TN_PHYSICS_SCENARIO_BYTES__: string;
 declare const __TN_PHYSICS_SCENARIO_SHA256__: string;
 declare const __TN_PLAYTEST_ENABLED__: boolean;
@@ -93,6 +98,8 @@ let dynamicBox: RigidBody3D | undefined;
 let initialCharacterPosition: VectorTuple = [0, 0, 0];
 let completedSteps = 0;
 let rapierVersion = "pending";
+let characterMaxY = Number.NEGATIVE_INFINITY;
+let platformGroundedObserved = false;
 let markSceneReady: (() => void) | undefined;
 const sceneReady = new Promise<void>((resolve) => {
   markSceneReady = resolve;
@@ -159,6 +166,13 @@ function observer(): GamePluginHooks<PhysicsState, PhysicsContext> {
       if (scenario.checkpoints.includes(step)) areaSnapshots.push(members.join(","));
       const state = simulation.readCharacterState?.(currentCharacter.body.id);
       const characterPosition = position(currentCharacter);
+      characterMaxY = Math.max(characterMaxY, characterPosition[1]);
+      if (
+        state?.grounded === true &&
+        state.groundCollider !== undefined &&
+        logicalName(state.groundCollider) === "movingPlatform"
+      )
+        platformGroundedObserved = true;
       ctx.state.set({
         parity: {
           areaMembership: members,
@@ -177,6 +191,11 @@ function observer(): GamePluginHooks<PhysicsState, PhysicsContext> {
           restingPosition: position(currentBox),
           runtime: __TN_RUNTIME__,
           scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
+          scenarioCoverage: {
+            areaExcludedCharacter: !members.includes("character"),
+            oneWayPassedUpward: characterMaxY > 1.23,
+            platformGroundedObserved,
+          },
           steps: completedSteps,
         },
       });
@@ -222,6 +241,11 @@ const initialParity: ParityObservation = {
   restingPosition: [0, 0, 0],
   runtime: __TN_RUNTIME__,
   scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
+  scenarioCoverage: {
+    areaExcludedCharacter: false,
+    oneWayPassedUpward: false,
+    platformGroundedObserved: false,
+  },
   steps: 0,
 };
 
@@ -235,6 +259,8 @@ class NativePhysicsParity extends Scene<PhysicsState, PhysicsContext> {
         new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })),
       );
       object.position.set(...spec.position);
+      if (__TN_PHYSICS_CONTROL__ === "offset-box" && spec.name === "dynamicBox")
+        object.position.x += 0.001;
       ctx.entities.add(spec.name, object);
       if (spec.sensor) {
         area = new Area3D({
@@ -288,6 +314,7 @@ class NativePhysicsParity extends Scene<PhysicsState, PhysicsContext> {
     if (area?.body.id !== scenario.bodies.find((body) => body.sensor)?.id)
       throw new Error("TN_PHYSICS_PARITY_AREA_ID");
     initialCharacterPosition = position(character as CharacterBody3D);
+    characterMaxY = initialCharacterPosition[1];
     markSceneReady?.();
 
     return () => {

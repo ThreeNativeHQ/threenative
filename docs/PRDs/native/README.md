@@ -22,9 +22,9 @@ requirement. A blocked row is still an open row: do not move one to the Proven c
 | — | Artifact parity: the bundler deletes the author's UI, string-matches the start call, and ships no `public/` assets to either phone (PRD-050) |
 | — | A HUD that renders on native at all, and navmesh pathfinding on mobile — both undecided (PRD-051, PRD-052) |
 
-Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`, and
-`docs/verification/PRD-046.md`. **Never summarize this folder as "mobile works" while the
-right column has rows in it.**
+Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`,
+`docs/verification/PRD-046.md`, and `docs/verification/PRD-049.md`. **Never summarize this
+folder as "mobile works" while the right column has rows in it.**
 
 **Roadmap position:** `ROADMAP.md` **Phase 3**, whose gate to start is *"Phase 2 exit gate
 green."* Phase 2 is not green — PRDs 033, 035, 036 and 038 are all "partial, release
@@ -49,9 +49,10 @@ runtime       on device     physics       distribution  tells the truth
 | 2 | [PRD-045](blocked/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **blocked** — in `blocked/`; criteria 1–6 and 8 met, only the iOS simulator run is left and no Apple machine exists |
 | 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web + Android closed; iOS and published consumer proof open |
 | 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
-| 5 | [PRD-050](PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **proposed** — not started |
-| 6 | [PRD-051](PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **proposed** — Phase 0 is a spike; nothing built until it answers |
-| 7 | [PRD-052](PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 §255 opened and nobody owned | **proposed** — Phase 0 is a measurement |
+| 5 | [PRD-049](PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **in progress** — phases 0–6 implemented; final acceptance audit open |
+| 6 | [PRD-050](PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **proposed** — not started |
+| 7 | [PRD-051](PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **proposed** — Phase 0 is a spike; nothing built until it answers |
+| 8 | [PRD-052](PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 §255 opened and nobody owned | **proposed** — Phase 0 is a measurement |
 | — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
 
 **PRD-050 is where "write once, run everywhere" is currently false.** Three divergences, each
