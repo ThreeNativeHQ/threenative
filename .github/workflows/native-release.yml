@@ -72,9 +72,9 @@ jobs:
         if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libasound2-dev libcurl4-openssl-dev libpulse-dev libudev-dev libx11-dev libxext-dev
-          libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev
-          libxkbcommon-dev
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev zlib1g-dev
       - name: Install Windows HTTP build dependencies
         if: runner.os == 'Windows'
         run: >-
