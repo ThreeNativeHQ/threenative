@@ -37,6 +37,54 @@ node packages/runtime-native/scripts/verify-android-first-proof.mjs --device emu
 This closes the Phase 2 Android catalog-version and 300-frame core-smoke row. It does not
 close native physics, iOS, or physical-device evidence.
 
+## Android toon-material abort, and the wgpu-native bump that fixes it — 2026-08-09
+
+Found by porting a real 1,950-line Three.js platformer (`fox-game`) into a scaffolded
+`minimal` project and running it on the x86_64 emulator. The game reached
+`TN_NATIVE_SMOKE_FIRST_FRAME` and then died with `signal 6 (Aborted)` roughly half a second
+later, with **no logcat output at all**, no tombstone, and no `TN_NATIVE_START_FAILED`.
+
+Bisected on the emulator, one variable per run. Alive and rendering: `MeshStandardMaterial`,
+`MeshToonMaterial` with a `gradientMap`, the vertex-coloured sky dome, the full 40-mesh fox
+rig, and an unlit `MeshBasicMaterial` with a `DirectionalLight` in the scene. Aborted:
+`MeshToonMaterial` **with** a `gradientMap` **and** any punctual light (`DirectionalLight` or
+`PointLight`). Dropping the `gradientMap` from that same material made it survive.
+
+Reproduced off-device by building the Linux host against wgpu-native instead of Dawn
+(`-DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF`), which prints what Android swallowed:
+
+```
+Shader validation error: Entry point main at Fragment is invalid
+120 │ nodeVar7 = textureLoad( nodeUniform10, vec2<u32>( ... ), u32( 0 ) );
+    = Image sample or level-of-detail index's type of [153] is not an integer scalar
+thread '<unnamed>' panicked at src/lib.rs:598:5:
+Error in wgpuQueueSubmit: Validation Error
+```
+
+That is the toon ramp lookup Three.js 0.185.1 emits for `gradientMap`. The naga in
+wgpu-native **v24.0.3.1** (March 2025) rejects it; `wgpuQueueSubmit` then calls
+`handle_error_fatal`, which panics and aborts the process. Dawn accepts the same WGSL, which
+is why desktop was green throughout.
+
+Two fixes, both in this commit:
+
+- **`scripts/download-deps.mjs` pins wgpu-native v25.0.2.2** for desktop, Android and iOS.
+  It compiles with no source changes (the modern-header path was already in place). On the
+  Linux wgpu host the failing scene goes from four validation errors plus an abort to 300
+  clean frames. On the emulator the whole platformer now renders — sky, cliffs, waterfalls,
+  bridge, coins, castle — stays alive, and moves the player in response to injected
+  `KEYCODE_DPAD_RIGHT` events.
+- **`src/webgpu/context.cpp` logs device errors through `__android_log_print`.** The
+  Dawn/modern-wgpu `onDeviceError` only wrote to `std::cerr`, which goes nowhere on Android,
+  so a validation error produced a completely silent abort. Adapter and device request
+  failures were equally invisible and now log too. `tests/webgpu-error-visibility.test.mjs`
+  fails if either backend callback shape loses its platform log again.
+
+Still open, and not claimed here: iOS (no Apple hardware available), physical Android
+hardware, and the portrait/landscape framing of the emulator surface — the manifest locks
+`screenOrientation="landscape"` while the AVD presents 1080x2400, and telling an emulator
+quirk from a real viewport bug needs a device.
+
 ## Android generated-asset integrity evidence — 2026-08-09
 
 Command, run twice against the same booted emulator:

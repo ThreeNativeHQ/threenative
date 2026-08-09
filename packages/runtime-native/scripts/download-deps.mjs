@@ -54,7 +54,7 @@ console.log(`Platform: ${platformName}-${archName}`);
 // Dependency versions and URLs
 const DEPS = {
   wgpu: {
-    version: 'v24.0.3.1',
+    version: 'v25.0.2.2',
     getUrl: () => {
       // wgpu-native releases: https://github.com/gfx-rs/wgpu-native/releases
       // Windows releases include toolchain suffix: wgpu-windows-x86_64-msvc-release.zip
@@ -70,7 +70,7 @@ const DEPS = {
   'wgpu-ios': {
     // wgpu-native iOS builds for cross-compilation from macOS
     // Downloads both device (arm64) and simulator (arm64 + x86_64) builds
-    version: 'v24.0.3.1',
+    version: 'v25.0.2.2',
     getUrl: () => {
       // This is a special multi-file download - handled separately
       return null;
@@ -78,9 +78,9 @@ const DEPS = {
     extractTo: 'wgpu-ios',
     // Individual archive URLs for iOS
     archives: {
-      device: `https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-ios-aarch64-release.zip`,
-      simulatorArm64: `https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-ios-aarch64-simulator-release.zip`,
-      simulatorX64: `https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-ios-x86_64-simulator-release.zip`,
+      device: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-release.zip`,
+      simulatorArm64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-simulator-release.zip`,
+      simulatorX64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-x86_64-simulator-release.zip`,
     },
   },
   sdl3: {
@@ -414,15 +414,15 @@ const DEPS = {
   'wgpu-android': {
     // wgpu-native Android builds for cross-compilation
     // Downloads aarch64 (ARM64) and x86_64 (emulator) builds
-    version: 'v24.0.3.1',
+    version: 'v25.0.2.2',
     getUrl: () => {
       // Multi-file download - handled separately
       return null;
     },
     extractTo: 'wgpu-android',
     archives: {
-      aarch64: `https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-android-aarch64-release.zip`,
-      x86_64: `https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-android-x86_64-release.zip`,
+      aarch64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-aarch64-release.zip`,
+      x86_64: `https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-x86_64-release.zip`,
     },
   },
   'sdl3-android': {

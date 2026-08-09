@@ -133,6 +133,7 @@ static void onAdapterRequestEnded(WGPURequestAdapterStatus status, WGPUAdapter a
         std::cout << "[WebGPU] Adapter acquired successfully" << std::endl;
     } else {
         std::cerr << "[WebGPU] Failed to request adapter: " << WGPU_PRINT_STRING_VIEW(message) << std::endl;
+        TN_CONTEXT_LOGE("Failed to request adapter: %s", WGPU_PRINT_STRING_VIEW(message).c_str());
     }
     data->completed = true;
 }
@@ -144,6 +145,7 @@ static void onDeviceRequestEnded(WGPURequestDeviceStatus status, WGPUDevice devi
         std::cout << "[WebGPU] Device acquired successfully" << std::endl;
     } else {
         std::cerr << "[WebGPU] Failed to request device: " << WGPU_PRINT_STRING_VIEW(message) << std::endl;
+        TN_CONTEXT_LOGE("Failed to request device: %s", WGPU_PRINT_STRING_VIEW(message).c_str());
     }
     data->completed = true;
 }
@@ -160,6 +162,9 @@ static void onDeviceError(WGPUDevice const* device, WGPUErrorType type, WGPUStri
         default: break;
     }
     std::cerr << "[WebGPU] Device error (" << typeStr << "): " << WGPU_PRINT_STRING_VIEW(message) << std::endl;
+    // std::cerr goes nowhere on Android. Without this the next wgpuQueueSubmit aborts the
+    // process on a validation error and logcat shows nothing at all.
+    TN_CONTEXT_LOGE("Device error (%s): %s", typeStr, WGPU_PRINT_STRING_VIEW(message).c_str());
 }
 #else
 // wgpu-native callback signatures
@@ -170,6 +175,7 @@ static void onAdapterRequestEnded(WGPURequestAdapterStatus status, WGPUAdapter a
         std::cout << "[WebGPU] Adapter acquired successfully" << std::endl;
     } else {
         std::cerr << "[WebGPU] Failed to request adapter: " << (message ? message : "unknown error") << std::endl;
+        TN_CONTEXT_LOGE("Failed to request adapter: %s", message ? message : "unknown error");
     }
     data->completed = true;
 }
@@ -181,6 +187,7 @@ static void onDeviceRequestEnded(WGPURequestDeviceStatus status, WGPUDevice devi
         std::cout << "[WebGPU] Device acquired successfully" << std::endl;
     } else {
         std::cerr << "[WebGPU] Failed to request device: " << (message ? message : "unknown error") << std::endl;
+        TN_CONTEXT_LOGE("Failed to request device: %s", message ? message : "unknown error");
     }
     data->completed = true;
 }
