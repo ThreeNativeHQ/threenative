@@ -23,7 +23,7 @@ const fixture = readFileSync(
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(import.meta.dirname, physicsScene ? "src/physics.ts" : "src/main.ts"),
+      entry: resolve(import.meta.dirname, physicsScene ? "src/physics-main.ts" : "src/main.ts"),
       fileName: () => "native-smoke.js",
       formats: ["es"],
     },
@@ -44,7 +44,7 @@ export default defineConfig({
     {
       name: "threenative-physics-scene",
       transformIndexHtml: (html) =>
-        physicsScene ? html.replace("/src/main.ts", "/src/physics.ts") : html,
+        physicsScene ? html.replace("/src/main.ts", "/src/physics-main.ts") : html,
     },
   ],
   resolve: {

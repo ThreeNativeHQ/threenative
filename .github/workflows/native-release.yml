@@ -303,7 +303,7 @@ jobs:
             --runtime-native-package "$runtime" --cli-package "$cli"
           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
           import { copyFileSync } from "node:fs";
-          copyFileSync("examples/native-smoke/src/main.ts", `${process.env.CONSUMER_TARGET}/src/main.ts`);
+          copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
           NODE
           echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
       - name: Expose an Android SDK with no NDK or CMake installation
@@ -339,7 +339,7 @@ jobs:
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Build the packed Android target without NDK, CMake, or Rust
         run: |
-          cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/main.ts"
+          cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$CONSUMER_TARGET/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
             "$CONSUMER_TARGET/physics-parity.scenario.json"
@@ -456,7 +456,7 @@ jobs:
           node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
             --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
             --runtime-native-package "$runtime" --cli-package "$cli"
-          cp examples/native-smoke/src/main.ts "$target/src/main.ts"
+          cp examples/native-smoke/src/game.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
             "$target/physics-parity.scenario.json"
@@ -496,7 +496,7 @@ jobs:
           grep -F TN_PLAYTEST_VISIBILITY_FAILED "$RUNNER_TEMP/ios-wrong-value.log"
       - name: Run packed-consumer native physics and negative controls
         run: |
-          cp examples/native-smoke/src/physics.ts "$IOS_RELEASE_CONSUMER/src/main.ts"
+          cp examples/native-smoke/src/physics.ts "$IOS_RELEASE_CONSUMER/src/game.ts"
           app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           run_ios() {
             scenario=$1

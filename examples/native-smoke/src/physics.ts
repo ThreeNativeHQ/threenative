@@ -366,4 +366,4 @@ const game = defineGame<PhysicsState, PhysicsContext>({
   step: scenario.deltaTime,
 });
 
-void game.start().then(() => console.info("TN_NATIVE_SMOKE_READY:webgpu"));
+export default game;
