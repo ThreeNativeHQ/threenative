@@ -7,8 +7,9 @@ available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are
 this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
 The implementation and checked-in replay consumer project are merged on `main`; the full
 headed browser suite and generated-scenario regression
-control now pass. The manual watch-and-diverge checkpoint and separate ≤200-line source-delta
-gate remain pending. Replay-removal, stale-artifact, and generated-scenario mutation controls
+control now pass. The manual watch-and-diverge checkpoint is closed by the headed continuation
+run; the separate ≤200-line source-delta gate remains pending. Replay-removal, stale-artifact,
+and generated-scenario mutation controls
 are observed-red.
 `docs/verification/PRD-036.md`.
 
@@ -646,12 +647,12 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 - [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
 - [ ] Every gate has a negative control that was **observed failing**; replay-removal,
-      stale-artifact, and generated-scenario mutation controls are observed-red, while the
-      manual watch-and-diverge and source-delta gates remain open
+      stale-artifact, generated-scenario mutation, and 1% movement-divergence controls are
+      observed-red, while the source-delta gate remains open
 - [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
       three-tick unit fixture. The replay consumer proof is recorded in
-      `docs/verification/PRD-036.md`; the manual divergence and red controls remain open.
+      `docs/verification/PRD-036.md`; the source-delta gate remains open.
 - [x] Package count still 7/8.
 - [ ] Framework LOC delta ≤ 200 and recorded: +256 net core/physics source lines; global
       budgets pass but this scoped gate does not.
