@@ -33,6 +33,7 @@ test('desktop platform lanes build and retain executable evidence', () => {
   for (const source of [workflow, releaseWorkflow]) {
     expect(source).toContain('libcurl4-openssl-dev');
     expect(source).toContain('libfontconfig1-dev');
+    expect(source).toContain('mesa-vulkan-drivers');
     expect(source).toContain('zlib1g-dev');
     expect(source).toContain('libx11-dev');
     expect(source).toContain('vswhere.exe');
