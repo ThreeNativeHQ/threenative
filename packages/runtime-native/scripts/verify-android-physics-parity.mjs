@@ -109,6 +109,10 @@ export function artifactPaths(control, root = outputRoot) {
   };
 }
 
+export function browserDisplayArgs(env = process.env) {
+  return env.DISPLAY || env.WAYLAND_DISPLAY ? ["--headed"] : [];
+}
+
 function requireObject(value, label) {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new ParityError(`${label} must be a JSON object.`);
@@ -456,6 +460,7 @@ export function main(argv = process.argv.slice(2)) {
       "THREENATIVE_PHYSICS_SCENE=enabled pnpm --dir examples/native-smoke exec vite --host 127.0.0.1 --port 5173 --strictPort",
       "--browser-recipe",
       "webgpu",
+      ...browserDisplayArgs(),
       "--artifacts",
       paths.webArtifacts,
     ],

@@ -54,15 +54,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
 
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
     const output = await this.adb(["logcat", "-d", "-v", "brief"]);
-    return output
-      .split(/\r?\n/u)
-      .filter((line) => /Mystral|THREENATIVE|chromium/u.test(line))
-      .map((text) => ({
-        text,
-        type: /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
-          ? "error"
-          : "log",
-      }));
+    return parseAndroidConsole(output);
   }
 
   async screenshot(path: string): Promise<void> {
@@ -131,6 +123,19 @@ export class AdbAndroidDriver implements IAndroidDriver {
   private serialArgs(): string[] {
     return this.options.serial === undefined ? [] : ["-s", this.options.serial];
   }
+}
+
+export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {
+  return output
+    .split(/\r?\n/u)
+    .filter((line) => !/^[VDIWEF]\/SurfaceSyncGroup\(/u.test(line))
+    .filter((line) => /Mystral|THREENATIVE|chromium/u.test(line))
+    .map((text) => ({
+      text,
+      type: /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
+        ? "error"
+        : "log",
+    }));
 }
 
 function isMissingRemoteFile(error: unknown): boolean {

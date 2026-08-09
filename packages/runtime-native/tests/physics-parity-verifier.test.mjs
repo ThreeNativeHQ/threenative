@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   artifactPaths,
+  browserDisplayArgs,
   clearOutputs,
   compareObservations,
   generateOperatorScenario,
@@ -120,6 +121,12 @@ describe("Android physics parity verifier negative controls", () => {
 });
 
 describe("Android physics parity verifier report parsing", () => {
+  it("uses headed WebGPU when a display server is available", () => {
+    expect(browserDisplayArgs({ DISPLAY: ":99" })).toEqual(["--headed"]);
+    expect(browserDisplayArgs({ WAYLAND_DISPLAY: "wayland-0" })).toEqual(["--headed"]);
+    expect(browserDisplayArgs({})).toEqual([]);
+  });
+
   it("normalizes the JSON-safe GameState parity resource", () => {
     const report = {
       observations: { resources: { GameState: { after: { parity: web } } } },

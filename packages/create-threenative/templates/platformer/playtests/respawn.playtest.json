@@ -6,8 +6,16 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 230, "release": true },
-    { "kind": "wait", "waitTicks": 60, "release": true }
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 16, "release": true },
+    {
+      "kind": "input",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    { "kind": "wait", "waitTicks": 16, "release": true },
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 170, "release": true },
+    { "kind": "wait", "waitTicks": 100, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },

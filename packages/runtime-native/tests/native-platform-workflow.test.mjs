@@ -94,6 +94,13 @@ test('clean Android consumer exposes late-installed emulator SDK directories', (
   );
 });
 
+test('packed desktop smoke copies the Vite defines required by its authored entry', () => {
+  const copy = 'examples/native-smoke/vite.config.ts';
+  const build = 'pnpm --dir "$CONSUMER_TARGET" build --target desktop';
+  expect(releaseWorkflow).toContain(copy);
+  expect(releaseWorkflow.indexOf(copy)).toBeLessThan(releaseWorkflow.indexOf(build));
+});
+
 test('clean Android emulator script is compatible with line-by-line action execution', () => {
   const script = releaseWorkflow.match(
     /- name: Run packed Android physics and negative controls on an emulator[\s\S]*?script: \|\n([\s\S]*?)\n {6}- name:/u,

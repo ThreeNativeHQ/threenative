@@ -76,6 +76,7 @@ export class Checkpoints {
   respawn(target: RespawnTarget): void {
     const point = this.points[this.currentIndex];
     if (point === undefined) throw new Error(`Missing checkpoint ${this.currentIndex}.`);
+    target.body.velocity.set(0, 0, 0);
     target.body.teleport(point);
     this.#invulnerable = this.#feel.invulnerabilityTime;
     this.respawns += 1;

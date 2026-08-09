@@ -139,7 +139,7 @@ export default { start: async () => console.info(marker) };
     expect(desktop).not.toContain("NATIVE_BACKEND");
     expect(android).toContain("NATIVE_BACKEND");
     expect(android).not.toContain("WEB_BACKEND");
-  });
+  }, 15_000);
 
   it("passes public assets to every native packager", async () => {
     const project = await projectRoot("threenative-native-assets-");

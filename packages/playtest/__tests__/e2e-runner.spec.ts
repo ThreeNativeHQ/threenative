@@ -23,12 +23,13 @@ const fixtureDirectory = join(dirname(fileURLToPath(import.meta.url)), "fixtures
 
 let server: Server;
 let origin: string;
+let fixtureHtml: string;
 
 beforeAll(async () => {
-  const html = await readFile(join(fixtureDirectory, "app.html"), "utf8");
+  fixtureHtml = await readFile(join(fixtureDirectory, "app.html"), "utf8");
   server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(html);
+    response.end(fixtureHtml);
   });
   await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
   const address = server.address();
@@ -36,11 +37,24 @@ beforeAll(async () => {
   origin = `http://127.0.0.1:${address.port}`;
 });
 
+async function unusedPort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((ready) => probe.listen(0, "127.0.0.1", ready));
+  const address = probe.address();
+  if (address === null || typeof address === "string") throw new Error("Port probe has no port.");
+  await new Promise<void>((closed) => probe.close(() => closed()));
+  return address.port;
+}
+
 afterAll(async () => {
   await new Promise<void>((closed) => server.close(() => closed()));
 });
 
-async function run(mode: string, assert: unknown): Promise<IStandalonePlaytestReport> {
+async function run(
+  mode: string,
+  assert: unknown,
+  managedServer?: { command: string; cwd: string; timeoutMs: number },
+): Promise<IStandalonePlaytestReport> {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-"));
   await writeFile(
     join(projectPath, "scenario.json"),
@@ -64,6 +78,7 @@ async function run(mode: string, assert: unknown): Promise<IStandalonePlaytestRe
     timeoutMs: 15_000,
     trace: false,
     url: `${origin}/?mode=${mode}`,
+    ...(managedServer === undefined ? {} : { server: managedServer }),
   });
 }
 
@@ -127,6 +142,63 @@ test("true positive: a missing bridge fails the run rather than skipping the ass
 
   expect(report.pass).toBe(false);
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_BRIDGE_MISSING");
+}, 60_000);
+
+test("managed server mode rejects an already occupied URL", async () => {
+  const report = await run("good", MOVES, {
+    command: `${JSON.stringify(process.execPath)} -e "process.exit(9)"`,
+    cwd: fixtureDirectory,
+    timeoutMs: 1_000,
+  });
+
+  expect(report.pass).toBe(false);
+  expect(report.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "TN_PLAYTEST_SERVER_FAILED" }),
+  );
+  expect(report.diagnostics[0]?.message).toContain("already in use");
+}, 60_000);
+
+test("managed server teardown releases the URL before the next run", async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-managed-server-"));
+  const port = await unusedPort();
+  const scenario = {
+    artifacts: { screenshots: false },
+    assert: MOVES,
+    name: "managed-server-restart",
+    schemaVersion: 1,
+    steps: [{ holdFrames: 30, press: "KeyW", release: true }],
+    subject: "player",
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 2,
+  };
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify(scenario));
+  await writeFile(
+    join(projectPath, "server.mjs"),
+    `import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const html = readFileSync(new URL("./app.html", import.meta.url));
+createServer((_request, response) => response.end(html)).listen(${port}, "127.0.0.1");\n`,
+  );
+  const runManaged = () =>
+    runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      server: { command: `${JSON.stringify(process.execPath)} server.mjs`, cwd: projectPath, timeoutMs: 5_000 },
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${port}/?mode=good`,
+    });
+  await writeFile(join(projectPath, "app.html"), fixtureHtml.replace("</body>", '<script>console.log("managed-instance-1")</script></body>'));
+  expect((await runManaged()).pass).toBe(true);
+  await writeFile(join(projectPath, "app.html"), fixtureHtml.replace("</body>", '<script>console.log("managed-instance-2")</script></body>'));
+
+  const second = await runManaged();
+
+  expect(second.pass).toBe(true);
+  expect(second.observations?.console.map(({ text }) => text)).toContain("managed-instance-2");
 }, 60_000);
 
 test("transport-only browser errors reach runtime diagnostics without a bridge", async () => {

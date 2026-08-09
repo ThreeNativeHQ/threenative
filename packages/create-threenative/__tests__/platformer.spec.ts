@@ -16,7 +16,7 @@ function checkpoints(points: readonly Point[]): ConstructorParameters<typeof Che
 
 function target(): Target {
   return {
-    body: { body: { setTranslation: vi.fn() }, velocity: { set: vi.fn() } },
+    body: { teleport: vi.fn(), velocity: { set: vi.fn() } },
     mesh: { position: point(1) },
     visual: { visible: true },
   } as unknown as Target;
@@ -68,6 +68,17 @@ describe("platformer checkpoints", () => {
 
     expect(level).toContain("collisionLayer: 4");
     expect(character).toContain("collisionMask: 0xfffb");
+  });
+
+  it("clears velocity before teleporting to the current checkpoint", () => {
+    const state = new Checkpoints(checkpoints([point(0), point(14)]), 3, feel);
+    const player = target();
+    state.pass(point(15));
+
+    state.respawn(player);
+
+    expect(player.body.velocity.set).toHaveBeenCalledWith(0, 0, 0);
+    expect(player.body.teleport).toHaveBeenCalledWith(state.points[1]);
   });
 
   it("should register a mobile-safe steering chaser without Recast", async () => {

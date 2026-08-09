@@ -21,9 +21,17 @@
     },
     {
       "kind": "input",
+      "label": "clear-blocker",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    { "kind": "wait", "waitTicks": 16, "release": true },
+    {
+      "kind": "input",
       "label": "last-coin",
-      "press": "ArrowRight",
-      "holdTicks": 40,
+      "press": "ArrowLeft",
+      "holdTicks": 20,
       "release": true
     }
   ],

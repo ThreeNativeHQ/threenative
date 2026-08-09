@@ -18,11 +18,21 @@ set +e
 run_log="$(mktemp)"
 trap 'rm -f "$run_log"' EXIT
 baseline_pids="$(ps -eo pid= | tr -d ' ')"
+test_port="$(node --input-type=module -e '
+  import { createServer } from "node:net";
+  const server = createServer();
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    if (address === null || typeof address === "string") process.exit(1);
+    process.stdout.write(String(address.port));
+    server.close();
+  });
+')"
 timeout 5s node packages/playtest/dist/runner/cli.js \
   --scenario examples/abyss-framework/playtest/moves.json \
   --project . \
-  --url http://127.0.0.1:5199 \
-  --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5199 --strictPort' >"$run_log" 2>&1
+  --url "http://127.0.0.1:$test_port" \
+  --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port $test_port --strictPort" >"$run_log" 2>&1
 run_code=$?
 set -e
 
@@ -37,7 +47,7 @@ if [[ "$run_code" -eq 2 ]] && rg -q "TN_PLAYTEST_(BROWSER_UNAVAILABLE|SERVER_FAI
 fi
 
 sleep 2
-orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" '
+orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="port $test_port" '
   BEGIN {
     count = split(baseline, pids, /[[:space:]]+/)
     for (idx = 1; idx <= count; idx += 1) if (pids[idx] != "") existing[pids[idx]] = 1
@@ -47,7 +57,7 @@ orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" '
     pid = $1
     $1 = ""
     sub(/^[[:space:]]+/, "", $0)
-    owned = index($0, "port 5199") || index($0, "playwright_chromiumdev_profile-") || index($0, "packages/playtest/dist/runner/cli.js")
+    owned = index($0, port_token) || index($0, "playwright_chromiumdev_profile-") || index($0, "packages/playtest/dist/runner/cli.js")
     if (owned && !existing[pid]) print pid " " $0
   }')"
 if [[ -n "$orphans" ]]; then

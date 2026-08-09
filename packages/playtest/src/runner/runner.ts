@@ -58,9 +58,9 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   const teardown = async (): Promise<void> => {
     if (teardownPromise !== undefined) return teardownPromise;
     teardownPromise = (async () => {
-      stopManagedServer(server);
       await page?.context().close().catch(() => undefined);
       await browser?.close().catch(() => undefined);
+      await stopManagedServer(server);
     })();
     return teardownPromise;
   };
@@ -77,7 +77,10 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
   }
   try {
-    server = config.server === undefined ? undefined : startManagedServer(config);
+    if (config.server !== undefined) {
+      await assertManagedUrlAvailable(config.url);
+      server = startManagedServer(config);
+    }
     browser = await chromium.launch({
       ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
       headless: config.headless,
@@ -726,6 +729,16 @@ function startManagedServer(config: IStandalonePlaytestConfig): ChildProcess {
   return server;
 }
 
+async function assertManagedUrlAvailable(url: string): Promise<void> {
+  try {
+    const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(500) });
+    await response.body?.cancel();
+  } catch {
+    return;
+  }
+  throw managedServerError("Managed server URL is already in use before startup.", url, 0, []);
+}
+
 async function waitForUrl(url: string, timeoutMs: number, server: ChildProcess): Promise<void> {
   const started = Date.now();
   const output: string[] = [];
@@ -751,8 +764,9 @@ async function waitForUrl(url: string, timeoutMs: number, server: ChildProcess):
   throw managedServerError(`Managed server did not become ready within ${timeoutMs}ms.`, url, timeoutMs, output);
 }
 
-function stopManagedServer(server: ChildProcess | undefined): void {
-  if (server?.pid === undefined || server.exitCode !== null) return;
+async function stopManagedServer(server: ChildProcess | undefined): Promise<void> {
+  if (server?.pid === undefined || server.exitCode !== null || server.signalCode !== null) return;
+  const stopped = waitForProcessExit(server, 2_000);
   if (process.platform === "win32") server.kill();
   else {
     try {
@@ -761,6 +775,31 @@ function stopManagedServer(server: ChildProcess | undefined): void {
       // The process group may have exited between the status check and teardown.
     }
   }
+  if (await stopped) return;
+  if (process.platform === "win32") server.kill("SIGKILL");
+  else {
+    try {
+      process.kill(-server.pid, "SIGKILL");
+    } catch {
+      // The process group may have exited between the timeout and forced teardown.
+    }
+  }
+  await waitForProcessExit(server, 1_000);
+}
+
+function waitForProcessExit(server: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (server.exitCode !== null || server.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolveExit) => {
+    const timeout = setTimeout(() => {
+      server.off("exit", onExit);
+      resolveExit(false);
+    }, timeoutMs);
+    const onExit = (): void => {
+      clearTimeout(timeout);
+      resolveExit(true);
+    };
+    server.once("exit", onExit);
+  });
 }
 
 function managedServerError(message: string, url: string, timeoutMs: number, output: readonly string[]): ManagedServerError {

@@ -10,17 +10,24 @@
       "kind": "input",
       "label": "near-patrol",
       "press": "ArrowRight",
-      "holdTicks": 46,
+      "holdTicks": 16,
       "release": true
     },
-    { "kind": "input", "label": "jump", "press": "Space", "holdTicks": 4, "release": true },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 42,
+      "release": true
+    },
     { "kind": "wait", "label": "stomp-settled", "waitTicks": 45, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "GameState", "path": "defeated", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true }
+      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "hearts", "equals": 3, "allowTrivial": true }
     ],
     "tags": [{ "tag": "patrol", "count": 0 }]
   }

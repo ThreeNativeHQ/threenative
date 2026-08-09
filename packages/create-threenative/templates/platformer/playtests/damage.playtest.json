@@ -6,11 +6,19 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 16, "release": true },
+    {
+      "kind": "input",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    { "kind": "wait", "waitTicks": 16, "release": true },
     {
       "kind": "input",
       "label": "enemy-contact",
       "press": "ArrowRight",
-      "holdTicks": 60,
+      "holdTicks": 20,
       "release": true
     },
     { "kind": "wait", "label": "damage-settled", "waitTicks": 10, "release": true }
