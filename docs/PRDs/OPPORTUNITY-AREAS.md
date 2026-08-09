@@ -33,9 +33,9 @@ numbers are comparable rather than vibes.
 
 ### The constraint that actually binds
 
-`pnpm budgets` on 2026-08-09: **5,815 / 15,000 framework LOC**, **53,768 / 50,000 native
+`pnpm budgets` on 2026-08-09: **5,815 / 15,000 framework LOC**, **53,851 / 50,000 native
 runtime LOC**, **6 framework packages**, and **3 example workspaces**. The native review
-trigger is exceeded by 3,768 LOC; it is reported, not silently routed around.
+trigger is exceeded by 3,851 LOC; it is reported, not silently routed around.
 
 **LOC is not the scarce resource. Package boundaries are dependency boundaries.** Rule 5 no
 longer defines a numeric slot: any new package still has to carry a dependency the others must
