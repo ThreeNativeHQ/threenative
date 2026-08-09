@@ -2,7 +2,23 @@ import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const SKIP_DIRECTORIES = new Set(["node_modules", ".git", "dist", "coverage", "test-results"]);
+const SKIP_DIRECTORIES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "coverage",
+  "test-results",
+  ".runtime",
+  ".cxx",
+  ".gradle",
+  ".test-tmp",
+  ".linchpin",
+  ".worktrees",
+  "artifacts",
+  "build",
+  "target",
+  "third_party",
+]);
 
 export const BANNER = "<!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->\n";
 

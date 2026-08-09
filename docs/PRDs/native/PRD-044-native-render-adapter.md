@@ -1,9 +1,22 @@
 # PRD-044 — Native render adapter
 
-**Status: SUPERSEDED by PRD-047.** The React Native host and `@threenative/native` package
-described below are no longer the selected architecture. This file is retained as the
-historical seam analysis; active work follows the owned Mystral runtime in
-`PRD-047-mystral-runtime-absorption.md`.
+**Status: SUPERSEDED by PRD-047. Do not execute any phase in this file.** The React Native
+host and `@threenative/native` package described below are no longer the selected
+architecture. This file is retained as the historical seam analysis; active work follows the
+owned Mystral runtime in `PRD-047-mystral-runtime-absorption.md`.
+
+**What survived the supersession, and where it went:**
+
+| This file | Now lives in | Note |
+|---|---|---|
+| §1.1's five measured DOM seams in `core` (`renderer.ts`, `viewport.ts`, `input.ts`, `audio.ts`, `game.ts`) | PRD-047 §4 Phase 2 | The measurement was host-independent and is the reason Phase 2 is scoped as it is |
+| §4's time-boxed exception to the playtest rule for *visible* render failures | PRD-047 §4 Phase 2 | Inherited deliberately; PRD-045 §0 and PRD-046 §0 both refuse to extend it to physics |
+| The emulator-vs-hardware split in the table below | PRD-047 §1 | Same rows, same open status |
+| `@threenative/native` as a package | **deleted** | PRD-047 §2.1 — `packages/runtime-native` is the only new package |
+| React Native, `react-native-webgpu`, NativeWind | **deleted** | The runtime is the host; there is no RN layer |
+
+Nothing below this block has been updated since supersession. Read it as a record of how the
+seams were measured, never as instructions.
 
 **Historical gate:** Does not begin until spike 0a records a PROVISIONAL PASS on
 the Android emulator. `docs/spikes/0a-mobile-render.md` §6 currently records
@@ -182,11 +195,11 @@ quietly ignore that sentence. Amend it to the split in §0 above — emulator cl
 questions, hardware still owes the driver and frame-rate rows — so the debt stays visible
 instead of disappearing.
 
-**The package cap.** `pnpm budgets` reports 7/8 packages, and
-`scripts/check-budgets.ts:50` counts `examples/*` as packages. This PRD needs one slot
-(`native`); PRD-046 needs a second (`physics-native`). That is 9. `CHARTER.md` §9a's own
-eight-package list contains both, so the list and the counter disagree. Resolve it
-**before** Phase 1, in a commit that states the reasoning:
+**Historical package-count question — resolved by PRD-047.** At the time, `pnpm budgets`
+counted examples against an eight-package cap and this proposal expected separate `native`
+and `physics-native` packages. The active Charter now governs package count by the §11.5
+dependency-boundary rule, and PRD-047 absorbs the host as `runtime-native` while PRD-046
+keeps physics in the existing package. Neither option below is executable now:
 
 - **(a)** Amend the counter to count only `packages/*`, cap 8 shipped packages. An example
   is not a published artifact. Honest, but it is changing an instrument to fit a plan and
@@ -194,8 +207,7 @@ eight-package list contains both, so the list and the counter disagree. Resolve 
 - **(b)** Spend the last slot on `physics-native` and fold the RN adapter into `core`
   behind a subpath export. Contradicts §9a — it carries a dep others must not inherit.
 
-**(a) is the recommendation. The decision is the human's, and §10 says exceeding a cap is
-not a signal to raise the cap — so if neither option is taken, this PRD dies here.**
+**PRD-047 chose neither historical option and supersedes this section.**
 
 ### Phase 1 — de-DOM the five seams in `core`, web unchanged
 

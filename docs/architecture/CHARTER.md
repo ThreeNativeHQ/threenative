@@ -7,9 +7,31 @@
 
 ## 1. What it is
 
-**The application framework for Three.js games.** WebGPU by default, web and native
-mobile from one codebase, Godot-shaped conventions, React/Tailwind for UI, and vanilla
-Three.js on every surface underneath.
+**The application framework for Three.js games.** WebGPU by default, **web, desktop and
+mobile from one codebase**, at a frame rate that does not apologise for the abstraction,
+Godot-shaped conventions, React/Tailwind for UI, and vanilla Three.js on every surface
+underneath.
+
+### The thesis, in one paragraph
+
+**Three.js is the most widely known 3D API in every model's weights. It is also a web
+rendering library, and it stops where the web stops.** Every model can already write it;
+none of them can make it leave the browser, hit native frame rates, or ship to a phone.
+ThreeNative keeps the API the models know and removes the ceiling underneath it.
+
+That is the whole bet, and it decides every argument in this document:
+
+| Three.js gives us | Three.js costs us | What we build |
+|---|---|---|
+| An API in the training data of every frontier model | — | Keep it. Deviating spends the only asset we did not have to earn. |
+| A renderer that works | Browser and webview only | An owned native host (§7): same code, three platforms |
+| WebGPU, TSL, a real material system | Webview performance ceilings, no native path | Native runtime and native physics (§7, §10a) |
+| — | No game layer: no loop, no input map, no physics bridge, no build | The plumbing (§3, §6) |
+
+**Every deviation from Three.js's API is a withdrawal from an account we did not fund.**
+That is why §5 borrows vocabulary instead of inventing it, why §5b refuses to own the look,
+and why §3's kill switch exists. The framework is worth having only where Three.js is
+genuinely absent — the game layer and the platform layer — and nowhere else.
 
 **We ship the plumbing. The user's AI agent ships the gameplay.**
 
@@ -19,15 +41,17 @@ render loop, a physics bridge, an input map and a mobile build on bare Three.js 
 
 **It owns the wiring, never the work — and never the look (§5b).**
 
-Two promises, both testable:
+Three promises, all testable:
 
 1. **Zero plumbing.** The 42% of every game that is identical boilerplate (§3) is
-   already written, on web and on device.
+   already written, on web, desktop and device.
 2. **Good-looking by default.** A freshly scaffolded game looks good before anyone
    touches it — delivered as editable generated source, never as framework config
    (§5b, §9b).
+3. **The abstraction is not the bottleneck.** Whatever the platform can render, the
+   framework gets out of the way of. Measured, not asserted — §10a.
 
-One line: *R3F gives you a scene. ThreeNative gives you a game — on web and on device.*
+One line: *R3F gives you a scene. ThreeNative gives you a game — on web, desktop and device.*
 
 **Framework, not engine.** A library you call (`three` — you own the loop); a framework
 calls you (it owns loop and lifecycle, you fill in scenes and entities); an engine adds an
@@ -40,11 +64,13 @@ authoring environment — editor, asset pipeline, scene format — which §2 rul
 ## 2. What it is not
 
 Every item here is something the previous attempt built, and something that helped kill it.
+Read them against §1's thesis: each one spends the training-data advantage to buy a surface
+the model then has to discover.
 
 | Not building | Why |
 |---|---|
 | An IR, a compiler, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. |
-| A framework-owned or forked second runtime | 32% of 1,707 commits went to a runtime no benchmark ever measured. A pinned, replaceable external host is allowed only when its own evidence and release lane stay outside this repository. |
+| A second *renderer* | 32% of v1's 1,707 commits went to a runtime no benchmark ever measured. §7's host is the deliberate exception and is bounded as one: it runs Three.js, it does not replace it. No custom renderer, no Three.js fork, no native `GLTFLoader`. The moment the host starts drawing, it has become v1. |
 | A JSON/structured-source ECS | Cost **14x vanilla Three.js** on greenfield work (8.27x cost-weighted) *and* scored lower on playability and visuals. |
 | An editor | Not in v1. The Studio dogfood found Share and Export did literally nothing. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces; that was the business model, inverted. |
@@ -64,15 +90,19 @@ Every item here is something the previous attempt built, and something that help
 Not "cheaper than vanilla." That fight cannot be won — Opus is trained on vanilla
 Three.js and gets better at it every release. v1 picked that fight and lost 14x.
 
-**Three criteria instead:**
+**Four criteria instead:**
 
 1. **Zero tax on the way in.** Writing a game in ThreeNative costs *the same* as
    vanilla. Parity is the target; any discount is a bonus.
 2. **Same or better output.** The model's budget goes to gameplay and feel instead of
    bootstrapping, and — critically — the framework never constrains what it can
    express (§5b).
-3. **What vanilla structurally cannot do.** Ships to iOS. Still works after the 20th
-   change. Has proof it isn't broken.
+3. **Zero tax at runtime.** The framework costs no measurable frame time against the
+   same scene written by hand. Parity again, measured against §10a's reference workload.
+   *An abstraction that is free to write and expensive to run has moved the tax, not
+   removed it.*
+4. **What vanilla structurally cannot do.** One codebase reaches web, desktop and
+   mobile. Still works after the 20th change. Has proof it isn't broken.
 
 ### The property that makes this unloseable
 
@@ -282,15 +312,19 @@ Four CLI commands, ever: `dev`, `build`, `test`, `ship`.
 ## 6b. UI — React + Tailwind, never the scene graph
 
 React renders the HUD, menus, and overlays. It does not touch `THREE.Scene`. This is
-the same split Bone Tide shipped: a shared TypeScript engine, with only the UI in
-React Native.
+the same split Bone Tide shipped: a shared TypeScript engine, with only the UI in React.
 
 ```
-Web                          Mobile
+Web                          Desktop / Mobile
 ─────────────────────        ─────────────────────────
-React 19 + react-dom         React 19 + React Native
-Tailwind 4                   NativeWind (Tailwind for RN)
+React 19 + react-dom         OPEN
+Tailwind 4                   OPEN
 ```
+
+**The native UI stack is an open question, not a decision.** The runtime (§7) is a host
+with no DOM and no React Native layer, so neither `react-dom` nor NativeWind applies, and
+no HUD has yet been rendered on it by any means. The store rule below is host-independent
+and holds on every target.
 
 **The 60fps problem.** React must never re-render on the game loop. The bridge is a
 plain external store the game writes to and React subscribes to:
@@ -322,7 +356,7 @@ NativeWind means the same class strings work on device.
 
 ---
 
-## 7. The gate — owned native runtime and mobile physics — **AMENDED 2026-08-08**
+## 7. Cross-platform — the owned native runtime
 
 ```
 Shared TypeScript game code
@@ -332,31 +366,36 @@ Shared TypeScript game code
                                              └── native Rapier, coarse bulk ABI
 ```
 
-Mystral is absorbed as the owned `packages/runtime-native/` fork. Desktop V8 + Dawn
-evidence is green; Android QuickJS + wgpu-native renders upstream Three.js on the emulator.
-Its C++/platform source lives in one workspace package, while Dawn, V8, QuickJS, SDL3,
-wgpu-native and other dependency trees stay downloaded into an untracked `third_party/`.
+**One codebase reaches three platforms.** That is the product, not a bet — the question of
+whether Three.js can run outside a browser is answered, on desktop and on the Android
+emulator. What remains open is coverage, not viability, and the honest rows are listed at
+the end of this section.
+
+Mystral is absorbed as the owned `packages/runtime-native/` fork. Its C++/platform source
+lives in one workspace package, while Dawn, V8, QuickJS, SDL3, wgpu-native and other
+dependency trees stay downloaded into an untracked `third_party/`.
 
 The framework supplies host-neutral TypeScript seams and an import-free bundle. The runtime
 is a host, not a renderer: it must not own Three's renderer, fork Three.js, or replace the
 JavaScript `GLTFLoader`. Exact Three.js compatibility must equal the workspace catalog.
 
-Rapier still cannot depend on WebAssembly on Android because Mystral uses QuickJS there.
-Native physics is compiled into the owned runtime and exposed through a coarse,
-host-neutral typed-array ABI. JSI is no longer the contract; it was specific to the
-superseded React Native host. The TypeScript API stays in `@threenative/physics`, with
-bulk `step`/`readVisibleTransforms` crossings rather than per-object frame calls.
+Rapier cannot depend on WebAssembly on Android, because the runtime uses QuickJS there.
+Native physics is compiled into the runtime and exposed through a coarse, host-neutral
+typed-array ABI. The TypeScript API stays in `@threenative/physics`, with bulk
+`step`/`readVisibleTransforms` crossings rather than per-object frame calls.
 
 Release readiness requires, in order:
 
 1. the unchanged core bundle renders 300+ frames on Android at the catalog Three version;
-2. PRD-045's device harness demonstrates all fail-closed negative controls;
+2. the device harness demonstrates all fail-closed negative controls;
 3. native physics passes those device scenarios;
-4. iOS simulator evidence exists; and
-5. physical-driver, arm64 physics and phone-performance debt remains open until measured.
+4. iOS simulator evidence exists;
+5. the §10a parity rule holds — the native arm is not slower than the browser arm; and
+6. physical-driver, arm64 physics and phone-performance debt is measured on real hardware.
 
-The binding execution record is PRD-047. A result may say desktop-ready or Android-emulator
-plumbing-ready; it must not say mobile-ready while physics, iOS or hardware rows are open.
+Rows 1 and 2 are green. The binding execution record is PRD-047. A result may say
+desktop-ready or Android-emulator plumbing-ready; **it must not say mobile-ready while
+physics, iOS, performance or hardware rows are open.**
 
 ---
 
@@ -391,8 +430,9 @@ pnpm workspace is the right tool; **11 packages was not.** v1 had 27, and packag
 proliferation was a symptom of the disease. A 15k-LOC framework split 11 ways is
 ~1.4k LOC per package — all boilerplate, no boundary.
 
-**Six framework packages, capped at eight forever.** Modularity comes
-from subpath exports, not from more `package.json` files.
+**Six framework packages today.** Package count is governed by §11.5's dependency-boundary
+rule, not by a number to negotiate. Modularity comes from subpath exports, not from more
+`package.json` files.
 
 ```
 threenative/
@@ -496,19 +536,70 @@ Biome over ESLint+Prettier is the one low-confidence call here — cheap to reve
 
 ## 10. Budgets
 
-Hard caps. v1 had none and added ~250k lines in its final nine days while CI went
-0-for-100.
+Two kinds, and the difference matters. **§10a is what we are trying to achieve. §10b is
+what we refuse to spend achieving it.** A charter with only cost caps is a brake with no
+steering wheel.
 
-| Budget | Cap | v1 |
-|---|---:|---:|
-| Workspace packages | **8** | 27 |
-| Framework source (excl. examples, salvage) | **15,000 LOC** | 441,811 TS + 129,247 Rust |
-| Native runtime source (excl. downloaded `third_party/`) | **50,000 LOC** | — |
-| Charter/PRD documents | **10** | 435 |
-| CLI commands | **4** | 178 forms |
-| Public API surface | **one page** | — |
+### 10a. Performance — the target, because "close to native" needs a number
 
-Exceeding a cap is not a signal to raise the cap.
+**Reference workload:** the `platformer` template, unmodified, as scaffolded. It is the
+heaviest starter, it already carries 14 playtest scenarios, and it is what a user actually
+receives. A performance claim measured on a spinning cube is not a performance claim.
+
+| Lane | Reference hardware | Budget |
+|---|---|---|
+| Web | Desktop Chrome, discrete GPU | **60 fps at 1080p**, 99th-percentile frame ≤ 33 ms |
+| Desktop native | Same machine, same scene | **≥ the web arm** — see the parity rule below |
+| Mobile | Mid-range Android phone (Snapdragon 7-series class) | **60 fps at 1080p**; hard floor 30 fps sustained |
+
+**The parity rule is the real definition of "close to native," and it is the one gate
+that is runnable today with no phone.**
+
+> On the same machine and the same scene, the native arm must not be slower than the
+> browser arm. If the owned runtime renders our own template worse than Chrome does,
+> the runtime is a liability and §3's kill switch applies to it exactly as it applies
+> to a helper function.
+
+That comparison needs no hardware, no emulator and no iOS. It runs on the Linux host that
+already produced the desktop evidence, and it is the strongest performance claim this
+project can honestly make right now.
+
+**Mobile numbers stay OPEN until physical hardware exists.** An emulator does not measure
+frame rate — it fakes the GPU driver. A mobile fps figure sourced from an emulator is the
+reporting failure `AGENTS.md` opens by naming.
+
+**The instrument does not exist yet, and building it is part of the target.** `playtest`
+ships 20 assertion kinds and **none of them measures time**. Until a `performance`
+assertion kind lands — fail-closed like the rest, so a missing timing observation fails
+rather than passes — every number in the table above is an intention. **A performance
+claim without that assertion is unverified, and "unverified" is the honest word for it.**
+
+### 10b. Cost caps — what we refuse to spend
+
+v1 had none and added ~250k lines in its final nine days while CI went 0-for-100. These
+exist so that never recurs. **They are not the goal; they bound the price of the goal.**
+
+| Budget | Limit | Kind | v1 |
+|---|---:|---|---:|
+| Framework source (excl. examples, salvage, native) | **15,000 LOC** | review trigger | 441,811 TS + 129,247 Rust |
+| Native runtime source (excl. downloaded `third_party/`) | **50,000 LOC** | review trigger | — |
+| Workspace packages | governed by §11.5, not by a number | rule | 27 |
+| Untracked `third_party/` | **hard fail** if any file is tracked | hard | — |
+| Default gate green with no C++ toolchain | **hard fail** otherwise | hard | — |
+
+**Hard means CI fails. Review trigger means CI reports and a human justifies it in the
+PRD** — crossing one is a conversation, not an outage. Both hard rows are invariants of
+the native absorption (§7) and are not negotiable; they are what keeps a C++ runtime from
+leaking into a TypeScript framework.
+
+Exceeding a review trigger is not a signal to raise it. It is a signal to run the kill
+switch (§3) over what was added and find out whether it earned its lines.
+
+**A cap that gets routed around is worse than no cap** — it looks like discipline while
+teaching that gates are negotiable, which is the same failure shape as a green check that
+asserts nothing. Every limit above is either enforced by `pnpm budgets` or is not written
+down. Nothing here counts documentation, command names, or pages of API: those are bounded
+by §11.1 and §11.4, with evidence, or they are not bounded at all.
 
 ---
 
@@ -529,20 +620,30 @@ v1 spent seven weeks unable to answer whether it was working, because the decisi
 experiment (`sustained-iteration-benchmark-2026-07-31.md`) was specified three times
 and **never run**.
 
-**ThreeNative succeeds if, and only if:**
+**ThreeNative succeeds if, and only if** — one criterion per pillar of §1's thesis:
 
-1. Phase 0 runs on a physical phone.
-2. The ThreeNative port of Abyss is no longer than 400 lines, still reads as ordinary
-   Three.js, and **does not look worse than the vanilla control** (§5b).
-3. One game is played by **a stranger for five minutes**, with a transcript. v1 never
-   once did this — it was the open acceptance item at abandonment.
-4. Framework source is under 15,000 LOC when 1–3 are true.
+1. **It still reads as Three.js.** The ThreeNative port of Abyss is no longer than 400
+   lines, reads as ordinary Three.js, and **does not look worse than the vanilla
+   control** (§5b). *Protects the training-data advantage.*
+2. **It leaves the browser.** One unmodified game codebase builds and runs on web,
+   desktop and a physical phone, each proven by a playtest run rather than a screenshot.
+   *Removes the ceiling.*
+3. **It is not slower for having done so.** §10a's parity rule holds on the reference
+   workload: the native arm is not slower than the browser arm, and the mobile lane
+   meets its frame budget on real hardware. *Removes the other ceiling.*
+4. **Someone plays it.** One game is played by **a stranger for five minutes**, with a
+   transcript. v1 never once did this — it was the open acceptance item at abandonment.
+
+Criterion 4 is the only one that cannot be gamed by the team that wrote it, which is why
+it is not negotiable and not first.
 
 **ThreeNative fails, and is abandoned, if:**
 
-- Phase 0 cannot run on a device and no JSI path is viable within two weeks; or
 - The Abyss port is longer than vanilla, or visibly worse; or
-- Framework source passes 15,000 LOC before criterion 3 is met.
+- A platform cannot be reached at all, and no host path is viable; or
+- Reaching it costs the frame rate — a game that ships everywhere and runs well nowhere
+  has solved the wrong half of §1; or
+- Framework source passes its review trigger with no criterion above met.
 
 **This document must be able to lose.** If the vanilla arm wins, the correct response
 is to ship `playtest` and `asset-mcp` as standalone tools for vanilla Three.js and stop

@@ -27,8 +27,11 @@ tasks.register("extractSdl3JniLibs") {
 }
 
 tasks.register<Exec>("buildAndroidFirstProofBundle") {
+    val playtestBridge = providers.environmentVariable("THREENATIVE_PLAYTEST_BRIDGE").orElse("enabled").get()
     workingDir = layout.projectDirectory.dir("../..").asFile
     commandLine("node", "scripts/build-android-first-proof.mjs")
+    environment("THREENATIVE_PLAYTEST_BRIDGE", playtestBridge)
+    inputs.property("playtestBridge", playtestBridge)
     inputs.file(layout.projectDirectory.file("../../scripts/build-android-first-proof.mjs"))
     inputs.file(layout.projectDirectory.file("../../../../pnpm-workspace.yaml"))
     inputs.file(layout.projectDirectory.file("../../../../pnpm-lock.yaml"))

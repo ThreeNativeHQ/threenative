@@ -11,6 +11,8 @@ async function fixture(): Promise<string> {
   await writeFile(path.join(root, "packages", "core", "AGENTS.md"), "# core rules\n");
   await mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
   await writeFile(path.join(root, "node_modules", "pkg", "AGENTS.md"), "# not ours\n");
+  await mkdir(path.join(root, "target", "generated"), { recursive: true });
+  await writeFile(path.join(root, "target", "generated", "AGENTS.md"), "# not ours\n");
   return root;
 }
 

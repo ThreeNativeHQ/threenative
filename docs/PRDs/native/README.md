@@ -1,9 +1,19 @@
 # Native / mobile PRDs — the sequence
 
-**Status:** PRD-047 is IN PROGRESS. Mystral now supplies the answer spike 0a could not:
-upstream `three/webgpu` runs outside a browser on desktop and on the Android emulator.
-Desktop framework absorption is proven; Android framework-version parity, device playtest,
-native physics, iOS and physical-hardware evidence remain open.
+**Status (2026-08-08):** PRD-047 is IN PROGRESS. Mystral supplied the answer spike 0a could
+not: upstream `three/webgpu` runs outside a browser on desktop and on the Android emulator.
+
+| Proven | Open |
+|---|---|
+| Desktop framework absorption, 300 frames + screenshot | iOS: no simulator app, launch, log or screenshot |
+| Android framework-version parity at catalog Three 0.185.1 | Native physics API/binding/device proof: not integrated |
+| Android device playtest with all fail-closed controls | Windows/macOS desktop lanes never run on a real runner |
+| Native physics Phase 0: version delta measured; both Android ABIs cross-compile | |
+| | Physical mobile hardware: no GPU, arm64 or frame-rate evidence |
+
+Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`, and
+`docs/verification/PRD-046.md`. **Never summarize this folder as "mobile works" while the
+right column has rows in it.**
 
 **Roadmap position:** `ROADMAP.md` **Phase 3**, whose gate to start is *"Phase 2 exit gate
 green."* Phase 2 is not green — PRDs 033, 035, 036 and 038 are all "partial, release
@@ -13,23 +23,33 @@ scheduled.
 ## The active sequence
 
 ```
-PRD-047  ──►  PRD-045  ──►  PRD-046
-external      playtest      physics-native
-runtime       on device
+PRD-047  ──►  PRD-045  ──►  PRD-046  ──►  PRD-048
+absorbed      playtest      native        CLI and
+runtime       on device     physics       distribution
 ```
 
-| # | PRD | What it buys | Cost |
+| # | PRD | What it buys | State |
 |---|---|---|---|
-| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | in progress |
-| — | [PRD-044](PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | historical |
-| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | open |
-| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | blocked on 045 |
+| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **in progress** — Phases 0–3 closed; 4–5 open; 6 split out |
+| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **in progress** — Android closed; iOS + CLI target open |
+| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — Phase 0 closed; API/binding/device proof open; iOS blocked |
+| 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — Phase 0 closed; CLI/distribution Phases 1–5 open |
+| — | [PRD-044](PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | historical — do not execute |
+
+**PRD-048 is last in the diagram but not gated behind PRD-046.** It depends on PRD-047
+Phases 2 and 5, not on physics. Its Phase 0 — deleting 1,159 lines of dead Mystral demo
+tooling — is the cheapest item in this folder and frees native LOC headroom that PRD-046
+will need, so it is a reasonable thing to run first regardless of sequence.
+
+**PRD-047 §4 Phase 4 and PRD-046 describe the same native-physics work.** PRD-047 is the
+summary and the authority; PRD-046 is the executable spec. If they disagree, PRD-047 wins.
 
 **Why physics is last, not first.** It is the most valuable artifact and the most dangerous
 to ship unproven: its failure mode is a subtly wrong simulation, invisible to a screenshot.
 PRD-045 builds the instrument before PRD-046 builds the thing that most needs measuring.
-PRD-044 §4 takes a deliberate, time-boxed exception to the playtest rule because rendering
-failures *are* visible; that exception does not extend to physics.
+PRD-044 §4 took a deliberate, time-boxed exception to the playtest rule because rendering
+failures *are* visible, and PRD-047 Phase 2 inherits it; that exception does not extend to
+physics.
 
 **Why 0a is not a PRD.** `CHARTER.md:364` — a Phase 0 spike ships "no template, no CLI, no
 docs, no framework." It is a throwaway app outside the repo and only its answer merges.
@@ -37,21 +57,26 @@ Keeping that framing costs zero charter amendments and zero package slots.
 
 ## Decisions now binding
 
-1. **The package cap.** The cap applies to distributable `packages/*`; private examples
-   are reported separately. **Reversed 2026-08-08:** the runtime is absorbed as
-   `packages/runtime-native/`, taking framework packages 5 → 6 of 8. It is the only new
-   package — there is no `@threenative/native`, and the ten-package split proposed by the
-   runtime's own PRD is rejected under rule 5. Native source is exempt from the 15,000-line
-   framework cap and bounded by its own 50,000-line cap.
+1. **The package boundary.** Private examples are reported separately. **Reversed
+   2026-08-08:** the runtime is absorbed as `packages/runtime-native/`, taking framework
+   packages 5 → 6. It is the only new package — there is no `@threenative/native`, and the
+   ten-package split proposed by the runtime's own PRD is rejected under rule 5. Native
+   source is excluded from the 15,000-line framework review trigger and measured against
+   its own 50,000-line review trigger.
 2. **Web is unchanged.** The runtime serves desktop and mobile only. The browser keeps
    Vite + `three/webgpu`.
 3. **No hardware exists (2026-08-08).** Android emulator evidence closes JS/runtime
    plumbing only. Real GPU drivers, arm64 physics and phone performance stay OPEN.
+4. **No `@threenative/physics-native`.** Native physics is a build-condition backend inside
+   the existing `@threenative/physics` package, with the Rust library compiled into
+   `packages/runtime-native`. No additional package is justified, and the transport is a
+   host-neutral C ABI, not JSI.
+5. **Native LOC has its own review trigger.** `nativeRuntimeLoc: 50,000` covers
+   `packages/runtime-native` excluding `third_party/`. Crossing it requires PRD
+   justification and a kill-switch pass; tracking any `third_party/` file is a hard failure.
 
-## A note on this folder and the PRD budget
+## A note on this folder
 
-`scripts/check-budgets.ts:92-94` counts only `.md` files **directly** in `docs/PRDs/`. Files
-in this subfolder do not count toward the 10-PRD cap. That is a real consequence of grouping
-them, and it is recorded here rather than quietly enjoyed: `done/` is uncounted because it
-holds *finished* work, whereas this folder holds *active* work. If the cap is meant to bound
-work in flight, the counter should be made to include this folder.
+This subfolder groups one execution sequence; it does not route around a PRD-count limit.
+The Charter defines no numerical documentation or active-PRD budget. `pnpm budgets` reports
+the direct `docs/PRDs/` file count for visibility only.

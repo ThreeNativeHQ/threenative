@@ -1853,7 +1853,7 @@ function evaluateVisibilityAssertion(
   const diagnosticsSnapshot = runtimeDiagnosticsSnapshot(runtimeDiagnosticsValue);
   const rendered = renderedEntity(diagnosticsSnapshot, entity);
   const supportsProjectedBounds = renderedEntitiesAreReported(diagnosticsSnapshot);
-  if (present !== undefined) {
+  if (present !== undefined && minProjectedPixels === undefined && maxOffscreenRatio === undefined) {
     const observed = rendered !== undefined;
     const pass = observed === present;
     const assertion = { details: { entity, observed, present }, id: `visibility.${entity}`, pass };
@@ -1877,10 +1877,16 @@ function evaluateVisibilityAssertion(
           maxOffscreenRatio,
           minProjectedPixels,
           reason: "native-projected-bounds-unavailable",
-          skipped: true,
+          skipped: false,
         },
         id: `visibility.${entity}`,
-        pass: true,
+        pass: false,
+      },
+      diagnostic: {
+        code: "TN_PLAYTEST_VISIBILITY_FAILED",
+        message: `Entity '${entity}' projected bounds are unavailable on the native target.`,
+        severity: "error",
+        suggestion: "Expose rendered entity projected bounds or remove the projected-pixel assertion.",
       },
     };
   }
@@ -1893,9 +1899,10 @@ function evaluateVisibilityAssertion(
   const offscreenRatio = min === undefined || max === undefined ? undefined : projectedOffscreenRatio([Number(min[0]), Number(min[1])], [Number(max[0]), Number(max[1])]);
   const pass = rendered !== undefined
     && bounds !== undefined
+    && (present === undefined || present)
     && (minProjectedPixels === undefined || (projectedPixels ?? 0) >= minProjectedPixels)
     && (maxOffscreenRatio === undefined || (offscreenRatio ?? 1) <= maxOffscreenRatio);
-  const assertion = { details: { entity, maxOffscreenRatio, minProjectedPixels, offscreenRatio, projectedPixels }, id: `visibility.${entity}`, pass };
+  const assertion = { details: { entity, maxOffscreenRatio, minProjectedPixels, offscreenRatio, present, projectedPixels }, id: `visibility.${entity}`, pass };
   return pass
     ? { assertion }
     : {

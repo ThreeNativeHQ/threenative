@@ -16,14 +16,20 @@ and §10 amendment, and §4 Phase 0 makes it explicitly rather than quietly.**
 
 **Web is out of scope and stays exactly as it is.** The browser target already ships
 `three/webgpu` through Vite and needs nothing from this runtime. The absorbed runtime
-serves **desktop and mobile only**; `threenative build --target web` remains unchanged Vite
-(§4 Phase 6). Any change to the browser path inside this PRD is scope creep — the one
+serves **desktop and mobile only**; the web build path stays exactly as it is today, plain
+Vite (the CLI that would wrap it is PRD-048, and does not exist yet). Any change to the
+browser path inside this PRD is scope creep — the one
 thing web does gain is that `packages/core` stops assuming a DOM (§4 Phase 2), and that is
 a refactor with a **no web behaviour change** gate, not a feature.
 
 **Reading order for whoever executes this:** §1 (what is already proven), §2 (what crosses
 and the four invariants), §4 Phase 0 (do this first — the budget gate currently rejects the
 import), then phases in order. §7 is the cost being accepted.
+
+**Phases 0–3 are closed** (`docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`).
+**Phase 4** is native physics, specified in full by PRD-046. **Phase 5** is iOS and the
+remaining desktop runners. **Phase 6 was split out into PRD-048** once it became clear it
+contained more unbuilt surface than Phases 0–5 combined.
 
 **Depends on:** the runtime evidence ledger, migrating from
 `threejs-mystral/docs/status/native-runtime-execution-status.md`.
@@ -40,7 +46,7 @@ with transport changed from JSI to a host-neutral native ABI.
 | Upstream `three/webgpu`, V8 + Dawn, Linux/Vulkan | Cube, PBR helmet and JS GLTF/GLB screenshots on an RTX 2080 | **PASS** |
 | Unchanged `@threenative/core` bundle on the runtime | One import-free ESM bundle, 300 frames, ready/first-frame markers, screenshot | **PASS (desktop)** |
 | Android upstream Three.js cube | QuickJS + wgpu-native, both packaged ABIs, emulator launch/log/liveness/screenshot gate | **PASS (emulator)** |
-| Android `@threenative/core` | Build proof now requires catalog/installed Three 0.185.1 and emits an import-free core bundle; emulator execution is not available on this machine | **OPEN (execution)** |
+| Android `@threenative/core` | Catalog Three 0.185.1 import-free bundle completed 300 frames through the bridge on `emulator-5554`; nonblank screenshot recorded | **PASS (emulator)** |
 | Android physics | QuickJS has no WebAssembly and the runtime has no native physics ABI | **BLOCKED** |
 | iOS | Preset and static-library scaffolding only; no simulator app, launch, log or screenshot | **OPEN** |
 | Physical mobile GPU / performance | No physical hardware evidence | **OPEN** |
@@ -84,9 +90,9 @@ packages/runtime-native/        # C++ runtime, CMake, Android/iOS projects, nati
 It carries a C++ toolchain, Dawn, V8, QuickJS, SDL3 and the NDK. Nothing else in the
 workspace may inherit those. That is the rule's test, verbatim.
 
-**Package count moves 5 → 6 framework packages** against a cap of 8. `pnpm budgets`
-already reports framework packages and example workspaces separately, so no cap moves for
-this line item.
+**Package count moves 5 → 6 framework packages.** The runtime passes §11.5 because it
+carries toolchain dependencies no TypeScript package may inherit. `pnpm budgets` reports
+framework packages and example workspaces separately for visibility.
 
 ### 2.2 What crosses, measured
 
@@ -120,11 +126,10 @@ Each is the honest form of a prohibition the previous revision made absolutely.
 1. **No vendored dependency tree.** `packages/runtime-native/third_party/` is gitignored
    and populated only by `download-deps.mjs`. The budget gate fails if any file under it
    is tracked. This is the invariant that keeps 1.39M lines out.
-2. **A bounded native LOC cap.** Native source is exempt from the 15,000-line framework
-   cap and gets its own: **`nativeRuntimeLoc: 50,000`**, measured over
-   `packages/runtime-native` excluding `third_party/`. Exempt is not unbounded, and
-   `CHARTER.md` §10's "exceeding a cap is not a signal to raise the cap" applies to this
-   one too.
+2. **A bounded native LOC review trigger.** Native source is excluded from the 15,000-line
+   framework trigger and gets its own: **`nativeRuntimeLoc: 50,000`**, measured over
+   `packages/runtime-native` excluding `third_party/`. Crossing it requires a PRD
+   justification and a kill-switch pass; it is not a CI outage or permission to hide lines.
 3. **The C++ toolchain never enters the default gate.** `pnpm typecheck && pnpm lint &&
    pnpm test` must stay green on a machine with no CMake, no NDK and no Xcode. The native
    build is a separate opt-in lane.
@@ -268,28 +273,28 @@ navigation or a mobile-safe template path is a separate open gate.
 3. Simulator and emulator proof close plumbing only. Physical Metal/Vulkan driver
    behaviour, arm64 physics and phone frame rate stay OPEN until hardware exists.
 
-### Phase 6 — CLI and distribution
+### Phase 6 — CLI and distribution — **SPLIT OUT into PRD-048**
 
-`CHARTER.md` §10 caps CLI commands at 4. Distribution does not add commands; it adds a
-target to one:
+This phase turned out to contain more unbuilt surface than the five phases before it
+combined, and it now lives in `PRD-048-native-distribution.md`.
 
-```sh
-threenative build --target web|desktop|android|ios
-```
+**Two claims the earlier text made here were factually wrong**, and are corrected in PRD-048
+§1 rather than left in place:
 
-`web` is unchanged Vite. The other three bundle to the single import-free ESM file Phase 2
-already produces, then hand it to the runtime packager (`scripts/package-{macos,windows,
-linux}.mjs` and the Gradle/Xcode projects, all imported in Phase 1).
+1. *"Distribution does not add commands; it adds a target to one."* **There is no command to
+   add a target to.** The workspace ships `create-threenative` and `threenative-playtest`,
+   and templates invoke `vite` directly. `CHARTER.md` §6a's four commands are an unbuilt
+   intention.
+2. *"the runtime packager (`scripts/package-{macos,windows,linux}.mjs` … imported in
+   Phase 1)."* **Those files do not exist.** Phase 1 imported `scripts/package-app.sh` —
+   macOS only, Mystral-branded, and dead.
 
-**Scaffolded projects do not build the runtime from source.** `create-threenative` adds a
-`@threenative/runtime-native` dependency whose install step fetches a prebuilt binary for
-the host platform — the mechanism the previous revision of this PRD specified, now serving
-users instead of serving this repository. The lock manifest, checksum verification and
-fail-closed unknown-platform behaviour are retained for that lane, and **no lock is
-accepted until matching release assets actually exist.**
+What stays true and stays here: Phase 2's `scripts/bundle.mjs` produces the single
+import-free ESM file that every native target consumes. PRD-048 is the delivery path around
+that artifact, and it depends on **this** PRD's Phase 2 and Phase 5.
 
-**Gate:** `pnpm create threenative` on a clean machine with no C++ toolchain produces a
-project that builds and runs a desktop binary. CLI command count stays at 4.
+**PRD-047 does not move to `done/` on account of the split.** Phases 4 and 5 — native
+physics and iOS/remaining-desktop evidence — are still open here.
 
 ---
 
@@ -297,8 +302,8 @@ project that builds and runs a desktop binary. CLI command count stays at 4.
 
 1. `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` is green on a machine with no
    CMake, NDK or Xcode.
-2. `pnpm budgets` reports 6 framework packages, native LOC under 50,000, and framework LOC
-   still under 15,000 — with no cap raised beyond the one §4 Phase 0 amends openly.
+2. `pnpm budgets` reports 6 framework packages and both LOC review-trigger measurements;
+   any crossing is justified in this PRD and survives a kill-switch pass.
 3. No file under `packages/runtime-native/third_party/` is tracked, and `download-deps.mjs`
    reconstructs every excluded tree from a clean checkout.
 4. Runtime and framework agree on the exact catalog Three.js version, on every platform
@@ -309,10 +314,13 @@ project that builds and runs a desktop binary. CLI command count stays at 4.
    broken variants fail.
 8. iOS simulator build/launch/screenshot evidence exists; physical-driver and performance
    debt stays explicitly open until measured.
-9. Any scaffold claimed mobile-ready contains neither Rapier WASM nor Recast WASM in its
-   native bundle.
-10. Conformance moves off 1/49. A pass count is reported as a fraction, never as "the
-    harness passes."
+9. Conformance moves off 1/49. A pass count is reported as a fraction, never as "the
+   harness passes."
+
+**Moved to PRD-048:** the former criterion 9 — *"any scaffold claimed mobile-ready contains
+neither Rapier WASM nor Recast WASM in its native bundle"* — is a distribution property and
+is now PRD-048 §4 Phase 5. It is not dropped, and PRD-047 cannot be closed as "mobile ships"
+on its own; it can only be closed as "the runtime runs our code."
 
 ---
 

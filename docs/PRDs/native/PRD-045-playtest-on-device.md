@@ -1,9 +1,14 @@
 # PRD-045 — Playtest on device
 
-**Status: IN PROGRESS — transport seam and in-process device proof pass; Android emulator
-execution remains open because `adb` is unavailable on this machine.** The transport targets
-Mystral rather than React Native; its fail-closed scenario semantics and negative controls are
-unchanged.
+**Status: IN PROGRESS — Phases 0–3 closed on Android; Phases 4 (iOS) and 5 (CLI/docs) open.**
+The transport targets the absorbed `packages/runtime-native` runtime rather than React Native;
+its fail-closed scenario semantics and negative controls are unchanged.
+
+`docs/verification/PRD-045.md` records the emulator run: `device-smoke.playtest.json` passes
+unchanged in Chromium and on `emulator-5554` over the adb mailbox transport, and all three
+Phase 3 negative controls plus the unsupported-network control produce their required non-zero
+exits. The wrong-value control found a real `present`/`minProjectedPixels` evaluator bug before
+it passed, which is the control doing its job. **iOS transport has no evidence of any kind.**
 
 **The emulator is fully sufficient for this PRD, unlike PRD-044.** Everything here is a
 JS-environment and host-tooling question: can the runner reach the bridge, does an
@@ -16,10 +21,9 @@ PRD-044 caveat leaked down the chain.
 `xcrun simctl` +2, cross-process/async lifecycle +2, touches the one package whose whole
 value is fail-closed correctness +2.) HIGH means an automated checkpoint after every phase.
 
-**Depends on:** PRD-047 (the app must run on the external runtime before it can be observed);
+**Depends on:** PRD-047 (the app must run on the absorbed runtime before it can be observed);
 PRD-033 (playtest semantic depth — the assertion surface this carries across).
-**Blocks:** PRD-046 (`@threenative/physics-native` must not ship without a device proof
-mechanism).
+**Blocks:** PRD-046 (native physics must not ship without a device proof mechanism).
 **Charter authority:** `CHARTER.md` §3 (win criterion 3, "ships to iOS"), `AGENTS.md`
 "Verification honesty, and how you prove it" — **the fail-closed rule is the entire subject
 of this PRD**. No new package: this extends `packages/playtest`. No §10 amendment needed.
@@ -40,8 +44,9 @@ timestep, a transform buffer read one frame stale. Those are invisible to a scre
 invisible to a frame counter. Shipping it with manual-only proof reproduces exactly the
 failure `AGENTS.md` opens with — v1's harness reporting green while asserting nothing.
 
-PRD-044 §4 takes a deliberate, time-boxed exception to the playtest rule because rendering
-failures *are* visible to a screenshot. Physics failures are not. **This PRD closes the
+PRD-044 §4 took a deliberate, time-boxed exception to the playtest rule because rendering
+failures *are* visible to a screenshot; PRD-047 Phase 2 inherits that exception for its
+screenshot-gated render proof. Physics failures are not visible. **This PRD closes the
 exception before the exception becomes the norm.**
 
 | Roadmap axis | Expected movement | Why |
@@ -97,12 +102,19 @@ scenario.ts · assertions.ts · report.ts      ← unchanged, pure
             BridgeTransport                  ← the new seam
            ╱                ╲
   PlaywrightTransport   DeviceTransport
-   page.evaluate         WebSocket ↔ app
+   page.evaluate         adb mailbox ↔ app
 ```
 
-The app side is a ~40-line addition to the existing bridge: when a
-`TN_PLAYTEST_ENDPOINT` is present, open a socket to the host runner and serve the same
-call surface the `page.evaluate` path serves today. Same protocol, same `protocol.ts`.
+The app side is a small addition to the existing bridge: when a `TN_PLAYTEST_ENDPOINT` is
+present, it serves the same call surface the `page.evaluate` path serves today. Same
+protocol, same `protocol.ts`.
+
+**The Android transport is an `adb` mailbox, not a socket.** The shipped driver polls a
+request/response mailbox over `adb` rather than opening a WebSocket, because it needs no
+listening port inside the app and no host-reachable network on the emulator. The seam is
+unchanged; only this implementation differs from the sketch above. The HTTP transport
+remains for hosts that can reach the app directly, and the Android HTTP client is still a
+stub — say so rather than implying two working paths.
 
 ### 2.1 Explicitly rejected
 
@@ -118,26 +130,28 @@ call surface the `page.evaluate` path serves today. Same protocol, same `protoco
 
 ## 3. Phases
 
-### Phase 0 — the transport seam, web unchanged
+### Phase 0 — the transport seam, web unchanged — **CLOSED**
 
 Extract `BridgeTransport` from `bridgeClient.ts`. Playwright implementation only.
 **Gate:** every existing playtest scenario in the repo passes byte-identically, including
 the four sealed genre proofs and the platformer consumer gate. Zero behaviour change is the
 phase.
 
-### Phase 1 — device transport, app side
+### Phase 1 — device transport, app side — **CLOSED**
 
 `TN_PLAYTEST_ENDPOINT` support in `three/bridge.ts` and `core/src/playtest.ts`.
-**Gate:** a unit test drives the socket transport against an in-process fake and gets
-identical observations to the evaluate path.
+**Gate:** a unit test drives the device transport against an in-process fake and gets
+identical observations to the evaluate path. `device-playtest.spec.ts` (5 tests) and
+`device-transport.spec.ts` (3 tests) pass.
 
-### Phase 2 — Android driver
+### Phase 2 — Android driver — **CLOSED (emulator)**
 
 `adb`-based launch, logcat console capture, `screencap` screenshots.
 **Gate:** a scenario file that passes in Chromium passes unmodified on the Android emulator,
-and the run is recorded dated in `docs/verification/`.
+and the run is recorded dated in `docs/verification/`. Met on `emulator-5554` with a nonblank
+1080×2400 screenshot; physical hardware remains open and is PRD-047's debt, not this PRD's.
 
-### Phase 3 — the negative controls, which are the point
+### Phase 3 — the negative controls, which are the point — **CLOSED (emulator)**
 
 **Gate — all three must hold on device, not just on web:**
 
@@ -147,16 +161,18 @@ and the run is recorded dated in `docs/verification/`.
 3. A scenario containing a misspelled assertion key is **rejected**, not dropped
    (`rejectUnknownKeys`, `scenario.ts`).
 
-A device harness that cannot fail is worse than no device harness.
+A device harness that cannot fail is worse than no device harness. All three produced their
+required exits on `emulator-5554`, alongside `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` for the
+network assertion. Scenario files: `examples/native-smoke/playtests/device-smoke*.json`.
 
-### Phase 4 — iOS
+### Phase 4 — iOS — **OPEN, no evidence**
 
 `xcrun simctl` for the simulator, physical device via `devicectl`. Simulator is acceptable
 evidence here because the question is JS-environment behaviour, not GPU driver behaviour —
 **state that distinction explicitly in the result, since it is the opposite of the rule
 0a applies to rendering.**
 
-### Phase 5 — docs and CLI surface
+### Phase 5 — docs and CLI surface — **OPEN**
 
 `--target android|ios|browser` on the CLI. Document plainly that network assertions are
 unsupported on device targets and that CI does not run device lanes.
@@ -181,14 +197,22 @@ If you cannot make it fail, you have not proven it can pass.
 
 ## 5. Acceptance criteria — consumer-scoped
 
-1. One scenario file, unmodified, passes on Chromium and on the Android emulator; both runs
-   dated in `docs/verification/`.
-2. All three Phase 3 negative controls produce the correct non-zero exit code **on device**.
-3. Every pre-existing browser playtest passes unchanged, no baseline edited.
-4. Network assertions on a device target fail with an explicit unsupported error; there is
-   no code path that skips an assertion and reports pass.
-5. `pnpm budgets` green with **no new package** and no cap raised.
-6. `pnpm typecheck && pnpm lint && pnpm test` green.
+State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
+
+| # | Criterion | State |
+|---|---|---|
+| 1 | One scenario file, unmodified, passes on Chromium and on the Android emulator; both runs dated in `docs/verification/` | **MET** |
+| 2 | All three Phase 3 negative controls produce the correct non-zero exit code **on device** | **MET** |
+| 3 | Every pre-existing browser playtest passes unchanged, no baseline edited | **MET** |
+| 4 | Network assertions on a device target fail with an explicit unsupported error; no code path skips an assertion and reports pass | **MET** |
+| 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
+| 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
+| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **OPEN** — Phase 4 |
+| 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **OPEN** — Phase 5 |
+
+Criteria 7 and 8 are the whole remaining scope. **This PRD does not move to `done/` until
+they are met or explicitly withdrawn**; PRD-046's gate reads criteria 1–4, which are met, so
+native physics is not blocked on iOS.
 
 ---
 
@@ -198,5 +222,5 @@ If you cannot make it fail, you have not proven it can pass.
   a second dialect is not an acceptable fallback.
 - Phase 3 cannot produce all three failures on demand → the harness is not fail-closed and
   must not ship. Record it as unresolved.
-- The seam extraction changes any browser result → revert; PRD-044's web-unchanged rule
+- The seam extraction changes any browser result → revert; PRD-047's web-unchanged rule
   applies here identically.

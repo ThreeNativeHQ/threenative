@@ -9,7 +9,8 @@ Read `/AGENTS.md` first. This file only covers what is different here.
 One reason: the Rapier and Recast WASM dependencies must not be inherited by games that do
 not use physics or navigation. That is the whole justification, and it is the only kind of
 justification that creates a package here. Navigation is a `./navigation` subpath so the
-last workspace slot stays reserved for `@threenative/physics-native`.
+public APIs stay separate. Native Rapier is compiled into `@threenative/runtime-native`;
+it does not create another package.
 
 ## The names are Godot's
 
@@ -22,16 +23,17 @@ without a PRD, and do not invent a name Godot does not use.
 `RigidBody3D` owns a Rapier handle and syncs its transform onto the `THREE.Object3D` you
 handed it. Roughly 80 lines. It is not an entity, not a component, not a system.
 
-The underlying objects stay reachable and must never be hidden:
+The web backend's underlying objects stay reachable through an explicitly backend-specific
+`raw` escape hatch. Do not extend the portable API with concrete Rapier types:
 
 ```ts
-ctx.physics.world   // Rapier World
-crate.body          // Rapier RigidBody
-crate.object          // THREE.Object3D
+ctx.physics.world.raw   // Rapier World on web
+crate.body.raw          // Rapier RigidBody on web
+crate.object            // THREE.Object3D
 ```
 
-If a wrapper starts growing convenience methods that Rapier already provides, delete them —
-the user reaches `body` directly.
+If a wrapper starts growing convenience methods that Rapier already provides, delete them.
+Code reaching through `raw` is backend-specific by contract and is not portable to native.
 
 ## Contracts to keep
 
@@ -57,7 +59,8 @@ shape requires an explicit re-bake and is outside this binding.
 
 ## Native path
 
-`@threenative/physics-native` (JSI binding to Rapier's Rust) is the planned mobile answer;
-WASM Rapier is not viable on Hermes or Android JSC. See `CHARTER.md` §7 and
-`docs/architecture/NATIVE-RUNTIME.md`. It does not exist yet — do not import it or write
-code that assumes it.
+Native Rapier compiled into `@threenative/runtime-native` is the planned mobile answer;
+WASM Rapier is not viable on the Android QuickJS host. The public Godot-shaped API stays in
+this package and selects a host-neutral backend through a coarse typed-array ABI. See
+`CHARTER.md` §7, `docs/architecture/NATIVE-RUNTIME.md`, and PRD-046. The backend is not
+integrated yet — do not import `@threenative/physics-native` or add per-object native calls.

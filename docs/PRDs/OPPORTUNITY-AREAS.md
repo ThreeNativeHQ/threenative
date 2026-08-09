@@ -98,7 +98,7 @@ adoption rather than in the pair.
 diagnostics (what the *page* did). `TN_PLAYTEST_BRIDGE_MISSING` failing closed is the
 harness being right; more of the game surface should be observable through it.
 
-### 3. Navigation & pathfinding — 86 · shipped in PRD-034 (browser-proven; package slot unspent)
+### 3. Navigation & pathfinding — 86 · shipped in PRD-034 (browser-proven; no new package)
 
 Three.js ships nothing. Godot ships `NavigationAgent3D`, `NavigationRegion3D`,
 `NavigationObstacle3D` — names already in every model's weights, so rule 4 is satisfied
@@ -110,8 +110,10 @@ without it is an ad-hoc A* on a grid it invents — which is precisely the "hund
 lines nobody wants to write" shape that made physics worth wrapping.
 
 **Cost is the honest problem:** recast is WASM, so by §9a's own logic it cannot live in
-`core`. PRD-034 keeps it behind `@threenative/physics/navigation`, preserving the last
-workspace slot for `@threenative/physics-native`. The platformer proof covers islands,
+`core`. PRD-034 keeps it behind `@threenative/physics/navigation`, which costs no workspace
+package. PRD-047 later deleted the proposed `@threenative/physics-native` package too, so
+native physics remains behind the existing dependency boundary. The platformer proof
+covers islands,
 the upper overhang layer, the blocker detour and local crowd avoidance; the minimal
 physics-only bundle stays recast-free.
 
@@ -153,7 +155,7 @@ fail-closed playtest scenario; the package cost remains 14.
 | # | Area | Score | Note |
 |---|---|---:|---|
 | 6 | Spatial audio buses | **64** | Partly shipped (`AudioBus`). `PositionalAudio` exists but is awkward; the gap is buses/ducking, not playback. Keep it small. |
-| 7 | Mobile & on-device | **61** | Gap is real, cost is brutal (§7 0b is 1–2 weeks of JSI work) and a failed spike *deletes* a charter promise. High variance, correctly scheduled last. |
+| 7 | Mobile & on-device | **61** | Score is stale — it priced an unrun spike. PRD-047 answered 0a: desktop and Android emulator render, evidence in `docs/verification/`. Cost is still brutal (a C++ runtime is now owned) but the variance that justified the 61 is gone. Re-score against `docs/PRDs/native/README.md`. |
 | 8 | Animation state machines | **57** | **Conditionally closed — PRD-039 is WONTBUILD.** `AnimationMixer` already ships and is decent. Godot's `AnimationTree` is opinionated — real ceiling risk. Reopen only if the round-2 ledger names crossfade/root-motion as a measured gap. |
 | 9 | Perf: instancing, LOD, streaming | **48** | `InstancedMesh` and `LOD` both ship. Owning batching caps what the user can render. Ship as template source, not package code. |
 | 10 | React/UI bindings | **49** | 22 LOC of `useGameState` is the 20-line rule working correctly. React and Tailwind are already in every model's weights. **Do not grow this.** |

@@ -130,7 +130,7 @@ function makeEntry(test, target, port, entryRoot) {
   const sceneAbs = join(root, test.scene);
   const entryAbs = join(entryRoot, `${target}-${test.id}.js`);
   const rel = './' + relative(dirname(entryAbs), sceneAbs).replaceAll('\\', '/');
-  const canvasExpr = target === 'browser' ? "document.getElementById('c')" : 'canvas';
+  const canvasExpr = target === 'browser' ? "document.getElementById('c')" : 'globalThis.canvas';
   const browserSuccess = target === 'browser'
     ? `await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();

@@ -52,7 +52,7 @@ The self-improvement loop is recorded in
 
 - [architecture/ENTITY-MODEL.md](architecture/ENTITY-MODEL.md) — the ECS question, closed
 - [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours
-- [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, thread split, JSI
+- [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, the owned runtime, the native physics ABI
 - [architecture/AGENT-INTERFACE.md](architecture/AGENT-INTERFACE.md) — how an AI agent drives a ThreeNative project
 
 ## Product

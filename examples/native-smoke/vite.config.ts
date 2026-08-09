@@ -12,4 +12,7 @@ export default defineConfig({
     rollupOptions: { output: { codeSplitting: false } },
     target: "es2022",
   },
+  define: {
+    __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
+  },
 });

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-misspelled-assertion",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 1 }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "visiblity": [{ "entity": "cube", "present": true }]
+  }
+}

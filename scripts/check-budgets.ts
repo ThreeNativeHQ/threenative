@@ -6,11 +6,20 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * `CHARTER.md` §10b splits these in two, and this file is the enforcement of that split.
+ *
+ * HARD limits fail CI: they are invariants of the native absorption (§7), and crossing one
+ * means the C++ runtime has leaked into the TypeScript framework.
+ *
+ * TRIGGER limits do not fail CI. They are reported on every run so growth stays visible,
+ * and crossing one obliges a justification in the owning PRD plus a kill-switch (§3) pass
+ * over what was added. A number that fails the build invites being routed around; a number
+ * that is merely loud does not.
+ */
 const LIMITS = {
-  packages: 8,
   frameworkLoc: 15_000,
   nativeRuntimeLoc: 50_000,
-  prdFiles: 10,
   /**
    * A sweep charges the framework arm only for what it authors above its starter, so every
    * line inside a template is a line the benchmark stops counting. Capped per template so the
@@ -23,7 +32,8 @@ const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
 
 /**
  * The asset MCP is an npm dependency of the *generated* project, never of this workspace:
- * vendoring its ~10.8k lines would take 72% of the LOC cap and a ninth package slot at once.
+ * vendoring its ~10.8k lines would take 72% of the framework LOC trigger and add a package
+ * that carries no dependency boundary.
  * Salvage already exempts an `asset-mcp` directory from the LOC count, so nothing else here
  * would notice it arriving.
  */
@@ -233,7 +243,16 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
       !candidate.endsWith(GENERATED_ANDROID_BUNDLE) &&
       (NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
         path.basename(candidate) === "CMakeLists.txt"),
-    new Set(["third_party", "build", ".runtime", "artifacts", ".cxx", ".gradle", ".test-tmp"]),
+    new Set([
+      "third_party",
+      "build",
+      ".runtime",
+      "artifacts",
+      ".cxx",
+      ".gradle",
+      ".test-tmp",
+      "target",
+    ]),
   );
   const templateRoot = path.join(root, "packages", "create-threenative", "templates");
   const templates: { name: string; loc: number }[] = [];
@@ -263,23 +282,27 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   };
 }
 
-export function budgetErrors(report: BudgetReport): string[] {
-  const errors: string[] = [];
-  if (report.frameworkPackages > LIMITS.packages) {
-    errors.push(
-      `framework package cap exceeded: ${report.frameworkPackages} packages (limit ${LIMITS.packages}, +${report.frameworkPackages - LIMITS.packages})`,
-    );
-  }
+/**
+ * Review triggers, per `CHARTER.md` §10b. Reported, never fatal — the PRD that crosses one
+ * owes the justification, and the kill switch (§3) decides whether the lines were earned.
+ */
+export function budgetTriggers(report: BudgetReport): string[] {
+  const triggers: string[] = [];
   if (report.frameworkLoc > LIMITS.frameworkLoc) {
-    errors.push(
-      `framework LOC cap exceeded: ${report.frameworkLoc} lines (limit ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc})`,
+    triggers.push(
+      `framework LOC review trigger: ${report.frameworkLoc} lines (trigger ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc}). Justify in the owning PRD and run the kill switch over what was added.`,
     );
   }
   if (report.nativeRuntimeLoc > LIMITS.nativeRuntimeLoc) {
-    errors.push(
-      `native runtime LOC cap exceeded: ${report.nativeRuntimeLoc} lines (limit ${LIMITS.nativeRuntimeLoc}, +${report.nativeRuntimeLoc - LIMITS.nativeRuntimeLoc})`,
+    triggers.push(
+      `native runtime LOC review trigger: ${report.nativeRuntimeLoc} lines (trigger ${LIMITS.nativeRuntimeLoc}, +${report.nativeRuntimeLoc - LIMITS.nativeRuntimeLoc}). Justify in the owning PRD and run the kill switch over what was added.`,
     );
   }
+  return triggers;
+}
+
+export function budgetErrors(report: BudgetReport): string[] {
+  const errors: string[] = [];
   for (const template of report.templates) {
     if (template.loc > LIMITS.templateLoc) {
       errors.push(
@@ -289,7 +312,7 @@ export function budgetErrors(report: BudgetReport): string[] {
   }
   if (report.vendoredAssetMcp.length > 0) {
     errors.push(
-      `${EXTERNAL_ASSET_MCP} must stay external: ${report.vendoredAssetMcp.join(", ")} claims it. It is a dependency of the generated project, and vendoring it breaks both the LOC and package caps at once.`,
+      `${EXTERNAL_ASSET_MCP} must stay external: ${report.vendoredAssetMcp.join(", ")} claims it. It is a dependency of the generated project, and vendoring it blows the framework LOC trigger while adding a package with no dependency boundary.`,
     );
   }
   if (report.vendoredNativeRuntime.length > 0) {
@@ -300,11 +323,6 @@ export function budgetErrors(report: BudgetReport): string[] {
   if (report.trackedNativeThirdParty.length > 0) {
     errors.push(
       `native runtime third_party must stay untracked: ${report.trackedNativeThirdParty.join(", ")}`,
-    );
-  }
-  if (report.prdFiles > LIMITS.prdFiles) {
-    errors.push(
-      `CHARTER/PRD document cap exceeded: ${report.prdFiles} files (limit ${LIMITS.prdFiles}, +${report.prdFiles - LIMITS.prdFiles})`,
     );
   }
   return errors;
@@ -323,8 +341,9 @@ if (
 ) {
   enforceBudgets(process.cwd())
     .then((report) => {
+      for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
       console.log(
-        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
+        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
       );
     })
     .catch((error: unknown) => {

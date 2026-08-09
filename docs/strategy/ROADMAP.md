@@ -167,22 +167,38 @@ inside the same brief. The voided asset-discovery PRD is not part of this gate.
 ## Phase 3 — the platform question
 
 **Gate to start:** Phase 2 exit gate green. Runs last because §7's research question is
-resolved but both spikes are unrun, and a failed spike deletes a charter promise rather
-than a phase.
+resolved but its risk is not, and a failed answer deletes a charter promise rather than a
+phase.
+
+**Superseded in part, 2026-08-08.** Spike 0a has been *answered* out of order, by
+PRD-047's absorbed native runtime rather than by the throwaway spike below: upstream
+`three/webgpu` renders on desktop and on the Android emulator, and a fail-closed playtest
+passes on `emulator-5554`. `docs/PRDs/native/README.md` is the current status of this
+phase; the two bullets below are kept for the reasoning, not the state. **Phase 2 is still
+not green, and this phase still does not start.**
 
 **These get no PRD, and that is a charter rule, not an oversight.** `CHARTER.md:364` says
 both Phase 0 spikes ship "no template, no CLI, no docs, no framework" — they are throwaway
 apps outside the repo, and only their answer is merged. `docs/spikes/0a-mobile-render.md`
 says so in its own header: *"Not a PRD."*
 
-- **0a — rendering on device (~1 day). Already executed, and unresolved.**
-  `docs/spikes/0a-mobile-render.md` records the run: **no device render observed.** The
-  spike plan exists and the answer does not. Re-running it is the first task of this phase.
-- **0b — physics on device (~1–2 weeks).** JSI binding to Rapier's Rust, enough to drop a
-  cube on a plane. §7 already ruled WASM Rapier non-viable on device. Not started.
+- **0a — rendering on device (~1 day). ANSWERED, not by this spike.**
+  `docs/spikes/0a-mobile-render.md` records its own run as unresolved — no device render
+  observed. PRD-047 then answered the question the expensive way, by absorbing a native
+  runtime: desktop and Android emulator render both pass. Physical-hardware GPU behaviour
+  stays open, so the answer is "yes on emulated drivers," not "yes on phones."
+- **0b — physics on device (~1–2 weeks, and that estimate is now known low).** A native
+  binding to Rapier's Rust, enough to drop a cube on a plane. §7 already ruled WASM Rapier
+  non-viable on device, and the absorbed runtime's QuickJS hits the same wall. The
+  transport is a host-neutral C ABI, not JSI, and the work is specified in
+  `docs/PRDs/native/PRD-046-physics-native.md`. Phase 0 is complete: the version delta is
+  measured and both Android ABIs cross-compile; API, runtime binding and device proof are
+  open.
 
 **If 0a fails:** ThreeNative is a web framework and §7's mobile promise is deleted from
 the charter. That is a legitimate outcome, and cheaper to learn in a day than in a year.
+It did not fail — but it also was not learned in a day, which is the cost PRD-047 §7
+records as accepted.
 **If 0b fails:** mobile ships without physics, or not at all.
 
 **Points: +5–20** → 80/100 with web-only honesty, higher if the device path holds.

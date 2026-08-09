@@ -46,7 +46,7 @@ pnpm typecheck                          # tsc across root + every package
 pnpm lint                               # biome check . (add --write to fix)
 pnpm test                               # package builds + vitest run
 pnpm test:browser                       # playwright, examples/abyss-vanilla
-pnpm budgets                            # §10 caps — fails CI when exceeded
+pnpm budgets                            # §10 limits — hard invariants fail; LOC triggers report
 pnpm sync:agents                        # regenerate CLAUDE.md mirrors (--check in CI)
 pnpm tsx scripts/count-loc.ts           # regenerates the README LOC table
 pnpm --filter abyss-framework dev       # run the framework example
@@ -78,20 +78,30 @@ These come from `CHARTER.md` §11 and from the 790k-line v1 that died of ignorin
    Godot's class name, method names (`move_and_slide` → `moveAndSlide`), property names and
    signal semantics, in camelCase. When Godot has no equivalent, borrow from Three.js or
    Rapier before inventing. Mixing conventions costs more than either one alone.
-5. **A package exists only when it carries a dependency the others must not inherit.** Cap
-   is 8 workspace packages, and it is not raised.
+5. **A package exists only when it carries a dependency the others must not inherit.** This
+   rule governs package count; there is no package number to argue with.
 6. **Never claim a green gate you did not run.** Paste the failure instead.
 
 ## Budgets
 
-`pnpm budgets` enforces: 8 workspace packages, 15,000 framework LOC (`packages/*/src`,
-excluding salvage), and 10 files in `docs/PRDs/`.
+`pnpm budgets` reports two kinds of limit, per `CHARTER.md` §10b.
+
+**Hard — these fail CI:** a native runtime tree anywhere but `packages/runtime-native/`, any
+tracked file under `packages/runtime-native/third_party/`, a template over 1,200 LOC, and a
+vendored asset MCP. They are the invariants that keep a C++ runtime from leaking into the
+TypeScript framework.
+
+**Review triggers — reported, never fatal:** 15,000 framework LOC (`packages/*/src`,
+excluding salvage and native) and 50,000 native runtime LOC. Crossing one obliges a
+justification in the owning PRD and a kill-switch pass over what was added. Do not silence a
+trigger; a number that is routed around is worse than no number.
 
 It also fails if any `packages/*/package.json` claims `threenative-asset-mcp`. That server is
 the asset-discovery MCP each template pins and each generated project installs; it is an
-external process, and vendoring its ~10.8k lines would break the LOC and package caps at
-once. Its surface of record is `packages/create-threenative/asset-mcp-tools.json`, recorded
-by running the pinned version — update it by running the server, never by reading its docs.
+external process, and vendoring its ~10.8k lines would blow the LOC trigger and add a package
+that carries nothing the others must not inherit. Its surface of record is
+`packages/create-threenative/asset-mcp-tools.json`, recorded by running the pinned version —
+update it by running the server, never by reading its docs.
 
 ## Layout
 
@@ -128,7 +138,8 @@ scripts/                      budgets, LOC classifier, blind scoring
 2. Check the 20-line rule. Most "framework features" are user-space code.
 3. Put visual behaviour in `packages/create-threenative/templates/`, not in a package.
 4. Add the test with the change, in the same commit.
-5. Run `pnpm budgets`. If a cap moved the wrong way, cut something.
+5. Run `pnpm budgets`. If a hard invariant fails, fix it; if a review trigger fires,
+   justify the addition and run the kill switch over it.
 6. Whenever you finish a PRD, move it to `docs/PRDs/done/`.
 
 ## Verification honesty, and how you prove it

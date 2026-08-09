@@ -99,6 +99,24 @@ test("visibility presence fails when an unloaded entity remains registered", () 
   expect(result.pass).toBe(false);
 });
 
+test("visibility evaluates projected pixels when present is also asserted", () => {
+  const currentScenario = scenario({
+    visibility: [{ entity: "chunk.7", minProjectedPixels: 1_000_000_000, present: true }],
+  });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 1 },
+    entities: [{ bounds: { height: 100, width: 100, x: 100, y: 100 }, id: "chunk.7", visible: true }],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "visibility.chunk.7",
+    pass: false,
+  }));
+  expect(result.pass).toBe(false);
+});
+
 test("rotationChanged falls back to before/after bridge quaternions", () => {
   const currentScenario = scenario({ movement: { entity: "player", rotationChanged: true } });
   const snapshot = (rotation: [number, number, number, number]): IPlaytestObservationSnapshot => ({

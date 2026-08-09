@@ -18,6 +18,8 @@ declare global {
   var canvas: HTMLCanvasElement | undefined;
 }
 
+declare const __TN_PLAYTEST_ENABLED__: boolean;
+
 const runtimeCanvas = globalThis.canvas;
 if (runtimeCanvas === undefined)
   throw new Error("TN_NATIVE_CANVAS_MISSING: globalThis.canvas is required");
@@ -45,7 +47,7 @@ class NativeSmoke extends Scene<SmokeState> {
 const game = defineGame<SmokeState>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
-  plugins: [playtest()],
+  plugins: __TN_PLAYTEST_ENABLED__ ? [playtest()] : [],
   scenes: { smoke: NativeSmoke },
   start: "smoke",
 });

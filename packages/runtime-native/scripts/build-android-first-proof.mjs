@@ -12,6 +12,9 @@ export const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 export const FIRST_FRAME_MARKER = 'TN_NATIVE_SMOKE_FIRST_FRAME';
 export const FRAME_MARKER = 'TN_NATIVE_SMOKE_300_FRAMES:300';
 export const THREE_VERSION_MARKER = `TN_NATIVE_SMOKE_THREE:${EXPECTED_THREE_VERSION}`;
+export const PLAYTEST_BRIDGE = process.env.THREENATIVE_PLAYTEST_BRIDGE === 'disabled'
+  ? 'disabled'
+  : 'enabled';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = resolve(runtimeRoot, '..', '..');
@@ -166,6 +169,7 @@ export function buildAndroidFirstProof() {
     schemaVersion: 1,
     entry: EXAMPLE_ENTRY,
     publicApiPackage: '@threenative/core',
+    playtestBridge: PLAYTEST_BRIDGE,
     catalogThree,
     installedThree,
     sourceSha256: sourceHash,

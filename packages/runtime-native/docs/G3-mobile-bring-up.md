@@ -27,15 +27,29 @@ node packages/runtime-native/scripts/verify-android-first-proof.mjs --device emu
   `TN_NATIVE_SMOKE_300_FRAMES:300`. The fail-closed scan found no JS, WebGPU validation,
   shader or fatal-process errors, and PID 8016 stayed live for the 3,000 ms stability gate.
 - Android bundle SHA-256:
-  `9e1dc47d98f744d5c8a5f1dc70a9b16480b11f5683db0ff6176a196390e3f8bb` (1,488,327
+  `a7c721841124ff570c1392cf5e3922acbd1cf3bca2efc7d781ccdd2a003185d6` (1,502,284
   bytes). Its metadata records core source SHA-256
-  `85c513e68ba434075d50c8da2337018bc65339caa2e5890ccd120fa634174e5b`.
+  `6c2a4a440d553a395a9c5d23575eb482589781c9ad042b06a3e43fc005cb57b0`.
 - Nonblank 1080x2400 screenshot SHA-256:
-  `f4787ba31c9dcf6f5521d3b4d5b71fd77dcda4c24fe5c29fbd7e4acc30ba00a5` (29,074
+  `4c6102448e796f871261c394a73e0ebc3f07088bdaa751273be6f0e7d0a17c89` (30,977
   bytes). The report, logcat and PNG are under ignored `artifacts/android/`.
 
 This closes the Phase 2 Android catalog-version and 300-frame core-smoke row. It does not
-close lifecycle/device playtest, native physics, iOS, or physical-device evidence.
+close native physics, iOS, or physical-device evidence.
+
+## Android lifecycle and device proof — 2026-08-08
+
+- One unchanged scenario passed in Chromium and on `emulator-5554` through the native adb
+  mailbox transport.
+- The wrong projected-pixel value failed with exit 1. A bridge-disabled APK failed
+  `TN_PLAYTEST_BRIDGE_MISSING` with exit 2. The misspelled assertion failed schema validation
+  with exit 2 before launch.
+- A network assertion failed explicitly unsupported with exit 2; no assertion was skipped.
+- The bridge-disabled bundle is selected by `THREENATIVE_PLAYTEST_BRIDGE=disabled`; the final
+  installed APK and recorded 300-frame report use the normal bridge-enabled bundle.
+
+This closes the PRD-047 Phase 3 Android emulator row. It does not prove physical-device
+transport or any physics behavior.
 
 ## Open rows
 

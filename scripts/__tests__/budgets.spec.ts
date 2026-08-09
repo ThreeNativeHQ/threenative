@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { budgetErrors, collectBudgets } from "../check-budgets";
+import { budgetErrors, budgetTriggers, collectBudgets } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -42,7 +42,7 @@ describe("budget gate", () => {
     );
   });
 
-  it("should fail when framework package count exceeds 8", async () => {
+  it("should report framework package count without inventing a numeric cap", async () => {
     const root = await fixtureRoot();
     for (let index = 0; index < 9; index += 1) {
       const directory = path.join(root, "packages", `package-${index}`);
@@ -50,17 +50,20 @@ describe("budget gate", () => {
       await writeFile(path.join(directory, "package.json"), "{}");
     }
     const report = await collectBudgets(root);
-    expect(budgetErrors(report).join("\n")).toContain("framework package cap exceeded");
+    expect(report.frameworkPackages).toBe(9);
+    expect(budgetErrors(report)).toEqual([]);
+    expect(budgetTriggers(report)).toEqual([]);
   });
 
-  it("should fail when framework LOC exceeds 15000", async () => {
+  it("should trigger review when framework LOC exceeds 15000", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "core", "src");
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
     await writeFile(path.join(directory, "large.ts"), "x\n".repeat(15_000));
     const report = await collectBudgets(root);
-    expect(budgetErrors(report).join("\n")).toContain("framework LOC cap exceeded");
+    expect(budgetTriggers(report).join("\n")).toContain("framework LOC review trigger");
+    expect(budgetErrors(report)).toEqual([]);
   });
 
   it("should allow framework LOC at 14999 lines", async () => {
@@ -70,12 +73,11 @@ describe("budget gate", () => {
     await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
     await writeFile(path.join(directory, "large.ts"), "x\n".repeat(14_998));
     const report = await collectBudgets(root);
-    expect(budgetErrors(report)).not.toContainEqual(
-      expect.stringContaining("framework LOC cap exceeded"),
-    );
+    expect(budgetTriggers(report)).toEqual([]);
+    expect(budgetErrors(report)).toEqual([]);
   });
 
-  it("should count native source and build files toward framework LOC", async () => {
+  it("should count native source and build files toward the framework LOC trigger", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "physics-native", "src");
     await mkdir(directory, { recursive: true });
@@ -83,7 +85,8 @@ describe("budget gate", () => {
     await writeFile(path.join(root, "packages", "physics-native", "CMakeLists.txt"), "x\n");
     await writeFile(path.join(directory, "binding.cpp"), "x\n".repeat(15_000));
     const report = await collectBudgets(root);
-    expect(budgetErrors(report).join("\n")).toContain("framework LOC cap exceeded");
+    expect(budgetTriggers(report).join("\n")).toContain("framework LOC review trigger");
+    expect(budgetErrors(report)).toEqual([]);
   });
 
   it("should fail when the asset MCP is vendored into packages", async () => {
@@ -139,7 +142,7 @@ describe("budget gate", () => {
     expect(budgetErrors(report).join("\n")).toContain("runtime is allowed only");
   });
 
-  it("should fail when native runtime LOC exceeds 50000 and not charge framework LOC", async () => {
+  it("should trigger review when native runtime LOC exceeds 50000 without charging framework LOC", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "runtime-native", "src");
     await mkdir(directory, { recursive: true });
@@ -148,7 +151,8 @@ describe("budget gate", () => {
     const report = await collectBudgets(root);
     expect(report.frameworkLoc).toBe(0);
     expect(report.nativeRuntimeLoc).toBeGreaterThan(50_000);
-    expect(budgetErrors(report).join("\n")).toContain("native runtime LOC cap exceeded");
+    expect(budgetTriggers(report).join("\n")).toContain("native runtime LOC review trigger");
+    expect(budgetErrors(report)).toEqual([]);
   });
 
   it("should allow native runtime LOC below 50000", async () => {
@@ -159,9 +163,7 @@ describe("budget gate", () => {
     await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(49_998));
     const report = await collectBudgets(root);
     expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
-    expect(budgetErrors(report)).not.toContainEqual(
-      expect.stringContaining("native runtime LOC cap exceeded"),
-    );
+    expect(budgetTriggers(report)).toEqual([]);
   });
 
   it("should exclude only the ignored generated Android bundle from native LOC", async () => {
@@ -182,6 +184,17 @@ describe("budget gate", () => {
     await writeFile(path.join(directory, "bridge.js"), "owned\n");
     const report = await collectBudgets(root);
     expect(report.nativeRuntimeLoc).toBe(2);
+  });
+
+  it("should exclude generated Cargo target metadata from native LOC", async () => {
+    const root = await fixtureRoot();
+    const target = path.join(root, "packages", "runtime-native", "native", "physics", "target");
+    await mkdir(path.join(target, "debug"), { recursive: true });
+    await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}\n");
+    await writeFile(path.join(root, "packages", "runtime-native", "runtime.cpp"), "owned\n");
+    await writeFile(path.join(target, "debug", "metadata.json"), "generated\n".repeat(60_000));
+    const report = await collectBudgets(root);
+    expect(report.nativeRuntimeLoc).toBe(4);
   });
 
   it("should fail when native third_party content is tracked", async () => {
@@ -218,8 +231,9 @@ describe("budget gate", () => {
     expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
   });
 
-  it("should keep the real tree under every cap", async () => {
+  it("should keep the real tree under every hard limit and every review trigger", async () => {
     const report = await collectBudgets(process.cwd());
     expect(budgetErrors(report)).toEqual([]);
+    expect(budgetTriggers(report)).toEqual([]);
   });
 });

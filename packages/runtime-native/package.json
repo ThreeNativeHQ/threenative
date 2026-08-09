@@ -20,6 +20,8 @@
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
+    "native:physics:cross": "node scripts/build-native-physics.mjs",
+    "native:physics:measure": "node scripts/measure-physics-divergence.mjs",
     "native:verify:desktop": "node scripts/verify-desktop-core.mjs",
     "test": "vitest run --config vitest.config.ts"
   },

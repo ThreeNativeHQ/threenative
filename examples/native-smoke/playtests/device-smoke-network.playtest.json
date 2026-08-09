@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-unsupported-network",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 1 }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true
+    }
+  }
+}

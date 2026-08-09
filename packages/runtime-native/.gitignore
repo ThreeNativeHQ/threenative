@@ -23,6 +23,7 @@ third_party/
 # Runtime-local output and downloaded release artifacts
 .runtime/
 artifacts/
+native/physics/target/
 
 # OS
 .DS_Store
