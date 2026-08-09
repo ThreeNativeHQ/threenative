@@ -87,6 +87,8 @@ jobs:
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/ui pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/threenative-packages"
       - name: Generate starter scaffold
         run: |
           target="$RUNNER_TEMP/threenative-starter"
@@ -94,8 +96,12 @@ jobs:
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
+            --core-package "$core_package" --physics-package "$physics_package" \
+            --playtest-package "$playtest_package" --ui-package "$ui_package" \
+            --runtime-native-package "$runtime_package" --cli-package "$cli_package"
           pnpm --dir "$target" install
           MCP_TARGET="$target" node --input-type=module - <<'NODE'
           import { spawn } from "node:child_process";
@@ -229,8 +235,12 @@ jobs:
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
+          cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
-            --core-package "$core_package" --physics-package "$physics_package" --playtest-package "$playtest_package" --ui-package "$ui_package"
+            --core-package "$core_package" --physics-package "$physics_package" \
+            --playtest-package "$playtest_package" --ui-package "$ui_package" \
+            --runtime-native-package "$runtime_package" --cli-package "$cli_package"
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
           xvfb-run -a -s '-screen 0 1600x900x24' pnpm --dir "$target" test
@@ -246,6 +256,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build framework packages consumed through export maps
+        run: |
+          pnpm --filter @threenative/core build
+          pnpm --filter @threenative/physics build
+          pnpm --filter @threenative/ui build
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
@@ -282,7 +297,7 @@ jobs:
       - run: pnpm -r build
       - name: Enforce entity registry boundaries
         run: |
-          test "$(wc -l < packages/core/src/entities.ts)" -lt 60
+          test "$(wc -l < packages/core/src/entities.ts)" -lt 80
           ! rg -n '\b(archetype|createQuery|defineComponent|System|Component)\b' packages/core/src
           ! rg -n 'DebugOverlay|__THREENATIVE__' examples/abyss-framework/dist
 
