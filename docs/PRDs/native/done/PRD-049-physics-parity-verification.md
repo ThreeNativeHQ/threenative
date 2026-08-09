@@ -1,6 +1,6 @@
 # PRD-049 — physics web/native parity, verified
 
-**Status: IMPLEMENTED (2026-08-09). Final repository gates pending.**
+**Status: DONE (2026-08-09).**
 
 PRD-046 built the native physics binding and proved it *runs*. This PRD proves it
 **agrees with web**, and closes the eight divergences an inspection of
