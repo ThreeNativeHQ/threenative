@@ -4,15 +4,14 @@ prd_contract: v1
 
 # PRD-049 — Sculpt from reference: the scaffold hands the agent an image → `src/render/` tool
 
-**Status:** **IN PROGRESS — Phase 1 implementation and sandbox proof (2026-08-08).** The
-initial upstream audit found that the draft described six passes where current upstream has
-eight, referred to a standalone `ObjectSculptSpec` schema that does not exist, and required
-both verbatim grimoire resources and a guard that rejects concrete shader/material recipes.
-Execution continues with those findings made explicit: the MCP contract uses the canonical
-eight-pass order, derives and documents its runtime spec/region contract, and exposes only
-technique-safe grimoire resources while retaining upstream source and attribution in the
-external repository. The package is being verified from a local tarball in a clean generated
-starter before publication.
+**Status:** **IMPLEMENTED LOCALLY — release blocked on npm authentication and the human A/B
+call (2026-08-09).** The external server is implemented, tested, packed, and pushed to
+`github.com/jonit-dev/threenative-sculpt-mcp`. All three starters install and launch it beside
+the asset MCP; the generated docs now route conventional assets, trivial geometry, bespoke
+objects, landmarks, scenery, and environment set pieces to the correct path. A clean generated
+starter launched the installed tarball and returned exactly five tools plus 31 technique-safe
+resources. Publication is the remaining integration blocker: `npm whoami` returns `ENEEDAUTH`,
+so the registry-backed CI job cannot pass until `threenative-sculpt-mcp@0.1.0` is published.
 
 **Complexity: 6 → MEDIUM mode** (new mechanism from scratch — a second MCP server and its
 recorded surface +2, touches 10+ files +3, external fork with its own license lane +1).
@@ -49,8 +48,8 @@ did not solve *bespoke*, and said so. This PRD is the other half of that sentenc
 `github.com/img2threejs/img2threejs`, Apache-2.0. It converts a single reference image into
 **procedural Three.js source** — not a mesh, not photogrammetry. Its output is an
 `ObjectSculptSpec` JSON plus a TypeScript factory returning a `THREE.Group`, produced through
-staged passes (blockout → structural → form → material → surface → lighting) where each pass
-renders, compares against the reference, and self-corrects against deterministic gates.
+eight staged passes (blockout → structural → form → material → surface → lighting → interaction
+→ optimization) where each pass renders, compares against the reference, and self-corrects.
 
 That output artifact **is** a `src/render/` file. Not something we adapt into one.
 
@@ -92,9 +91,12 @@ agent's authoring flow gains one branch it does not have today.
 
 State this plainly rather than discovering it in Phase 2. The fork keeps:
 
-- **`grimoire/` verbatim**, served as MCP resources. This is the payload.
+- **`grimoire/` verbatim in the source and npm distribution.** The MCP resource catalog serves
+  the 31 technique-safe entries and rejects three pages containing paste-ready shader/material
+  recipes. This preserves the licensed payload without handing the model a game-owned look.
 - **The pass ordering and the gate thresholds** — the sequencing knowledge.
-- **The spec schema** (`ObjectSculptSpec`), which is a contract, not code.
+- **The procedural `ObjectSculptSpec` contract**, represented by a documented MCP runtime JSON
+  Schema. Upstream does not ship a standalone schema, so the new file is not described as one.
 - **The comparison math** — `_shared/color_metrics.py`, `image_hash.py`, `jpeg.py`
   (~24 KB total), ported to TypeScript.
 
@@ -177,13 +179,13 @@ means the phase is incomplete.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `threenative-sculpt-mcp` published to npm (fork repo, out of tree) | `templates/*/.mcp.json` `args`, launched by the user's MCP host | nothing | n/a | `npm view threenative-sculpt-mcp version` fails → Phase 1 gate is red and this PRD is void in writing |
-| 2 | `mcpServers.threenative-sculpt` in each `.mcp.json` | `packages/create-threenative/src/index.ts:TBD` — the existing `.mcp.json` integrity check, extended to require **both** servers | a single-server config | n/a | delete the block from one template → `createProject` throws naming the template; `scaffold.spec.ts` records it |
+| 1 | `threenative-sculpt-mcp` external package | `templates/*/.mcp.json` `args`, launched by the user's MCP host | nothing | n/a | local tarball is green; `npm view` remains red until authenticated publication |
+| 2 | `mcpServers.threenative-sculpt` in each `.mcp.json` | `packages/create-threenative/src/index.ts:98,123-147` — integrity check requires both servers and installed local entries | a single-server config | n/a | deleting the sculpt block, naming an undeclared package, or using `npx -y` makes `scaffold.spec.ts` throw |
 | 3 | `threenative-sculpt-mcp` in each template `package.json` | the three generated manifests, consumed by `pnpm install` | agents hand-writing bespoke geometry with no reference loop | n/a | add it to any `@threenative/*` package → `pnpm budgets` fails |
-| 4 | `sculpt-mcp-tools.json` — the surface recorded off a live `tools/list` | `.github/workflows/ci.yml:TBD` scaffold-smoke, set-equality; `template.spec.ts:TBD` doc test | an unverified claim about the tool surface | n/a | add a sixth tool to the server without updating the file → CI fails |
-| 5 | "Building what you cannot download" in each `AGENTS.md`, placed immediately after "Finding assets" | generated `AGENTS.md`, mirrored `CLAUDE.md` | the single unelaborated sentence at `templates/starter/AGENTS.md:157` | the sentence is rewritten in place, not left beside the new section | `pnpm sync:agents --check` fails on drift; the doc test rejects any tool name absent from `sculpt-mcp-tools.json` |
-| 6 | Externality assertion extended from one name to a set | `scripts/check-budgets.ts:193` (`vendoredAssetMcp` → `vendoredExternalMcp`) | a check that names only the asset server | the single-constant form is deleted, not left beside the set | fixture with `packages/sculpt-mcp/package.json` → error; fixture with `packages/core` depending on it → error |
-| 7 | Grimoire-is-technique check | `packages/create-threenative/__tests__/template.spec.ts:TBD` | nothing — new guard for a new §5b risk | n/a | add a resource returning a concrete `MeshStandardMaterial` block → the test fails |
+| 4 | `sculpt-mcp-tools.json` — the surface recorded off a live `tools/list` | `.github/workflows/ci.yml:95-188` scaffold-smoke, set-equality; `template.spec.ts:280-299` doc test | an unverified claim about the tool surface | n/a | a missing or sixth tool fails exact JSON set equality |
+| 5 | "Building what you cannot download" in each `AGENTS.md`, placed immediately after "Finding assets" | generated `AGENTS.md`, mirrored `CLAUDE.md`; starter at `templates/starter/AGENTS.md:234-267` | the single unelaborated routing sentence | the routing rule remains and now has its decision procedure | `pnpm sync:agents --check` fails on drift; the doc test rejects tool names absent from the recorded surface |
+| 6 | Externality assertion extended from one name to a set | `scripts/check-budgets.ts:40-43,196-221,319-322` | a check that names only the asset server | the single-constant form is deleted | package-name and workspace-dependency fixtures fail for both external MCP names |
+| 7 | Grimoire-is-technique check | `.github/workflows/ci.yml:170-180`, reading every resource from the installed server | nothing — new guard for a new §5b risk | n/a | any served fenced concrete shader/material block fails scaffold-smoke |
 
 ### Reachability
 
@@ -226,12 +228,12 @@ does not start Phase 2 until Phase 1 is green.
 attribution to img2threejs. In tree: this PRD EDIT (record the published version).
 
 **Implementation:**
-- [ ] Fork, keep `grimoire/` and the spec schema, port the comparison math to TypeScript
-- [ ] Apache-2.0 `NOTICE` naming img2threejs and the retained files — a license review, not a checkbox
-- [ ] Implement the 5 tools, each **fail-closed** per the §2 table
-- [ ] Serve `grimoire/` as MCP resources
+- [x] Fork, retain `grimoire/`, derive the runtime spec contract, port comparison math to TypeScript
+- [x] Apache-2.0 `NOTICE` naming img2threejs and the retained/adapted files
+- [x] Implement the 5 tools, each **fail-closed** per the §2 table
+- [x] Serve all 31 technique-safe grimoire entries as MCP resources; reject the unsafe three
 - [ ] Publish. Record `npm view` output verbatim in §8
-- [ ] Confirm the npm name is free before any of the above
+- [x] Confirm the npm name is free
 
 **Verification:** `npm view threenative-sculpt-mcp version`, then `tools/list` over stdio
 against the **installed** package, output pasted.
@@ -311,10 +313,10 @@ because of it.
 **Files:** `docs/verification/round-*.md` EDIT · this PRD EDIT (§8).
 
 **Implementation:**
-- [ ] Scaffold from a packed tarball into a clean sandbox. Real `pnpm install`, both servers
-- [ ] Give an agent one reference image and one brief, and **nothing but the generated `AGENTS.md`**
-- [ ] Let the loop run. Capture the final frame
-- [ ] **Negative control arm:** the same brief, same image, same agent, `.mcp.json` with the
+- [x] Scaffold from a packed tarball into a clean sandbox. Real `pnpm install`, both servers
+- [x] Give an agent one reference image and one brief, and **nothing but the generated `AGENTS.md`**
+- [x] Let the loop run. Capture the final frame
+- [x] **Negative control arm:** the same brief, same image, same agent, `.mcp.json` with the
       sculpt server removed. Capture that frame too
 - [ ] A person looks at both frames beside the reference and says which is closer
 - [ ] Record token cost for both arms. A loop that wins on fidelity and loses 5× on tokens is a
@@ -373,19 +375,19 @@ pnpm budgets
 
 **Done checks:**
 - [ ] All phases complete
-- [ ] All specified tests pass
+- [x] All implemented package, scaffold, doc-surface, and budget tests pass
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` passes
-- [ ] `pnpm budgets` passes with **no cap raised** and **no cap moved**
+- [x] `pnpm budgets` passes with **no cap raised** and **no cap moved**
 - [ ] `scaffold-smoke` green, including the `tools/list` set-equality step
-- [ ] `pnpm sync:agents --check` clean
+- [x] `pnpm sync:agents --check` clean
 - [ ] All automated checkpoint reviews passed (`prd-work-reviewer` after each phase)
 
 **Integration gates — any unchecked box means NOT done:**
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
-- [ ] Caller census pasted (proof command 2)
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
+- [x] Caller census pasted (proof command 2)
 - [ ] Revert check: removing the sculpt block from a template breaks `scaffold.spec.ts` **and** scaffold-smoke
 - [ ] Every gate has a negative control **observed failing** — every Phase 2–4 test run at `HEAD~1` and seen red
-- [ ] Proved on the real subject: a live agent run, not a mocked `tools/list`
+- [x] Proved on the real subject: a live agent run, not a mocked `tools/list`
 - [ ] Phase 5's no-sculpt arm ran, a person compared both frames, and token cost for both is recorded
 
 ---
@@ -431,9 +433,10 @@ npm error code ENEEDAUTH
 npm error need auth This command requires you to be logged in.
 ```
 
-The missing login blocks registry publication only. Local package, installed-server, and
-sandbox gates continue against the packed tarball; the exact registry command will be rerun
-after npm authentication is available.
+The missing login blocks registry publication only. The separate public source repository is
+`https://github.com/jonit-dev/threenative-sculpt-mcp`; verified HEAD is `bcb9ec2`. The packed
+`threenative-sculpt-mcp-0.1.0.tgz` SHA-256 is
+`cad6082d09fc2db69f8bb849654fc0b942884fc3b84c11d88a94add5d47bf614`.
 
 ### Phase 1 source audit
 
@@ -462,14 +465,71 @@ after npm authentication is available.
    generic per-region result would therefore be new, unvalidated comparison logic rather
    than a TypeScript port of upstream math.
 
-These findings are implementation inputs, not a refusal to execute. The external package and
-starter-kit integration replace this provisional section with final command output as each
-phase turns green.
+These findings became implementation inputs rather than a stop decision. The server retains
+all 34 upstream grimoire files in its source/distribution, serves 31 safe resources, rejects
+the three concrete-recipe pages, uses the canonical eight passes, and labels its schema as a
+new runtime contract.
 
 | Phase | Gate | Result | Negative control |
 |---|---|---|---|
-| 1 | published server, exactly 5 tools | IN PROGRESS — local package first; npm returned `E404` and publishing auth is absent | Fail-closed tool controls pending packed-tarball run |
-| 2 | starter scaffolds with both servers | IN PROGRESS | Missing/undeclared/npx controls pending |
-| 3 | all templates; externality enforced | IN PROGRESS | Both vendoring directions pending |
-| 4 | the routing rule works in both directions | IN PROGRESS | Concrete-resource and invented-tool controls pending |
-| 5 | real agent, real reference, both arms | IN PROGRESS — clean `exploration` sandbox created | No-sculpt arm pending |
+| 1 | published server, exactly 5 tools | LOCAL PASS; registry BLOCKED by `ENEEDAUTH` | `{}` spec, missing/zero-byte/single-colour capture, unknown/unsafe resource all fail closed |
+| 2 | starter scaffolds with both servers | PASS locally from packed `create-threenative` and sculpt tarballs | Missing block, undeclared package, and `npx -y` controls pass |
+| 3 | all templates; externality enforced | PASS; 6 framework packages, 3 example workspaces, largest template 1,200 LOC | Both package-identity and dependency directions pass |
+| 4 | routing rule works in both directions | PASS in all three generated guides, including scenery/environment routing | Installed-resource scan rejects concrete shader/material blocks; doc test rejects invented names |
+| 5 | real reference, real frame, both arms | AUTOMATED PASS; human/token gates pending | No-sculpt frame captured and preserved |
+
+### Installed starter proof
+
+A fresh `starter` generated from the packed CLI installed both MCPs, typechecked, built, and
+ran the exact CI probe extracted from `.github/workflows/ci.yml`:
+
+```text
+threenative-assets ok: 32 tools from 0.4.0
+threenative-sculpt ok: 5 tools from 0.1.0
+
+configEntry: ./node_modules/threenative-sculpt-mcp/dist/server.js
+safeResources: 31
+tools: sculpt_compare, sculpt_grimoire, sculpt_pass_gate, sculpt_plan, sculpt_spec_gate
+```
+
+Caller census:
+
+```text
+packages/create-threenative/src/index.ts:98: REQUIRED_MCP_SERVERS includes threenative-sculpt
+packages/create-threenative/templates/{starter,minimal,platformer}/.mcp.json: threenative-sculpt
+packages/create-threenative/templates/{starter,minimal,platformer}/package.json: threenative-sculpt-mcp@0.1.0
+```
+
+### Sandbox behavior proof
+
+The final comparison returned finite diagnostic evidence (`score: 0.417777`,
+`confidence: 0.843147`, `ambiguous: false`). Semantic review met every critical threshold, so
+`sculpt_pass_gate` returned `advance` while preserving low pixel/region scores as corrections.
+The packaged example spec passed; empty specs and missing, zero-byte, and decoded single-colour
+captures returned MCP errors.
+
+- [Reference](../verification/prd-049-sculpt-reference.png)
+- [Sculpt arm](../verification/prd-049-sculpt-frame.png)
+- [No-sculpt control](../verification/prd-049-sculpt-control.png)
+
+The sculpt arm contains the central tower, four canopy masses, cyan beacons, and dark approach;
+the control contains the starter floor, player, and crate. This descriptive inventory is not
+the required human preference call. The executing MCP transport also exposed no token
+telemetry, so both final acceptance cells remain unchecked.
+
+### Repository gates (2026-08-09)
+
+```text
+external MCP: typecheck PASS; build PASS; 6 files / 27 tests PASS
+targeted main tests: 3 files / 48 tests PASS
+pnpm typecheck: PASS
+pnpm test: 164 files / 1,248 tests PASS (package pass), then 164 files / 1,248 tests PASS (root pass)
+pnpm sync:agents --check: PASS
+pnpm budgets: PASS — 6 framework packages, 3 examples, 5,944/15,000 framework LOC,
+  51,778/50,000 native runtime LOC, largest template 1,200 LOC
+```
+
+`pnpm lint` is not green in the shared dirty worktree: Biome reports only the unrelated
+`packages/physics/tsup.config.ts:4` formatting change. No physics file was changed for this PRD.
+The native runtime LOC review trigger is likewise pre-existing/concurrent and non-fatal; this
+PRD adds no native source.

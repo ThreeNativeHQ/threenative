@@ -128,7 +128,6 @@ truth for the pinned version, and they change between versions.
 Load what you downloaded the ordinary way — `ctx.assets.model("crate.glb")`,
 `ctx.assets.texture(...)`, `ctx.assets.audio(...)` — and write your own material and lighting
 around it in `src/render/`. The framework ships no asset and picks none for you.
-+
 
 ## Building what you cannot download — sculpt from a reference
 
