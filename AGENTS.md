@@ -73,7 +73,8 @@ package, work out what the native host does with it.
 - **No WASM on native.** Android runs QuickJS. A WASM dependency is web-only by
   construction; its native equivalent compiles into `runtime-native` and is reached through
   a coarse bulk typed-array ABI (`step`, `readVisibleTransforms`), never per-object frame
-  calls.
+  calls. `@threenative/physics/navigation` is therefore browser-only; the shipped platformer
+  uses template-local steering so its portable entry still runs on desktop and Android.
 - **A backend that cannot honour an option throws at construction.** Accepting it and
   discarding it becomes a gameplay bug on one platform only.
 - **The native bundle is one import-free ESM file.** No code splitting, no dynamic

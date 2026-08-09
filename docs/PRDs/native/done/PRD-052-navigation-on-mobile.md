@@ -1,14 +1,17 @@
 # PRD-052 — pathfinding on mobile: close the gate PRD-046 opened
 
-**Status: PROPOSED (2026-08-09). Not started. Phase 0 is a measurement, not an implementation.**
+**Status: DONE (2026-08-09). Candidate B selected and executed.** The platformer now uses
+template-local steering and runs the same chase/avoidance scenarios in the browser and on the
+Android x86_64 emulator. Navmesh navigation remains browser-only. Evidence:
+`docs/verification/PRD-052.md`.
 
 `@threenative/physics/navigation` is built on `recast-navigation`, which is WASM.
 **Android runs QuickJS and iOS runs JSC with `--no-webassembly`, so it is dead on both.**
 PRD-046 §255 and PRD-047 §282 both name this as "a separate open gate" and neither owns it.
 This PRD owns it.
 
-**The concrete consequence, measured 2026-08-09:** the shipped `platformer` template imports
-navigation in `src/main.ts`, `src/scenes/Level.ts` and `src/entities/Chaser.ts`. So **one of
+**The concrete consequence, measured 2026-08-09:** the shipped `platformer` template imported
+navigation in `src/game.ts`, `src/scenes/Level.ts` and `src/entities/Chaser.ts`. So **one of
 the three templates a user can scaffold cannot be built for Android or iOS at all** — today
 silently through a WASM bundle that would fault at startup, and after PRD-050 loudly through
 `TN_NATIVE_WASM_ON_MOBILE`.
@@ -86,13 +89,55 @@ rest moot.
 
 Whichever candidate wins, all four must be true when this PRD closes:
 
-- [ ] Every template a user can scaffold **either builds and runs for Android** or states in
+- [x] Every template a user can scaffold **either builds and runs for Android** or states in
       its own README, at scaffold time, which target it does not support and why.
-- [ ] The build error for an unsupported combination names the file and the alternative — no
+- [x] The build error for an unsupported combination names the file and the alternative — no
       silent WASM fault at startup on any platform.
-- [ ] If candidate A is chosen: an agent reaches the same goal position on web and on the
-      Android emulator from the same seed, measured through PRD-049's parity harness, not
-      asserted.
-- [ ] If candidate B is chosen: `docs/PRDs/native/README.md` and `/AGENTS.md` say plainly that
+- [x] Candidate A's parity gate is not applicable because B was chosen; no native Recast
+      parity claim is made.
+- [x] If candidate B is chosen: `docs/PRDs/native/README.md` and `/AGENTS.md` say plainly that
       navmesh navigation is a web (and possibly desktop) feature — the promise is narrowed in
       writing, not quietly.
+
+---
+
+## 5. Phase 0 answers
+
+1. **Desktop Recast fails.** The pre-change platformer bundled successfully, but V8 rejected
+   the classic-script artifact before frame 1:
+   `SyntaxError: Cannot use 'import.meta' outside a module` at Recast's
+   `var _scriptName = import.meta.url`. No screenshot existed because no frame rendered.
+   Navigation is browser-only, not desktop-capable.
+2. **Corpus demand is zero.** Across 87 sweep directories and 3,034 files under `*/src/*`,
+   plus 17 TypeScript/JavaScript files under `examples/*/src`, there are zero consumers of
+   the navigation entry or its three nodes. Four hits in two 2026-08-09 archives are copied
+   `.d.ts` declarations, not consumers. `pnpm round:deletions` reports 161 persistent names
+   but no navigation name because its two frozen declaration trees contain none; that command
+   is therefore no signal for navigation reach.
+3. **The chaser needs 31 steering lines, not a navmesh.** Two fixed corner waypoints route
+   around the one blocker, opposite sides separate the two agents, short-range repulsion
+   protects peer spacing, and the existing `CharacterBody3D.moveAndSlide()` performs motion.
+   The complete `Chaser.ts` is 79 lines; the platformer falls from 1,200 to 1,159 LOC.
+
+**Decision: B.** No C++ dependency, native ABI, second implementation, package, or framework
+code was added. Candidate A has no measured consumer demand and would exceed the native LOC
+review trigger for a feature that currently fails even on desktop. Candidate C remains the
+forbidden two-implementation fork; D is unnecessary because the bounded template path is
+proved.
+
+## 6. Executed result
+
+The platformer portable graph contains no `recast`, navigation entry, or navigation node.
+The original `chase` and `avoidance` scenarios now assert steering facts:
+`routeComplete`, `steeringFinished`, arrival, a six-unit detour, and 0.56 minimum peer
+separation. They passed in headed Chromium and through the Android device playtest transport.
+
+Removing the two route waypoints was observed red: the chaser remained 4.03 units from the
+goal, traversed only 1.01 units, never finished, and the already-true route assertion failed
+as vacuous. This proves the test observes the detour rather than accepting direct steering
+into the blocker.
+
+All three scaffoldable templates were executed on Android: starter under PRD-050, and fresh
+platformer and minimal scaffolds under this PRD. The iOS-target platformer bundle passed its
+compatibility check, but Linux then refused simulator packaging as intended; no iOS execution
+claim is made.

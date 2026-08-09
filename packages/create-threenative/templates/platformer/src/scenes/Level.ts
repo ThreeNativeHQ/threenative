@@ -1,7 +1,6 @@
 import { type Ctx, Scene, type SceneFrame } from "@threenative/core";
 import { CollisionShape3D, RigidBody3D } from "@threenative/physics";
 import type { PhysicsContext } from "@threenative/physics";
-import { NavigationObstacle3D, NavigationRegion3D } from "@threenative/physics/navigation";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Character, PLATFORMER_FEEL } from "../entities/Character.js";
 import { Chaser } from "../entities/Chaser.js";
@@ -40,12 +39,10 @@ export class Level extends Scene<GameState, PhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     ctx.viewport.resize();
-    const platforms = [
-      createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 }),
-      createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 }),
-      createPlatform(ctx, new Vector3(25, 0, 0), 8, { depth: 7, seed: 11 }),
-      createPlatform(ctx, new Vector3(0, 2.6, 0), 6, { depth: 5, oneWay: true, seed: 17 }),
-    ];
+    createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
+    createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
+    createPlatform(ctx, new Vector3(25, 0, 0), 8, { depth: 7, seed: 11 });
+    createPlatform(ctx, new Vector3(0, 2.6, 0), 6, { depth: 5, oneWay: true, seed: 17 });
     const blocker = new Mesh(new BoxGeometry(0.6, 1.6, 5.2), createMaterials().shadow);
     blocker.position.set(3.4, 0.8, 0);
     blocker.castShadow = blocker.receiveShadow = true;
@@ -56,13 +53,6 @@ export class Level extends Scene<GameState, PhysicsContext> {
       physics: ctx.physics,
       shape: CollisionShape3D.box(0.6, 1.6, 5.2),
       type: "fixed",
-    });
-    const navigation = ctx.physics.navigation;
-    if (navigation === undefined)
-      throw new Error("NavigationRegion3D requires a navigation context.");
-    new NavigationRegion3D({
-      meshes: [...platforms.map(({ visual }) => visual), blocker],
-      navigation,
     });
     const { playerX } = ctx.state.getState() as { playerX?: number };
     const spawn = SPAWN.clone();
@@ -76,12 +66,6 @@ export class Level extends Scene<GameState, PhysicsContext> {
     let coins = 0;
     let defeated = 0;
     const cameraAnchor = new Vector3();
-    let obstacleTime = 0;
-    const avoidanceObstacle = new Mesh(new BoxGeometry(0.7, 1.4, 0.7), createMaterials().accent);
-    avoidanceObstacle.position.set(5.6, 0.7, 2.35);
-    avoidanceObstacle.castShadow = true;
-    ctx.add(avoidanceObstacle);
-    new NavigationObstacle3D({ navigation, object: avoidanceObstacle });
     const addPickup = (at: Vector3): void => {
       const id = `coin.${pickups.length}`;
       const pickup = new Pickup(ctx, at, () => {
@@ -132,8 +116,8 @@ export class Level extends Scene<GameState, PhysicsContext> {
     );
     patrols.push({ id: "patrol", value: patrol });
     ctx.entities.add("patrol", patrol);
-    const chaser = new Chaser(ctx, character, navigation, new Vector3(7.5, 0.66, 0));
-    const avoidanceChaser = new Chaser(ctx, character, navigation, new Vector3(8.2, 0.66, 0.7));
+    const chaser = new Chaser(ctx, character, new Vector3(7.5, 0.66, 0));
+    const avoidanceChaser = new Chaser(ctx, character, new Vector3(8.2, 0.66, 0.7));
     chaser.mesh.userData.peer = avoidanceChaser.mesh;
     avoidanceChaser.mesh.userData.peer = chaser.mesh;
     ctx.entities.add("chaser", chaser);
@@ -141,8 +125,6 @@ export class Level extends Scene<GameState, PhysicsContext> {
     followCamera(spawn, 1);
     return (frameCtx, dt) => {
       character.update(frameCtx, dt);
-      obstacleTime += dt;
-      avoidanceObstacle.position.z = 2.35 + Math.sin(obstacleTime * 1.5) * 0.45;
       chaser.update(dt);
       avoidanceChaser.update(dt);
       for (const entry of patrols) entry.value.update(dt);

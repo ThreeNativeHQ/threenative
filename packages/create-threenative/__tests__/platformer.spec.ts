@@ -56,7 +56,7 @@ describe("platformer checkpoints", () => {
     expect(state.currentIndex).toBe(2);
   });
 
-  it("should register a chaser entity and the recast plugin in the platformer template", async () => {
+  it("should register a mobile-safe steering chaser without Recast", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/platformer/src/game.ts"),
       "utf8",
@@ -65,8 +65,14 @@ describe("platformer checkpoints", () => {
       path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
       "utf8",
     );
+    const chaser = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/entities/Chaser.ts"),
+      "utf8",
+    );
 
-    expect(game).toContain("recast(");
+    expect(`${game}\n${level}\n${chaser}`).not.toMatch(/recast|NavigationAgent3D/u);
+    expect(chaser).toContain("steeringFinished");
+    expect(chaser).toContain("routeComplete");
     expect(level).toContain('ctx.entities.add("chaser", chaser)');
   });
 });

@@ -1,17 +1,24 @@
 import type { Ctx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
-import { NavigationAgent3D, type NavigationContext } from "@threenative/physics/navigation";
 import { Group, Mesh, SphereGeometry, Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
 import type { Character } from "./Character.js";
 type GameCtx = Ctx<Record<string, unknown>, PhysicsContext>;
+const SPEED = 3.4;
+const STOP_DISTANCE = 0.7;
 export class Chaser {
   readonly mesh: Group;
   readonly body: CharacterBody3D;
-  readonly agent: NavigationAgent3D;
   readonly tags = ["enemy", "chaser"];
-  #retarget: ReturnType<GameCtx["every"]>;
-  constructor(ctx: GameCtx, player: Character, navigation: NavigationContext, spawn: Vector3) {
+  readonly #direction = new Vector3();
+  readonly #player: Character;
+  readonly #route: Vector3[];
+  readonly #separation = new Vector3();
+  #routeIndex = 0;
+  constructor(ctx: GameCtx, player: Character, spawn: Vector3) {
+    this.#player = player;
+    const side = spawn.z >= 0.35 ? 3.05 : -3.05;
+    this.#route = [new Vector3(4.15, spawn.y, side), new Vector3(2.65, spawn.y, side)];
     this.mesh = new Group();
     this.mesh.position.copy(spawn);
     const visual = new Mesh(new SphereGeometry(0.44, 12, 8), createMaterials().accent);
@@ -26,38 +33,46 @@ export class Chaser {
       physics: ctx.physics,
       shape: CollisionShape3D.capsule(0.35, 0.3).setSensor(true),
     });
-    this.agent = new NavigationAgent3D({
-      maxSpeed: 3.4,
-      navigation,
-      object: this.mesh,
-      targetDesiredDistance: 0.7,
-    });
-    this.agent.setTargetPosition(player.mesh.position);
-    this.#retarget = ctx.every(() => this.agent.setTargetPosition(player.mesh.position));
   }
   update(dt: number): void {
-    const next = this.agent.getNextPathPosition();
-    const direction = new Vector3(next.x - this.mesh.position.x, 0, next.z - this.mesh.position.z);
-    if (direction.lengthSq() > 0.0001) direction.normalize();
-    this.body.velocity.set(
-      direction.x * this.agent.maxSpeed,
-      this.body.velocity.y,
-      direction.z * this.agent.maxSpeed,
-    );
+    const position = this.mesh.position;
+    const target = this.#player.mesh.position;
+    const waypoint = this.#route[this.#routeIndex];
+    if (waypoint !== undefined && position.distanceToSquared(waypoint) < 0.12) {
+      this.#routeIndex += 1;
+    }
+    const goal = this.#route[this.#routeIndex] ?? target;
+    const targetDistance = position.distanceTo(target);
+    if (this.#routeIndex === this.#route.length && targetDistance <= STOP_DISTANCE) {
+      this.body.velocity.set(0, this.body.velocity.y, 0);
+      this.body.moveAndSlide(dt);
+      return;
+    }
+    this.#direction.subVectors(goal, position).setY(0);
+    const peer = this.mesh.userData.peer;
+    if (peer !== undefined) {
+      const separation = this.#separation.subVectors(position, peer.position).setY(0);
+      const distance = separation.length();
+      if (distance > 0.001 && distance < 1.1) {
+        this.#direction.addScaledVector(separation.normalize(), (1.1 - distance) * 2);
+      }
+    }
+    if (this.#direction.lengthSq() > 0.0001) this.#direction.normalize().multiplyScalar(SPEED);
+    this.body.velocity.set(this.#direction.x, this.body.velocity.y, this.#direction.z);
     this.body.moveAndSlide(dt);
   }
   debug(): Record<string, unknown> {
     const peer = this.mesh.userData.peer;
+    const targetDistance = this.mesh.position.distanceTo(this.#player.mesh.position);
     return {
-      navigationFinished: this.agent.isNavigationFinished(),
       position: this.mesh.position.toArray(),
+      routeComplete: this.#routeIndex === this.#route.length,
       separation: this.mesh.position.distanceTo(peer?.position ?? this.mesh.position),
-      targetReachable: this.agent.isTargetReachable(),
+      steeringFinished: targetDistance <= STOP_DISTANCE,
+      targetDistance,
     };
   }
   dispose(): void {
-    this.#retarget.cancel();
-    this.agent.dispose();
     this.body.dispose();
     this.mesh.removeFromParent();
   }

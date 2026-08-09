@@ -11,11 +11,12 @@
     "movement": {
       "entity": "chaser.avoidance",
       "reachesPositionWithin": { "position": [0, 0.66, 0], "maxDistance": 1.2 },
-      "pathLength": 9.0
+      "pathLength": 6.0
     },
     "components": [
-      { "entity": "chaser", "component": "navigationFinished", "equals": true },
-      { "entity": "chaser.avoidance", "component": "navigationFinished", "equals": true },
+      { "entity": "chaser", "component": "steeringFinished", "equals": true },
+      { "entity": "chaser.avoidance", "component": "steeringFinished", "equals": true },
+      { "entity": "chaser.avoidance", "component": "routeComplete", "equals": true },
       { "entity": "chaser.avoidance", "component": "separation", "gte": 0.56, "allowTrivial": true }
     ]
   }

@@ -16,11 +16,12 @@ pnpm test
 pnpm typecheck
 ```
 
-The normal physics API selects native Rapier on Android, but this template's navigation still
-imports Recast WASM, which QuickJS cannot execute. Android and iOS therefore fail closed for
-this template; native navigation or a mobile-safe route is still required. Linux desktop is
-source-machine evidence, not a clean-machine distribution proof; macOS, Windows, iOS, and
-physical hardware remain OPEN.
+The normal physics API selects native Rapier on Android. This template's chasers use editable
+steering in `src/entities/Chaser.ts`, not Recast, so the portable game runs on desktop and the
+Android emulator. `@threenative/physics/navigation` remains browser-only because it carries
+Recast WASM. Linux desktop and Android x86_64 emulator runs are source-machine evidence, not
+clean-machine distribution proof; macOS, Windows, iOS, arm64, and physical hardware remain
+OPEN.
 
 If you care about the desktop target, keep the game portable: no real DOM there (`document`
 is a Three.js compatibility stub), no dynamic `import()`, and `.raw` on a physics handle is
@@ -30,9 +31,9 @@ Godot-named nodes keeps that correct without thinking about it.
 ## Where to work
 
 - `src/entities/Character.ts` contains every movement and feel constant.
-- `src/entities/Patrol.ts` is the ordinary scripted-route enemy; use `Chaser.ts` when an
-  enemy should pursue a target across baked level geometry. Steering, aggro rules, and
-  re-path cadence remain gameplay decisions in these classes.
+- `src/entities/Patrol.ts` is the ordinary scripted-route enemy; `Chaser.ts` demonstrates a
+  two-corner route around this level's blocker plus short-range peer separation. Change its
+  route with the level. General navmesh pathfinding is browser-only.
 - `src/entities/Pickup.ts` is an ordinary gameplay class.
 - `src/level/` contains plain level helpers and checkpoint state.
 - `src/render/` is ordinary Three.js source. It has no framework imports. The six baseline

@@ -58,7 +58,7 @@ describe("starter playtest proof", () => {
     expect(packageJson.scripts["test:playtest"]).toContain("chase.playtest.json");
     expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
     expect(scenario.assert.movement).toMatchObject({
-      pathLength: 9,
+      pathLength: 6,
       reachesPositionWithin: { maxDistance: 1.2, position: [0, 0.66, 0] },
     });
   });

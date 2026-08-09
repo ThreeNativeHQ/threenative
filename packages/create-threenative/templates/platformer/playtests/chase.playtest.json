@@ -11,7 +11,11 @@
     "movement": {
       "entity": "chaser",
       "reachesPositionWithin": { "position": [0, 0.66, 0], "maxDistance": 1.2 },
-      "pathLength": 9.0
-    }
+      "pathLength": 6.0
+    },
+    "components": [
+      { "entity": "chaser", "component": "routeComplete", "equals": true },
+      { "entity": "chaser", "component": "steeringFinished", "equals": true }
+    ]
   }
 }
