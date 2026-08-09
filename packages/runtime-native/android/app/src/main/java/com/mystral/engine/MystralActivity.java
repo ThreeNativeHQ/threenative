@@ -50,10 +50,15 @@ public class MystralActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         String endpoint = getIntent().getStringExtra("TN_PLAYTEST_ENDPOINT");
+        String mailboxRoot = getIntent().getStringExtra("TN_PLAYTEST_MAILBOX_ROOT");
+        if (mailboxRoot == null) {
+            java.io.File externalFiles = getExternalFilesDir(null);
+            mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
+        }
         return new String[] {
             "asset://scripts/main.js",
             endpoint == null ? "" : endpoint,
-            getFilesDir().getAbsolutePath()
+            mailboxRoot
         };
     }
 }

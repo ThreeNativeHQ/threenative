@@ -17,13 +17,28 @@ export const ANDROID_TRANSPORT_CAPABILITIES = [
   "browser.screenshot",
 ] as const;
 
+export interface IDeviceMailbox {
+  read(path: string): Promise<string | undefined>;
+  remove(path: string): Promise<void>;
+  write(path: string, contents: string): Promise<void>;
+}
+
+export interface IDeviceMailboxPaths {
+  request: string;
+  response: string;
+}
+
+export interface DevicePlaytestTransport extends BridgeTransport {
+  start(): Promise<void>;
+}
+
 interface PendingCall {
   reject(error: Error): void;
   resolve(value: unknown): void;
   timeout: ReturnType<typeof setTimeout>;
 }
 
-export class DeviceBridgeTransport implements BridgeTransport {
+export class DeviceBridgeTransport implements DevicePlaytestTransport {
   readonly capabilities = ANDROID_TRANSPORT_CAPABILITIES;
   readonly endpoint: URL;
   private connected = false;
@@ -136,6 +151,97 @@ export class DeviceBridgeTransport implements BridgeTransport {
   }
 }
 
+export class DeviceMailboxTransport implements DevicePlaytestTransport {
+  readonly capabilities = ANDROID_TRANSPORT_CAPABILITIES;
+  private connected = false;
+  private closed = false;
+  private nextId = 1;
+
+  constructor(
+    private readonly mailbox: IDeviceMailbox,
+    private readonly paths: IDeviceMailboxPaths,
+  ) {}
+
+  async start(): Promise<void> {
+    this.closed = false;
+    this.connected = false;
+    await this.mailbox.remove(this.paths.request);
+    await this.mailbox.remove(this.paths.response);
+  }
+
+  async call<T>(method: string, argument?: unknown): Promise<T> {
+    if (this.closed) throw new Error("Device mailbox transport is closed.");
+    if (!this.connected) throw new Error("Device mailbox bridge is not connected.");
+    if (argument !== undefined) assertBounded(argument);
+    const id = String(this.nextId++);
+    await this.mailbox.remove(this.paths.response);
+    await this.mailbox.write(this.paths.request, JSON.stringify({
+      ...(argument === undefined ? {} : { argument: argument as JsonValue }),
+      id,
+      method,
+    } satisfies IPlaytestDeviceRequest));
+    const response = await this.waitForResponse(id);
+    if (response.error !== undefined) throw new Error(response.error.message);
+    return response.result as T;
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.mailbox.remove(this.paths.request).catch(() => undefined);
+    await this.mailbox.remove(this.paths.response).catch(() => undefined);
+  }
+
+  async waitForBridge(timeoutMs: number): Promise<boolean> {
+    if (this.connected) return true;
+    const deadline = Date.now() + timeoutMs;
+    while (!this.closed && Date.now() < deadline) {
+      const response = await this.readResponse();
+      if (response !== undefined) {
+        await this.mailbox.remove(this.paths.response);
+        if (response.id === "ready") {
+          this.connected = true;
+          return true;
+        }
+      }
+      await delayUntil(deadline);
+    }
+    return false;
+  }
+
+  private async waitForResponse(id: string): Promise<IPlaytestDeviceResponse> {
+    const deadline = Date.now() + PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs;
+    while (!this.closed && Date.now() < deadline) {
+      const response = await this.readResponse();
+      if (response !== undefined) {
+        await this.mailbox.remove(this.paths.response);
+        if (response.id !== id) throw new Error(`Unexpected device response id '${response.id}'.`);
+        return response;
+      }
+      await delayUntil(deadline);
+    }
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OPERATION_TIMEOUT",
+      `Device mailbox operation '${id}' exceeded ${PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs}ms.`,
+      "Confirm the app is running and its native mailbox is polling the configured files.",
+    ));
+  }
+
+  private async readResponse(): Promise<IPlaytestDeviceResponse | undefined> {
+    const raw = await this.mailbox.read(this.paths.response);
+    return raw === undefined ? undefined : parseResponse(raw);
+  }
+}
+
+export function androidMailboxPaths(
+  packageName: string,
+  root = `/sdcard/Android/data/${packageName}/files`,
+): IDeviceMailboxPaths {
+  return {
+    request: `${root}/tn-playtest-request.json`,
+    response: `${root}/tn-playtest-response.json`,
+  };
+}
+
 export function validateDeviceEndpoint(value: string): URL {
   const endpoint = new URL(value);
   if (endpoint.protocol !== "http:") throw new Error("Device playtest --endpoint must use http://.");
@@ -188,4 +294,9 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function delayUntil(deadline: number): Promise<void> {
+  const remaining = deadline - Date.now();
+  if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, Math.min(40, remaining)));
 }

@@ -20,12 +20,18 @@ import {
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
-import { DeviceBridgeTransport } from "./deviceTransport.js";
+import {
+  androidMailboxPaths,
+  DeviceBridgeTransport,
+  DeviceMailboxTransport,
+  type DevicePlaytestTransport,
+  type IDeviceMailbox,
+} from "./deviceTransport.js";
 import { buildReport, type IStandalonePlaytestReport } from "./runner.js";
 
 export interface IAndroidPlaytestDependencies {
   driver?: IAndroidDriver;
-  transport?: DeviceBridgeTransport;
+  transport?: DevicePlaytestTransport;
 }
 
 export async function runAndroidPlaytest(
@@ -37,7 +43,6 @@ export async function runAndroidPlaytest(
   const unsupported = unsupportedAssertion(scenario);
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported);
   const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
-  const transport = dependencies.transport ?? new DeviceBridgeTransport(endpoint);
   const android = config.android ?? {
     activity: ".MystralActivity",
     packageName: "com.mystral.engine",
@@ -47,10 +52,12 @@ export async function runAndroidPlaytest(
     ...(config.adbPath === undefined ? {} : { adbPath: config.adbPath }),
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
+  const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;
+  const transport = dependencies.transport ?? createDeviceTransport(driver, endpoint, android.packageName, mailboxRoot);
   let bridge: IPlaytestBridgeClient | undefined;
   try {
     await transport.start();
-    await driver.prepare(endpoint);
+    await driver.prepare(endpoint, mailboxRoot);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
     if (bridge === undefined) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -175,6 +182,31 @@ export async function runAndroidPlaytest(
     await bridge?.close().catch(() => undefined);
     await transport.close().catch(() => undefined);
   }
+}
+
+function createDeviceTransport(
+  driver: IAndroidDriver,
+  endpoint: string,
+  packageName: string,
+  mailboxRoot: string,
+): DevicePlaytestTransport {
+  if (isMailboxDriver(driver)) {
+    const mailbox: IDeviceMailbox = {
+      read: (path) => driver.readFile(path),
+      remove: (path) => driver.removeFile(path),
+      write: (path, contents) => driver.writeFile(path, contents),
+    };
+    return new DeviceMailboxTransport(mailbox, androidMailboxPaths(packageName, mailboxRoot));
+  }
+  return new DeviceBridgeTransport(endpoint);
+}
+
+function isMailboxDriver(
+  driver: IAndroidDriver,
+): driver is IAndroidDriver & Required<Pick<IAndroidDriver, "readFile" | "removeFile" | "writeFile">> {
+  return typeof driver.readFile === "function"
+    && typeof driver.removeFile === "function"
+    && typeof driver.writeFile === "function";
 }
 
 function unsupportedAssertion(scenario: IPlaytestScenario): IPlaytestProtocolDiagnostic | undefined {

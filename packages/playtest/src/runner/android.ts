@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -17,9 +17,12 @@ export interface IAndroidDriverOptions {
 export interface IAndroidDriver {
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
   isAlive(): Promise<boolean>;
-  prepare(endpoint: string): Promise<void>;
+  prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
+  readFile?(path: string): Promise<string | undefined>;
+  removeFile?(path: string): Promise<void>;
   screenshot(path: string): Promise<void>;
   stop(): Promise<void>;
+  writeFile?(path: string, contents: string): Promise<void>;
 }
 
 export class AdbAndroidDriver implements IAndroidDriver {
@@ -29,7 +32,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     this.adbPath = options.adbPath ?? discoverAdb();
   }
 
-  async prepare(endpoint: string): Promise<void> {
+  async prepare(endpoint: string, mailboxRoot?: string): Promise<void> {
     const url = new URL(endpoint);
     const port = url.port;
     await this.adb(["reverse", `tcp:${port}`, `tcp:${port}`]);
@@ -45,6 +48,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
       "--es",
       "TN_PLAYTEST_ENDPOINT",
       endpoint,
+      ...(mailboxRoot === undefined ? [] : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", mailboxRoot]),
     ]);
   }
 
@@ -75,9 +79,37 @@ export class AdbAndroidDriver implements IAndroidDriver {
     return (await this.adb(["shell", "pidof", this.options.packageName])).trim().length > 0;
   }
 
+  async readFile(path: string): Promise<string | undefined> {
+    try {
+      const contents = await this.adb(["exec-out", "cat", path]);
+      return isMissingRemoteFileOutput(contents) ? undefined : contents;
+    } catch (error) {
+      if (isMissingRemoteFile(error)) return undefined;
+      throw error;
+    }
+  }
+
+  async removeFile(path: string): Promise<void> {
+    await this.adb(["shell", "rm", "-f", path]);
+  }
+
   async stop(): Promise<void> {
     await this.adb(["shell", "am", "force-stop", this.options.packageName]).catch(() => undefined);
     await this.adb(["reverse", "--remove-all"]).catch(() => undefined);
+  }
+
+  async writeFile(path: string, contents: string): Promise<void> {
+    const directory = await mkdtemp(join(tmpdir(), "threenative-adb-mailbox-"));
+    const localPath = join(directory, "payload.json");
+    const remotePath = `${path}.incoming-${process.pid}-${Date.now()}`;
+    try {
+      await writeFile(localPath, contents, "utf8");
+      await this.adb(["push", localPath, remotePath]);
+      await this.adb(["shell", "mv", remotePath, path]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+      await this.adb(["shell", "rm", "-f", remotePath]).catch(() => undefined);
+    }
   }
 
   private async adb(args: readonly string[]): Promise<string> {
@@ -99,6 +131,15 @@ export class AdbAndroidDriver implements IAndroidDriver {
   private serialArgs(): string[] {
     return this.options.serial === undefined ? [] : ["-s", this.options.serial];
   }
+}
+
+function isMissingRemoteFile(error: unknown): boolean {
+  const detail = error as Error & { stderr?: string; stdout?: string };
+  return isMissingRemoteFileOutput(`${detail.stderr ?? ""}\n${detail.stdout ?? ""}`);
+}
+
+function isMissingRemoteFileOutput(output: string): boolean {
+  return /No such file|not found/u.test(output);
 }
 
 export function discoverAdb(environment: NodeJS.ProcessEnv = process.env): string {

@@ -15,6 +15,7 @@ export interface IStandalonePlaytestConfig {
   device?: string;
   endpoint?: string;
   headless: boolean;
+  mailboxRoot?: string;
   projectPath: string;
   scenarioPath: string;
   server?: IPlaytestServerConfig;
@@ -41,6 +42,7 @@ export const PLAYTEST_FLAGS = {
   "--device": { default: "adb default", summary: "Android device/emulator serial", takesValue: true },
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
+  "--mailbox-root": { default: "Android external files directory", summary: "native device mailbox directory", takesValue: true },
   "--project": { default: ".", summary: "project root used to resolve paths", takesValue: true },
   "--package": { default: "com.mystral.engine", summary: "Android application id", takesValue: true },
   "--scenario": { default: "required (or positional)", summary: "scenario JSON path", takesValue: true },
@@ -122,6 +124,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     ...(flags.get("--device")?.[0] === undefined ? {} : { device: flags.get("--device")![0] }),
     endpoint: flags.get("--endpoint")?.[0] ?? "http://127.0.0.1:41777/playtest",
     headless: !argv.includes("--headed"),
+    ...(flags.get("--mailbox-root")?.[0] === undefined ? {} : { mailboxRoot: flags.get("--mailbox-root")![0] }),
     projectPath,
     scenarioPath,
     ...(serverCommand === undefined

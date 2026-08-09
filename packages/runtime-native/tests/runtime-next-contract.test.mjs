@@ -141,6 +141,11 @@ test('Android default gate is generated from the public core native smoke at cat
   assert.match(gradle, /buildAndroidFirstProofBundle/, 'Android Gradle build must invoke reproducible first proof bundling');
   assert.match(gradle, /preBuild[\s\S]*buildAndroidFirstProofBundle/, 'Android preBuild must depend on generated bundle task');
   assert.match(gradle, /examples\/native-smoke\/src/, 'Android Gradle inputs must track the public core smoke');
+
+  const activity = read('android/app/src/main/java/com/mystral/engine/MystralActivity.java');
+  assert.match(activity, /TN_PLAYTEST_MAILBOX_ROOT/, 'Android activity must pass the host mailbox root to SDL_main');
+  const androidMain = read('src/platform/android_main.cpp');
+  assert.match(androidMain, /TN_PLAYTEST_MAILBOX_ROOT|tn-playtest-request\.json/, 'Android native entry must configure the mailbox bridge');
 });
 
 const generatedAndroidBundle = 'android/app/src/main/assets/scripts/main.js';

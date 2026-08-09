@@ -2,7 +2,13 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "vitest";
 
-import { DeviceBridgeTransport, validateDeviceEndpoint } from "../src/runner/deviceTransport.js";
+import {
+  androidMailboxPaths,
+  DeviceBridgeTransport,
+  DeviceMailboxTransport,
+  type IDeviceMailbox,
+  validateDeviceEndpoint,
+} from "../src/runner/deviceTransport.js";
 
 async function freePort(): Promise<number> {
   const probe = createServer();
@@ -48,3 +54,42 @@ test("device endpoint validation rejects non-loopback or ambiguous endpoints", (
   expect(() => validateDeviceEndpoint("http://192.168.0.2:41777/playtest")).toThrow(/loopback/u);
   expect(() => validateDeviceEndpoint("http://127.0.0.1:41777/playtest?x=1")).toThrow(/query/u);
 });
+
+test("Android mailbox transport consumes the native ready handshake and correlates calls", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/device-files");
+  const mailbox = new FakeMailbox(paths);
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).resolves.toBe(true);
+    await expect(transport.call<{ ok: boolean }>("sample", { entities: ["player"] }))
+      .resolves.toEqual({ ok: true });
+    expect(mailbox.requests).toEqual([{ entities: ["player"] }]);
+  } finally {
+    await transport.close();
+  }
+});
+
+class FakeMailbox implements IDeviceMailbox {
+  readonly files = new Map<string, string>();
+  readonly requests: unknown[] = [];
+
+  constructor(private readonly paths: ReturnType<typeof androidMailboxPaths>) {}
+
+  async read(path: string): Promise<string | undefined> {
+    return this.files.get(path);
+  }
+
+  async remove(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
+  async write(path: string, contents: string): Promise<void> {
+    this.files.set(path, contents);
+    if (path !== this.paths.request) return;
+    const request = JSON.parse(contents) as { argument?: unknown; id: string };
+    this.requests.push(request.argument);
+    this.files.set(this.paths.response, JSON.stringify({ id: request.id, result: { ok: true } }));
+  }
+}
