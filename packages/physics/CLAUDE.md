@@ -20,11 +20,13 @@ without a PRD, and do not invent a name Godot does not use.
 
 ## These are bindings, not a simulation
 
-`RigidBody3D` owns a Rapier handle and syncs its transform onto the `THREE.Object3D` you
-handed it. Roughly 80 lines. It is not an entity, not a component, not a system.
+`RigidBody3D` owns a backend handle and syncs its transform onto the `THREE.Object3D` you
+handed it. The node classes are shared by web and native; only `PhysicsSimulation` names
+the backend. They are not entities, components, or systems.
 
 The web backend's underlying objects stay reachable through an explicitly backend-specific
-`raw` escape hatch. Do not extend the portable API with concrete Rapier types:
+`raw` escape hatch. On native, `raw` is opaque. Do not extend the portable API with concrete
+Rapier types:
 
 ```ts
 ctx.physics.world.raw   // Rapier World on web
@@ -37,7 +39,7 @@ Code reaching through `raw` is backend-specific by contract and is not portable 
 
 ## Contracts to keep
 
-- Every node exposes `dispose()`, and disposing must remove the Rapier handle and detach
+- Every node exposes `dispose()`, and disposing must remove its backend handle and detach
   from the scene. The framework calls the plugin's scene-exit hook for nodes that remain
   registered with Rapier; callers still dispose a node explicitly when removing it during
   play.
@@ -60,9 +62,11 @@ shape requires an explicit re-bake and is outside this binding.
 ## Native path
 
 Native Rapier compiled into `@threenative/runtime-native` is the mobile answer; WASM Rapier
-is not viable on the Android QuickJS host. The public Godot-shaped nodes stay in this package,
-while the first native proof selects its host adapter through the `threenative-native` export
-condition. Do not import `@threenative/physics-native` or add per-object native calls.
+is not viable on the Android QuickJS host. There is one source file per public node, and the
+`threenative-native` export condition swaps only the `PhysicsSimulation` host adapter. Do not
+import `@threenative/physics-native` or add per-object native calls. A native shape or
+character option the ABI cannot honor must throw during construction; it must never be
+silently ignored.
 
 Both backends exercise the contract through `PhysicsSimulation.step()` and
 `readVisibleTransforms()`. Kinematic input and visible transforms use reusable typed-array

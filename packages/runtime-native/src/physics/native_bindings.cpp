@@ -200,6 +200,48 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
          readGroup(engine, value, "collisionMask", options.collision_mask);
 }
 
+bool parseCharacterOptions(js::Engine *engine, js::JSValueHandle value,
+                           uint32_t id,
+                           TnPhysicsCharacterOptions &options) {
+  if (!engine->isObject(value))
+    return false;
+  options = {id, 0.01f, 0.78539816339f, false, 0.0f,
+             0.0f, false, false, 0.0f, 0};
+  if (!readFiniteNumber(engine, value, "offset", options.offset) ||
+      !readFiniteNumber(engine, value, "maxSlopeClimbAngle",
+                        options.max_slope_climb_angle) ||
+      !readGroup(engine, value, "oneWayLayers", options.one_way_layers)) {
+    return false;
+  }
+  const auto autostep = engine->getProperty(value, "autostep");
+  if (!engine->isUndefined(autostep)) {
+    if (!engine->isObject(autostep) ||
+        !readFiniteNumber(engine, autostep, "maxHeight",
+                          options.autostep_max_height) ||
+        !readFiniteNumber(engine, autostep, "minWidth",
+                          options.autostep_min_width)) {
+      return false;
+    }
+    const auto includeDynamic =
+        engine->getProperty(autostep, "includeDynamicBodies");
+    if (!engine->isBoolean(includeDynamic))
+      return false;
+    options.autostep_enabled = true;
+    options.autostep_include_dynamic_bodies =
+        engine->toBoolean(includeDynamic);
+  }
+  const auto snap = engine->getProperty(value, "snapToGround");
+  if (!engine->isUndefined(snap)) {
+    if (!engine->isNumber(snap) ||
+        !std::isfinite(engine->toNumber(snap))) {
+      return false;
+    }
+    options.snap_to_ground_enabled = true;
+    options.snap_to_ground = static_cast<float>(engine->toNumber(snap));
+  }
+  return true;
+}
+
 js::JSValueHandle makeSimulationObject(
     js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner,
     bool allowBodies) {
@@ -238,6 +280,53 @@ js::JSValueHandle makeSimulationObject(
                                           static_cast<uint32_t>(id))) {
                 return fail(engine, "removeBody received an unknown id");
               }
+              return engine->newUndefined();
+            }));
+    engine->setProperty(
+        simulation, "configureCharacter",
+        engine->newFunction(
+            "configureCharacter",
+            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+              if (owner->simulation == nullptr)
+                return fail(engine, "physics simulation is disposed");
+              if (args.size() < 2 || !engine->isNumber(args[0]))
+                return fail(engine, "configureCharacter requires an id and options");
+              const double id = engine->toNumber(args[0]);
+              if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
+                  std::floor(id) != id)
+                return fail(engine, "configureCharacter received an invalid id");
+              TnPhysicsCharacterOptions options{};
+              if (!parseCharacterOptions(engine, args[1],
+                                         static_cast<uint32_t>(id), options) ||
+                  !tn_physics_configure_character(owner->simulation, &options)) {
+                return fail(engine, "character controller options are invalid");
+              }
+              return engine->newUndefined();
+            }));
+    engine->setProperty(
+        simulation, "setBodyTransform",
+        engine->newFunction(
+            "setBodyTransform",
+            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+              if (owner->simulation == nullptr)
+                return fail(engine, "physics simulation is disposed");
+              if (args.size() < 2 || !engine->isNumber(args[0]) ||
+                  !std::isfinite(engine->toNumber(args[0])))
+                return fail(engine, "setBodyTransform requires an id and position");
+              const double id = engine->toNumber(args[0]);
+              if (id < 0 || id > kMaxExactFloatId || std::floor(id) != id)
+                return fail(engine, "setBodyTransform received an invalid id");
+              float x = 0.0f;
+              float y = 0.0f;
+              float z = 0.0f;
+              if (!engine->isObject(args[1]) ||
+                  !readFiniteNumber(engine, args[1], "x", x) ||
+                  !readFiniteNumber(engine, args[1], "y", y) ||
+                  !readFiniteNumber(engine, args[1], "z", z))
+                return fail(engine, "setBodyTransform received an invalid position");
+              if (!tn_physics_set_body_transform(owner->simulation,
+                                                 static_cast<uint32_t>(id), x, y, z))
+                return fail(engine, "setBodyTransform received an unknown id");
               return engine->newUndefined();
             }));
   }
@@ -304,6 +393,30 @@ js::JSValueHandle makeSimulationObject(
                 owner->simulation, data, bytes / sizeof(float));
             if (count < 0)
               return fail(engine, "transform buffer is too small");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "readCharacterStates",
+      engine->newFunction(
+          "readCharacterStates",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() ||
+                !isTypedArray(engine, args[0], "Float32Array")) {
+              return fail(engine,
+                          "readCharacterStates requires a Float32Array");
+            }
+            size_t bytes = 0;
+            auto *data = static_cast<float *>(
+                engine->getArrayBufferData(args[0], &bytes));
+            if (bytes % sizeof(float) != 0)
+              return fail(engine, "character state buffer is malformed");
+            const int32_t count = tn_physics_read_character_states(
+                owner->simulation, data, bytes / sizeof(float));
+            if (count < 0)
+              return fail(engine, "character state buffer is too small");
             return engine->newNumber(count);
           }));
   engine->setProperty(

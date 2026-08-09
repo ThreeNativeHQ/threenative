@@ -4,6 +4,7 @@ import { FixedStepLoop } from "@threenative/core";
 import type { Ctx } from "@threenative/core";
 import { BoxGeometry, Mesh } from "three";
 import { describe, expect, it } from "vitest";
+import "../src/index.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { type PhysicsContext, rapier } from "../src/plugin.js";

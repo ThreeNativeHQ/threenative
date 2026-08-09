@@ -1,7 +1,14 @@
 # PRD-045 — Playtest on device
 
 **Status: IN PROGRESS — Phases 0–3 closed on Android and Phase 5 closed; Phase 4 (executed
-iOS simulator evidence) remains open.**
+iOS simulator evidence) is BLOCKED ON HARDWARE.**
+
+**Operator hardware limitation (2026-08-08): no Apple machine is available.** No Xcode, no
+`xcrun`, no simulator, no physical iOS device. This blocks *execution evidence only* — iOS
+implementation work continues normally and merges on its contract tests. Android and Linux
+lanes are unaffected and keep their executed-evidence requirement. Do not mark criterion 7
+or Phase 4 closed, and do not soften the requirement to fit the hardware; the evidence is
+deferred until an Apple machine exists, not waived.
 The transport targets the absorbed `packages/runtime-native` runtime rather than React Native;
 its fail-closed scenario semantics and negative controls are unchanged.
 
@@ -167,12 +174,17 @@ A device harness that cannot fail is worse than no device harness. All three pro
 required exits on `emulator-5554`, alongside `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` for the
 network assertion. Scenario files: `examples/native-smoke/playtests/device-smoke*.json`.
 
-### Phase 4 — iOS — **IMPLEMENTED; EXECUTION OPEN**
+### Phase 4 — iOS — **IMPLEMENTED; EXECUTION BLOCKED ON HARDWARE**
 
 `xcrun simctl` for the simulator, physical device via `devicectl`. Simulator is acceptable
 evidence here because the question is JS-environment behaviour, not GPU driver behaviour —
 **state that distinction explicitly in the result, since it is the opposite of the rule
 0a applies to rendering.**
+
+The operator has no Apple machine as of 2026-08-08, so nothing here can be run. Keep
+changing the iOS driver and its fail-closed contract tests as the work requires; the only
+thing that waits is the executed simulator run. When an Apple machine becomes available,
+this phase is one command against an already-implemented driver.
 
 ### Phase 5 — docs and CLI surface — **CLOSED**
 
@@ -213,7 +225,7 @@ State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
 | 4 | Network assertions on a device target fail with an explicit unsupported error; no code path skips an assertion and reports pass | **MET** |
 | 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
 | 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
-| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **OPEN** — Phase 4 |
+| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **BLOCKED ON HARDWARE** — Phase 4; no Apple machine available to the operator as of 2026-08-08 |
 | 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **MET** — Phase 5 |
 
 Criterion 7 is the whole remaining scope. **This PRD does not move to `done/` until it is met

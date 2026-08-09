@@ -16,10 +16,17 @@ export interface PhysicsColliderHandle extends PhysicsHandle {
   readonly id: number;
 }
 
-export type PhysicsWorldHandle = PhysicsHandle;
+export interface PhysicsWorldHandle extends PhysicsHandle {
+  /** The selected backend, kept beside `raw` so shared nodes do not inspect it. */
+  readonly simulation?: unknown;
+}
 
 export function physicsHandle(raw: unknown): PhysicsHandle {
   return { raw };
+}
+
+export function physicsWorldHandle(raw: unknown, simulation: unknown): PhysicsWorldHandle {
+  return { raw, simulation };
 }
 
 export function physicsBodyHandle(id: number, raw: unknown): PhysicsBodyHandle {

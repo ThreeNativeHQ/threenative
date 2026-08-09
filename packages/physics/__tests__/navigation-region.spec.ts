@@ -1,6 +1,7 @@
 import type { Ctx } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import "../src/index.js";
 import { NavigationRegion3D, recast } from "../src/navigation/index.js";
 import type { PhysicsContext } from "../src/plugin.js";
 import { rapier } from "../src/plugin.js";

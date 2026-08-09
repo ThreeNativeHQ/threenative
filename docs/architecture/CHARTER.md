@@ -358,6 +358,8 @@ NativeWind means the same class strings work on device.
 
 ## 7. Cross-platform — the owned native runtime
 
+**Write once, run everywhere.**
+
 ```
 Shared TypeScript game code
         ├── browser WebGPU ──────────────► web
@@ -383,6 +385,28 @@ Rapier cannot depend on WebAssembly on Android, because the runtime uses QuickJS
 Native physics is compiled into the runtime and exposed through a coarse, host-neutral
 typed-array ABI. The TypeScript API stays in `@threenative/physics`, with bulk
 `step`/`readVisibleTransforms` crossings rather than per-object frame calls.
+
+### The user never has to know native exists
+
+The test of "write once, run everywhere" is not that the same source *compiles* everywhere.
+It is that a developer writes their game against the framework abstractions and plain
+Three.js, never thinks about the target, and it behaves the same on all of them.
+
+That forbids a second implementation of any public class. `CharacterBody3D` is one file. So
+are `Area3D`, `RigidBody3D` and `CollisionShape3D`. An export condition may swap the
+`PhysicsSimulation` backend beneath them; it may never swap a node, a scene, an entity or
+anything else a game writes against. Two copies of a class are a fork, and a fork of gameplay
+logic diverges silently — a feature added to one is simply missing from the other, and no gate
+reports it.
+
+Where a backend cannot honour part of the shared API, it **throws at construction**. Accepting
+an option and discarding it is §11's fail-closed rule relocated from the harness into the
+runtime, and it is worse there, because it surfaces as a gameplay bug on one platform only.
+
+Both backends are proven by a single conformance suite: the same scenario, run against every
+`PhysicsSimulation` implementation, asserting the same transforms. Absent that suite, "runs
+everywhere" is a claim and not a gate. `COURSE-CORRECTION-2026-08-08.md` records where the
+codebase currently violates this and the order of work to fix it.
 
 Release readiness requires, in order:
 
@@ -611,6 +635,8 @@ by §11.1 and §11.4, with evidence, or they are not bounded at all.
 4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering, Rapier for physics, Tailwind for UI.
 5. **A package exists only when it carries a dependency the others must not inherit.**
 6. **CI green means something or it means nothing.** No merge while red. (v1: 0 passing in 100.)
+7. **Write once, run everywhere.** §7. One implementation per public class. A backend swaps
+   beneath the API, never a node the user writes against; what a backend cannot honour throws.
 
 ---
 

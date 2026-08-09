@@ -54,6 +54,7 @@ The self-improvement loop is recorded in
 - [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours
 - [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, the owned runtime, the native physics ABI
 - [architecture/AGENT-INTERFACE.md](architecture/AGENT-INTERFACE.md) — how an AI agent drives a ThreeNative project
+- [architecture/COURSE-CORRECTION-2026-08-08.md](architecture/COURSE-CORRECTION-2026-08-08.md) — **binding.** Write once, run everywhere; the `@threenative/physics` backend fork and how to undo it
 
 ## Product
 
@@ -70,3 +71,9 @@ recorded here.
 
 `pnpm budgets` fails CI above 10 files in `docs/PRDs/` — files only, so `docs/PRDs/done/`
 does not count against the cap. Edit an existing document by preference.
+
+[`PRDs/native/blocked/`](PRDs/native/blocked/) holds PRDs whose every remaining item is
+blocked on hardware the operator does not have — as of 2026-08-08, no Apple machine, so no
+Xcode, simulator or iOS device. **Blocked is not done.** The criterion stays unmet and the
+PRD moves to `done/` only when it is met on real hardware, never by rewriting it to fit
+what this machine can run. A PRD with any non-hardware work left stays in `PRDs/native/`.

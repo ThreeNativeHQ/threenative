@@ -1,15 +1,13 @@
-import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Mesh } from "three";
+import { interactionGroups } from "./collision.js";
+import {
+  physicsSimulationBackend,
+  type PhysicsShapeDescriptor,
+  type PhysicsShapeKind,
+} from "./simulation.js";
 
-export type CollisionShapeKind =
-  | "box"
-  | "sphere"
-  | "capsule"
-  | "trimesh"
-  | "convexHull"
-  | "heightfield";
+export type CollisionShapeKind = PhysicsShapeKind;
 
-/** A portable shape descriptor whose `raw` value is backend-specific. */
 export interface CollisionShapeHandle {
   readonly raw: unknown;
 }
@@ -37,24 +35,87 @@ function geometryIndices(mesh: Mesh): Uint32Array {
   return Uint32Array.from({ length: count }, (_, offset) => offset);
 }
 
-export class CollisionShape3D {
-  /** Web: `RAPIER.ColliderDesc`. Native: an opaque backend descriptor. */
-  readonly raw: unknown;
+function finitePositive(value: number, label: string): number {
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`CollisionShape3D.${label} requires a positive finite value.`);
+  return value;
+}
 
-  private constructor(raw: unknown) {
-    this.raw = raw;
+function applyRaw(raw: unknown, method: string, ...args: unknown[]): void {
+  if (typeof raw !== "object" || raw === null || !(method in raw)) return;
+  const operation = (raw as Record<string, unknown>)[method];
+  if (typeof operation === "function") operation.apply(raw, args);
+}
+
+export class CollisionShape3D {
+  readonly #descriptor: PhysicsShapeDescriptor;
+  #backendRaw: unknown;
+
+  private constructor(descriptor: PhysicsShapeDescriptor) {
+    this.#descriptor = descriptor;
+  }
+
+  /** Backend-neutral data consumed by the selected PhysicsSimulation adapter. */
+  get descriptor(): PhysicsShapeDescriptor {
+    return this.#descriptor;
+  }
+
+  /** Rapier's descriptor on web, or an opaque native descriptor after registration. */
+  get raw(): unknown {
+    if (this.#backendRaw === undefined) {
+      try {
+        const createShape = physicsSimulationBackend().createShape;
+        if (createShape !== undefined) this.#backendRaw = createShape(this.#descriptor);
+      } catch {
+        // A native package entry has no web backend; its portable descriptor is the raw value.
+      }
+    }
+    return this.#backendRaw ?? this.#descriptor;
+  }
+
+  /** Internal seam: the backend binds its own descriptor when the body is created. */
+  bindRaw(raw: unknown): void {
+    this.#backendRaw = raw;
+    applyRaw(raw, "setCollisionGroups", interactionGroups(this.#descriptor.collisionLayer, this.#descriptor.collisionMask));
+    applyRaw(raw, "setSensor", this.#descriptor.sensor);
   }
 
   static box(width: number, height: number, depth: number): CollisionShape3D {
-    return new CollisionShape3D(RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2));
+    return new CollisionShape3D({
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "box",
+      sensor: false,
+      x: finitePositive(width, "box") / 2,
+      y: finitePositive(height, "box") / 2,
+      z: finitePositive(depth, "box") / 2,
+    });
   }
 
   static sphere(radius: number): CollisionShape3D {
-    return new CollisionShape3D(RAPIER.ColliderDesc.ball(radius));
+    return new CollisionShape3D({
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "sphere",
+      sensor: false,
+      x: finitePositive(radius, "sphere"),
+      y: 0,
+      z: 0,
+    });
   }
 
   static capsule(halfHeight: number, radius: number): CollisionShape3D {
-    return new CollisionShape3D(RAPIER.ColliderDesc.capsule(halfHeight, radius));
+    if (!Number.isFinite(halfHeight) || halfHeight < 0)
+      throw new Error("CollisionShape3D.capsule requires a finite non-negative halfHeight.");
+    return new CollisionShape3D({
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "capsule",
+      sensor: false,
+      x: halfHeight,
+      y: finitePositive(radius, "capsule"),
+      z: 0,
+    });
   }
 
   static heightfield(
@@ -71,9 +132,20 @@ export class CollisionShape3D {
       throw new Error(
         `CollisionShape3D.heightfield expected ${rows * columns} heights, received ${heights.length}.`,
       );
-    return new CollisionShape3D(
-      RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale),
-    );
+    return new CollisionShape3D({
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "heightfield",
+      sensor: false,
+      x: 0,
+      y: 0,
+      z: 0,
+      rows,
+      columns,
+      heights,
+      shape: { ncols: columns - 1, nrows: rows - 1, scale },
+      scale,
+    });
   }
 
   static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): CollisionShape3D {
@@ -86,15 +158,30 @@ export class CollisionShape3D {
           ? "capsule"
           : "box");
     if (inferred === "trimesh")
-      return new CollisionShape3D(
-        RAPIER.ColliderDesc.trimesh(geometryVertices(mesh), geometryIndices(mesh)),
-      );
-    if (inferred === "convexHull") {
-      const shape = RAPIER.ColliderDesc.convexHull(geometryVertices(mesh));
-      if (shape === null)
-        throw new Error("CollisionShape3D.fromMesh could not build a convex hull.");
-      return new CollisionShape3D(shape);
-    }
+      return new CollisionShape3D({
+        collisionLayer: 1,
+        collisionMask: 0xffff,
+        kind: inferred,
+        sensor: false,
+        x: 0,
+        y: 0,
+        z: 0,
+        vertices: geometryVertices(mesh),
+        indices: geometryIndices(mesh),
+      });
+    if (inferred === "convexHull")
+      return new CollisionShape3D({
+        collisionLayer: 1,
+        collisionMask: 0xffff,
+        kind: inferred,
+        sensor: false,
+        x: 0,
+        y: 0,
+        z: 0,
+        vertices: geometryVertices(mesh),
+      });
+    if (inferred === "heightfield")
+      throw new Error("CollisionShape3D.fromMesh cannot infer a heightfield.");
 
     geometry.computeBoundingBox();
     const bounds = geometry.boundingBox;
@@ -117,12 +204,18 @@ export class CollisionShape3D {
   }
 
   setCollisionGroups(groups: number): this {
-    (this.raw as RAPIER.ColliderDesc).setCollisionGroups(groups);
+    const layer = groups >>> 16;
+    const mask = groups & 0xffff;
+    interactionGroups(layer, mask);
+    this.#descriptor.collisionLayer = layer;
+    this.#descriptor.collisionMask = mask;
+    applyRaw(this.#backendRaw, "setCollisionGroups", groups);
     return this;
   }
 
   setSensor(sensor: boolean): this {
-    (this.raw as RAPIER.ColliderDesc).setSensor(sensor);
+    this.#descriptor.sensor = sensor;
+    applyRaw(this.#backendRaw, "setSensor", sensor);
     return this;
   }
 }

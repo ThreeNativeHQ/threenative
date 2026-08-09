@@ -37,11 +37,23 @@ export async function createPhysicsProof(options: PhysicsProofOptions = {}): Pro
   );
   const pending: number[][] = [];
   let disposed = false;
-
+  
   const requireLive = () => {
     if (disposed) throw new Error("Physics proof simulation is disposed.");
   };
   return {
+    createBody: () => {
+      throw new Error("Physics proof simulation does not expose general body creation.");
+    },
+    configureCharacter: () => {
+      throw new Error("Physics proof simulation does not expose character configuration.");
+    },
+    removeBody: () => {
+      throw new Error("Physics proof simulation does not expose general body removal.");
+    },
+    setBodyTransform: () => {
+      throw new Error("Physics proof simulation does not expose body transforms.");
+    },
     version: RAPIER.version(),
     step: (deltaTime) => {
       requireLive();

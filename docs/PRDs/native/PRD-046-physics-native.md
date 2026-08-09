@@ -158,6 +158,13 @@ must say that at the property, not only in a PRD.
 Backend selection is a build condition on the existing package. There is no
 `@threenative/physics-native`.
 
+**Implementation decision (2026-08-08): choose (a) at the simulation seam.** The shared
+nodes call `PhysicsSimulation.configureCharacter()` and both adapters carry controller
+configuration, character state, and bulk transforms through the seam. The native ABI supports
+the controller options and primitive shapes currently exposed by the shared classes; shapes
+outside that ABI throw during construction. This keeps the node source unified without
+silently dropping behavior.
+
 ### 2.3 Explicitly rejected
 
 - **A different physics API for device.** `@threenative/physics`'s Godot-shaped surface

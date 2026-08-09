@@ -2,6 +2,7 @@ import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Ctx, GamePluginRuntime } from "@threenative/core";
 import { Object3D } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import "../src/index.js";
 import { Area3D } from "../src/Area3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";

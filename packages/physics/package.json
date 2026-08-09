@@ -25,7 +25,7 @@
     },
     "./package.json": "./package.json"
   },
-  "sideEffects": false,
+  "sideEffects": ["./src/web.ts", "./src/native.ts"],
   "dependencies": {
     "@dimforge/rapier3d-compat": "catalog:",
     "recast-navigation": "catalog:"

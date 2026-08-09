@@ -2,6 +2,7 @@ import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Ctx } from "@threenative/core";
 import { BoxGeometry, Group, Mesh, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import "../src/index.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";

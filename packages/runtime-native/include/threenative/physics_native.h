@@ -37,6 +37,19 @@ typedef struct TnPhysicsBodyOptions {
   bool sensor;
 } TnPhysicsBodyOptions;
 
+typedef struct TnPhysicsCharacterOptions {
+  uint32_t id;
+  float offset;
+  float max_slope_climb_angle;
+  bool autostep_enabled;
+  float autostep_max_height;
+  float autostep_min_width;
+  bool autostep_include_dynamic_bodies;
+  bool snap_to_ground_enabled;
+  float snap_to_ground;
+  uint32_t one_way_layers;
+} TnPhysicsCharacterOptions;
+
 typedef struct TnPhysicsProofOptions {
   float gravity_x;
   float gravity_y;
@@ -52,11 +65,19 @@ TnPhysicsSimulation *
 tn_physics_create(const TnPhysicsWorldOptions *options);
 bool tn_physics_add_body(TnPhysicsSimulation *simulation,
                          const TnPhysicsBodyOptions *options);
+bool tn_physics_configure_character(
+    TnPhysicsSimulation *simulation,
+    const TnPhysicsCharacterOptions *options);
 bool tn_physics_remove_body(TnPhysicsSimulation *simulation, uint32_t id);
+bool tn_physics_set_body_transform(TnPhysicsSimulation *simulation, uint32_t id,
+                                   float x, float y, float z);
 bool tn_physics_step(TnPhysicsSimulation *simulation, float delta_time,
                      const float *kinematic_transforms,
                      size_t kinematic_record_count);
 int32_t tn_physics_read_visible_transforms(
+    const TnPhysicsSimulation *simulation, float *output,
+    size_t output_float_capacity);
+int32_t tn_physics_read_character_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);
 int32_t tn_physics_drain_collision_events(TnPhysicsSimulation *simulation,

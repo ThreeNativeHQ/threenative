@@ -3,6 +3,12 @@
 **Status (2026-08-08):** the Linux and Android-emulator lanes are implemented and proven;
 Apple/Windows execution and published prebuilt consumer distribution remain open.
 
+**Every Apple row below is blocked on hardware, not on work.** The operator has no Apple
+machine as of 2026-08-08 — no Xcode, no `xcrun`, no simulator, no physical device. iOS
+implementation still proceeds and merges on its fail-closed contract tests; what waits is
+the executed evidence. Linux and Android lanes are unaffected and keep their executed-run
+requirement. A blocked row is still an open row: do not move one to the Proven column.
+
 | Proven | Open |
 |---|---|
 | Desktop framework absorption, 300 frames + screenshot | iOS: no simulator app, launch, log or screenshot |
@@ -31,7 +37,7 @@ runtime       on device     physics       distribution
 | # | PRD | What it buys | State |
 |---|---|---|---|
 | 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **in progress** — Phases 0–4 closed; Apple/Windows execution open; 6 split out |
-| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **in progress** — Android + CLI/docs closed; iOS simulator execution open |
+| 2 | [PRD-045](blocked/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **blocked** — in `blocked/`; criteria 1–6 and 8 met, only the iOS simulator run is left and no Apple machine exists |
 | 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web + Android closed; iOS and published consumer proof open |
 | 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
 | — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |

@@ -1,7 +1,7 @@
-use rapier3d::control::KinematicCharacterController;
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::na::{Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ptr;
 
 const TRANSFORM_WIDTH: usize = 8;
@@ -36,6 +36,20 @@ pub struct TnPhysicsBodyOptions {
 }
 
 #[repr(C)]
+pub struct TnPhysicsCharacterOptions {
+    pub id: u32,
+    pub offset: f32,
+    pub max_slope_climb_angle: f32,
+    pub autostep_enabled: bool,
+    pub autostep_max_height: f32,
+    pub autostep_min_width: f32,
+    pub autostep_include_dynamic_bodies: bool,
+    pub snap_to_ground_enabled: bool,
+    pub snap_to_ground: f32,
+    pub one_way_layers: u32,
+}
+
+#[repr(C)]
 pub struct TnPhysicsProofOptions {
     pub gravity_x: f32,
     pub gravity_y: f32,
@@ -53,6 +67,14 @@ struct BodyEntry {
     character: bool,
 }
 
+#[derive(Clone, Copy)]
+struct CharacterEntry {
+    controller: KinematicCharacterController,
+    grounded: bool,
+    ground_collider: Option<u32>,
+    one_way_layers: u32,
+}
+
 pub struct Simulation {
     gravity: Vector<Real>,
     pipeline: PhysicsPipeline,
@@ -66,6 +88,7 @@ pub struct Simulation {
     multibody_joints: MultibodyJointSet,
     ccd: CCDSolver,
     entries: BTreeMap<u32, BodyEntry>,
+    characters: BTreeMap<u32, CharacterEntry>,
     colliding: BTreeSet<(u32, u32)>,
     events: VecDeque<[u32; EVENT_WIDTH]>,
 }
@@ -95,6 +118,7 @@ impl Simulation {
             multibody_joints: MultibodyJointSet::new(),
             ccd: CCDSolver::new(),
             entries: BTreeMap::new(),
+            characters: BTreeMap::new(),
             colliding: BTreeSet::new(),
             events: VecDeque::new(),
         })
@@ -190,6 +214,53 @@ impl Simulation {
         true
     }
 
+    fn configure_character(&mut self, options: TnPhysicsCharacterOptions) -> bool {
+        if ![
+            options.offset,
+            options.max_slope_climb_angle,
+            options.autostep_max_height,
+            options.autostep_min_width,
+            options.snap_to_ground,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+            || options.offset <= 0.0
+            || options.max_slope_climb_angle < 0.0
+            || (options.autostep_enabled
+                && (options.autostep_max_height <= 0.0 || options.autostep_min_width <= 0.0))
+            || (options.snap_to_ground_enabled && options.snap_to_ground <= 0.0)
+            || !self
+                .entries
+                .get(&options.id)
+                .is_some_and(|entry| entry.character)
+        {
+            return false;
+        }
+        let mut controller = KinematicCharacterController {
+            offset: CharacterLength::Absolute(options.offset),
+            max_slope_climb_angle: options.max_slope_climb_angle,
+            snap_to_ground: options
+                .snap_to_ground_enabled
+                .then_some(CharacterLength::Absolute(options.snap_to_ground)),
+            ..KinematicCharacterController::default()
+        };
+        controller.autostep = options.autostep_enabled.then_some(CharacterAutostep {
+            max_height: CharacterLength::Absolute(options.autostep_max_height),
+            min_width: CharacterLength::Absolute(options.autostep_min_width),
+            include_dynamic_bodies: options.autostep_include_dynamic_bodies,
+        });
+        self.characters.insert(
+            options.id,
+            CharacterEntry {
+                controller,
+                grounded: false,
+                ground_collider: None,
+                one_way_layers: options.one_way_layers,
+            },
+        );
+        true
+    }
+
     fn remove_body(&mut self, id: u32) -> bool {
         let Some(entry) = self.entries.remove(&id) else {
             return false;
@@ -203,6 +274,24 @@ impl Simulation {
             true,
         );
         self.colliding.retain(|(left, right)| *left != id && *right != id);
+        self.characters.remove(&id);
+        true
+    }
+
+    fn set_body_transform(&mut self, id: u32, x: f32, y: f32, z: f32) -> bool {
+        if ![x, y, z].into_iter().all(f32::is_finite) {
+            return false;
+        }
+        let Some(entry) = self.entries.get(&id) else {
+            return false;
+        };
+        let body = &mut self.bodies[entry.body];
+        body.set_translation(vector![x, y, z], true);
+        body.set_next_kinematic_translation(vector![x, y, z]);
+        if let Some(character) = self.characters.get_mut(&id) {
+            character.grounded = false;
+            character.ground_collider = None;
+        }
         true
     }
 
@@ -231,28 +320,57 @@ impl Simulation {
                 record[7], record[4], record[5], record[6],
             ));
             if entry.character {
+                let Some(character) = self.characters.get(&id).copied() else {
+                    return false;
+                };
                 let body = &self.bodies[entry.body];
                 let desired = target - body.translation();
-                let filter = QueryFilter::new().exclude_rigid_body(entry.body);
+                let upward = desired.y > 0.0;
+                let one_way_layers = character.one_way_layers;
+                let predicate = |_: ColliderHandle, collider: &Collider| {
+                    !collider.is_sensor()
+                        && (!upward
+                            || (collider.collision_groups().memberships.bits()
+                                & one_way_layers)
+                                == 0)
+                };
+                let filter = QueryFilter {
+                    flags: QueryFilterFlags::EXCLUDE_SENSORS,
+                    exclude_rigid_body: Some(entry.body),
+                    predicate: Some(&predicate),
+                    ..QueryFilter::default()
+                };
                 let query = self.broad_phase.as_query_pipeline(
                     self.narrow_phase.query_dispatcher(),
                     &self.bodies,
                     &self.colliders,
                     filter,
                 );
-                let controller = KinematicCharacterController::default();
-                let movement = controller.move_shape(
+                let collider_ids: HashMap<ColliderHandle, u32> = self
+                    .entries
+                    .iter()
+                    .map(|(body_id, body_entry)| (body_entry.collider, *body_id))
+                    .collect();
+                let mut ground_collider = None;
+                let movement = character.controller.move_shape(
                     delta_time,
                     &query,
                     self.colliders[entry.collider].shape(),
                     body.position(),
                     desired,
-                    |_| {},
+                    |collision| {
+                        if collision.hit.normal1.y >= 0.5 {
+                            ground_collider = collider_ids.get(&collision.handle).copied();
+                        }
+                    },
                 );
                 let body = &mut self.bodies[entry.body];
                 let current = *body.translation();
                 body.set_next_kinematic_translation(current + movement.translation);
                 body.set_next_kinematic_rotation(rotation);
+                let state = self.characters.get_mut(&id).expect("character was checked");
+                state.grounded = movement.grounded;
+                state.ground_collider = ground_collider;
             } else {
                 let body = &mut self.bodies[entry.body];
                 if !body.is_kinematic() {
@@ -313,6 +431,21 @@ impl Simulation {
         self.colliding = current;
         true
     }
+
+    fn write_character_states(&self, output: &mut [f32]) -> Option<usize> {
+        if output.len() < self.characters.len() * 3 {
+            return None;
+        }
+        for (index, (id, character)) in self.characters.iter().enumerate() {
+            let offset = index * 3;
+            output[offset] = *id as f32;
+            output[offset + 1] = if character.grounded { 1.0 } else { 0.0 };
+            output[offset + 2] = character
+                .ground_collider
+                .map_or(-1.0, |collider| collider as f32);
+        }
+        Some(self.characters.len())
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -347,6 +480,29 @@ pub extern "C" fn tn_physics_add_body(
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_remove_body(simulation: *mut Simulation, id: u32) -> bool {
     unsafe { simulation.as_mut() }.is_some_and(|simulation| simulation.remove_body(id))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_configure_character(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsCharacterOptions,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    simulation.configure_character(unsafe { ptr::read(options) })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_body_transform(
+    simulation: *mut Simulation,
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> bool {
+    unsafe { simulation.as_mut() }
+        .is_some_and(|simulation| simulation.set_body_transform(id, x, y, z))
 }
 
 #[unsafe(no_mangle)]
@@ -411,6 +567,29 @@ pub extern "C" fn tn_physics_read_visible_transforms(
         };
     }
     simulation.entries.len() as i32
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_character_states(
+    simulation: *const Simulation,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    let required = simulation.characters.len() * 3;
+    if required > output_float_capacity || (required > 0 && output.is_null()) {
+        return -1;
+    }
+    let values = if required == 0 {
+        &mut []
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(output, required) }
+    };
+    simulation
+        .write_character_states(values)
+        .map_or(-1, |count| count as i32)
 }
 
 #[unsafe(no_mangle)]

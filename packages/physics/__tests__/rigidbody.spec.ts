@@ -1,6 +1,7 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import { BoxGeometry, Mesh } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import "../src/index.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 

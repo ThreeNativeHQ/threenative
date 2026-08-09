@@ -1,6 +1,7 @@
 import type { Ctx } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
+import "../src/index.js";
 import { NavigationAgent3D } from "../src/navigation/NavigationAgent3D.js";
 import { NavigationRegion3D } from "../src/navigation/NavigationRegion3D.js";
 import { recast } from "../src/navigation/index.js";

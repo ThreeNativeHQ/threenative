@@ -1,4 +1,3 @@
-import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
@@ -6,10 +5,9 @@ import {
   type PhysicsBodyHandle,
   type PhysicsColliderHandle,
   type PhysicsWorldHandle,
-  physicsBodyHandle,
-  physicsColliderHandle,
 } from "./handles.js";
 import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
+import { requirePhysicsSimulation, type PhysicsSimulation } from "./simulation.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
 export type AreaHandler = (body: PhysicsBody3D) => void;
@@ -35,12 +33,22 @@ export interface Area3DOptions {
   readonly collisionMask?: number;
 }
 
+type TransformRecord = [number, number, number, number, number, number, number, number];
+
+function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
+  const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
+  if (result.some((value) => value === undefined || !Number.isFinite(value)))
+    throw new Error("PhysicsSimulation returned a malformed transform.");
+  return result as TransformRecord;
+}
+
 export class Area3D {
   readonly entity: string | undefined;
   readonly body: PhysicsBodyHandle;
   readonly collider: PhysicsColliderHandle;
-  #world: RAPIER.World;
-  #physics: PhysicsContext | undefined;
+  readonly #simulation: PhysicsSimulation;
+  readonly #physics: PhysicsContext | undefined;
+  readonly #position = { x: 0, y: 0, z: 0 };
   #entered = new Map<number, PhysicsBody3D>();
   #contacts: AreaContact[] = [];
   #monitoring = true;
@@ -50,35 +58,28 @@ export class Area3D {
   };
   #disposed = false;
 
-  #rawBody(): RAPIER.RigidBody {
-    return this.body.raw as RAPIER.RigidBody;
-  }
-
   constructor(options: Area3DOptions) {
-    const worldHandle = options.world ?? options.physics?.world;
-    if (worldHandle === undefined) throw new Error("Area3D requires a physics context or world.");
-    const world =
-      typeof worldHandle === "object" && worldHandle !== null && "raw" in worldHandle
-        ? ((worldHandle as PhysicsWorldHandle).raw as RAPIER.World)
-        : (worldHandle as RAPIER.World);
-    this.#world = world;
+    this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.entity = options.entity;
-    const position = options.position ?? { x: 0, y: 0, z: 0 };
-    const rawBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
-    );
-    rawBody.userData = this;
-    const shape = options.shape.setSensor(true).raw as RAPIER.ColliderDesc;
-    shape.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    Object.assign(this.#position, options.position ?? { x: 0, y: 0, z: 0 });
+    const shape = options.shape.setSensor(true).descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
-      shape.setCollisionGroups(
-        interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
-      );
+      const layer = options.collisionLayer ?? shape.collisionLayer;
+      const mask = options.collisionMask ?? shape.collisionMask;
+      options.shape.setCollisionGroups(interactionGroups(layer, mask));
     }
-    const rawCollider = world.createCollider(shape, rawBody);
-    this.body = physicsBodyHandle(rawBody.handle, rawBody);
-    this.collider = physicsColliderHandle(rawCollider.handle, rawCollider);
+    const registration = this.#simulation.createBody({
+      mass: 0,
+      position: this.#position,
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: true,
+      shape,
+      type: "kinematic",
+    });
+    options.shape.bindRaw(registration.rawShape);
+    this.body = registration.body;
+    this.collider = registration.collider;
     this.#physics?.addArea(this);
   }
 
@@ -99,9 +100,24 @@ export class Area3D {
   }
 
   setPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
-    const body = this.#rawBody();
-    if (this.#disposed || !body.isValid()) return;
-    body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    if (!this.#disposed) {
+      Object.assign(this.#position, position);
+      this.#simulation.setBodyTransform(this.body.id, position);
+    }
+  }
+
+  /** Called by the shared plugin before a bulk step. */
+  writeKinematic(buffer: Float32Array, offset: number): void {
+    if (this.#disposed) return;
+    buffer.set(
+      [this.body.id, this.#position.x, this.#position.y, this.#position.z, 0, 0, 0, 1],
+      offset,
+    );
+  }
+
+  applyTransform(values: Readonly<Float32Array>, offset: number): void {
+    const [, x, y, z] = finiteTransform(values, offset);
+    Object.assign(this.#position, { x, y, z });
   }
 
   handleCollision(body: PhysicsBody3D, started: boolean): void {
@@ -140,8 +156,7 @@ export class Area3D {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#physics?.removeArea(this);
-    const body = this.#rawBody();
-    if (body.isValid()) this.#world.removeRigidBody(body);
+    this.#simulation.removeBody(this.body.id);
     this.#entered.clear();
     this.#listeners.bodyEntered.clear();
     this.#listeners.bodyExited.clear();

@@ -19,5 +19,20 @@ export async function createPhysicsProof(options: PhysicsProofOptions = {}): Pro
     if (typeof simulation[method] !== "function")
       throw new Error(`TN_NATIVE_PHYSICS_INVALID: simulation is missing ${method}`);
   }
-  return { ...simulation, version: host.version };
+  return {
+    ...simulation,
+    createBody: () => {
+      throw new Error("Physics proof simulation does not expose general body creation.");
+    },
+    configureCharacter: () => {
+      throw new Error("Physics proof simulation does not expose character configuration.");
+    },
+    removeBody: () => {
+      throw new Error("Physics proof simulation does not expose general body removal.");
+    },
+    setBodyTransform: () => {
+      throw new Error("Physics proof simulation does not expose body transforms.");
+    },
+    version: host.version,
+  };
 }
