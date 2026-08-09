@@ -313,9 +313,16 @@ export function main(argv = process.argv.slice(2)) {
     run(process.execPath, [join(runtimeRoot, "scripts/build-android-physics-proof.mjs")], {
       env: androidEnv,
     });
-    run(join(runtimeRoot, "android/gradlew"), ["-p", join(runtimeRoot, "android"), ":app:assembleDebug", "--console=plain"], {
-      env: androidEnv,
-    });
+    const gradlew = join(runtimeRoot, "android/gradlew");
+    run(process.platform === "win32" ? `${gradlew}.bat` : "bash", [
+      ...(process.platform === "win32" ? [] : [gradlew]),
+      "-p",
+      join(runtimeRoot, "android"),
+      ":app:assembleDebug",
+      "-x",
+      "buildAndroidFirstProofBundle",
+      "--console=plain",
+    ], { env: androidEnv });
   }
   const apk = join(runtimeRoot, "android/app/build/outputs/apk/debug/app-debug.apk");
   if (!existsSync(apk)) throw new ParityError(`Android APK is missing at ${apk}.`);

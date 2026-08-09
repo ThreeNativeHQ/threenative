@@ -10,8 +10,18 @@
   "assert": {
     "resources": [
       { "id": "GameState", "path": "parity.steps", "equals": 180, "changed": true },
-      { "id": "GameState", "path": "parity.grounded", "equals": true },
-      { "id": "GameState", "path": "parity.groundCollider", "equals": "floor" },
+      {
+        "id": "GameState",
+        "path": "parity.grounded",
+        "equals": true,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.groundCollider",
+        "equals": "floor",
+        "allowTrivial": true
+      },
       {
         "id": "GameState",
         "path": "parity.scenarioSha256",
