@@ -420,6 +420,30 @@ js::JSValueHandle makeSimulationObject(
             return engine->newNumber(count);
           }));
   engine->setProperty(
+      simulation, "readAreaIntersections",
+      engine->newFunction(
+          "readAreaIntersections",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() ||
+                !isTypedArray(engine, args[0], "Uint32Array")) {
+              return fail(engine,
+                          "readAreaIntersections requires a Uint32Array");
+            }
+            size_t bytes = 0;
+            auto *data = static_cast<uint32_t *>(
+                engine->getArrayBufferData(args[0], &bytes));
+            if (bytes % sizeof(uint32_t) != 0)
+              return fail(engine, "area intersection buffer is malformed");
+            const int32_t count = tn_physics_read_area_intersections(
+                owner->simulation, data, bytes / sizeof(uint32_t));
+            if (count < 0)
+              return fail(engine, "area intersection buffer is too small");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
       simulation, "drainCollisionEvents",
       engine->newFunction(
           "drainCollisionEvents",

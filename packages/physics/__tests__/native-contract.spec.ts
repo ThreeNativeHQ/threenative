@@ -5,24 +5,25 @@ import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import {
+  type NativeBodyOptions,
+  type NativeSimulation,
+  createNativePhysicsSimulation,
+} from "../src/native/host.js";
+import {
   Area3D as NativeArea3D,
   CharacterBody3D as NativeCharacterBody3D,
   CollisionShape3D as NativeCollisionShape3D,
   RigidBody3D as NativeRigidBody3D,
 } from "../src/native/index.js";
 import {
-  createNativePhysicsSimulation,
-  type NativeBodyOptions,
-  type NativeSimulation,
-} from "../src/native/host.js";
-import {
-  createWebPhysicsSimulation,
   type PhysicsCharacterOptions,
   type PhysicsInputSnapshot,
   type PhysicsRuntimeSimulation,
+  createWebPhysicsSimulation,
 } from "../src/simulation.js";
 
 class NativeHostOverWeb implements NativeSimulation {
+  readonly #areas = new Set<number>();
   readonly #characters = new Set<number>();
   readonly #simulation: PhysicsRuntimeSimulation;
 
@@ -40,6 +41,7 @@ class NativeHostOverWeb implements NativeSimulation {
       type: options.type,
     });
     if (options.type === "character") this.#characters.add(registration.body.id);
+    if (options.sensor) this.#areas.add(registration.body.id);
     return registration.body.id;
   }
 
@@ -50,6 +52,7 @@ class NativeHostOverWeb implements NativeSimulation {
   removeBody(id: number): void {
     this.#simulation.removeBody(id);
     this.#characters.delete(id);
+    this.#areas.delete(id);
   }
 
   setBodyTransform(id: number, position: { x: number; y: number; z: number }): void {
@@ -69,11 +72,20 @@ class NativeHostOverWeb implements NativeSimulation {
     let index = 0;
     for (const id of this.#characters) {
       const state = this.#simulation.readCharacterState?.(id);
-      buffer.set(
-        [id, state?.grounded === true ? 1 : 0, state?.groundCollider ?? -1],
-        index * 3,
-      );
+      buffer.set([id, state?.grounded === true ? 1 : 0, state?.groundCollider ?? -1], index * 3);
       index += 1;
+    }
+    return index;
+  }
+
+  readAreaIntersections(buffer: Uint32Array): number {
+    let index = 0;
+    for (const areaId of this.#areas) {
+      for (const bodyId of this.#simulation.areaIntersections?.(areaId) ?? []) {
+        if ((index + 1) * 2 > buffer.length) throw new Error("buffer is too small");
+        buffer.set([areaId, bodyId], index * 2);
+        index += 1;
+      }
     }
     return index;
   }
@@ -84,6 +96,7 @@ class NativeHostOverWeb implements NativeSimulation {
 
   dispose(): void {
     this.#simulation.dispose();
+    this.#areas.clear();
     this.#characters.clear();
   }
 }
@@ -147,9 +160,43 @@ async function runConformanceScenario(simulation: PhysicsRuntimeSimulation) {
   return { state, transforms };
 }
 
+function runAreaScenario(simulation: PhysicsRuntimeSimulation): number[] {
+  const areaShape = CollisionShape3D.box(2, 2, 2).descriptor;
+  areaShape.collisionLayer = 8;
+  areaShape.collisionMask = 2;
+  const bodyShape = CollisionShape3D.box(1, 1, 1).descriptor;
+  bodyShape.collisionLayer = 2;
+  bodyShape.collisionMask = 4;
+  const area = simulation.createBody({
+    mass: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { w: 1, x: 0, y: 0, z: 0 },
+    sensor: true,
+    shape: areaShape,
+    type: "kinematic",
+  });
+  const body = simulation.createBody({
+    mass: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { w: 1, x: 0, y: 0, z: 0 },
+    sensor: false,
+    shape: bodyShape,
+    type: "fixed",
+  });
+  simulation.step(1 / 60, {
+    kinematicCount: 1,
+    kinematicTransforms: new Float32Array([area.body.id, 0, 0, 0, 0, 0, 0, 1]),
+  });
+  simulation.readVisibleTransforms(new Float32Array(16));
+  const result = [...(simulation.areaIntersections?.(area.body.id) ?? [])];
+  expect(result).toEqual([body.body.id]);
+  simulation.dispose();
+  return result;
+}
+
 describe("two-backend physics conformance", () => {
   afterEach(() => {
-    delete globalThis.__THREENATIVE_NATIVE__;
+    globalThis.__THREENATIVE_NATIVE__ = undefined;
   });
 
   it("exports one shared class for every public node", () => {
@@ -162,15 +209,41 @@ describe("two-backend physics conformance", () => {
   it("produces the same character transforms and state through both adapters", async () => {
     await RAPIER.init();
     const web = webSimulation();
-    const native = createNativePhysicsSimulation(
-      new NativeHostOverWeb(webSimulation()),
-      "0.30.0",
-    );
+    const native = createNativePhysicsSimulation(new NativeHostOverWeb(webSimulation()), "0.30.0");
     const webResult = await runConformanceScenario(web);
     const nativeResult = await runConformanceScenario(native);
 
     expect(nativeResult.transforms).toEqual(webResult.transforms);
     expect(nativeResult.state).toEqual(webResult.state);
     expect(nativeResult.state?.grounded).toBe(true);
+  });
+
+  it("uses Area3D's mask on both backends when the body does not scan the area", async () => {
+    await RAPIER.init();
+    const webResult = runAreaScenario(webSimulation());
+    const nativeResult = runAreaScenario(
+      createNativePhysicsSimulation(new NativeHostOverWeb(webSimulation()), "0.30.0"),
+    );
+    expect(nativeResult).toEqual(webResult);
+  });
+
+  it("rejects native shapes outside the ABI instead of silently dropping them", async () => {
+    await RAPIER.init();
+    const native = createNativePhysicsSimulation(new NativeHostOverWeb(webSimulation()), "0.30.0");
+    expect(() =>
+      native.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor: false,
+        shape: CollisionShape3D.heightfield(2, 2, new Float32Array(4), {
+          x: 1,
+          y: 1,
+          z: 1,
+        }).descriptor,
+        type: "fixed",
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*heightfield/);
+    native.dispose();
   });
 });

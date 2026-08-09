@@ -35,14 +35,21 @@ export interface NativeBodyOptions {
 
 /** Raw object installed by the C++ runtime. It is wrapped before shared nodes see it. */
 export interface NativeSimulation {
-  configureCharacter(id: number, options: Parameters<PhysicsSimulation["configureCharacter"]>[1]): void;
+  configureCharacter(
+    id: number,
+    options: Parameters<PhysicsSimulation["configureCharacter"]>[1],
+  ): void;
   createBody(options: NativeBodyOptions): number;
   dispose(): void;
   drainCollisionEvents(buffer: Uint32Array): number;
   removeBody(id: number): void;
-  setBodyTransform?(id: number, position: { readonly x: number; readonly y: number; readonly z: number }): void;
+  setBodyTransform?(
+    id: number,
+    position: { readonly x: number; readonly y: number; readonly z: number },
+  ): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
+  readAreaIntersections(buffer: Uint32Array): number;
   step(deltaTime: number, inputSnapshot?: PhysicsInputSnapshot): void;
 }
 
@@ -72,8 +79,22 @@ export function nativeSimulation(value: unknown): NativeSimulation {
   if (
     typeof value !== "object" ||
     value === null ||
+    !("configureCharacter" in value) ||
+    typeof value.configureCharacter !== "function" ||
     !("createBody" in value) ||
     typeof value.createBody !== "function" ||
+    !("dispose" in value) ||
+    typeof value.dispose !== "function" ||
+    !("drainCollisionEvents" in value) ||
+    typeof value.drainCollisionEvents !== "function" ||
+    !("removeBody" in value) ||
+    typeof value.removeBody !== "function" ||
+    !("readVisibleTransforms" in value) ||
+    typeof value.readVisibleTransforms !== "function" ||
+    !("readCharacterStates" in value) ||
+    typeof value.readCharacterStates !== "function" ||
+    !("readAreaIntersections" in value) ||
+    typeof value.readAreaIntersections !== "function" ||
     !("step" in value) ||
     typeof value.step !== "function"
   ) {
@@ -92,12 +113,16 @@ export function createNativePhysicsSimulation(
   raw: NativeSimulation,
   version: string,
 ): PhysicsRuntimeSimulation {
+  const bodyIds = new Set<number>();
+  const areaIds = new Set<number>();
   const characterIds = new Set<number>();
   const characterState = new Map<
     number,
     { readonly grounded: boolean; readonly groundCollider?: number }
   >();
   let characterStates = new Float32Array(48);
+  let areaPairs = new Uint32Array(32);
+  const areaIntersections = new Map<number, Set<number>>();
   const simulation: PhysicsRuntimeSimulation = {
     version,
     rawEventQueue: raw,
@@ -117,6 +142,8 @@ export function createNativePhysicsSimulation(
       if (!Number.isInteger(id) || id < 0)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid body id");
       const rawHandle = { backend: "native", id };
+      bodyIds.add(id);
+      if (options.sensor) areaIds.add(id);
       if (options.type === "character") characterIds.add(id);
       return {
         body: physicsBodyHandle(id, rawHandle),
@@ -128,6 +155,8 @@ export function createNativePhysicsSimulation(
     configureCharacter: (id, options) => raw.configureCharacter(id, options),
     removeBody: (id) => {
       raw.removeBody(id);
+      bodyIds.delete(id);
+      areaIds.delete(id);
       characterIds.delete(id);
       characterState.delete(id);
     },
@@ -155,14 +184,31 @@ export function createNativePhysicsSimulation(
           groundCollider: groundCollider < 0 ? undefined : groundCollider,
         });
       }
+      const pairCapacity = Math.max(16, bodyIds.size * bodyIds.size * 2);
+      if (areaPairs.length < pairCapacity) areaPairs = new Uint32Array(pairCapacity);
+      const pairCount = raw.readAreaIntersections(areaPairs);
+      areaIntersections.clear();
+      for (const areaId of areaIds) areaIntersections.set(areaId, new Set());
+      for (let index = 0; index < pairCount; index += 1) {
+        const offset = index * 2;
+        const areaId = areaPairs[offset];
+        const bodyId = areaPairs[offset + 1];
+        if (areaId === undefined || bodyId === undefined)
+          throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed area intersection");
+        areaIntersections.get(areaId)?.add(bodyId);
+      }
       return count;
     },
     readCharacterState: (id) => characterState.get(id),
+    areaIntersections: (id) => areaIntersections.get(id) ?? new Set(),
     drainCollisionEvents: (buffer) => raw.drainCollisionEvents(buffer),
     dispose: () => {
       raw.dispose();
+      bodyIds.clear();
+      areaIds.clear();
       characterIds.clear();
       characterState.clear();
+      areaIntersections.clear();
     },
   };
   return simulation;

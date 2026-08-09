@@ -1,9 +1,9 @@
 import type { Mesh } from "three";
 import { interactionGroups } from "./collision.js";
 import {
-  physicsSimulationBackend,
   type PhysicsShapeDescriptor,
   type PhysicsShapeKind,
+  physicsSimulationBackend,
 } from "./simulation.js";
 
 export type CollisionShapeKind = PhysicsShapeKind;
@@ -76,7 +76,11 @@ export class CollisionShape3D {
   /** Internal seam: the backend binds its own descriptor when the body is created. */
   bindRaw(raw: unknown): void {
     this.#backendRaw = raw;
-    applyRaw(raw, "setCollisionGroups", interactionGroups(this.#descriptor.collisionLayer, this.#descriptor.collisionMask));
+    applyRaw(
+      raw,
+      "setCollisionGroups",
+      interactionGroups(this.#descriptor.collisionLayer, this.#descriptor.collisionMask),
+    );
     applyRaw(raw, "setSensor", this.#descriptor.sensor);
   }
 

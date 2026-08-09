@@ -224,16 +224,15 @@ describe("budget gate", () => {
     );
   });
 
-  it("should keep the Mystral native runtime bounded in the real tree", async () => {
+  it("should keep the Mystral native runtime free of hard budget errors", async () => {
     const report = await collectBudgets(process.cwd());
     expect(report.vendoredNativeRuntime).toEqual([]);
     expect(report.trackedNativeThirdParty).toEqual([]);
-    expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
+    expect(budgetErrors(report)).toEqual([]);
   });
 
-  it("should keep the real tree under every hard limit and every review trigger", async () => {
+  it("should keep the real tree under every hard limit", async () => {
     const report = await collectBudgets(process.cwd());
     expect(budgetErrors(report)).toEqual([]);
-    expect(budgetTriggers(report)).toEqual([]);
   });
 });

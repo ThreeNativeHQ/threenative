@@ -1,17 +1,17 @@
 import type { Object3D, Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
-import {
-  type PhysicsBodyHandle,
-  type PhysicsColliderHandle,
-  type PhysicsHandle,
-  type PhysicsWorldHandle,
+import type {
+  PhysicsBodyHandle,
+  PhysicsColliderHandle,
+  PhysicsHandle,
+  PhysicsWorldHandle,
 } from "./handles.js";
 import type { PhysicsContext } from "./plugin.js";
 import {
-  requirePhysicsSimulation,
   type PhysicsCharacterOptions,
   type PhysicsSimulation,
+  requirePhysicsSimulation,
 } from "./simulation.js";
 
 export interface CharacterBody3DOptions {
@@ -196,11 +196,7 @@ export class CharacterBody3D {
   syncFromPhysics(): void {
     const transform = this.#simulation.readBodyTransform?.(this.body.id);
     if (transform === undefined) return;
-    this.object.position.set(
-      transform.position.x,
-      transform.position.y,
-      transform.position.z,
-    );
+    this.object.position.set(transform.position.x, transform.position.y, transform.position.z);
     this.object.quaternion.set(
       transform.rotation.x,
       transform.rotation.y,

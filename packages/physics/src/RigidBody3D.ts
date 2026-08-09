@@ -1,13 +1,9 @@
 import type { Object3D } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
-import {
-  type PhysicsBodyHandle,
-  type PhysicsColliderHandle,
-  type PhysicsWorldHandle,
-} from "./handles.js";
+import type { PhysicsBodyHandle, PhysicsColliderHandle, PhysicsWorldHandle } from "./handles.js";
 import type { PhysicsContext } from "./plugin.js";
-import { requirePhysicsSimulation, type PhysicsSimulation } from "./simulation.js";
+import { type PhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
@@ -55,19 +51,14 @@ export class RigidBody3D {
       const mask = options.collisionMask ?? shape.collisionMask;
       options.shape.setCollisionGroups(interactionGroups(layer, mask));
     }
-    let registration;
-    try {
-      registration = this.#simulation.createBody({
-        mass: options.mass ?? 0,
-        position: this.object.position,
-        rotation: this.object.quaternion,
-        sensor: false,
-        shape,
-        type: this.type,
-      });
-    } catch (error) {
-      throw error;
-    }
+    const registration = this.#simulation.createBody({
+      mass: options.mass ?? 0,
+      position: this.object.position,
+      rotation: this.object.quaternion,
+      sensor: false,
+      shape,
+      type: this.type,
+    });
     options.shape.bindRaw(registration.rawShape);
     this.body = registration.body;
     this.collider = registration.collider;
@@ -113,11 +104,7 @@ export class RigidBody3D {
   syncFromPhysics(): void {
     const transform = this.#simulation.readBodyTransform?.(this.body.id);
     if (transform === undefined) return;
-    this.object.position.set(
-      transform.position.x,
-      transform.position.y,
-      transform.position.z,
-    );
+    this.object.position.set(transform.position.x, transform.position.y, transform.position.z);
     this.object.quaternion.set(
       transform.rotation.x,
       transform.rotation.y,

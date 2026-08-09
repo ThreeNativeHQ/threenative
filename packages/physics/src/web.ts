@@ -1,9 +1,9 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import {
+  type PhysicsSimulation,
   createWebPhysicsShape,
   createWebPhysicsSimulation,
   installPhysicsSimulationBackend,
-  type PhysicsSimulation,
 } from "./simulation.js";
 
 let initialized: Promise<void> | undefined;

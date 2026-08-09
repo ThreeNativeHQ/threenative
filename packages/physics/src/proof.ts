@@ -37,7 +37,7 @@ export async function createPhysicsProof(options: PhysicsProofOptions = {}): Pro
   );
   const pending: number[][] = [];
   let disposed = false;
-  
+
   const requireLive = () => {
     if (disposed) throw new Error("Physics proof simulation is disposed.");
   };

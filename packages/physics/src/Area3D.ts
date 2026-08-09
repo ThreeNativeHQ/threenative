@@ -1,13 +1,9 @@
 import type { Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
-import {
-  type PhysicsBodyHandle,
-  type PhysicsColliderHandle,
-  type PhysicsWorldHandle,
-} from "./handles.js";
+import type { PhysicsBodyHandle, PhysicsColliderHandle, PhysicsWorldHandle } from "./handles.js";
 import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
-import { requirePhysicsSimulation, type PhysicsSimulation } from "./simulation.js";
+import { type PhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
 export type AreaHandler = (body: PhysicsBody3D) => void;

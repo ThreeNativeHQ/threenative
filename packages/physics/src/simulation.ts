@@ -1,12 +1,12 @@
 import type * as RAPIER from "@dimforge/rapier3d-compat";
 import { interactionGroups } from "./collision.js";
 import {
-  physicsBodyHandle,
-  physicsColliderHandle,
-  physicsHandle,
   type PhysicsBodyHandle,
   type PhysicsColliderHandle,
   type PhysicsHandle,
+  physicsBodyHandle,
+  physicsColliderHandle,
+  physicsHandle,
 } from "./handles.js";
 
 /** One record is logical body id, xyz position, and xyzw rotation. */
@@ -46,7 +46,12 @@ export interface PhysicsBodyCreateOptions {
   readonly type: PhysicsBodyType;
   readonly shape: PhysicsShapeDescriptor;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
-  readonly rotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number };
+  readonly rotation: {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly w: number;
+  };
   readonly mass: number;
   readonly sensor: boolean;
 }
@@ -93,10 +98,17 @@ export interface PhysicsSimulation {
   ): void;
   step(deltaTime: number, inputSnapshot?: PhysicsInputSnapshot): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
-  readBodyTransform?(id: number): {
-    readonly position: { readonly x: number; readonly y: number; readonly z: number };
-    readonly rotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number };
-  } | undefined;
+  readBodyTransform?(id: number):
+    | {
+        readonly position: { readonly x: number; readonly y: number; readonly z: number };
+        readonly rotation: {
+          readonly x: number;
+          readonly y: number;
+          readonly z: number;
+          readonly w: number;
+        };
+      }
+    | undefined;
   readCharacterState?(id: number): PhysicsCharacterState | undefined;
   areaIntersections?(id: number): ReadonlySet<number>;
   drainCollisionEvents(buffer: Uint32Array): number;
@@ -137,7 +149,9 @@ interface SimulationBody {
   readonly collider: RAPIER.Collider;
   readonly type: PhysicsBodyType;
   controller?: RAPIER.KinematicCharacterController;
+  controllerHandle?: PhysicsHandle;
   character?: PhysicsCharacterOptions;
+  groundCollider?: number;
 }
 
 interface WebPhysicsSimulationOptions {
@@ -197,7 +211,8 @@ export function createWebPhysicsShape(
       throw new Error("CollisionShape3D.trimesh is missing mesh data.");
     descriptor = rapier.ColliderDesc.trimesh(shape.vertices, shape.indices);
   } else if (shape.kind === "convexHull") {
-    if (shape.vertices === undefined) throw new Error("CollisionShape3D.convexHull is missing vertices.");
+    if (shape.vertices === undefined)
+      throw new Error("CollisionShape3D.convexHull is missing vertices.");
     descriptor = rapier.ColliderDesc.convexHull(shape.vertices);
     if (descriptor === null) throw new Error("CollisionShape3D could not build a convex hull.");
   } else {
@@ -256,7 +271,10 @@ function characterState(
       if (groundCollider !== undefined) break;
     }
   }
-  return { grounded: controller.computedGrounded(), groundCollider };
+  const grounded = controller.computedGrounded();
+  if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
+  else if (!grounded) simulationBody.groundCollider = undefined;
+  return { grounded, groundCollider: simulationBody.groundCollider };
 }
 
 /** Web adapter. It is the only implementation that names Rapier's JS objects. */
@@ -301,14 +319,14 @@ export function createWebPhysicsSimulation(
       };
       if (bodyOptions.type === "character") {
         entry.controller = options.world.createCharacterController(0.01);
+        entry.controllerHandle = physicsHandle(entry.controller);
       }
       bodies.set(id, entry);
       byCollider.set(rawCollider.handle, entry);
       return {
         body: physicsBodyHandle(id, rawBody),
         collider: physicsColliderHandle(id, rawCollider),
-        controller:
-          entry.controller === undefined ? undefined : physicsHandle(entry.controller),
+        controller: entry.controllerHandle,
         rawShape,
       };
     },
@@ -317,6 +335,12 @@ export function createWebPhysicsSimulation(
       const entry = bodies.get(id);
       if (entry?.controller === undefined)
         throw new Error("Physics character configuration references a non-character body.");
+      if (characterOptions.offset !== 0.01) {
+        options.world.removeCharacterController(entry.controller);
+        entry.controller = options.world.createCharacterController(characterOptions.offset);
+        if (entry.controllerHandle !== undefined)
+          (entry.controllerHandle as { raw: unknown }).raw = entry.controller;
+      }
       entry.character = characterOptions;
       entry.controller.setMaxSlopeClimbAngle(characterOptions.maxSlopeClimbAngle);
       if (characterOptions.autostep !== undefined) {
@@ -341,7 +365,8 @@ export function createWebPhysicsSimulation(
     setBodyTransform: (id, position) => {
       requireLive();
       const entry = bodies.get(id);
-      if (entry === undefined) throw new Error("Physics body transform references an unknown body.");
+      if (entry === undefined)
+        throw new Error("Physics body transform references an unknown body.");
       entry.body.setTranslation(position, true);
     },
     step: (deltaTime, inputSnapshot) => {
@@ -485,16 +510,15 @@ export function createWebPhysicsSimulation(
       });
       if (buffer.length < pending.length * PHYSICS_COLLISION_EVENT_STRIDE)
         throw new Error("PhysicsSimulation collision event buffer is too small.");
-      pending.forEach((event, index) =>
-        buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE),
-      );
+      pending.forEach((event, index) => buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE));
       return pending.length;
     },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       for (const entry of bodies.values()) {
-        if (entry.controller !== undefined) options.world.removeCharacterController(entry.controller);
+        if (entry.controller !== undefined)
+          options.world.removeCharacterController(entry.controller);
         if (entry.body.isValid()) options.world.removeRigidBody(entry.body);
       }
       bodies.clear();

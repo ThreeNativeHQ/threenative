@@ -80,6 +80,9 @@ int32_t tn_physics_read_visible_transforms(
 int32_t tn_physics_read_character_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);
+int32_t tn_physics_read_area_intersections(
+    const TnPhysicsSimulation *simulation, uint32_t *output,
+    size_t output_u32_capacity);
 int32_t tn_physics_drain_collision_events(TnPhysicsSimulation *simulation,
                                           uint32_t *output,
                                           size_t output_u32_capacity);

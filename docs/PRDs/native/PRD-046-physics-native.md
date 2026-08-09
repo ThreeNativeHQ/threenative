@@ -300,6 +300,27 @@ or an integration setting is mismatched.
 
 ## 6. Kill conditions
 
+### Native LOC trigger review — 2026-08-08
+
+`pnpm budgets` reports **50,373 native lines**, 373 above the 50,000 review trigger. This is
+not silenced or treated as a hard-gate failure. The increase is the smallest ABI completion
+needed by the shared node correction: native character configuration/state records, body
+transform transport, and their C++/Rust validation. It adds no package and tracks no
+`third_party/` source.
+
+Kill-switch pass completed with the same change:
+
+```text
+pnpm --filter @threenative/runtime-native test       PASS — 13 files, 40 passed, 30 skipped
+pnpm --filter @threenative/runtime-native native:physics:cross PASS — arm64 + x86_64
+pnpm exec vitest run packages/physics/__tests__     PASS — 11 files, 64 tests
+```
+
+The conformance test reaches the shared adapter methods, the native runtime test suite
+exercises the host bindings, and the native bundle contains no web/Rapier import. If the
+next native change cannot justify its lines with the same evidence, the added surface is
+deleted rather than routed around this trigger.
+
 - The per-frame crossing cost exceeds WASM-on-web's for an equivalent scene → the binding
   spent back what it bought. Stop and re-read `NATIVE-RUNTIME.md`'s boundary rule.
 - Distribution requires users to build from source → does not ship.

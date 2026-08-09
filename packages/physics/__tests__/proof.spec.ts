@@ -40,9 +40,12 @@ describe("physics proof backend selection", () => {
       physics: {
         version: "0.30.0",
         createProofSimulation: vi.fn(() => ({
+          configureCharacter: vi.fn(),
           createBody: vi.fn(),
           dispose,
           drainCollisionEvents,
+          readAreaIntersections: vi.fn(() => 0),
+          readCharacterStates: vi.fn(() => 0),
           readVisibleTransforms,
           removeBody: vi.fn(),
           step,

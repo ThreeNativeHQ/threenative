@@ -65,6 +65,7 @@ struct BodyEntry {
     body: RigidBodyHandle,
     collider: ColliderHandle,
     character: bool,
+    sensor: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -95,13 +96,9 @@ pub struct Simulation {
 
 impl Simulation {
     fn new(options: TnPhysicsWorldOptions) -> Option<Self> {
-        if ![
-            options.gravity_x,
-            options.gravity_y,
-            options.gravity_z,
-        ]
-        .into_iter()
-        .all(f32::is_finite)
+        if ![options.gravity_x, options.gravity_y, options.gravity_z]
+            .into_iter()
+            .all(f32::is_finite)
         {
             return None;
         }
@@ -209,6 +206,7 @@ impl Simulation {
                 body,
                 collider,
                 character: options.body_type == 3,
+                sensor: options.sensor,
             },
         );
         true
@@ -273,7 +271,8 @@ impl Simulation {
             &mut self.multibody_joints,
             true,
         );
-        self.colliding.retain(|(left, right)| *left != id && *right != id);
+        self.colliding
+            .retain(|(left, right)| *left != id && *right != id);
         self.characters.remove(&id);
         true
     }
@@ -330,8 +329,7 @@ impl Simulation {
                 let predicate = |_: ColliderHandle, collider: &Collider| {
                     !collider.is_sensor()
                         && (!upward
-                            || (collider.collision_groups().memberships.bits()
-                                & one_way_layers)
+                            || (collider.collision_groups().memberships.bits() & one_way_layers)
                                 == 0)
                 };
                 let filter = QueryFilter {
@@ -370,7 +368,8 @@ impl Simulation {
                 body.set_next_kinematic_rotation(rotation);
                 let state = self.characters.get_mut(&id).expect("character was checked");
                 state.grounded = movement.grounded;
-                state.ground_collider = ground_collider;
+                state.ground_collider = ground_collider
+                    .or_else(|| movement.grounded.then_some(state.ground_collider).flatten());
             } else {
                 let body = &mut self.bodies[entry.body];
                 if !body.is_kinematic() {
@@ -405,7 +404,11 @@ impl Simulation {
             &(),
             &(),
         );
-        let entries: Vec<_> = self.entries.iter().map(|(id, entry)| (*id, *entry)).collect();
+        let entries: Vec<_> = self
+            .entries
+            .iter()
+            .map(|(id, entry)| (*id, *entry))
+            .collect();
         let mut current = BTreeSet::new();
         for (index, (left_id, left)) in entries.iter().enumerate() {
             for (right_id, right) in entries.iter().skip(index + 1) {
@@ -446,6 +449,42 @@ impl Simulation {
         }
         Some(self.characters.len())
     }
+
+    fn area_intersections(&self) -> Vec<[u32; 2]> {
+        let collider_ids: HashMap<ColliderHandle, u32> = self
+            .entries
+            .iter()
+            .map(|(body_id, body_entry)| (body_entry.collider, *body_id))
+            .collect();
+        let mut pairs = Vec::new();
+        for (area_id, area) in self.entries.iter().filter(|(_, entry)| entry.sensor) {
+            let area_collider = &self.colliders[area.collider];
+            let area_mask = area_collider.collision_groups().filter.bits();
+            let predicate = |handle: ColliderHandle, collider: &Collider| {
+                handle != area.collider
+                    && !collider.is_sensor()
+                    && (collider.collision_groups().memberships.bits() & area_mask) != 0
+            };
+            let filter = QueryFilter {
+                predicate: Some(&predicate),
+                ..QueryFilter::default()
+            };
+            let query = self.broad_phase.as_query_pipeline(
+                self.narrow_phase.query_dispatcher(),
+                &self.bodies,
+                &self.colliders,
+                filter,
+            );
+            for (collider, _) in
+                query.intersect_shape(*area_collider.position(), area_collider.shape())
+            {
+                if let Some(body_id) = collider_ids.get(&collider) {
+                    pairs.push([*area_id, *body_id]);
+                }
+            }
+        }
+        pairs
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -454,9 +493,7 @@ pub extern "C" fn tn_physics_version() -> *const std::ffi::c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_create(
-    options: *const TnPhysicsWorldOptions,
-) -> *mut Simulation {
+pub extern "C" fn tn_physics_create(options: *const TnPhysicsWorldOptions) -> *mut Simulation {
     if options.is_null() {
         return ptr::null_mut();
     }
@@ -593,6 +630,26 @@ pub extern "C" fn tn_physics_read_character_states(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_area_intersections(
+    simulation: *const Simulation,
+    output: *mut u32,
+    output_u32_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    let pairs = simulation.area_intersections();
+    let required = pairs.len() * 2;
+    if required > output_u32_capacity || (required > 0 && output.is_null()) {
+        return -1;
+    }
+    for (index, pair) in pairs.iter().enumerate() {
+        unsafe { ptr::copy_nonoverlapping(pair.as_ptr(), output.add(index * 2), 2) };
+    }
+    pairs.len() as i32
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_drain_collision_events(
     simulation: *mut Simulation,
     output: *mut u32,
@@ -686,10 +743,7 @@ pub extern "C" fn tn_physics_proof_create(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_step(
-    simulation: *mut Simulation,
-    delta_time: f32,
-) -> bool {
+pub extern "C" fn tn_physics_proof_step(simulation: *mut Simulation, delta_time: f32) -> bool {
     tn_physics_step(simulation, delta_time, ptr::null(), 0)
 }
 
@@ -791,10 +845,101 @@ mod tests {
             collision_mask: u16::MAX.into(),
             sensor: false,
         }));
-        assert!(simulation.step(
-            1.0 / 60.0,
-            &[42.0, 2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0],
-        ));
-        assert_eq!(simulation.bodies[simulation.entries[&42].body].translation().x, 2.0);
+        assert!(simulation.step(1.0 / 60.0, &[42.0, 2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0],));
+        assert_eq!(
+            simulation.bodies[simulation.entries[&42].body]
+                .translation()
+                .x,
+            2.0
+        );
+    }
+
+    #[test]
+    fn configured_character_reports_grounded_while_standing_still() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let body = |id, body_type, y, shape_x, shape_y, shape_z| TnPhysicsBodyOptions {
+            id,
+            body_type,
+            shape_type: if body_type == 3 { 2 } else { 0 },
+            position_x: 0.0,
+            position_y: y,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x,
+            shape_y,
+            shape_z,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        };
+        assert!(simulation.add_body(body(1, 1, -0.1, 5.0, 0.1, 5.0)));
+        assert!(simulation.add_body(body(2, 3, 0.5, 0.2, 0.3, 0.0)));
+        assert!(simulation.configure_character(TnPhysicsCharacterOptions {
+            id: 2,
+            offset: 0.02,
+            max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
+            autostep_enabled: true,
+            autostep_max_height: 0.4,
+            autostep_min_width: 0.2,
+            autostep_include_dynamic_bodies: false,
+            snap_to_ground_enabled: true,
+            snap_to_ground: 0.1,
+            one_way_layers: 2,
+        }));
+        for _ in 0..30 {
+            let y = simulation.bodies[simulation.entries[&2].body]
+                .translation()
+                .y;
+            assert!(simulation.step(1.0 / 60.0, &[2.0, 0.0, y - 0.02, 0.0, 0.0, 0.0, 0.0, 1.0],));
+        }
+        let y = simulation.bodies[simulation.entries[&2].body]
+            .translation()
+            .y;
+        assert!(simulation.step(1.0 / 60.0, &[2.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, 1.0],));
+        let character = simulation.characters[&2];
+        assert!(character.grounded);
+        assert_eq!(character.ground_collider, Some(1));
+    }
+
+    #[test]
+    fn area_mask_does_not_require_the_body_to_scan_the_area() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let body = |id, sensor, layer, mask| TnPhysicsBodyOptions {
+            id,
+            body_type: if sensor { 2 } else { 1 },
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: if sensor { 1.0 } else { 0.5 },
+            shape_y: if sensor { 1.0 } else { 0.5 },
+            shape_z: if sensor { 1.0 } else { 0.5 },
+            mass: 0.0,
+            collision_layer: layer,
+            collision_mask: mask,
+            sensor,
+        };
+        assert!(simulation.add_body(body(1, true, 8, 2)));
+        assert!(simulation.add_body(body(2, false, 2, 4)));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+        assert_eq!(simulation.area_intersections(), vec![[1, 2]]);
     }
 }
