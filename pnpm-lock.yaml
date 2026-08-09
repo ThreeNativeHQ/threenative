@@ -271,13 +271,14 @@ importers:
         version: 5.9.3
 
   packages/runtime-native:
+    dependencies:
+      pngjs:
+        specifier: 'catalog:'
+        version: 7.0.0
     devDependencies:
       esbuild:
         specifier: 'catalog:'
         version: 0.27.0
-      pngjs:
-        specifier: 'catalog:'
-        version: 7.0.0
       three:
         specifier: 'catalog:'
         version: 0.185.1
