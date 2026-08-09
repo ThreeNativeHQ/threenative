@@ -317,6 +317,7 @@ test('wgpu-native caps sampler LOD without changing sampler filtering', () => {
 
 test('native AudioContext exposes the positional graph used by Three.js', () => {
   const audio = read('src/audio/audio_bindings.cpp');
+  const audioSmoke = read('tests/audio-play-at-smoke.ts');
   assert.match(audio, /function AudioContext\(\)[\s\S]*__tnCreateAudioContext/,
     'the JavaScript constructor must call the native AudioContext factory');
   assert.match(audio, /Object\.defineProperties\(this, Object\.getOwnPropertyDescriptors\(native\)\)/,
@@ -340,4 +341,8 @@ test('native AudioContext exposes the positional graph used by Three.js', () => 
   const runtime = read('src/runtime.cpp');
   assert.match(runtime, /audio::processAudioEvents\(\)/,
     'the main loop must drain native audio completion events');
+  assert.match(audioSmoke, /async function main\(\)/,
+    'the shared audio proof must compile as an Android QuickJS script without top-level await');
+  assert.doesNotMatch(audioSmoke, /^await /m,
+    'Android QuickJS loads the shared audio proof as a classic script');
 });

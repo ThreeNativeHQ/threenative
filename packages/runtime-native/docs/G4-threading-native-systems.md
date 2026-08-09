@@ -1,8 +1,8 @@
 # G4 — threading and native systems
 
 **Milestones:** M7, M8, M9, M10, M11
-**State:** IN PROGRESS — native Rapier and bounded Linux positional audio executed; worker,
-asset-pipeline, mobile-audio, and physical-output evidence remain open.
+**State:** IN PROGRESS — native Rapier plus bounded Linux and Android-emulator positional
+audio executed; worker, asset-pipeline, iOS-audio, and physical-output evidence remain open.
 
 The runtime still owes its worker/thread model, JobSystem, native asset pipeline, and mobile
 audio evidence. Android QuickJS has no WebAssembly; native physics uses the coarse
@@ -43,9 +43,24 @@ initializer-list overflow found by the host test. The same rebuilt host passed t
 hardware quality, Android, iOS, HRTF, or mobile parity evidence. No generated template caller
 should become portable until those platform rows execute.
 
-`pnpm budgets` reports 53,768 native runtime LOC, 3,768 above the review trigger. The
+The same `tests/audio-play-at-smoke.ts` source was then bundled as an import-free IIFE,
+packaged through `package-android.mjs`, installed, and cold-launched on `emulator-5556`.
+Android QuickJS emitted the same completion marker:
+
+```text
+TN_NATIVE_AUDIO_PLAY_AT_OK:createPanner+gain+source+ended
+```
+
+This executes `AudioContext`, `createPanner`, source → panner → gain routing, the SDL audio
+callback, main-thread `onended`, and `AudioBus` voice release on Android x86_64. The proof
+process exited successfully after the marker. It does not prove audible speaker output,
+device latency, arm64, iOS, or physical-driver quality.
+
+`pnpm budgets` reports 53,851 native runtime LOC, 3,851 above the review trigger. The
 kill-switch pass retained only the graph plumbing needed to make the already-public
 `AudioBus.playAt()` contract work: node traversal, bounded gain automation, distance/pan,
 and the binding/test seam. HRTF, cones, buses, ducking, worker abstractions, and a portable
 template caller were not added. Removing this bounded graph would restore the proven native
 `connect()` no-op, so the retained code is cheaper than exposing a platform-specific API lie.
+The Android evidence added no runtime path; it only made the existing proof source a classic
+script and locked that portability constraint in the contract test.

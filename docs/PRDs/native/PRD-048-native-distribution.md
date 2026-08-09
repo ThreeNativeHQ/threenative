@@ -207,7 +207,7 @@ builds normal/masked/wrong-gravity variants, and drives the normal plus four con
 on an x86_64 emulator. It remains open until that workflow actually runs against released
 assets.
 
-The current budget measurement is 53,839 native-runtime lines, 3,839 above the nonfatal
+The current budget measurement is 53,851 native-runtime lines, 3,851 above the nonfatal
 50,000-line review trigger. The crossing stays visible. Phase 0 deleted 1,159 unreachable
 demo-distribution lines, and the distribution additions that remain are each exercised by a
 consumer boundary: the five-asset transaction, the no-toolchain Gradle branch, or their
