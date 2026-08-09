@@ -133,6 +133,9 @@ test('release lane locks and launches the packed simulator host with physics con
     'physics-mask.playtest.json',
     'THREENATIVE_PHYSICS_CONTROL=wrong-gravity',
     'TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED',
+    'xcrun simctl list devices available',
+    'xcrun simctl boot "$device"',
+    'xcrun simctl bootstatus "$device" -b',
     'test ! -e "$TN_IOS_TOOLCHAIN_LOG"',
   ]) {
     assert.match(workflow, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));

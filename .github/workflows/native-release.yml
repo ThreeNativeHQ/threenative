@@ -478,6 +478,14 @@ jobs:
           pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
           test -d "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+      - name: Boot a clean-consumer iOS simulator
+        run: |
+          device=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')
+          test -n "$device"
+          if ! xcrun simctl list devices booted | grep -F "$device"; then
+            xcrun simctl boot "$device"
+          fi
+          xcrun simctl bootstatus "$device" -b
       - name: Launch packed-consumer pass and wrong-value scenarios
         run: |
           app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"

@@ -17,6 +17,7 @@ import {
 } from '../scripts/install-prebuilt.mjs';
 import {
   ANDROID_PREBUILT_ASSETS,
+  ensureGradleWrapper,
   prepareAndroidPrebuilts,
 } from '../scripts/package-android.mjs';
 
@@ -56,7 +57,7 @@ test('a missing release lock and a missing platform asset both fail closed', () 
 test('the default checksum lock URL is tied to the installed package version', () => {
   assert.equal(
     releaseManifestUrl(),
-    'https://github.com/jonit-dev/threenative/releases/download/runtime-native-v0.1.9/prebuilt-lock.json',
+    'https://github.com/jonit-dev/threenative/releases/download/runtime-native-v0.1.10/prebuilt-lock.json',
   );
 });
 
@@ -139,6 +140,36 @@ test('Android prebuilts verify every runtime, SDL, and Java payload before writi
       /No prebuilt release asset.*android-x86_64-runtime/u,
     );
     assert.equal(existsSync(rejectedRoot), false);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test('a packed Android build reconstructs only a checksum-verified Gradle wrapper', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'threenative-gradle-wrapper-'));
+  roots.push(root);
+  const wrapper = Buffer.from('verified Gradle wrapper');
+  const server = createServer((_request, response) => response.end(wrapper));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const url = `http://127.0.0.1:${address.port}/gradle-wrapper.jar`;
+    const output = join(root, 'gradle-wrapper.jar');
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    await ensureGradleWrapper({ output, sha256: sha256(wrapper), url });
+    assert.deepEqual(readFileSync(output), wrapper);
+    await assert.rejects(
+      ensureGradleWrapper({
+        output: join(root, 'rejected.jar'),
+        sha256: sha256(Buffer.from('wrong')),
+        url,
+      }),
+      /Checksum verification failed.*gradle-wrapper/u,
+    );
+    assert.equal(existsSync(join(root, 'rejected.jar')), false);
   } finally {
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

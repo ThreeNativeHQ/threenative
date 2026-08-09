@@ -42,7 +42,7 @@
     "vite": "8.2.0"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": "0.1.9"
+    "@threenative/runtime-native": "0.1.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["@threenative/runtime-native"]

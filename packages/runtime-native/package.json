@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "ThreeNative-owned native host for desktop, Android, and iOS",
   "license": "MIT",
   "publishConfig": {

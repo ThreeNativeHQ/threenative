@@ -6,6 +6,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -13,9 +14,13 @@ import {
 } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { downloadReleaseArtifact } from './install-prebuilt.mjs';
+import { downloadReleaseArtifact, verifyChecksum } from './install-prebuilt.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const GRADLE_WRAPPER_URL =
+  'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
+export const GRADLE_WRAPPER_SHA256 =
+  'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
 
 export const ANDROID_PREBUILT_ASSETS = {
   'android-arm64-v8a-runtime': 'jniLibs/arm64-v8a/libmystral-runtime.so',
@@ -39,6 +44,28 @@ export async function prepareAndroidPrebuilts(options = {}) {
     writeFileSync(output, contents);
   }
   return prebuiltRoot;
+}
+
+export async function ensureGradleWrapper(options = {}) {
+  const output = resolve(
+    options.output ?? join(runtimeRoot, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar'),
+  );
+  const expected = options.sha256 ?? GRADLE_WRAPPER_SHA256;
+  if (existsSync(output)) {
+    verifyChecksum(readFileSync(output), expected, 'gradle-wrapper');
+    return output;
+  }
+  const url = new URL(options.url ?? GRADLE_WRAPPER_URL);
+  if (url.protocol !== 'https:' && process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT !== '1') {
+    throw new Error('Gradle wrapper URL must use HTTPS.');
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Gradle wrapper fetch failed: HTTP ${response.status}.`);
+  const contents = Buffer.from(await response.arrayBuffer());
+  verifyChecksum(contents, expected, 'gradle-wrapper');
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, contents);
+  return output;
 }
 
 function listFiles(directory, relative = '') {
@@ -79,6 +106,7 @@ export async function packageAndroid(bundle, requestedOutput, assets) {
   );
   if (!existsSync(gradlew)) throw new Error(`Android Gradle wrapper is missing: ${gradlew}`);
   if (!existsSync(bundle)) throw new Error(`Missing native bundle: ${bundle}`);
+  await ensureGradleWrapper();
   const sourceCheckout =
     existsSync(join(runtimeRoot, 'CMakeLists.txt')) &&
     existsSync(join(runtimeRoot, 'third_party', 'sdl3-android', 'SDL3-3.2.8.aar'));
