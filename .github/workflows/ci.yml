@@ -61,7 +61,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test
-      - run: pnpm test:browser
+      - run: xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser
       - run: pnpm test:playtest
 
   scaffold-smoke:
@@ -251,7 +251,7 @@ jobs:
       - run: pnpm --filter abyss-framework build
       - run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:browser
+      - run: xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   visuals:
