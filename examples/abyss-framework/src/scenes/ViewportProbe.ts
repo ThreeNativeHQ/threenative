@@ -18,7 +18,7 @@ export class ViewportProbe extends Scene<AbyssState> {
 
   override enter(ctx: ProbeCtx): void {
     const camera = ctx.camera as PerspectiveCamera;
-    camera.position.set(0, 2, 8);
+    camera.position.set(0, 2, 6_000);
     camera.lookAt(0, 0, 0);
     ctx.viewport.resize();
     ctx.add(new AmbientLight(0xffffff, 2));
