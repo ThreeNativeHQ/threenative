@@ -38,7 +38,10 @@ test('official ThreeNative CMake presets and feature flags exist', () => {
     /elseif\(WIN32\)[\s\S]*?if\(TN_ENABLE_VIDEO\)[\s\S]*?windows_graphics_capture_impl\.cpp/u,
     'Windows capture sources must remain behind TN_ENABLE_VIDEO',
   );
-  assert.match(cmake, /if\(MSVC\)[\s\S]*?OneCoreUap\.lib[\s\S]*?else\(\)[\s\S]*?kernelbase/u);
+  assert.match(
+    cmake,
+    /if\(MSVC\)[\s\S]*?OneCoreUap\.lib[\s\S]*?else\(\)[\s\S]*?api-ms-win-core-handle-l1-1-0/u,
+  );
   assert.match(cmake, /else\(\)[\s\S]*?-Wl,--allow-multiple-definition/u);
 });
 

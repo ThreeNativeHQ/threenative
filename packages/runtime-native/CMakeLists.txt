@@ -1336,7 +1336,7 @@ if(MYSTRAL_USE_DAWN AND TARGET dawn::webgpu)
         if(MSVC)
             target_link_libraries(mystral-runtime PUBLIC OneCoreUap.lib)
         else()
-            target_link_libraries(mystral-runtime PUBLIC kernelbase)
+            target_link_libraries(mystral-runtime PUBLIC api-ms-win-core-handle-l1-1-0)
         endif()
         # Prebuilt Rust and Abseil archives carry overlapping runtime symbols.
         if(MSVC)

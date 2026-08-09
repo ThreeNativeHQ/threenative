@@ -193,7 +193,7 @@ if (!existsSync(join(app, 'native-smoke.js'))) throw new Error('Built iOS app om
 mkdirSync(artifactRoot, { recursive: true });
 const simulator = chooseSimulator();
 run('xcrun', ['simctl', 'install', simulator.udid, app]);
-const startedAt = new Date().toISOString();
+const startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 const launch = run('xcrun', ['simctl', 'launch', '--terminate-running-process', simulator.udid, bundleId]);
 if (!/:\s*\d+\b/u.test(launch)) throw new Error(`simctl launch did not report a pid: ${launch}`);
 
