@@ -223,8 +223,8 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
   const nativeBuild = read('scripts/native-build.mjs');
   assert.match(nativeBuild, /VCPKG_INSTALLATION_ROOT[\s\S]*x64-windows-static/,
     'Windows builds must consume the static-CRT HTTP dependencies installed by the platform lane');
-  assert.match(deps, /gradle-8\.5-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
-    'Android dependency reconstruction must restore and verify the excluded Gradle wrapper');
+  assert.match(deps, /gradle\/v8\.5\.0\/gradle\/wrapper\/gradle-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
+    'Android dependency reconstruction must restore the excluded wrapper from an immutable Gradle tag and verify it');
   assert.match(deps, /'wgpu-android':[\s\S]*version: 'v24\.0\.3\.1'/,
     'Android must use the first verified modern wgpu-native release that accepts Three.js WGSL on the emulator');
   assert.doesNotMatch(deps, /wgpu-android[\s\S]{0,800}v22\.1\.0\.5/,

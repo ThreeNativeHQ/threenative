@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MystralNativeRuntime VERSION 0.1.5 LANGUAGES C CXX)
+project(MystralNativeRuntime VERSION 0.1.6 LANGUAGES C CXX)
 
 if(APPLE)
     enable_language(OBJCXX)

@@ -28,7 +28,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const THIRD_PARTY = join(ROOT, 'third_party');
 const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
-const GRADLE_WRAPPER_URL = 'https://services.gradle.org/distributions/gradle-8.5-wrapper.jar';
+const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
 const GRADLE_WRAPPER_SHA256 = 'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
 
 // Detect platform
