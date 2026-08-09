@@ -88,3 +88,13 @@ test('release lane locks and launches the packed simulator host with physics con
   assert.match(workflow, /finalize:[\s\S]*needs: \[clean-consumer, clean-consumer-ios\]/u);
   assert.match(workflow, /cleanup-failed-release:[\s\S]*gh release delete/u);
 });
+
+test('simulator verification builds only the arm64 architecture carried by the host archive', () => {
+  const verifier = readFileSync(
+    new URL('../scripts/verify-ios-simulator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(verifier, /-DPLATFORM=SIMULATORARM64/);
+  assert.match(verifier, /-DCMAKE_OSX_ARCHITECTURES=arm64/);
+  assert.match(verifier, /result\.stdout[\s\S]*result\.stderr/);
+});

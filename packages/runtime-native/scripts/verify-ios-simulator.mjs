@@ -25,7 +25,9 @@ function run(command, args, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed (${result.status}):\n${result.stderr || result.stdout}`);
+    throw new Error(
+      `${command} ${args.join(' ')} failed (${result.status}):\n${result.stdout}\n${result.stderr}`,
+    );
   }
   return result.stdout;
 }
@@ -157,6 +159,7 @@ run('cmake', [
   '-G', 'Xcode',
   `-DCMAKE_TOOLCHAIN_FILE=${join(runtimeRoot, 'cmake', 'ios.toolchain.cmake')}`,
   '-DPLATFORM=SIMULATORARM64',
+  '-DCMAKE_OSX_ARCHITECTURES=arm64',
   '-DTN_ENABLE_CANVAS2D=OFF',
   '-DTN_ENABLE_VIDEO=OFF',
   '-DTN_ENABLE_RAYTRACING=OFF',
