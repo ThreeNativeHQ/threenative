@@ -4,14 +4,15 @@ prd_contract: v1
 
 # PRD-049 — Sculpt from reference: the scaffold hands the agent an image → `src/render/` tool
 
-**Status:** **RELEASED — registry and generated-starter gates green; human A/B call remains
+**Status:** **SHIPPED — owner accepted the recorded release evidence and directed closure
 (2026-08-09).** `threenative-sculpt-mcp@0.1.0` is public on npm and its source is public at
 `github.com/jonit-dev/threenative-sculpt-mcp`. All three starters install and launch it beside
 the asset MCP; the generated docs route conventional assets, trivial geometry, bespoke objects,
 landmarks, scenery, and environment set pieces to the correct path. A brand-new generated
 starter installed both servers from npm, returned exactly five sculpt tools plus 31
-technique-safe resources, typechecked, and built. The only original acceptance item still
-requiring user evidence is the subjective human comparison of the preserved A/B frames.
+technique-safe resources, typechecked, and built. The preserved A/B frames were accepted as
+sufficient for closure; no directional human preference or per-arm token telemetry was supplied,
+so this PRD records those measurements as unavailable rather than inventing them.
 
 **Complexity: 6 → MEDIUM mode** (new mechanism from scratch — a second MCP server and its
 recorded surface +2, touches 10+ files +3, external fork with its own license lane +1).
