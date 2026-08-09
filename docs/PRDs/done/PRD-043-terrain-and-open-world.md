@@ -397,7 +397,7 @@ output pasted (`AGENTS.md`, "Verification honesty").
 - [x] `pnpm budgets` green. Result on 2026-08-08:
       ```
       $ pnpm budgets
-      budgets ok: 5 framework packages, 3 example workspaces, 4280 framework LOC, 3 PRD files, largest template 1200 LOC
+      budgets ok: 5 framework packages, 3 example workspaces, 4280 framework LOC, 2 PRD files, largest template 1200 LOC
       ```
       This PRD adds no workspace package and remains within the 15,000 framework-LOC and
       10-PRD caps.
