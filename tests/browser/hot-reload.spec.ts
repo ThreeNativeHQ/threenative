@@ -73,13 +73,20 @@ async function waitForHotReload(
     const ready = await page
       .evaluate((reloads) => {
         try {
-          const diagnostics = (
-            window as Window & { __THREENATIVE__?: { hot?: () => HotDiagnostics } }
-          ).__THREENATIVE__?.hot?.();
+          const tools = (
+            window as Window & {
+              __THREENATIVE__?: {
+                hot?: () => HotDiagnostics;
+                snapshot?: () => Record<string, { position?: number[] }>;
+              };
+            }
+          ).__THREENATIVE__;
+          const diagnostics = tools?.hot?.();
           return (
             diagnostics?.reloads === reloads &&
             diagnostics.canvases === 1 &&
-            diagnostics.physics !== null
+            diagnostics.physics !== null &&
+            tools?.snapshot?.().player?.position?.[0] !== undefined
           );
         } catch {
           return false;
