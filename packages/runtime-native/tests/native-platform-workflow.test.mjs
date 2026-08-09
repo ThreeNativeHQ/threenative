@@ -83,6 +83,17 @@ test('Android release lane installs both Rust cross-compilation targets before G
   );
 });
 
+test('clean Android consumer exposes late-installed emulator SDK directories', () => {
+  expect(releaseWorkflow).toContain(
+    'ln -s "$source_sdk/$directory" "$clean_sdk/$directory"',
+  );
+  expect(releaseWorkflow).toContain('test -L "$clean_sdk/emulator"');
+  expect(releaseWorkflow).toContain('test -L "$clean_sdk/system-images"');
+  expect(releaseWorkflow).not.toContain(
+    'if test -e "$source_sdk/$directory"; then ln -s',
+  );
+});
+
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
   const wrongHeight = smokeScenario('physics-wrong-height.playtest.json');

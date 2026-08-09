@@ -313,8 +313,10 @@ jobs:
           clean_sdk="$RUNNER_TEMP/android-sdk-no-native-toolchain"
           mkdir -p "$clean_sdk"
           for directory in build-tools cmdline-tools emulator licenses platform-tools platforms system-images; do
-            if test -e "$source_sdk/$directory"; then ln -s "$source_sdk/$directory" "$clean_sdk/$directory"; fi
+            ln -s "$source_sdk/$directory" "$clean_sdk/$directory"
           done
+          test -L "$clean_sdk/emulator"
+          test -L "$clean_sdk/system-images"
           test ! -e "$clean_sdk/ndk"
           test ! -e "$clean_sdk/cmake"
           echo "ANDROID_HOME=$clean_sdk" >> "$GITHUB_ENV"
