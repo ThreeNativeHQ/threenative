@@ -1,6 +1,8 @@
 # PRD-051 — the HUD on native: decide before building
 
-**Status: PROPOSED (2026-08-09). Not started. Phase 0 is a spike, not an implementation.**
+**Status: DONE (2026-08-09). Phase 0 killed candidate A and selected D.** The framework
+ships no native HUD abstraction; `@threenative/ui` remains a web-shell package. Evidence:
+`docs/verification/PRD-051.md`.
 
 `@threenative/ui` is React DOM. The native host installs `document` and `window` only as
 Three.js compatibility stubs — `body.appendChild` is a no-op — so **no React HUD has ever
@@ -111,9 +113,42 @@ a UI framework nobody asked for.
 
 ## 5. Acceptance criteria for Phase 0 (consumer-scoped)
 
-- [ ] The same game source renders a readable score, a health bar and a pause overlay in the
-      browser **and** in the desktop native artifact, at the same seed, captured side by side.
-- [ ] The line count the author writes is recorded, and compared against the 20-line rule.
-- [ ] Every divergence between the two surfaces is listed, with which one is wrong.
-- [ ] The decision (A, B, C or D) is written into this PRD with the evidence that produced it,
-      **before** any framework or template code changes.
+- [x] The same 40-line HUD source was executed in the browser and desktop artifact at seed
+      90210 and captured side by side. The browser rendered all three elements; native did
+      not, which is the observed result that killed A.
+- [x] The author wrote 40 lines in `src/render/hud.ts` plus three integration lines. This is
+      already past the 20-line framework threshold, but rule 3 forbids absorbing the look.
+- [x] Every observed divergence is recorded in `docs/verification/PRD-051.md`, with native
+      identified as wrong.
+- [x] Decision D was recorded before any framework or template implementation. The spike
+      remained under `/tmp`; only this decision and its evidence merged.
+
+---
+
+## 6. Phase 0 answer — candidate D
+
+**Decision: D. `@threenative/ui` is web-only; ThreeNative does not ship a native HUD
+abstraction or a portable HUD template.** A native game authors its on-canvas interface in
+its own Three.js source and proves it on each claimed platform. The product promise is
+narrowed accordingly: game and rendering source are shared where the native host implements
+their facilities, but React DOM/Tailwind HUD source is not write-once.
+
+Candidate A failed before performance could be measured. The unchanged source built for web
+and desktop, but the desktop host created a 1280×720 main-surface Canvas2D context for the
+supposed 512×256 offscreen canvas. Three.js then logged
+`copyExternalImageToTexture: unsupported source type, width=512, height=256`. Rectangles were
+painted at raw surface coordinates, `fillText` produced no visible glyphs, and the Three.js
+scene was absent from the captured native frame. The browser frame was readable.
+
+| Measurement | Browser | Linux desktop native |
+| --- | ---: | ---: |
+| 1280×720 bright text pixels | 1,939 | 0 |
+| non-black pixels | 916,243 | 43,896 |
+| non-black bounds | full frame | `(18,18)`–`(475,173)` |
+| 300-frame execution | captured after five seconds | 18,815 ms |
+
+Candidates B and C remain rejected by the original cost and Charter analysis: both require
+the framework to own layout or a DOM/CSS engine. The spike found no evidence that changes
+that conclusion. Candidate A is not retained as a future implementation claim; fixing its
+host bugs would still leave its measured 43 authored lines on the wrong side of the rule-3
+boundary. Reopening this decision requires a new PRD with new evidence.
