@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,6 +165,10 @@ function scenarioUnreadable(
 }
 
 const entryPath = process.argv[1];
-if (entryPath !== undefined && resolve(entryPath) === fileURLToPath(import.meta.url)) {
+if (
+  entryPath !== undefined
+  && existsSync(entryPath)
+  && realpathSync(resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))
+) {
   await main();
 }

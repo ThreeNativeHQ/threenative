@@ -104,9 +104,16 @@ test('clean Android emulator script is compatible with line-by-line action execu
   expect(script).not.toMatch(/\n\s+(?:cli|scenario_root)=/u);
   expect(
     script.match(
-      /set \+e; node .*status=\$\?; set -e; test "\$status" -eq 1; grep -F/gu,
+      /set \+e; node .*status=\$\?; set -e; cat .*; test "\$status" -eq 1; grep -F/gu,
     ),
   ).toHaveLength(3);
+});
+
+test('clean consumers retain failure logs and use the measured device timeout', () => {
+  expect(releaseWorkflow.match(/--timeout 30000/gu)).toHaveLength(8);
+  expect(releaseWorkflow.match(/if: always\(\)/gu)).toHaveLength(2);
+  expect(releaseWorkflow.match(/if-no-files-found: warn/gu)).toHaveLength(2);
+  expect(releaseWorkflow).toContain('cat "$RUNNER_TEMP/ios-wrong-value.log"');
 });
 
 test('native physics controls assert the parity scene surface', () => {

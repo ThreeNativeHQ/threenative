@@ -97,7 +97,7 @@ describe("threenative build", () => {
       expect(manifest.scripts?.["build:ios"], template).toBe("threenative build --target ios");
       expect(manifest.devDependencies?.["create-threenative"], template).toBe("0.1.0");
       expect(manifest.optionalDependencies?.["@threenative/runtime-native"], template).toBe(
-        "0.1.12",
+        "0.1.13",
       );
       expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
         "@threenative/runtime-native",
