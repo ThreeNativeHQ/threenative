@@ -68,6 +68,11 @@ jobs:
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
       - run: pnpm --filter threenative-native-smoke build
+      - name: Install Windows HTTP build dependencies
+        if: runner.os == 'Windows'
+        run: >-
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install
+          "curl:x64-windows-static" "zlib:x64-windows-static"
       - run: pnpm --filter @threenative/runtime-native native:build
       - run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - name: Stage the verified runtime

@@ -13,6 +13,7 @@ test('desktop platform lanes build and retain executable evidence', () => {
     'runner: windows-2025',
     'native:build',
     'native:verify:desktop',
+    'curl:x64-windows-static',
     'packages/runtime-native/artifacts/',
     'if-no-files-found: error',
   ]) {

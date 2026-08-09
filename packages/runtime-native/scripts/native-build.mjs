@@ -36,5 +36,13 @@ if (!available(cmake) || !available(ninja)) {
   ninja = tool('ninja');
 }
 
-run(cmake, ['--preset', preset, `-DCMAKE_MAKE_PROGRAM=${ninja}`]);
+const configureArgs = ['--preset', preset, `-DCMAKE_MAKE_PROGRAM=${ninja}`];
+const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
+if (windows && vcpkgRoot) {
+  configureArgs.push(
+    `-DCMAKE_TOOLCHAIN_FILE=${join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake')}`,
+    '-DVCPKG_TARGET_TRIPLET=x64-windows-static',
+  );
+}
+run(cmake, configureArgs);
 run(cmake, ['--build', '--preset', preset, '--parallel']);
