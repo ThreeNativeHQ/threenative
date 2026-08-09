@@ -20,7 +20,7 @@ Command:
 node packages/runtime-native/scripts/verify-android-first-proof.mjs --device emulator-5554
 ```
 
-- Built the unchanged public-API entry `examples/native-smoke/src/main.ts` through
+- Built the unchanged public-API entry `examples/native-smoke/src/game.ts` through
   `@threenative/core`; catalog and installed Three.js were both exactly `0.185.1`.
 - The x86_64 emulator logged, in order, `TN_NATIVE_SMOKE_THREE:0.185.1`,
   `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_SMOKE_FIRST_FRAME`, then
@@ -36,6 +36,30 @@ node packages/runtime-native/scripts/verify-android-first-proof.mjs --device emu
 
 This closes the Phase 2 Android catalog-version and 300-frame core-smoke row. It does not
 close native physics, iOS, or physical-device evidence.
+
+## Android generated-asset integrity evidence — 2026-08-09
+
+Command, run twice against the same booted emulator:
+
+```sh
+THREENATIVE_ANDROID_SDK=/home/joao/Android/Sdk \
+  node packages/runtime-native/scripts/verify-android-first-proof.mjs \
+  --device emulator-5556
+```
+
+- Android assets now live under Gradle's modeled `build/generated/threenative/assets`
+  directory instead of the source tree. The source set consumes only that generated root.
+- The gate extracts `assets/scripts/main.js` from the assembled APK and fails before install
+  unless its SHA-256 matches the generated bundle metadata.
+- The first run rebuilt and passed. The second run reported both the bundle task and
+  `mergeDebugAssets` `UP-TO-DATE`, then passed the same extraction check, all four lifecycle
+  markers, 300 frames, clean logs, a nonblank 1080x2400 screenshot, and the 3,000 ms
+  liveness window.
+- Generated and packaged bundle SHA-256 were both
+  `d515e339730d1a8c46d2e9b96f111b07bac2a924053fadf76303b5d7bdf38856`.
+
+This closes the stale Gradle asset-cache hole in the source-emulator proof. It does not
+close the released-consumer or physical-device rows.
 
 ## Android lifecycle and device proof — 2026-08-08
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -22,7 +22,8 @@ const exampleRoot = join(workspaceRoot, 'examples', 'native-smoke');
 const exampleEntry = join(workspaceRoot, EXAMPLE_ENTRY);
 const exampleBundle = join(exampleRoot, 'dist', 'native-smoke.js');
 const coreSourceRoot = join(workspaceRoot, 'packages', 'core', 'src');
-const output = join(runtimeRoot, 'android', 'app', 'src', 'main', 'assets', 'scripts', 'main.js');
+const assetRoot = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets');
+const output = join(assetRoot, 'scripts', 'main.js');
 const metadataOutput = `${output}.meta.json`;
 
 function sha256(contents) {
@@ -132,6 +133,7 @@ export function buildAndroidFirstProof() {
 
   const esbuild = executable(runtimeRoot, 'esbuild');
   if (!existsSync(esbuild)) throw new Error('Pinned runtime-native esbuild dependency is missing.');
+  rmSync(assetRoot, { force: true, recursive: true });
   mkdirSync(dirname(output), { recursive: true });
   const sourceHash = sha256(source);
   const coreSourceHash = sourceTreeSha256(coreSourceRoot);

@@ -207,12 +207,18 @@ builds normal/masked/wrong-gravity variants, and drives the normal plus four con
 on an x86_64 emulator. It remains open until that workflow actually runs against released
 assets.
 
-The current budget measurement is 51,756 native-runtime lines, 1,756 above the nonfatal
+The current budget measurement is 53,839 native-runtime lines, 3,839 above the nonfatal
 50,000-line review trigger. The crossing stays visible. Phase 0 deleted 1,159 unreachable
 demo-distribution lines, and the distribution additions that remain are each exercised by a
 consumer boundary: the five-asset transaction, the no-toolchain Gradle branch, or their
 fail-closed tests. No C++ was added by this PRD; deleting any of those paths would reopen the
 consumer or checksum gates, so the kill-switch pass retains them.
+
+The 2026-08-09 asset-cache repair retains only the shared generated-root wiring, APK entry
+hash check, and regression coverage. The hash check closes a false-green boundary: Gradle
+previously restored a stale `mergeDebugAssets` output even though the source bundle metadata
+was current. Removing the check would let that exact failure pass again; duplicating the
+bundle into the source tree was deleted. The change adds no package, C++, or user-facing API.
 
 ### Phase 5 — templates, docs, and the WASM trap
 

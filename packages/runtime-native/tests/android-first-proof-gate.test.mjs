@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'vitest';
 import { PNG } from 'pngjs';
 
@@ -16,6 +17,7 @@ import {
   SUCCESS_MARKER,
   THREE_VERSION_MARKER,
   analyzeAppLog,
+  assertPackagedAndroidBundle,
   filterAppLog,
   inspectScreenshot,
   javaMajorFromRelease,
@@ -43,6 +45,16 @@ test('asset builder fails closed on catalog drift and non-core smoke input', () 
   assert.throws(
     () => assertNativeSmokeSource(`const Scene = true; const defineGame = true; ${FRAME_MARKER}`),
     /public @threenative\/core/,
+  );
+});
+
+test('packaged Android asset must match the generated bundle metadata', () => {
+  const bundle = Buffer.from('current bundle');
+  const outputSha256 = createHash('sha256').update(bundle).digest('hex');
+  assert.doesNotThrow(() => assertPackagedAndroidBundle(bundle, { outputSha256 }));
+  assert.throws(
+    () => assertPackagedAndroidBundle(Buffer.from('stale bundle'), { outputSha256 }),
+    /APK asset does not match/u,
   );
 });
 

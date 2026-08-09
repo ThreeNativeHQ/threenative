@@ -24,6 +24,7 @@ if (!usePrebuiltRuntime && !runtimeRoot.file("CMakeLists.txt").asFile.isFile) {
 val sdl3Aar = if (usePrebuiltRuntime) prebuiltRoot.file("SDL3-3.2.8.aar")
     else runtimeRoot.file("third_party/sdl3-android/SDL3-3.2.8.aar")
 val extractedSdl3JniLibs = layout.buildDirectory.dir("generated/sdl3-jniLibs")
+val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenative/assets")
 
 tasks.register("extractSdl3JniLibs") {
     inputs.file(sdl3Aar)
@@ -70,8 +71,8 @@ tasks.register<Exec>("buildAndroidFirstProofBundle") {
     inputs.dir(layout.projectDirectory.dir("../../../../examples/native-smoke/src"))
     inputs.dir(layout.projectDirectory.dir("../../../../examples/native-smoke/node_modules/three"))
     inputs.dir(layout.projectDirectory.dir("../../../core/src"))
-    outputs.file(layout.projectDirectory.file("src/main/assets/scripts/main.js"))
-    outputs.file(layout.projectDirectory.file("src/main/assets/scripts/main.js.meta.json"))
+    outputs.file(generatedThreeNativeAssets.map { it.file("scripts/main.js") })
+    outputs.file(generatedThreeNativeAssets.map { it.file("scripts/main.js.meta.json") })
 }
 
 val buildNativePhysics by tasks.registering(Exec::class) {
@@ -157,6 +158,7 @@ android {
 
     sourceSets {
         getByName("main") {
+            assets.setSrcDirs(listOf(generatedThreeNativeAssets.get().asFile))
             // Compile the vendored SDL Java glue so ThreeNative can request a
             // larger SDLThread stack while retaining the official SDL native libs.
             if (!usePrebuiltRuntime) {

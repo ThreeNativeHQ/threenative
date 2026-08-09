@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,8 @@ const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
 const exampleRoot = join(workspaceRoot, "examples/native-smoke");
 const bundle = join(exampleRoot, "dist/native-smoke.js");
-const output = join(runtimeRoot, "android/app/src/main/assets/scripts/main.js");
+const assetRoot = join(runtimeRoot, "android/app/build/generated/threenative/assets");
+const output = join(assetRoot, "scripts/main.js");
 const control = process.env.THREENATIVE_PHYSICS_CONTROL ?? "normal";
 if (!["normal", "masked", "offset-box", "wrong-gravity"].includes(control))
   throw new Error(`Unsupported THREENATIVE_PHYSICS_CONTROL=${control}`);
@@ -54,6 +55,7 @@ for (const marker of [
 }
 if (/^\s*import\s+/m.test(source) || /\bimport\s*\(/.test(source))
   throw new Error("Native physics bundle contains a runtime import");
+rmSync(assetRoot, { force: true, recursive: true });
 mkdirSync(dirname(output), { recursive: true });
 run(esbuild, [bundle, "--minify", "--format=iife", "--platform=browser", "--target=es2022", `--outfile=${output}`]);
 const built = readFileSync(output);

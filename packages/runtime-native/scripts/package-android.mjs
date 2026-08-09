@@ -81,7 +81,7 @@ function listFiles(directory, relative = '') {
 
 export function stageAndroidAssets(
   assets,
-  destination = join(runtimeRoot, 'android', 'app', 'src', 'main', 'assets', 'game'),
+  destination = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets', 'game'),
 ) {
   rmSync(destination, { force: true, recursive: true });
   mkdirSync(destination, { recursive: true });
@@ -111,19 +111,24 @@ export async function packageAndroid(bundle, requestedOutput, assets) {
     existsSync(join(runtimeRoot, 'CMakeLists.txt')) &&
     existsSync(join(runtimeRoot, 'third_party', 'sdl3-android', 'SDL3-3.2.8.aar'));
   if (!sourceCheckout) await prepareAndroidPrebuilts();
-  const assetBundle = join(
+  const generatedAssets = join(
     runtimeRoot,
     'android',
     'app',
-    'src',
-    'main',
+    'build',
+    'generated',
+    'threenative',
     'assets',
+  );
+  rmSync(generatedAssets, { force: true, recursive: true });
+  const assetBundle = join(
+    generatedAssets,
     'scripts',
     'main.js',
   );
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
-  stageAndroidAssets(assets);
+  stageAndroidAssets(assets, join(generatedAssets, 'game'));
   const command = process.platform === 'win32' ? gradlew : 'sh';
   const args =
     process.platform === 'win32'

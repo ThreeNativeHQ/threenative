@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -34,7 +34,7 @@ const defaultApk = join(root, 'android/app/build/outputs/apk/debug/app-debug.apk
 const defaultLogPath = join(root, 'artifacts/android/first-proof-logcat.txt');
 const defaultReportPath = join(root, 'artifacts/android/first-proof-report.json');
 const defaultScreenshotPath = join(root, 'artifacts/android/first-proof.png');
-const bundlePath = join(root, 'android/app/src/main/assets/scripts/main.js');
+const bundlePath = join(root, 'android/app/build/generated/threenative/assets/scripts/main.js');
 const bundleMetadataPath = `${bundlePath}.meta.json`;
 
 class GateError extends Error {
@@ -394,6 +394,29 @@ export function verifyAndroidBundle() {
   return metadata;
 }
 
+export function assertPackagedAndroidBundle(packagedBundle, metadata) {
+  if (metadata.outputSha256 !== sha256(packagedBundle)) {
+    throw new GateError('Android APK asset does not match its generated bundle metadata.');
+  }
+}
+
+function verifyPackagedAndroidBundle(apk, metadata, javaHome) {
+  const temporary = mkdtempSync(join(tmpdir(), 'threenative-apk-'));
+  try {
+    run(join(javaHome, 'bin', executableName('jar')), [
+      '--extract',
+      '--file',
+      apk,
+      'assets/scripts/main.js',
+    ], { cwd: temporary });
+    const packagedPath = join(temporary, 'assets', 'scripts', 'main.js');
+    if (!existsSync(packagedPath)) throw new GateError('Android APK is missing assets/scripts/main.js.');
+    assertPackagedAndroidBundle(readFileSync(packagedPath), metadata);
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+}
+
 function buildApk(tools) {
   const androidDir = join(root, 'android');
   const gradleEnv = {
@@ -432,6 +455,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     throw new GateError(`Debug APK not found at ${options.apk}. Remove --skip-build so the gate builds it.`);
   }
   const bundleMetadata = verifyAndroidBundle();
+  verifyPackagedAndroidBundle(options.apk, bundleMetadata, tools.javaHome);
 
   const devicesOutput = run(tools.adb, ['devices', '-l'], { timeoutMs: 10000 }).stdout;
   const serial = selectDevice(parseAdbDevices(String(devicesOutput)), options.device);
