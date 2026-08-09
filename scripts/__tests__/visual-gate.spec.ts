@@ -6,12 +6,18 @@ import {
   VISUAL_SCORE_FLOOR,
   inspectAllTemplates,
   validateVisualScores,
+  visualServerProcessGroup,
 } from "../visual-gate.js";
 
 describe("visual gate", () => {
   it("builds playtest before packages that import its export map", () => {
     const names = LOCAL_FRAMEWORK_PACKAGES.map(([name]) => name);
     expect(names.indexOf("@threenative/playtest")).toBeLessThan(names.indexOf("@threenative/core"));
+  });
+
+  it("terminates the complete visual server process group outside Windows", () => {
+    expect(visualServerProcessGroup(1234, "linux")).toBe(-1234);
+    expect(visualServerProcessGroup(1234, "win32")).toBe(1234);
   });
 
   it("finds the six live render files and quality floor in every template", () => {

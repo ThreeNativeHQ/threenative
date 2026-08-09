@@ -36,6 +36,22 @@ export const LOCAL_FRAMEWORK_PACKAGES = [
   ["create-threenative", "create-threenative-"],
 ] as const;
 
+export function visualServerProcessGroup(
+  pid: number,
+  platform: NodeJS.Platform = process.platform,
+): number {
+  return platform === "win32" ? pid : -pid;
+}
+
+function stopVisualServer(server: ChildProcess): void {
+  if (server.pid === undefined || server.exitCode !== null) return;
+  try {
+    process.kill(visualServerProcessGroup(server.pid), "SIGTERM");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+}
+
 export interface TemplateStructureResult {
   readonly errors: readonly string[];
   readonly files: readonly string[];
@@ -272,7 +288,11 @@ async function captureTemplate(
   const server = spawn(
     "pnpm",
     ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    { cwd: result.target, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: result.target,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
   const output: string[] = [];
   server.stdout?.on("data", (chunk) => output.push(String(chunk)));
@@ -308,7 +328,7 @@ async function captureTemplate(
       `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,
     );
   } finally {
-    server.kill();
+    stopVisualServer(server);
   }
 }
 
