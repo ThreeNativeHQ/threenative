@@ -27,7 +27,10 @@ test('desktop platform lanes build and retain executable evidence', () => {
     workflow.indexOf('pnpm --filter @threenative/core build'),
   );
   for (const source of [workflow, releaseWorkflow]) {
-    expect(source).toContain('VsDevCmd.bat');
+    expect(source).toContain('vswhere.exe');
+    expect(source).toContain('set "CC=cl"');
+    expect(source).toContain('set "CXX=cl"');
+    expect(source).toContain('where cl');
     expect(source).toContain('shell: cmd');
     expect(source).toContain("if: runner.os != 'Windows'");
   }
