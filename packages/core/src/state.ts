@@ -14,20 +14,22 @@ export function createGameStore<T extends Record<string, unknown>>(
   intervalMs = 100,
 ): GameStore<T> {
   const store = createStore<T>(() => ({ ...initial }));
+  const current = { value: store.getState() };
   let pending: Partial<T> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
-
+  store.subscribe((state) => Object.assign(current, { value: state }));
   const flush = () => {
     if (pending === undefined) return;
     const patch = pending;
     pending = undefined;
     store.setState(patch);
   };
-
   const gameStore = store as GameStore<T>;
+  gameStore.getState = () => current.value;
   gameStore.set = (patch: StatePatch<T>) => {
-    const next = typeof patch === "function" ? patch(store.getState()) : patch;
+    const next = typeof patch === "function" ? patch(current.value) : patch;
     pending = { ...pending, ...next };
+    current.value = { ...current.value, ...next };
   };
   gameStore.flush = flush;
   gameStore.start = () => {

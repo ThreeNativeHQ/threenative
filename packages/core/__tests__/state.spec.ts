@@ -32,4 +32,20 @@ describe("createGameStore", () => {
     unsubscribe();
     store.stop();
   });
+
+  it("should expose coalesced writes to gameplay before notifying subscribers", () => {
+    const store = createGameStore({ score: 0 });
+    const observed: number[] = [];
+    const unsubscribe = store.subscribe((state) => observed.push(state.score));
+
+    store.set({ score: 1 });
+    store.set((state) => ({ score: state.score + 1 }));
+
+    expect(store.getState().score).toBe(2);
+    expect(observed).toEqual([]);
+    store.flush();
+    expect(observed).toEqual([2]);
+    unsubscribe();
+    store.stop();
+  });
 });
