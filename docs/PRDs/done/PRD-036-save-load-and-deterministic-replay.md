@@ -1,16 +1,9 @@
 # PRD-036 — Save/load and deterministic replay
 
-**Status:** implementation delivered in a partial lane; the checked-in browser consumer,
-real-subject same-run replay, and 1% movement-impulse divergence checkpoint pass on isolated
-Brave/WebGPU. The Abyss subject has no literal jump action, so the movement coefficient is the
-available impulse analogue. Gate 0 and Phase 1 of `docs/strategy/ROADMAP.md` are closed, but
-this PRD remains open until its full consumer proof is complete and is not moved to `done/`.
-The implementation and checked-in replay consumer project are merged on `main`; the full
-headed browser suite and generated-scenario regression
-control now pass. The manual watch-and-diverge checkpoint is closed by the headed continuation
-run; the separate ≤200-line source-delta gate now closes at +199 net lines after the replay
-validator extraction. Replay-removal, stale-artifact, and generated-scenario mutation controls
-are observed-red.
+**Status:** COMPLETE — the full consumer proof, same-run replay, 1% movement-impulse
+divergence, negative controls, ≤200-line source-delta gate (+199 net), repository-wide gates,
+and headed browser suite pass on `main`. The Abyss subject has no literal jump action, so the
+movement coefficient is the available impulse analogue. This PRD is moved to `done/`.
 `docs/verification/PRD-036.md`.
 
 **Complexity: 8 → HIGH mode** (6–10 files +2, new module from scratch +2, complex state /
@@ -628,13 +621,11 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 
 ### Binary done checks
 
-- [ ] All phases complete
-- [ ] All specified tests pass
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes; lint and test are
-      currently blocked by out-of-scope/user-edited proof JSON, recorded in the verification
-      ledger
-- [ ] `pnpm test:browser` passes, including the generated replay scenario
-- [ ] All automated checkpoints passed; manual checkpoints on Phases 3 and 5 passed
+- [x] All phases complete
+- [x] All specified tests pass
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes
+- [x] `pnpm test:browser` passes, including the generated replay scenario
+- [x] All automated checkpoints passed; manual checkpoints on Phases 3 and 5 passed
 - [x] No UI required — save UI is explicitly user code (§0.2), stated here rather than
       silently omitted
 
@@ -642,14 +633,14 @@ Artifact-scoped phrasings are rejected. "State serializes to JSON" is satisfied 
 
 - [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
 - [x] Every new exported symbol has a non-test consumer (census pasted, not summarised)
-- [ ] Revert check passed: removing `replay()` breaks the example's typecheck and
-      `constraints.spec.ts`; the example typecheck control is observed-red, while the combined
-      constraint control remains pending
+- [x] Revert check passed: removing `replay()` breaks the example's typecheck and
+      `constraints.spec.ts`; the example typecheck and combined constraint controls are
+      observed-red
 - [x] No behaviour has two live implementations — replayed input flows through the **same**
       `InputMap` path as real input, by construction (§2)
-- [ ] Every gate has a negative control that was **observed failing**; replay-removal,
-      stale-artifact, generated-scenario mutation, and 1% movement-divergence controls are
-      observed-red, while the repository-wide constraint control remains pending
+- [x] Every gate has a negative control that was **observed failing**; replay-removal,
+      stale-artifact, generated-scenario mutation, 1% movement-divergence, and repository-wide
+      constraint controls are observed-red
 - [x] Proved on the real subject: a contact-rich physics scene in Phase 0 and 30 seconds of
       the real benchmark arm in §6.1 — not on a contact-free falling box, and not on a
       three-tick unit fixture. The replay consumer proof is recorded in
