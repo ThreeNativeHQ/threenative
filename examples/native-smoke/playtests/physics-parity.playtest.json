@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "native-physics-observable-parity",
+  "target": "web",
+  "subject": "dynamicBox",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitTicks": 180, "label": "complete" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "resources": [
+      { "id": "GameState", "path": "parity.steps", "equals": 180, "changed": true },
+      { "id": "GameState", "path": "parity.grounded", "equals": true },
+      { "id": "GameState", "path": "parity.groundCollider", "equals": "floor" },
+      {
+        "id": "GameState",
+        "path": "parity.scenarioSha256",
+        "equals": "c5f9c14ec977ee05e00c4662208fb5d8f1707ff5b64cb41b86bfbc6875330b4d",
+        "allowTrivial": true
+      }
+    ]
+  }
+}

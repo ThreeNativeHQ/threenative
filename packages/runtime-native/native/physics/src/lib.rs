@@ -49,17 +49,6 @@ pub struct TnPhysicsCharacterOptions {
     pub one_way_layers: u32,
 }
 
-#[repr(C)]
-pub struct TnPhysicsProofOptions {
-    pub gravity_x: f32,
-    pub gravity_y: f32,
-    pub gravity_z: f32,
-    pub floor_collision_layer: u32,
-    pub floor_collision_mask: u32,
-    pub cube_collision_layer: u32,
-    pub cube_collision_mask: u32,
-}
-
 #[derive(Clone, Copy)]
 struct BodyEntry {
     body: RigidBodyHandle,
@@ -679,140 +668,9 @@ pub extern "C" fn tn_physics_destroy(simulation: *mut Simulation) {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_create(
-    options: *const TnPhysicsProofOptions,
-) -> *mut Simulation {
-    if options.is_null() {
-        return ptr::null_mut();
-    }
-    let options = unsafe { ptr::read(options) };
-    let Some(mut simulation) = Simulation::new(TnPhysicsWorldOptions {
-        gravity_x: options.gravity_x,
-        gravity_y: options.gravity_y,
-        gravity_z: options.gravity_z,
-    }) else {
-        return ptr::null_mut();
-    };
-    let floor = TnPhysicsBodyOptions {
-        id: 0,
-        body_type: 1,
-        shape_type: 0,
-        position_x: 0.0,
-        position_y: -0.5,
-        position_z: 0.0,
-        rotation_x: 0.0,
-        rotation_y: 0.0,
-        rotation_z: 0.0,
-        rotation_w: 1.0,
-        shape_x: 50.0,
-        shape_y: 0.5,
-        shape_z: 50.0,
-        mass: 0.0,
-        collision_layer: options.floor_collision_layer,
-        collision_mask: options.floor_collision_mask,
-        sensor: false,
-    };
-    let cube = TnPhysicsBodyOptions {
-        id: 1,
-        body_type: 0,
-        shape_type: 0,
-        position_x: 0.0,
-        position_y: 3.0,
-        position_z: 0.0,
-        rotation_x: 0.0,
-        rotation_y: 0.0,
-        rotation_z: 0.0,
-        rotation_w: 1.0,
-        shape_x: 0.5,
-        shape_y: 0.5,
-        shape_z: 0.5,
-        mass: 0.0,
-        collision_layer: options.cube_collision_layer,
-        collision_mask: options.cube_collision_mask,
-        sensor: false,
-    };
-    if !simulation.add_body(floor) || !simulation.add_body(cube) {
-        return ptr::null_mut();
-    }
-    Box::into_raw(Box::new(simulation))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_step(simulation: *mut Simulation, delta_time: f32) -> bool {
-    tn_physics_step(simulation, delta_time, ptr::null(), 0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_read_visible_transforms(
-    simulation: *const Simulation,
-    output: *mut f32,
-    output_float_capacity: usize,
-) -> i32 {
-    tn_physics_read_visible_transforms(simulation, output, output_float_capacity)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_drain_collision_events(
-    simulation: *mut Simulation,
-    output: *mut u32,
-    output_u32_capacity: usize,
-) -> i32 {
-    tn_physics_drain_collision_events(simulation, output, output_u32_capacity)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_destroy(simulation: *mut Simulation) {
-    tn_physics_destroy(simulation);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn proof_options() -> TnPhysicsProofOptions {
-        TnPhysicsProofOptions {
-            gravity_x: 0.0,
-            gravity_y: -9.81,
-            gravity_z: 0.0,
-            floor_collision_layer: 1,
-            floor_collision_mask: u16::MAX.into(),
-            cube_collision_layer: 1,
-            cube_collision_mask: u16::MAX.into(),
-        }
-    }
-
-    fn proof(options: TnPhysicsProofOptions) -> Box<Simulation> {
-        let pointer = tn_physics_proof_create(&options);
-        assert!(!pointer.is_null());
-        unsafe { Box::from_raw(pointer) }
-    }
-
-    #[test]
-    fn cube_rests_on_floor_and_emits_collision() {
-        let mut simulation = proof(proof_options());
-        for _ in 0..180 {
-            assert!(simulation.step(1.0 / 60.0, &[]));
-        }
-        let cube = simulation.entries[&1];
-        let cube_y = simulation.bodies[cube.body].translation().y;
-        assert!((cube_y - 0.5).abs() <= 0.02, "cube y was {cube_y}");
-        assert!(simulation.events.iter().any(|event| *event == [0, 1, 1, 1]));
-    }
-
-    #[test]
-    fn collision_mask_is_a_real_negative_control() {
-        let mut options = proof_options();
-        options.cube_collision_layer = 2;
-        options.cube_collision_mask = 2;
-        let mut simulation = proof(options);
-        for _ in 0..180 {
-            assert!(simulation.step(1.0 / 60.0, &[]));
-        }
-        let cube = simulation.entries[&1];
-        assert!(simulation.bodies[cube.body].translation().y < -5.0);
-        assert!(simulation.events.is_empty());
-    }
 
     #[test]
     fn arbitrary_body_ids_and_kinematic_bulk_input_are_supported() {

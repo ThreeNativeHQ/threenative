@@ -191,15 +191,11 @@ export function requirePhysicsStepInput(
     const id = inputSnapshot.kinematicTransforms[offset] as number;
     if (!Number.isInteger(id) || id < 0)
       throw new Error("PhysicsSimulation input contains an invalid body id.");
-    if (!bodyExists(id))
-      throw new Error("PhysicsSimulation input contains an unknown body id.");
+    if (!bodyExists(id)) throw new Error("PhysicsSimulation input contains an unknown body id.");
   }
 }
 
-export function requirePhysicsRenderBuffer(
-  renderBuffer: Float32Array,
-  bodyCount: number,
-): void {
+export function requirePhysicsRenderBuffer(renderBuffer: Float32Array, bodyCount: number): void {
   if (!(renderBuffer instanceof Float32Array))
     throw new Error("PhysicsSimulation output must use a Float32Array.");
   if (renderBuffer.length < bodyCount * PHYSICS_TRANSFORM_STRIDE)
@@ -296,6 +292,7 @@ export function createWebPhysicsSimulation(
 ): PhysicsRuntimeSimulation {
   const bodies = new Map<number, SimulationBody>();
   const byCollider = new Map<number, SimulationBody>();
+  const pendingCollisionEvents: number[][] = [];
   let nextId = 0;
   let disposed = false;
 
@@ -510,17 +507,20 @@ export function createWebPhysicsSimulation(
     drainCollisionEvents: (buffer) => {
       requireLive();
       requirePhysicsEventBuffer(buffer);
-      const pending: number[][] = [];
       options.eventQueue.drainCollisionEvents((first, second, started) => {
         const left = byCollider.get(first)?.id;
         const right = byCollider.get(second)?.id;
         if (left !== undefined && right !== undefined)
-          pending.push([left, right, Number(started), 1]);
+          pendingCollisionEvents.push([left, right, Number(started), 1]);
       });
-      if (buffer.length < pending.length * PHYSICS_COLLISION_EVENT_STRIDE)
+      if (buffer.length < pendingCollisionEvents.length * PHYSICS_COLLISION_EVENT_STRIDE)
         throw new Error("PhysicsSimulation collision event buffer is too small.");
-      pending.forEach((event, index) => buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE));
-      return pending.length;
+      pendingCollisionEvents.forEach((event, index) =>
+        buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE),
+      );
+      const count = pendingCollisionEvents.length;
+      pendingCollisionEvents.length = 0;
+      return count;
     },
     dispose: () => {
       if (disposed) return;
@@ -532,6 +532,7 @@ export function createWebPhysicsSimulation(
       }
       bodies.clear();
       byCollider.clear();
+      pendingCollisionEvents.length = 0;
       options.eventQueue.free();
       options.world.free();
     },

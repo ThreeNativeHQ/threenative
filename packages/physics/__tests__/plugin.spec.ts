@@ -98,6 +98,29 @@ describe("rapier plugin", () => {
     ).toThrow(/buffer is too small/);
   });
 
+  it("grows the event buffer geometrically without losing a collision burst", async () => {
+    const { ctx, plugin } = await setup();
+    const lengths: number[] = [];
+    const drain = ctx.physics.simulation.drainCollisionEvents.bind(ctx.physics.simulation);
+    ctx.physics.simulation.drainCollisionEvents = (buffer) => {
+      lengths.push(buffer.length);
+      return drain(buffer);
+    };
+    for (let index = 0; index < 20; index += 1) {
+      new RigidBody3D({
+        object: new Object3D(),
+        physics: ctx.physics,
+        shape: CollisionShape3D.box(1, 1, 1),
+      });
+    }
+
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(lengths.length).toBeGreaterThan(1);
+    expect(lengths).toEqual([...lengths].sort((left, right) => left - right));
+    expect(new Set(lengths).size).toBe(lengths.length);
+  });
+
   it("releases scene physics on sceneExit", async () => {
     const { ctx, plugin } = await setup();
     const body = new RigidBody3D({

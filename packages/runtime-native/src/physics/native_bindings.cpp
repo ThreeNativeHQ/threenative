@@ -133,17 +133,6 @@ bool isTypedArray(js::Engine *engine, js::JSValueHandle value,
   return engine->isString(name) && engine->toString(name) == expectedName;
 }
 
-bool readCollisionGroups(js::Engine *engine, js::JSValueHandle options,
-                         const char *bodyName, uint32_t &layer,
-                         uint32_t &mask) {
-  const auto body = engine->getProperty(options, bodyName);
-  if (engine->isUndefined(body))
-    return true;
-  return engine->isObject(body) &&
-         readGroup(engine, body, "collisionLayer", layer) &&
-         readGroup(engine, body, "collisionMask", mask);
-}
-
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
                       TnPhysicsBodyOptions &options) {
   if (!engine->isObject(value))
@@ -243,92 +232,89 @@ bool parseCharacterOptions(js::Engine *engine, js::JSValueHandle value,
 }
 
 js::JSValueHandle makeSimulationObject(
-    js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner,
-    bool allowBodies) {
+    js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner) {
   auto simulation = engine->newObject();
-  if (allowBodies) {
-    engine->setProperty(
-        simulation, "createBody",
-        engine->newFunction(
-            "createBody",
-            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
-              if (owner->simulation == nullptr)
-                return fail(engine, "physics simulation is disposed");
-              if (args.empty() || owner->nextId > kMaxExactFloatId)
-                return fail(engine, "createBody requires options and an available id");
-              TnPhysicsBodyOptions options{};
-              if (!parseBodyOptions(engine, args[0], owner->nextId, options) ||
-                  !tn_physics_add_body(owner->simulation, &options)) {
-                return fail(engine, "physics body options are invalid");
-              }
-              const uint32_t id = owner->nextId++;
-              return engine->newNumber(id);
-            }));
-    engine->setProperty(
-        simulation, "removeBody",
-        engine->newFunction(
-            "removeBody",
-            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
-              if (owner->simulation == nullptr)
-                return fail(engine, "physics simulation is disposed");
-              if (args.empty() || !engine->isNumber(args[0]))
-                return fail(engine, "removeBody requires a numeric id");
-              const double id = engine->toNumber(args[0]);
-              if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
-                  std::floor(id) != id)
-                return fail(engine, "removeBody received an invalid id");
-              tn_physics_remove_body(owner->simulation,
-                                     static_cast<uint32_t>(id));
-              return engine->newUndefined();
-            }));
-    engine->setProperty(
-        simulation, "configureCharacter",
-        engine->newFunction(
-            "configureCharacter",
-            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
-              if (owner->simulation == nullptr)
-                return fail(engine, "physics simulation is disposed");
-              if (args.size() < 2 || !engine->isNumber(args[0]))
-                return fail(engine, "configureCharacter requires an id and options");
-              const double id = engine->toNumber(args[0]);
-              if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
-                  std::floor(id) != id)
-                return fail(engine, "configureCharacter received an invalid id");
-              TnPhysicsCharacterOptions options{};
-              if (!parseCharacterOptions(engine, args[1],
-                                         static_cast<uint32_t>(id), options) ||
-                  !tn_physics_configure_character(owner->simulation, &options)) {
-                return fail(engine, "character controller options are invalid");
-              }
-              return engine->newUndefined();
-            }));
-    engine->setProperty(
-        simulation, "setBodyTransform",
-        engine->newFunction(
-            "setBodyTransform",
-            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
-              if (owner->simulation == nullptr)
-                return fail(engine, "physics simulation is disposed");
-              if (args.size() < 2 || !engine->isNumber(args[0]) ||
-                  !std::isfinite(engine->toNumber(args[0])))
-                return fail(engine, "setBodyTransform requires an id and position");
-              const double id = engine->toNumber(args[0]);
-              if (id < 0 || id > kMaxExactFloatId || std::floor(id) != id)
-                return fail(engine, "setBodyTransform received an invalid id");
-              float x = 0.0f;
-              float y = 0.0f;
-              float z = 0.0f;
-              if (!engine->isObject(args[1]) ||
-                  !readFiniteNumber(engine, args[1], "x", x) ||
-                  !readFiniteNumber(engine, args[1], "y", y) ||
-                  !readFiniteNumber(engine, args[1], "z", z))
-                return fail(engine, "setBodyTransform received an invalid position");
-              if (!tn_physics_set_body_transform(owner->simulation,
-                                                 static_cast<uint32_t>(id), x, y, z))
-                return fail(engine, "setBodyTransform received an unknown id");
-              return engine->newUndefined();
-            }));
-  }
+  engine->setProperty(
+      simulation, "createBody",
+      engine->newFunction(
+          "createBody",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() || owner->nextId > kMaxExactFloatId)
+              return fail(engine, "createBody requires options and an available id");
+            TnPhysicsBodyOptions options{};
+            if (!parseBodyOptions(engine, args[0], owner->nextId, options) ||
+                !tn_physics_add_body(owner->simulation, &options)) {
+              return fail(engine, "physics body options are invalid");
+            }
+            const uint32_t id = owner->nextId++;
+            return engine->newNumber(id);
+          }));
+  engine->setProperty(
+      simulation, "removeBody",
+      engine->newFunction(
+          "removeBody",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() || !engine->isNumber(args[0]))
+              return fail(engine, "removeBody requires a numeric id");
+            const double id = engine->toNumber(args[0]);
+            if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
+                std::floor(id) != id)
+              return fail(engine, "removeBody received an invalid id");
+            tn_physics_remove_body(owner->simulation,
+                                   static_cast<uint32_t>(id));
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "configureCharacter",
+      engine->newFunction(
+          "configureCharacter",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.size() < 2 || !engine->isNumber(args[0]))
+              return fail(engine, "configureCharacter requires an id and options");
+            const double id = engine->toNumber(args[0]);
+            if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
+                std::floor(id) != id)
+              return fail(engine, "configureCharacter received an invalid id");
+            TnPhysicsCharacterOptions options{};
+            if (!parseCharacterOptions(engine, args[1],
+                                       static_cast<uint32_t>(id), options) ||
+                !tn_physics_configure_character(owner->simulation, &options)) {
+              return fail(engine, "character controller options are invalid");
+            }
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "setBodyTransform",
+      engine->newFunction(
+          "setBodyTransform",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.size() < 2 || !engine->isNumber(args[0]) ||
+                !std::isfinite(engine->toNumber(args[0])))
+              return fail(engine, "setBodyTransform requires an id and position");
+            const double id = engine->toNumber(args[0]);
+            if (id < 0 || id > kMaxExactFloatId || std::floor(id) != id)
+              return fail(engine, "setBodyTransform received an invalid id");
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            if (!engine->isObject(args[1]) ||
+                !readFiniteNumber(engine, args[1], "x", x) ||
+                !readFiniteNumber(engine, args[1], "y", y) ||
+                !readFiniteNumber(engine, args[1], "z", z))
+              return fail(engine, "setBodyTransform received an invalid position");
+            if (!tn_physics_set_body_transform(owner->simulation,
+                                               static_cast<uint32_t>(id), x, y, z))
+              return fail(engine, "setBodyTransform received an unknown id");
+            return engine->newUndefined();
+          }));
   engine->setProperty(
       simulation, "step",
       engine->newFunction(
@@ -506,34 +492,7 @@ bool initializeNativePhysicsBindings(js::Engine *engine) {
             owner->simulation = tn_physics_create(&options);
             if (owner->simulation == nullptr)
               return fail(engine, "Rapier simulation creation failed");
-            return makeSimulationObject(engine, owner, true);
-          }));
-  engine->setProperty(
-      physicsHost, "createProofSimulation",
-      engine->newFunction(
-          "createProofSimulation",
-          [engine](void *, const std::vector<js::JSValueHandle> &args) {
-            TnPhysicsProofOptions options{0.0f, -9.81f, 0.0f, 1, 0xffff,
-                                          1,    0xffff};
-            if (!args.empty() && !engine->isUndefined(args[0])) {
-              if (!engine->isObject(args[0]) ||
-                  !readGravity(engine, args[0], options.gravity_x,
-                               options.gravity_y, options.gravity_z) ||
-                  !readCollisionGroups(engine, args[0], "floor",
-                                       options.floor_collision_layer,
-                                       options.floor_collision_mask) ||
-                  !readCollisionGroups(engine, args[0], "cube",
-                                       options.cube_collision_layer,
-                                       options.cube_collision_mask)) {
-                return fail(engine, "physics proof options are invalid");
-              }
-            }
-            auto owner = std::make_shared<SimulationOwner>();
-            owner->simulation = tn_physics_proof_create(&options);
-            if (owner->simulation == nullptr)
-              return fail(engine, "Rapier proof simulation creation failed");
-            owner->nextId = 2;
-            return makeSimulationObject(engine, owner, false);
+            return makeSimulationObject(engine, owner);
           }));
   engine->setProperty(nativeHost, "physics", physicsHost);
   return engine->setGlobalProperty("__THREENATIVE_NATIVE__", nativeHost);

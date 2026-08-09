@@ -50,8 +50,14 @@ function growEvents(
   buffer: Uint32Array<ArrayBufferLike>,
   bodyCount: number,
 ): Uint32Array<ArrayBufferLike> {
-  const required = Math.max(16, bodyCount * bodyCount * PHYSICS_COLLISION_EVENT_STRIDE);
-  return buffer.length >= required ? buffer : new Uint32Array(required);
+  const required = Math.max(64, bodyCount * 2 * PHYSICS_COLLISION_EVENT_STRIDE);
+  let length = buffer.length;
+  while (length < required) length *= 2;
+  return length === buffer.length ? buffer : new Uint32Array(length);
+}
+
+function isSmallBufferError(error: unknown): boolean {
+  return error instanceof Error && /buffer is too small/i.test(error.message);
 }
 
 function visibleId(buffer: Readonly<Float32Array>, offset: number): number {
@@ -146,7 +152,20 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
       }
 
       events = growEvents(events, bodies.size + areas.size);
-      const eventCount = simulation.drainCollisionEvents(events);
+      const maximumEventValues = Math.max(
+        64,
+        (bodies.size + areas.size) ** 2 * PHYSICS_COLLISION_EVENT_STRIDE,
+      );
+      let eventCount: number;
+      for (;;) {
+        try {
+          eventCount = simulation.drainCollisionEvents(events);
+          break;
+        } catch (error) {
+          if (!isSmallBufferError(error) || events.length >= maximumEventValues) throw error;
+          events = new Uint32Array(Math.min(maximumEventValues, events.length * 2));
+        }
+      }
       for (let index = 0; index < eventCount; index += 1) {
         const offset = index * PHYSICS_COLLISION_EVENT_STRIDE;
         const left = events[offset];

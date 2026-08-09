@@ -40,15 +40,15 @@ run(vite, ["build", "--config", "vite.config.ts"], {
   env: {
     ...process.env,
     THREENATIVE_PHYSICS_CONTROL: control,
-    THREENATIVE_PHYSICS_PROOF: "enabled",
+    THREENATIVE_NATIVE_BACKEND: "enabled",
+    THREENATIVE_PHYSICS_SCENE: "enabled",
   },
 });
 const source = readFileSync(bundle, "utf8");
 for (const marker of [
   "TN_NATIVE_SMOKE_READY:webgpu",
   "TN_NATIVE_SMOKE_FIRST_FRAME",
-  "TN_NATIVE_SMOKE_300_FRAMES:300",
-  "TN_NATIVE_PHYSICS_RESULT",
+  "TN_NATIVE_PHYSICS_PARITY",
 ]) {
   if (!source.includes(marker)) throw new Error(`Native physics bundle is missing ${marker}`);
 }
@@ -62,10 +62,11 @@ writeFileSync(
   `${output}.meta.json`,
   `${JSON.stringify(
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       entry: "examples/native-smoke/src/physics.ts",
       publicApiPackage: "@threenative/physics",
       backendCondition: "threenative-native",
+      sceneFlag: "THREENATIVE_PHYSICS_SCENE",
       control,
       outputBytes: built.length,
       outputSha256: sha256,

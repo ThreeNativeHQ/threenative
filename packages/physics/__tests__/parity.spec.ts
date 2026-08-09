@@ -562,6 +562,40 @@ describe("native adapter freshness", () => {
     expect(raw.readAreaIntersections).toHaveBeenCalledTimes(5);
     expect(raw.readVisibleTransforms).not.toHaveBeenCalled();
   });
+
+  it("grows the area-pair buffer geometrically after a fail-closed capacity error", () => {
+    const capacities: number[] = [];
+    const { native: simulation, raw } = validationAdapters();
+    let nextId = 1;
+    raw.createBody = vi.fn(() => nextId++);
+    raw.readAreaIntersections = vi.fn((buffer) => {
+      capacities.push(buffer.length);
+      if (buffer.length < 128) throw new Error("area intersection buffer is too small");
+      return 0;
+    });
+    for (let index = 0; index < 19; index += 1) {
+      const sensor = index === 0;
+      simulation.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor,
+        shape: {
+          collisionLayer: 1,
+          collisionMask: 65535,
+          kind: "box",
+          sensor,
+          x: 1,
+          y: 1,
+          z: 1,
+        },
+        type: sensor ? "kinematic" : "dynamic",
+      });
+    }
+
+    expect([...(simulation.areaIntersections?.(1) ?? [])]).toEqual([]);
+    expect(capacities).toEqual([64, 128]);
+  });
 });
 
 describe("physics adapter fail-closed symmetry", () => {
@@ -599,14 +633,18 @@ describe("physics adapter fail-closed symmetry", () => {
           kinematicTransforms: new Float32Array(PHYSICS_TRANSFORM_STRIDE),
         }),
     ],
-    ...Array.from({ length: PHYSICS_TRANSFORM_STRIDE }, (_, index) => [
-      `non-finite record scalar ${index}`,
-      (simulation: PhysicsSimulation) =>
-        simulation.step(1 / 60, {
-          kinematicCount: 1,
-          kinematicTransforms: transformWith(index, Number.NaN),
-        }),
-    ] as const),
+    ...Array.from(
+      { length: PHYSICS_TRANSFORM_STRIDE },
+      (_, index) =>
+        [
+          `non-finite record scalar ${index}`,
+          (simulation: PhysicsSimulation) =>
+            simulation.step(1 / 60, {
+              kinematicCount: 1,
+              kinematicTransforms: transformWith(index, Number.NaN),
+            }),
+        ] as const,
+    ),
     [
       "negative body id",
       (simulation) =>

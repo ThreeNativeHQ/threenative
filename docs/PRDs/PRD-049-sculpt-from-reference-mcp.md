@@ -4,14 +4,14 @@ prd_contract: v1
 
 # PRD-049 — Sculpt from reference: the scaffold hands the agent an image → `src/render/` tool
 
-**Status:** **IMPLEMENTED LOCALLY — release blocked on npm authentication and the human A/B
-call (2026-08-09).** The external server is implemented, tested, packed, and pushed to
+**Status:** **RELEASED — registry and generated-starter gates green; human A/B call remains
+(2026-08-09).** `threenative-sculpt-mcp@0.1.0` is public on npm and its source is public at
 `github.com/jonit-dev/threenative-sculpt-mcp`. All three starters install and launch it beside
-the asset MCP; the generated docs now route conventional assets, trivial geometry, bespoke
-objects, landmarks, scenery, and environment set pieces to the correct path. A clean generated
-starter launched the installed tarball and returned exactly five tools plus 31 technique-safe
-resources. Publication is the remaining integration blocker: `npm whoami` returns `ENEEDAUTH`,
-so the registry-backed CI job cannot pass until `threenative-sculpt-mcp@0.1.0` is published.
+the asset MCP; the generated docs route conventional assets, trivial geometry, bespoke objects,
+landmarks, scenery, and environment set pieces to the correct path. A brand-new generated
+starter installed both servers from npm, returned exactly five sculpt tools plus 31
+technique-safe resources, typechecked, and built. The only original acceptance item still
+requiring user evidence is the subjective human comparison of the preserved A/B frames.
 
 **Complexity: 6 → MEDIUM mode** (new mechanism from scratch — a second MCP server and its
 recorded surface +2, touches 10+ files +3, external fork with its own license lane +1).
@@ -232,7 +232,7 @@ attribution to img2threejs. In tree: this PRD EDIT (record the published version
 - [x] Apache-2.0 `NOTICE` naming img2threejs and the retained/adapted files
 - [x] Implement the 5 tools, each **fail-closed** per the §2 table
 - [x] Serve all 31 technique-safe grimoire entries as MCP resources; reject the unsafe three
-- [ ] Publish. Record `npm view` output verbatim in §8
+- [x] Publish. Record `npm view` output verbatim in §8
 - [x] Confirm the npm name is free
 
 **Verification:** `npm view threenative-sculpt-mcp version`, then `tools/list` over stdio
@@ -378,7 +378,7 @@ pnpm budgets
 - [x] All implemented package, scaffold, doc-surface, and budget tests pass
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` passes
 - [x] `pnpm budgets` passes with **no cap raised** and **no cap moved**
-- [ ] `scaffold-smoke` green, including the `tools/list` set-equality step
+- [x] Registry-backed scaffold-smoke probe green, including `tools/list` set equality
 - [x] `pnpm sync:agents --check` clean
 - [ ] All automated checkpoint reviews passed (`prd-work-reviewer` after each phase)
 
@@ -415,13 +415,11 @@ next external server from arriving unguarded.
 
 Phase 1 source discovery ran against upstream commit
 `d6673386f89673a58736f8d398dd16ece67874f5b` (2026-08-06). It identified amendments required
-for a truthful implementation; package, starter integration, and sandbox verification are now
-in progress.
+for a truthful implementation; those amendments are reflected in the released package.
 
 ### Phase 1 registry gate
 
-The npm name is free, but no package is published and this environment has no npm publishing
-identity:
+The initial negative control proved the name was free and publication required authentication:
 
 ```text
 $ npm view threenative-sculpt-mcp version --json
@@ -433,9 +431,23 @@ npm error code ENEEDAUTH
 npm error need auth This command requires you to be logged in.
 ```
 
-The missing login blocks registry publication only. The separate public source repository is
-`https://github.com/jonit-dev/threenative-sculpt-mcp`; verified HEAD is `bcb9ec2`. The packed
-`threenative-sculpt-mcp-0.1.0.tgz` SHA-256 is
+After authentication, publication and registry lookup passed:
+
+```text
+$ npm publish --access public
++ threenative-sculpt-mcp@0.1.0
+
+$ npm view threenative-sculpt-mcp version dist.tarball dist.shasum --json
+{
+  "version": "0.1.0",
+  "dist.tarball": "https://registry.npmjs.org/threenative-sculpt-mcp/-/threenative-sculpt-mcp-0.1.0.tgz",
+  "dist.shasum": "6bc4b45dc0e2a43d763aaa5eed249efc6803fb24"
+}
+```
+
+The separate public source repository is
+`https://github.com/jonit-dev/threenative-sculpt-mcp`; verified HEAD is `bcb9ec2`. The local
+packed tarball SHA-256 is
 `cad6082d09fc2db69f8bb849654fc0b942884fc3b84c11d88a94add5d47bf614`.
 
 ### Phase 1 source audit
@@ -472,16 +484,17 @@ new runtime contract.
 
 | Phase | Gate | Result | Negative control |
 |---|---|---|---|
-| 1 | published server, exactly 5 tools | LOCAL PASS; registry BLOCKED by `ENEEDAUTH` | `{}` spec, missing/zero-byte/single-colour capture, unknown/unsafe resource all fail closed |
-| 2 | starter scaffolds with both servers | PASS locally from packed `create-threenative` and sculpt tarballs | Missing block, undeclared package, and `npx -y` controls pass |
+| 1 | published server, exactly 5 tools | PASS — npm `0.1.0`, installed registry server returned exact five | `{}` spec, missing/zero-byte/single-colour capture, unknown/unsafe resource all fail closed |
+| 2 | starter scaffolds with both servers | PASS — packed CLI plus real registry install of both MCPs | Missing block, undeclared package, and `npx -y` controls pass |
 | 3 | all templates; externality enforced | PASS; 6 framework packages, 3 example workspaces, largest template 1,200 LOC | Both package-identity and dependency directions pass |
 | 4 | routing rule works in both directions | PASS in all three generated guides, including scenery/environment routing | Installed-resource scan rejects concrete shader/material blocks; doc test rejects invented names |
 | 5 | real reference, real frame, both arms | AUTOMATED PASS; human/token gates pending | No-sculpt frame captured and preserved |
 
 ### Installed starter proof
 
-A fresh `starter` generated from the packed CLI installed both MCPs, typechecked, built, and
-ran the exact CI probe extracted from `.github/workflows/ci.yml`:
+A brand-new `starter-registry-proof` generated from the packed CLI installed
+`threenative-asset-mcp@0.4.0` and `threenative-sculpt-mcp@0.1.0` from npm, typechecked, built,
+and ran the exact CI probe extracted from `.github/workflows/ci.yml`:
 
 ```text
 threenative-assets ok: 32 tools from 0.4.0
@@ -490,6 +503,9 @@ threenative-sculpt ok: 5 tools from 0.1.0
 configEntry: ./node_modules/threenative-sculpt-mcp/dist/server.js
 safeResources: 31
 tools: sculpt_compare, sculpt_grimoire, sculpt_pass_gate, sculpt_plan, sculpt_spec_gate
+
+pnpm typecheck: exit 0
+pnpm build: exit 0, 104 modules transformed
 ```
 
 Caller census:

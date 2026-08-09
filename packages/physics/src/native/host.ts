@@ -60,7 +60,6 @@ export interface NativeSimulation {
 
 export interface NativePhysicsHost {
   readonly version: string;
-  createProofSimulation(options?: unknown): NativeSimulation;
   createSimulation(options?: unknown): NativeSimulation;
 }
 
@@ -114,6 +113,16 @@ function primitiveShape(shape: PhysicsShapeDescriptor): NativeShapeDescriptor {
   return shape as NativeShapeDescriptor;
 }
 
+function isSmallBufferError(error: unknown): boolean {
+  return error instanceof Error && /buffer is too small/i.test(error.message);
+}
+
+function growUint32(buffer: Uint32Array, minimum: number): Uint32Array {
+  let length = Math.max(16, buffer.length);
+  while (length < minimum) length *= 2;
+  return length === buffer.length ? buffer : new Uint32Array(length);
+}
+
 export function createNativePhysicsSimulation(
   raw: NativeSimulation,
   version: string,
@@ -126,7 +135,7 @@ export function createNativePhysicsSimulation(
     { readonly grounded: boolean; readonly groundCollider?: number }
   >();
   let characterStates = new Float32Array(48);
-  let areaPairs = new Uint32Array(32);
+  let areaPairs: Uint32Array<ArrayBufferLike> = new Uint32Array(32);
   const areaIntersections = new Map<number, Set<number>>();
   let characterStateDirty = true;
   let areaIntersectionsDirty = true;
@@ -156,9 +165,18 @@ export function createNativePhysicsSimulation(
   };
   const refreshAreaIntersections = () => {
     if (!areaIntersectionsDirty) return;
-    const pairCapacity = Math.max(16, bodyIds.size * bodyIds.size * 2);
-    if (areaPairs.length < pairCapacity) areaPairs = new Uint32Array(pairCapacity);
-    const pairCount = raw.readAreaIntersections(areaPairs);
+    areaPairs = growUint32(areaPairs, bodyIds.size * 2);
+    const maximum = Math.max(16, bodyIds.size * bodyIds.size * 2);
+    let pairCount: number;
+    for (;;) {
+      try {
+        pairCount = raw.readAreaIntersections(areaPairs);
+        break;
+      } catch (error) {
+        if (!isSmallBufferError(error) || areaPairs.length >= maximum) throw error;
+        areaPairs = growUint32(areaPairs, Math.min(maximum, areaPairs.length * 2));
+      }
+    }
     areaIntersections.clear();
     for (const areaId of areaIds) areaIntersections.set(areaId, new Set());
     for (let index = 0; index < pairCount; index += 1) {
