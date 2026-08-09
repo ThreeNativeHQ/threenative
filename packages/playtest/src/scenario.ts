@@ -11,6 +11,13 @@ export interface IPlaytestViewport {
   width: number;
 }
 
+export interface IPlaytestPointer {
+  buttons?: number;
+  id: number;
+  x: number;
+  y: number;
+}
+
 export interface IPlaytestStep {
   kind?: "input" | "wait";
   holdFrames?: number;
@@ -26,6 +33,8 @@ export interface IPlaytestStep {
     x: number;
     y: number;
   };
+  /** The complete held-pointer set for this step, in arrival order. */
+  pointers?: readonly IPlaytestPointer[];
   /** A string presses one key; an array describes the complete held-key set. */
   press?: string | readonly string[];
   release: boolean;
@@ -620,6 +629,7 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     "label",
     "overlayMessage",
     "pointerPosition",
+    "pointers",
     "press",
     "release",
     "screenshot",
@@ -667,11 +677,18 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
         y: value.pointerPosition.y,
       }
     : undefined;
+  const pointers = Array.isArray(value.pointers)
+    ? value.pointers.map((pointer, pointerIndex) =>
+        validatePointer(pointer, scenarioPath, index, pointerIndex))
+    : undefined;
   if (isRecord(value.overlayMessage)) {
     rejectUnknownKeys(value.overlayMessage, ["overlayId", "payload", "type"], scenarioPath, `steps[${index}].overlayMessage`);
   }
   if (isRecord(value.pointerPosition)) {
     rejectUnknownKeys(value.pointerPosition, ["buttons", "x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
+  }
+  if (pointers !== undefined && new Set(pointers.map(({ id }) => id)).size !== pointers.length) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} pointers must use unique ids.`);
   }
   const holdFrames = positiveInteger(value.holdFrames);
   const holdTicks = positiveInteger(value.holdTicks);
@@ -708,6 +725,9 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (value.pointerPosition !== undefined && pointerPosition === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} pointerPosition must define normalized x and y values from 0 through 1.`);
   }
+  if (value.pointers !== undefined && pointers === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} pointers must be an array.`);
+  }
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
   }
@@ -717,8 +737,8 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (press === undefined && overlayMessage === undefined && pointerPosition === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define press, overlayMessage, pointerPosition, window, or waitFrames/waitTicks.`);
+  if (press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define press, overlayMessage, pointerPosition, pointers, window, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -751,12 +771,40 @@ function validateStep(value: unknown, scenarioPath: string, index: number): IPla
     ...(typeof value.label === "string" ? { label: value.label } : {}),
     ...(overlayMessage === undefined ? {} : { overlayMessage }),
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
+    ...(pointers === undefined ? {} : { pointers }),
     ...(press === undefined ? {} : { press }),
     release: typeof value.release === "boolean" ? value.release : true,
     ...(screenshot === undefined ? {} : { screenshot }),
     ...(waitFrames === undefined ? {} : { waitFrames }),
     ...(waitTicks === undefined ? {} : { waitTicks }),
     ...(window === undefined ? {} : { window }),
+  };
+}
+
+function validatePointer(
+  value: unknown,
+  scenarioPath: string,
+  stepIndex: number,
+  pointerIndex: number,
+): IPlaytestPointer {
+  const path = `steps[${stepIndex}].pointers[${pointerIndex}]`;
+  if (!isRecord(value)) throw invalidStep(scenarioPath, `${path} must be an object.`);
+  rejectUnknownKeys(value, ["buttons", "id", "x", "y"], scenarioPath, path);
+  if (!Number.isInteger(value.id) || (value.id as number) < 1) {
+    throw invalidStep(scenarioPath, `${path}.id must be a positive integer.`);
+  }
+  if (typeof value.x !== "number" || !Number.isFinite(value.x) || value.x < 0 || value.x > 1
+    || typeof value.y !== "number" || !Number.isFinite(value.y) || value.y < 0 || value.y > 1) {
+    throw invalidStep(scenarioPath, `${path} must define normalized x and y values from 0 through 1.`);
+  }
+  if (value.buttons !== undefined && (!Number.isInteger(value.buttons) || (value.buttons as number) < 1)) {
+    throw invalidStep(scenarioPath, `${path}.buttons must be a positive integer when present.`);
+  }
+  return {
+    ...(typeof value.buttons === "number" ? { buttons: value.buttons } : {}),
+    id: value.id as number,
+    x: value.x,
+    y: value.y,
   };
 }
 

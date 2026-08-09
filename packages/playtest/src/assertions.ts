@@ -394,7 +394,7 @@ export const PLAYTEST_SETUP_REGISTRY: readonly IPlaytestSetupSchemaEntry[] = [
 
 export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
-  if (scenario.steps.some((step) => step.kind !== "wait" && (step.press !== undefined || step.pointerPosition !== undefined))) {
+  if (scenario.steps.some((step) => step.kind !== "wait" && (step.press !== undefined || step.pointerPosition !== undefined || step.pointers !== undefined))) {
     required.add("browser.input");
   }
   if (scenario.artifacts?.screenshots !== false) {

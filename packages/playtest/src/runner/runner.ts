@@ -22,6 +22,7 @@ import {
 import { chromium, type Browser, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { reconcileBrowserPointers } from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
@@ -119,7 +120,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     const pathPositions = beforeSnapshot === undefined || pathEntity === undefined
       ? []
       : [entityPosition(beforeSnapshot, pathEntity)].filter((position): position is PlaytestVec3 => position !== undefined);
-    const inputState: StepInputState = { heldKeys: new Set(), pointerButtons: 0 };
+    const inputState: StepInputState = { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() };
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
     const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
@@ -462,6 +463,9 @@ async function runStep(
       await setPointerButtons(page, inputState, step.pointerPosition.buttons);
     }
   }
+  if (step.pointers !== undefined) {
+    await setBrowserPointers(page, inputState, step.pointers, viewport);
+  }
   const press = step.press;
   if (typeof press === "string") {
     await page.keyboard.down(press);
@@ -515,12 +519,48 @@ async function runStep(
   if (step.pointerPosition?.buttons !== undefined && step.release) {
     await setPointerButtons(page, inputState, 0);
   }
+  if (step.pointers !== undefined && step.release) {
+    await setBrowserPointers(page, inputState, [], viewport);
+  }
 }
 
 type StepInputState = {
   heldKeys: Set<string>;
   pointerButtons: number;
+  pointers: Map<number, { buttons: number; id: number; x: number; y: number }>;
 };
+
+async function setBrowserPointers(
+  page: Page,
+  inputState: StepInputState,
+  next: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
+  viewport: IPlaytestScenario["viewport"],
+): Promise<void> {
+  const changes = reconcileBrowserPointers(inputState.pointers, next);
+  for (const change of changes) {
+    await page.evaluate(({ change, viewport }) => {
+      const target = document.querySelector("canvas");
+      if (!(target instanceof EventTarget)) {
+        throw new Error("TN_PLAYTEST_POINTER_TARGET_MISSING: multi-pointer input requires a canvas.");
+      }
+      target.dispatchEvent(new PointerEvent(change.type, {
+        bubbles: true,
+        buttons: change.pointer.buttons,
+        clientX: change.pointer.x * viewport.width,
+        clientY: change.pointer.y * viewport.height,
+        isPrimary: change.isPrimary,
+        pointerId: change.pointer.id,
+        pointerType: "touch",
+      }));
+    }, { change, viewport });
+  }
+  inputState.pointers = new Map(next.map((pointer) => [pointer.id, {
+    buttons: pointer.buttons ?? 1,
+    id: pointer.id,
+    x: pointer.x,
+    y: pointer.y,
+  }]));
+}
 
 const POINTER_BUTTONS = [
   { button: "left", mask: 1 },
