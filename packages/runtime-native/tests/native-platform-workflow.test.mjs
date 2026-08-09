@@ -6,6 +6,10 @@ const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-platforms.yml', import.meta.url)),
   'utf8',
 );
+const releaseWorkflow = readFileSync(
+  fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
+  'utf8',
+);
 
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [
@@ -22,6 +26,11 @@ test('desktop platform lanes build and retain executable evidence', () => {
   expect(workflow.indexOf('pnpm --filter @threenative/playtest build')).toBeLessThan(
     workflow.indexOf('pnpm --filter @threenative/core build'),
   );
+  for (const source of [workflow, releaseWorkflow]) {
+    expect(source).toContain('VsDevCmd.bat');
+    expect(source).toContain('shell: cmd');
+    expect(source).toContain("if: runner.os != 'Windows'");
+  }
 });
 
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {

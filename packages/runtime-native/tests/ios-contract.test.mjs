@@ -30,6 +30,8 @@ test('iOS scaffold is root-linked to the exact shared core proof', () => {
   assert.match(verifier, /simctl', 'launch', '--terminate-running-process'/u);
   assert.doesNotMatch(verifier, /simctl', 'terminate'/u);
   assert.match(verifier, /toISOString\(\)\.slice\(0, 19\)\.replace\('T', ' '\)/u);
+  const jsc = readFileSync(join(root, 'src/js/jsc_engine.mm'), 'utf8');
+  assert.match(jsc, /NSLog\(@"%s", output\.c_str\(\)\)/u);
 });
 
 test('Linux can validate the iOS lane without claiming simulator execution', () => {

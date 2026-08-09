@@ -38,7 +38,14 @@ jobs:
         run: >-
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install
           "curl:x64-windows-static" "zlib:x64-windows-static"
-      - run: pnpm --filter @threenative/runtime-native native:build
+      - name: Build native runtime with MSVC
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          pnpm --filter @threenative/runtime-native native:build
+      - if: runner.os != 'Windows'
+        run: pnpm --filter @threenative/runtime-native native:build
       - run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - uses: actions/upload-artifact@v7
         if: always()

@@ -7,11 +7,13 @@
 
 #include "mystral/js/engine.h"
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
 #include <chrono>
 
 #if defined(MYSTRAL_JS_JSC) && defined(__APPLE__)
 
+#import <Foundation/Foundation.h>
 #import <JavaScriptCore/JavaScriptCore.h>
 
 namespace mystral {
@@ -557,19 +559,22 @@ private:
         auto consoleFn = [this](const char* prefix) {
             return newFunction(prefix, [prefix](void* ctx, const std::vector<JSValueHandle>& args) {
                 JSGlobalContextRef context = (JSGlobalContextRef)ctx;
-                std::cout << "[" << prefix << "] ";
+                std::ostringstream message;
+                message << "[" << prefix << "] ";
                 for (size_t i = 0; i < args.size(); i++) {
                     JSStringRef str = JSValueToStringCopy(context, (JSValueRef)args[i].ptr, nullptr);
                     if (str) {
                         size_t maxSize = JSStringGetMaximumUTF8CStringSize(str);
                         std::string result(maxSize, '\0');
                         JSStringGetUTF8CString(str, &result[0], maxSize);
-                        std::cout << result.c_str();
-                        if (i < args.size() - 1) std::cout << " ";
+                        message << result.c_str();
+                        if (i < args.size() - 1) message << " ";
                         JSStringRelease(str);
                     }
                 }
-                std::cout << std::endl;
+                const std::string output = message.str();
+                std::cout << output << std::endl;
+                NSLog(@"%s", output.c_str());
                 return JSValueHandle{(void*)JSValueMakeUndefined(context), ctx};
             });
         };
