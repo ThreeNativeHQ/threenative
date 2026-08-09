@@ -158,6 +158,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         respawns: previous.respawns + (respawned ? 1 : 0),
         entityCount: Object.keys(frameCtx.entities.snapshot()).length,
       });
+      if (respawned) frameCtx.state.flush();
     };
   }
 }

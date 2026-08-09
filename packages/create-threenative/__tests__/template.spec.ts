@@ -172,6 +172,7 @@ describe("template contracts", () => {
     expect(play).toContain("setupSky(ctx.scene");
     expect(play).toContain("KILL_PLANE");
     expect(play).toContain("player.respawn()");
+    expect(play).toContain("if (respawned) frameCtx.state.flush()");
     expect(play).toContain("audio.play(buffer)");
     for (const player of [starterPlayer, minimalPlayer]) {
       expect(player).toContain("moveAndSlide");
