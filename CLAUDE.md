@@ -112,8 +112,9 @@ separate workflow. Run `pnpm typecheck && pnpm lint && pnpm test` before calling
 
 The self-improvement loop resumes from `docs/verification/round-*.md`: `pnpm round:next`
 computes the single next action, `pnpm round:deletions` reports exports unreached across
-consecutive rounds. Move a finished PRD to `docs/PRDs/done/` and keep the round ledger as
-the evidence record.
+consecutive rounds. Keep the round ledger as the evidence record.
+
+**When a PRD is finished, `git mv` it to `docs/PRDs/done/` in the same commit that finishes it.**
 
 ## Rules that get a change rejected
 
