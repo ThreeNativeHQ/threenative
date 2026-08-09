@@ -236,6 +236,10 @@ export function androidMailboxPaths(
   packageName: string,
   root = `/sdcard/Android/data/${packageName}/files`,
 ): IDeviceMailboxPaths {
+  return deviceMailboxPaths(root);
+}
+
+export function deviceMailboxPaths(root: string): IDeviceMailboxPaths {
   return {
     request: `${root}/tn-playtest-request.json`,
     response: `${root}/tn-playtest-response.json`,

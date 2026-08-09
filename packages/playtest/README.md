@@ -23,6 +23,24 @@ npx @threenative/playtest playtests/movement.playtest.json \
   --browser-arg --enable-features=Vulkan
 ```
 
+## Device targets
+
+The same scenario format runs through `--target browser`, `--target android`, or
+`--target ios`. An iOS simulator run installs a built app, launches it with `simctl`, and
+uses the app data-container mailbox:
+
+```bash
+npx @threenative/playtest playtests/device-smoke.playtest.json \
+  --target ios --app build/threenative-ios.app \
+  --bundle-id dev.threenative.runtime --device booted
+```
+
+For a signed physical build, add `--ios-transport device --device <devicectl-id>`.
+Network, DOM, and visual-metric assertions are unsupported on device targets and fail
+`TN_PLAYTEST_UNSUPPORTED_ON_TARGET` with exit code 2. Default CI does not run Android or
+iOS device scenarios. `.github/workflows/native-platforms.yml` is an explicit opt-in
+platform lane; an absent run is not a pass.
+
 ## What a passing run means
 
 A scenario only reports `pass` when at least one assertion was evaluated

@@ -34,14 +34,29 @@ export interface IAndroidPlaytestDependencies {
   transport?: DevicePlaytestTransport;
 }
 
+export interface IDevicePlaytestDriver {
+  captureConsole(): Promise<Array<{ text: string; type: string }>>;
+  isAlive(): Promise<boolean>;
+  prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
+  readFile?(path: string): Promise<string | undefined>;
+  removeFile?(path: string): Promise<void>;
+  screenshot(path: string): Promise<void>;
+  stop(): Promise<void>;
+  writeFile?(path: string, contents: string): Promise<void>;
+}
+
+export interface IDevicePlaytestTarget {
+  driver: IDevicePlaytestDriver;
+  mailboxPaths: ReturnType<typeof androidMailboxPaths>;
+  name: "android" | "ios";
+  processName: string;
+  transport?: DevicePlaytestTransport;
+}
+
 export async function runAndroidPlaytest(
   config: IStandalonePlaytestConfig,
   dependencies: IAndroidPlaytestDependencies = {},
 ): Promise<IStandalonePlaytestReport> {
-  const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
-  await mkdir(config.artifactDirectory, { recursive: true });
-  const unsupported = unsupportedAssertion(scenario);
-  if (unsupported !== undefined) return failureReport(config, scenario, unsupported);
   const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
   const android = config.android ?? {
     activity: ".MystralActivity",
@@ -53,24 +68,43 @@ export async function runAndroidPlaytest(
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
   const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;
-  const transport = dependencies.transport ?? createDeviceTransport(driver, endpoint, android.packageName, mailboxRoot);
+  return runDevicePlaytest(config, {
+    driver,
+    mailboxPaths: androidMailboxPaths(android.packageName, mailboxRoot),
+    name: "android",
+    processName: android.packageName,
+    ...(dependencies.transport === undefined ? {} : { transport: dependencies.transport }),
+  });
+}
+
+export async function runDevicePlaytest(
+  config: IStandalonePlaytestConfig,
+  target: IDevicePlaytestTarget,
+): Promise<IStandalonePlaytestReport> {
+  const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
+  await mkdir(config.artifactDirectory, { recursive: true });
+  const unsupported = unsupportedAssertion(scenario, target.name);
+  if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
+  const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
+  const transport = target.transport ?? createDeviceTransport(target.driver, endpoint, target.mailboxPaths);
   let bridge: IPlaytestBridgeClient | undefined;
   try {
     await transport.start();
-    await driver.prepare(endpoint, mailboxRoot);
+    await target.driver.prepare(endpoint, config.mailboxRoot);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
     if (bridge === undefined) {
       return failureReport(config, scenario, playtestDiagnostic(
         "TN_PLAYTEST_BRIDGE_MISSING",
-        "Android application did not expose a playtest bridge.",
+        `${targetLabel(target.name)} application did not expose a playtest bridge.`,
         "Install playtest() or installThreePlaytestBridge() in the device build.",
-      ));
+      ), target.name);
     }
     if (!bridge.description.capabilities.includes("runtime.fixedStep")) {
       return failureReport(config, scenario, unsupportedDiagnostic(
         "deterministic frame steps",
         "Install a bridge with runtime.fixedStep; device scenarios never fall back to wall-clock sleeps.",
-      ));
+        target.name,
+      ), target.name);
     }
     if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
@@ -127,7 +161,7 @@ export async function runAndroidPlaytest(
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
       if (step.screenshot !== undefined) {
-        await driver.screenshot(join(config.artifactDirectory, `${safePart(step.screenshot)}.png`));
+        await target.driver.screenshot(join(config.artifactDirectory, `${safePart(step.screenshot)}.png`));
       }
       if (step.release) {
         for (const key of pressed) {
@@ -143,22 +177,22 @@ export async function runAndroidPlaytest(
     const after = await bridge.sample(sampleRequest);
     appendPosition(pathPositions, after, pathEntity);
     if (scenario.artifacts?.screenshots !== false) {
-      await driver.screenshot(join(config.artifactDirectory, "after.png"));
+      await target.driver.screenshot(join(config.artifactDirectory, "after.png"));
     }
-    if (!(await driver.isAlive())) {
+    if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
         "TN_PLAYTEST_DEVICE_FAILED",
-        `Android process '${android.packageName}' exited before assertions were evaluated.`,
-        "Inspect logcat, fix the first native or JavaScript error, then rerun the same scenario.",
-      ));
+        `${targetLabel(target.name)} process '${target.processName}' exited before assertions were evaluated.`,
+        `Inspect ${target.name === "android" ? "logcat" : "unified logs"}, fix the first native or JavaScript error, then rerun the same scenario.`,
+      ), target.name);
     }
-    const consoleEntries = await driver.captureConsole();
+    const consoleEntries = await target.driver.captureConsole();
     if (consoleEntries.some(({ type }) => type === "error" || type === "pageerror")) {
       return failureReport(config, scenario, playtestDiagnostic(
         "TN_PLAYTEST_DEVICE_FAILED",
-        "Android logcat contained a runtime error before assertions were evaluated.",
-        "Inspect logcat, fix the first native or JavaScript error, then rerun the same scenario.",
-      ));
+        `${targetLabel(target.name)} logs contained a runtime error before assertions were evaluated.`,
+        `Inspect ${target.name === "android" ? "logcat" : "unified logs"}, fix the first native or JavaScript error, then rerun the same scenario.`,
+      ), target.name);
     }
     const report = buildReport(
       config,
@@ -173,22 +207,23 @@ export async function runAndroidPlaytest(
       undefined,
       labeledSamples,
     );
-    return { ...report, runtime: "native", target: "android", url: endpoint };
+    return { ...report, runtime: "native", target: target.name, url: endpoint };
   } catch (error) {
-    if (error instanceof PlaytestBridgeError) return failureReport(config, scenario, error.diagnostic);
+    if (error instanceof PlaytestBridgeError) {
+      return failureReport(config, scenario, error.diagnostic, target.name);
+    }
     throw error;
   } finally {
-    await driver.stop().catch(() => undefined);
+    await target.driver.stop().catch(() => undefined);
     await bridge?.close().catch(() => undefined);
     await transport.close().catch(() => undefined);
   }
 }
 
 function createDeviceTransport(
-  driver: IAndroidDriver,
+  driver: IDevicePlaytestDriver,
   endpoint: string,
-  packageName: string,
-  mailboxRoot: string,
+  paths: ReturnType<typeof androidMailboxPaths>,
 ): DevicePlaytestTransport {
   if (isMailboxDriver(driver)) {
     const mailbox: IDeviceMailbox = {
@@ -196,45 +231,55 @@ function createDeviceTransport(
       remove: (path) => driver.removeFile(path),
       write: (path, contents) => driver.writeFile(path, contents),
     };
-    return new DeviceMailboxTransport(mailbox, androidMailboxPaths(packageName, mailboxRoot));
+    return new DeviceMailboxTransport(mailbox, paths);
   }
   return new DeviceBridgeTransport(endpoint);
 }
 
 function isMailboxDriver(
-  driver: IAndroidDriver,
-): driver is IAndroidDriver & Required<Pick<IAndroidDriver, "readFile" | "removeFile" | "writeFile">> {
+  driver: IDevicePlaytestDriver,
+): driver is IDevicePlaytestDriver & Required<Pick<IDevicePlaytestDriver, "readFile" | "removeFile" | "writeFile">> {
   return typeof driver.readFile === "function"
     && typeof driver.removeFile === "function"
     && typeof driver.writeFile === "function";
 }
 
-function unsupportedAssertion(scenario: IPlaytestScenario): IPlaytestProtocolDiagnostic | undefined {
+function unsupportedAssertion(
+  scenario: IPlaytestScenario,
+  target: "android" | "ios",
+): IPlaytestProtocolDiagnostic | undefined {
   if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
     return unsupportedDiagnostic(
       "network assertions",
-      "Run this assertion on --target browser; Android device transport has no CDP network observer.",
+      `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer.`,
+      target,
     );
   }
   if ((scenario.assert?.hud?.length ?? 0) > 0 || (scenario.assert?.overlayNodes?.length ?? 0) > 0) {
     return unsupportedDiagnostic(
       "DOM assertions",
-      "Use runtime resources/components for a cross-target scenario; Android has no DOM observer.",
+      `Use runtime resources/components for a cross-target scenario; ${targetLabel(target)} has no DOM observer.`,
+      target,
     );
   }
   if ((scenario.assert?.visual?.length ?? 0) > 0) {
     return unsupportedDiagnostic(
       "visual assertions",
-      "Android screenshots are captured as artifacts, but visual metric evaluation is not supported yet.",
+      `${targetLabel(target)} screenshots are captured as artifacts, but visual metric evaluation is not supported yet.`,
+      target,
     );
   }
   return undefined;
 }
 
-function unsupportedDiagnostic(subject: string, fix: string): IPlaytestProtocolDiagnostic {
+function unsupportedDiagnostic(
+  subject: string,
+  fix: string,
+  target: "android" | "ios",
+): IPlaytestProtocolDiagnostic {
   return playtestDiagnostic(
     "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
-    `Android device target does not support ${subject}.`,
+    `${targetLabel(target)} device target does not support ${subject}.`,
     fix,
   );
 }
@@ -243,6 +288,7 @@ function failureReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
   diagnostic: IPlaytestProtocolDiagnostic,
+  target: "android" | "ios",
 ): IStandalonePlaytestReport {
   const item: IPlaytestDiagnostic = { ...diagnostic, suggestion: diagnostic.fix.instruction };
   return {
@@ -255,9 +301,13 @@ function failureReport(
     pass: false,
     runtime: "native",
     scenario: scenario.name,
-    target: "android",
+    target,
     url: config.endpoint ?? "http://127.0.0.1:41777/playtest",
   } as IStandalonePlaytestReport;
+}
+
+function targetLabel(target: "android" | "ios"): string {
+  return target === "android" ? "Android" : "iOS";
 }
 
 function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {

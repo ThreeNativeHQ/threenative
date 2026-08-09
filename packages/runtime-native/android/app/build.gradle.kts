@@ -28,11 +28,22 @@ tasks.register("extractSdl3JniLibs") {
 
 tasks.register<Exec>("buildAndroidFirstProofBundle") {
     val playtestBridge = providers.environmentVariable("THREENATIVE_PLAYTEST_BRIDGE").orElse("enabled").get()
+    val physicsProof = providers.environmentVariable("THREENATIVE_PHYSICS_PROOF").orElse("disabled").get()
+    val physicsControl = providers.environmentVariable("THREENATIVE_PHYSICS_CONTROL").orElse("normal").get()
     workingDir = layout.projectDirectory.dir("../..").asFile
-    commandLine("node", "scripts/build-android-first-proof.mjs")
+    commandLine(
+        "node",
+        if (physicsProof == "enabled") "scripts/build-android-physics-proof.mjs"
+        else "scripts/build-android-first-proof.mjs"
+    )
     environment("THREENATIVE_PLAYTEST_BRIDGE", playtestBridge)
+    environment("THREENATIVE_PHYSICS_CONTROL", physicsControl)
+    environment("THREENATIVE_PHYSICS_PROOF", physicsProof)
     inputs.property("playtestBridge", playtestBridge)
+    inputs.property("physicsControl", physicsControl)
+    inputs.property("physicsProof", physicsProof)
     inputs.file(layout.projectDirectory.file("../../scripts/build-android-first-proof.mjs"))
+    inputs.file(layout.projectDirectory.file("../../scripts/build-android-physics-proof.mjs"))
     inputs.file(layout.projectDirectory.file("../../../../pnpm-workspace.yaml"))
     inputs.file(layout.projectDirectory.file("../../../../pnpm-lock.yaml"))
     inputs.file(layout.projectDirectory.file("../../../../examples/native-smoke/package.json"))
@@ -45,8 +56,18 @@ tasks.register<Exec>("buildAndroidFirstProofBundle") {
     outputs.file(layout.projectDirectory.file("src/main/assets/scripts/main.js.meta.json"))
 }
 
+val buildNativePhysics by tasks.registering(Exec::class) {
+    workingDir = layout.projectDirectory.dir("../..").asFile
+    environment("ANDROID_HOME", android.sdkDirectory.absolutePath)
+    commandLine("node", "scripts/build-native-physics.mjs")
+    inputs.dir(layout.projectDirectory.dir("../../native/physics/src"))
+    inputs.file(layout.projectDirectory.file("../../native/physics/Cargo.toml"))
+    inputs.file(layout.projectDirectory.file("../../native/physics/Cargo.lock"))
+    outputs.dir(layout.projectDirectory.dir("../../.runtime/physics-target"))
+}
+
 tasks.named("preBuild") {
-    dependsOn("extractSdl3JniLibs", "buildAndroidFirstProofBundle")
+    dependsOn("extractSdl3JniLibs", "buildAndroidFirstProofBundle", buildNativePhysics)
 }
 
 android {
@@ -80,7 +101,8 @@ android {
                     "-DTN_ENABLE_CANVAS2D=OFF",
                     "-DTN_ENABLE_VIDEO=OFF",
                     "-DTN_ENABLE_WEBTRANSPORT=OFF",
-                    "-DTN_ENABLE_DEBUG_SERVER=OFF"
+                    "-DTN_ENABLE_DEBUG_SERVER=OFF",
+                    "-DTN_ENABLE_NATIVE_PHYSICS=ON"
                 )
                 System.getenv("THREENATIVE_WGPU_ROOT")?.takeIf { it.isNotBlank() }?.let {
                     nativeArguments.add("-DTHREENATIVE_WGPU_ROOT=$it")

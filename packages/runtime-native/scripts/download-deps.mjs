@@ -786,7 +786,7 @@ async function main() {
   const onlyIndex = args.indexOf('--only');
 
   // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'skia', 'swc', 'libuv', 'draco', 'quiche'];
+  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'draco', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];

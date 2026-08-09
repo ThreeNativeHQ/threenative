@@ -12,6 +12,7 @@ import {
 } from "./config.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
+import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest } from "./runner.js";
 
@@ -88,7 +89,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     config = parseStandalonePlaytestArgs(argv);
     const report = config.target === "android"
       ? await runAndroidPlaytest(config)
-      : await runStandalonePlaytest(config);
+      : config.target === "ios"
+        ? await runIosPlaytest(config)
+        : await runStandalonePlaytest(config);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     const exitCode = exitCodeForReport(report);
     process.exitCode = exitCode;

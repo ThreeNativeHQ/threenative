@@ -4,7 +4,10 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(import.meta.dirname, "src/main.ts"),
+      entry: resolve(
+        import.meta.dirname,
+        process.env.THREENATIVE_PHYSICS_PROOF === "enabled" ? "src/physics.ts" : "src/main.ts",
+      ),
       fileName: () => "native-smoke.js",
       formats: ["es"],
     },
@@ -13,6 +16,10 @@ export default defineConfig({
     target: "es2022",
   },
   define: {
+    __TN_PHYSICS_CONTROL__: JSON.stringify(process.env.THREENATIVE_PHYSICS_CONTROL ?? "normal"),
     __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
+  },
+  resolve: {
+    conditions: process.env.THREENATIVE_PHYSICS_PROOF === "enabled" ? ["threenative-native"] : [],
   },
 });

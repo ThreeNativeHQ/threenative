@@ -10,10 +10,17 @@ level, entities, and look.
 
 ```sh
 pnpm dev
-pnpm build
+pnpm build                    # web build; identical to vite build
+pnpm build --target desktop   # native executable; Linux is the only verified host
 pnpm test
 pnpm typecheck
 ```
+
+The normal physics API selects native Rapier on Android, but this template's navigation still
+imports Recast WASM, which QuickJS cannot execute. Android and iOS therefore fail closed for
+this template; native navigation or a mobile-safe route is still required. Linux desktop is
+source-machine evidence, not a clean-machine distribution proof; macOS, Windows, iOS, and
+physical hardware remain OPEN.
 
 ## Where to work
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
+import { absoluteErrorRatio } from '../conformance/metrics.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const runner = join(root, 'conformance/run-conformance.mjs');
@@ -90,4 +91,16 @@ test('report validation rejects a pass with null metrics or incomplete browser e
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('ImageMagick Q16 HDRI absolute error is normalized to a pixel ratio', () => {
+  assert.equal(absoluteErrorRatio('65535', 100, 'ImageMagick 7.1.2-10 Q16-HDRI'), 0.01);
+  assert.equal(absoluteErrorRatio('1', 100, 'ImageMagick 7.1.2-10 Q16-HDRI'), 0.01);
+  assert.ok(Number.isNaN(absoluteErrorRatio('65535', 100, 'unknown quantum depth')));
+});
+
+test('bounded execution rejects unknown conformance ids before claiming a report', () => {
+  const proc = run(['--dry-run', '--only-tests', 'not-a-row']);
+  assert.notEqual(proc.status, 0);
+  assert.match(proc.stderr, /Unknown --only-tests/u);
 });

@@ -1,6 +1,7 @@
 # PRD-047 — Native runtime absorption
 
-**Status: IN PROGRESS — desktop integration proven; mobile not release-ready.**
+**Status: IN PROGRESS — Phases 0–4 complete; Phase 5 Apple/remaining-desktop execution is
+open, and distribution remains in PRD-048. Mobile is not release-ready.**
 
 **Decision (2026-08-08, reversed by João):** the Mystral runtime is **absorbed into this
 repository as one workspace package**, `packages/runtime-native/`. It is no longer an
@@ -26,8 +27,9 @@ a refactor with a **no web behaviour change** gate, not a feature.
 and the four invariants), §4 Phase 0 (do this first — the budget gate currently rejects the
 import), then phases in order. §7 is the cost being accepted.
 
-**Phases 0–3 are closed** (`docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`).
-**Phase 4** is native physics, specified in full by PRD-046. **Phase 5** is iOS and the
+**Phases 0–4 are closed** (`docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`,
+`docs/verification/PRD-046.md`). **Phase 4** is the emulator-proven normal public native
+physics backend specified in full by PRD-046. **Phase 5** is iOS and the
 remaining desktop runners. **Phase 6 was split out into PRD-048** once it became clear it
 contained more unbuilt surface than Phases 0–5 combined.
 
@@ -47,13 +49,13 @@ with transport changed from JSI to a host-neutral native ABI.
 | Unchanged `@threenative/core` bundle on the runtime | One import-free ESM bundle, 300 frames, ready/first-frame markers, screenshot | **PASS (desktop)** |
 | Android upstream Three.js cube | QuickJS + wgpu-native, both packaged ABIs, emulator launch/log/liveness/screenshot gate | **PASS (emulator)** |
 | Android `@threenative/core` | Catalog Three 0.185.1 import-free bundle completed 300 frames through the bridge on `emulator-5554`; nonblank screenshot recorded | **PASS (emulator)** |
-| Android physics | QuickJS has no WebAssembly and the runtime has no native physics ABI | **BLOCKED** |
-| iOS | Preset and static-library scaffolding only; no simulator app, launch, log or screenshot | **OPEN** |
+| Android physics | General native ABI behind normal `@threenative/physics`; scenario and negative controls on x86_64 emulator | **PASS (emulator)** |
+| iOS | Root-linked app, verifier and device transport implemented; no Xcode/simulator execution | **OPEN** |
 | Physical mobile GPU / performance | No physical hardware evidence | **OPEN** |
 | Windows / macOS desktop | CI lanes configured, never executed on a real runner | **OPEN** |
 
-This PRD must never be summarized as "mobile works" while any of the last five rows are
-open. The current verdict is **conditionally ready for desktop integration only**.
+This PRD must never be summarized as "mobile works" while any open row remains. The current
+verdict is **Linux and Android-emulator integration proven; release readiness is open**.
 
 ### 1.1 The engine matrix, because it decides §4 Phase 4
 
@@ -232,7 +234,7 @@ Chromium and on Android. A missing bridge, a misspelled assertion and a delibera
 value must each fail on the emulator. Network assertions are reported explicitly
 unsupported, never silently skipped.
 
-### Phase 4 — native physics
+### Phase 4 — native physics — **COMPLETE 2026-08-08 (x86_64 emulator)**
 
 QuickJS WebAssembly is not a supported path (§1.1). Compile Rapier into the runtime and
 expose a host-neutral, coarse ABI under `globalThis.__THREENATIVE_NATIVE__.physics`:
@@ -252,8 +254,11 @@ per-object proxy. Godot-shaped public nodes stay stable; `world`, `body` and `co
 become backend-neutral handles with an explicitly backend-specific `raw` escape hatch. Web
 keeps real Rapier objects behind `raw`; native exposes opaque handles.
 
-First proof is deliberately narrow: fixed floor at `y=-0.5`, dynamic unit cube at `y=3`,
-180 steps at `1/60`, one preallocated transform buffer, `abs(cubeY - 0.5) <= 0.02`.
+The acceptance subject is deliberately narrow: fixed floor at `y=-0.5`, dynamic unit cube
+at `y=3`, 180 steps at `1/60`, one preallocated transform buffer,
+`abs(cubeY - 0.5) <= 0.02`. It runs through the normal `rapier()` and Godot-shaped node API;
+the native host itself supports arbitrary bodies, the three portable primitive shapes,
+characters, sensors, collision groups/masks, events and bulk transfer.
 
 **Gate:** the same fail-closed device scenario asserts resting position, collision event and
 collision-layer masking, and each assertion is also shown failing when deliberately broken.
@@ -293,8 +298,8 @@ What stays true and stays here: Phase 2's `scripts/bundle.mjs` produces the sing
 import-free ESM file that every native target consumes. PRD-048 is the delivery path around
 that artifact, and it depends on **this** PRD's Phase 2 and Phase 5.
 
-**PRD-047 does not move to `done/` on account of the split.** Phases 4 and 5 — native
-physics and iOS/remaining-desktop evidence — are still open here.
+**PRD-047 does not move to `done/` on account of the split.** Phase 5 — executed iOS and
+remaining-desktop evidence — is still open here.
 
 ---
 

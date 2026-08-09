@@ -3,6 +3,8 @@ export * from "./android.js";
 export * from "./androidRunner.js";
 export * from "./config.js";
 export * from "./init.js";
+export * from "./ios.js";
+export * from "./iosRunner.js";
 export * from "./recording.js";
 export * from "./runner.js";
 export * from "./deviceTransport.js";

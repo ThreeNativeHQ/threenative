@@ -41,7 +41,12 @@ export function inspectScreenshot(path) {
 }
 
 export function verifyDesktopCore({ frames = 300 } = {}) {
-  const binary = join(root, 'build', 'tn-linux', 'mystral');
+  const preset = process.platform === 'darwin'
+    ? 'tn-macos'
+    : process.platform === 'win32'
+      ? 'tn-windows'
+      : 'tn-linux';
+  const binary = join(root, 'build', preset, process.platform === 'win32' ? 'mystral.exe' : 'mystral');
   const bundle = join(workspace, 'examples', 'native-smoke', 'dist', 'native-smoke.js');
   const date = new Date().toISOString().slice(0, 10);
   const screenshot = join(root, 'artifacts', `desktop-core-${date}.png`);
@@ -49,20 +54,21 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     if (!existsSync(path)) throw new Error(`${label} is missing: ${path}`);
   }
   mkdirSync(dirname(screenshot), { recursive: true });
+  const runtimeArgs = [
+    'run',
+    bundle,
+    '--screenshot',
+    screenshot,
+    '--frames',
+    String(frames),
+  ];
+  const command = process.platform === 'linux' ? 'xvfb-run' : binary;
+  const args = process.platform === 'linux'
+    ? ['-a', '-s', '-screen 0 1600x900x24', binary, ...runtimeArgs]
+    : runtimeArgs;
   const result = spawnSync(
-    'xvfb-run',
-    [
-      '-a',
-      '-s',
-      '-screen 0 1600x900x24',
-      binary,
-      'run',
-      bundle,
-      '--screenshot',
-      screenshot,
-      '--frames',
-      String(frames),
-    ],
+    command,
+    args,
     {
       cwd: workspace,
       encoding: 'utf8',
@@ -76,7 +82,7 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   const failures = analyzeDesktopLog(log, frames);
   if (failures.length > 0) throw new Error(`desktop core gate failed:\n${failures.join('\n')}`);
   const image = inspectScreenshot(screenshot);
-  return { ...image, frames, log, screenshot };
+  return { ...image, frames, host: process.platform, log, preset, screenshot };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

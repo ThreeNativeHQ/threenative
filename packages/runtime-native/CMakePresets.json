@@ -23,7 +23,8 @@
         "TN_ENABLE_WEBTRANSPORT": "ON",
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
-        "TN_ENABLE_DEBUG_SERVER": "OFF"
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
       }
     },
     {
@@ -44,7 +45,8 @@
         "TN_ENABLE_WEBTRANSPORT": "ON",
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
-        "TN_ENABLE_DEBUG_SERVER": "OFF"
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -66,7 +68,8 @@
         "TN_ENABLE_WEBTRANSPORT": "ON",
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
-        "TN_ENABLE_DEBUG_SERVER": "OFF"
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     },
@@ -90,7 +93,8 @@
         "TN_ENABLE_WEBTRANSPORT": "OFF",
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
-        "TN_ENABLE_DEBUG_SERVER": "OFF"
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "ON"
       }
     },
     {
@@ -113,7 +117,8 @@
         "TN_ENABLE_WEBTRANSPORT": "OFF",
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
-        "TN_ENABLE_DEBUG_SERVER": "OFF"
+        "TN_ENABLE_DEBUG_SERVER": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "ON"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     }

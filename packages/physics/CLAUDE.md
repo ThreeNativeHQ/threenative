@@ -59,8 +59,12 @@ shape requires an explicit re-bake and is outside this binding.
 
 ## Native path
 
-Native Rapier compiled into `@threenative/runtime-native` is the planned mobile answer;
-WASM Rapier is not viable on the Android QuickJS host. The public Godot-shaped API stays in
-this package and selects a host-neutral backend through a coarse typed-array ABI. See
-`CHARTER.md` §7, `docs/architecture/NATIVE-RUNTIME.md`, and PRD-046. The backend is not
-integrated yet — do not import `@threenative/physics-native` or add per-object native calls.
+Native Rapier compiled into `@threenative/runtime-native` is the mobile answer; WASM Rapier
+is not viable on the Android QuickJS host. The public Godot-shaped nodes stay in this package,
+while the first native proof selects its host adapter through the `threenative-native` export
+condition. Do not import `@threenative/physics-native` or add per-object native calls.
+
+Both backends exercise the contract through `PhysicsSimulation.step()` and
+`readVisibleTransforms()`. Kinematic input and visible transforms use reusable typed-array
+records; keep the fixed-step crossing bulk-shaped. See `CHARTER.md` §7,
+`docs/architecture/NATIVE-RUNTIME.md`, and PRD-046.

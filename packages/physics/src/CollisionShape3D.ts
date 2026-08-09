@@ -9,6 +9,11 @@ export type CollisionShapeKind =
   | "convexHull"
   | "heightfield";
 
+/** A portable shape descriptor whose `raw` value is backend-specific. */
+export interface CollisionShapeHandle {
+  readonly raw: unknown;
+}
+
 function geometryVertices(mesh: Mesh): Float32Array {
   const position = mesh.geometry.getAttribute("position");
   if (position === undefined)
@@ -32,18 +37,24 @@ function geometryIndices(mesh: Mesh): Uint32Array {
   return Uint32Array.from({ length: count }, (_, offset) => offset);
 }
 
-// biome-ignore lint/complexity/noStaticOnlyClass: The public Godot-shaped API is intentionally a static class.
 export class CollisionShape3D {
-  static box(width: number, height: number, depth: number): RAPIER.ColliderDesc {
-    return RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2);
+  /** Web: `RAPIER.ColliderDesc`. Native: an opaque backend descriptor. */
+  readonly raw: unknown;
+
+  private constructor(raw: unknown) {
+    this.raw = raw;
   }
 
-  static sphere(radius: number): RAPIER.ColliderDesc {
-    return RAPIER.ColliderDesc.ball(radius);
+  static box(width: number, height: number, depth: number): CollisionShape3D {
+    return new CollisionShape3D(RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2));
   }
 
-  static capsule(halfHeight: number, radius: number): RAPIER.ColliderDesc {
-    return RAPIER.ColliderDesc.capsule(halfHeight, radius);
+  static sphere(radius: number): CollisionShape3D {
+    return new CollisionShape3D(RAPIER.ColliderDesc.ball(radius));
+  }
+
+  static capsule(halfHeight: number, radius: number): CollisionShape3D {
+    return new CollisionShape3D(RAPIER.ColliderDesc.capsule(halfHeight, radius));
   }
 
   static heightfield(
@@ -51,7 +62,7 @@ export class CollisionShape3D {
     columns: number,
     heights: Float32Array,
     scale: { x: number; y: number; z: number },
-  ): RAPIER.ColliderDesc {
+  ): CollisionShape3D {
     if (!Number.isInteger(rows) || rows < 2)
       throw new Error("CollisionShape3D.heightfield requires at least 2 rows.");
     if (!Number.isInteger(columns) || columns < 2)
@@ -60,10 +71,12 @@ export class CollisionShape3D {
       throw new Error(
         `CollisionShape3D.heightfield expected ${rows * columns} heights, received ${heights.length}.`,
       );
-    return RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale);
+    return new CollisionShape3D(
+      RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale),
+    );
   }
 
-  static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): RAPIER.ColliderDesc {
+  static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): CollisionShape3D {
     const geometry = mesh.geometry;
     const inferred =
       kind ??
@@ -73,12 +86,14 @@ export class CollisionShape3D {
           ? "capsule"
           : "box");
     if (inferred === "trimesh")
-      return RAPIER.ColliderDesc.trimesh(geometryVertices(mesh), geometryIndices(mesh));
+      return new CollisionShape3D(
+        RAPIER.ColliderDesc.trimesh(geometryVertices(mesh), geometryIndices(mesh)),
+      );
     if (inferred === "convexHull") {
       const shape = RAPIER.ColliderDesc.convexHull(geometryVertices(mesh));
       if (shape === null)
         throw new Error("CollisionShape3D.fromMesh could not build a convex hull.");
-      return shape;
+      return new CollisionShape3D(shape);
     }
 
     geometry.computeBoundingBox();
@@ -99,5 +114,15 @@ export class CollisionShape3D {
       return CollisionShape3D.capsule(Math.max(0, height / 2 - radius), radius);
     }
     return CollisionShape3D.box(width, height, depth);
+  }
+
+  setCollisionGroups(groups: number): this {
+    (this.raw as RAPIER.ColliderDesc).setCollisionGroups(groups);
+    return this;
+  }
+
+  setSensor(sensor: boolean): this {
+    (this.raw as RAPIER.ColliderDesc).setSensor(sensor);
+    return this;
   }
 }

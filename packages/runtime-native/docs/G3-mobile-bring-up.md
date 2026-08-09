@@ -57,3 +57,15 @@ transport or any physics behavior.
 - Physical Metal/Vulkan driver behavior, arm64 physics and phone frame rate.
 
 No row in this file permits a “mobile ready” claim while any open row remains.
+
+## iOS scaffold and transport implementation — 2026-08-08
+
+The repository now has a root-linked `threenative-ios.app` CMake target. Its game source is
+the exact import-free `examples/native-smoke/dist/native-smoke.js` bundle used by desktop
+and Android. The Objective-C++ entry configures the same native playtest mailbox; it adds no
+WebView, custom renderer, or iOS-only scenario format.
+
+`verify-ios-simulator.mjs --check` passes on Linux and validates the target, plist, shared
+bundle link, Metal requirement, and mailbox wiring. Executable mode is macOS-only and fails
+explicitly elsewhere. `xcrun` is unavailable here, so build, install, launch, unified-log
+markers, nonblank screenshot, and simulator negative controls remain **UNEXECUTED**.

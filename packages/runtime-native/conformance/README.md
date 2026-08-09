@@ -6,3 +6,7 @@ This directory is the same-source browser/native compatibility harness for upstr
 - `scenes/shared/first-proof-game.js` is the first proof source. It contains no runtime conditional branches; host adapters provide the canvas/dimensions.
 - `browser-reference/` and `native-runner/` are thin adapters around the same scene sources.
 - `run-conformance.mjs` writes a machine-readable report with pixel/perceptual metric slots, render completion, GPU validation error slots, and per-test tolerance metadata.
+
+Use `--only-tests id,id` for bounded real execution. Implemented rows not selected by that
+command are reported blocked, never passed or omitted. ImageMagick Q16/Q16-HDRI absolute
+error is normalized by its quantum range; an unknown quantum depth fails metric computation.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyVariant, summarizeFrames } from "../profile-starter.js";
+import { applyVariant, backendOf, summarizeFrames } from "../profile-starter.js";
 
 describe("starter profiler", () => {
   it("summarizes frame percentiles and slow frames", () => {
@@ -30,5 +30,12 @@ describe("starter profiler", () => {
     expect(applyVariant(source, "no-particles")).not.toContain("ctx.add(createParticles())");
     expect(applyVariant(source, "no-sculpture")).not.toContain("ctx.add(sculptureMesh)");
     expect(() => applyVariant("", "no-sculpture")).toThrow(/marker is missing/);
+  });
+
+  it("names a software rasteriser instead of reporting it as a GPU", () => {
+    expect(backendOf({ architecture: "turing", vendor: "nvidia" })).toBe("hardware");
+    expect(backendOf({ architecture: "SwiftShader", vendor: "google" })).toBe("software fallback");
+    expect(backendOf({ architecture: "llvmpipe", vendor: "mesa" })).toBe("software fallback");
+    expect(backendOf(null)).toBe("unknown");
   });
 });

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Area3D } from "../src/Area3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
+import { PHYSICS_TRANSFORM_STRIDE } from "../src/index.js";
 import { type PhysicsContext, rapier } from "../src/plugin.js";
 
 const plugins: Array<ReturnType<typeof rapier>> = [];
@@ -43,7 +44,7 @@ describe("rapier plugin", () => {
 
   it("should step exactly once per fixed tick", async () => {
     const { ctx, plugin } = await setup();
-    const world = ctx.physics.world;
+    const world = ctx.physics.world.raw as RAPIER.World;
     const originalStep = world.step.bind(world);
     let steps = 0;
     world.step = (eventQueue, hooks) => {
@@ -54,6 +55,46 @@ describe("rapier plugin", () => {
     for (let tick = 0; tick < 60; tick++) plugin.update?.(ctx, 1 / 60);
 
     expect(steps).toBe(60);
+  });
+
+  it("should route kinematic input and visible transforms through the bulk API", async () => {
+    const { ctx, plugin } = await setup();
+    const object = new Object3D();
+    const body = new RigidBody3D({
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+      type: "kinematic",
+    });
+    new RigidBody3D({
+      object: new Object3D(),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+      type: "fixed",
+    });
+    object.position.set(4, 5, 6);
+
+    plugin.update?.(ctx, 1 / 60);
+
+    const buffer = new Float32Array(PHYSICS_TRANSFORM_STRIDE * 2);
+    expect(ctx.physics.simulation.readVisibleTransforms(buffer)).toBe(2);
+    expect(buffer[0]).toBe(0);
+    expect([...buffer.slice(1, 4)]).toEqual([4, 5, 6]);
+    expect(buffer[PHYSICS_TRANSFORM_STRIDE]).toBe(1);
+    expect(object.position.toArray()).toEqual([4, 5, 6]);
+  });
+
+  it("should fail closed when the visible transform buffer is too small", async () => {
+    const { ctx } = await setup();
+    new RigidBody3D({
+      object: new Object3D(),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+
+    expect(() =>
+      ctx.physics.simulation.readVisibleTransforms(new Float32Array(PHYSICS_TRANSFORM_STRIDE - 1)),
+    ).toThrow(/buffer is too small/);
   });
 
   it("releases scene physics on sceneExit", async () => {
@@ -69,8 +110,8 @@ describe("rapier plugin", () => {
     });
 
     plugin.sceneExit?.(ctx);
-    expect(body.body.isValid()).toBe(false);
-    expect(area.body.isValid()).toBe(false);
+    expect((body.body.raw as RAPIER.RigidBody).isValid()).toBe(false);
+    expect((area.body.raw as RAPIER.RigidBody).isValid()).toBe(false);
   });
 
   it("should report zero bodies after dispose", async () => {
@@ -82,7 +123,7 @@ describe("rapier plugin", () => {
     });
 
     expect(ctx.physics.numBodies()).toBe(1);
-    expect(body.body.isValid()).toBe(true);
+    expect((body.body.raw as RAPIER.RigidBody).isValid()).toBe(true);
     plugin.dispose?.(ctx);
     expect(ctx.physics.numBodies()).toBe(0);
   });

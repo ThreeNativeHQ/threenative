@@ -12,6 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { absoluteErrorRatio } from './metrics.mjs';
 
 const REPORT_SCHEMA_VERSION = '0.2.0';
 const REGISTRY_SCHEMA_VERSION = '0.1.0';
@@ -355,9 +356,11 @@ function runNative(test, bundlePath, result, runtime, screenshotRoot) {
     stdout: (proc.stdout || '').slice(-4000),
     stderr: (proc.stderr || '').slice(-4000),
   };
-  if (!result.native.completed || /TypeError|ReferenceError|SyntaxError|GPUValidationError|Validation Error|Unhandled|ThreeNative conformance\] failed/i.test(combined)) {
+  const validationPattern = /GPUValidationError|Validation Error|Device error \(Validation\)|Unhandled|ThreeNative conformance\] failed/gi;
+  const validationErrors = combined.match(validationPattern) || [];
+  if (!result.native.completed || /TypeError|ReferenceError|SyntaxError/i.test(combined) || validationErrors.length > 0) {
     result.status = 'fail';
-    result.gpuValidationErrors.push(...(combined.match(/GPUValidationError|Validation Error[^\n]*/g) || []));
+    result.gpuValidationErrors.push(...validationErrors);
   }
 }
 
@@ -389,11 +392,13 @@ function computeMetrics(result) {
   const aeValue = Number.parseFloat((ae.stderr || ae.stdout || '').trim());
   const normalizedMatch = (rmse.stderr || rmse.stdout || '').trim().match(/\(([^)]+)\)/);
   const normalized = normalizedMatch ? Number.parseFloat(normalizedMatch[1]) : Number.NaN;
-  if (!Number.isFinite(aeValue) || !Number.isFinite(normalized)) {
+  const imageMagickVersion = spawnSync('identify', ['-version'], { encoding: 'utf8', timeout: 10_000 }).stdout || '';
+  const pixelMismatchRatio = absoluteErrorRatio(String(aeValue), width * height, imageMagickVersion);
+  if (!Number.isFinite(pixelMismatchRatio) || !Number.isFinite(normalized)) {
     result.metricError = 'ImageMagick returned non-numeric comparison metrics';
     return false;
   }
-  result.metrics = { pixelMismatchRatio: aeValue / (width * height), perceptualDeltaE: normalized * 100 };
+  result.metrics = { pixelMismatchRatio, perceptualDeltaE: normalized * 100 };
   return true;
 }
 
@@ -451,6 +456,12 @@ async function main() {
   const outPath = valueAfter('--out') || 'artifacts/conformance/report.json';
   const dryRun = process.argv.includes('--dry-run');
   const allowBlocked = process.argv.includes('--allow-blocked');
+  const selectedIds = valueAfter('--only-tests')?.split(',').filter(Boolean) ?? null;
+  if (selectedIds !== null) {
+    const known = new Set(registry.tests.map(({ id }) => id));
+    const unknown = selectedIds.filter((id) => !known.has(id));
+    if (unknown.length > 0) throw new Error(`Unknown --only-tests id(s): ${unknown.join(', ')}`);
+  }
   const runtime = process.env.TN_RUNTIME || process.env.MYSTRAL_BIN || '';
   const browser = findFirefox();
   const esbuildBin = process.platform === 'win32' ? join(root, 'node_modules/.bin/esbuild.cmd') : join(root, 'node_modules/.bin/esbuild');
@@ -467,6 +478,13 @@ async function main() {
       const result = createResult(test);
       if (test.status !== 'implemented') {
         report.summary.planned++;
+        report.results.push(result);
+        continue;
+      }
+      if (selectedIds !== null && !selectedIds.includes(test.id)) {
+        result.status = 'blocked';
+        result.blockedReason = 'Not selected by this bounded execution run.';
+        report.summary.blocked++;
         report.results.push(result);
         continue;
       }

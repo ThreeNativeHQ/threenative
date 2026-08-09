@@ -226,13 +226,15 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
   const packages = [
-    "@threenative/core",
-    "@threenative/physics",
-    "@threenative/playtest",
-    "@threenative/ui",
+    ["@threenative/core", "threenative-core-"],
+    ["@threenative/physics", "threenative-physics-"],
+    ["@threenative/playtest", "threenative-playtest-"],
+    ["@threenative/runtime-native", "threenative-runtime-native-"],
+    ["@threenative/ui", "threenative-ui-"],
+    ["create-threenative", "create-threenative-"],
   ] as const;
   const archives = new Map<string, string>();
-  for (const name of packages) {
+  for (const [name] of packages) {
     await runCommand("pnpm", ["--filter", name, "build"], REPO_ROOT);
     await runCommand(
       "pnpm",
@@ -242,15 +244,7 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   }
   for (const file of await readdir(packageRoot)) {
     if (!file.endsWith(".tgz")) continue;
-    const key = file.startsWith("threenative-core-")
-      ? "@threenative/core"
-      : file.startsWith("threenative-physics-")
-        ? "@threenative/physics"
-        : file.startsWith("threenative-playtest-")
-          ? "@threenative/playtest"
-          : file.startsWith("threenative-ui-")
-            ? "@threenative/ui"
-            : undefined;
+    const key = packages.find(([, prefix]) => file.startsWith(prefix))?.[0];
     if (key !== undefined) archives.set(key, path.join(packageRoot, file));
   }
   if (archives.size !== packages.length)

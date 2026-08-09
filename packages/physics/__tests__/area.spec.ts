@@ -44,7 +44,7 @@ describe("Area3D", () => {
 
     area.monitoring = false;
     expect(area.monitoring).toBe(false);
-    body.body.setTranslation({ x: 5, y: 0, z: 0 }, true);
+    (body.body.raw as RAPIER.RigidBody).setTranslation({ x: 5, y: 0, z: 0 }, true);
     plugin.update?.(ctx, 1 / 60);
     area.monitoring = true;
     plugin.update?.(ctx, 1 / 60);
@@ -81,7 +81,7 @@ describe("Area3D", () => {
 
     area.setPosition({ x: 3, y: 4, z: 5 });
 
-    expect(area.body.translation()).toEqual({ x: 3, y: 4, z: 5 });
+    expect((area.body.raw as RAPIER.RigidBody).translation()).toEqual({ x: 3, y: 4, z: 5 });
     area.dispose();
   });
 
@@ -185,7 +185,7 @@ describe("Area3D", () => {
     let exited = 0;
     area.on("bodyExited", () => exited++);
     plugin.update?.(ctx, 1 / 60);
-    body.body.setTranslation({ x: 5, y: 0, z: 0 }, true);
+    (body.body.raw as RAPIER.RigidBody).setTranslation({ x: 5, y: 0, z: 0 }, true);
     plugin.update?.(ctx, 1 / 60);
 
     expect(exited).toBe(1);

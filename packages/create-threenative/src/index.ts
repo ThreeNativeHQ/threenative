@@ -10,7 +10,12 @@ export interface ScaffoldOptions {
   install?: boolean;
   packageSources?: Partial<
     Record<
-      "@threenative/core" | "@threenative/physics" | "@threenative/playtest" | "@threenative/ui",
+      | "@threenative/core"
+      | "@threenative/physics"
+      | "@threenative/playtest"
+      | "@threenative/runtime-native"
+      | "@threenative/ui"
+      | "create-threenative",
       string
     >
   >;
@@ -70,10 +75,15 @@ async function applyPackageSources(
   const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
   };
   for (const [name, source] of Object.entries(packageSources)) {
     if (source === undefined) continue;
-    if (name === "@threenative/playtest") {
+    if (packageJson.optionalDependencies?.[name] !== undefined) {
+      packageJson.optionalDependencies[name] = source.startsWith("file:")
+        ? source
+        : `file:${source}`;
+    } else if (name === "@threenative/playtest" || name === "create-threenative") {
       packageJson.devDependencies ??= {};
       packageJson.devDependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
     } else {
@@ -201,7 +211,9 @@ export function parseArgs(argv: readonly string[]): ScaffoldOptions {
     ["@threenative/core", "--core-package"],
     ["@threenative/physics", "--physics-package"],
     ["@threenative/playtest", "--playtest-package"],
+    ["@threenative/runtime-native", "--runtime-native-package"],
     ["@threenative/ui", "--ui-package"],
+    ["create-threenative", "--cli-package"],
   ] as const) {
     const source = readFlag(argv, flag);
     if (source !== undefined) packageSources[name] = source;

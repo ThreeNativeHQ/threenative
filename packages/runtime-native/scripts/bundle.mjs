@@ -16,8 +16,9 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname, basename, extname } from 'path';
-import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+import { join, dirname, basename, resolve } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -149,13 +150,108 @@ function generateVFSHeader(files, outputPath) {
 /**
  * Main
  */
-function main() {
+async function bundleProject(project, entryPoint, outputPath) {
+  const absoluteProject = resolve(project);
+  const absoluteEntry = resolve(absoluteProject, entryPoint);
+  const absoluteOutput = resolve(outputPath);
+  const require = createRequire(join(absoluteProject, 'package.json'));
+  let viteEntry;
+  try {
+    viteEntry = require.resolve('vite');
+  } catch {
+    throw new Error(`Cannot bundle '${absoluteProject}': its pinned Vite dependency is missing.`);
+  }
+  const { build } = await import(pathToFileURL(viteEntry).href);
+  const nativePrelude = `
+const nativeElements = new Map();
+const nativeGetElementById = document.getElementById.bind(document);
+const nativeQuerySelector = document.querySelector.bind(document);
+const nativeCreateElement = document.createElement.bind(document);
+document.getElementById = (id) => nativeElements.get(id) ?? nativeGetElementById(id);
+document.querySelector = (selector) =>
+  selector.startsWith("#") ? nativeElements.get(selector.slice(1)) ?? null : nativeQuerySelector(selector);
+document.createElement = (tag) =>
+  String(tag).toLowerCase() === "canvas" ? globalThis.canvas : nativeCreateElement(tag);
+for (const id of ["app", "root"]) {
+  if (document.getElementById(id) == null) {
+    const element = document.createElement("div");
+    element.id = id;
+    element.nodeType = 1;
+    element.ownerDocument = document;
+    element.append = (child) => element.appendChild(child);
+    nativeElements.set(id, element);
+    document.body?.append?.(element);
+  }
+}
+if (typeof globalThis.requestAnimationFrame === "function") {
+  const nativeRequestFrame = globalThis.requestAnimationFrame.bind(globalThis);
+  let nativeFrames = 0;
+  globalThis.requestAnimationFrame = (callback) => nativeRequestFrame((time) => {
+    const result = callback(time);
+    nativeFrames += 1;
+    if (nativeFrames === 1) {
+      console.info("TN_NATIVE_SMOKE_READY:webgpu");
+      console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
+    }
+    if (nativeFrames === 300) console.info("TN_NATIVE_SMOKE_300_FRAMES:300");
+    return result;
+  });
+}`;
+  const nativeEntryPlugin = {
+    name: 'threenative-native-entry',
+    enforce: 'pre',
+    transform(source, id) {
+      if (resolve(id) !== absoluteEntry) return null;
+      let nativeSource = source;
+      const reactRoot = nativeSource.indexOf('const root = document.getElementById("root");');
+      if (reactRoot !== -1) nativeSource = nativeSource.slice(0, reactRoot);
+      const start = `void game.start().catch((error) => console.error(
+        \`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`,
+      ));`;
+      if (nativeSource.includes('void game.start();')) {
+        nativeSource = nativeSource.replace('void game.start();', start);
+      } else if (/^const game = defineGame/m.test(nativeSource) && !/\bgame\.start\s*\(/u.test(nativeSource)) {
+        nativeSource = `${nativeSource}\n${start}\n`;
+      }
+      return { code: nativeSource, map: null };
+    },
+  };
+  mkdirSync(dirname(absoluteOutput), { recursive: true });
+  await build({
+    root: absoluteProject,
+    plugins: [nativeEntryPlugin],
+    resolve: { conditions: ['threenative-native'] },
+    configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
+      ? join(absoluteProject, 'vite.config.ts')
+      : undefined,
+    build: {
+      emptyOutDir: false,
+      lib: {
+        entry: absoluteEntry,
+        fileName: () => basename(absoluteOutput),
+        formats: ['es'],
+      },
+      minify: false,
+      outDir: dirname(absoluteOutput),
+      rollupOptions: { output: { banner: nativePrelude, codeSplitting: false } },
+      target: 'es2022',
+    },
+  });
+  const source = readFileSync(absoluteOutput, 'utf8');
+  if (/^\s*import\s+/m.test(source) || /\bimport\s*\(/.test(source)) {
+    throw new Error(`Native bundle '${absoluteOutput}' contains a runtime import.`);
+  }
+  console.log(`ThreeNative native bundle: ${absoluteOutput}`);
+}
+
+async function main() {
   const args = process.argv.slice(2);
 
   // Parse arguments
   let entryPoint = null;
   let assetsDir = null;
   let outputDir = 'dist';
+  let project = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -164,7 +260,15 @@ function main() {
       assetsDir = args[++i];
     } else if (args[i] === '--output' && args[i + 1]) {
       outputDir = args[++i];
+    } else if (args[i] === '--project' && args[i + 1]) {
+      project = args[++i];
     }
+  }
+
+  if (project) {
+    if (!entryPoint) throw new Error('--project requires --entry.');
+    await bundleProject(project, entryPoint, outputDir);
+    return;
   }
 
   if (!entryPoint && !assetsDir) {
@@ -217,4 +321,7 @@ function main() {
   console.log('  }');
 }
 
-main();
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

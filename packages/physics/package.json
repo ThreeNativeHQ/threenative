@@ -11,11 +11,17 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "threenative-native": "./dist/native/index.js",
       "import": "./dist/index.js"
     },
     "./navigation": {
       "types": "./dist/navigation/index.d.ts",
       "import": "./dist/navigation/index.js"
+    },
+    "./proof": {
+      "types": "./dist/proof.d.ts",
+      "threenative-native": "./dist/native/proof.js",
+      "import": "./dist/proof.js"
     },
     "./package.json": "./package.json"
   },

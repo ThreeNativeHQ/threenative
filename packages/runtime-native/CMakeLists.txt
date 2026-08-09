@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(MystralNativeRuntime VERSION 0.1.5 LANGUAGES C CXX)
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # Windows: Use /MT (static CRT) for all builds
 # Both Skia and Dawn (from library-builder) are built with /MT static CRT.
 # The CI workflow passes -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded for all Windows builds.
@@ -54,6 +58,8 @@ option(TN_ENABLE_WEBTRANSPORT "Enable WebTransport/QUIC support when dependencie
 option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remain OFF; use Three.js GLTFLoader)" OFF)
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
+option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
+set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
 # the C++ GLTF loader deprecated; ThreeNative GLTF conformance uses JavaScript
@@ -66,6 +72,7 @@ add_compile_definitions(
     TN_ENABLE_WEBTRANSPORT=$<BOOL:${TN_ENABLE_WEBTRANSPORT}>
     TN_ENABLE_NATIVE_GLTF=$<BOOL:${TN_ENABLE_NATIVE_GLTF}>
     TN_ENABLE_DEBUG_SERVER=$<BOOL:${TN_ENABLE_DEBUG_SERVER}>
+    TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
 )
 
 # ============================================================================
@@ -1044,6 +1051,36 @@ set(MYSTRAL_SOURCES
     src/async/event_loop.cpp
 )
 
+if(TN_ENABLE_NATIVE_PHYSICS)
+    if(NOT THREENATIVE_PHYSICS_LIBRARY)
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-linux-android")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(THREENATIVE_PHYSICS_TARGET "x86_64-linux-android")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "simulator")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
+        else()
+            message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
+        endif()
+        set(THREENATIVE_PHYSICS_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/.runtime/physics-target/${THREENATIVE_PHYSICS_TARGET}/release/libthreenative_native_physics.a"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
+        message(FATAL_ERROR
+            "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
+            "Run pnpm native:physics:cross or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+        )
+    endif()
+    add_library(threenative-native-physics STATIC IMPORTED)
+    set_target_properties(threenative-native-physics PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
+    )
+    list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
+endif()
+
 # Canvas2D sources provide no-Skia stubs when MYSTRAL_HAS_SKIA is absent.
 # Keep them linked even when TN_ENABLE_CANVAS2D=OFF because WebGPU bindings expose
 # browser-shaped canvas methods that reference these symbols.
@@ -1140,6 +1177,16 @@ target_compile_definitions(mystral-runtime PUBLIC
     MYSTRAL_JS_ENGINE="${MYSTRAL_JS_ENGINE_NAME}"
     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
 )
+
+if(TN_ENABLE_NATIVE_PHYSICS)
+    target_link_libraries(mystral-runtime PRIVATE threenative-native-physics)
+    # Both native physics and Android wgpu-native are Rust staticlibs and therefore carry
+    # the same Rust runtime symbols. They are built with the same pinned NDK/toolchain;
+    # keep one definition at the final shared-library link.
+    if(ANDROID AND MYSTRAL_USE_WGPU)
+        target_link_options(mystral-runtime PRIVATE "LINKER:--allow-multiple-definition")
+    endif()
+endif()
 
 # Platform-specific sources
 if(APPLE)
@@ -1473,6 +1520,36 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         RUNTIME DESTINATION bin
     )
 
+endif()
+
+# iOS app target. The JavaScript proof remains the exact import-free bundle built from
+# examples/native-smoke; the app is only a root-linked native host around that source.
+if(MYSTRAL_PLATFORM STREQUAL "ios")
+    set(THREENATIVE_IOS_PROOF_BUNDLE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../examples/native-smoke/dist/native-smoke.js"
+        CACHE FILEPATH "Import-free ThreeNative smoke bundle embedded in the iOS app")
+    if(NOT EXISTS "${THREENATIVE_IOS_PROOF_BUNDLE}")
+        message(FATAL_ERROR
+            "iOS proof bundle missing at ${THREENATIVE_IOS_PROOF_BUNDLE}. Run pnpm --filter threenative-native-smoke build first.")
+    endif()
+    add_executable(threenative-ios MACOSX_BUNDLE
+        ios/main.mm
+        "${THREENATIVE_IOS_PROOF_BUNDLE}"
+    )
+    set_source_files_properties("${THREENATIVE_IOS_PROOF_BUNDLE}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources
+    )
+    set_target_properties(threenative-ios PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "dev.threenative.runtime"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
+    target_link_libraries(threenative-ios PRIVATE mystral-runtime)
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(threenative-ios PRIVATE ${SDL3_STATIC_TARGET})
+    elseif(TARGET SDL3::SDL3-static)
+        target_link_libraries(threenative-ios PRIVATE SDL3::SDL3-static)
+    endif()
 endif()
 
 # ============================================================================

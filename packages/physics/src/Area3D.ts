@@ -1,6 +1,14 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Vector3 } from "three";
+import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
+import {
+  type PhysicsBodyHandle,
+  type PhysicsColliderHandle,
+  type PhysicsWorldHandle,
+  physicsBodyHandle,
+  physicsColliderHandle,
+} from "./handles.js";
 import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
@@ -17,8 +25,9 @@ export interface AreaContact {
 export interface Area3DOptions {
   readonly entity?: string;
   readonly physics?: PhysicsContext;
-  readonly world?: RAPIER.World;
-  readonly shape: RAPIER.ColliderDesc;
+  /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
+  readonly world?: PhysicsWorldHandle | unknown;
+  readonly shape: CollisionShape3D;
   readonly position?: Pick<Vector3, "x" | "y" | "z">;
   /** Godot's collision_layer — which layers this area occupies. Default 1. */
   readonly collisionLayer?: number;
@@ -28,8 +37,8 @@ export interface Area3DOptions {
 
 export class Area3D {
   readonly entity: string | undefined;
-  readonly body: RAPIER.RigidBody;
-  readonly collider: RAPIER.Collider;
+  readonly body: PhysicsBodyHandle;
+  readonly collider: PhysicsColliderHandle;
   #world: RAPIER.World;
   #physics: PhysicsContext | undefined;
   #entered = new Map<number, PhysicsBody3D>();
@@ -41,26 +50,35 @@ export class Area3D {
   };
   #disposed = false;
 
+  #rawBody(): RAPIER.RigidBody {
+    return this.body.raw as RAPIER.RigidBody;
+  }
+
   constructor(options: Area3DOptions) {
-    const world = options.world ?? options.physics?.world;
-    if (world === undefined) throw new Error("Area3D requires a physics context or world.");
+    const worldHandle = options.world ?? options.physics?.world;
+    if (worldHandle === undefined) throw new Error("Area3D requires a physics context or world.");
+    const world =
+      typeof worldHandle === "object" && worldHandle !== null && "raw" in worldHandle
+        ? ((worldHandle as PhysicsWorldHandle).raw as RAPIER.World)
+        : (worldHandle as RAPIER.World);
     this.#world = world;
     this.#physics = options.physics;
     this.entity = options.entity;
     const position = options.position ?? { x: 0, y: 0, z: 0 };
-    this.body = world.createRigidBody(
+    const rawBody = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
     );
-    this.body.userData = this;
-    const shape = options.shape
-      .setSensor(true)
-      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    rawBody.userData = this;
+    const shape = options.shape.setSensor(true).raw as RAPIER.ColliderDesc;
+    shape.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       shape.setCollisionGroups(
         interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
       );
     }
-    this.collider = world.createCollider(shape, this.body);
+    const rawCollider = world.createCollider(shape, rawBody);
+    this.body = physicsBodyHandle(rawBody.handle, rawBody);
+    this.collider = physicsColliderHandle(rawCollider.handle, rawCollider);
     this.#physics?.addArea(this);
   }
 
@@ -81,13 +99,14 @@ export class Area3D {
   }
 
   setPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
-    if (this.#disposed || !this.body.isValid()) return;
-    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    const body = this.#rawBody();
+    if (this.#disposed || !body.isValid()) return;
+    body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
   }
 
   handleCollision(body: PhysicsBody3D, started: boolean): void {
     if (this.#disposed || !this.#monitoring) return;
-    const handle = body.body.handle;
+    const handle = body.body.id;
     if (started) {
       if (this.#entered.has(handle)) return;
       this.#entered.set(handle, body);
@@ -121,7 +140,8 @@ export class Area3D {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#physics?.removeArea(this);
-    if (this.body.isValid()) this.#world.removeRigidBody(this.body);
+    const body = this.#rawBody();
+    if (body.isValid()) this.#world.removeRigidBody(body);
     this.#entered.clear();
     this.#listeners.bodyEntered.clear();
     this.#listeners.bodyExited.clear();

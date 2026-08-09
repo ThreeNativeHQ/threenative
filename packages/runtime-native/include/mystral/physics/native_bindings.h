@@ -6,6 +6,6 @@ class Engine;
 
 namespace mystral::physics {
 
-bool initializeNativePhysicsBindings(js::Engine* engine);
+bool initializeNativePhysicsBindings(js::Engine *engine);
 
-}  // namespace mystral::physics
+} // namespace mystral::physics

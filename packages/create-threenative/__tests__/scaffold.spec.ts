@@ -395,4 +395,25 @@ describe("create-threenative", () => {
       target: "my-game",
     });
   });
+
+  it("should keep a local native runtime optional", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-local-runtime-"));
+    try {
+      const result = await createProject(
+        {
+          install: false,
+          packageSources: { "@threenative/runtime-native": "/tmp/runtime.tgz" },
+          target: "my-game",
+        },
+        root,
+      );
+      const manifest = JSON.parse(await readFile(path.join(result.target, "package.json"), "utf8"));
+      expect(manifest.optionalDependencies["@threenative/runtime-native"]).toBe(
+        "file:/tmp/runtime.tgz",
+      );
+      expect(manifest.dependencies["@threenative/runtime-native"]).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

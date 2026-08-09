@@ -1,13 +1,24 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { Object3D, Vector3 } from "three";
+import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
+import {
+  type PhysicsBodyHandle,
+  type PhysicsColliderHandle,
+  type PhysicsHandle,
+  type PhysicsWorldHandle,
+  physicsBodyHandle,
+  physicsColliderHandle,
+  physicsHandle,
+} from "./handles.js";
 import type { PhysicsContext } from "./plugin.js";
 
 export interface CharacterBody3DOptions {
   readonly object: Object3D;
   readonly physics?: PhysicsContext;
-  readonly world?: RAPIER.World;
-  readonly shape: RAPIER.ColliderDesc;
+  /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
+  readonly world?: PhysicsWorldHandle | unknown;
+  readonly shape: CollisionShape3D;
   readonly offset?: number;
   readonly maxSlopeClimbAngle?: number;
   readonly autostep?: {
@@ -27,9 +38,9 @@ export interface CharacterBody3DOptions {
 }
 
 export class CharacterBody3D {
-  readonly body: RAPIER.RigidBody;
-  readonly collider: RAPIER.Collider;
-  readonly controller: RAPIER.KinematicCharacterController;
+  readonly body: PhysicsBodyHandle;
+  readonly collider: PhysicsColliderHandle;
+  readonly controller: PhysicsHandle;
   readonly object: Object3D;
   readonly velocity: Vector3;
   gravity: number;
@@ -43,10 +54,26 @@ export class CharacterBody3D {
   #groundCollider: number | undefined;
   #disposed = false;
 
+  #rawBody(): RAPIER.RigidBody {
+    return this.body.raw as RAPIER.RigidBody;
+  }
+
+  #rawCollider(): RAPIER.Collider {
+    return this.collider.raw as RAPIER.Collider;
+  }
+
+  #rawController(): RAPIER.KinematicCharacterController {
+    return this.controller.raw as RAPIER.KinematicCharacterController;
+  }
+
   constructor(options: CharacterBody3DOptions) {
-    const world = options.world ?? options.physics?.world;
-    if (world === undefined)
+    const worldHandle = options.world ?? options.physics?.world;
+    if (worldHandle === undefined)
       throw new Error("CharacterBody3D requires a physics context or world.");
+    const world =
+      typeof worldHandle === "object" && worldHandle !== null && "raw" in worldHandle
+        ? ((worldHandle as PhysicsWorldHandle).raw as RAPIER.World)
+        : (worldHandle as RAPIER.World);
     this.#world = world;
     this.#physics = options.physics;
     this.object = options.object;
@@ -62,25 +89,27 @@ export class CharacterBody3D {
         z: this.object.quaternion.z,
         w: this.object.quaternion.w,
       });
-    this.body = world.createRigidBody(description);
-    this.body.userData = this;
+    const rawBody = world.createRigidBody(description);
+    rawBody.userData = this;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       options.shape.setCollisionGroups(
         interactionGroups(options.collisionLayer ?? 1, options.collisionMask ?? 0xffff),
       );
     }
-    this.collider = world.createCollider(options.shape, this.body);
-    this.controller = world.createCharacterController(options.offset ?? 0.01);
-    this.controller.setMaxSlopeClimbAngle(options.maxSlopeClimbAngle ?? Math.PI / 4);
+    const rawCollider = world.createCollider(options.shape.raw as RAPIER.ColliderDesc, rawBody);
+    const rawController = world.createCharacterController(options.offset ?? 0.01);
+    this.body = physicsBodyHandle(rawBody.handle, rawBody);
+    this.collider = physicsColliderHandle(rawCollider.handle, rawCollider);
+    this.controller = physicsHandle(rawController);
+    rawController.setMaxSlopeClimbAngle(options.maxSlopeClimbAngle ?? Math.PI / 4);
     if (options.autostep !== undefined) {
-      this.controller.enableAutostep(
+      rawController.enableAutostep(
         options.autostep.maxHeight,
         options.autostep.minWidth,
         options.autostep.includeDynamicBodies ?? false,
       );
     }
-    if (options.snapToGround !== undefined)
-      this.controller.enableSnapToGround(options.snapToGround);
+    if (options.snapToGround !== undefined) rawController.enableSnapToGround(options.snapToGround);
     this.syncFromPhysics();
     this.#physics?.add(this);
   }
@@ -103,9 +132,10 @@ export class CharacterBody3D {
   }
 
   syncToPhysics(): void {
-    if (this.#disposed || !this.body.isValid()) return;
+    const body = this.#rawBody();
+    if (this.#disposed || !body.isValid()) return;
     const rotation = this.object.quaternion;
-    this.body.setNextKinematicRotation({
+    body.setNextKinematicRotation({
       x: rotation.x,
       y: rotation.y,
       z: rotation.z,
@@ -114,9 +144,10 @@ export class CharacterBody3D {
   }
 
   teleport(position: Pick<Vector3, "x" | "y" | "z">): void {
-    if (this.#disposed || !this.body.isValid())
+    const body = this.#rawBody();
+    if (this.#disposed || !body.isValid())
       throw new Error("CharacterBody3D.teleport cannot be used after dispose.");
-    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
     this.velocity.set(0, 0, 0);
     this.#desired = { x: 0, y: 0, z: 0 };
     this.#sliding = false;
@@ -126,7 +157,10 @@ export class CharacterBody3D {
   }
 
   step(): void {
-    if (this.#disposed || !this.body.isValid()) return;
+    const body = this.#rawBody();
+    const collider = this.#rawCollider();
+    const controller = this.#rawController();
+    if (this.#disposed || !body.isValid()) return;
     const carry =
       this.#sliding && this.grounded && this.velocity.y <= 0 && this.#groundCollider !== undefined
         ? this.#physics?.kinematicMotion?.(this.#groundCollider)
@@ -145,21 +179,21 @@ export class CharacterBody3D {
         ? (collider: RAPIER.Collider) =>
             ((collider.collisionGroups() >>> 16) & this.oneWayLayers) === 0
         : undefined;
-    this.controller.computeColliderMovement(
-      this.collider,
+    controller.computeColliderMovement(
+      collider,
       desired,
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
       filterGroups,
       filterPredicate,
     );
-    const movement = this.controller.computedMovement();
-    const current = this.body.translation();
-    this.body.setNextKinematicTranslation({
+    const movement = controller.computedMovement();
+    const current = body.translation();
+    body.setNextKinematicTranslation({
       x: current.x + movement.x,
       y: current.y + movement.y,
       z: current.z + movement.z,
     });
-    this.grounded = this.controller.computedGrounded();
+    this.grounded = controller.computedGrounded();
     this.#groundCollider = this.grounded ? this.#findGroundCollider() : undefined;
     if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
     this.#desired = { x: 0, y: 0, z: 0 };
@@ -167,8 +201,9 @@ export class CharacterBody3D {
   }
 
   #findGroundCollider(): number | undefined {
-    for (let index = 0; index < this.controller.numComputedCollisions(); index += 1) {
-      const collision = this.controller.computedCollision(index);
+    const controller = this.#rawController();
+    for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
+      const collision = controller.computedCollision(index);
       if (collision === null || collision.collider === null) continue;
       if ((collision.normal1.y ?? Number.NEGATIVE_INFINITY) >= 0.5)
         return collision.collider.handle;
@@ -177,9 +212,10 @@ export class CharacterBody3D {
   }
 
   syncFromPhysics(): void {
-    if (!this.body.isValid()) return;
-    const translation = this.body.translation();
-    const rotation = this.body.rotation();
+    const body = this.#rawBody();
+    if (!body.isValid()) return;
+    const translation = body.translation();
+    const rotation = body.rotation();
     this.object.position.set(translation.x, translation.y, translation.z);
     this.object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   }
@@ -188,7 +224,8 @@ export class CharacterBody3D {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#physics?.remove(this);
-    this.#world.removeCharacterController(this.controller);
-    if (this.body.isValid()) this.#world.removeRigidBody(this.body);
+    this.#world.removeCharacterController(this.#rawController());
+    const body = this.#rawBody();
+    if (body.isValid()) this.#world.removeRigidBody(body);
   }
 }

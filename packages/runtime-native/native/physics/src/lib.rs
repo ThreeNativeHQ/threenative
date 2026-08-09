@@ -1,12 +1,39 @@
+use rapier3d::control::KinematicCharacterController;
+use rapier3d::na::{Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ptr;
 
-const FLOOR_ID: u32 = 0;
-const CUBE_ID: u32 = 1;
 const TRANSFORM_WIDTH: usize = 8;
-const VISIBLE_BODY_COUNT: usize = 2;
 const EVENT_WIDTH: usize = 4;
+
+#[repr(C)]
+pub struct TnPhysicsWorldOptions {
+    pub gravity_x: f32,
+    pub gravity_y: f32,
+    pub gravity_z: f32,
+}
+
+#[repr(C)]
+pub struct TnPhysicsBodyOptions {
+    pub id: u32,
+    pub body_type: u32,
+    pub shape_type: u32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
+    pub rotation_w: f32,
+    pub shape_x: f32,
+    pub shape_y: f32,
+    pub shape_z: f32,
+    pub mass: f32,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
+    pub sensor: bool,
+}
 
 #[repr(C)]
 pub struct TnPhysicsProofOptions {
@@ -19,7 +46,14 @@ pub struct TnPhysicsProofOptions {
     pub cube_collision_mask: u32,
 }
 
-pub struct ProofSimulation {
+#[derive(Clone, Copy)]
+struct BodyEntry {
+    body: RigidBodyHandle,
+    collider: ColliderHandle,
+    character: bool,
+}
+
+pub struct Simulation {
     gravity: Vector<Real>,
     pipeline: PhysicsPipeline,
     integration: IntegrationParameters,
@@ -31,38 +65,23 @@ pub struct ProofSimulation {
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
     ccd: CCDSolver,
-    floor_body: RigidBodyHandle,
-    cube_body: RigidBodyHandle,
-    floor_collider: ColliderHandle,
-    cube_collider: ColliderHandle,
-    colliding: bool,
+    entries: BTreeMap<u32, BodyEntry>,
+    colliding: BTreeSet<(u32, u32)>,
     events: VecDeque<[u32; EVENT_WIDTH]>,
 }
 
-impl ProofSimulation {
-    fn new(options: TnPhysicsProofOptions) -> Option<Self> {
-        let floor_layer = Group::from_bits(options.floor_collision_layer)?;
-        let floor_mask = Group::from_bits(options.floor_collision_mask)?;
-        let cube_layer = Group::from_bits(options.cube_collision_layer)?;
-        let cube_mask = Group::from_bits(options.cube_collision_mask)?;
-        let mut bodies = RigidBodySet::new();
-        let mut colliders = ColliderSet::new();
-
-        let floor_body = bodies.insert(RigidBodyBuilder::fixed().translation(vector![0.0, -0.5, 0.0]));
-        let floor_collider = colliders.insert_with_parent(
-            ColliderBuilder::cuboid(50.0, 0.5, 50.0)
-                .collision_groups(InteractionGroups::new(floor_layer, floor_mask)),
-            floor_body,
-            &mut bodies,
-        );
-        let cube_body = bodies.insert(RigidBodyBuilder::dynamic().translation(vector![0.0, 3.0, 0.0]));
-        let cube_collider = colliders.insert_with_parent(
-            ColliderBuilder::cuboid(0.5, 0.5, 0.5)
-                .collision_groups(InteractionGroups::new(cube_layer, cube_mask)),
-            cube_body,
-            &mut bodies,
-        );
-
+impl Simulation {
+    fn new(options: TnPhysicsWorldOptions) -> Option<Self> {
+        if ![
+            options.gravity_x,
+            options.gravity_y,
+            options.gravity_z,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+        {
+            return None;
+        }
         Some(Self {
             gravity: vector![options.gravity_x, options.gravity_y, options.gravity_z],
             pipeline: PhysicsPipeline::new(),
@@ -70,22 +89,187 @@ impl ProofSimulation {
             islands: IslandManager::new(),
             broad_phase: BroadPhaseBvh::new(),
             narrow_phase: NarrowPhase::new(),
-            bodies,
-            colliders,
+            bodies: RigidBodySet::new(),
+            colliders: ColliderSet::new(),
             impulse_joints: ImpulseJointSet::new(),
             multibody_joints: MultibodyJointSet::new(),
             ccd: CCDSolver::new(),
-            floor_body,
-            cube_body,
-            floor_collider,
-            cube_collider,
-            colliding: false,
+            entries: BTreeMap::new(),
+            colliding: BTreeSet::new(),
             events: VecDeque::new(),
         })
     }
 
-    fn step(&mut self, delta_time: f32) -> bool {
-        if !delta_time.is_finite() || delta_time <= 0.0 {
+    fn add_body(&mut self, options: TnPhysicsBodyOptions) -> bool {
+        let finite = [
+            options.position_x,
+            options.position_y,
+            options.position_z,
+            options.rotation_x,
+            options.rotation_y,
+            options.rotation_z,
+            options.rotation_w,
+            options.shape_x,
+            options.shape_y,
+            options.shape_z,
+            options.mass,
+        ]
+        .into_iter()
+        .all(f32::is_finite);
+        let quaternion_norm = options.rotation_x * options.rotation_x
+            + options.rotation_y * options.rotation_y
+            + options.rotation_z * options.rotation_z
+            + options.rotation_w * options.rotation_w;
+        if !finite
+            || quaternion_norm <= f32::EPSILON
+            || self.entries.contains_key(&options.id)
+            || options.mass < 0.0
+        {
+            return false;
+        }
+        let Some(layer) = Group::from_bits(options.collision_layer) else {
+            return false;
+        };
+        let Some(mask) = Group::from_bits(options.collision_mask) else {
+            return false;
+        };
+        let position = Isometry::from_parts(
+            Translation::new(options.position_x, options.position_y, options.position_z),
+            UnitQuaternion::new_normalize(Quaternion::new(
+                options.rotation_w,
+                options.rotation_x,
+                options.rotation_y,
+                options.rotation_z,
+            )),
+        );
+        let mut body = match options.body_type {
+            0 => RigidBodyBuilder::dynamic(),
+            1 => RigidBodyBuilder::fixed(),
+            2 | 3 => RigidBodyBuilder::kinematic_position_based(),
+            _ => return false,
+        }
+        .pose(position);
+        if options.mass > 0.0 {
+            body = body.additional_mass(options.mass);
+        }
+        let body = self.bodies.insert(body);
+        let mut collider = match options.shape_type {
+            0 if options.shape_x > 0.0 && options.shape_y > 0.0 && options.shape_z > 0.0 => {
+                ColliderBuilder::cuboid(options.shape_x, options.shape_y, options.shape_z)
+            }
+            1 if options.shape_x > 0.0 => ColliderBuilder::ball(options.shape_x),
+            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
+                ColliderBuilder::capsule_y(options.shape_x, options.shape_y)
+            }
+            _ => {
+                self.bodies.remove(
+                    body,
+                    &mut self.islands,
+                    &mut self.colliders,
+                    &mut self.impulse_joints,
+                    &mut self.multibody_joints,
+                    true,
+                );
+                return false;
+            }
+        }
+        .collision_groups(InteractionGroups::new(layer, mask))
+        .sensor(options.sensor);
+        collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
+        let collider = self
+            .colliders
+            .insert_with_parent(collider, body, &mut self.bodies);
+        self.entries.insert(
+            options.id,
+            BodyEntry {
+                body,
+                collider,
+                character: options.body_type == 3,
+            },
+        );
+        true
+    }
+
+    fn remove_body(&mut self, id: u32) -> bool {
+        let Some(entry) = self.entries.remove(&id) else {
+            return false;
+        };
+        self.bodies.remove(
+            entry.body,
+            &mut self.islands,
+            &mut self.colliders,
+            &mut self.impulse_joints,
+            &mut self.multibody_joints,
+            true,
+        );
+        self.colliding.retain(|(left, right)| *left != id && *right != id);
+        true
+    }
+
+    fn apply_kinematic(&mut self, values: &[f32], delta_time: f32) -> bool {
+        if values.len() % TRANSFORM_WIDTH != 0 || !values.iter().all(|value| value.is_finite()) {
+            return false;
+        }
+        for record in values.chunks_exact(TRANSFORM_WIDTH) {
+            let id_value = record[0];
+            if id_value < 0.0 || id_value.fract() != 0.0 || id_value > u32::MAX as f32 {
+                return false;
+            }
+            let id = id_value as u32;
+            let Some(entry) = self.entries.get(&id).copied() else {
+                return false;
+            };
+            let rotation_norm = record[4] * record[4]
+                + record[5] * record[5]
+                + record[6] * record[6]
+                + record[7] * record[7];
+            if rotation_norm <= f32::EPSILON {
+                return false;
+            }
+            let target = vector![record[1], record[2], record[3]];
+            let rotation = UnitQuaternion::new_normalize(Quaternion::new(
+                record[7], record[4], record[5], record[6],
+            ));
+            if entry.character {
+                let body = &self.bodies[entry.body];
+                let desired = target - body.translation();
+                let filter = QueryFilter::new().exclude_rigid_body(entry.body);
+                let query = self.broad_phase.as_query_pipeline(
+                    self.narrow_phase.query_dispatcher(),
+                    &self.bodies,
+                    &self.colliders,
+                    filter,
+                );
+                let controller = KinematicCharacterController::default();
+                let movement = controller.move_shape(
+                    delta_time,
+                    &query,
+                    self.colliders[entry.collider].shape(),
+                    body.position(),
+                    desired,
+                    |_| {},
+                );
+                let body = &mut self.bodies[entry.body];
+                let current = *body.translation();
+                body.set_next_kinematic_translation(current + movement.translation);
+                body.set_next_kinematic_rotation(rotation);
+            } else {
+                let body = &mut self.bodies[entry.body];
+                if !body.is_kinematic() {
+                    return false;
+                }
+                body.set_next_kinematic_translation(target);
+                body.set_next_kinematic_rotation(rotation);
+            }
+        }
+        true
+    }
+
+    fn step(&mut self, delta_time: f32, kinematic: &[f32]) -> bool {
+        if !delta_time.is_finite()
+            || delta_time <= 0.0
+            || !self.apply_kinematic(kinematic, delta_time)
+        {
             return false;
         }
         self.integration.dt = delta_time;
@@ -103,16 +287,30 @@ impl ProofSimulation {
             &(),
             &(),
         );
-
-        let colliding = self
-            .narrow_phase
-            .contact_pair(self.floor_collider, self.cube_collider)
-            .is_some_and(|pair| pair.has_any_active_contact);
-        if colliding != self.colliding {
-            self.events
-                .push_back([FLOOR_ID, CUBE_ID, u32::from(colliding), 1]);
-            self.colliding = colliding;
+        let entries: Vec<_> = self.entries.iter().map(|(id, entry)| (*id, *entry)).collect();
+        let mut current = BTreeSet::new();
+        for (index, (left_id, left)) in entries.iter().enumerate() {
+            for (right_id, right) in entries.iter().skip(index + 1) {
+                let touching = self
+                    .narrow_phase
+                    .contact_pair(left.collider, right.collider)
+                    .is_some_and(|pair| pair.has_any_active_contact)
+                    || self
+                        .narrow_phase
+                        .intersection_pair(left.collider, right.collider)
+                        .unwrap_or(false);
+                if touching {
+                    current.insert((*left_id, *right_id));
+                }
+            }
         }
+        for pair in current.difference(&self.colliding) {
+            self.events.push_back([pair.0, pair.1, 1, 1]);
+        }
+        for pair in self.colliding.difference(&current) {
+            self.events.push_back([pair.0, pair.1, 0, 1]);
+        }
+        self.colliding = current;
         true
     }
 }
@@ -123,54 +321,79 @@ pub extern "C" fn tn_physics_version() -> *const std::ffi::c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_create(
-    options: *const TnPhysicsProofOptions,
-) -> *mut ProofSimulation {
+pub extern "C" fn tn_physics_create(
+    options: *const TnPhysicsWorldOptions,
+) -> *mut Simulation {
     if options.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: The caller supplies a non-null pointer to the C-compatible options struct.
     let options = unsafe { ptr::read(options) };
-    ProofSimulation::new(options)
+    Simulation::new(options)
         .map(Box::new)
         .map_or(ptr::null_mut(), Box::into_raw)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_step(
-    simulation: *mut ProofSimulation,
-    delta_time: f32,
+pub extern "C" fn tn_physics_add_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
 ) -> bool {
-    // SAFETY: A live simulation pointer is created and exclusively owned by the C++ wrapper.
-    unsafe { simulation.as_mut() }.is_some_and(|simulation| simulation.step(delta_time))
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    simulation.add_body(unsafe { ptr::read(options) })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_read_visible_transforms(
-    simulation: *const ProofSimulation,
+pub extern "C" fn tn_physics_remove_body(simulation: *mut Simulation, id: u32) -> bool {
+    unsafe { simulation.as_mut() }.is_some_and(|simulation| simulation.remove_body(id))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_step(
+    simulation: *mut Simulation,
+    delta_time: f32,
+    kinematic_transforms: *const f32,
+    kinematic_record_count: usize,
+) -> bool {
+    let Some(simulation) = (unsafe { simulation.as_mut() }) else {
+        return false;
+    };
+    if kinematic_record_count > 0 && kinematic_transforms.is_null() {
+        return false;
+    }
+    let values = if kinematic_record_count == 0 {
+        &[]
+    } else {
+        unsafe {
+            std::slice::from_raw_parts(
+                kinematic_transforms,
+                kinematic_record_count * TRANSFORM_WIDTH,
+            )
+        }
+    };
+    simulation.step(delta_time, values)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_visible_transforms(
+    simulation: *const Simulation,
     output: *mut f32,
     output_float_capacity: usize,
 ) -> i32 {
-    if simulation.is_null()
-        || output.is_null()
-        || output_float_capacity < TRANSFORM_WIDTH * VISIBLE_BODY_COUNT
-    {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    let required = simulation.entries.len() * TRANSFORM_WIDTH;
+    if required > output_float_capacity || (required > 0 && output.is_null()) {
         return -1;
     }
-    // SAFETY: Both pointers were checked and the caller guarantees capacity for eight floats.
-    let simulation = unsafe { &*simulation };
-    for (index, (id, handle)) in [
-        (FLOOR_ID, simulation.floor_body),
-        (CUBE_ID, simulation.cube_body),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let body = &simulation.bodies[handle];
+    for (index, (id, entry)) in simulation.entries.iter().enumerate() {
+        let body = &simulation.bodies[entry.body];
         let translation = body.translation();
         let rotation = body.rotation().quaternion();
         let values = [
-            id as f32,
+            *id as f32,
             translation.x,
             translation.y,
             translation.z,
@@ -179,21 +402,20 @@ pub extern "C" fn tn_physics_proof_read_visible_transforms(
             rotation.k,
             rotation.w,
         ];
-        // SAFETY: output_float_capacity was validated for both complete records.
         unsafe {
             ptr::copy_nonoverlapping(
                 values.as_ptr(),
                 output.add(index * TRANSFORM_WIDTH),
-                values.len(),
+                TRANSFORM_WIDTH,
             )
         };
     }
-    VISIBLE_BODY_COUNT as i32
+    simulation.entries.len() as i32
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_drain_collision_events(
-    simulation: *mut ProofSimulation,
+pub extern "C" fn tn_physics_drain_collision_events(
+    simulation: *mut Simulation,
     output: *mut u32,
     output_u32_capacity: usize,
 ) -> i32 {
@@ -204,9 +426,7 @@ pub extern "C" fn tn_physics_proof_drain_collision_events(
     if required > output_u32_capacity || (required > 0 && output.is_null()) {
         return -1;
     }
-    for event_index in 0..simulation.events.len() {
-        let event = simulation.events[event_index];
-        // SAFETY: The full queue capacity was validated before writing any event.
+    for (event_index, event) in simulation.events.iter().enumerate() {
         unsafe {
             ptr::copy_nonoverlapping(
                 event.as_ptr(),
@@ -221,18 +441,107 @@ pub extern "C" fn tn_physics_proof_drain_collision_events(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_proof_destroy(simulation: *mut ProofSimulation) {
+pub extern "C" fn tn_physics_destroy(simulation: *mut Simulation) {
     if !simulation.is_null() {
-        // SAFETY: The C++ wrapper calls destroy at most once for the Box returned by create.
         unsafe { drop(Box::from_raw(simulation)) };
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_proof_create(
+    options: *const TnPhysicsProofOptions,
+) -> *mut Simulation {
+    if options.is_null() {
+        return ptr::null_mut();
+    }
+    let options = unsafe { ptr::read(options) };
+    let Some(mut simulation) = Simulation::new(TnPhysicsWorldOptions {
+        gravity_x: options.gravity_x,
+        gravity_y: options.gravity_y,
+        gravity_z: options.gravity_z,
+    }) else {
+        return ptr::null_mut();
+    };
+    let floor = TnPhysicsBodyOptions {
+        id: 0,
+        body_type: 1,
+        shape_type: 0,
+        position_x: 0.0,
+        position_y: -0.5,
+        position_z: 0.0,
+        rotation_x: 0.0,
+        rotation_y: 0.0,
+        rotation_z: 0.0,
+        rotation_w: 1.0,
+        shape_x: 50.0,
+        shape_y: 0.5,
+        shape_z: 50.0,
+        mass: 0.0,
+        collision_layer: options.floor_collision_layer,
+        collision_mask: options.floor_collision_mask,
+        sensor: false,
+    };
+    let cube = TnPhysicsBodyOptions {
+        id: 1,
+        body_type: 0,
+        shape_type: 0,
+        position_x: 0.0,
+        position_y: 3.0,
+        position_z: 0.0,
+        rotation_x: 0.0,
+        rotation_y: 0.0,
+        rotation_z: 0.0,
+        rotation_w: 1.0,
+        shape_x: 0.5,
+        shape_y: 0.5,
+        shape_z: 0.5,
+        mass: 0.0,
+        collision_layer: options.cube_collision_layer,
+        collision_mask: options.cube_collision_mask,
+        sensor: false,
+    };
+    if !simulation.add_body(floor) || !simulation.add_body(cube) {
+        return ptr::null_mut();
+    }
+    Box::into_raw(Box::new(simulation))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_proof_step(
+    simulation: *mut Simulation,
+    delta_time: f32,
+) -> bool {
+    tn_physics_step(simulation, delta_time, ptr::null(), 0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_proof_read_visible_transforms(
+    simulation: *const Simulation,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    tn_physics_read_visible_transforms(simulation, output, output_float_capacity)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_proof_drain_collision_events(
+    simulation: *mut Simulation,
+    output: *mut u32,
+    output_u32_capacity: usize,
+) -> i32 {
+    tn_physics_drain_collision_events(simulation, output, output_u32_capacity)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_proof_destroy(simulation: *mut Simulation) {
+    tn_physics_destroy(simulation);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn options() -> TnPhysicsProofOptions {
+    fn proof_options() -> TnPhysicsProofOptions {
         TnPhysicsProofOptions {
             gravity_x: 0.0,
             gravity_y: -9.81,
@@ -244,38 +553,69 @@ mod tests {
         }
     }
 
+    fn proof(options: TnPhysicsProofOptions) -> Box<Simulation> {
+        let pointer = tn_physics_proof_create(&options);
+        assert!(!pointer.is_null());
+        unsafe { Box::from_raw(pointer) }
+    }
+
     #[test]
     fn cube_rests_on_floor_and_emits_collision() {
-        let mut simulation = ProofSimulation::new(options()).unwrap();
+        let mut simulation = proof(proof_options());
         for _ in 0..180 {
-            assert!(simulation.step(1.0 / 60.0));
+            assert!(simulation.step(1.0 / 60.0, &[]));
         }
-        let cube_y = simulation.bodies[simulation.cube_body].translation().y;
+        let cube = simulation.entries[&1];
+        let cube_y = simulation.bodies[cube.body].translation().y;
         assert!((cube_y - 0.5).abs() <= 0.02, "cube y was {cube_y}");
         assert!(simulation.events.iter().any(|event| *event == [0, 1, 1, 1]));
     }
 
     #[test]
     fn collision_mask_is_a_real_negative_control() {
-        let mut masked = options();
-        masked.cube_collision_layer = 2;
-        masked.cube_collision_mask = 2;
-        let mut simulation = ProofSimulation::new(masked).unwrap();
+        let mut options = proof_options();
+        options.cube_collision_layer = 2;
+        options.cube_collision_mask = 2;
+        let mut simulation = proof(options);
         for _ in 0..180 {
-            assert!(simulation.step(1.0 / 60.0));
+            assert!(simulation.step(1.0 / 60.0, &[]));
         }
-        assert!(simulation.bodies[simulation.cube_body].translation().y < -5.0);
+        let cube = simulation.entries[&1];
+        assert!(simulation.bodies[cube.body].translation().y < -5.0);
         assert!(simulation.events.is_empty());
     }
 
     #[test]
-    fn upward_gravity_is_a_real_negative_control() {
-        let mut upward = options();
-        upward.gravity_y = 9.81;
-        let mut simulation = ProofSimulation::new(upward).unwrap();
-        for _ in 0..60 {
-            assert!(simulation.step(1.0 / 60.0));
-        }
-        assert!(simulation.bodies[simulation.cube_body].translation().y > 7.0);
+    fn arbitrary_body_ids_and_kinematic_bulk_input_are_supported() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 42,
+            body_type: 2,
+            shape_type: 1,
+            position_x: 0.0,
+            position_y: 1.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.0,
+            shape_z: 0.0,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        }));
+        assert!(simulation.step(
+            1.0 / 60.0,
+            &[42.0, 2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0],
+        ));
+        assert_eq!(simulation.bodies[simulation.entries[&42].body].translation().x, 2.0);
     }
 }

@@ -18,7 +18,14 @@ const hotReloadProjectFile = path.join(
   tmpdir(),
   `threenative-hot-reload-${path.basename(repoRoot)}.path`,
 );
-const localPackages = ["core", "physics", "playtest", "ui"] as const;
+const localPackages = [
+  ["core", "@threenative/core"],
+  ["physics", "@threenative/physics"],
+  ["playtest", "@threenative/playtest"],
+  ["runtime-native", "@threenative/runtime-native"],
+  ["ui", "@threenative/ui"],
+  ["create-threenative", "create-threenative"],
+] as const;
 // The scaffolded projects install from tarballs, not from `packages/*` directly: a source
 // directory still carries `catalog:` specifiers, which only resolve inside this workspace.
 // `pnpm pack` rewrites them, which is the same thing CI's scaffold smoke does.
@@ -28,25 +35,27 @@ async function packLocalPackages(): Promise<Record<string, string>> {
   const existing = process.env.THREENATIVE_PACKED_PACKAGES;
   const staging = existing ?? (await mkdtemp(path.join(tmpdir(), "threenative-packed-")));
   if (existing === undefined) {
-    await run("pnpm", ["-r", "--workspace-concurrency=1", "--if-present", "run", "build"]);
-    for (const name of localPackages)
+    for (const [directory] of localPackages) {
+      await run("pnpm", ["--filter", `./packages/${directory}`, "run", "build"]);
       await run("pnpm", [
         "--filter",
-        `./packages/${name}`,
+        `./packages/${directory}`,
         "exec",
         "pnpm",
         "pack",
         "--pack-destination",
         staging,
       ]);
+    }
     process.env.THREENATIVE_PACKED_PACKAGES = staging;
   }
   const files = await readdir(staging);
   const sources: Record<string, string> = {};
-  for (const name of localPackages) {
-    const tarball = files.find((file) => file.startsWith(`threenative-${name}-`));
-    if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${name}.`);
-    sources[`@threenative/${name}`] = path.join(staging, tarball);
+  for (const [directory, packageName] of localPackages) {
+    const prefix = packageName.replace("@", "").replace("/", "-");
+    const tarball = files.find((file) => file.startsWith(`${prefix}-`));
+    if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${packageName}.`);
+    sources[packageName] = path.join(staging, tarball);
   }
   return sources;
 }
@@ -108,8 +117,20 @@ async function readSharedHotReloadProject(): Promise<string | undefined> {
   const target = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
   if (target.length === 0) return undefined;
   try {
-    await readdir(target);
-    return target;
+    const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const installedSources = {
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+      ...manifest.optionalDependencies,
+    };
+    const current = Object.entries(localPackageSources).every(
+      ([name, source]) => installedSources[name] === `file:${source}`,
+    );
+    return current ? target : undefined;
   } catch {
     return undefined;
   }

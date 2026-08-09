@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "native-physics-wrong-height-control",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 180, "label": "settled" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "movement": {
+      "entity": "cube",
+      "reachesPositionWithin": { "position": [0, 1.5, 0], "maxDistance": 0.02, "atStep": "settled" }
+    }
+  }
+}

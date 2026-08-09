@@ -1,6 +1,9 @@
 # PRD-048 — shipping a native game: the CLI and distribution lane
 
-**Status: IN PROGRESS. Phase 0 complete; Phases 1–5 open.** Split out of PRD-047 §4 Phase 6
+**Status: IN PROGRESS. Phases 0–2 and 5 are complete. Phase 3's fail-closed installer and
+packed-consumer lifecycle are locally proven, but real release assets/checksum lock and the
+clean-machine build remain open. Android Phase 4 is source-workspace emulator-proven; iOS
+and the prebuilt consumer handoff remain open.** Split out of PRD-047 §4 Phase 6
 on 2026-08-08, because that phase turned out to contain more unbuilt surface than the five
 phases before it combined. Phase 0 evidence is in `docs/verification/PRD-048.md`.
 
@@ -118,7 +121,7 @@ the current native LOC measurement; `pnpm typecheck && pnpm lint && pnpm test` s
 is written fresh
 against ThreeNative's targets, never by reviving one of these.**
 
-### Phase 1 — the `threenative` binary, `--target web` only
+### Phase 1 — the `threenative` binary, `--target web` only — **COMPLETE 2026-08-08**
 
 A new bin on an existing package — **no new workspace package** (`AGENTS.md` rule 5:
 a CLI carries no dependency the others must not inherit). `threenative build --target web`
@@ -127,6 +130,9 @@ delegates to Vite and produces a byte-identical result to today's `vite build`.
 **Gate:** for all three templates, `threenative build --target web` and `vite build` produce
 identical output trees, and every existing template playtest passes against the CLI-built
 output with no scenario edited. Zero behaviour change is the phase.
+
+All three packed scaffolds are byte-identical and all 25 committed template scenarios pass
+through the repeatable `pnpm test:templates` gate.
 
 ### Phase 2 — `--target desktop`, from source, on this machine
 
@@ -140,7 +146,8 @@ ready and first-frame markers, 300 frames, clean logs, a dated nonblank screensh
 those lanes on real runners. A cross-platform claim before that is the dishonesty
 `AGENTS.md` names.
 
-### Phase 3 — prebuilt binaries, so no consumer compiles anything
+### Phase 3 — prebuilt binaries, so no consumer compiles anything — **LOCAL CONTRACT
+COMPLETE; RELEASE OPEN**
 
 The release lane publishes a prebuilt runtime per platform/arch. `@threenative/runtime-native`
 gains an install step that fetches the one matching the host, verified against a checksum
@@ -159,7 +166,8 @@ binary. Separately, a deliberately corrupted checksum **fails the install**, and
 unsupported `platform-arch` fails with that string in the message. Both failures are shown,
 not asserted.
 
-### Phase 4 — `--target android` and `--target ios`
+### Phase 4 — `--target android` and `--target ios` — **ANDROID SOURCE HANDOFF COMPLETE;
+PREBUILT CONSUMER AND iOS OPEN**
 
 Hand the bundle to the Gradle and Xcode projects PRD-047 Phase 1 imported.
 
@@ -173,10 +181,11 @@ Template `package.json` scripts gain the native targets; the docs state plainly 
 targets have real evidence and which are emulator-only.
 
 **A template is not mobile-ready just because it builds.** The platformer imports
-`recast-navigation`, and `@threenative/physics` imports Rapier — both WASM, both dead on the
-runtime's QuickJS Android engine (PRD-046 §1). **Any scaffold this phase labels mobile-ready
-must contain neither Rapier WASM nor Recast WASM in its native bundle**, and a template that
-cannot meet that is documented as web-and-desktop, not quietly shipped as mobile.
+`recast-navigation`, which is WASM and dead on the runtime's QuickJS Android engine
+(PRD-046 §1). The normal physics entry now selects native Rapier and its Android bundle is
+free of Rapier WASM; platformer remains blocked by Recast. **Any scaffold this phase labels
+mobile-ready must contain neither Rapier WASM nor Recast WASM in its native bundle**, and a
+template that cannot meet that is documented honestly rather than quietly shipped as mobile.
 
 ---
 

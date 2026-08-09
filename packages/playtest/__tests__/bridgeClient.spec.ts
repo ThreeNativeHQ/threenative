@@ -34,6 +34,25 @@ test("device args select Android and preserve an explicit endpoint", () => {
   expect(config.device).toBe("emulator-5554");
 });
 
+test("device args select iOS simulator or physical devicectl transport", () => {
+  const simulator = parseStandalonePlaytestArgs([
+    "scenario.json", "--target", "ios", "--app", "build/ThreeNative.app",
+    "--bundle-id", "dev.example.game", "--device", "SIM-123",
+  ], "/project");
+  expect(simulator.target).toBe("ios");
+  expect(simulator.ios).toEqual({
+    appPath: "/project/build/ThreeNative.app",
+    bundleId: "dev.example.game",
+    transport: "simulator",
+  });
+  expect(simulator.device).toBe("SIM-123");
+
+  const physical = parseStandalonePlaytestArgs([
+    "scenario.json", "--target", "ios", "--app", "game.app", "--ios-transport", "device",
+  ], "/project");
+  expect(physical.ios?.transport).toBe("device");
+});
+
 test("browser args are repeatable and absent when unused", () => {
   // A WebGPU target needs several chromium flags at once, so one flag per
   // occurrence rather than a delimited string.

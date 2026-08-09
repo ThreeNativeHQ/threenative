@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "native-physics-collision-mask",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 180, "label": "fell-through" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "movement": { "entity": "cube", "minDistance": 5 },
+    "resources": [
+      { "id": "GameState", "path": "collisions", "equals": 0, "allowTrivial": true },
+      {
+        "id": "GameState",
+        "path": "control",
+        "equals": "masked",
+        "changed": false,
+        "allowTrivial": true
+      }
+    ]
+  }
+}

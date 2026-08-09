@@ -25,6 +25,7 @@ export interface FrameSummary {
 }
 
 interface ProfileArgs {
+  readonly allowSoftware: boolean;
   readonly browser?: string;
   readonly browserArgs: readonly string[];
   readonly headed: boolean;
@@ -88,6 +89,7 @@ function parseArgs(args: readonly string[]): ProfileArgs {
   if (packageDir !== undefined && !existsSync(packageDir))
     throw new Error(`Packed package directory does not exist: ${packageDir}`);
   return {
+    allowSoftware: args.includes("--allow-software"),
     browser,
     browserArgs: argumentValues(args, "--browser-arg"),
     headed: args.includes("--headed"),
@@ -102,12 +104,19 @@ function parseArgs(args: readonly string[]): ProfileArgs {
 
 async function packageSourcesFrom(directory: string): Promise<Record<string, string>> {
   const files = await readdir(directory);
-  const names = ["core", "physics", "playtest", "ui"] as const;
+  const packages = [
+    ["@threenative/core", "threenative-core-"],
+    ["@threenative/physics", "threenative-physics-"],
+    ["@threenative/playtest", "threenative-playtest-"],
+    ["@threenative/runtime-native", "threenative-runtime-native-"],
+    ["@threenative/ui", "threenative-ui-"],
+    ["create-threenative", "create-threenative-"],
+  ] as const;
   return Object.fromEntries(
-    names.map((name) => {
-      const archive = files.find((file) => file.startsWith(`threenative-${name}-`));
+    packages.map(([name, prefix]) => {
+      const archive = files.find((file) => file.startsWith(prefix));
       if (archive === undefined) throw new Error(`Packed package is missing: ${name}`);
-      return [`@threenative/${name}`, path.join(directory, archive)];
+      return [name, path.join(directory, archive)];
     }),
   );
 }
@@ -185,6 +194,9 @@ async function profileUrl(url: string, args: ProfileArgs): Promise<ProfileResult
     args: [
       "--ozone-platform=x11",
       "--enable-unsafe-webgpu",
+      // Without this Dawn picks SwiftShader even on a machine with a GPU, and
+      // every number below becomes a software-rasteriser number.
+      "--enable-features=Vulkan",
       "--disable-gpu-sandbox",
       "--ignore-gpu-blocklist",
       ...args.browserArgs,
@@ -249,14 +261,18 @@ async function profileUrl(url: string, args: ProfileArgs): Promise<ProfileResult
   }
 }
 
+export function backendOf(
+  adapter: Record<string, string> | null,
+): "hardware" | "software fallback" | "unknown" {
+  if (adapter === null) return "unknown";
+  return /swiftshader|llvmpipe|software/u.test(adapter.architecture?.toLowerCase() ?? "")
+    ? "software fallback"
+    : "hardware";
+}
+
 function printResult(result: ProfileResult): void {
   const { frames } = result;
-  const architecture = result.adapter?.architecture?.toLowerCase() ?? "";
-  const backend = /swiftshader|llvmpipe|software/u.test(architecture)
-    ? "software fallback"
-    : result.adapter === null
-      ? "unknown"
-      : "hardware";
+  const backend = backendOf(result.adapter);
   process.stdout.write(`starter profile (${result.variant}): ${result.url}\n`);
   process.stdout.write(
     `adapter: ${result.adapter === null ? "unavailable" : JSON.stringify(result.adapter)}; backend=${backend}; navigator.gpu=${result.gpuAvailable}\n`,
@@ -268,20 +284,29 @@ function printResult(result: ProfileResult): void {
     process.stdout.write(`cpu: ${hotspot.selfMs.toFixed(1)}ms ${hotspot.location}\n`);
 }
 
+/** A profile taken on SwiftShader measures the rasteriser, not the scene. */
+function report(result: ProfileResult, args: ProfileArgs): void {
+  process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : "");
+  if (!args.json) printResult(result);
+  const backend = backendOf(result.adapter);
+  if (backend !== "hardware" && !args.allowSoftware)
+    throw new Error(
+      `Profile ran on ${backend} GPU, so these frame times mean nothing. Re-run with --headed on a machine with a GPU, or pass --allow-software to accept the fallback.`,
+    );
+}
+
 export async function runStarterProfile(
   cliArgs: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
   if (cliArgs.includes("--help")) {
     process.stdout.write(
-      "pnpm profile:starter -- [--variant baseline|no-sculpture|no-particles] [--seconds 5] [--browser PATH --headed] [--browser-arg=FLAG] [--url URL] [--package-dir DIR] [--json]\n",
+      "pnpm profile:starter -- [--variant baseline|no-sculpture|no-particles] [--seconds 5] [--browser PATH --headed] [--browser-arg=FLAG] [--url URL] [--package-dir DIR] [--json] [--allow-software]\n",
     );
     return;
   }
   const args = parseArgs(cliArgs);
   if (args.url !== undefined) {
-    const result = await profileUrl(args.url, args);
-    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : "");
-    if (!args.json) printResult(result);
+    report(await profileUrl(args.url, args), args);
     return;
   }
 
@@ -313,8 +338,7 @@ export async function runStarterProfile(
         `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,
       );
     });
-    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : "");
-    if (!args.json) printResult(result);
+    report(result, args);
   } finally {
     if (server !== undefined) await stopServer(server);
     await rm(temporaryRoot, { force: true, recursive: true });

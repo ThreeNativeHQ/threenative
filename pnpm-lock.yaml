@@ -157,6 +157,9 @@ importers:
       '@threenative/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
       three:
         specifier: 'catalog:'
         version: 0.185.1

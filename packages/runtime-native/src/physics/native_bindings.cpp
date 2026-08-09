@@ -13,228 +13,394 @@
 namespace mystral::physics {
 namespace {
 
+constexpr uint32_t kMaxExactFloatId = 16'777'215;
+
 struct SimulationOwner {
-    TnPhysicsProofSimulation* simulation = nullptr;
+  TnPhysicsSimulation *simulation = nullptr;
+  uint32_t nextId = 0;
 
-    ~SimulationOwner() {
-        dispose();
-    }
+  ~SimulationOwner() { dispose(); }
 
-    void dispose() {
-        if (simulation != nullptr) {
-            tn_physics_proof_destroy(simulation);
-            simulation = nullptr;
-        }
+  void dispose() {
+    if (simulation != nullptr) {
+      tn_physics_destroy(simulation);
+      simulation = nullptr;
     }
+  }
 };
 
-js::JSValueHandle fail(js::Engine* engine, const char* message) {
-    engine->throwException(message);
-    return engine->newUndefined();
+js::JSValueHandle fail(js::Engine *engine, const char *message) {
+  engine->throwException(message);
+  return engine->newUndefined();
 }
 
-bool readFiniteNumber(js::Engine* engine, js::JSValueHandle object, const char* name, float& output) {
-    const auto value = engine->getProperty(object, name);
-    if (engine->isUndefined(value)) return false;
-    const double number = engine->toNumber(value);
-    if (!std::isfinite(number) || number < -std::numeric_limits<float>::max() ||
-        number > std::numeric_limits<float>::max()) {
-        return false;
-    }
-    output = static_cast<float>(number);
+bool readFiniteNumber(js::Engine *engine, js::JSValueHandle object,
+                      const char *name, float &output) {
+  const auto value = engine->getProperty(object, name);
+  if (!engine->isNumber(value))
+    return false;
+  const double number = engine->toNumber(value);
+  if (!std::isfinite(number) || number < -std::numeric_limits<float>::max() ||
+      number > std::numeric_limits<float>::max()) {
+    return false;
+  }
+  output = static_cast<float>(number);
+  return true;
+}
+
+bool readOptionalFiniteNumber(js::Engine *engine, js::JSValueHandle object,
+                              const char *name, float &output) {
+  const auto value = engine->getProperty(object, name);
+  if (engine->isUndefined(value))
     return true;
+  return readFiniteNumber(engine, object, name, output);
 }
 
-bool readGroup(js::Engine* engine, js::JSValueHandle object, const char* name, uint32_t& output) {
-    const auto value = engine->getProperty(object, name);
-    if (engine->isUndefined(value)) return true;
-    const double number = engine->toNumber(value);
-    if (!std::isfinite(number) || number < 0 || number > std::numeric_limits<uint32_t>::max() ||
-        std::floor(number) != number) {
-        return false;
-    }
-    output = static_cast<uint32_t>(number);
+bool readGroup(js::Engine *engine, js::JSValueHandle object, const char *name,
+               uint32_t &output) {
+  const auto value = engine->getProperty(object, name);
+  if (engine->isUndefined(value))
     return true;
+  if (!engine->isNumber(value))
+    return false;
+  const double number = engine->toNumber(value);
+  if (!std::isfinite(number) || number < 0 ||
+      number > std::numeric_limits<uint32_t>::max() ||
+      std::floor(number) != number) {
+    return false;
+  }
+  output = static_cast<uint32_t>(number);
+  return true;
 }
 
-bool readGravity(js::Engine* engine, js::JSValueHandle options, TnPhysicsProofOptions& native) {
-    const auto gravity = engine->getProperty(options, "gravity");
-    if (engine->isUndefined(gravity)) return true;
-    if (engine->isNumber(gravity)) {
-        const double y = engine->toNumber(gravity);
-        if (!std::isfinite(y)) return false;
-        native.gravity_y = static_cast<float>(y);
-        return true;
+bool readVector(js::Engine *engine, js::JSValueHandle parent,
+                const char *name, float &x, float &y, float &z) {
+  const auto value = engine->getProperty(parent, name);
+  return engine->isObject(value) && readFiniteNumber(engine, value, "x", x) &&
+         readFiniteNumber(engine, value, "y", y) &&
+         readFiniteNumber(engine, value, "z", z);
+}
+
+bool readQuaternion(js::Engine *engine, js::JSValueHandle parent,
+                    const char *name, float &x, float &y, float &z, float &w) {
+  const auto value = engine->getProperty(parent, name);
+  return engine->isObject(value) && readFiniteNumber(engine, value, "x", x) &&
+         readFiniteNumber(engine, value, "y", y) &&
+         readFiniteNumber(engine, value, "z", z) &&
+         readFiniteNumber(engine, value, "w", w);
+}
+
+bool readGravity(js::Engine *engine, js::JSValueHandle options, float &x,
+                 float &y, float &z) {
+  const auto gravity = engine->getProperty(options, "gravity");
+  if (engine->isUndefined(gravity))
+    return true;
+  if (engine->isNumber(gravity)) {
+    const double value = engine->toNumber(gravity);
+    if (!std::isfinite(value))
+      return false;
+    y = static_cast<float>(value);
+    return true;
+  }
+  if (!engine->isObject(gravity))
+    return false;
+  if (engine->isArray(gravity)) {
+    const auto xValue = engine->getPropertyIndex(gravity, 0);
+    const auto yValue = engine->getPropertyIndex(gravity, 1);
+    const auto zValue = engine->getPropertyIndex(gravity, 2);
+    if (!engine->isNumber(xValue) || !engine->isNumber(yValue) ||
+        !engine->isNumber(zValue)) {
+      return false;
     }
-    if (!engine->isObject(gravity)) return false;
-    if (engine->isArray(gravity)) {
-        const double x = engine->toNumber(engine->getPropertyIndex(gravity, 0));
-        const double y = engine->toNumber(engine->getPropertyIndex(gravity, 1));
-        const double z = engine->toNumber(engine->getPropertyIndex(gravity, 2));
-        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
-        native.gravity_x = static_cast<float>(x);
-        native.gravity_y = static_cast<float>(y);
-        native.gravity_z = static_cast<float>(z);
-        return true;
-    }
-    return readFiniteNumber(engine, gravity, "x", native.gravity_x) &&
-           readFiniteNumber(engine, gravity, "y", native.gravity_y) &&
-           readFiniteNumber(engine, gravity, "z", native.gravity_z);
+    x = static_cast<float>(engine->toNumber(xValue));
+    y = static_cast<float>(engine->toNumber(yValue));
+    z = static_cast<float>(engine->toNumber(zValue));
+    return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
+  }
+  return readFiniteNumber(engine, gravity, "x", x) &&
+         readFiniteNumber(engine, gravity, "y", y) &&
+         readFiniteNumber(engine, gravity, "z", z);
 }
 
-bool readCollisionGroups(
-    js::Engine* engine,
-    js::JSValueHandle options,
-    const char* bodyName,
-    uint32_t& layer,
-    uint32_t& mask
-) {
-    const auto body = engine->getProperty(options, bodyName);
-    if (engine->isUndefined(body)) return true;
-    return engine->isObject(body) && readGroup(engine, body, "collisionLayer", layer) &&
-           readGroup(engine, body, "collisionMask", mask);
+bool isTypedArray(js::Engine *engine, js::JSValueHandle value,
+                  const char *expectedName) {
+  if (!engine->isObject(value))
+    return false;
+  const auto constructor = engine->getProperty(value, "constructor");
+  if (!engine->isFunction(constructor))
+    return false;
+  const auto name = engine->getProperty(constructor, "name");
+  return engine->isString(name) && engine->toString(name) == expectedName;
 }
 
-}  // namespace
+bool readCollisionGroups(js::Engine *engine, js::JSValueHandle options,
+                         const char *bodyName, uint32_t &layer,
+                         uint32_t &mask) {
+  const auto body = engine->getProperty(options, bodyName);
+  if (engine->isUndefined(body))
+    return true;
+  return engine->isObject(body) &&
+         readGroup(engine, body, "collisionLayer", layer) &&
+         readGroup(engine, body, "collisionMask", mask);
+}
 
-bool initializeNativePhysicsBindings(js::Engine* engine) {
-    if (engine == nullptr) return false;
+bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
+                      TnPhysicsBodyOptions &options) {
+  if (!engine->isObject(value))
+    return false;
+  options = {id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+             0.0f, 0.0f, 0.0f, 0.0f, 1,    0xffff, false};
+  const auto type = engine->getProperty(value, "type");
+  if (!engine->isString(type))
+    return false;
+  const std::string typeName = engine->toString(type);
+  if (typeName == "dynamic")
+    options.body_type = 0;
+  else if (typeName == "fixed")
+    options.body_type = 1;
+  else if (typeName == "kinematic")
+    options.body_type = 2;
+  else if (typeName == "character")
+    options.body_type = 3;
+  else
+    return false;
 
-    auto nativeHost = engine->getGlobalProperty("__THREENATIVE_NATIVE__");
-    if (engine->isUndefined(nativeHost)) nativeHost = engine->newObject();
-    auto physicsHost = engine->newObject();
-    engine->setProperty(physicsHost, "version", engine->newString(tn_physics_version()));
+  const auto shape = engine->getProperty(value, "shape");
+  if (!engine->isObject(shape))
+    return false;
+  const auto kind = engine->getProperty(shape, "kind");
+  if (!engine->isString(kind))
+    return false;
+  const std::string shapeName = engine->toString(kind);
+  if (shapeName == "box")
+    options.shape_type = 0;
+  else if (shapeName == "sphere")
+    options.shape_type = 1;
+  else if (shapeName == "capsule")
+    options.shape_type = 2;
+  else
+    return false;
+
+  const auto sensor = engine->getProperty(value, "sensor");
+  if (!engine->isUndefined(sensor)) {
+    if (!engine->isBoolean(sensor))
+      return false;
+    options.sensor = engine->toBoolean(sensor);
+  }
+  return readVector(engine, value, "position", options.position_x,
+                    options.position_y, options.position_z) &&
+         readQuaternion(engine, value, "rotation", options.rotation_x,
+                        options.rotation_y, options.rotation_z,
+                        options.rotation_w) &&
+         readFiniteNumber(engine, shape, "x", options.shape_x) &&
+         readOptionalFiniteNumber(engine, shape, "y", options.shape_y) &&
+         readOptionalFiniteNumber(engine, shape, "z", options.shape_z) &&
+         readOptionalFiniteNumber(engine, value, "mass", options.mass) &&
+         readGroup(engine, value, "collisionLayer", options.collision_layer) &&
+         readGroup(engine, value, "collisionMask", options.collision_mask);
+}
+
+js::JSValueHandle makeSimulationObject(
+    js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner,
+    bool allowBodies) {
+  auto simulation = engine->newObject();
+  if (allowBodies) {
     engine->setProperty(
-        physicsHost,
-        "createProofSimulation",
+        simulation, "createBody",
         engine->newFunction(
-            "createProofSimulation",
-            [engine](void*, const std::vector<js::JSValueHandle>& args) {
-                TnPhysicsProofOptions native{
-                    0.0f,
-                    -9.81f,
-                    0.0f,
-                    1,
-                    0xffff,
-                    1,
-                    0xffff,
-                };
-                if (!args.empty() && !engine->isUndefined(args[0])) {
-                    if (!engine->isObject(args[0])) {
-                        return fail(engine, "physics options must be an object");
-                    }
-                    if (!readGravity(engine, args[0], native) ||
-                        !readCollisionGroups(
-                            engine,
-                            args[0],
-                            "floor",
-                            native.floor_collision_layer,
-                            native.floor_collision_mask
-                        ) ||
-                        !readCollisionGroups(
-                            engine,
-                            args[0],
-                            "cube",
-                            native.cube_collision_layer,
-                            native.cube_collision_mask
-                        )) {
-                        return fail(engine, "physics options contain an invalid gravity or collision group");
-                    }
-                }
-
-                auto owner = std::make_shared<SimulationOwner>();
-                owner->simulation = tn_physics_proof_create(&native);
-                if (owner->simulation == nullptr) {
-                    return fail(engine, "Rapier proof simulation creation failed");
-                }
-
-                auto simulation = engine->newObject();
-                engine->setProperty(
-                    simulation,
-                    "step",
-                    engine->newFunction(
-                        "step",
-                        [engine, owner](void*, const std::vector<js::JSValueHandle>& stepArgs) {
-                            if (owner->simulation == nullptr) {
-                                return fail(engine, "physics simulation is disposed");
-                            }
-                            if (stepArgs.empty()) return fail(engine, "step requires deltaTime");
-                            const double deltaTime = engine->toNumber(stepArgs[0]);
-                            if (!std::isfinite(deltaTime) || deltaTime <= 0 ||
-                                !tn_physics_proof_step(owner->simulation, static_cast<float>(deltaTime))) {
-                                return fail(engine, "deltaTime must be a positive finite number");
-                            }
-                            return engine->newUndefined();
-                        }
-                    )
-                );
-                engine->setProperty(
-                    simulation,
-                    "readVisibleTransforms",
-                    engine->newFunction(
-                        "readVisibleTransforms",
-                        [engine, owner](void*, const std::vector<js::JSValueHandle>& readArgs) {
-                            if (owner->simulation == nullptr) {
-                                return fail(engine, "physics simulation is disposed");
-                            }
-                            if (readArgs.empty()) return fail(engine, "readVisibleTransforms requires a Float32Array");
-                            size_t bytes = 0;
-                            auto* data = static_cast<float*>(engine->getArrayBufferData(readArgs[0], &bytes));
-                            if (data == nullptr || bytes % sizeof(float) != 0 || bytes < 16 * sizeof(float)) {
-                                return fail(engine, "transform buffer must hold two 8-float records");
-                            }
-                            const int32_t count = tn_physics_proof_read_visible_transforms(
-                                owner->simulation,
-                                data,
-                                bytes / sizeof(float)
-                            );
-                            if (count < 0) return fail(engine, "native transform read failed");
-                            return engine->newNumber(count);
-                        }
-                    )
-                );
-                engine->setProperty(
-                    simulation,
-                    "drainCollisionEvents",
-                    engine->newFunction(
-                        "drainCollisionEvents",
-                        [engine, owner](void*, const std::vector<js::JSValueHandle>& eventArgs) {
-                            if (owner->simulation == nullptr) {
-                                return fail(engine, "physics simulation is disposed");
-                            }
-                            if (eventArgs.empty()) return fail(engine, "drainCollisionEvents requires a Uint32Array");
-                            size_t bytes = 0;
-                            auto* data = static_cast<uint32_t*>(engine->getArrayBufferData(eventArgs[0], &bytes));
-                            if (data == nullptr || bytes % sizeof(uint32_t) != 0) {
-                                return fail(engine, "collision event buffer must contain 4-u32 records");
-                            }
-                            const int32_t count = tn_physics_proof_drain_collision_events(
-                                owner->simulation,
-                                data,
-                                bytes / sizeof(uint32_t)
-                            );
-                            if (count < 0) return fail(engine, "collision event buffer is too small");
-                            return engine->newNumber(count);
-                        }
-                    )
-                );
-                engine->setProperty(
-                    simulation,
-                    "dispose",
-                    engine->newFunction(
-                        "dispose",
-                        [engine, owner](void*, const std::vector<js::JSValueHandle>&) {
-                            owner->dispose();
-                            return engine->newUndefined();
-                        }
-                    )
-                );
-                return simulation;
+            "createBody",
+            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+              if (owner->simulation == nullptr)
+                return fail(engine, "physics simulation is disposed");
+              if (args.empty() || owner->nextId > kMaxExactFloatId)
+                return fail(engine, "createBody requires options and an available id");
+              TnPhysicsBodyOptions options{};
+              if (!parseBodyOptions(engine, args[0], owner->nextId, options) ||
+                  !tn_physics_add_body(owner->simulation, &options)) {
+                return fail(engine, "physics body options are invalid");
+              }
+              const uint32_t id = owner->nextId++;
+              return engine->newNumber(id);
+            }));
+    engine->setProperty(
+        simulation, "removeBody",
+        engine->newFunction(
+            "removeBody",
+            [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+              if (owner->simulation == nullptr)
+                return fail(engine, "physics simulation is disposed");
+              if (args.empty() || !engine->isNumber(args[0]))
+                return fail(engine, "removeBody requires a numeric id");
+              const double id = engine->toNumber(args[0]);
+              if (!std::isfinite(id) || id < 0 || id > kMaxExactFloatId ||
+                  std::floor(id) != id ||
+                  !tn_physics_remove_body(owner->simulation,
+                                          static_cast<uint32_t>(id))) {
+                return fail(engine, "removeBody received an unknown id");
+              }
+              return engine->newUndefined();
+            }));
+  }
+  engine->setProperty(
+      simulation, "step",
+      engine->newFunction(
+          "step", [engine, owner](
+                      void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() || !engine->isNumber(args[0]))
+              return fail(engine, "step requires a numeric deltaTime");
+            const double deltaTime = engine->toNumber(args[0]);
+            const float *input = nullptr;
+            size_t count = 0;
+            if (args.size() > 1 && !engine->isUndefined(args[1])) {
+              if (!engine->isObject(args[1]))
+                return fail(engine, "physics input snapshot must be an object");
+              const auto countValue =
+                  engine->getProperty(args[1], "kinematicCount");
+              const auto transforms =
+                  engine->getProperty(args[1], "kinematicTransforms");
+              if (!engine->isNumber(countValue) ||
+                  !isTypedArray(engine, transforms, "Float32Array")) {
+                return fail(engine, "physics input snapshot is malformed");
+              }
+              const double countNumber = engine->toNumber(countValue);
+              size_t bytes = 0;
+              input = static_cast<const float *>(
+                  engine->getArrayBufferData(transforms, &bytes));
+              if (!std::isfinite(countNumber) || countNumber < 0 ||
+                  std::floor(countNumber) != countNumber ||
+                  countNumber > bytes / (8 * sizeof(float))) {
+                return fail(engine, "physics input snapshot has an invalid count");
+              }
+              count = static_cast<size_t>(countNumber);
             }
-        )
-    );
-    engine->setProperty(nativeHost, "physics", physicsHost);
-    return engine->setGlobalProperty("__THREENATIVE_NATIVE__", nativeHost);
+            if (!std::isfinite(deltaTime) || deltaTime <= 0 ||
+                !tn_physics_step(owner->simulation,
+                                 static_cast<float>(deltaTime), input, count)) {
+              return fail(engine, "physics step rejected its deltaTime or input");
+            }
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "readVisibleTransforms",
+      engine->newFunction(
+          "readVisibleTransforms",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() ||
+                !isTypedArray(engine, args[0], "Float32Array")) {
+              return fail(engine,
+                          "readVisibleTransforms requires a Float32Array");
+            }
+            size_t bytes = 0;
+            auto *data = static_cast<float *>(
+                engine->getArrayBufferData(args[0], &bytes));
+            if (bytes % sizeof(float) != 0)
+              return fail(engine, "transform buffer is malformed");
+            const int32_t count = tn_physics_read_visible_transforms(
+                owner->simulation, data, bytes / sizeof(float));
+            if (count < 0)
+              return fail(engine, "transform buffer is too small");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "drainCollisionEvents",
+      engine->newFunction(
+          "drainCollisionEvents",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() ||
+                !isTypedArray(engine, args[0], "Uint32Array")) {
+              return fail(engine,
+                          "drainCollisionEvents requires a Uint32Array");
+            }
+            size_t bytes = 0;
+            auto *data = static_cast<uint32_t *>(
+                engine->getArrayBufferData(args[0], &bytes));
+            if (bytes % sizeof(uint32_t) != 0)
+              return fail(engine, "collision event buffer is malformed");
+            const int32_t count = tn_physics_drain_collision_events(
+                owner->simulation, data, bytes / sizeof(uint32_t));
+            if (count < 0)
+              return fail(engine, "collision event buffer is too small");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "dispose",
+      engine->newFunction(
+          "dispose", [engine, owner](
+                         void *, const std::vector<js::JSValueHandle> &) {
+            owner->dispose();
+            return engine->newUndefined();
+          }));
+  return simulation;
 }
 
-}  // namespace mystral::physics
+} // namespace
+
+bool initializeNativePhysicsBindings(js::Engine *engine) {
+  if (engine == nullptr)
+    return false;
+
+  auto nativeHost = engine->getGlobalProperty("__THREENATIVE_NATIVE__");
+  if (engine->isUndefined(nativeHost))
+    nativeHost = engine->newObject();
+  auto physicsHost = engine->newObject();
+  engine->setProperty(physicsHost, "version",
+                      engine->newString(tn_physics_version()));
+  engine->setProperty(
+      physicsHost, "createSimulation",
+      engine->newFunction(
+          "createSimulation",
+          [engine](void *, const std::vector<js::JSValueHandle> &args) {
+            TnPhysicsWorldOptions options{0.0f, -9.81f, 0.0f};
+            if (!args.empty() && !engine->isUndefined(args[0])) {
+              if (!engine->isObject(args[0]) ||
+                  !readGravity(engine, args[0], options.gravity_x,
+                               options.gravity_y, options.gravity_z)) {
+                return fail(engine, "physics options contain invalid gravity");
+              }
+            }
+            auto owner = std::make_shared<SimulationOwner>();
+            owner->simulation = tn_physics_create(&options);
+            if (owner->simulation == nullptr)
+              return fail(engine, "Rapier simulation creation failed");
+            return makeSimulationObject(engine, owner, true);
+          }));
+  engine->setProperty(
+      physicsHost, "createProofSimulation",
+      engine->newFunction(
+          "createProofSimulation",
+          [engine](void *, const std::vector<js::JSValueHandle> &args) {
+            TnPhysicsProofOptions options{0.0f, -9.81f, 0.0f, 1, 0xffff,
+                                          1,    0xffff};
+            if (!args.empty() && !engine->isUndefined(args[0])) {
+              if (!engine->isObject(args[0]) ||
+                  !readGravity(engine, args[0], options.gravity_x,
+                               options.gravity_y, options.gravity_z) ||
+                  !readCollisionGroups(engine, args[0], "floor",
+                                       options.floor_collision_layer,
+                                       options.floor_collision_mask) ||
+                  !readCollisionGroups(engine, args[0], "cube",
+                                       options.cube_collision_layer,
+                                       options.cube_collision_mask)) {
+                return fail(engine, "physics proof options are invalid");
+              }
+            }
+            auto owner = std::make_shared<SimulationOwner>();
+            owner->simulation = tn_physics_proof_create(&options);
+            if (owner->simulation == nullptr)
+              return fail(engine, "Rapier proof simulation creation failed");
+            owner->nextId = 2;
+            return makeSimulationObject(engine, owner, false);
+          }));
+  engine->setProperty(nativeHost, "physics", physicsHost);
+  return engine->setGlobalProperty("__THREENATIVE_NATIVE__", nativeHost);
+}
+
+} // namespace mystral::physics

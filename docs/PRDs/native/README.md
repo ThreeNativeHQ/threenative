@@ -1,15 +1,15 @@
 # Native / mobile PRDs — the sequence
 
-**Status (2026-08-08):** PRD-047 is IN PROGRESS. Mystral supplied the answer spike 0a could
-not: upstream `three/webgpu` runs outside a browser on desktop and on the Android emulator.
+**Status (2026-08-08):** the Linux and Android-emulator lanes are implemented and proven;
+Apple/Windows execution and published prebuilt consumer distribution remain open.
 
 | Proven | Open |
 |---|---|
 | Desktop framework absorption, 300 frames + screenshot | iOS: no simulator app, launch, log or screenshot |
-| Android framework-version parity at catalog Three 0.185.1 | Native physics API/binding/device proof: not integrated |
+| Android framework-version parity at catalog Three 0.185.1 | iOS: app/verifier implemented, no Xcode/simulator execution |
 | Android device playtest with all fail-closed controls | Windows/macOS desktop lanes never run on a real runner |
-| Native physics Phase 0: version delta measured; both Android ABIs cross-compile | |
-| | Physical mobile hardware: no GPU, arm64 or frame-rate evidence |
+| Normal public native physics API: x86_64 emulator + negative controls; both ABIs compile | Published runtime assets/checksum lock and clean-machine consumer build |
+| Web CLI parity plus all 25 packed-template scenarios | Physical mobile hardware: no GPU, arm64 execution or frame-rate evidence |
 
 Evidence: `docs/verification/PRD-047.md`, `docs/verification/PRD-045.md`, and
 `docs/verification/PRD-046.md`. **Never summarize this folder as "mobile works" while the
@@ -30,11 +30,11 @@ runtime       on device     physics       distribution
 
 | # | PRD | What it buys | State |
 |---|---|---|---|
-| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **in progress** — Phases 0–3 closed; 4–5 open; 6 split out |
-| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **in progress** — Android closed; iOS + CLI target open |
-| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — Phase 0 closed; API/binding/device proof open; iOS blocked |
-| 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — Phase 0 closed; CLI/distribution Phases 1–5 open |
-| — | [PRD-044](PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | historical — do not execute |
+| 1 | [PRD-047](PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **in progress** — Phases 0–4 closed; Apple/Windows execution open; 6 split out |
+| 2 | [PRD-045](PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **in progress** — Android + CLI/docs closed; iOS simulator execution open |
+| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — web + Android closed; iOS and published consumer proof open |
+| 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
+| — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
 
 **PRD-048 is last in the diagram but not gated behind PRD-046.** It depends on PRD-047
 Phases 2 and 5, not on physics. Its Phase 0 — deleting 1,159 lines of dead Mystral demo

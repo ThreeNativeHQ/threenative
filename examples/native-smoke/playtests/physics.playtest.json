@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "native-physics-rest-collision",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 180, "label": "settled" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "movement": {
+      "entity": "cube",
+      "minDistance": 2,
+      "reachesPositionWithin": { "position": [0, 0.5, 0], "maxDistance": 0.02, "atStep": "settled" }
+    },
+    "resources": [
+      { "id": "GameState", "path": "steps", "equals": 180, "changed": true },
+      { "id": "GameState", "path": "collisions", "gte": 1, "changed": true }
+    ]
+  }
+}

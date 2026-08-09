@@ -15,10 +15,17 @@ any of it.
 ## Commands
 
 ```sh
-pnpm dev      # vite dev server
-pnpm build    # production build
-pnpm test     # build, start the dev server, and run the committed playtest
+pnpm dev                       # Vite dev server
+pnpm build                     # web build; identical to vite build
+pnpm build --target desktop    # native executable; Linux is the only verified host
+pnpm test                      # build, start the dev server, and run the committed playtest
 ```
+
+The normal `@threenative/physics` API selects native Rapier on Android; its source-workspace
+APK and emulator scenario are proven without Rapier WASM. A published scaffold still cannot
+ship Android or iOS until signed prebuilt runtime assets and their checksum manifest exist,
+so those targets fail closed for consumers. Linux desktop is source-machine evidence, not a
+clean-machine distribution proof; macOS, Windows, iOS, and physical hardware remain OPEN.
 
 ## The layout
 

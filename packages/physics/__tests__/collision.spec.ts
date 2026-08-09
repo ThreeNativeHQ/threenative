@@ -43,7 +43,7 @@ describe("CollisionShape3D.heightfield", () => {
       z: 4,
     });
 
-    expect(shape.shape).toMatchObject({
+    expect((shape.raw as RAPIER.ColliderDesc).shape).toMatchObject({
       nrows: 2,
       ncols: 3,
       scale: { x: 2, y: 3, z: 4 },
@@ -107,9 +107,9 @@ describe("collision layers", () => {
       world,
     });
 
-    expect(rigid.collider.collisionGroups()).toBe(groups);
-    expect(area.collider.collisionGroups()).toBe(groups);
-    expect(character.collider.collisionGroups()).toBe(groups);
+    expect((rigid.collider.raw as RAPIER.Collider).collisionGroups()).toBe(groups);
+    expect((area.collider.raw as RAPIER.Collider).collisionGroups()).toBe(groups);
+    expect((character.collider.raw as RAPIER.Collider).collisionGroups()).toBe(groups);
 
     character.dispose();
     area.dispose();

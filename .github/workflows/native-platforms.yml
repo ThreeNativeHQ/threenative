@@ -1,0 +1,61 @@
+name: Native platform evidence
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  desktop:
+    name: ${{ matrix.platform }} desktop core
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS
+            runner: macos-14
+          - platform: Windows
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter threenative-native-smoke build
+      - run: pnpm --filter @threenative/runtime-native native:build
+      - run: pnpm --filter @threenative/runtime-native native:verify:desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-desktop-${{ matrix.platform }}
+          path: packages/runtime-native/artifacts/
+          if-no-files-found: error
+
+  ios-simulator:
+    name: iOS simulator core and device-playtest plumbing
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
+      - run: >-
+          pnpm exec vitest run
+          packages/playtest/__tests__/ios-driver.spec.ts
+          packages/playtest/__tests__/ios-device-playtest.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-ios-simulator
+          path: packages/runtime-native/artifacts/ios/
+          if-no-files-found: error

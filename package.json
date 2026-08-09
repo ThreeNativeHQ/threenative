@@ -14,6 +14,7 @@
     "test": "pnpm run build && pnpm -r --workspace-concurrency=1 --if-present run test && vitest run",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
     "test:playtest": "pnpm --filter @threenative/playtest build && xvfb-run -a -s '-screen 0 1600x900x24' node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && xvfb-run -a -s '-screen 0 1600x900x24' node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/camera.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
+    "test:templates": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/verify-template-playtests.ts",
     "visuals": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/visual-gate.ts",
     "lint": "biome check .",
     "budgets": "tsx scripts/check-budgets.ts",

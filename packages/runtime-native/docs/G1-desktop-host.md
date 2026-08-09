@@ -34,3 +34,11 @@ SDL_VIDEODRIVER=x11 xvfb-run -a -s '-screen 0 1600x900x24' \
 - Liveness: 300 frames rendered in 8,986 ms; no WebGPU or JavaScript error was reported.
 - Screenshot: 1280×720 RGBA, visually inspected as a nonblank rotating blue cube;
   SHA-256 `d07780b0b89207ed646f25eba3b0268240b49ef9a9f5d4cb227401b72c9bfcfa`.
+
+## Remaining desktop lane wiring — 2026-08-08
+
+`.github/workflows/native-platforms.yml` now contains opt-in macOS 14 and Windows 2025
+real-runner jobs. The build and verifier select the matching host preset and retain the
+exact 300-frame/log/screenshot gate. Neither job has executed: this checkout is on Linux,
+there are no self-hosted runners, and no remote workflow was dispatched. Windows and macOS
+remain **UNEXECUTED**, not configured-pass.

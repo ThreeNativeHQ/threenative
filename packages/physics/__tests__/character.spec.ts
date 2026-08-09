@@ -285,7 +285,10 @@ describe("CharacterBody3D", () => {
     plugin.update?.(ctx, 1 / 60);
 
     expect(object.rotation.y).toBeCloseTo(Math.PI / 2, 4);
-    expect(character.body.rotation().y).toBeCloseTo(Math.sin(Math.PI / 4), 4);
+    expect((character.body.raw as RAPIER.RigidBody).rotation().y).toBeCloseTo(
+      Math.sin(Math.PI / 4),
+      4,
+    );
     character.dispose();
   });
 

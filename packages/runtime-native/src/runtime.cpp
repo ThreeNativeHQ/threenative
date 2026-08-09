@@ -15,6 +15,9 @@
 #include "mystral/audio/audio_bindings.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/async/event_loop.h"
+#if TN_ENABLE_NATIVE_PHYSICS
+#include "mystral/physics/native_bindings.h"
+#endif
 #include "storage/local_storage.h"
 
 // Ray tracing bindings (conditional)
@@ -428,6 +431,13 @@ public:
 
         // Set up localStorage/sessionStorage (file-backed persistence)
         setupStorage();
+
+#if TN_ENABLE_NATIVE_PHYSICS
+        if (!physics::initializeNativePhysicsBindings(jsEngine_.get())) {
+            std::cerr << "[Mystral] Failed to initialize native physics bindings" << std::endl;
+            return false;
+        }
+#endif
 
 #if TN_ENABLE_NATIVE_GLTF
         // Deprecated native GLTF loading API: default builds must use upstream Three.js GLTFLoader instead.

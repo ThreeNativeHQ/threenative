@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
     "three": "catalog:"
   },
   "devDependencies": {

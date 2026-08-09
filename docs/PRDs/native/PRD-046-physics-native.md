@@ -1,7 +1,9 @@
 # PRD-046 — native physics
 
-**Status: IN PROGRESS. Phase 0 complete; Phases 1–5 open. Retargeted by PRD-047 — transport
-and packaging revised, correctness gates unchanged.** Three things in the original design are now historical and are marked
+**Status: IN PROGRESS. Phases 0–2 and 5 complete; Phase 3 is implemented but blocked on
+Apple execution, and Phase 4's local artifact/install contract is complete while the real
+published clean-machine consumer proof remains open. Retargeted by PRD-047 — transport and packaging
+revised, correctness gates unchanged.** Three things in the original design are now historical and are marked
 inline where they appear: the **JSI transport**, the separate **`@threenative/physics-native`
 package**, and the **concrete-Rapier-object escape hatch**. The active design compiles Rapier
 into the absorbed `packages/runtime-native` runtime and selects a host-neutral adapter from
@@ -10,13 +12,13 @@ the existing `@threenative/physics` package by build condition. **No new workspa
 **This PRD is the executable spec for what PRD-047 §4 Phase 4 summarizes.** Where the two
 disagree, PRD-047 wins and this file is wrong — say so rather than following it.
 
-**Scaffolding exists and is locally proven but uncommitted (2026-08-08):**
+**Scaffolding is tracked and locally proven (2026-08-08):**
 `packages/runtime-native/native/physics/` (Rust `staticlib`, `rapier3d =0.30.0`),
-`packages/runtime-native/src/physics/native_bindings.cpp`, and two headers. The Rust unit
-controls pass, both Android ABIs cross-compile, and Phase 0's measured evidence is in
-`docs/verification/PRD-046.md`. Nothing is tracked by git yet, the C++ binding is not wired
-into the runtime, and `packages/physics` has no backend selection. Treat the binding as a
-spike, not as Phase 2 progress.
+`packages/runtime-native/src/physics/native_bindings.cpp`, and two headers are tracked. The
+Rust unit controls pass, both Android ABIs cross-compile, the C++ binding is runtime-wired,
+and the normal `@threenative/physics` export selects the native adapter through the
+`threenative-native` condition. Android emulator evidence and Phase 0 measurements
+are in `docs/verification/PRD-046.md`.
 
 **Execution gate is now open on the Android side.** PRD-045's negative controls passed on
 `emulator-5554` (`docs/verification/PRD-045.md`), which was the hard prerequisite in §0.
@@ -185,24 +187,30 @@ byte comparison — and compare against the web `0.19.3` result already on recor
 is to *measure and document* the divergence so §1.1's claim is quantified rather than
 asserted. **A phase that cannot state the delta in bytes and in final positions has failed.**
 
-### Phase 1 — the bulk API, on web, backed by WASM
+### Phase 1 — the bulk API, on web, backed by WASM — **COMPLETE 2026-08-08**
 
 `step(dt, input)` / `readVisibleTransforms(buffer)` land in `@threenative/physics`, served
-by the existing WASM build, with the existing browser playtests proving them.
+by the existing WASM build, with the existing browser playtests proving them. The web
+adapter and plugin path now exist: kinematic input is eight-float bulk records, visible
+transforms are read into a reusable buffer using logical body IDs, and the public context
+exposes `simulation`; backend-specific Rapier handles stay behind the web adapter.
+The four-test browser suite, including the 30-second direct replay lane, is green; all three
+packed templates also pass their 25 committed scenarios through the current package builds.
 **Gate:** the four sealed genre proofs and the platformer physics consumer scenario pass
 through the new API path. Zero web regression.
 
-### Phase 2 — Android native binding
+### Phase 2 — Android native binding — **COMPLETE 2026-08-08 (x86_64 emulator)**
 
-The Rust static library, the C ABI, the `globalThis.__THREENATIVE_NATIVE__.physics` surface,
-and the backend selection in `@threenative/physics`. The uncommitted scaffolding named in the
-header is the starting point, not credit against this phase — **it lands under a gate or it
-is deleted**, and its `third_party` invariant and `nativeRuntimeLoc` cost are checked by
-`pnpm budgets` on the first tracked commit.
+The Rust static library, the general body/shape C ABI, the
+`globalThis.__THREENATIVE_NATIVE__.physics` surface, and normal-entry backend selection in
+`@threenative/physics`. `RigidBody3D`, `Area3D`, `CharacterBody3D`, collision shapes,
+bulk kinematic input, visible transforms, events, groups and masks use the native host; the
+Android bundle contains neither Rapier WASM nor a `WebAssembly` marker.
 
-PRD-047 §4 Phase 4 fixes the first proof and it is deliberately narrow: fixed floor at
-`y=-0.5`, dynamic unit cube at `y=3`, 180 steps at `1/60`, one preallocated transform buffer,
-`abs(cubeY - 0.5) <= 0.02`.
+The device acceptance subject remains deliberately narrow: fixed floor at `y=-0.5`, dynamic
+unit cube at `y=3`, 180 steps at `1/60`, one preallocated transform buffer,
+`abs(cubeY - 0.5) <= 0.02`. It is created through the normal public API, not a proof-only
+package subpath.
 
 **Gate:** that cube drops onto that plane on the Android emulator and the resulting resting
 position is asserted by a PRD-045 device scenario — not by a screenshot. Wrong gravity and a
@@ -217,19 +225,20 @@ hardware exists, and the docs must not claim otherwise.
 scaffolding pins `rapier3d =0.30.0`. That delta is §1.1's whole subject and Phase 0 has to
 quantify it before this phase can interpret its own numbers.
 
-### Phase 3 — iOS native binding — blocked beyond this PRD
+### Phase 3 — iOS native binding — **IMPLEMENTED; EXECUTION BLOCKED**
 
-Same, via `xcrun simctl`. Same caveat, same honesty. **This phase is blocked on iOS evidence
-that neither PRD-047 nor PRD-045 has produced** — no simulator app, no launch, no device
-transport. It does not start on the strength of the Android result.
+Same, via `xcrun simctl`. The root-linked app, simulator verifier and device transport now
+exist and pass static/contract checks. **Execution remains blocked** because this Linux host
+has no Xcode, `xcrun`, Apple runner or simulator result. It does not close on the strength of
+the Android result.
 
-### Phase 4 — binary distribution
+### Phase 4 — binary distribution — **ARTIFACT CONTRACT COMPLETE; CONSUMER PROOF OPEN**
 
 Prebuilt static-library artifacts for each target ABI, carried by the runtime's own release
 lane (PRD-047 Phase 6), not by a separate package. **Gate:** a scaffolded project on a clean
 machine with no Rust toolchain installs and runs.
 
-### Phase 5 — template, charter, gates
+### Phase 5 — template, charter, gates — **COMPLETE 2026-08-08**
 
 Starter wiring, `ROADMAP.md` Phase 3 result, and the §1.1 portability caveat written into the
 published docs. **`CHARTER.md` §9a needs no package-table edit** — PRD-047 Phase 0 already

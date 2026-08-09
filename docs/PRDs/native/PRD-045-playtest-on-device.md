@@ -1,6 +1,7 @@
 # PRD-045 — Playtest on device
 
-**Status: IN PROGRESS — Phases 0–3 closed on Android; Phases 4 (iOS) and 5 (CLI/docs) open.**
+**Status: IN PROGRESS — Phases 0–3 closed on Android and Phase 5 closed; Phase 4 (executed
+iOS simulator evidence) remains open.**
 The transport targets the absorbed `packages/runtime-native` runtime rather than React Native;
 its fail-closed scenario semantics and negative controls are unchanged.
 
@@ -8,7 +9,8 @@ its fail-closed scenario semantics and negative controls are unchanged.
 unchanged in Chromium and on `emulator-5554` over the adb mailbox transport, and all three
 Phase 3 negative controls plus the unsupported-network control produce their required non-zero
 exits. The wrong-value control found a real `present`/`minProjectedPixels` evaluator bug before
-it passed, which is the control doing its job. **iOS transport has no evidence of any kind.**
+it passed, which is the control doing its job. The iOS driver and fail-closed contract tests
+exist, but **no simulator execution evidence exists on this Linux host.**
 
 **The emulator is fully sufficient for this PRD, unlike PRD-044.** Everything here is a
 JS-environment and host-tooling question: can the runner reach the bridge, does an
@@ -165,17 +167,21 @@ A device harness that cannot fail is worse than no device harness. All three pro
 required exits on `emulator-5554`, alongside `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` for the
 network assertion. Scenario files: `examples/native-smoke/playtests/device-smoke*.json`.
 
-### Phase 4 — iOS — **OPEN, no evidence**
+### Phase 4 — iOS — **IMPLEMENTED; EXECUTION OPEN**
 
 `xcrun simctl` for the simulator, physical device via `devicectl`. Simulator is acceptable
 evidence here because the question is JS-environment behaviour, not GPU driver behaviour —
 **state that distinction explicitly in the result, since it is the opposite of the rule
 0a applies to rendering.**
 
-### Phase 5 — docs and CLI surface — **OPEN**
+### Phase 5 — docs and CLI surface — **CLOSED**
 
 `--target android|ios|browser` on the CLI. Document plainly that network assertions are
 unsupported on device targets and that CI does not run device lanes.
+
+The CLI routes all three targets, the public playtest documentation names the unsupported
+device assertions, and default CI excludes device execution. Focused driver/CLI tests are
+recorded in `docs/verification/PRD-045.md`.
 
 ---
 
@@ -208,11 +214,11 @@ State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
 | 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
 | 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
 | 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **OPEN** — Phase 4 |
-| 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **OPEN** — Phase 5 |
+| 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **MET** — Phase 5 |
 
-Criteria 7 and 8 are the whole remaining scope. **This PRD does not move to `done/` until
-they are met or explicitly withdrawn**; PRD-046's gate reads criteria 1–4, which are met, so
-native physics is not blocked on iOS.
+Criterion 7 is the whole remaining scope. **This PRD does not move to `done/` until it is met
+or explicitly withdrawn**; PRD-046's Android gate reads criteria 1–4, which are met, so its
+Android physics work is not blocked on iOS.
 
 ---
 
