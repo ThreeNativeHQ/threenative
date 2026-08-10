@@ -62,6 +62,7 @@ change does not land.
 | Animation state machine | [done/PRD-039](../PRDs/done/PRD-039-animation-state-machine.md) | ✅ closed WONTBUILD — reopen only on the recorded rigged-asset triggers |
 | Sculpt-from-reference MCP | [done/PRD-049](../PRDs/done/PRD-049-sculpt-from-reference-mcp.md) | ✅ shipped — no human preference or token telemetry supplied; recorded unavailable, not a win |
 | Native: runtime absorption, build parity, HUD decision, mobile pathfinding, physics parity | [native/done](../PRDs/native/) PRD-047, 050, 051, 052, 049 | ✅ done — see the Phase 3 table for what that does *not* cover |
+| Native physics closure · distribution | [native/done/PRD-046](../PRDs/native/done/PRD-046-physics-native.md), [PRD-048](../PRDs/native/done/PRD-048-native-distribution.md) | ✅ closed 2026-08-09 — **arm64 hardware, iOS, clean-machine and registry criteria waived by the owner, not met** |
 | DRY the sweep corpus | [done/PRD-041](../PRDs/done/PRD-041-sweep-corpus-dry.md) | ⚠️ n≥10 adoption rerun and browser proof still missing |
 | Navigation and pathfinding | [done/PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | ⚠️ browser-only by decision; the platformer uses template-local steering |
 
@@ -73,7 +74,6 @@ change does not land.
 | Multi-touch input | [PRD-053](../PRDs/PRD-053-core-input-multitouch.md) | ⚠️ blocked at Android device proof |
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; aggregate parity fails on PRD-053 |
 | The HUD hole on native | [PRD-055](../PRDs/PRD-055-native-hud-reopened.md) | ⚠️ blocked at touch playability and row 25 |
-| Native physics closure · distribution | [native/PRD-046](../PRDs/native/PRD-046-physics-native.md), [PRD-048](../PRDs/native/PRD-048-native-distribution.md) | ⚠️ in progress — published clean-machine consumer proof open |
 | Playtest on physical device | [native/blocked/PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) | ❌ no hardware on this machine |
 | Build-time asset pipeline | none | ❌ deferred behind two measured triggers (`docs/product/ASSET-PIPELINE.md`) |
 | Device spikes 0a / 0b | none — forbidden | ❌ never a PRD (`CHARTER.md:364`); both were answered by the native lane instead |

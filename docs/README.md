@@ -72,7 +72,7 @@ backend swaps on the export condition. Write-once/run-anywhere is now owned as a
 ## Spikes
 
 - [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — **CLOSED 2026-08-09.** Its own run never observed a device render; the question was answered *yes* by PRD-047's owned runtime (300 desktop frames + Android emulator, [verification/PRD-047.md](verification/PRD-047.md)). Retained only because superseded PRD-044 and [strategy/NATIVE-LEVELS-2026-08-08.md](strategy/NATIVE-LEVELS-2026-08-08.md) cite it; the React Native route it prescribes is deleted
-- 0b — physics on device: never written as a spike. It became [PRDs/native/PRD-046-physics-native.md](PRDs/native/PRD-046-physics-native.md)
+- 0b — physics on device: never written as a spike. It became [PRDs/native/PRD-046-physics-native.md](PRDs/native/done/PRD-046-physics-native.md)
 
 A spike is not a PRD. It buys an answer, ships nothing, and is deleted once its answer is
 recorded here and nothing else cites it.
