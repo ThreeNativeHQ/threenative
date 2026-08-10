@@ -1,3 +1,5 @@
+export const version = "0.1.0";
+
 export { AudioBus } from "./audio.js";
 export { defineGame } from "./game.js";
 export type {

@@ -38,12 +38,13 @@ is a candidate generator; the table below records the required caller dispositio
 
 ## Phase 1 — dispositions
 
-Counts: 48 reached externally, 114 internal only, 0 public by contract, 5 dead; total 167.
+Counts: 48 reached externally, 113 internal only, 1 public by contract, 5 dead; total 167.
 
 A `reached externally` row has a caller outside its declaring package, including the playtest
 CLI's runner subpath; an `internal only` row has callers only in that package's `src` or
-`__tests__`. No export was retained solely because it appears in an export map, so the
-public-by-contract count is zero. Dead exports are deleted in this commit.
+`__tests__`. The `version` row is public by contract because
+`packages/core/__tests__/build.spec.ts:14` asserts the built core package exports
+`module.version === "0.1.0"`. Dead exports are deleted in this commit.
 
 | Export | Disposition | Evidence |
 | --- | --- | --- |
@@ -213,11 +214,11 @@ public-by-contract count is zero. Dead exports are deleted in this commit.
 | `runStandalonePlaytest` | **reached externally** | packages/playtest/src/runner/cli.ts:18: import { runStandalonePlaytest } from "./runner.js"; |
 | `sampleThreeObservations` | **internal only** | packages/playtest/src/three/bridge.ts:15: import { sampleThreeObservations, type ThreePlaytestRenderer } from "./observations.js"; |
 | `unknownPlaytestCapabilities` | **reached externally** | packages/playtest/src/runner/bridgeClient.ts:111: const unknown = unknownPlaytestCapabilities(description.capabilities); |
-| `version` | **internal only** | packages/physics/__tests__/native-contract.spec.ts:101: version: RAPIER.version(), |
+| `version` | **public by contract** | packages/core/__tests__/build.spec.ts:14: expect(module.version).toBe("0.1.0"); |
 
 ## Phase 2 — deletion result
 
-The package entrypoints now un-export all 114 `internal only` candidates while keeping their
+The package entrypoints now un-export all 113 `internal only` candidates while keeping their
 declarations module-local. Internal tests that still exercise those symbols import the declaring
 module directly; a test-only caller does not restore a package export.
 
@@ -229,9 +230,9 @@ The five `dead` candidates were deleted with their private-only implementations:
 - `parsePlaytestTarget`
 - `parseViewport`
 
-No candidate was `public by contract`. The 48 `reached externally` rows retain public exports
-and record the external package, template, example, or playtest CLI caller in the evidence
-column.
+The `version` export is the one `public by contract` candidate, retained for the built-package
+contract recorded above. The 48 `reached externally` rows retain public exports and record the
+external package, template, example, or playtest CLI caller in the evidence column.
 
 ## Verification commands
 
