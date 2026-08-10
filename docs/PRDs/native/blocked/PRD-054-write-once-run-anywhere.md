@@ -281,7 +281,7 @@ the very divergence this PRD exists to expose. The trigger is accepted and not r
 ## Criterion 1 aggregate rerun — 2026-08-10
 
 The unsandboxed batch rerun is recorded in
-[`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../verification/prd-054-aggregate-rerun-2026-08-10.md).
+[`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../../../verification/prd-054-aggregate-rerun-2026-08-10.md).
 `pnpm parity` exited `1` after writing all three reports. Browser recorded 66 passes and observed
 `90-multitouch-input` as red/failing; this evidence does not establish its root cause, so the row
 remains open/non-green. Linux desktop recorded 65 passes, a red `25-camera-parented-overlay` row,

@@ -167,7 +167,7 @@ unchanged.
 ## Criterion 2 rerun — 2026-08-10
 
 The lane result is recorded in
-[`docs/verification/prd-055-touch-criterion-2-2026-08-10.md`](../verification/prd-055-touch-criterion-2-2026-08-10.md).
+[`docs/verification/prd-055-touch-criterion-2-2026-08-10.md`](../../../verification/prd-055-touch-criterion-2-2026-08-10.md).
 The actual template contains a 181-line touch-controls implementation wired through
 `Level.ts`, so Path 1's source contract is satisfied. Android execution remains blocked
 before touch assertions by the recorded ADB result:
