@@ -2,6 +2,7 @@ packages: ['packages/*', 'examples/*']
 
 catalog:
   three: 0.185.1
+  three-mesh-bvh: 0.9.14
   '@dimforge/rapier3d-compat': 0.19.3
   recast-navigation: 0.43.1
   react: 19.2.0

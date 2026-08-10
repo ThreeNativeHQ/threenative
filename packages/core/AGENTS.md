@@ -6,10 +6,16 @@ Read `/AGENTS.md` first. This file covers only what is different here.
 
 The wiring every game repeats and no game should write: renderer bootstrap and WebGPU
 fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, asset loading,
-animation playback, hot-reload state preservation, the throttled state store, and the entity
-registry that makes a running game inspectable.
+animation playback, hot-reload state preservation, the throttled state store, accelerated
+scene ray queries, and the entity registry that makes a running game inspectable.
 
 That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`.
+
+`picking.ts` is the one place a third-party dependency other than `three` and `zustand`
+reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,
+patches no `three` prototype, and a game that never calls `ctx.raycast` never builds one.
+Changing that containment is a `CHARTER.md` question, not an implementation detail. See
+`docs/PRDs/done/PRD-056-scene-picking-abstraction.md`.
 
 ## What must never enter this package
 

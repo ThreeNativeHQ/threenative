@@ -24,6 +24,8 @@ export { FixedStepLoop } from "./loop.js";
 export type { FixedStepLoopOptions } from "./loop.js";
 export { GPUParticles3D } from "./particles.js";
 export type { GPUParticles3DBuffers, GPUParticles3DOptions } from "./particles.js";
+export { ScenePicker } from "./picking.js";
+export type { RaycastOptions, ScenePickerOptions } from "./picking.js";
 export { createRandom } from "./random.js";
 export type { Random } from "./random.js";
 export { createReplayDriver, replay } from "./replay.js";

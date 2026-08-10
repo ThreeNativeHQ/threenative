@@ -1,7 +1,8 @@
-import type { Camera, Object3D, Scene as ThreeScene } from "three";
+import type { Camera, Intersection, Object3D, Scene as ThreeScene } from "three";
 import type { AssetLoader } from "./assets.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
+import type { RaycastOptions } from "./picking.js";
 import type { Random } from "./random.js";
 import type { RendererLike } from "./renderer.js";
 import type { ScheduleHandle } from "./schedule.js";
@@ -65,6 +66,7 @@ export interface Ctx<
     duration: number,
   ) => Promise<void>;
   readonly random: Random;
+  readonly raycast: (options?: RaycastOptions) => Intersection | undefined;
   readonly goto: (name: string) => Promise<void>;
   physics: TPhysics;
 }

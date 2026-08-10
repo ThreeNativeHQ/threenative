@@ -23,8 +23,7 @@
     "@threenative/ui": "0.1.12",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "three": "0.185.1",
-    "three-mesh-bvh": "0.9.14"
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",

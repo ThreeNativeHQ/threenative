@@ -28,6 +28,7 @@
   "sideEffects": false,
   "dependencies": {
     "three": "catalog:",
+    "three-mesh-bvh": "catalog:",
     "zustand": "catalog:"
   },
   "scripts": {

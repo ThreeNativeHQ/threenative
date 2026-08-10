@@ -4,6 +4,7 @@ import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
 import { FixedStepLoop } from "./loop.js";
 import { GPUParticles3D } from "./particles.js";
+import { ScenePicker } from "./picking.js";
 import { type Random, createRandom } from "./random.js";
 import { type RendererLike, type RendererOptions, createRenderer } from "./renderer.js";
 import type { Ctx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
@@ -189,6 +190,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #particles = new Set<GPUParticles3D>();
   #entities: Registry | undefined;
   #random: Random | undefined;
+  #picker: ScenePicker | undefined;
   #scheduler: Scheduler | undefined;
   #activePlugins: Array<GamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<GamePluginHooks<TState, TPhysics>>();
@@ -329,6 +331,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
     const scheduler = new Scheduler();
+    const input = this.#input;
+    const picker = new ScenePicker({
+      camera,
+      pointer: () => input.raw.pointer.position,
+      scene: threeScene,
+      viewport,
+    });
+    this.#picker = picker;
     const loopState: { current?: FixedStepLoop } = {};
     const ctx: Ctx<TState, TPhysics> = {
       add: (object) => {
@@ -354,6 +364,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       input: this.#input,
       physics: undefined as TPhysics,
       random,
+      raycast: (options) => picker.raycast(options),
       renderer: this.#renderer,
       viewport,
       scene: threeScene,
@@ -488,6 +499,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#ctx = undefined;
     this.#loop = undefined;
     this.#random = undefined;
+    this.#picker?.dispose();
+    this.#picker = undefined;
     this.#scheduler = undefined;
     this.#disposedPlugins.clear();
     this.#paused = false;
