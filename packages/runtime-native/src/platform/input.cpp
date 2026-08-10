@@ -7,6 +7,9 @@
 #include "mystral/platform/input.h"
 #include "mystral/platform/window.h"
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#endif
 #include <algorithm>
 #include <iostream>
 #include <unordered_map>
@@ -56,6 +59,14 @@ struct TouchKeyHash {
 static std::unordered_map<TouchKey, int, TouchKeyHash> g_touchPointers;
 static std::vector<int> g_touchOrder;
 static int g_nextTouchPointerId = 2;
+#if defined(__ANDROID__)
+// SDL can replace the Android window with a portrait-sized drawable after the runtime has
+// created its landscape presentation surface. Keep the drawable size captured at callback setup
+// and refresh it on resize so normalized finger coordinates continue to map to the canvas that
+// WebGPU presents.
+static int g_presentedTouchWidth = 0;
+static int g_presentedTouchHeight = 0;
+#endif
 
 /**
  * SDL key to DOM "key" property
@@ -292,6 +303,16 @@ void setMouseCallback(MouseCallback callback) {
 
 void setPointerCallback(PointerCallback callback) {
     g_pointerCallback = callback;
+#if defined(__ANDROID__)
+    int width = 0;
+    int height = 0;
+    SDL_Window* window = getSDLWindow();
+    if (window != nullptr) SDL_GetWindowSizeInPixels(window, &width, &height);
+    if (width > 0 && height > 0) {
+        g_presentedTouchWidth = width;
+        g_presentedTouchHeight = height;
+    }
+#endif
 }
 
 void setWheelCallback(WheelCallback callback) {
@@ -472,7 +493,33 @@ void processTouchEvent(const SDL_TouchFingerEvent& event) {
 
     int width = 0;
     int height = 0;
+#if defined(__ANDROID__)
+    // Android can keep SDL's logical window and current drawable in portrait while the
+    // landscape-locked surface presented to WebGPU is landscape. Prefer the drawable captured
+    // when the callback was installed, before Android replaces it during the orientation change.
+    width = g_presentedTouchWidth;
+    height = g_presentedTouchHeight;
+    if (width <= 0 || height <= 0) {
+        SDL_Window* window = getSDLWindow();
+        if (window != nullptr) {
+            void* nativeWindow = SDL_GetPointerProperty(
+                SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+            if (nativeWindow != nullptr) {
+                auto* surface = static_cast<ANativeWindow*>(nativeWindow);
+                width = ANativeWindow_getWidth(surface);
+                height = ANativeWindow_getHeight(surface);
+            }
+            if (width <= 0 || height <= 0) {
+                SDL_GetWindowSizeInPixels(window, &width, &height);
+            }
+        }
+        if (width <= 0 || height <= 0) {
+            getWindowSize(&width, &height);
+        }
+    }
+#else
     getWindowSize(&width, &height);
+#endif
 
     PointerEventData data{};
     if (event.type == SDL_EVENT_FINGER_DOWN) data.type = "pointerdown";
@@ -615,6 +662,21 @@ void processGamepadDisconnected(SDL_JoystickID id) {
  * Process resize event
  */
 void processResize(int width, int height) {
+#if defined(__ANDROID__)
+    // Android may report a logical portrait resize after the landscape presented surface was
+    // captured. Refresh same-orientation dimensions before the optional JavaScript resize
+    // callback so touch mapping stays current even when no resize listener is installed.
+    if (width > 0 && height > 0) {
+        const bool hasPresentedDimensions =
+            g_presentedTouchWidth > 0 && g_presentedTouchHeight > 0;
+        const bool presentedIsLandscape = g_presentedTouchWidth > g_presentedTouchHeight;
+        const bool resizeIsLandscape = width > height;
+        if (!hasPresentedDimensions || presentedIsLandscape == resizeIsLandscape) {
+            g_presentedTouchWidth = width;
+            g_presentedTouchHeight = height;
+        }
+    }
+#endif
     if (!g_resizeCallback) return;
 
     ResizeEventData data;

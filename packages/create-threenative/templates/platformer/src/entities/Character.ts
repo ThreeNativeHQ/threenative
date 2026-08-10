@@ -3,6 +3,7 @@ import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threena
 import { Group, Vector3 } from "three";
 import { ONE_WAY_LAYER } from "../level/Platform.js";
 import { animateCharacter, createCharacterRig } from "../render/rig.js";
+import type { TouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 type GameCtx = Ctx<GameState, PhysicsContext>;
 export const PLAYER_LAYER = 1;
@@ -72,21 +73,27 @@ export class Character {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(ctx: GameCtx, dt: number, touch?: TouchInput): void {
     this.#time += dt;
     this.#dashTimer = Math.max(0, this.#dashTimer - dt);
     this.#dashCooldown = Math.max(0, this.#dashCooldown - dt);
     this.#coyote = Math.max(0, this.#coyote - dt);
     this.#buffered = Math.max(0, this.#buffered - dt);
     const move = ctx.input.vector("move");
+    if (touch !== undefined) move.add(touch.move).clampLength(0, 1);
     const wants = new Vector3(move.x, 0, -move.y);
     if (wants.lengthSq() > 1) wants.normalize();
     if (this.body.grounded) {
       this.#coyote = PLATFORMER_FEEL.coyoteTime;
       this.#airJumpUsed = false;
     }
-    if (ctx.input.justPressed("jump")) this.#buffered = PLATFORMER_FEEL.jumpBuffer;
-    if (ctx.input.justPressed("dash") && this.#dashCooldown <= 0 && this.#dashTimer <= 0)
+    if (ctx.input.justPressed("jump") || touch?.jumpPressed === true)
+      this.#buffered = PLATFORMER_FEEL.jumpBuffer;
+    if (
+      (ctx.input.justPressed("dash") || touch?.dashPressed === true) &&
+      this.#dashCooldown <= 0 &&
+      this.#dashTimer <= 0
+    )
       this.#startDash(wants);
 
     if (this.#dashTimer > 0) this.#driveDash();

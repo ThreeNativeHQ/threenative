@@ -123,7 +123,7 @@ close the released-consumer or physical-device rows.
 This closes the PRD-047 Phase 3 Android emulator row. It does not prove physical-device
 transport or any physics behavior.
 
-## Android multi-touch proof — blocked, 2026-08-09
+## Android multi-touch proof — historical failed attempt, superseded 2026-08-09
 
 `native:verify:android:multitouch --device emulator-5556` passed the existing 300-frame,
 clean-log, screenshot, bundle-hash and process-liveness first proof, then failed closed on
@@ -138,6 +138,26 @@ three bounded attempts, the doubtful assumption is display-0 InputReader routing
 emulator console's virtio touchscreen. PRD-053 therefore remains blocked and Android
 multi-touch is not claimed. Full commands and hashes are in
 `docs/verification/prd-053-multitouch-2026-08-09.md`.
+
+## Android multi-touch proof — PASS, 2026-08-10
+
+Command:
+
+```sh
+THREENATIVE_JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
+PATH=/home/joao/Android/Sdk/platform-tools:$PATH \
+pnpm --filter @threenative/runtime-native native:verify:android:multitouch \
+  --device emulator-5554
+```
+
+The exact command exited `0` after building the APK. The first proof reached 300 frames with
+clean logs, captured a nonblank `1080x2400` screenshot, and kept the process alive. The
+positive protocol-B scenario recorded `maxPointers=2`, `movedWithTwoPointers=true`,
+`leftGroundWithTwoPointers=true`, `airborne=true`, and `currentPointers=0`. The one-pointer
+negative control reached its assertions and failed with the expected exit-code-1 semantics;
+positive and negative liveness both passed. The report is
+`artifacts/android/multitouch/report.json`; screenshot SHA-256 is
+`188bc163e12ef039448572dc66dd2d84d6fe040ab719d2fc96e2ad9a4d7d628e`.
 
 ## Open rows
 

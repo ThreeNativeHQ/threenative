@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Vector3 } from "three";
+import { PerspectiveCamera, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
+import {
+  TouchControls,
+  touchControlPoint,
+} from "../templates/platformer/src/render/touch-controls.js";
 
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
@@ -99,5 +103,88 @@ describe("platformer checkpoints", () => {
     expect(chaser).toContain("steeringFinished");
     expect(chaser).toContain("routeComplete");
     expect(level).toContain('ctx.entities.add("chaser", chaser)');
+  });
+
+  it("should ship touch controls as user-owned render source", async () => {
+    const controls = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/render/touch-controls.ts"),
+      "utf8",
+    );
+    const character = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/entities/Character.ts"),
+      "utf8",
+    );
+    const level = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+      "utf8",
+    );
+
+    expect(controls).toContain("ReadonlyMap<number, TouchPointer>");
+    expect(controls).toContain("TouchControls");
+    expect(level).toContain('ctx.entities.add("touch-controls"');
+    expect(level).toContain("frameCtx.input.raw.pointers");
+    expect(character).toContain("TouchInput");
+    expect(character).toContain("touch?.jumpPressed === true");
+    expect(character).toContain("touch?.dashPressed === true");
+  });
+
+  it("keeps portrait movement and dash pointers in separate hit regions", () => {
+    for (const size of [
+      { aspect: 390 / 844, height: 844, width: 390 },
+      { aspect: 320 / 568, height: 568, width: 320 },
+    ]) {
+      const controls = new TouchControls(new PerspectiveCamera(54, size.aspect));
+      const movementCenter = touchControlPoint(size, "move");
+      const dashCenter = touchControlPoint(size, "dash");
+      const movementPosition = movementCenter.clone().add(new Vector2(20, 0));
+
+      const movement = controls.update(new Map([[1, { id: 1, position: movementPosition }]]), size);
+      expect(movement.dashPressed).toBe(false);
+      expect(movement.move.length()).toBeGreaterThan(0);
+
+      controls.update(new Map(), size);
+      const dash = controls.update(new Map([[2, { id: 2, position: dashCenter }]]), size);
+      expect(dash.dashPressed).toBe(true);
+      expect(dash.move.toArray()).toEqual([0, 0]);
+
+      if (size.width === 320) {
+        const outsideDash = new Vector2(dashCenter.x - 65, dashCenter.y);
+        const insideDash = new Vector2(dashCenter.x - 63, dashCenter.y);
+
+        controls.update(new Map(), size);
+        const movementAtBoundary = controls.update(
+          new Map([[3, { id: 3, position: outsideDash }]]),
+          size,
+        );
+        expect(movementAtBoundary.dashPressed).toBe(false);
+        expect(movementAtBoundary.move.length()).toBeGreaterThan(0);
+
+        controls.update(new Map(), size);
+        const dashAtBoundary = controls.update(
+          new Map([[4, { id: 4, position: insideDash }]]),
+          size,
+        );
+        expect(dashAtBoundary.dashPressed).toBe(true);
+        expect(dashAtBoundary.move.toArray()).toEqual([0, 0]);
+      }
+      controls.dispose();
+    }
+  });
+
+  it("keeps simultaneous movement and jump pointers active", () => {
+    const controls = new TouchControls(new PerspectiveCamera(54, 2400 / 1080));
+    const pointers = new Map([
+      [7, { buttons: 1, id: 7, position: new Vector2(180, 972) }],
+      [3, { buttons: 1, id: 3, position: new Vector2(2300, 980) }],
+    ]);
+    const size = { aspect: 2400 / 1080, height: 1080, width: 2400 };
+
+    const first = controls.update(pointers, size);
+    const second = controls.update(pointers, size);
+
+    expect(first.move.x).toBe(1);
+    expect(first.jumpPressed).toBe(true);
+    expect(second.jumpPressed).toBe(false);
+    controls.dispose();
   });
 });

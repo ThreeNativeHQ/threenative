@@ -15,6 +15,7 @@ import { setupLighting } from "../render/lighting.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 export type GameCtx = Ctx<GameState, PhysicsContext>;
 const SPAWN = new Vector3(0, 0.75, 0);
@@ -41,6 +42,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     setupCamera(camera);
     ctx.add(camera);
     const hud = ctx.entities.add("hud", createHud(camera, "HEARTS", "COINS"));
+    const touchControls = ctx.entities.add("touch-controls", new TouchControls(camera));
     ctx.viewport.resize();
     createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
     createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
@@ -129,7 +131,11 @@ export class Level extends Scene<GameState, PhysicsContext> {
     let elapsed = 0;
     return (frameCtx, dt) => {
       elapsed += dt;
-      character.update(frameCtx, dt);
+      character.update(
+        frameCtx,
+        dt,
+        touchControls.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+      );
       chaser.update(dt);
       avoidanceChaser.update(dt);
       for (const entry of patrols) entry.value.update(dt);

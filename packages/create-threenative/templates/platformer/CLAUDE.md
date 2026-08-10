@@ -44,9 +44,9 @@ Godot-named nodes keeps that correct without thinking about it.
 
 `src/render/hud.ts` is generated user-owned source, not a framework widget. It renders hearts,
 coins and a clock as instanced planes without `CanvasTexture`, so it follows the portable game
-onto desktop and Android. The React HUD and menu remain web conveniences. Touch controls are
-not generated yet; add the small pointer-action mapping after the core multitouch surface from
-PRD-053 lands.
+onto desktop and Android. The React HUD and menu remain web conveniences. `src/render/touch-controls.ts`
+draws the thumbstick, jump and dash surfaces and maps `ctx.input.raw.pointers` in the scene, so
+the platformer remains playable without a keyboard on a touch target.
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
 `.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct

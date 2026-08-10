@@ -29,6 +29,92 @@ test('SDL finger events deliver stable DOM touch pointers in pixel coordinates',
   assert.match(input, /data\.type = "pointercancel"/);
 });
 
+test('Android touch coordinates use the presented surface orientation with fallbacks', () => {
+  const input = read('src/platform/input.cpp');
+
+  assert.match(
+    input,
+    /#include <android\/native_window\.h>/u,
+  );
+  assert.match(input, /SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER/u);
+  assert.match(input, /ANativeWindow_getWidth\(surface\)/u);
+  assert.match(input, /ANativeWindow_getHeight\(surface\)/u);
+  assert.match(
+    input,
+    /void setPointerCallback\(PointerCallback callback\)[\s\S]*?SDL_GetWindowSizeInPixels\(window, &width, &height\)[\s\S]*?g_presentedTouchWidth = width/u,
+    'the presented drawable must be captured before Android replaces the SDL window orientation',
+  );
+  assert.match(
+    input,
+    /width = g_presentedTouchWidth;[\s\S]*?height = g_presentedTouchHeight;/u,
+    'touches must prefer the captured presented drawable dimensions',
+  );
+  assert.match(
+    input,
+    /ANativeWindow_getHeight\(surface\)[\s\S]*?SDL_GetWindowSizeInPixels\(window, &width, &height\)/u,
+    'an unavailable Android surface must fall back to SDL drawable pixels',
+  );
+  assert.match(
+    input,
+    /SDL_GetWindowSizeInPixels\(window, &width, &height\)[\s\S]*?getWindowSize\(&width, &height\)/u,
+    'invalid drawable dimensions must retain the existing logical-size fallback',
+  );
+  assert.match(input, /data\.clientX = event\.x \* width/u);
+  assert.match(input, /data\.clientY = event\.y \* height/u);
+});
+
+test('Android touch mapping refreshes after callback registration and resize', () => {
+  const input = read('src/platform/input.cpp');
+  const callbackBlock = input.match(
+    /void setPointerCallback\(PointerCallback callback\) \{[\s\S]*?\n\}\n\nvoid setWheelCallback/u,
+  )?.[0];
+  const resizeBlock = input.match(
+    /void processResize\(int width, int height\) \{[\s\S]*?\n\}\n\n\/\*\*\n \* Get gamepad state/u,
+  )?.[0];
+
+  assert.ok(callbackBlock, 'pointer callback registration must capture the initial dimensions');
+  assert.match(callbackBlock, /g_presentedTouchWidth = width;/u);
+  assert.match(callbackBlock, /g_presentedTouchHeight = height;/u);
+  assert.ok(resizeBlock, 'resize processing must update the touch dimensions');
+  assert.match(
+    resizeBlock,
+    /#if defined\(__ANDROID__\)[\s\S]*?if \(width > 0 && height > 0\) \{[\s\S]*?g_presentedTouchWidth = width;[\s\S]*?g_presentedTouchHeight = height;[\s\S]*?#endif[\s\S]*?if \(!g_resizeCallback\) return;/u,
+    'the resize must replace the post-registration dimensions before the callback guard',
+  );
+  assert.match(
+    input,
+    /void processTouchEvent\(const SDL_TouchFingerEvent& event\)[\s\S]*?width = g_presentedTouchWidth;[\s\S]*?height = g_presentedTouchHeight;/u,
+    'touches must consume the dimensions refreshed by the resize path',
+  );
+});
+
+test('Android post-registration resize rejects orientation swaps but accepts same orientation', () => {
+  const input = read('src/platform/input.cpp');
+  const resizeBlock = input.match(
+    /void processResize\(int width, int height\) \{[\s\S]*?\n\}\n\n\/\*\*\n \* Get gamepad state/u,
+  )?.[0];
+
+  assert.ok(resizeBlock, 'resize processing must be available for orientation regression coverage');
+  assert.match(
+    resizeBlock,
+    /const bool hasPresentedDimensions =[\s\S]*?g_presentedTouchWidth > 0 && g_presentedTouchHeight > 0;[\s\S]*?const bool presentedIsLandscape = g_presentedTouchWidth > g_presentedTouchHeight;[\s\S]*?const bool resizeIsLandscape = width > height;[\s\S]*?if \(!hasPresentedDimensions \|\| presentedIsLandscape == resizeIsLandscape\) \{[\s\S]*?g_presentedTouchWidth = width;[\s\S]*?g_presentedTouchHeight = height;/u,
+    'post-registration cache refresh must be guarded by the captured surface orientation',
+  );
+
+  const sameOrientation = (cachedWidth, cachedHeight, resizeWidth, resizeHeight) =>
+    (cachedWidth > cachedHeight) === (resizeWidth > resizeHeight);
+  assert.equal(
+    sameOrientation(2400, 1080, 1080, 2400),
+    false,
+    'the portrait logical resize must not replace the captured landscape surface',
+  );
+  assert.equal(
+    sameOrientation(2400, 1080, 1920, 900),
+    true,
+    'a later landscape resize must refresh the captured surface dimensions',
+  );
+});
+
 test('SDL synthetic touch mouse events suppress only duplicate pointer delivery', () => {
   const input = read('src/platform/input.cpp');
   const mouseCallbacks = input.match(/if \(g_mouseCallback\)/gu) ?? [];

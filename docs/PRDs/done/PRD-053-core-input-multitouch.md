@@ -1,15 +1,17 @@
 # PRD-053 — multi-touch input, and what actually caps core
 
-**Status: BLOCKED AT ANDROID DEVICE PROOF, 2026-08-09.** Criteria 1, 2, 3 and 5 are met:
+**Status: DONE, 2026-08-10.** Criteria 1, 2, 3 and 5 are met:
 `raw.pointers` reports every held pointer, `pointercancel` releases one, and the core cap
-that blocked this is gone. Criterion 4 is *written and not executed here*.
+that blocked this is gone. Criterion 4 passed on the Android emulator; the final proof is
+recorded below.
 
 The proof itself was repaired on 2026-08-09: it previously accepted latched `moved`/
 `leftGround` flags, so two sequential one-finger touches satisfied it. The conformance scene
 now latches `simultaneous` only when the stick half and the jump half are held in the **same
 frame**, and `conformance/multitouch-proof.mjs` requires that flag plus two pointers still
 down at the moment the proof is read. `tests/conformance-runner.test.mjs` pins both
-rejections. **What remains is running it on the emulator**; no emulator run is claimed.
+rejections. The final Android emulator run passed the simultaneous movement-and-jump assertions
+and its one-pointer negative control.
 
 **The proof was executed on the Android emulator on 2026-08-09 and it failed.** That run is
 what turned two suspicions into two fixed bugs and one open defect:
@@ -24,20 +26,34 @@ what turned two suspicions into two fixed bugs and one open defect:
 2. **Fixed — the cached window size could not track the canvas.** `setWindowSize` skipped its
    cache update when there was no SDL window, and `dispatchResizeEvent` never synced at all.
    `getWindowSize()` is what scales SDL's normalized touch back into canvas pixels.
-3. **OPEN — Android orientation mismatch.** With the activity locked to `landscape` on a
-   portrait display, the JS canvas is `2400x1080` while SDL's window stays `1080x2400`, so
-   `event.x * width` yields display-space pixels. Measured on device: two contacts at
-   normalized `x = 0.2` and `x = 0.8` arrive at canvas x `216` and `865`, both below the
-   `1200` half-width, so a two-finger gesture reads as two contacts in the same half.
+3. **Fixed on 2026-08-10 — Android orientation mismatch.** With the activity locked to
+   `landscape` on a portrait display, the JS canvas is `2400x1080` while SDL replaces its
+   drawable with `1080x2400`, so `event.x * width` yields display-space pixels. The input
+   bridge now retains the presented drawable dimensions captured before that replacement.
 
-After the two fixes the device run reports `maxPointers: 2` and `movedWithTwoPointers: true`
-— **two simultaneous contacts do reach the game on a real Android emulator** — while
-`leftGroundWithTwoPointers` stays false because of defect 3. Criterion 4 is therefore
-**executed and failing**, which is a stronger position than the previous "written, unproven".
+On the 2026-08-09 run, the first two fixes produced `maxPointers: 2` and
+`movedWithTwoPointers: true` while `leftGroundWithTwoPointers` stayed false because of defect 3.
+That failure is historical; the orientation fix and final proof are recorded below.
 Full record: `docs/verification/integration-2026-08-09-six-prds.md`.
 
 Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
 `docs/verification/prd-053-multitouch-2026-08-09.md`.
+
+**Final Android proof, 2026-08-10:** Ran the exact required command:
+
+```sh
+THREENATIVE_JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
+PATH=/home/joao/Android/Sdk/platform-tools:$PATH \
+pnpm --filter @threenative/runtime-native native:verify:android:multitouch \
+  --device emulator-5554
+```
+
+It exited `0`. The first proof built and launched the APK, reached 300 frames with clean logs,
+and captured a non-blank `1080x2400` screenshot. The positive protocol-B scenario passed with
+`maxPointers: 2`, `movedWithTwoPointers: true`, `leftGroundWithTwoPointers: true`,
+`airborne: true`, and `currentPointers: 0`. The one-pointer negative control reached its
+assertions and failed as required with exit-code `1` semantics. The generated report was
+`packages/runtime-native/artifacts/android/multitouch/report.json`.
 
 **What this owns:** whether `InputMap` reports more than one pointer, and what number (if
 any) limits the size of `@threenative/core`.
@@ -128,8 +144,8 @@ owning the meaning, which is the same split the physics and render boundaries al
    scenario that holds the stick and presses jump simultaneously and asserts the player both
    moved and left the ground. `adb shell input` sends one finger at a time, so this needs
    `sendevent` or an equivalent multi-touch injection — building that harness is part of this
-   PRD, and it is what turns "written" into "proven". As of 2026-08-09 simultaneous touch is
-   written and **not proven on any platform**.
+   PRD, and it is what turns "written" into "proven". At PRD opening on 2026-08-09,
+   simultaneous touch was written and **not proven on any platform**.
 5. No new interpretation surface in core: no zone, gesture, joystick or button concept.
 
 ## 6. Native budget review
@@ -142,8 +158,8 @@ real APK. Neither is gameplay or an alternate input model.
 The kill switch is direct: if the SDL bridge cannot deliver stable simultaneous pointer ids,
 delete it rather than grow a parallel native gesture/input abstraction; if the verifier cannot
 produce a fail-closed real-emulator result, keep it out of parity and do not claim Android
-support. The failed API-35 device run is recorded in the verification evidence, so this PRD
-remains here rather than moving to `done/`.
+support. The failed API-35 device run is recorded above as historical evidence; the final
+emulator proof now satisfies criterion 4.
 
 ## 7. Open
 
