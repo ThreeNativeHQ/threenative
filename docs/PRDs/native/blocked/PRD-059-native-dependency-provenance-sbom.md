@@ -4,9 +4,13 @@ prd_contract: v1
 
 # PRD-059 — Native dependency provenance and SBOM
 
-**Status:** PLANNING ONLY — NOT STARTED. This author lane stops after producing and validating
-this plan. A manager must obtain separate confirmation before starting implementation,
-review, a branch, a worktree, a release, or any delivery action.
+**Status:** BLOCKED — IMPLEMENTATION COMMITTED IN ISOLATED LANE; NOT SQUASHED
+**Lane commit:** `fb222c8ae47952179b24163d2149265f52a79dd2`
+
+**Manager gate:** 10 declared controls reran with exact observed-red evidence; local
+dependency/SBOM/provenance selectors return green after restoration, but same-candidate hosted
+release evidence is unavailable.
+**Owner:** Native release operator and runtime maintainers
 
 **Complexity: 6 → MEDIUM mode.** The score is +3 for 10+ repository paths, +2 for a new
 dependency-lock/provenance system, and +1 for release-host and upstream-download integration.
