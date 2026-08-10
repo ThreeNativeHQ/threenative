@@ -215,7 +215,7 @@ builds normal/masked/wrong-gravity variants, and drives the normal plus four con
 on an x86_64 emulator. It remains open until that workflow actually runs against released
 assets.
 
-The budget measurement taken during this phase was 53,851 native-runtime lines, 3,851 above
+The historical budget measurement taken during this phase was 53,851 native-runtime lines, 3,851 above
 the nonfatal 50,000-line review trigger. **That number is stale and must be re-measured before
 criterion 6 is judged** — PRD-049's final gate later the same day recorded 52,280 after its
 207-line proof deletion, and PRD-046's Phase 5 re-run recorded 51,563. Three different figures
@@ -336,7 +336,7 @@ files for visibility; this subfolder is an organizational sequence, not a cap wo
 
 2026-08-10: PRD-048 owns the native packaging, Android/iOS consumer, build-script, manifest,
 and release-test portions of `android/`, `ios/`, `scripts/`, CMake, and `tests/`. The exact
-61,605-line measurement, commit attribution, and kill-switch table are in
+61,617-line measurement, commit attribution, and kill-switch table are in
 `docs/verification/native-loc-trigger-2026-08-10.md`. These lines stay because they make the
 no-toolchain packed consumer and checksum/failure controls executable; deleting them would
 turn distribution claims into manual assertions. The trigger remains a review trigger and no

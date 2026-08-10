@@ -456,6 +456,18 @@ test("Android parity blocks a partial packaged layout even when the source AAR e
   }
 });
 
+test("Android parity accepts a source-only SDL3 dependency layout", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-source-only-"));
+  try {
+    mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
+    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+
+    assert.equal(androidDependencyBlocker(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Android parity accepts a complete packaged dependency layout", () => {
   const dir = mkdtempSync(join(tmpdir(), "threenative-android-prebuilt-"));
   try {

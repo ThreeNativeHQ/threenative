@@ -6,8 +6,9 @@ not raised, hidden, or converted into a hard failure.
 ## Phase 0 — measurement and attribution
 
 The lane is based at `5e86c48` and includes the post-base runtime commits `fd92899`, `0995e01`,
-and `0ea5cd1`, plus `be06ddf` and `c7ff378`. The current re-runnable lane measurement is 61,605
-lines; the pre-c7ff378 measurement was 61,589, and the pre-be06ddf measurement was 61,554. This
+and `0ea5cd1`, plus `be06ddf`, `c7ff378`, and this fixture repair. The current re-runnable lane
+measurement is 61,617 lines; the historical pre-fixture measurement was 61,605, the historical
+pre-c7ff378 measurement was 61,589, and the historical pre-be06ddf measurement was 61,554. This
 evidence uses the number produced in this lane.
 
 The raw attribution source is:
@@ -17,13 +18,18 @@ git log --reverse --date=short --format='%h%x09%ad%x09%s' --numstat -- packages/
 node --import tsx/esm scripts/check-budgets.ts
 ```
 
+The filtered `git-numstat` command, including the working-tree fixture diff before commit,
+returned **+63,970 / -2,593 / net 61,377**; after commit, the same total comes from history
+alone. The historical pre-fixture command result was **+63,958 / -2,593 / net 61,365**.
+
 The commit table applies the same source extensions and exclusions as
 `scripts/check-budgets.ts`: `third_party/`, build outputs, `.runtime/`, artifacts, native
 build caches, `dist/`, and the generated Android bundle are excluded. `CMakeLists.txt` is
 included even though it has no extension. The `+/-` values below are the budget-counted
 `git numstat` changes; the budget script's exact line counter adds one terminal line for each
-of the 240 counted files, reconciling the historical `git numstat` net of 61,127 to the
-measured 61,605.
+of the 240 counted files, reconciling the current filtered `git numstat` net of 61,377 to the
+measured 61,617. The historical pre-fixture filtered baseline was 61,365; the current command
+result includes the 12-line fixture repair.
 
 | Commit | Budget lines (+/-) | Owning PRD | Area |
 | --- | ---: | --- | --- |
@@ -91,21 +97,24 @@ measured 61,605.
 | `0ea5cd1` | +30 / -0 | PRD-054 | parity runner and contract tests (`conformance/`, `tests/`) |
 | `be06ddf` | +38 / -3 | PRD-054 | Android dependency layout preflight (`conformance/`, `tests/`) |
 | `c7ff378` | +18 / -2 | PRD-054 | Android dependency layout preflight guard and regression test (`conformance/`, `tests/`) |
+| this fixture repair | +12 / -0 | PRD-054 | source-only Android dependency layout regression test (`tests/`) |
 
-The table attributes the full measured tree's growth in this lane. The source PRD's
+The table sums to **+63,970 / -2,593**, net **61,377**; adding one terminal line for each of the
+240 counted files reconciles the commit attribution to the measured **61,617**. The table
+attributes the full measured tree's growth in this lane. The source PRD's
 53,851-line prior measurement is retained as historical context in PRD-048; it is not
 reachable from this lane's commit ancestry, so it is not used to manufacture a delta.
 
 ## Current measured areas
 
 The following exact counts come from the same file walk as `scripts/check-budgets.ts` and sum
-to 61,605:
+to 61,617:
 
 | Area | Lines | Owning PRD(s) | Kill-switch verdict |
 | --- | ---: | --- | --- |
 | `src/` | 37,179 | PRD-047, PRD-046, PRD-050, PRD-053 | **keep** — host shims, physics ABI, platform lifecycle, and input delivery are the runtime itself |
 | `conformance/` | 5,613 | PRD-054, PRD-055, PRD-053 | **keep** — the shared registry is executable parity evidence; removing it makes cross-target claims untestable |
-| `tests/` | 4,950 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055 | **keep** — fail-closed contract tests are required evidence; deleting tests to clear a trigger is forbidden |
+| `tests/` | 4,962 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055 | **keep** — fail-closed contract tests are required evidence; deleting tests to clear a trigger is forbidden |
 | `scripts/` | 4,827 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054 | **keep** — packaging, build, emulator, and verifier orchestration has no plain native alternative |
 | `include/` | 3,550 | PRD-047, PRD-046, PRD-053 | **keep** — these headers are the host and coarse physics/input ABI contracts |
 | `android/` | 1,738 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054 | **keep** — APK lifecycle, SDL glue, and device transport are needed to execute the Android proof |
@@ -131,7 +140,7 @@ back to this file.
 
 ## Phase 3 — residual
 
-The current post-c7ff378 measurement is **61,605 / 50,000 native LOC**, a residual **+11,605**.
+The current post-fixture measurement is **61,617 / 50,000 native LOC**, a residual **+11,617**.
 `LIMITS.nativeRuntimeLoc` and the trigger text in `scripts/check-budgets.ts` are unchanged.
 The owner sentence for this residual is: retain the single absorbed host plus the executable
 parity, device, build, distribution, and physics evidence that makes the claimed native
@@ -151,6 +160,13 @@ Error: listen EPERM: operation not permitted /tmp/tsx-1000/13.pipe
 ```
 
 The repository's equivalent direct loader ran successfully after the lane changes:
+
+```text
+budgets trigger: native runtime LOC review trigger: 61617 lines (trigger 50000, +11617). Justify in the owning PRD and run the kill switch over what was added.
+budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61617/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
+```
+
+The historical pre-fixture direct-loader baseline was:
 
 ```text
 budgets trigger: native runtime LOC review trigger: 61605 lines (trigger 50000, +11605). Justify in the owning PRD and run the kill switch over what was added.
@@ -173,6 +189,7 @@ budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC
 
 The `be06ddf` repair increased the native number by 35 counted lines for the Android layout
 preflight and its positive/negative tests. `c7ff378` added 16 budget-counted native lines
-(`+18 / -2`) for the Android dependency layout guard and regression test. The framework number
-and `LIMITS.nativeRuntimeLoc` are unchanged; the trigger remains visible and justified rather
-than routed around.
+(`+18 / -2`) for the Android dependency layout guard and regression test. This fixture repair
+adds 12 budget-counted native lines (`+12 / -0`) for the source-only layout regression test. The
+framework number and `LIMITS.nativeRuntimeLoc` are unchanged; the trigger remains visible and
+justified rather than routed around.

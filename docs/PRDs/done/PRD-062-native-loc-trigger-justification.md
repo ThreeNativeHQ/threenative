@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-062 — the native LOC trigger has no owner
 
-**Status: COMPLETE, 2026-08-10.** The 61,605-line measurement, attribution, area verdicts,
+**Status: COMPLETE, 2026-08-10.** The 61,617-line measurement, attribution, area verdicts,
 owning-PRD justifications, and residual are recorded in the verification file. The trigger
 and `LIMITS.nativeRuntimeLoc` remain unchanged.
 
@@ -28,16 +28,17 @@ worse than no number."*
 The direct budget command on 2026-08-10 produced:
 
 ```
-budgets trigger: native runtime LOC review trigger: 61605 lines (trigger 50000, +11605).
+budgets trigger: native runtime LOC review trigger: 61617 lines (trigger 50000, +11617).
                  Justify in the owning PRD and run the kill switch over what was added.
 budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC,
-            61605/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
+            61617/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-At kickoff, the trigger had fired on every run for at least a week and **no PRD carried the
+At the historical pre-fixture review snapshot, the trigger had fired on every run for at least a
+week and **no PRD carried the
 justification it demands.** `OPPORTUNITY-AREAS.md` records 53,851 on 2026-08-09 and calls the overage
 "reported, not silently routed around" — but reporting a number is not justifying it, and
-nobody had run the kill switch over the 7,738 lines added since. A review trigger that fires
+nobody had run the kill switch over the 7,738 lines added since that 61,589-line snapshot. A review trigger that fires
 forever with no owner is exactly the failure mode §10b exists to prevent: the number stops
 carrying information and every future overage inherits an already-numb signal.
 
@@ -53,11 +54,11 @@ runtime, this PRD produces the evidence and stops, and the owner decides separat
 |---|---:|---|
 | `src/` | 37,179 | the host itself — render, platform, shims, physics ABI |
 | `conformance/` | 5,613 | PRD-054's parity registry and its runners |
-| `tests/` | 4,950 | fail-closed contract tests |
+| `tests/` | 4,962 | fail-closed contract tests |
 | `scripts/` | 4,827 | build, download-deps, release, emulator lanes |
 | `include/` | 3,550 | public headers |
 | `android/`, `native/`, CMake, iOS, manifests, config | 5,486 | platform packaging and build configuration |
-| **Total** | **61,605** | trigger is 50,000 |
+| **Total** | **61,617** | trigger is 50,000 |
 
 That table is a starting read, not the attribution the charter asks for. Phase 0 produces the
 real one.
@@ -82,7 +83,7 @@ Three areas need the verdict stated explicitly because they are the cheapest to 
 - `conformance/` (5,613) — is a parity registry runtime code, or is it a gate that belongs
   beside the tests? If it is a gate, say so and record why it counts against a runtime budget.
 - `scripts/` (4,827) — build and release orchestration measured as runtime lines.
-- `tests/` (4,950) — the fail-closed contract suite. Deleting tests to clear a budget is
+- `tests/` (4,962) — the fail-closed contract suite. Deleting tests to clear a budget is
   forbidden; if tests are the reason the number is over, that is the finding.
 
 **Phase 2 — write the justification where the charter says it goes.** Each owning native PRD
