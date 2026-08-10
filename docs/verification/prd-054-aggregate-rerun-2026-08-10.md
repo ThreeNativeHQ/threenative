@@ -1,6 +1,6 @@
 # PRD-054 criterion 1 — aggregate parity rerun — 2026-08-10
 
-Result: **RED / browser and desktop have genuine non-green rows; Android did not execute.** The
+Result: **RED / browser and desktop have observed non-green rows; Android did not execute.** The
 unsandboxed aggregate command exited `1`; criterion 1 is not closed.
 
 ## Command and literal runner output
@@ -57,11 +57,11 @@ output, not inferred parity results.
 
 | Target | Pass | Fail | Blocked | Observed result |
 | --- | ---: | ---: | ---: | --- |
-| browser | 66 | 1 | 0 | `90-multitouch-input` failed; report written |
+| browser | 66 | 1 | 0 | `90-multitouch-input` observed red/failure; report written |
 | Linux desktop | 65 | 1 | 1 | `25-camera-parented-overlay` failed; `90-multitouch-input` stayed blocked because desktop native multitouch injection is unsupported |
 | Android emulator | 0 | 0 | 67 | every row was blocked by `TN_PARITY_ANDROID_DEVICE_BLOCKED: No online Android device found (none listed). Start an emulator or connect and authorize a device.` |
 
-## Reproduced row failures and blocked row
+## Observed row failures and blocked row
 
 The browser `90-multitouch-input` row completed its capture but failed on these two page errors:
 
@@ -69,6 +69,10 @@ The browser `90-multitouch-input` row completed its capture but failed on these 
 Failed to execute 'setPointerCapture' on 'Element': No active pointer with the given id is found.
 Failed to execute 'setPointerCapture' on 'Element': No active pointer with the given id is found.
 ```
+
+The browser run observed `90-multitouch-input` as red/failing. Its root cause is not established
+by this evidence; in particular, this document does not establish a test-injector root cause.
+The row remains open/non-green.
 
 The Linux desktop `25-camera-parented-overlay` row completed 300 frames with exit code `0`, but
 the runtime emitted GPU validation errors. The first was:

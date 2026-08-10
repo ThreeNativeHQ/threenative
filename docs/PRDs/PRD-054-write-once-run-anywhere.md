@@ -2,11 +2,12 @@
 
 **Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-10.** The unsandboxed aggregate rerun
 produced browser `66 pass / 1 fail / 0 blocked`, Linux desktop `65 pass / 1 fail / 1 blocked`,
-and Android `0 pass / 0 fail / 67 blocked`. Browser `90-multitouch-input` and desktop
-`25-camera-parented-overlay` reproduced genuine failures; desktop multitouch remained blocked
-because native injection is unsupported. Android rows were blocked by the lack of an online
-emulator/device. The separate Android multitouch supplemental reached APK assembly and exposed a
-real missing `SDL3-3.2.8.aar` before APK creation. Criterion 1 remains open.
+and Android `0 pass / 0 fail / 67 blocked`. The browser run observed `90-multitouch-input` as
+red/failing; this evidence does not establish its root cause, so the row remains open/non-green.
+Desktop `25-camera-parented-overlay` remained red with the observed GPU validation errors; desktop
+multitouch remained blocked because native injection is unsupported. Android rows were blocked by
+the lack of an online emulator/device. The separate Android multitouch supplemental reached APK
+assembly and exposed a real missing `SDL3-3.2.8.aar` before APK creation. Criterion 1 remains open.
 
 The precondition handling was repaired on 2026-08-09. `--target desktop` now runs the
 repository's own `download-deps.mjs` and `native-build.mjs` before it can fail a row, and a
@@ -281,11 +282,12 @@ the very divergence this PRD exists to expose. The trigger is accepted and not r
 
 The unsandboxed batch rerun is recorded in
 [`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../verification/prd-054-aggregate-rerun-2026-08-10.md).
-`pnpm parity` exited `1` after writing all three reports. Browser recorded 66 passes and the
-genuine `90-multitouch-input` failure. Linux desktop recorded 65 passes, the genuine
-`25-camera-parented-overlay` failure, and blocked `90-multitouch-input` because desktop native
-multitouch injection is unsupported. Android recorded 0 passes, 0 failures, and 67 blocked rows
-with `TN_PARITY_ANDROID_DEVICE_BLOCKED` because no online emulator/device was listed. The
-separate Android multitouch supplemental reached the pre-APK Gradle step and failed because the
-SDL3 Android AAR was missing; it did not fail for an SDK/NDK/toolchain or sandbox reason. No
-Android parity row executed. Criterion 1 remains open.
+`pnpm parity` exited `1` after writing all three reports. Browser recorded 66 passes and observed
+`90-multitouch-input` as red/failing; this evidence does not establish its root cause, so the row
+remains open/non-green. Linux desktop recorded 65 passes, a red `25-camera-parented-overlay` row,
+and blocked `90-multitouch-input` because desktop native multitouch injection is unsupported.
+Android recorded 0 passes, 0 failures, and 67 blocked rows with
+`TN_PARITY_ANDROID_DEVICE_BLOCKED` because no online emulator/device was listed. The separate
+Android multitouch supplemental reached the pre-APK Gradle step and failed because the SDL3
+Android AAR was missing; it did not fail for an SDK/NDK/toolchain or sandbox reason. No Android
+parity row executed. Criterion 1 remains open.
