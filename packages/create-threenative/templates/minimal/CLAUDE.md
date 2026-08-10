@@ -47,15 +47,26 @@ without thinking about it. If you only ever ship to the web, ignore this section
 
 ## The layout
 
-```
-src/
-  main.ts               defineGame(...) + accessible web DOM score
-  scenes/Play.ts        gameplay: load, enter, update, exit
-  entities/Player.ts    a plain class, not an ECS
-  render/               palette, camera, lighting, HUD geometry, materials, post — YOURS
-  state.ts              the state shape gameplay publishes
-playtests/play.playtest.json  one scenario, run by pnpm test
-threenative.config.ts   renderer + plugins. No visual options, by design.
+```mermaid
+flowchart TD
+    project["generated project"]
+    src["src/"]
+    main["main.ts<br/>defineGame(...) + accessible web DOM score"]
+    play["scenes/Play.ts<br/>gameplay: load, enter, update, exit"]
+    player["entities/Player.ts<br/>plain class, not an ECS"]
+    render["render/<br/>palette, camera, lighting, HUD geometry,<br/>materials, post — YOURS"]
+    state["state.ts<br/>state shape gameplay publishes"]
+    playtest["playtests/play.playtest.json<br/>one scenario, run by pnpm test"]
+    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+
+    project --> src
+    src --> main
+    src --> play
+    src --> player
+    src --> render
+    src --> state
+    project --> playtest
+    project --> config
 ```
 
 `src/render/hud.ts` is generated user-owned source, not a framework widget. It uses instanced

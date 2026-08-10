@@ -153,56 +153,38 @@ There is no database, public configuration, or serialized game-state migration.
 
 ### Project Structure
 
-```text
-.
-├── .github/
-│   └── workflows/
-│       └── native-release.yml                                      [EDIT, release caller]
-├── docs/
-│   ├── PRDs/
-│   │   ├── production-readiness/
-│   │   │   └── PRD-059-native-dependency-provenance-sbom.md        [DELETE at DONE via git mv]
-│   │   ├── done/
-│   │   │   └── PRD-059-native-dependency-provenance-sbom.md        [NEW at DONE, moved artifact]
-│   │   └── native/
-│   │       ├── PRD-046-physics-native.md                            [AUTHORITY, unchanged]
-│   │       ├── PRD-048-native-distribution.md                       [AUTHORITY, unchanged]
-│   │       └── README.md                                            [EDIT, evidence identity]
-│   ├── architecture/
-│   │   └── CHARTER.md                                               [AUTHORITY, unchanged]
-│   └── verification/
-│       └── PRD-059.md                                               [NEW, checkpoint evidence]
-├── package.json                                                     [EXISTING workspace caller, unchanged]
-├── pnpm-lock.yaml                                                   [PROVENANCE INPUT, unchanged]
-├── release/                                                         [EPHEMERAL hosted-runner staging]
-│   ├── native-dependencies.cdx.json                                 [GENERATED, untracked]
-│   ├── native-license-inventory.json                                [GENERATED, untracked]
-│   └── native-release-provenance.json                               [GENERATED, untracked]
-└── packages/
-    └── runtime-native/
-        ├── AGENTS.md                                                [AUTHORITY, unchanged]
-        ├── .gitignore                                               [INVARIANT, unchanged]
-        ├── CMakeLists.txt                                           [LIVE CONSUMER, unchanged]
-        ├── NOTICE                                                   [EDIT, inventory pointer]
-        ├── native-deps.lock.json                                    [NEW, acquisition authority]
-        ├── package.json                                             [EDIT, script callers]
-        ├── native/
-        │   └── physics/
-        │       └── Cargo.lock                                       [PROVENANCE INPUT, unchanged]
-        ├── scripts/
-        │   ├── download-deps.mjs                                    [EDIT, lock consumer]
-        │   ├── generate-native-sbom.mjs                             [NEW, deterministic generator]
-        │   └── generate-native-release-provenance.mjs               [NEW, output linker]
-        ├── tests/
-        │   ├── dependency-provenance.test.mjs                       [NEW]
-        │   ├── native-sbom.test.mjs                                 [NEW]
-        │   └── native-platform-workflow.test.mjs                    [EDIT, release wiring gate]
-        ├── third_party/                                             [UNTRACKED acquisition destination]
-        └── .runtime/
-            └── provenance/
-                ├── acquisition-report.json                          [GENERATED, untracked]
-                ├── native-dependencies.cdx.json                     [GENERATED, untracked]
-                └── native-license-inventory.json                    [GENERATED, untracked]
+```mermaid
+flowchart TD
+    root["repository root/"]
+    workflows[".github/workflows/native-release.yml<br/>release caller"]
+    docs["docs/<br/>PRDs/production-readiness/PRD-059...<br/>PRDs/done/PRD-059...<br/>PRDs/native/PRD-046 · PRD-048 · README.md<br/>architecture/CHARTER.md · verification/PRD-059.md"]
+    package["package.json<br/>existing workspace caller"]
+    lock["pnpm-lock.yaml<br/>provenance input"]
+    release["release/<br/>native-dependencies.cdx.json<br/>native-license-inventory.json<br/>native-release-provenance.json"]
+    runtime["packages/runtime-native/"]
+    agents["AGENTS.md · .gitignore<br/>authority and invariants"]
+    cmake["CMakeLists.txt<br/>live consumer"]
+    notice["NOTICE · native-deps.lock.json<br/>inventory pointer and acquisition authority"]
+    physics["native/physics/Cargo.lock<br/>provenance input"]
+    scripts["scripts/<br/>download-deps.mjs<br/>generate-native-sbom.mjs<br/>generate-native-release-provenance.mjs"]
+    tests["tests/<br/>dependency-provenance.test.mjs<br/>native-sbom.test.mjs<br/>native-platform-workflow.test.mjs"]
+    thirdParty["third_party/<br/>untracked acquisition destination"]
+    state[".runtime/provenance/<br/>generated acquisition report, SBOM and license inventory"]
+
+    root --> workflows
+    root --> docs
+    root --> package
+    root --> lock
+    root --> release
+    root --> runtime
+    runtime --> agents
+    runtime --> cmake
+    runtime --> notice
+    runtime --> physics
+    runtime --> scripts
+    runtime --> tests
+    runtime --> thirdParty
+    runtime --> state
 ```
 
 **How will this feature be reached?**

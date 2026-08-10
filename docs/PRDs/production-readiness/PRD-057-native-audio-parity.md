@@ -111,66 +111,42 @@ distribution implementation is replaced.
 
 ## 2. Project Structure
 
-```text
-threejs-webgpu/
-├── .github/workflows/native-platforms.yml                         # EDIT: hosted deterministic/simulator audio lanes; never speaker claims
-├── package.json                                                    # EXISTING CALLER: root parity command
-├── artifacts/                                                      # GENERATED/IGNORED: conformance and audio evidence outputs
-├── docs/
-│   ├── architecture/CHARTER.md                                    # AUTHORITY: same-source/native honesty and budgets
-│   ├── PRDs/
-│   │   ├── PRD-053-core-input-multitouch.md                       # EXISTING OWNER: multitouch
-│   │   ├── PRD-054-write-once-run-anywhere.md                     # DEPENDENCY: parity runner/report
-│   │   ├── PRD-055-native-hud-reopened.md                         # EXISTING OWNER: HUD/text
-│   │   ├── native/
-│   │   │   ├── PRD-046-physics-native.md                          # EXISTING OWNER: physics
-│   │   │   ├── PRD-048-native-distribution.md                     # EXISTING OWNER: CLI/distribution
-│   │   │   └── README.md                                          # EDIT: support-truth matrix
-│   │   └── production-readiness/
-│   │       ├── PRD-056-physical-mobile-qualification.md           # DEPENDENCY: physical device/signing envelope
-│   │       └── PRD-057-native-audio-parity.md                     # THIS PLAN
-│   └── verification/
-│       ├── PRD-014.md                                              # BASELINE: AudioBus + dummy-driver evidence
-│       └── PRD-057.md                                              # NEW: immutable target/evidence ledger
-├── packages/
-│   ├── core/
-│   │   ├── src/audio.ts                                           # EDIT: strict AudioBus completion/error semantics
-│   │   └── __tests__/audio.spec.ts                                # EDIT: public consumer contract
-│   ├── create-threenative/templates/starter/
-│   │   ├── public/pickup.ogg                                      # EXISTING PRODUCTION SUBJECT: Ogg/Vorbis mono 44.1 kHz
-│   │   └── src/scenes/Play.ts                                     # EDIT: live load/play caller; no swallowed failure
-│   └── runtime-native/
-│       ├── AGENTS.md                                               # AUTHORITY: host boundary and platform claim limits
-│       ├── CMakeLists.txt                                          # EDIT: codec and native contract target
-│       ├── package.json                                            # EDIT: audio verification entry
-│       ├── artifacts/                                              # GENERATED/IGNORED: package-local target evidence
-│       ├── build/tn-linux/threenative-audio-graph-test             # GENERATED/IGNORED: native deterministic test executable
-│       ├── third_party/                                            # GENERATED/UNTRACKED: downloaded codec/runtime dependencies
-│       ├── conformance/
-│       │   ├── README.md                                           # EDIT: audio result/tier contract
-│       │   ├── registry.json                                       # EDIT: strengthen row 94
-│       │   ├── run-conformance.mjs                                # EDIT: audio supplemental validation/exit result
-│       │   └── scenes/shared/audio-context.js                     # EDIT: same-source Web Audio/decode subject
-│       ├── docs/G4-threading-native-systems.md                     # EDIT: binding audio evidence ledger
-│       ├── include/mystral/audio/audio_context.h                   # EDIT: buffer/source/lifecycle contract
-│       ├── scripts/
-│       │   ├── download-deps.mjs                                  # EDIT: pinned decoder acquisition
-│       │   ├── verify-ios-simulator.mjs                            # EXISTING TARGET EXECUTOR: simulator audio mode
-│       │   └── verify-audio-output.mjs                             # NEW: capture analyzer and target verdict
-│       ├── src/
-│       │   ├── audio/audio_bindings.cpp                            # EDIT: Promise/state/error Web Audio bindings
-│       │   ├── audio/audio_context.cpp                             # EDIT: decode/resample/mix/device lifecycle
-│       │   ├── platform/window.cpp                                # EDIT: SDL lifecycle/interruption caller
-│       │   └── runtime.cpp                                        # EXISTING CALLER: binding install/event loop
-│       └── tests/
-│           ├── audio.playtest.json                                 # NEW: device scenario for the audible probe
-│           ├── audio-play-at-smoke.ts                              # EDIT: real decoder + AudioBus portable smoke
-│           ├── audio-output-probe.ts                               # NEW: deterministic audible probe source
-│           ├── audio-output-verifier.test.mjs                     # NEW: fail-closed analyzer controls
-│           ├── audio_graph_test.cpp                                # EDIT: deterministic samples/scheduling/lifecycle
-│           └── conformance-runner.test.mjs                         # EDIT: supplemental report validation
-├── packages/playtest/dist/runner/cli.js                            # GENERATED CALLER: built iOS device runner
-└── packages/runtime-native/include/mystral/platform/window.h       # EXISTING CONTRACT: platform event-loop surface
+```mermaid
+flowchart TD
+    root["threejs-webgpu/"]
+    workflow[".github/workflows/native-platforms.yml<br/>hosted deterministic/simulator audio lanes"]
+    package["package.json<br/>root parity command"]
+    artifacts["artifacts/<br/>generated conformance and audio evidence"]
+    docs["docs/<br/>architecture/CHARTER.md"]
+    prds["PRDs/<br/>PRD-053 · PRD-054 · PRD-055<br/>native: PRD-046 · PRD-048 · README.md<br/>production-readiness: PRD-056 · PRD-057"]
+    verification["verification/<br/>PRD-014.md · PRD-057.md"]
+    core["packages/core/<br/>src/audio.ts · __tests__/audio.spec.ts"]
+    starter["create-threenative/templates/starter/<br/>public/pickup.ogg · src/scenes/Play.ts"]
+    playtest["packages/playtest/dist/runner/cli.js"]
+    runtime["packages/runtime-native/<br/>CMakeLists.txt · package.json · artifacts · build · third_party"]
+    conformance["conformance/<br/>README.md · registry.json · run-conformance.mjs<br/>scenes/shared/audio-context.js"]
+    runtimeDocs["docs/G4-threading-native-systems.md"]
+    include["include/mystral/audio/audio_context.h"]
+    scripts["scripts/<br/>download-deps.mjs · verify-ios-simulator.mjs<br/>verify-audio-output.mjs"]
+    source["src/<br/>audio/audio_bindings.cpp · audio_context.cpp<br/>platform/window.cpp · runtime.cpp"]
+    tests["tests/<br/>audio.playtest.json · audio-play-at-smoke.ts<br/>audio-output-probe.ts · audio-output-verifier.test.mjs<br/>audio_graph_test.cpp · conformance-runner.test.mjs"]
+
+    root --> workflow
+    root --> package
+    root --> artifacts
+    root --> docs
+    root --> core
+    root --> starter
+    root --> playtest
+    root --> runtime
+    docs --> prds
+    docs --> verification
+    runtime --> conformance
+    runtime --> runtimeDocs
+    runtime --> include
+    runtime --> scripts
+    runtime --> source
+    runtime --> tests
 ```
 
 ## 3. Solution

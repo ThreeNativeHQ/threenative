@@ -50,17 +50,30 @@ without thinking about it. If you only ever ship to the web, ignore this section
 
 ## The layout
 
-```
-src/
-  main.ts               defineGame(...) + React mount
-  scenes/Play.ts        gameplay: load, enter, update, exit
-  entities/             Player.ts, Crate.ts — plain classes, not an ECS
-  render/               palette, camera, sky, lighting, HUD geometry, materials, post — YOURS
-  ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
-  state.ts              the state shape the HUD subscribes to
-playtests/*.playtest.json      committed browser scenarios, run by pnpm test
-playtest/boot-to-play.json  Boot-to-Play jump proof for the standalone runner
-threenative.config.ts   renderer + plugins. No visual options, by design.
+```mermaid
+flowchart TD
+    project["generated project"]
+    src["src/"]
+    main["main.ts<br/>defineGame(...) + React mount"]
+    play["scenes/Play.ts<br/>gameplay: load, enter, update, exit"]
+    entities["entities/<br/>Player.ts, Crate.ts — plain classes, not an ECS"]
+    render["render/<br/>palette, camera, sky, lighting, HUD geometry,<br/>materials, post — YOURS"]
+    ui["ui/<br/>App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4"]
+    state["state.ts<br/>state shape the HUD subscribes to"]
+    scenarios["playtests/*.playtest.json<br/>committed browser scenarios, run by pnpm test"]
+    boot["playtest/boot-to-play.json<br/>Boot-to-Play jump proof"]
+    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+
+    project --> src
+    src --> main
+    src --> play
+    src --> entities
+    src --> render
+    src --> ui
+    src --> state
+    project --> scenarios
+    project --> boot
+    project --> config
 ```
 
 `src/render/hud.ts` is generated user-owned Three.js source, not a package widget. It uses

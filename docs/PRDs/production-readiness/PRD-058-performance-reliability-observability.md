@@ -66,67 +66,32 @@ prd_contract: v1
 
 Exactly the following repository paths are in implementation, caller, dependency, or proof scope. `NEW` and `EDIT` identify planned writes; `READ` and `CONSUME` are immutable inputs owned elsewhere. `.runtime/` entries are ignored generated artifacts, not repository writes.
 
-```text
-threejs-webgpu/
-├── AGENTS.md                                                        # READ repository rules
-├── package.json                                                     # EDIT live profile command
-├── .runtime/
-│   ├── prd056/{android,ios}/report.json                           # CONSUME physical-device provenance
-│   ├── prd057/<target>/audio-evidence.json                        # CONSUME only when audio is claimed
-│   └── prd058/<run-id>/{production-evidence.json,artifacts/}       # NEW ignored local evidence
-├── docs/
-│   ├── architecture/CHARTER.md                                  # READ binding budgets and scope
-│   ├── product/PERFORMANCE-BUDGETS.md                           # READ non-binding proposal
-│   ├── PRDs/
-│   │   ├── PRD-053-core-input-multitouch.md                      # CONSUME multitouch owner
-│   │   ├── PRD-054-write-once-run-anywhere.md                   # CONSUME parity/error-channel owner
-│   │   ├── PRD-055-native-hud-reopened.md                      # CONSUME HUD/text owner
-│   │   ├── done/                                               # FUTURE destination only after DONE
-│   │   ├── native/
-│   │   │   ├── README.md                                         # EDIT support truth
-│   │   │   ├── PRD-046-physics-native.md                         # CONSUME physics owner
-│   │   │   └── PRD-048-native-distribution.md                    # CONSUME CLI/distribution owner
-│   │   └── production-readiness/
-│   │       ├── PRD-056-physical-mobile-qualification.md       # CONSUME physical-device owner
-│   │       ├── PRD-057-native-audio-parity.md                 # CONSUME audio owner
-│   │       ├── PRD-058-performance-reliability-observability.md # EDIT this plan/evidence state
-│   │       └── PRD-059-native-dependency-provenance-sbom.md   # CONSUME provenance owner
-│   └── verification/
-│       ├── PRD-046.md                                             # CONSUME physics evidence
-│       ├── PRD-048.md                                             # CONSUME distribution evidence
-│       ├── prd-053-multitouch-2026-08-09.md                       # CONSUME multitouch evidence
-│       ├── prd-054-android-color-2026-08-09.md                    # CONSUME parity evidence
-│       ├── prd-055-phase-0-candidate-g-2026-08-09.md               # CONSUME HUD evidence
-│       └── PRD-058.md                                             # NEW privacy-safe summary
-├── packages/
-│   ├── core/
-│   │   ├── src/{loop.ts,playtest.ts}                              # EDIT real render observations
-│   │   └── __tests__/playtest.spec.ts                            # EDIT observation integration tests
-│   ├── playtest/
-│   │   ├── src/{assertions.ts,scenario.ts,capabilities.ts,protocol.ts} # EDIT strict assertion contract
-│   │   ├── src/three/{bridge.ts,bridge.test.ts}                   # EDIT Three.js observation bridge
-│   │   ├── src/runner/{cli.ts,runner.ts,androidRunner.ts,observationFields.ts} # READ/EDIT live wall-clock runner
-│   │   └── __tests__/{scenario.spec.ts,runner.spec.ts,device-playtest.spec.ts} # EDIT fail-closed tests
-│   ├── create-threenative/
-│   │   ├── templates/platformer/src/scenes/Level.ts               # READ production workload caller
-│   │   ├── templates/platformer/playtests/{performance.playtest.json,production-soak.playtest.json} # NEW scenarios
-│   │   └── __tests__/platformer.spec.ts                           # EDIT scaffold integration proof
-│   └── runtime-native/
-│       ├── AGENTS.md                                                   # READ native rules
-│       ├── package.json                                                # EDIT native profile command
-│       ├── docs/G5-profiling.md                                        # EDIT G5 ledger
-│       ├── src/runtime.cpp                                             # EDIT crash/end markers
-│       ├── src/cli/main.cpp                                            # READ desktop entry caller
-│       ├── src/platform/android_main.cpp                               # EDIT fail-closed Android entry/controls
-│       ├── src/webgpu/context.cpp                                      # CONSUME PRD-054 GPU errors
-│       ├── android/app/src/main/java/com/mystral/engine/MystralActivity.java # EDIT diagnostic launch/ANR control
-│       ├── conformance/run-conformance.mjs                             # CONSUME PRD-054 runner
-│       ├── conformance/scenes/shared/gpu-validation-scope.js           # CONSUME PRD-054 invalid-GPU subject
-│       ├── scripts/{profile-production.mjs,production-evidence.mjs,collect-production-diagnostics.mjs} # NEW local pipeline
-│       └── tests/{production-profile.test.mjs,production-diagnostics.test.mjs} # NEW pipeline tests
-└── scripts/
-    ├── profile-starter.ts                                           # READ incumbent developer diagnostic
-    └── __tests__/profile-starter.spec.ts                            # READ incumbent test
+```mermaid
+flowchart TD
+    root["threejs-webgpu/"]
+    agents["AGENTS.md<br/>repository rules"]
+    package["package.json<br/>live profile command"]
+    runtimeState[".runtime/<br/>prd056 reports · prd057 audio evidence<br/>prd058 production evidence and artifacts"]
+    docs["docs/<br/>architecture/CHARTER.md<br/>product/PERFORMANCE-BUDGETS.md"]
+    prds["PRDs/<br/>PRD-053 · PRD-054 · PRD-055<br/>native: README · PRD-046 · PRD-048<br/>production-readiness: PRD-056 · PRD-057 · PRD-058 · PRD-059"]
+    verification["verification/<br/>PRD-046.md · PRD-048.md<br/>prd-053-multitouch · prd-054-android-color<br/>prd-055-phase-0-candidate-g · PRD-058.md"]
+    core["packages/core/<br/>loop.ts · playtest.ts · __tests__/playtest.spec.ts"]
+    playtest["packages/playtest/<br/>assertions · scenario · capabilities · protocol<br/>three bridge · runner · device-playtest tests"]
+    templates["create-threenative/<br/>platformer workload · performance scenarios<br/>platformer integration proof"]
+    runtime["packages/runtime-native/<br/>AGENTS.md · package.json · docs/G5-profiling.md<br/>runtime/platform/webgpu sources · Android activity<br/>conformance scenes · production scripts · tests"]
+    scripts["scripts/<br/>profile-starter.ts · __tests__/profile-starter.spec.ts"]
+
+    root --> agents
+    root --> package
+    root --> runtimeState
+    root --> docs
+    root --> core
+    root --> playtest
+    root --> templates
+    root --> runtime
+    root --> scripts
+    docs --> prds
+    docs --> verification
 ```
 
 ## Scope Limits and Anti-Scope

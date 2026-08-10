@@ -129,64 +129,42 @@ emulator/simulator identities are errors. Optional platform observations use exp
 
 ## Project Structure
 
-```text
-threejs-webgpu/
-├── AGENTS.md                                                     # READ: platform-proof rules
-├── package.json                                                  # EDIT P1: root qualification command
-├── docs/
-│   ├── architecture/CHARTER.md                                   # READ: physical/performance authority
-│   ├── PRDs/
-│   │   ├── PRD-053-core-input-multitouch.md                      # READ/CONSUME: multitouch owner
-│   │   ├── PRD-054-write-once-run-anywhere.md                    # READ/CONSUME: parity owner
-│   │   ├── PRD-055-native-hud-reopened.md                        # READ: explicit anti-scope owner
-│   │   ├── native/
-│   │   │   ├── PRD-046-physics-native.md                         # READ/CONSUME: physics owner
-│   │   │   ├── PRD-048-native-distribution.md                    # READ/CONSUME: distribution owner
-│   │   │   └── README.md                                         # EDIT P5: support-truth rollup
-│   │   └── production-readiness/
-│   │       └── PRD-056-physical-mobile-qualification.md          # EDIT P5: final status/evidence
-│   └── verification/
-│       ├── PRD-046.md                                            # READ/CONSUME: physics evidence
-│       ├── PRD-048.md                                            # READ/CONSUME: distribution evidence
-│       ├── PRD-056.md                                            # NEW P4, EDIT P5: qualification summary
-│       ├── prd-053-multitouch-2026-08-09.md                      # READ/CONSUME: multitouch evidence
-│       └── prd-054-android-color-2026-08-09.md                   # READ/CONSUME: parity blocker
-├── examples/native-smoke/
-│   ├── src/game.ts                                               # EDIT P2: lifecycle/frame observations
-│   └── playtests/
-│       ├── multitouch.playtest.json                              # READ/CONSUME: PRD-053 subject
-│       ├── physics-parity.playtest.json                          # READ/CONSUME: PRD-046 subject
-│       └── physical-mobile-lifecycle.playtest.json               # NEW P3: continuity assertions
-├── packages/playtest/
-│   ├── README.md                                                  # READ: device semantics
-│   ├── dist/runner/cli.js                                        # GENERATED/CONSUME: operator CLI
-│   └── src/runner/
-│       ├── cli.ts                                                # READ/CALLER: dispatches device scenario
-│       ├── config.ts                                             # READ/CALLER: loads scenario path
-│       └── ios.ts                                                # READ/CONSUME: signed devicectl install
-├── packages/runtime-native/
-│   ├── AGENTS.md                                                 # READ: native proof rules
-│   ├── package.json                                              # EDIT P1/P3: package command/files
-│   ├── include/mystral/platform/window.h                         # EDIT P2: lifecycle callback contract
-│   ├── src/
-│   │   ├── platform/window.cpp                                   # EDIT P2: SDL lifecycle transitions
-│   │   └── runtime.cpp                                           # EDIT P2: suspend/resume frame work
-│   ├── conformance/
-│   │   ├── README.md                                             # READ: physical target/exit semantics
-│   │   └── run-conformance.mjs                                   # READ/CONSUME: PRD-054 hardware gate
-│   ├── scripts/
-│   │   ├── physical-device-evidence.mjs                          # NEW P1: schema/validator/rollup
-│   │   ├── qualify-physical-mobile.mjs                           # NEW P1, EDIT P3/P4: orchestrator
-│   │   └── verify-android-physics-parity.mjs                     # READ/CONSUME: PRD-046 gate
-│   ├── tests/
-│   │   ├── physical-mobile-qualification.test.mjs                # NEW P1, EDIT P3/P4
-│   │   └── runtime-next-contract.test.mjs                        # EDIT P2: lifecycle wiring contract
-│   ├── docs/
-│   │   ├── G3-mobile-bring-up.md                                 # EDIT P3/P4: device evidence
-│   │   └── G5-profiling.md                                       # EDIT P5: PRD-058 data handoff
-│   └── ios/README.md                                             # EDIT P4: signed physical procedure
-└── .runtime/prd056/
-    └── <run-id>/                                                  # GENERATED/IGNORED: raw reports/media/logs
+```mermaid
+flowchart TD
+    root["threejs-webgpu/"]
+    agents["AGENTS.md<br/>READ: platform-proof rules"]
+    package["package.json<br/>EDIT P1: root qualification command"]
+    docs["docs/"]
+    architecture["architecture/CHARTER.md<br/>READ: physical/performance authority"]
+    prds["PRDs/<br/>PRD-053 · PRD-054 · PRD-055"]
+    nativePrds["PRDs/native/<br/>PRD-046 · PRD-048 · README.md"]
+    qualification["PRDs/production-readiness/<br/>PRD-056-physical-mobile-qualification.md"]
+    verification["verification/<br/>PRD-046.md · PRD-048.md · PRD-056.md<br/>prd-053-multitouch-2026-08-09.md<br/>prd-054-android-color-2026-08-09.md"]
+    smoke["examples/native-smoke/<br/>src/game.ts<br/>playtests: multitouch · physics-parity · physical-mobile-lifecycle"]
+    playtest["packages/playtest/<br/>README.md · dist/runner/cli.js<br/>src/runner/cli.ts · config.ts · ios.ts"]
+    runtime["packages/runtime-native/<br/>AGENTS.md · package.json · include/window.h<br/>src/window.cpp · runtime.cpp<br/>ios/README.md"]
+    conformance["conformance/<br/>README.md · run-conformance.mjs"]
+    scripts["scripts/<br/>physical-device-evidence.mjs<br/>qualify-physical-mobile.mjs<br/>verify-android-physics-parity.mjs"]
+    tests["tests/<br/>physical-mobile-qualification.test.mjs<br/>runtime-next-contract.test.mjs"]
+    runtimeDocs["docs/<br/>G3-mobile-bring-up.md · G5-profiling.md"]
+    runtimeState[".runtime/prd056/<br/>run-id/ generated reports, media and logs"]
+
+    root --> agents
+    root --> package
+    root --> docs
+    root --> smoke
+    root --> playtest
+    root --> runtime
+    root --> runtimeState
+    docs --> architecture
+    docs --> prds
+    docs --> verification
+    prds --> nativePrds
+    prds --> qualification
+    runtime --> conformance
+    runtime --> scripts
+    runtime --> tests
+    runtime --> runtimeDocs
 ```
 
 ## Scope Limits
