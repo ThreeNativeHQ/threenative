@@ -87,9 +87,15 @@ wrong place. Layers are honoured the way `Raycaster.intersectObject` honours the
   46.5 KB is the price of that. If the number grows, this is the fallback.
 - **A `defineGame` option.** See §2.
 - **Building trees at load.** See §2.
-- **Emitting a `render.sceneRayQuery` effect-log entry.** `packages/playtest/src/assertions.ts`
-  already reads that service name and nothing in the repository emits it, so the branch is
-  dead. Out of scope here; it is a playtest-side gap, not a picking one.
+- **Emitting a `render.sceneRayQuery` effect-log entry.** `assertions.ts:1949` reads that
+  service name for the `occluded` assertion, and nothing in this repository emits it — but
+  that is not a gap to close here. PRD-033 declined a per-call tracing layer as far past the
+  20-line rule, and the `occluded` registry entry declares `observationPath: "effectLog"`,
+  which is not in `STANDALONE_PLAYTEST_OBSERVATION_FIELDS`, so a scenario using it is refused
+  with `TN_PLAYTEST_OBSERVATION_UNAVAILABLE` before the run starts. The evaluator is
+  unreachable salvage, not a live wrong answer. `packages/playtest/__tests__/silent-drop.spec.ts`
+  now pins that fail-closed path so the misleading `TN_PLAYTEST_OCCLUSION_NOT_OBSERVED`
+  diagnostic cannot start reaching users. Making `occluded` work needs its own PRD.
 
 ## 6. Proof
 
