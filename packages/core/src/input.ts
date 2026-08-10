@@ -227,12 +227,3 @@ export class InputMap {
     if (down === false) capture.releasePointerCapture?.(id);
   }
 }
-
-export function input(
-  bindings?: InputBindings,
-  target?: EventTarget,
-  pointerTarget?: EventTarget,
-  source?: InputPlatformSource,
-): InputMap {
-  return new InputMap(bindings, target, pointerTarget, source);
-}

@@ -12,5 +12,8 @@ describe("core package build", () => {
       `${pathToFileURL(path.join(dist, "index.js")).href}?test=${Date.now()}`
     );
     expect(module.version).toBe("0.1.0");
+    expect(module.AnimationPlayer).toBeDefined();
+    expect(module.Scheduler).toBeDefined();
+    expect(module.createRandom).toBeDefined();
   });
 });

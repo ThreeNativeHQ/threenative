@@ -245,3 +245,12 @@ Android physics work is not blocked on iOS.
   must not ship. Record it as unresolved.
 - The seam extraction changes any browser result → revert; PRD-047's web-unchanged rule
   applies here identically.
+
+## Budget justification
+
+2026-08-10: PRD-045 owns the Android device-observer and playtest-transport slice of the
+native `android/`, `scripts/`, and `tests/` areas. The current lane measurement is recorded in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps these lines because
+they are the fail-closed mechanism that observes the real APK and its negative controls; the
+plain alternative is an unproven native claim. No native gesture abstraction or second input
+model was added, and the 50,000-line trigger remains unchanged.

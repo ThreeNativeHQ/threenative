@@ -409,7 +409,7 @@ Both backends are proven by a single conformance suite: the same scenario, run a
 everywhere" is a claim and not a gate. The 2026-08-08 course correction that recorded the
 `@threenative/physics` node fork is closed: the fork was removed, each public class is one
 file again, and only the `PhysicsSimulation` backend swaps on the export condition. The
-standing gate is [`../PRDs/PRD-054-write-once-run-anywhere.md`](../PRDs/PRD-054-write-once-run-anywhere.md),
+standing gate is [`../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md`](../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md),
 which owns the parity matrix and is open.
 
 Release readiness requires, in order:

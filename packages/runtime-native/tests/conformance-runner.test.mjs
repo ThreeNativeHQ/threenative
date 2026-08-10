@@ -26,6 +26,7 @@ import {
 } from "../conformance/project-mode.mjs";
 import {
   androidDeviceKind,
+  androidDependencyBlocker,
   androidSystemDialog,
   validateRegistry,
   validateReport,
@@ -422,6 +423,66 @@ test("Android conformance override requires an explicit matching bundle hash", (
     const metadata = buildAndroidConformanceAsset({ bundle, expectedSha256: hash, output });
     assert.equal(metadata.outputSha256, hash);
     assert.deepEqual(readFileSync(output), readFileSync(bundle));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-deps-"));
+  try {
+    const reason = androidDependencyBlocker(dir);
+    assert.match(reason ?? "", /^TN_PARITY_ANDROID_DEPS_BLOCKED:/u);
+    assert.match(reason ?? "", /SDL3-3\.2\.8\.aar does not exist/u);
+    assert.match(reason ?? "", /checked source and packaged Android dependency layouts/u);
+    assert.match(reason ?? "", /libmystral-runtime\.so/u);
+    assert.match(reason ?? "", /pnpm native:build/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android parity blocks a partial packaged layout even when the source AAR exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-partial-prebuilt-"));
+  try {
+    mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
+    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+    mkdirSync(join(dir, "android/prebuilt"), { recursive: true });
+    writeFileSync(join(dir, "android/prebuilt/SDL3-3.2.8.aar"), "fixture");
+
+    assert.ok(androidDependencyBlocker(dir));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android parity accepts a source-only SDL3 dependency layout", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-source-only-"));
+  try {
+    mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
+    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+
+    assert.equal(androidDependencyBlocker(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android parity accepts a complete packaged dependency layout", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-prebuilt-"));
+  try {
+    const files = [
+      "android/prebuilt/SDL3-3.2.8.aar",
+      "android/prebuilt/jniLibs/arm64-v8a/libSDL3.so",
+      "android/prebuilt/jniLibs/arm64-v8a/libmystral-runtime.so",
+      "android/prebuilt/jniLibs/x86_64/libSDL3.so",
+      "android/prebuilt/jniLibs/x86_64/libmystral-runtime.so",
+    ];
+    for (const file of files) {
+      mkdirSync(join(dir, file, ".."), { recursive: true });
+      writeFileSync(join(dir, file), "fixture");
+    }
+    assert.equal(androidDependencyBlocker(dir), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

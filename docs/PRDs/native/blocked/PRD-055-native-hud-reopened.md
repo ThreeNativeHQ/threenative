@@ -154,3 +154,22 @@ If this PRD lands as G+E, "everything that works on web works on desktop and mob
 true for the interface too, and `@threenative/ui` remains what it is: a React convenience for
 web-only games, clearly labelled. If it lands as D again, the promise must be rewritten
 wherever it appears, because today it is stated without the asterisk that the code enforces.
+
+## Budget justification
+
+2026-08-10: PRD-055 owns the native HUD/text conformance scenes and their fail-closed test
+coverage in `conformance/` and `tests/`. The exact count and commit attribution are in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps these proof scenes
+because they distinguish a readable native HUD from a blank or stale frame; it does not create
+a framework widget, layout system, or native UI abstraction. The native LOC trigger remains
+unchanged.
+
+## Criterion 2 rerun — 2026-08-10
+
+The lane result is recorded in
+[`docs/verification/prd-055-touch-criterion-2-2026-08-10.md`](../verification/prd-055-touch-criterion-2-2026-08-10.md).
+The actual template contains a 181-line touch-controls implementation wired through
+`Level.ts`, so Path 1's source contract is satisfied. Android execution remains blocked
+before touch assertions by the recorded ADB result:
+`TN_PARITY_ANDROID_ADB_BLOCKED: spawnSync /home/joao/Android/Sdk/platform-tools/adb EPERM`.
+Criterion 2 remains open; no Android touch-playability claim is made.

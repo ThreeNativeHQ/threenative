@@ -521,3 +521,12 @@ resolution for each packager, the entry/start contract, and the V8/QuickJS/WebGP
 fixes required for that unchanged starter to reach 300 frames. Temporary diagnostics were
 removed. The old source-truncation and start-string paths were deleted, no second runtime or
 package was added, and the platformer template was reduced to the hard 1,200-LOC ceiling.
+
+## Budget justification
+
+2026-08-10: PRD-050 owns the native entry, asset staging, starter verifier, platform build
+configuration, and associated `src/`, `scripts/`, `android/`, `ios/`, CMake, and `tests/`
+lines. The exact count and commit-level attribution are in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps these paths
+because removing them restores the silent-drop artifact divergence this PRD closes; they are
+not a second runtime or a user-facing abstraction. The 50,000-line trigger remains unchanged.

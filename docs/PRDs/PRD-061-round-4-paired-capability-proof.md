@@ -1,7 +1,9 @@
 # PRD-061 — round 4: the paired proof Phase 2 has been missing
 
-**Status: NOT STARTED, 2026-08-09.** Nothing in this PRD is blocked. It needs no device, no
-credential and no toolchain beyond the ones `pnpm test` already requires.
+**Status: NOT STARTED, 2026-08-09 — blocked on an owner round-budget grant.** `pnpm round:next`
+prints `stop round 3 / Stop condition recorded: budget`; round 4 does not start until an owner
+clears it. Nothing else blocks it: it needs no device, no credential and no toolchain beyond
+the ones `pnpm test` already requires.
 
 **Complexity: 5 → MEDIUM mode.** One new sealed genre (3 artifacts), one instrument-text
 change with a pinned test, one round executed end to end, one ledger.

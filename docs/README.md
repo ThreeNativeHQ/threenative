@@ -65,7 +65,7 @@ persistent unused-export evidence comes from `pnpm round:deletions`.
 The 2026-08-08 course correction is closed and its file deleted: the `@threenative/physics`
 node fork was removed, each public class is one file, and only the `PhysicsSimulation`
 backend swaps on the export condition. Write-once/run-anywhere is now owned as a gate by
-[PRDs/PRD-054-write-once-run-anywhere.md](PRDs/PRD-054-write-once-run-anywhere.md), which is
+[PRDs/native/blocked/PRD-054-write-once-run-anywhere.md](PRDs/native/blocked/PRD-054-write-once-run-anywhere.md), which is
 **open** — blocked at acceptance criterion 1.
 
 ## Product

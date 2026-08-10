@@ -165,3 +165,12 @@ emulator proof now satisfies criterion 4.
 
 Whether `pressure`, `width`/`height` and `pointerType` should be carried through. The host
 already dispatches them. Nothing in the probe needed them, so this PRD does not add them.
+
+## Budget justification
+
+2026-08-10: PRD-053 owns the native multi-pointer bridge and proof slice in `src/`,
+`include/`, `android/`, `conformance/`, `scripts/`, and `tests/`. The exact attribution is in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps only the pointer
+identity transport and fail-closed simultaneous-touch verifier; it does not justify a gesture,
+joystick, or second input model. Removing this slice would make the Android touch-playability
+claim unobservable, and the native LOC trigger remains unchanged.
