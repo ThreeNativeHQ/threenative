@@ -10,6 +10,7 @@ import {
   type IPlaytestBridgeV1,
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
+import { androidTouchBatches } from "../src/runner/android.js";
 import { runAndroidPlaytest } from "../src/runner/androidRunner.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
@@ -271,3 +272,25 @@ async function availablePort(): Promise<number> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   return address.port;
 }
+
+test("emulator touch batches never mix a tracking id with a coordinate", () => {
+  const identity = ["EV_ABS:ABS_MT_SLOT:0", "EV_ABS:ABS_MT_TRACKING_ID:100"];
+  const positions = [
+    "EV_ABS:ABS_MT_SLOT:0",
+    "EV_ABS:ABS_MT_POSITION_X:6553",
+    "EV_ABS:ABS_MT_POSITION_Y:26214",
+  ];
+
+  expect(androidTouchBatches(identity, positions)).toEqual([
+    [...identity, "EV_SYN:0:0"],
+    [...positions, "EV_SYN:0:0"],
+  ]);
+  expect(androidTouchBatches([], [])).toEqual([]);
+  expect(androidTouchBatches(identity, [])).toEqual([[...identity, "EV_SYN:0:0"]]);
+
+  // The emulator answers OK and silently discards the coordinate, so this has to throw rather
+  // than inject a contact that lands at (0, 0).
+  expect(() => androidTouchBatches([...identity, ...positions], [])).toThrow(
+    /TN_PLAYTEST_ANDROID_TOUCH_BATCH_MIXED/u,
+  );
+});

@@ -73,6 +73,33 @@ frame reported a pass. **No clean-machine run was executed here** — criterion 
 | `pnpm budgets` | PASS — 6 framework packages, 3 example workspaces, 6,011/15,000 framework LOC, 4 PRD files. Native runtime LOC trips its review trigger at 61,198/50,000; that trigger predates this change and is owned by the native PRDs |
 | `pnpm test:templates` | See the run recorded alongside this file |
 
+## The Android emulator run — executed 2026-08-09
+
+The owner supplied an emulator, so PRD-053 criterion 4 was executed rather than deferred.
+`pnpm --filter @threenative/runtime-native native:verify:android:multitouch --device
+emulator-5554` on AVD `threenative-prd050` (emulator 36.6.11, android-35 google_apis x86_64,
+JDK 17). The APK built and the first proof passed on device: 300 frames, clean logcat, a
+53 KB non-blank 1080x2400 screenshot.
+
+The simultaneous-touch scenario **failed**, and finding out why produced two fixes and one
+open defect.
+
+| # | Finding | State |
+|---|---|---|
+| 1 | `adb emu event send` silently drops `ABS_MT_POSITION_X/Y` from any batch that also carries `ABS_MT_TRACKING_ID`. It answers `OK`. Every contact landed at `(0, 0)` | **fixed** — identity and coordinates go in separate synced batches; `androidTouchBatches` throws `TN_PLAYTEST_ANDROID_TOUCH_BATCH_MIXED` if recombined, with a unit test |
+| 2 | `setWindowSize` skipped its cache update when there was no SDL window, and `dispatchResizeEvent` never synced the platform size at all | **fixed** — the cache now tracks the canvas; `syncWindowSize` records a size the platform already applied |
+| 3 | A `landscape`-locked activity on a portrait display gives a `2400x1080` canvas while SDL's window stays `1080x2400`, so `event.x * width` produces display-space pixels | **open** — measured on device: normalized `x = 0.2` and `x = 0.8` arrive at canvas x `216` and `865`, both under the `1200` half-width |
+
+Fix 1 was verified by observing raw evdev traffic with `getevent -lt /dev/input/event2`, not
+by the scenario passing. Fix 2 is a latent-inconsistency repair that did **not** resolve
+defect 3; it is verified only insofar as the Android APK rebuilt and passed the 300-frame
+first proof with it. **Desktop native was not rebuilt**, so no desktop claim is made for it.
+
+After both fixes the device run reports `maxPointers: 2` and `movedWithTwoPointers: true` —
+two simultaneous contacts genuinely reach the game on Android — while
+`leftGroundWithTwoPointers` and the `airborne` step assertion stay false because of defect 3.
+PRD-053 criterion 4 is **executed and failing**, not unproven.
+
 ## Not run here, and not claimed
 
 - No Android emulator or physical-device execution. PRD-053 criterion 4 and PRD-054's

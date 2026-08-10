@@ -252,13 +252,22 @@ void setFullscreen(bool fullscreen) {
 }
 
 /**
- * Resize window
+ * Record a size the platform already applied, without asking SDL to resize again.
  */
+void syncWindowSize(int width, int height) {
+    if (width <= 0 || height <= 0) return;
+    g_window.width = width;
+    g_window.height = height;
+}
+
 void setWindowSize(int width, int height) {
+    // The cached size is what scales SDL's normalized touch coordinates back into canvas
+    // pixels, so it has to track the canvas even when there is no SDL window to resize.
+    // Android reaches this before the SDL window exists, and skipping the cache left every
+    // finger scaled by the portrait display width inside a landscape surface.
+    syncWindowSize(width, height);
     if (g_window.sdlWindow) {
         SDL_SetWindowSize(g_window.sdlWindow, width, height);
-        g_window.width = width;
-        g_window.height = height;
     }
 }
 

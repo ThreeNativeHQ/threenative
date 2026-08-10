@@ -11,6 +11,31 @@ frame**, and `conformance/multitouch-proof.mjs` requires that flag plus two poin
 down at the moment the proof is read. `tests/conformance-runner.test.mjs` pins both
 rejections. **What remains is running it on the emulator**; no emulator run is claimed.
 
+**The proof was executed on the Android emulator on 2026-08-09 and it failed.** That run is
+what turned two suspicions into two fixed bugs and one open defect:
+
+1. **Fixed — the injector silently lost every coordinate.**
+   `packages/playtest/src/runner/android.ts` batched `ABS_MT_TRACKING_ID` together with
+   `ABS_MT_POSITION_X/Y` in one `adb emu event send`. The emulator answers `OK` and discards
+   the coordinates, so every contact landed at `(0, 0)`. Confirmed against
+   `getevent -lt /dev/input/event2` on emulator 36.6.11 / android-35 google_apis. Identity and
+   coordinates now go in separate synced batches and `androidTouchBatches` throws
+   `TN_PLAYTEST_ANDROID_TOUCH_BATCH_MIXED` if they are ever recombined.
+2. **Fixed — the cached window size could not track the canvas.** `setWindowSize` skipped its
+   cache update when there was no SDL window, and `dispatchResizeEvent` never synced at all.
+   `getWindowSize()` is what scales SDL's normalized touch back into canvas pixels.
+3. **OPEN — Android orientation mismatch.** With the activity locked to `landscape` on a
+   portrait display, the JS canvas is `2400x1080` while SDL's window stays `1080x2400`, so
+   `event.x * width` yields display-space pixels. Measured on device: two contacts at
+   normalized `x = 0.2` and `x = 0.8` arrive at canvas x `216` and `865`, both below the
+   `1200` half-width, so a two-finger gesture reads as two contacts in the same half.
+
+After the two fixes the device run reports `maxPointers: 2` and `movedWithTwoPointers: true`
+— **two simultaneous contacts do reach the game on a real Android emulator** — while
+`leftGroundWithTwoPointers` stays false because of defect 3. Criterion 4 is therefore
+**executed and failing**, which is a stronger position than the previous "written, unproven".
+Full record: `docs/verification/integration-2026-08-09-six-prds.md`.
+
 Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
 `docs/verification/prd-053-multitouch-2026-08-09.md`.
 

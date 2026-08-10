@@ -107,14 +107,15 @@ export class AdbAndroidDriver implements IAndroidDriver {
     }
     this.rotation ??= await this.readRotation();
     const next = new Map(pointers.map((pointer) => [pointer.id, pointer]));
-    const events: string[] = [];
-    const append = (type: string, code: string, value: number) => {
-      events.push(`${type}:${code}:${value}`);
+    const identity: string[] = [];
+    const positions: string[] = [];
+    const append = (batch: string[], type: string, code: string, value: number) => {
+      batch.push(`${type}:${code}:${value}`);
     };
     for (const [id, held] of [...this.touchSlots]) {
       if (next.has(id)) continue;
-      append("EV_ABS", "ABS_MT_SLOT", held.slot);
-      append("EV_ABS", "ABS_MT_TRACKING_ID", -1);
+      append(identity, "EV_ABS", "ABS_MT_SLOT", held.slot);
+      append(identity, "EV_ABS", "ABS_MT_TRACKING_ID", -1);
       this.touchSlots.delete(id);
     }
     for (const pointer of pointers) {
@@ -126,25 +127,24 @@ export class AdbAndroidDriver implements IAndroidDriver {
         while (usedSlots.has(slot)) slot += 1;
         held = { slot, trackingId: this.nextTrackingId++, x, y };
         this.touchSlots.set(pointer.id, held);
-        append("EV_ABS", "ABS_MT_SLOT", slot);
-        append("EV_ABS", "ABS_MT_TRACKING_ID", held.trackingId);
-        append("EV_ABS", "ABS_MT_POSITION_X", x);
-        append("EV_ABS", "ABS_MT_POSITION_Y", y);
+        append(identity, "EV_ABS", "ABS_MT_SLOT", slot);
+        append(identity, "EV_ABS", "ABS_MT_TRACKING_ID", held.trackingId);
+        append(positions, "EV_ABS", "ABS_MT_SLOT", slot);
+        append(positions, "EV_ABS", "ABS_MT_POSITION_X", x);
+        append(positions, "EV_ABS", "ABS_MT_POSITION_Y", y);
         // The emulator's virtio touchscreen advertises pressure and touch-major axes.
-        append("EV_ABS", "ABS_MT_TOUCH_MAJOR", 1);
-        append("EV_ABS", "ABS_MT_PRESSURE", 512);
+        append(positions, "EV_ABS", "ABS_MT_TOUCH_MAJOR", 1);
+        append(positions, "EV_ABS", "ABS_MT_PRESSURE", 512);
       } else if (held.x !== x || held.y !== y) {
-        append("EV_ABS", "ABS_MT_SLOT", held.slot);
-        append("EV_ABS", "ABS_MT_POSITION_X", x);
-        append("EV_ABS", "ABS_MT_POSITION_Y", y);
+        append(positions, "EV_ABS", "ABS_MT_SLOT", held.slot);
+        append(positions, "EV_ABS", "ABS_MT_POSITION_X", x);
+        append(positions, "EV_ABS", "ABS_MT_POSITION_Y", y);
         held.x = x;
         held.y = y;
       }
     }
-    if (events.length > 0) {
-      // The emulator console has no symbolic EV_SYN code aliases. Linux SYN_REPORT is 0.
-      append("EV_SYN", "0", 0);
-      await this.adb(["emu", "event", "send", ...events]);
+    for (const batch of androidTouchBatches(identity, positions)) {
+      await this.adb(["emu", "event", "send", ...batch]);
     }
     return {
       activeIds: [...this.touchSlots.keys()],
@@ -235,6 +235,37 @@ export function parseAndroidConsole(output: string): Array<{ text: string; type:
 }
 
 const TOUCH_AXIS_MAX = 32767;
+
+/**
+ * Splits slot identity from coordinates into separate synced `adb emu event send` batches.
+ *
+ * The emulator console drops ABS_MT_POSITION_X/Y from any batch that also carries an
+ * ABS_MT_TRACKING_ID: the command reports `OK` and the coordinates never reach the device, so
+ * every contact lands at (0, 0) and a two-finger gesture reads as two touches in the same
+ * screen half — the exact failure that made the simultaneous-touch proof unprovable.
+ * Confirmed against `getevent -lt /dev/input/event2` on emulator 36.6.11 with the android-35
+ * google_apis image. Identity goes first so a slot exists before it is positioned.
+ */
+export function androidTouchBatches(
+  identity: readonly string[],
+  positions: readonly string[],
+): string[][] {
+  const batches: string[][] = [];
+  for (const batch of [identity, positions]) {
+    if (batch.length === 0) continue;
+    if (
+      batch.some((event) => event.includes("ABS_MT_TRACKING_ID")) &&
+      batch.some((event) => event.includes("ABS_MT_POSITION_"))
+    ) {
+      throw new Error(
+        "TN_PLAYTEST_ANDROID_TOUCH_BATCH_MIXED: a tracking id and a coordinate cannot share one emulator event batch; the emulator silently drops the coordinate.",
+      );
+    }
+    // The emulator console has no symbolic EV_SYN code aliases. Linux SYN_REPORT is 0.
+    batches.push([...batch, "EV_SYN:0:0"]);
+  }
+  return batches;
+}
 
 export function rotatedTouchPosition(x: number, y: number, rotation: number): [number, number] {
   const normalized = rotation === 0

@@ -75,6 +75,15 @@ void setFullscreen(bool fullscreen);
 void setWindowSize(int width, int height);
 
 /**
+ * Record a size the platform already applied, without asking SDL to resize again.
+ *
+ * getWindowSize() is what scales SDL's normalized touch coordinates back into canvas pixels,
+ * so a surface change that reaches the runtime without going through setWindowSize() would
+ * otherwise leave pointers scaled by a stale size.
+ */
+void syncWindowSize(int width, int height);
+
+/**
  * Set window title
  */
 void setWindowTitle(const char* title);

@@ -4287,6 +4287,13 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         width_ = e.width;
         height_ = e.height;
 
+        // Touch coordinates are normalized by SDL and scaled back up with getWindowSize(), so
+        // the platform window has to track the canvas. A landscape-locked Android activity on
+        // a portrait display resizes to 2400x1080 through this path while the platform size
+        // stayed 1080x2400, which scaled every finger into the wrong half of the screen and
+        // made a two-finger gesture read as two contacts on the same side.
+        platform::syncWindowSize(e.width, e.height);
+
         // Update window.innerWidth/innerHeight
         auto window = jsEngine_->getGlobal();
         jsEngine_->setProperty(window, "innerWidth", jsEngine_->newNumber(e.width));
