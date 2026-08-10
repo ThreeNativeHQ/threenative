@@ -462,19 +462,29 @@ proliferation was a symptom of the disease. A 15k-LOC framework split 11 ways is
 rule, not by a number to negotiate. Modularity comes from subpath exports, not from more
 `package.json` files.
 
-```
-threenative/
-  pnpm-workspace.yaml
-  packages/
-    core/                  # loop, lifecycle, scenes, input, assets, web platform,
-                           #   renderer bootstrap (~40 lines), state store, hot reload
-    physics/               # Rapier binding — separate ONLY because of the WASM dep
-    ui/                    # React bindings — separate ONLY because of the React dep
-    runtime-native/        # owned C++ host; separate ONLY because of its native toolchains
-    create-threenative/    # scaffolder
-    playtest/              # salvaged
-  examples/
-    abyss/                 # the benchmark, in both forms
+```mermaid
+flowchart TD
+    repo["threenative/"]
+    workspace["pnpm-workspace.yaml"]
+    packages["packages/"]
+    core["core/<br/>loop, lifecycle, scenes, input, assets, web platform,<br/>renderer bootstrap, state store, hot reload"]
+    physics["physics/<br/>Rapier binding — separate because of the WASM dependency"]
+    ui["ui/<br/>React bindings — separate because of the React dependency"]
+    native["runtime-native/<br/>owned C++ host and native toolchains"]
+    create["create-threenative/<br/>scaffolder"]
+    playtest["playtest/<br/>salvaged"]
+    examples["examples/"]
+    abyss["abyss/<br/>benchmark in both forms"]
+
+    repo --> workspace
+    repo --> packages
+    packages --> core
+    packages --> physics
+    packages --> ui
+    packages --> native
+    packages --> create
+    packages --> playtest
+    repo --> examples --> abyss
 ```
 
 A package exists only when it carries a dependency the others must not inherit. That
@@ -500,31 +510,52 @@ dependencies are a support burden.
 
 ### 9b. What `pnpm create threenative my-game` generates
 
-```
-my-game/
-  package.json
-  threenative.config.ts        # renderer + plugins. No visual options.
-  index.html
-  tailwind.config.ts
-  src/
-    main.ts                    # defineGame(...)
-    scenes/
-      Boot.ts
-      Play.ts
-    render/                    # ← GENERATED, YOURS. Framework never touches these.
-      lighting.ts              #   three-point rig, shadows, ambient
-      postprocessing.ts        #   bloom + tonemapping, plain three/webgpu
-      materials.ts             #   palette + shared material defaults
-    entities/
-      Player.ts                # RigidBody3D usage, as a readable example
-    ui/
-      Hud.tsx                  # React + Tailwind
-      Menu.tsx
-    state.ts                   # game state shape the UI subscribes to
-  assets/
-  tests/
-    play.playtest.ts           # one scenario, green on the scaffold
-  public/
+```mermaid
+flowchart TD
+    project["my-game/"]
+    package["package.json"]
+    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    index["index.html"]
+    tailwind["tailwind.config.ts"]
+    src["src/"]
+    main["main.ts<br/>defineGame(...)"]
+    scenes["scenes/"]
+    boot["Boot.ts"]
+    play["Play.ts"]
+    render["render/<br/>GENERATED, YOURS; framework never touches these"]
+    lighting["lighting.ts<br/>three-point rig, shadows, ambient"]
+    post["postprocessing.ts<br/>bloom + tonemapping, plain three/webgpu"]
+    materials["materials.ts<br/>palette + shared material defaults"]
+    entities["entities/"]
+    player["Player.ts<br/>RigidBody3D usage, readable example"]
+    ui["ui/"]
+    hud["Hud.tsx<br/>React + Tailwind"]
+    menu["Menu.tsx"]
+    state["state.ts<br/>game state shape the UI subscribes to"]
+    assets["assets/"]
+    tests["tests/"]
+    scenario["play.playtest.ts<br/>one scenario, green on the scaffold"]
+    public["public/"]
+
+    project --> package
+    project --> config
+    project --> index
+    project --> tailwind
+    project --> src
+    src --> main
+    src --> scenes --> boot
+    scenes --> play
+    src --> render
+    render --> lighting
+    render --> post
+    render --> materials
+    src --> entities --> player
+    src --> ui --> hud
+    ui --> menu
+    src --> state
+    project --> assets
+    project --> tests --> scenario
+    project --> public
 ```
 
 **`src/render/` is the design's load-bearing folder.** It is ordinary Three.js written

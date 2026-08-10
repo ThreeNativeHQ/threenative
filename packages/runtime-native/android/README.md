@@ -85,22 +85,36 @@ bash ./gradlew installDebug
 
 ## Project Structure
 
-```
-android/
-├── app/
-│   ├── build.gradle.kts     # App build config with NDK/CMake settings
-│   ├── proguard-rules.pro   # ProGuard config
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── java/com/mystral/engine/
-│       │   └── MystralActivity.java    # SDL Activity subclass
-│       └── res/
-│           └── values/
-│               ├── strings.xml
-│               └── themes.xml
-├── build.gradle.kts         # Root build file
-├── gradle.properties        # Gradle/NDK settings
-└── settings.gradle.kts      # Project settings
+```mermaid
+flowchart TD
+    android["android/"]
+    app["app/"]
+    appGradle["build.gradle.kts<br/>App build config with NDK/CMake settings"]
+    proguard["proguard-rules.pro<br/>ProGuard config"]
+    srcMain["src/main/"]
+    manifest["AndroidManifest.xml"]
+    java["java/com/mystral/engine/"]
+    activity["MystralActivity.java<br/>SDL Activity subclass"]
+    res["res/"]
+    values["values/"]
+    strings["strings.xml"]
+    themes["themes.xml"]
+    rootGradle["build.gradle.kts<br/>Root build file"]
+    properties["gradle.properties<br/>Gradle/NDK settings"]
+    settings["settings.gradle.kts<br/>Project settings"]
+
+    android --> app
+    app --> appGradle
+    app --> proguard
+    app --> srcMain
+    srcMain --> manifest
+    srcMain --> java --> activity
+    srcMain --> res --> values
+    values --> strings
+    values --> themes
+    android --> rootGradle
+    android --> properties
+    android --> settings
 ```
 
 ## How It Works
