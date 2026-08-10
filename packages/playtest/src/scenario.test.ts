@@ -7,11 +7,11 @@ import test from "node:test";
 import {
   PLAYTEST_ASSERTION_REGISTRY,
   PLAYTEST_CAPABILITY_REGISTRY,
-  PLAYTEST_SETUP_REGISTRY,
   PlaytestScenarioError,
   loadPlaytestScenario,
   requiredPlaytestCapabilities,
 } from "./index.js";
+import { PLAYTEST_SETUP_REGISTRY } from "./assertions.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));

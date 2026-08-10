@@ -48,16 +48,17 @@ narrow consumer. Visible in the current report are names like `runStandalonePlay
 internals a *sweep game* would never call, but the CLI itself does.
 
 So the sweep report is a **candidate generator, not a verdict.** This PRD supplies the missing
-step: a cheap, mechanical live-caller check that turns each candidate into one of three
-dispositions, with no third "review later" escape.
+step: a cheap, mechanical live-caller check that turns each candidate into one of four
+dispositions, with no "review later" escape.
 
-## 3. The three dispositions
+## 3. The four dispositions
 
 Every one of the 167 candidates lands in exactly one, and the count in each is recorded.
 
 | Disposition | Test | Action |
 |---|---|---|
-| **Reached elsewhere** | a real caller exists in `packages/*/src`, a package test, a template, the playtest CLI, or an example | keep; record the caller path so it is never re-reported as a candidate without one |
+| **Reached externally** | a caller exists outside the declaring package: another `packages/*/src`, a template, an example, or the playtest CLI | keep the public export; record the external caller path |
+| **Internal only** | every caller lives inside the declaring package's own `src` or `__tests__` | **un-export**: remove from the package `index.ts`, keep the symbol module-local. A test-only caller does not justify a public export |
 | **Public by contract** | no internal caller, but it is a documented consumer entry point in an export map that a scaffolded project uses | keep; record which template or generated file calls it. A public export with no consumer anywhere is *not* this row |
 | **Dead** | no caller in the repository, no consumer in any template, no export-map path a user reaches | delete with its tests in this PRD's commit |
 

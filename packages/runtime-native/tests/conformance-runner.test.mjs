@@ -26,6 +26,7 @@ import {
 } from "../conformance/project-mode.mjs";
 import {
   androidDeviceKind,
+  androidDependencyBlocker,
   androidSystemDialog,
   validateRegistry,
   validateReport,
@@ -422,6 +423,18 @@ test("Android conformance override requires an explicit matching bundle hash", (
     const metadata = buildAndroidConformanceAsset({ bundle, expectedSha256: hash, output });
     assert.equal(metadata.outputSha256, hash);
     assert.deepEqual(readFileSync(output), readFileSync(bundle));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-deps-"));
+  try {
+    const reason = androidDependencyBlocker(dir);
+    assert.match(reason ?? "", /^TN_PARITY_ANDROID_DEPS_BLOCKED:/u);
+    assert.match(reason ?? "", /SDL3-3\.2\.8\.aar does not exist/u);
+    assert.match(reason ?? "", /pnpm native:build/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

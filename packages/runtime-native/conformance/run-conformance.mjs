@@ -713,6 +713,12 @@ async function runAndroid(
       return;
     }
   }
+  const androidBlockedReason = androidDependencyBlocker();
+  if (androidBlockedReason !== null) {
+    result.status = "blocked";
+    result.blockedReason = androidBlockedReason;
+    return;
+  }
   const androidDir = join(runtimeRoot, "android");
   stageAndroidAssets(assets);
   const gradlew = process.platform === "win32" ? join(androidDir, "gradlew.bat") : "bash";
@@ -919,6 +925,17 @@ async function runAndroid(
       }
     }
   }
+}
+
+export function androidDependencyBlocker(root = runtimeRoot) {
+  const androidAar = join(root, "third_party", "sdl3-android", "SDL3-3.2.8.aar");
+  if (!existsSync(androidAar)) {
+    return (
+      `TN_PARITY_ANDROID_DEPS_BLOCKED: ${androidAar} does not exist. ` +
+      `Run "pnpm native:build" to download the Android third-party dependencies.`
+    );
+  }
+  return null;
 }
 
 const RUNTIME_ENV_KEYS = Object.freeze([

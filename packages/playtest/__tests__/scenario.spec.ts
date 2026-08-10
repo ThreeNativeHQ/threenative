@@ -6,12 +6,12 @@ import { test, expect } from "vitest";
 import {
   PLAYTEST_ASSERTION_REGISTRY,
   PLAYTEST_CAPABILITY_REGISTRY,
-  PLAYTEST_SETUP_REGISTRY,
   PlaytestScenarioError,
   loadPlaytestScenario,
   requiredPlaytestCapabilities,
 } from "../src/index.js";
-import type { IPlaytestResourceAssertion } from "../src/index.js";
+import { PLAYTEST_SETUP_REGISTRY } from "../src/assertions.js";
+import type { IPlaytestResourceAssertion } from "../src/scenario.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));

@@ -1,4 +1,9 @@
-export * from "./bridge.js";
-export * from "./device.js";
-export * from "./entities.js";
-export * from "./observations.js";
+export { installThreePlaytestBridge } from "./bridge.js";
+export type {
+  IThreePlaytestBridgeInstallation,
+  IThreePlaytestBridgeOptions,
+  IThreePlaytestResources,
+} from "./bridge.js";
+export { connectDevicePlaytestBridge, readPlaytestEndpoint } from "./device.js";
+export type { IDeviceBridgeInstallation } from "./device.js";
+export type { IThreePlaytestEntity } from "./entities.js";
