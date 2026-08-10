@@ -5,10 +5,9 @@ not raised, hidden, or converted into a hard failure.
 
 ## Phase 0 — measurement and attribution
 
-The lane is based at `5e86c48`. The batch PRD's parent worktree reports 61,524 lines, but its
-nine newer commits are not present in this lane. The re-runnable lane measurement is 61,351
-lines, so this evidence uses the number actually produced here rather than importing a
-measurement from another worktree.
+The lane is based at `5e86c48` and includes the post-base runtime commits `fd92899`, `0995e01`,
+and `0ea5cd1`, plus this repair. The re-runnable post-repair lane measurement is 61,589 lines;
+the pre-repair measurement was 61,554. This evidence uses the number produced in this lane.
 
 The raw attribution source is:
 
@@ -23,7 +22,7 @@ build caches, `dist/`, and the generated Android bundle are excluded. `CMakeList
 included even though it has no extension. The `+/-` values below are the budget-counted
 `git numstat` changes; the budget script's exact line counter adds one terminal line for each
 of the 240 counted files, reconciling the historical `git numstat` net of 61,111 to the
-measured 61,351.
+measured 61,589.
 
 | Commit | Budget lines (+/-) | Owning PRD | Area |
 | --- | ---: | --- | --- |
@@ -86,6 +85,10 @@ measured 61,351.
 | `2e247d6` | +960 / -47 | PRD-046 + PRD-048 + PRD-053 + PRD-054 + PRD-055 | landed cross-PRD gates |
 | `351319c` | +0 / -0 | PRD-048 | excluded Android documentation |
 | `5e86c48` | +2 / -2 | PRD-048 | emulator boot/release gate |
+| `fd92899` | +28 / -3 | PRD-053 | Android touch coordinate transport (`include/`, `src/`) |
+| `0995e01` | +148 / -0 | PRD-053 | Android touch parity and proof (`src/`, `tests/`) |
+| `0ea5cd1` | +30 / -0 | PRD-054 | parity runner and contract tests (`conformance/`, `tests/`) |
+| this repair | +38 / -3 | PRD-054 | Android dependency layout preflight (`conformance/`, `tests/`) |
 
 The table attributes the full measured tree's growth in this lane. The source PRD's
 53,851-line prior measurement is retained as historical context in PRD-048; it is not
@@ -94,13 +97,13 @@ reachable from this lane's commit ancestry, so it is not used to manufacture a d
 ## Current measured areas
 
 The following exact counts come from the same file walk as `scripts/check-budgets.ts` and sum
-to 61,351:
+to 61,589:
 
 | Area | Lines | Owning PRD(s) | Kill-switch verdict |
 | --- | ---: | --- | --- |
-| `src/` | 37,101 | PRD-047, PRD-046, PRD-050, PRD-053 | **keep** — host shims, physics ABI, platform lifecycle, and input delivery are the runtime itself |
-| `conformance/` | 5,581 | PRD-054, PRD-055, PRD-053 | **keep** — the shared registry is executable parity evidence; removing it makes cross-target claims untestable |
-| `tests/` | 4,815 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055 | **keep** — fail-closed contract tests are required evidence; deleting tests to clear a trigger is forbidden |
+| `src/` | 37,179 | PRD-047, PRD-046, PRD-050, PRD-053 | **keep** — host shims, physics ABI, platform lifecycle, and input delivery are the runtime itself |
+| `conformance/` | 5,611 | PRD-054, PRD-055, PRD-053 | **keep** — the shared registry is executable parity evidence; removing it makes cross-target claims untestable |
+| `tests/` | 4,936 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055 | **keep** — fail-closed contract tests are required evidence; deleting tests to clear a trigger is forbidden |
 | `scripts/` | 4,827 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054 | **keep** — packaging, build, emulator, and verifier orchestration has no plain native alternative |
 | `include/` | 3,541 | PRD-047, PRD-046, PRD-053 | **keep** — these headers are the host and coarse physics/input ABI contracts |
 | `android/` | 1,738 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054 | **keep** — APK lifecycle, SDL glue, and device transport are needed to execute the Android proof |
@@ -126,7 +129,7 @@ back to this file.
 
 ## Phase 3 — residual
 
-The post-pass measurement remains **61,351 / 50,000 native LOC**, a residual **+11,351**.
+The post-repair measurement is **61,589 / 50,000 native LOC**, a residual **+11,589**.
 `LIMITS.nativeRuntimeLoc` and the trigger text in `scripts/check-budgets.ts` are unchanged.
 The owner sentence for this residual is: retain the single absorbed host plus the executable
 parity, device, build, distribution, and physics evidence that makes the claimed native
@@ -148,17 +151,17 @@ Error: listen EPERM: operation not permitted /tmp/tsx-1000/13.pipe
 The repository's equivalent direct loader ran successfully after the lane changes:
 
 ```text
-budgets trigger: native runtime LOC review trigger: 61351 lines (trigger 50000, +11351). Justify in the owning PRD and run the kill switch over what was added.
-budgets ok: 6 framework packages, 3 example workspaces, 6002/15000 framework LOC, 61351/50000 native runtime LOC, 4 PRD files, largest template 1200 LOC
+budgets trigger: native runtime LOC review trigger: 61589 lines (trigger 50000, +11589). Justify in the owning PRD and run the kill switch over what was added.
+budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61589/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The pre-deletion direct-loader baseline was:
+The pre-repair direct-loader baseline was:
 
 ```text
-budgets trigger: native runtime LOC review trigger: 61351 lines (trigger 50000, +11351). Justify in the owning PRD and run the kill switch over what was added.
-budgets ok: 6 framework packages, 3 example workspaces, 6011/15000 framework LOC, 61351/50000 native runtime LOC, 4 PRD files, largest template 1200 LOC
+budgets trigger: native runtime LOC review trigger: 61554 lines (trigger 50000, +11554). Justify in the owning PRD and run the kill switch over what was added.
+budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61554/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The native number did not move: this PRD justified the measured residual rather than routing
-around it. The framework number falls by nine only because PRD-063 removes the unused core
-`input` factory; `LIMITS.nativeRuntimeLoc` is unchanged.
+The native number increased by 35 counted lines for the Android layout preflight and its
+positive/negative tests. The framework number and `LIMITS.nativeRuntimeLoc` are unchanged by
+this repair; the trigger remains visible and justified rather than routed around.

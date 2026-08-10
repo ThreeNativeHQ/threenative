@@ -928,10 +928,23 @@ async function runAndroid(
 }
 
 export function androidDependencyBlocker(root = runtimeRoot) {
-  const androidAar = join(root, "third_party", "sdl3-android", "SDL3-3.2.8.aar");
-  if (!existsSync(androidAar)) {
+  const sourceRoot = join(root, "third_party", "sdl3-android");
+  const sourceAar = join(sourceRoot, "SDL3-3.2.8.aar");
+  const prebuiltRoot = join(root, "android", "prebuilt");
+  const prebuiltFiles = [
+    join(prebuiltRoot, "SDL3-3.2.8.aar"),
+    join(prebuiltRoot, "jniLibs", "arm64-v8a", "libSDL3.so"),
+    join(prebuiltRoot, "jniLibs", "arm64-v8a", "libmystral-runtime.so"),
+    join(prebuiltRoot, "jniLibs", "x86_64", "libSDL3.so"),
+    join(prebuiltRoot, "jniLibs", "x86_64", "libmystral-runtime.so"),
+  ];
+  const sourceComplete = existsSync(sourceAar);
+  const prebuiltMissing = prebuiltFiles.filter((file) => !existsSync(file));
+  if (!sourceComplete && prebuiltMissing.length > 0) {
     return (
-      `TN_PARITY_ANDROID_DEPS_BLOCKED: ${androidAar} does not exist. ` +
+      "TN_PARITY_ANDROID_DEPS_BLOCKED: checked source and packaged Android dependency layouts. " +
+      `source (${sourceRoot}): ${sourceAar} does not exist; ` +
+      `packaged (${prebuiltRoot}): missing ${prebuiltMissing.join(", ")}. ` +
       `Run "pnpm native:build" to download the Android third-party dependencies.`
     );
   }

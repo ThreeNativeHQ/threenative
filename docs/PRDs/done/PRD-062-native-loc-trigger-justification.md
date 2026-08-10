@@ -4,13 +4,14 @@ prd_contract: v1
 
 # PRD-062 — the native LOC trigger has no owner
 
-**Status: NOT STARTED, 2026-08-10.** Nothing here is blocked. It needs no device, no
-credential, no C++ toolchain, and no network. `pnpm budgets` and `git` supply every input.
+**Status: COMPLETE, 2026-08-10.** The 61,589-line measurement, attribution, area verdicts,
+owning-PRD justifications, and residual are recorded in the verification file. The trigger
+and `LIMITS.nativeRuntimeLoc` remain unchanged.
 
 **Complexity: 3 → SMALL mode.** One measurement script run, one attribution pass, one
 kill-switch verdict per added area, one justification section written into the owning PRDs.
 
-**Blast radius:** `docs/PRDs/batch-2026-08-10/PRD-062-*.md`, a justification section in each
+**Blast radius:** this PRD, a justification section in each
 owning native PRD, `docs/verification/native-loc-trigger-2026-08-10.md`, and whatever
 `packages/runtime-native/` source the kill switch actually deletes. **No public API change,
 no gameplay, no template, no package added or removed.**
@@ -24,19 +25,19 @@ worse than no number."*
 
 ## 1. Why this exists
 
-`pnpm budgets` on 2026-08-10:
+The direct budget command on 2026-08-10 produced:
 
 ```
-budgets trigger: native runtime LOC review trigger: 61524 lines (trigger 50000, +11524).
+budgets trigger: native runtime LOC review trigger: 61589 lines (trigger 50000, +11589).
                  Justify in the owning PRD and run the kill switch over what was added.
-budgets ok: 6 framework packages, 3 example workspaces, 6011/15000 framework LOC,
-            61524/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
+budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC,
+            61589/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The trigger has fired on every run for at least a week and **no PRD carries the justification
-it demands.** `OPPORTUNITY-AREAS.md` records 53,851 on 2026-08-09 and calls the overage
+At kickoff, the trigger had fired on every run for at least a week and **no PRD carried the
+justification it demands.** `OPPORTUNITY-AREAS.md` records 53,851 on 2026-08-09 and calls the overage
 "reported, not silently routed around" — but reporting a number is not justifying it, and
-nobody has run the kill switch over the 7,673 lines added since. A review trigger that fires
+nobody had run the kill switch over the 7,738 lines added since. A review trigger that fires
 forever with no owner is exactly the failure mode §10b exists to prevent: the number stops
 carrying information and every future overage inherits an already-numb signal.
 
@@ -50,13 +51,13 @@ runtime, this PRD produces the evidence and stops, and the owner decides separat
 
 | Area | Lines | First read |
 |---|---:|---|
-| `src/` | 37,664 | the host itself — render, platform, shims, physics ABI |
-| `conformance/` | 5,554 | PRD-054's parity registry and its runners |
-| `tests/` | 4,863 | fail-closed contract tests |
-| `scripts/` | 4,807 | build, download-deps, release, emulator lanes |
-| `include/` | 3,523 | public headers |
-| `native/`, `android/`, CMake, docs, misc | ~5,113 | platform packaging |
-| **Total** | **61,524** | trigger is 50,000 |
+| `src/` | 37,179 | the host itself — render, platform, shims, physics ABI |
+| `conformance/` | 5,611 | PRD-054's parity registry and its runners |
+| `tests/` | 4,936 | fail-closed contract tests |
+| `scripts/` | 4,827 | build, download-deps, release, emulator lanes |
+| `include/` | 3,550 | public headers |
+| `android/`, `native/`, CMake, iOS, manifests, config | 5,486 | platform packaging and build configuration |
+| **Total** | **61,589** | trigger is 50,000 |
 
 That table is a starting read, not the attribution the charter asks for. Phase 0 produces the
 real one.

@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-063 — 167 unreached exports, zero deleted
 
-**Status: NOT STARTED, 2026-08-10.** Nothing here is blocked. `pnpm round:deletions` is the
-only instrument and it already runs on this machine.
+**Status: COMPLETE, 2026-08-10.** The frozen worklist has one disposition and caller evidence
+for all 167 candidates; five dead exports were deleted and 106 internal-only exports were
+un-exported. The round-3 ledger records the outcome.
 
 **Complexity: 4 → MEDIUM mode.** One report run, one live-caller review per candidate group,
 deletions with their tests, one ledger row per decision.

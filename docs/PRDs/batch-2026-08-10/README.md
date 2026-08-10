@@ -1,8 +1,8 @@
 # Batch — 2026-08-10
 
-Five items sized for one day on **this** machine: no physical device, no Apple hardware, no
-hosted release credentials. Two are new PRDs in this folder; three are existing PRDs whose
-blocker lifted and that stay where they are.
+Five items were sized for one day on **this** machine: no physical device, no Apple hardware,
+no hosted release credentials. The two batch PRDs are now closed in `docs/PRDs/done/`; the
+other three remain in their owning locations with their separate gate states.
 
 **How the batch was chosen:** every item is executable here today, and every item either
 clears an unmet charter obligation or unblocks a `ROADMAP.md` beta row. Items needing a
@@ -13,9 +13,9 @@ device, a signing identity or a hosted release run were excluded — that is PRD
 
 | Reading | Source |
 |---|---|
-| `native runtime LOC review trigger: 61524 (trigger 50000, +11524)` — fires every run, no PRD carries the justification §10b demands | `pnpm budgets`, 2026-08-10 |
+| `native runtime LOC review trigger: 61589 (trigger 50000, +11589)` — fires every run and is now justified by PRD-062 | `node --import tsx/esm scripts/check-budgets.ts`, 2026-08-10 |
 | `stop round 3 / Stop condition recorded: budget` — round 4 cannot start until an owner grants budget | `pnpm round:next`, 2026-08-10 |
-| 167 unreached exports across rounds 2–3, **zero deleted** | round-3 ledger, `pnpm round:deletions` |
+| 167 unreached exports classified: 48 kept, 106 un-exported, 8 contract-kept, 5 deleted | round-3 ledger, `docs/verification/deletions-2026-08-10.md` |
 | Android touch parity landed — the orientation defect that gated three PRDs is fixed | `0995e01`, `d625299`, 2026-08-10 |
 | Beta rows 3, 4 and 5 remain the blockers | `ROADMAP.md` |
 
@@ -45,8 +45,8 @@ alongside the rest.
 |---|---|---|---|---|---|
 | 1 | **PRD-055** criterion 2 — playable on touch with no keyboard | [`../PRD-055-native-hud-reopened.md`](../PRD-055-native-hud-reopened.md) | yes — Android emulator | 1–2 h | The blocker was the touch orientation defect. It is fixed and `templates/platformer/src/render/touch-controls.ts` shipped 181 lines of on-canvas controls. Re-run the criterion and close it, or record the red |
 | 2 | **PRD-054** criterion 1 — aggregate parity rerun | [`../PRD-054-write-once-run-anywhere.md`](../PRD-054-write-once-run-anywhere.md) | yes — browser + Linux desktop + emulator | 2–3 h | Beta row 4. The matrix could not aggregate while 053 was red; it no longer is. Clean-machine remains a separate, still-unexecuted prerequisite — do not claim it |
-| 3 | **PRD-062** — native LOC trigger justification + kill-switch pass | [`PRD-062-native-loc-trigger-justification.md`](PRD-062-native-loc-trigger-justification.md) | yes — no toolchain needed | 2–3 h | §10b obliges a justification in the owning PRD; none exists. The trigger has fired continuously for a week with no owner |
-| 4 | **PRD-063** — resolve the 167 unreached exports | [`PRD-063-unreached-export-deletion-sweep.md`](PRD-063-unreached-export-deletion-sweep.md) | yes | ~3 h | Rule 2 says delete in the round that discovers it. Three rounds, zero deletions. A kill switch that has never fired is not a kill switch |
+| 3 | **PRD-062** — native LOC trigger justification + kill-switch pass | [`../done/PRD-062-native-loc-trigger-justification.md`](../done/PRD-062-native-loc-trigger-justification.md) | complete | 2–3 h | All measured areas have a keep verdict, owning PRDs carry justification, and the 61,589-line residual is recorded without changing the trigger |
+| 4 | **PRD-063** — resolve the 167 unreached exports | [`../done/PRD-063-unreached-export-deletion-sweep.md`](../done/PRD-063-unreached-export-deletion-sweep.md) | complete | ~3 h | All 167 candidates have one disposition; five dead exports were deleted and 106 internal-only exports were un-exported |
 | 5 | **PRD-061** — round 4, the paired capability proof | [`../PRD-061-round-4-paired-capability-proof.md`](../PRD-061-round-4-paired-capability-proof.md) | yes, but **gated on an owner decision** | full day | The only PRD pointing at beta row 3, the Phase 2 exit gate. `pnpm round:next` refuses to resume: round 3's stop condition is `budget` |
 
 ## The one decision this batch needs from the owner
