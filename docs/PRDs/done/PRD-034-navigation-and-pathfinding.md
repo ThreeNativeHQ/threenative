@@ -13,7 +13,7 @@ phase, plus a manual checkpoint on the phases that change what a screenshot show
 **Depends on:** PRD-003 (physics), PRD-013 (platformer kit), PRD-007 (playtest bridge).
 **Charter authority:** `CHARTER.md` §5 (borrowed vocabulary), §5b (never own the look),
 §9a (when a package may exist), §10 (budgets), §11.1 (the 20-line rule), §11.5 (packages).
-**Strategy source:** [`OPPORTUNITY-AREAS.md`](./OPPORTUNITY-AREAS.md) area #3,
+**Strategy source:** [`OPPORTUNITY-AREAS.md`](../OPPORTUNITY-AREAS.md) area #3,
 score 86 (Gap 30 / Ceiling 22 / Agent 22 / Cost 12).
 
 ---
@@ -758,7 +758,7 @@ the evidence section below. "Verified" without a pasted run is not.
   islands, overhang and blocker described in §7.
 - Negative controls observed red: empty meshes and `cellSize: NaN` both throw in the region
   suite; the blocker omission and cursor-pin browser mutations are recorded in
-  [`docs/verification/PRD-034.md`](../verification/PRD-034.md).
+  [`docs/verification/PRD-034.md`](../../verification/PRD-034.md).
 - `pnpm budgets`: `budgets ok: 7 packages, 3668 framework LOC, 8 PRD files, largest template 1200 LOC`.
 
 ### Phase 2

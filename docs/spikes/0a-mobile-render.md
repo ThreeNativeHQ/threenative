@@ -1,6 +1,21 @@
 # Spike 0a — rendering on device
 
-**Status:** unresolved after execution; no device render observed. **Charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
+**Status: CLOSED 2026-08-09 — the question is answered, and not by this plan.** This spike
+never observed a render (§6 below, 2026-08-02, environmental failure). The question it
+bought — *does `three@0.185.1`'s WebGPU path run outside a browser at all?* — was answered
+**yes** by PRD-047's owned C++ runtime, which replaced the React Native path this plan
+assumed: a 300-frame desktop run and an Android emulator bundle at the catalog Three
+version, both recorded in [`../verification/PRD-047.md`](../verification/PRD-047.md).
+
+Everything below is the original 2026-08-02 plan and its failed run, retained because
+`PRDs/native/done/PRD-044-native-render-adapter.md` and
+[`../strategy/NATIVE-LEVELS-2026-08-08.md`](../strategy/NATIVE-LEVELS-2026-08-08.md) cite it
+as the record of what had *not* been observed at the time. **Do not execute it.** The RN
+route it prescribes is deleted; `react-native-webgpu` is not a dependency of this repo.
+Physical-hardware and frame-rate debt stays open — see
+[`../PRDs/production-readiness/PRD-056-physical-mobile-qualification.md`](../PRDs/production-readiness/PRD-056-physical-mobile-qualification.md).
+
+**Original charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
 **Background:** [`../architecture/NATIVE-RUNTIME.md`](../architecture/NATIVE-RUNTIME.md) —
 the path and the physics verdict. This document is only the executable plan for 0a.
 

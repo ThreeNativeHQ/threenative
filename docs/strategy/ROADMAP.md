@@ -2,7 +2,7 @@
 
 **Status:** Gate 0 closed on 2026-08-07; Phase 1 passed on 2026-08-08; Phase 2 is now
 active. Supersedes the 2026-08-02 phase plan, whose Phase 0 table described six PRDs when
-thirty-one are now in `docs/PRDs/done/`.
+forty-seven are now archived — 41 in `docs/PRDs/done/` and 6 in `docs/PRDs/native/done/`.
 **Charter authority:** `CHARTER.md` §3 (win condition), §5b (the ownership boundary),
 §7 (mobile), §10 (budgets), §12.
 
@@ -31,7 +31,7 @@ than argued.
 | Looks good | **framework wins 2/4** | Phase 1 v2 blind judges: platformer and exploration win, endless ties, topdown loses |
 | Costs less | **wins 2/4** | Phase 1 authored-cost deltas: platformer -187 LOC and topdown -695 LOC; endless +442 and exploration +95 |
 | Does what vanilla can't | **12** | `physics` (Rapier bindings — vanilla has none) and `playtest` both ship. `playtest` is given away to the vanilla arm by §3, so it wins no comparison |
-| Survives the platform | **2** | Web only. §7 resolved the *research* question; neither device spike has run |
+| Survives the platform | **web + emulated device** | Not web-only since 2026-08-08. PRD-047's owned runtime renders 300 desktop frames and an Android emulator bundle at the catalog Three version (`verification/PRD-047.md`); PRD-054's visual registry passes 66/66 on browser, Linux desktop and the emulator. Open: physical phones, iOS, frame-rate parity, and PRD-053 multi-touch |
 
 **The two prior zeroes are now measured.** The instruments built by PRD-019 and PRD-020 now
 have a fresh exploration result: functional parity, framework visual win, and vanilla

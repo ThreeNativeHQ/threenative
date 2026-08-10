@@ -1,16 +1,20 @@
-# Asset pipeline — deferred, with a trigger
+# Asset pipeline — still deferred, with a trigger
 
-**Status:** deferred, 2026-08-02. **Charter authority:** `CHARTER.md` §10 (15k LOC cap),
-§11.1, §11.5 (a package exists only when it carries a dependency the others must not
-inherit).
+**Status:** deferred 2026-08-02, re-checked 2026-08-09 — **still deferred, neither trigger
+fired.** Nothing in `packages/` or `scripts/` implements a build-time asset pipeline, and
+that is the intended state. **Charter authority:** `CHARTER.md` §10 (15k LOC review
+trigger), §11.1, §11.5 (a package exists only when it carries a dependency the others must
+not inherit).
 
 ## Discovery is under its kill switch; the pipeline did not ship
 
 Asset **discovery** — finding a licensed model, texture, HDRI or sound and recording its
 attribution — is separate from the build-time pipeline below. Its scaffold integration
-exists, but PRD-032's 2026-08-09 live-agent gate lost to the no-MCP control and fired its
-deletion condition. The external process remains pinned in generated projects only while
-that destructive removal awaits confirmation; it must not be described as proved.
+exists and still ships: all three templates pin `threenative-asset-mcp@0.4.0` and generate a
+`.mcp.json`. But PRD-032's 2026-08-09 live-agent gate lost to the no-MCP control and fired
+its own deletion condition, so the wiring remains only while that destructive removal awaits
+confirmation. **It must not be described as proved.** Evidence:
+[`../verification/PRD-032-asset-proof/README.md`](../verification/PRD-032-asset-proof/README.md).
 
 The deferral below still binds discovery in one direction: `smithsonian_*` returns
 scan-resolution photogrammetry that this project has no way to decimate, so the generated
@@ -28,22 +32,22 @@ None of that is fixed by a better prompt.
 
 ## Why it is deferred
 
-`packages/core/src/assets.ts` today is ~90 lines: a cached loader with `model`, `texture`,
+`packages/core/src/assets.ts` today is 77 lines: a cached loader with `model`, `texture`,
 `audio`, and injectable per-kind loaders. That is the whole framework-side surface, and it
 is the right size for the current phase.
 
 A real pipeline is a build-time tool of a completely different scale — glTF Transform,
 Meshopt/Draco, KTX2/Basis, texture resizing, LOD generation, collider generation,
-animation validation. Starting it now would consume the 15,000 LOC cap that Phase 1's
-device work has not yet spent, and it would do so before a single game has shipped to a
-device to prove which optimizations actually matter.
+animation validation. Starting it now would spend the 15,000-LOC review trigger against
+device work that is still open, and it would do so before a single game has shipped to
+physical hardware to prove which optimizations actually matter.
 
 ## The trigger to start
 
 Both must be true:
 
-1. `CHARTER.md` §12 criterion 3 is met — a stranger has played a ThreeNative game for five
-   minutes.
+1. `CHARTER.md` §12 criterion **4** is met — a stranger has played a ThreeNative game for
+   five minutes, with a transcript.
 2. A reference game fails a device performance budget **for asset reasons**, measured, not
    assumed.
 
@@ -86,8 +90,9 @@ Collider       missing         !
 
 Not in `@threenative/core`. It is build-time, it carries heavy Node-only dependencies, and
 §11.5 makes that a separate release lane — the shape `asset-mcp` already has in
-`CHARTER.md` §8 (published, MIT, its own lane, 32 tools verified). Reuse that lane rather
-than opening a new package against a cap that is already at 7 of 8.
+`CHARTER.md` §8 (published, MIT, its own lane, 32 tools recorded). Reuse that lane. Package
+count is governed by §11.5's dependency-boundary rule and not by a number — six framework
+packages today — so "there is room for one more" is never the argument.
 
 ## The longer-term reason to care
 

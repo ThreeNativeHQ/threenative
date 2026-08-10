@@ -405,8 +405,11 @@ runtime, and it is worse there, because it surfaces as a gameplay bug on one pla
 
 Both backends are proven by a single conformance suite: the same scenario, run against every
 `PhysicsSimulation` implementation, asserting the same transforms. Absent that suite, "runs
-everywhere" is a claim and not a gate. `COURSE-CORRECTION-2026-08-08.md` records where the
-codebase currently violates this and the order of work to fix it.
+everywhere" is a claim and not a gate. The 2026-08-08 course correction that recorded the
+`@threenative/physics` node fork is closed: the fork was removed, each public class is one
+file again, and only the `PhysicsSimulation` backend swaps on the export condition. The
+standing gate is [`../PRDs/PRD-054-write-once-run-anywhere.md`](../PRDs/PRD-054-write-once-run-anywhere.md),
+which owns the parity matrix and is open.
 
 Release readiness requires, in order:
 
@@ -428,7 +431,7 @@ physics, iOS, performance or hardware rows are open.**
 | Package | LOC | State |
 |---|---:|---|
 | `playtest{,-core,-three}` | 4,582 | Already standalone. `examples/playtest-three-vanilla/` proves it runs on **plain Three.js with zero ThreeNative deps** |
-| `asset-mcp` | 15,345 | Already published, MIT, v0.5.0, own release lane, 32 tools verified |
+| `asset-mcp` | 15,345 | Already published, MIT, own release lane. The version that resolves from the registry and that every template pins is **0.4.0**, exposing 32 tools recorded in `packages/create-threenative/asset-mcp-tools.json`. PRD-032's live-agent gate failed against it |
 | `shader-portable` | 1,991 | TSL → WGSL/GLSL exporter, naga-validated |
 
 **Blocking fix before lifting playtest.** The misspelled-key hole is closed

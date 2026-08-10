@@ -29,7 +29,7 @@ borrowed, never invented — this is what kills row 9, which has no Godot node t
 from), rule 5 (**this PRD adds no package**; 7 of 8 are in use and the 8th is reserved for
 `physics-native`, `CHARTER.md:426`).
 
-**Sibling PRDs:** world persistence is [PRD-036](../PRD-036-save-load-and-deterministic-replay.md)'s
+**Sibling PRDs:** world persistence is [PRD-036](./PRD-036-save-load-and-deterministic-replay.md)'s
 subject, not this one's — row 12 defers to it rather than restating it. Row 6 restates,
 without contradicting, `OPPORTUNITY-AREAS.md:158` (area #9, score 48: *"`InstancedMesh` and
 `LOD` both ship. Owning batching caps what the user can render. Ship as template source,
@@ -107,7 +107,7 @@ So the census supports exactly one inference, and it is a negative one:
 
 > **No agent in this corpus has ever been asked to build terrain, so the corpus says
 > nothing about whether they can.** It is the `AnimationPlayer` situation from
-> [PRD-039](../PRD-039-animation-state-machine.md) §4b — a missing input, not a rejected
+> [PRD-039](./PRD-039-animation-state-machine.md) §4b — a missing input, not a rejected
 > abstraction — and the correct response is §5's measurement, not a build.
 
 Phase 1's two builds do **not** rest on this census. They rest on the 20-line rule and on a
@@ -134,7 +134,7 @@ row 9 is declined precisely because inventing one would be the only option.
 | 9 | Floating origin / large-world coordinates | **none exists** | Genuinely >20 lines, and it must rebase the camera, every `Object3D`, and every Rapier body together | **DECLINE — for vocabulary and for evidence, not for size.** See below |
 | 10 | Navmesh across streamed chunks | recast `generateTiledNavMesh` / `generateTileCache` | `NavigationRegion3D.ts:2` imports `generateSoloNavMesh` — a single bake over a fixed mesh list. Both tiled generators exist in `recast-navigation@0.43.1`, already a dependency | **DECLINE with trigger** — §6 |
 | 11 | Terrain height / ground query | Rapier `world.castRay` | 3 lines against the row-1 collider once it exists | **DECLINE** — rule 1 |
-| 12 | Persistent world state | — | [PRD-036](../PRD-036-save-load-and-deterministic-replay.md)'s subject | **OUT OF SCOPE** — deferred, not declined |
+| 12 | Persistent world state | — | [PRD-036](./PRD-036-save-load-and-deterministic-replay.md)'s subject | **OUT OF SCOPE** — deferred, not declined |
 
 **Row 9 deserves its own paragraph, because it is the row most likely to be rebuilt later
 by someone who skims this table.** Float32 loses sub-centimetre precision past roughly
@@ -335,7 +335,7 @@ everything else, and to test the one claim in §3 that is currently an argument.
 
 **One trap to record in advance.** 0.5 will report both new exports as unreached unless
 0.1 lands first — the same self-justifying deletion described in
-[PRD-039](../PRD-039-animation-state-machine.md) §4b. Neither export may be deleted under rule 2
+[PRD-039](./PRD-039-animation-state-machine.md) §4b. Neither export may be deleted under rule 2
 until an `open-world` brief has existed for two full rounds. Record that stay in the ledger
 with this reason attached.
 

@@ -33,17 +33,20 @@ framework archive with one completed vanilla archive using
 `pnpm sweep:pair <framework-archive> <vanilla-archive>`; the command refuses mismatched arms,
 genres, brief hashes, proof hashes, and missing proof results before reporting passed/total,
 source LOC, source files, and framework reach side by side.
-The current caller census and recomputed round-2 comparison are recorded in
-[`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md).
+The recomputed round-2 comparison is in
+[`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md); the current caller census
+is [`verification/arm-census-2026-08-08.md`](verification/arm-census-2026-08-08.md).
 
-The self-improvement loop is recorded in
-[`verification/round-2-2026-08-07.md`](verification/round-2-2026-08-07.md). Resume it with
-`pnpm round:next`; persistent unused-export evidence comes from `pnpm round:deletions`.
+The self-improvement loop resumes from the newest round ledger — currently
+[`verification/round-3-2026-08-09.md`](verification/round-3-2026-08-09.md), with
+[round 2](verification/round-2-2026-08-07.md) and
+[round 1](verification/round-1-2026-08-06.md) behind it. Resume with `pnpm round:next`;
+persistent unused-export evidence comes from `pnpm round:deletions`.
 
 ## Strategy
 
 - [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse
-- [strategy/ROADMAP.md](strategy/ROADMAP.md) — the measured path from 30/100 to 80/100, gated on round 2
+- [strategy/ROADMAP.md](strategy/ROADMAP.md) — the measured path from 30/100 to 80/100; Gate 0 and Phase 1 closed, Phase 2 active
 - [strategy/BUSINESS-MODEL.md](strategy/BUSINESS-MODEL.md) — open core, pricing hypotheses, revenue order
 - [strategy/METRICS.md](strategy/METRICS.md) — north star and the metrics that are not vanity
 - [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `CHARTER.md`
@@ -54,20 +57,25 @@ The self-improvement loop is recorded in
 - [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours
 - [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, the owned runtime, the native physics ABI
 - [architecture/AGENT-INTERFACE.md](architecture/AGENT-INTERFACE.md) — how an AI agent drives a ThreeNative project
-- [architecture/COURSE-CORRECTION-2026-08-08.md](architecture/COURSE-CORRECTION-2026-08-08.md) — **binding.** Write once, run everywhere; the `@threenative/physics` backend fork and how to undo it
+The 2026-08-08 course correction is closed and its file deleted: the `@threenative/physics`
+node fork was removed, each public class is one file, and only the `PhysicsSimulation`
+backend swaps on the export condition. Write-once/run-anywhere is now owned as a gate by
+[PRDs/PRD-054-write-once-run-anywhere.md](PRDs/PRD-054-write-once-run-anywhere.md), which is
+**open** — blocked at acceptance criterion 1.
 
 ## Product
 
 - [product/PERFORMANCE-BUDGETS.md](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
-- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — deferred, with the trigger to start; asset *discovery* was reopened after its live gate failed in [PRDs/PRD-032-asset-discovery-mcp.md](PRDs/PRD-032-asset-discovery-mcp.md)
+- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — **still deferred**, neither trigger fired as of 2026-08-09; asset *discovery* is separate and was reopened after its live gate failed in [PRDs/PRD-032-asset-discovery-mcp.md](PRDs/PRD-032-asset-discovery-mcp.md)
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
 ## Spikes
 
-- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — `CHARTER.md` §7 Phase 0a, unresolved after execution
+- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — **CLOSED 2026-08-09.** Its own run never observed a device render; the question was answered *yes* by PRD-047's owned runtime (300 desktop frames + Android emulator, [verification/PRD-047.md](verification/PRD-047.md)). Retained only because superseded PRD-044 and [strategy/NATIVE-LEVELS-2026-08-08.md](strategy/NATIVE-LEVELS-2026-08-08.md) cite it; the React Native route it prescribes is deleted
+- 0b — physics on device: never written as a spike. It became [PRDs/native/PRD-046-physics-native.md](PRDs/native/PRD-046-physics-native.md)
 
-A spike is not a PRD. It buys an answer, ships nothing, and is deleted after its result is
-recorded here.
+A spike is not a PRD. It buys an answer, ships nothing, and is deleted once its answer is
+recorded here and nothing else cites it.
 
 `pnpm budgets` fails CI above 10 files in `docs/PRDs/` — files only, so `docs/PRDs/done/`
 does not count against the cap. Edit an existing document by preference.

@@ -525,9 +525,9 @@ The final comparison returned finite diagnostic evidence (`score: 0.417777`,
 The packaged example spec passed; empty specs and missing, zero-byte, and decoded single-colour
 captures returned MCP errors.
 
-- [Reference](../verification/prd-049-sculpt-reference.png)
-- [Sculpt arm](../verification/prd-049-sculpt-frame.png)
-- [No-sculpt control](../verification/prd-049-sculpt-control.png)
+- [Reference](../../verification/prd-049-sculpt-reference.png)
+- [Sculpt arm](../../verification/prd-049-sculpt-frame.png)
+- [No-sculpt control](../../verification/prd-049-sculpt-control.png)
 
 The sculpt arm contains the central tower, four canopy masses, cyan beacons, and dark approach;
 the control contains the starter floor, player, and crate. This descriptive inventory is not
