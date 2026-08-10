@@ -279,6 +279,7 @@ The batch rerun is recorded in
 `pnpm parity` executed the browser and Linux desktop lanes, then reached Android, but exited
 1. Browser row `90-multitouch-input` failed on `setPointerCapture` page errors; desktop row
 `25-camera-parented-overlay` failed on depth-attachment size validation and row
-`90-multitouch-input` was blocked because desktop injection is not implemented; Android rows
-failed during APK assembly because `third_party/sdl3-android/SDL3-3.2.8.aar` is absent. The
-full clean-checkout criterion remains open; no target is claimed green by this rerun.
+`90-multitouch-input` was blocked because desktop injection is not implemented; all 67 Android
+rows were **blocked** before execution because `third_party/sdl3-android/SDL3-3.2.8.aar` is
+absent. Under acceptance criterion 4, setup-blocked rows are not parity failures. The full
+clean-checkout criterion remains open; no target is claimed green by this rerun.
