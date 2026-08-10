@@ -6,9 +6,9 @@ not done; nothing here is aspirational prose.
 
 **Legend:** ✅ done · ⚠️ partially done · ❌ not done.
 
-**Status (reconciled 2026-08-09):** Gate 0 ✅ closed 2026-08-07 · Phase 1 ✅ passed
+**Status (reconciled 2026-08-10):** Gate 0 ✅ closed 2026-08-07 · Phase 1 ✅ passed
 2026-08-08 · Phase 2 ⚠️ active, gate not green · Phase 3 ⚠️ started out of order by the
-native lane. 48 PRDs archived (42 `docs/PRDs/done/`, 6 `docs/PRDs/native/done/`).
+native lane. 52 PRDs archived (44 `docs/PRDs/done/`, 8 `docs/PRDs/native/done/`).
 **Charter authority:** `CHARTER.md` §3, §5b, §7, §10, §12 — it wins if this file disagrees.
 
 Phases are gated, not scheduled. A phase starts because the previous gate passed.
@@ -39,7 +39,7 @@ static `abyss` ratio — that one is a regression ratchet (`docs/benchmark/PROTO
 | 1 | `pnpm typecheck && pnpm lint && pnpm test` green, budgets green, no cap raised | ✅ held on every landed change |
 | 2 | Three templates scaffold, build, and pass their playtests from a clean machine | ✅ `pnpm test:templates`, scaffold-smoke in CI |
 | 3 | A paired result the vanilla arm cannot match — the Phase 2 exit gate | ⚠️ not yet; round 3 lost visual and cost |
-| 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ registry 66/66 on 3 targets; aggregate still fails |
+| 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ 66/66 visual rows on 3 targets; current aggregate rerun is non-green |
 | 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ PRD-048 desktop passes; Android release rerun and prebuilt distribution open |
 
 Rows 3–5 are the beta blockers. Rows 1–2 are held, not finished — they stay green or the
@@ -63,6 +63,7 @@ change does not land.
 | Sculpt-from-reference MCP | [done/PRD-049](../PRDs/done/PRD-049-sculpt-from-reference-mcp.md) | ✅ shipped — no human preference or token telemetry supplied; recorded unavailable, not a win |
 | Native: runtime absorption, build parity, HUD decision, mobile pathfinding, physics parity | [native/done](../PRDs/native/) PRD-047, 050, 051, 052, 049 | ✅ done — see the Phase 3 table for what that does *not* cover |
 | Native physics closure · distribution | [native/done/PRD-046](../PRDs/native/done/PRD-046-physics-native.md), [PRD-048](../PRDs/native/done/PRD-048-native-distribution.md) | ✅ closed 2026-08-09 — **arm64 hardware, iOS, clean-machine and registry criteria waived by the owner, not met** |
+| Multi-touch input | [done/PRD-053](../PRDs/done/PRD-053-core-input-multitouch.md) | ✅ done 2026-08-10 — Android emulator proof passed; physical-device qualification remains out of scope |
 | DRY the sweep corpus | [done/PRD-041](../PRDs/done/PRD-041-sweep-corpus-dry.md) | ⚠️ n≥10 adoption rerun and browser proof still missing |
 | Navigation and pathfinding | [done/PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | ⚠️ browser-only by decision; the platformer uses template-local steering |
 
@@ -72,8 +73,7 @@ change does not land.
 |---|---|---|
 | **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/PRD-061-round-4-paired-capability-proof.md) | ❌ not started — **the only PRD pointing at beta row 3**; needs no hardware. Round 3's `budget` stop condition must clear first |
 | Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | ⚠️ closed — live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so the visual-improvement evidence stays unmet |
-| Multi-touch input | [PRD-053](../PRDs/PRD-053-core-input-multitouch.md) | ⚠️ blocked at Android device proof |
-| Write-once/run-anywhere parity gate | [PRD-054](../PRDs/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; aggregate parity fails on PRD-053 |
+| Write-once/run-anywhere parity gate | [PRD-054](../PRDs/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; current aggregate rerun remains non-green |
 | The HUD hole on native | [PRD-055](../PRDs/PRD-055-native-hud-reopened.md) | ⚠️ blocked at touch playability and row 25 |
 | Playtest on physical device | [native/blocked/PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) | ❌ no hardware on this machine |
 | Physical mobile production qualification | [native/blocked/PRD-056](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md) | ❌ filed under `native/blocked/` — every criterion needs a physical device or an Apple signing identity; an untracked duplicate under `production-readiness/` was removed 2026-08-09 |
@@ -81,7 +81,7 @@ change does not land.
 | Build-time asset pipeline | none | ❌ deferred behind two measured triggers (`docs/product/ASSET-PIPELINE.md`) |
 | Device spikes 0a / 0b | none — forbidden | ❌ never a PRD (`CHARTER.md:364`); both were answered by the native lane instead |
 
-The last three blocked rows share one evidence file:
+The PRD-054 and PRD-055 blocked rows share one evidence file:
 `docs/verification/probe-real-game-cross-platform-2026-08-09.md`.
 
 ## Phases
@@ -127,7 +127,7 @@ they disagree, the verification files win.
 | Web CLI parity + all 25 packed-template scenarios | ✅ done |
 | iOS simulator + macOS + Windows | ✅ executed once — **simulator ≠ device** |
 | Toolchain-free distribution: published prebuilt artifacts, checksum lock, clean-machine build | ⚠️ desktop passes; Android release rerun open |
-| HUD on native (reopened) · multi-touch on device | ⚠️ blocked — PRD-055, PRD-053 |
+| HUD on native (reopened) | ⚠️ blocked — PRD-055 |
 | Physical mobile/Apple hardware: real GPU drivers, arm64, frame-rate parity | ❌ not executed — no hardware here |
 | Navmesh pathfinding on native | ❌ never — browser-only by decision (PRD-052) |
 

@@ -1,9 +1,11 @@
 # PRD-054 — write once, run anywhere: a parity gate that proves it
 
-**Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-09.** The complete visual registry now
-passes 66/66 on browser, Linux desktop, and the Android emulator. Aggregate parity still
-fails on PRD-053 multi-touch, and the stated clean-machine prerequisites do not include the
-desktop C++ toolchain.
+**Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-10.** The complete visual registry has
+the bounded 66/66 result on browser, Linux desktop, and the Android emulator. The PRD-053
+Android multi-touch supplemental now passes its positive and one-pointer negative controls;
+the current aggregate parity rerun remains non-green/incomplete for the reasons recorded in
+`packages/runtime-native/docs/G2-conformance.md`. The stated clean-machine prerequisites do
+not include the desktop C++ toolchain.
 
 The precondition handling was repaired on 2026-08-09. `--target desktop` now runs the
 repository's own `download-deps.mjs` and `native-build.mjs` before it can fail a row, and a
