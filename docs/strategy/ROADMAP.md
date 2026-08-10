@@ -48,8 +48,8 @@ change does not land.
 ## Native reliability tiers — owner decision, 2026-08-10
 
 "Reliable" is split into what this machine can prove and what only physical hardware can.
-Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md); see
-[UNBLOCK-CHAIN.md](UNBLOCK-CHAIN.md) for the dependency order.
+Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md); the blocked-PRD dependency
+order lives in [`docs/PRDs/native/blocked/README.md`](../PRDs/native/blocked/README.md).
 
 | Tier | Bar | Licenses the sentence |
 |---|---|---|
