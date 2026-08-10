@@ -60,7 +60,7 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Capture, judge, blind bundle | `done/PRD-020-seeing-the-game.md` | shipped |
 | Template visual baseline + `pnpm visuals` | `done/PRD-030-visual-baseline-and-gate.md` | shipped |
 | Honest LOC instrument | `done/PRD-025-honest-loc-counting.md` | shipped |
-| Asset discovery MCP | [PRD-032](../PRDs/PRD-032-asset-discovery-mcp.md) | **reopened — 2026-08-09 live-agent gate lost to the no-MCP control; kill-switch deletion pending confirmation** |
+| Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | **closed — 2026-08-09 live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so visual-improvement evidence remains unmet** |
 | Playtest semantic depth | [done/PRD-033](../PRDs/done/PRD-033-playtest-semantic-depth.md) | **done; 11/11 platformer semantic scenarios and observed-red controls verified** |
 | Navigation and pathfinding | [PRD-034](../PRDs/done/PRD-034-navigation-and-pathfinding.md) | **shipped browser-only; its original platformer caller was later removed, so restore a real consumer or apply the kill switch before growth** |
 | Hot reload with state preservation | [done/PRD-035](../PRDs/done/PRD-035-hot-reload-state-preservation.md) | **done; ten-reload cadence and both load-bearing removal controls pass** |
@@ -74,8 +74,10 @@ non-done PRD inventory is recorded here so new proposals cannot disappear from t
 | Build-time asset pipeline | none — deferred | `docs/product/ASSET-PIPELINE.md`, two measured triggers |
 | Device spikes 0a / 0b | none — **forbidden** | `CHARTER.md:364`: spikes ship no docs and no framework |
 
-The current root non-done inventory is PRD-032, reopened after its live-agent kill switch.
-PRD-033, PRD-036 and PRD-039 are complete records in `done/`, and there is no PRD-037 file.
+PRD-032 is a closed retained decision: its live-agent comparison failed the visual
+improvement condition, but the product owner intentionally kept the generated asset-MCP
+surface. PRD-033, PRD-036 and PRD-039 are complete records in `done/`, and there is no
+PRD-037 file.
 
 Two items deliberately have no PRD and never will: the device spikes, because the charter
 says a spike is a throwaway app whose only output is an answer; and the build-time asset
@@ -157,7 +159,9 @@ to verify its own game in a browser.
 
 **Gate to exit:** one of the remaining Phase 2 capabilities — hot reload/state preservation
 or physics reach — ships with consumer-scoped proof that the paired vanilla arm cannot match
-inside the same brief. The voided asset-discovery PRD is not part of this gate.
+inside the same brief. The closed asset-discovery record remains outside this gate: its
+2026-08-09 live-agent comparison favored the no-MCP control, and the retained MCP is not
+counted as a visual win.
 
 **Points: +15** → ~75/100.
 
@@ -191,8 +195,9 @@ says so in its own header: *"Not a PRD."*
   non-viable on device, and the absorbed runtime's QuickJS hits the same wall. The
   transport is a host-neutral C ABI, not JSI, and the work is specified in
   `docs/PRDs/native/PRD-046-physics-native.md`. Phase 0 is complete: the version delta is
-  measured and both Android ABIs cross-compile; API, runtime binding and device proof are
-  open.
+  measured and both Android ABIs cross-compile; the API, runtime binding, and Android/iOS
+  simulator device proofs are closed. PRD-048 owns the clean consumer gate; physical arm64
+  and performance remain open.
 
 **If 0a fails:** ThreeNative is a web framework and §7's mobile promise is deleted from
 the charter. That is a legitimate outcome, and cheaper to learn in a day than in a year.

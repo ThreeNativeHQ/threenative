@@ -153,8 +153,12 @@ system, a code-first ECS, a bespoke CLI vocabulary. Do not reopen them in a feat
 `pnpm budgets` (`CHARTER.md` §10b) reports two kinds of limit.
 
 **Hard — fails CI:** a native runtime tree outside `packages/runtime-native/`, any tracked
-file under `packages/runtime-native/third_party/`, a template over 1,200 LOC, a vendored
-asset MCP, and any `packages/*/package.json` claiming `threenative-asset-mcp`.
+file under `packages/runtime-native/third_party/`, a vendored asset MCP, and any
+`packages/*/package.json` claiming `threenative-asset-mcp`.
+
+Template LOC is **reported, never capped** — retired by owner decision 2026-08-09. Templates
+are generated user source, so a line there is the user's to keep or delete; the 20-line rule
+and the kill switch still bound what the *framework* spends.
 
 **Review triggers — reported, never fatal:** 15,000 framework LOC (`packages/*/src`,
 excluding salvage and native) and 50,000 native runtime LOC. Crossing one obliges a

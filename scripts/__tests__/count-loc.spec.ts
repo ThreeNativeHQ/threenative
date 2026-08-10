@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  PLATFORMER_LOC_LIMIT,
   assertFrameworkImportClosure,
   assertFrameworkRatchet,
   classifyVanillaLine,
@@ -91,7 +90,7 @@ describe("count-loc", () => {
     }
   });
 
-  it("keeps the platformer template below the fox-game control", () => {
-    expect(countPlatformerTemplateLoc()).toBeLessThan(PLATFORMER_LOC_LIMIT);
+  it("reports the platformer template LOC without capping it", () => {
+    expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
   });
 });

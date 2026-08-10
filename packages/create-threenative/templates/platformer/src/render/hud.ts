@@ -16,9 +16,9 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
   const matrix = new Matrix4();
   camera.add(root);
   return {
+    glyphs: 0,
     update(values: { counter: number; primary: number; seconds: number }): void {
-      const minutes = Math.floor(values.seconds / 60);
-      const text = `${primaryLabel} ${Math.max(0, Math.round(values.primary))}\n${counterLabel} ${Math.max(0, Math.round(values.counter))}\nTIME ${String(minutes).padStart(2, "0")}:${String(Math.floor(values.seconds % 60)).padStart(2, "0")}`;
+      const text = `${primaryLabel} ${Math.max(0, Math.round(values.primary))}\n${counterLabel} ${Math.max(0, Math.round(values.counter))}\nTIME ${String(Math.floor(values.seconds / 60)).padStart(2, "0")}:${String(Math.floor(values.seconds % 60)).padStart(2, "0")}`;
       let instance = 0;
       for (const [y, line] of text.split("\n").entries()) {
         for (let x = 0; x < line.length; x += 1) {
@@ -32,7 +32,7 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
           }
         }
       }
-      root.count = instance;
+      root.count = this.glyphs = instance;
       root.instanceMatrix.needsUpdate = true;
       const height = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2));
       root.position.set(-height * camera.aspect * 0.46, height * 0.42, -1);

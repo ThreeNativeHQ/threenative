@@ -20,12 +20,6 @@ const execFileAsync = promisify(execFile);
 const LIMITS = {
   frameworkLoc: 15_000,
   nativeRuntimeLoc: 50_000,
-  /**
-   * A sweep charges the framework arm only for what it authors above its starter, so every
-   * line inside a template is a line the benchmark stops counting. Capped per template so the
-   * exemption cannot quietly become a place to hide gameplay.
-   */
-  templateLoc: 1_200,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
@@ -314,13 +308,6 @@ export function budgetTriggers(report: BudgetReport): string[] {
 
 export function budgetErrors(report: BudgetReport): string[] {
   const errors: string[] = [];
-  for (const template of report.templates) {
-    if (template.loc > LIMITS.templateLoc) {
-      errors.push(
-        `template LOC cap exceeded: ${template.name} is ${template.loc} lines (limit ${LIMITS.templateLoc}, +${template.loc - LIMITS.templateLoc}). Template lines are exempt from the sweep's authored cost, so this cap is what keeps that exemption honest.`,
-      );
-    }
-  }
   if (report.vendoredExternalMcp.length > 0) {
     errors.push(
       `External MCPs (${[...EXTERNAL_MCPS].join(", ")}) must stay external: ${report.vendoredExternalMcp.join(", ")} claims one. They are dependencies of generated projects, and vendoring them consumes framework LOC while adding packages with no runtime dependency boundary.`,

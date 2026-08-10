@@ -3,7 +3,17 @@
 **Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-09.** The complete visual registry now
 passes 66/66 on browser, Linux desktop, and the Android emulator. Aggregate parity still
 fails on PRD-053 multi-touch, and the stated clean-machine prerequisites do not include the
-desktop C++ toolchain. Evidence:
+desktop C++ toolchain.
+
+The precondition handling was repaired on 2026-08-09. `--target desktop` now runs the
+repository's own `download-deps.mjs` and `native-build.mjs` before it can fail a row, and a
+host that cannot run them reports every desktop row `blocked` with the command output rather
+than as an assertion failure. `--target android` refuses physical hardware and reports a
+missing or uninstalled AVD as a blocked precondition. `tests/parity-contract.test.mjs` drives
+those decisions directly instead of manufacturing a fake runtime. **A clean-machine run is
+still not executed here**, so criterion 1 stays open.
+
+Evidence:
 `docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
 `docs/verification/prd-054-android-color-2026-08-09.md`.
 

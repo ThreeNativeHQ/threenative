@@ -1,20 +1,31 @@
 # Asset pipeline — still deferred, with a trigger
 
-**Status:** deferred 2026-08-02, re-checked 2026-08-09 — **still deferred, neither trigger
-fired.** Nothing in `packages/` or `scripts/` implements a build-time asset pipeline, and
-that is the intended state. **Charter authority:** `CHARTER.md` §10 (15k LOC review
-trigger), §11.1, §11.5 (a package exists only when it carries a dependency the others must
-not inherit).
+**Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-09 — **still
+deferred, neither trigger fired.** Nothing in `packages/` or `scripts/` implements a
+build-time asset pipeline, and that is the intended state. Asset discovery is retained by
+product-owner decision after its 2026-08-09 live-agent gate failed. **Charter authority:**
+`CHARTER.md` §10 (15k LOC review trigger), §11.1, §11.5 (a package exists only when it
+carries a dependency the others must not inherit).
 
-## Discovery is under its kill switch; the pipeline did not ship
+
+## Discovery is retained with an evidence gap; the pipeline did not ship
 
 Asset **discovery** — finding a licensed model, texture, HDRI or sound and recording its
 attribution — is separate from the build-time pipeline below. Its scaffold integration
 exists and still ships: all three templates pin `threenative-asset-mcp@0.4.0` and generate a
-`.mcp.json`. But PRD-032's 2026-08-09 live-agent gate lost to the no-MCP control and fired
-its own deletion condition, so the wiring remains only while that destructive removal awaits
-confirmation. **It must not be described as proved.** Evidence:
-[`../verification/PRD-032-asset-proof/README.md`](../verification/PRD-032-asset-proof/README.md).
+`.mcp.json`. PRD-032's 2026-08-09 live-agent gate ran against real providers, but the no-MCP
+control produced the better frame (`4/5` overall versus `3/5`). That is a failed visual
+improvement result, not a pass. The product owner intentionally retained the external
+process, its generated-project wiring and its recorded 32-tool surface rather than applying
+the destructive kill-switch deletion. **It must not be described as proved.** The exact
+commands, screenshots, hashes and blind scores remain in
+[the dated evidence record](../verification/PRD-032-asset-proof/README.md).
+
+Retention is an owner decision, not evidence that MCP improves the consumer's frame. The
+bounded `game-assets` profile remains unpublished, so generated projects currently pin
+`threenative-asset-mcp@0.4.0` and expose 32 tools; the recommended eight-tool loop is
+documentation, not a filtered server surface.
+
 
 The deferral below still binds discovery in one direction: `smithsonian_*` returns
 scan-resolution photogrammetry that this project has no way to decimate, so the generated

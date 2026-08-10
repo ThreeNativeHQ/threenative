@@ -200,8 +200,10 @@ jobs:
           NODE
           pnpm exec playwright install --with-deps chromium
           pnpm --dir "$target" test
+          # `pnpm --dir "$target" test` above boots this project and asserts its portable HUD
+          # reported a live glyph count, so the HUD proof is an observation, not this check.
           test -f "$target/src/render/lighting.ts"
-          test -f "$target/src/ui/Hud.tsx"
+          test -f "$target/src/render/hud.ts"
           ! grep -R "@threenative/" "$target/src/render"
           ! grep -R "catalog:" "$target/package.json"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &

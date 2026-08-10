@@ -16,8 +16,6 @@ export interface LocCount {
 
 export type LineClassifier = (line: string, lineNumber: number) => LocKind;
 
-export const PLATFORMER_LOC_LIMIT = 1_850;
-
 const README_START = "<!-- benchmark:loc:start -->";
 const README_END = "<!-- benchmark:loc:end -->";
 
@@ -283,13 +281,6 @@ export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): numbe
   );
 }
 
-export function assertPlatformerTemplateLoc(rootDirectory = process.cwd()): number {
-  const total = countPlatformerTemplateLoc(rootDirectory);
-  if (total >= PLATFORMER_LOC_LIMIT)
-    throw new Error(`platformer template LOC ${total} must stay below ${PLATFORMER_LOC_LIMIT}.`);
-  return total;
-}
-
 function summary(rows: readonly LocCount[], arm: BenchmarkArm): LocCount {
   const selected = rows.filter((row) => row.arm === arm);
   return {
@@ -409,8 +400,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       `suggested framework normalised baseline: ${ratchet.suggested} (current baseline ${ratchet.baseline})\n`,
     );
   }
-  const platformerLoc = assertPlatformerTemplateLoc(root);
-  process.stdout.write(
-    `platformer template LOC: ${platformerLoc} (limit ${PLATFORMER_LOC_LIMIT})\n`,
-  );
+  // Reported, not capped: the template LOC caps were retired by owner decision 2026-08-09.
+  process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
 }

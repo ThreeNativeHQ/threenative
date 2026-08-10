@@ -1,8 +1,26 @@
 # PRD-055 — the HUD hole, reopened with a real game's evidence
 
-**Status: BLOCKED AT TOUCH PLAYABILITY AND ROW 25, 2026-08-09.** Candidate G now renders
-generated HUD source on browser, desktop, and the Android emulator; acceptance criterion 2
-and the four-viewport row-25 proof remain blocked. Reopens the candidate-D decision in
+**Status: BLOCKED AT TOUCH PLAYABILITY, 2026-08-09.** Candidate G now renders generated HUD
+source on browser, desktop, and the Android emulator. Acceptance criterion 2 remains blocked.
+
+Three review defects were repaired on 2026-08-09:
+
+1. **Row 25 was synthetic.** It changed only projection numbers, so it passed without the
+   renderer or canvas ever resizing. It now resizes the real renderer at four viewports and
+   reads back the drawing buffer; `conformance/overlay-anchor.mjs` throws
+   `TN_CONFORMANCE_RESIZE_NOT_APPLIED` when the resize is removed, with its own negative tests
+   in `tests/parity-contract.test.mjs`.
+2. **The scaffold HUD checks grepped source and watched the React DOM path.** Every template's
+   HUD now reports the glyph count it pushed to the GPU, and the minimal template's `pnpm test`
+   asserts that count changed on the booted project (`377 → 361` glyphs, `trivial: false`). The
+   minimal template gained `playtest()` so its scenario can observe rather than fail closed on
+   a missing bridge. Starter and platformer boot to a `boot` scene, where the bridge advertises
+   no `runtime.components` capability, so they keep the source-level contract only — recorded
+   in `docs/verification/integration-2026-08-09-six-prds.md`, not worked around.
+3. **The 1,200-line template cap** is retired by product-owner decision, so the HUD no longer
+   competes with gameplay for template lines. `pnpm budgets` still reports template LOC.
+
+Reopens the candidate-D decision in
 `docs/PRDs/native/done/PRD-051-native-ui-layer.md`, which requires "a new PRD with new
 evidence". Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-09.md`.
 

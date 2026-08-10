@@ -1,7 +1,17 @@
 # PRD-053 — multi-touch input, and what actually caps core
 
-**Status: BLOCKED AT ANDROID DEVICE PROOF, 2026-08-09.** Evidence:
-`docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
+**Status: BLOCKED AT ANDROID DEVICE PROOF, 2026-08-09.** Criteria 1, 2, 3 and 5 are met:
+`raw.pointers` reports every held pointer, `pointercancel` releases one, and the core cap
+that blocked this is gone. Criterion 4 is *written and not executed here*.
+
+The proof itself was repaired on 2026-08-09: it previously accepted latched `moved`/
+`leftGround` flags, so two sequential one-finger touches satisfied it. The conformance scene
+now latches `simultaneous` only when the stick half and the jump half are held in the **same
+frame**, and `conformance/multitouch-proof.mjs` requires that flag plus two pointers still
+down at the moment the proof is read. `tests/conformance-runner.test.mjs` pins both
+rejections. **What remains is running it on the emulator**; no emulator run is claimed.
+
+Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
 `docs/verification/prd-053-multitouch-2026-08-09.md`.
 
 **What this owns:** whether `InputMap` reports more than one pointer, and what number (if

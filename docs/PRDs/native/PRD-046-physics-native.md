@@ -1,10 +1,11 @@
 # PRD-046 — native physics
 
-**Status: IN PROGRESS. Phases 0–3 and 5 complete; Phase 3 passed on current SHA `e38439c`
-in GitHub run `31313092745`. Phase 4's
-local artifact/install contract is complete while the real published clean-machine consumer
-proof remains open. Retargeted by PRD-047 — transport and packaging
-revised, correctness gates unchanged.** Three things in the original design are now historical and are marked
+**Status: IN PROGRESS — implementation contract repaired; final archive awaits PRD-048's
+clean consumer gate.** Phases 0–3 and 5 are complete; Phase 3 passed on current SHA `e38439c`
+in GitHub run `31313092745`. The local artifact/install contract is complete; published
+consumer distribution remains open and owned by PRD-048. Physical arm64 execution and
+performance remain explicitly open. Retargeted by PRD-047 — transport and packaging revised,
+correctness gates unchanged.** Three things in the original design are now historical and are marked
 inline where they appear: the **JSI transport**, the separate **`@threenative/physics-native`
 package**, and the **concrete-Rapier-object escape hatch**. The active design compiles Rapier
 into the absorbed `packages/runtime-native` runtime and selects a host-neutral adapter from
@@ -335,3 +336,18 @@ deleted rather than routed around this trigger.
 - Native physics crosses the 50,000-line review trigger without surviving a documented
   kill-switch pass, or needs a tracked `third_party/` tree → PRD-047's invariants win, not
   this PRD's scope.
+
+## 7. Implementation checkpoint — 2026-08-09
+
+The final public sensor contract repair is included in the closing change. Both the web and
+native adapters now require `PhysicsBodyCreateOptions.sensor` to match
+`CollisionShape3D.descriptor.sensor`, including explicit `false`; conflicting inputs throw
+`TN_PHYSICS_SENSOR_CONFLICT` before a body is registered. The opaque native `raw` shape
+contract remains unchanged.
+
+Focused evidence: `pnpm exec vitest run packages/physics/__tests__` passed all physics tests;
+`pnpm lint` passed. The root typecheck reaches every package after the required package builds;
+the relevant `@threenative/physics` typecheck passes. The package `publint` substep and the
+clean-machine consumer gate are owned by PRD-048. `pnpm budgets` passes through the direct
+Node loader and retains the existing native LOC review trigger without a hard-invariant
+violation. This record is an implementation checkpoint, not the final archive decision.

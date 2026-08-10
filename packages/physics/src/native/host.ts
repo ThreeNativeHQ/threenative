@@ -7,6 +7,7 @@ import type {
   PhysicsSimulation,
 } from "../simulation.js";
 import {
+  requirePhysicsBodySensor,
   requirePhysicsEventBuffer,
   requirePhysicsRenderBuffer,
   requirePhysicsStepInput,
@@ -113,6 +114,10 @@ function primitiveShape(shape: PhysicsShapeDescriptor): NativeShapeDescriptor {
   return shape as NativeShapeDescriptor;
 }
 
+function opaqueNativeShape(shape: NativeShapeDescriptor): unknown {
+  return Object.freeze({ backend: "native", kind: shape.kind });
+}
+
 function isSmallBufferError(error: unknown): boolean {
   return error instanceof Error && /buffer is too small/i.test(error.message);
 }
@@ -195,13 +200,14 @@ export function createNativePhysicsSimulation(
     rawWorld: raw,
     createBody: (options: PhysicsBodyCreateOptions) => {
       const shape = primitiveShape(options.shape);
+      const sensor = requirePhysicsBodySensor(options);
       const id = raw.createBody({
         collisionLayer: shape.collisionLayer,
         collisionMask: shape.collisionMask,
         mass: options.mass,
         position: options.position,
         rotation: options.rotation,
-        sensor: options.sensor,
+        sensor,
         shape,
         type: options.type,
       });
@@ -209,14 +215,14 @@ export function createNativePhysicsSimulation(
         throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid body id");
       const rawHandle = { backend: "native", id };
       bodyIds.add(id);
-      if (options.sensor) areaIds.add(id);
+      if (sensor) areaIds.add(id);
       if (options.type === "character") characterIds.add(id);
       invalidateObservations();
       return {
         body: physicsBodyHandle(id, rawHandle),
         collider: physicsColliderHandle(id, rawHandle),
         controller: options.type === "character" ? physicsHandle(rawHandle) : undefined,
-        rawShape: shape,
+        rawShape: opaqueNativeShape(shape),
       };
     },
     configureCharacter: (id, options) => {

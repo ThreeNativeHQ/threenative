@@ -8,6 +8,7 @@ import {
 
 export type CollisionShapeKind = PhysicsShapeKind;
 
+/** A backend-specific escape hatch: Rapier on web, opaque on native. */
 export interface CollisionShapeHandle {
   readonly raw: unknown;
 }
@@ -60,14 +61,14 @@ export class CollisionShape3D {
     return this.#descriptor;
   }
 
-  /** Rapier's descriptor on web, or an opaque native descriptor after registration. */
+  /** Backend-specific escape hatch: Rapier's descriptor on web, or an opaque native handle. */
   get raw(): unknown {
     if (this.#backendRaw === undefined) {
       try {
         const createShape = physicsSimulationBackend().createShape;
         if (createShape !== undefined) this.#backendRaw = createShape(this.#descriptor);
       } catch {
-        // A native package entry has no web backend; its portable descriptor is the raw value.
+        // Registration will fail closed if the selected backend cannot represent this shape.
       }
     }
     return this.#backendRaw ?? this.#descriptor;

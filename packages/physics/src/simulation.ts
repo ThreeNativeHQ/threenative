@@ -53,6 +53,7 @@ export interface PhysicsBodyCreateOptions {
     readonly w: number;
   };
   readonly mass: number;
+  /** Must match `shape.sensor`; conflicting values are rejected during body creation. */
   readonly sensor: boolean;
 }
 
@@ -207,9 +208,20 @@ export function requirePhysicsEventBuffer(buffer: Uint32Array): void {
     throw new Error("PhysicsSimulation events must use a Uint32Array.");
 }
 
+export function requirePhysicsBodySensor(
+  options: Pick<PhysicsBodyCreateOptions, "sensor" | "shape">,
+): boolean {
+  if (options.sensor !== options.shape.sensor)
+    throw new Error(
+      `TN_PHYSICS_SENSOR_CONFLICT: options.sensor (${options.sensor}) must match shape.sensor (${options.shape.sensor}).`,
+    );
+  return options.sensor;
+}
+
 export function createWebPhysicsShape(
   rapier: typeof RAPIER,
   shape: PhysicsShapeDescriptor,
+  sensor = shape.sensor,
 ): RAPIER.ColliderDesc {
   let descriptor: RAPIER.ColliderDesc | null;
   if (shape.kind === "box") descriptor = rapier.ColliderDesc.cuboid(shape.x, shape.y, shape.z);
@@ -240,7 +252,7 @@ export function createWebPhysicsShape(
     );
   }
   descriptor.setCollisionGroups(interactionGroups(shape.collisionLayer, shape.collisionMask));
-  descriptor.setSensor(shape.sensor);
+  descriptor.setSensor(sensor);
   descriptor.setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
   return descriptor;
 }
@@ -306,11 +318,12 @@ export function createWebPhysicsSimulation(
     rawEventQueue: options.eventQueue,
     createBody: (bodyOptions) => {
       requireLive();
+      const sensor = requirePhysicsBodySensor(bodyOptions);
       if (!Number.isFinite(bodyOptions.mass) || bodyOptions.mass < 0)
         throw new Error("Physics body mass must be a finite non-negative number.");
       const id = nextId;
       nextId += 1;
-      const rawShape = createWebPhysicsShape(options.rapier, bodyOptions.shape);
+      const rawShape = createWebPhysicsShape(options.rapier, bodyOptions.shape, sensor);
       const rawBody = options.world.createRigidBody(
         bodyDescription(
           options.rapier,

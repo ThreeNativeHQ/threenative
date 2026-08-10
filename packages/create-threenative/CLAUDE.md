@@ -35,8 +35,8 @@ output look worse than vanilla.
 - `platformer` — adds navigation; its Recast WASM dependency makes it web/desktop only.
 
 Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. Any new
-placeholder needs the same treatment in `renderTemplate`. A template over 1,200 LOC fails
-`pnpm budgets`.
+placeholder needs the same treatment in `renderTemplate`. `pnpm budgets` reports each
+template's LOC but no longer caps it.
 
 **A template's platform claims must match what was executed.** The status paragraph under
 each template's Commands block is a fail-closed statement, not marketing; narrow it when a

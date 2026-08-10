@@ -10,6 +10,12 @@ import { fileURLToPath } from "node:url";
 import { stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 import {
+  androidMultitouchScript,
+  MULTITOUCH_PROOF_POINTS,
+  MULTITOUCH_PROOF_ROTATION,
+  parseAndroidTouchDevice,
+} from "./android-touch.mjs";
+import {
   ACTIVITY,
   APP_ID,
   analyzeAppLog,
@@ -215,14 +221,40 @@ function makeEntry(test, target, port, entryRoot) {
   const sceneRelative = `./${relative(dirname(entryAbs), sceneAbs).replaceAll("\\", "/")}`;
   const canvasExpression =
     target === "browser" ? "document.getElementById('c')" : "globalThis.canvas";
+  const proofImport =
+    test.inputProof === "multitouch"
+      ? `import { isMultitouchProofSatisfied } from './${relative(
+          dirname(entryAbs),
+          join(runtimeRoot, "conformance/multitouch-proof.mjs"),
+        ).replaceAll("\\", "/")}';`
+      : "";
+  const proofWait = test.inputProof === "multitouch"
+    ? `await new Promise((resolve, reject) => {
+  const deadline = setTimeout(() => reject(new Error('multitouch proof timed out')), 60000);
+  const check = () => {
+    const proof = globalThis.__TN_MULTITOUCH_PROOF__;
+    if (isMultitouchProofSatisfied(proof)) {
+      clearTimeout(deadline);
+      resolve();
+      return;
+    }
+    requestAnimationFrame(check);
+  };
+  check();
+});
+console.info(${JSON.stringify(`TN_MULTITOUCH_PROOF_PASS:${test.id}`)});`
+    : "";
   const completion =
     target === "browser"
-      ? `for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
+      ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
+${proofWait}
+for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
 if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();
 const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
 const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
 if (!response.ok) throw new Error('completion upload failed: ' + response.status);`
-      : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});`;
+      : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
+${proofWait}`;
   const error =
     target === "browser"
       ? `await fetch('/__tn_conformance__/error/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: globalThis.__TN_CONFORMANCE_ERROR__ }).catch(() => {});`
@@ -232,6 +264,7 @@ if (!response.ok) throw new Error('completion upload failed: ' + response.status
   writeFileSync(
     entryAbs,
     `import { startScene } from '${sceneRelative}';
+${proofImport}
 ${asyncStart}
 globalThis.__TN_ASSET_BASE__ = 'http://127.0.0.1:${port}/';
 const canvas = ${canvasExpression};
@@ -432,6 +465,26 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     const completion = broker.wait(test.id, Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000));
     await page.goto(url, { waitUntil: "domcontentloaded" });
+    if (test.inputProof === "multitouch") {
+      await page.waitForFunction(() => globalThis.__TN_MULTITOUCH_INPUT_READY__ === true, null, {
+        timeout: Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000),
+      });
+      await page.evaluate((points) => {
+        const canvas = document.querySelector("canvas");
+        if (!(canvas instanceof EventTarget)) throw new Error("multitouch proof canvas is missing");
+        for (const point of points) {
+          canvas.dispatchEvent(new PointerEvent("pointerdown", {
+            bubbles: true,
+            buttons: 1,
+            clientX: point.x * 1280,
+            clientY: point.y * 720,
+            isPrimary: point.id === points[0].id,
+            pointerId: point.id,
+            pointerType: "touch",
+          }));
+        }
+      }, MULTITOUCH_PROOF_POINTS);
+    }
     const outcome = await completion;
     broker.cancel(test.id);
     result.browser = {
@@ -481,10 +534,11 @@ function validationErrors(output) {
   return output.match(pattern) || [];
 }
 
-function runDesktop(test, bundlePath, result, runtime, captureRoot, assets) {
+function runDesktop(test, bundlePath, result, runtime, captureRoot, assets, runtimeBlocker = null) {
   if (!runtime || !existsSync(runtime)) {
     result.status = "blocked";
     result.blockedReason =
+      runtimeBlocker ||
       "TN_PARITY_DESKTOP_RUNTIME_MISSING: build the desktop runtime or set THREENATIVE_RUNTIME_BINARY/TN_RUNTIME. A clean build additionally requires CMake, a C++ compiler, and platform development libraries; Node 20, JDK 17, and an Android SDK are insufficient.";
     return;
   }
@@ -617,23 +671,47 @@ function verifyApkBundle(apk, bundle, javaHome) {
   }
 }
 
-async function runAndroid(test, bundlePath, result, device, captureRoot, assets) {
+async function runAndroid(
+  test,
+  bundlePath,
+  result,
+  device,
+  captureRoot,
+  assets,
+  requireEmulator = false,
+) {
   let tools;
   try {
     tools = discoverTools();
   } catch (error) {
     result.status = "blocked";
-    result.blockedReason = error instanceof Error ? error.message : String(error);
+    result.blockedReason = `TN_PARITY_ANDROID_TOOLS_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
     return;
   }
-  const devices = parseAdbDevices(String(runCommand(tools.adb, ["devices", "-l"]).stdout));
+  let devices;
+  try {
+    devices = parseAdbDevices(String(runCommand(tools.adb, ["devices", "-l"]).stdout));
+  } catch (error) {
+    result.status = "blocked";
+    result.blockedReason = `TN_PARITY_ANDROID_ADB_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
+    return;
+  }
   let serial;
   try {
     serial = selectDevice(devices, device);
   } catch (error) {
     result.status = "blocked";
-    result.blockedReason = error instanceof Error ? error.message : String(error);
+    result.blockedReason = `TN_PARITY_ANDROID_DEVICE_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
     return;
+  }
+  if (requireEmulator) {
+    try {
+      assertAndroidEmulator(androidDeviceProperties(tools.adb, serial), serial);
+    } catch (error) {
+      result.status = "blocked";
+      result.blockedReason = error instanceof Error ? error.message : String(error);
+      return;
+    }
   }
   const androidDir = join(runtimeRoot, "android");
   stageAndroidAssets(assets);
@@ -678,6 +756,7 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
   const common = (...args) =>
     runCommand(tools.adb, androidArgs(serial, ...args), { timeout: 120_000 });
   let displayRestore = null;
+  let releaseMultitouch = null;
   try {
     runCommand(tools.adb, androidArgs(serial, "uninstall", APP_ID), {
       allowFailure: true,
@@ -712,6 +791,44 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
       await wait(500);
     }
     if (!appLog.includes(marker)) throw new Error(`Android timed out waiting for ${marker}.`);
+    if (test.inputProof === "multitouch") {
+      const touchDevice = parseAndroidTouchDevice(
+        String(common("shell", "getevent", "-lp").stdout || ""),
+        process.env.THREENATIVE_TOUCH_DEVICE,
+      );
+      const releaseScript = androidMultitouchScript(
+        touchDevice,
+        MULTITOUCH_PROOF_POINTS,
+        false,
+        MULTITOUCH_PROOF_ROTATION,
+      );
+      common(
+        "shell",
+        "sh",
+        "-c",
+        androidMultitouchScript(
+          touchDevice,
+          MULTITOUCH_PROOF_POINTS,
+          true,
+          MULTITOUCH_PROOF_ROTATION,
+        ),
+      );
+      releaseMultitouch = () => common("shell", "sh", "-c", releaseScript);
+      const proofMarker = `TN_MULTITOUCH_PROOF_PASS:${test.id}`;
+      const proofTimeoutAt = Date.now() + Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000);
+      while (Date.now() <= proofTimeoutAt) {
+        appLog = filterAppLog(androidLog(tools.adb, serial), pid);
+        const analysis = analyzeAppLog(appLog);
+        if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
+        if (appLog.includes(proofMarker)) break;
+        if (pid && !androidPid(tools.adb, serial))
+          throw new Error("Android process exited before the multitouch proof marker.");
+        await wait(100);
+      }
+      if (!appLog.includes(proofMarker)) throw new Error(`Android timed out waiting for ${proofMarker}.`);
+      await releaseMultitouch();
+      releaseMultitouch = null;
+    }
     if (!/ThreeNativeWGPU/u.test(appLog)) {
       throw new Error(
         "Android WebGPU log channel was silent; expected a ThreeNativeWGPU startup line.",
@@ -737,6 +854,9 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
       timeout: 30_000,
     }).stdout;
     inspectScreenshot(png);
+    // Observe the capture instead of asserting it. A hard-coded `uniform: false` reports a
+    // blank device frame as a pass, which is the fail-open this lane exists to prevent.
+    const capture = inspectCapture(png);
     const afterCaptureDialog = androidSystemDialog(
       common("shell", "dumpsys", "window", "windows").stdout,
     );
@@ -750,7 +870,9 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
     result.native = {
       completed: true,
       screenshot,
-      uniform: false,
+      uniform: capture.uniform,
+      width: capture.width,
+      height: capture.height,
       device: serial,
       pid,
       bundleSha256: bundleHash,
@@ -768,6 +890,19 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
+    if (releaseMultitouch !== null) {
+      try {
+        releaseMultitouch();
+      } catch (error) {
+        result.status = "fail";
+        result.native = {
+          completed: false,
+          ...(result.native || {}),
+          error: `Android multitouch release failed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      releaseMultitouch = null;
+    }
     if (displayRestore !== null) {
       const restored = runCommand(
         tools.adb,
@@ -786,11 +921,151 @@ async function runAndroid(test, bundlePath, result, device, captureRoot, assets)
   }
 }
 
+const RUNTIME_ENV_KEYS = Object.freeze([
+  "THREENATIVE_RUNTIME_BINARY",
+  "TN_RUNTIME",
+  "MYSTRAL_BIN",
+]);
+
+export function configuredRuntime(env = process.env) {
+  return RUNTIME_ENV_KEYS.map((key) => env[key]).find(Boolean) || null;
+}
+
+export function defaultDesktopRuntimePath(platform = process.platform) {
+  const preset =
+    platform === "darwin" ? "tn-macos" : platform === "win32" ? "tn-windows" : "tn-linux";
+  const executable = platform === "win32" ? "mystral.exe" : "mystral";
+  return join(runtimeRoot, "build", preset, executable);
+}
+
+/**
+ * The one-command parity path provisions what the repository already declares — the pinned
+ * `third_party` downloads and the CMake build — before it decides a desktop row failed.
+ * A host that cannot run those steps reports every affected row as `blocked` with the exact
+ * command output, never as an assertion failure.
+ */
+export function desktopRuntimeBuildCommands() {
+  return [
+    { command: process.execPath, args: [join(runtimeRoot, "scripts/download-deps.mjs")] },
+    { command: process.execPath, args: [join(runtimeRoot, "scripts/native-build.mjs")] },
+  ];
+}
+
+export function prepareDesktopRuntime(runtime, options = {}) {
+  const env = options.env || process.env;
+  const exists = options.exists || existsSync;
+  if (runtime && exists(runtime)) return { runtime, blockedReason: null };
+  if (configuredRuntime(env)) {
+    return {
+      runtime: null,
+      blockedReason:
+        "TN_PARITY_DESKTOP_RUNTIME_MISSING: the configured " +
+        "THREENATIVE_RUNTIME_BINARY/TN_RUNTIME/MYSTRAL_BIN path does not exist.",
+    };
+  }
+  const run = options.run || runCommand;
+  try {
+    for (const { command, args } of desktopRuntimeBuildCommands()) {
+      run(command, args, { cwd: runtimeRoot, timeout: 1_800_000 });
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      runtime: null,
+      blockedReason: `TN_PARITY_DESKTOP_RUNTIME_BUILD_BLOCKED: automatic native provisioning failed: ${detail}`,
+    };
+  }
+  if (!exists(runtime)) {
+    return {
+      runtime: null,
+      blockedReason:
+        "TN_PARITY_DESKTOP_RUNTIME_BUILD_BLOCKED: automatic native provisioning completed " +
+        "without producing the expected runtime binary.",
+    };
+  }
+  return { runtime, blockedReason: null };
+}
+
 export function androidDeviceKind(properties) {
   return /^1$/mu.test(properties.qemu || "") ||
     /^(goldfish|ranchu)$/mu.test(properties.hardware || "")
     ? "emulator"
     : "physical";
+}
+
+export function assertAndroidEmulator(properties, serial = "the selected device") {
+  const kind = androidDeviceKind(properties);
+  if (kind !== "emulator") {
+    throw new Error(
+      `TN_PARITY_ANDROID_EMULATOR_REQUIRED: ${serial} identifies as physical hardware, ` +
+        "but --target android runs the emulator lane. Use --target android-hardware instead.",
+    );
+  }
+  return kind;
+}
+
+/**
+ * `--target android` must not silently depend on an emulator someone else started. When no
+ * emulator is attached this boots the requested AVD; when the SDK cannot supply one the
+ * caller gets a blocked precondition string, never a failed row.
+ */
+export function androidEmulatorBlocker(devices, avdNames, requested) {
+  if (devices.length > 0) return null;
+  if (requested && !avdNames.includes(requested)) {
+    return (
+      `TN_PARITY_ANDROID_AVD_MISSING: no emulator is attached and the requested AVD '${requested}' ` +
+      `is not installed. Installed AVDs: ${avdNames.length > 0 ? avdNames.join(", ") : "none"}.`
+    );
+  }
+  if (avdNames.length === 0) {
+    return (
+      "TN_PARITY_ANDROID_AVD_MISSING: no emulator is attached and the Android SDK has no AVD to " +
+      "boot. Create one with avdmanager, or pass --device SERIAL for an already-running emulator."
+    );
+  }
+  return null;
+}
+
+function androidDeviceProperties(adb, serial) {
+  const getprop = (name) =>
+    String(
+      runCommand(adb, androidArgs(serial, "shell", "getprop", name), { timeout: 10_000 }).stdout ||
+        "",
+    ).trim();
+  return { qemu: getprop("ro.kernel.qemu"), hardware: getprop("ro.hardware") };
+}
+
+function installedAvdNames(sdkRoot) {
+  const binary = join(
+    sdkRoot,
+    "emulator",
+    process.platform === "win32" ? "emulator.exe" : "emulator",
+  );
+  if (!existsSync(binary)) return [];
+  try {
+    return String(runCommand(binary, ["-list-avds"], { timeout: 30_000 }).stdout || "")
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function emulatorPreconditionBlocker(device) {
+  let tools;
+  try {
+    tools = discoverTools();
+  } catch (error) {
+    return `TN_PARITY_ANDROID_TOOLS_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  let devices;
+  try {
+    devices = parseAdbDevices(String(runCommand(tools.adb, ["devices", "-l"]).stdout));
+  } catch (error) {
+    return `TN_PARITY_ANDROID_ADB_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return androidEmulatorBlocker(devices, installedAvdNames(tools.sdkRoot), device);
 }
 
 function physicalAndroidBlocker(device) {
@@ -801,17 +1076,7 @@ function physicalAndroidBlocker(device) {
     const tools = discoverTools();
     const devices = parseAdbDevices(String(runCommand(tools.adb, ["devices", "-l"]).stdout));
     const serial = selectDevice(devices, device);
-    const qemu = String(
-      runCommand(tools.adb, androidArgs(serial, "shell", "getprop", "ro.kernel.qemu"), {
-        timeout: 10_000,
-      }).stdout || "",
-    ).trim();
-    const hardware = String(
-      runCommand(tools.adb, androidArgs(serial, "shell", "getprop", "ro.hardware"), {
-        timeout: 10_000,
-      }).stdout || "",
-    ).trim();
-    if (androidDeviceKind({ qemu, hardware }) === "emulator") {
+    if (androidDeviceKind(androidDeviceProperties(tools.adb, serial)) === "emulator") {
       return `TN_PARITY_PHYSICAL_DEVICE_REQUIRED: ${serial} identifies as an emulator, not physical hardware.`;
     }
     return null;
@@ -1008,11 +1273,12 @@ async function main(argv = process.argv.slice(2)) {
     const unknown = selectedIds.filter((id) => !known.has(id));
     if (unknown.length > 0) throw new Error(`Unknown --only-tests id(s): ${unknown.join(", ")}`);
   }
-  const runtime =
-    process.env.THREENATIVE_RUNTIME_BINARY ||
-    process.env.TN_RUNTIME ||
-    process.env.MYSTRAL_BIN ||
-    join(runtimeRoot, "build/tn-linux/mystral");
+  const runtime = configuredRuntime() || defaultDesktopRuntimePath();
+  const desktopPreparation =
+    !dryRun && (target === "desktop" || target === "all")
+      ? prepareDesktopRuntime(runtime)
+      : { runtime, blockedReason: null };
+  const desktopRuntimeBlocker = desktopPreparation.blockedReason;
   const outArg = valueAfter(argv, "--out");
   const { reportPath, captureRoot } = outputLayout(outArg, target);
   const artifactRoot = join(runtimeRoot, "artifacts/conformance");
@@ -1020,10 +1286,13 @@ async function main(argv = process.argv.slice(2)) {
   const bundleRoot = join(artifactRoot, `${target}-bundles`);
   for (const path of [entryRoot, bundleRoot, captureRoot]) mkdirSync(path, { recursive: true });
   const report = createReport(registry, dryRun ? "dry-run" : "execution", target, runtime, project);
-  const targetBlocker =
-    !dryRun && target === "android-hardware"
+  const targetBlocker = dryRun
+    ? null
+    : target === "android-hardware"
       ? physicalAndroidBlocker(valueAfter(argv, "--device"))
-      : null;
+      : target === "android"
+        ? emulatorPreconditionBlocker(valueAfter(argv, "--device"))
+        : null;
   const esbuildBin =
     process.platform === "win32"
       ? join(runtimeRoot, "node_modules/.bin/esbuild.cmd")
@@ -1040,6 +1309,10 @@ async function main(argv = process.argv.slice(2)) {
       } else if (targetBlocker) {
         result.status = "blocked";
         result.blockedReason = targetBlocker;
+      } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
+        result.status = "blocked";
+        result.blockedReason =
+          "The simultaneous-touch proof requires browser PointerEvents or the Android sendevent injector; desktop native input injection is not implemented.";
       } else {
         result.status = dryRun ? "validated" : "pass";
         let bundled;
@@ -1090,7 +1363,15 @@ async function main(argv = process.argv.slice(2)) {
         if (!dryRun && bundled && target === "web") {
           await runBrowser(test, bundlePath, result, port, broker, captureRoot);
         } else if (!dryRun && bundled && target === "desktop") {
-          runDesktop(test, bundlePath, result, runtime, captureRoot, project?.publicDir);
+          runDesktop(
+            test,
+            bundlePath,
+            result,
+            runtime,
+            captureRoot,
+            project?.publicDir,
+            desktopRuntimeBlocker,
+          );
           applyReferenceAndMetrics(
             test,
             result,
@@ -1104,6 +1385,7 @@ async function main(argv = process.argv.slice(2)) {
             valueAfter(argv, "--device"),
             captureRoot,
             project?.publicDir,
+            target === "android",
           );
           applyReferenceAndMetrics(
             test,

@@ -78,11 +78,15 @@ console.info(arena, uiMarker);
 
   it("fails with TN_NATIVE_ENTRY_NO_DEFAULT when the portable entry has no default", async () => {
     const project = await projectRoot("threenative-native-default-");
+    const output = path.join(project, "dist/desktop.js");
     await writeFile(path.join(project, "src/game.ts"), "export const game = { start() {} };\n");
 
     await expect(bundle(project, "desktop")).rejects.toMatchObject({
-      stderr: expect.stringContaining("TN_NATIVE_ENTRY_NO_DEFAULT"),
+      stderr: expect.stringContaining(
+        "TN_NATIVE_ENTRY_NO_DEFAULT: src/game.ts must default-export the game.",
+      ),
     });
+    await expect(readFile(output, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects UI only when the portable entry imports it", async () => {

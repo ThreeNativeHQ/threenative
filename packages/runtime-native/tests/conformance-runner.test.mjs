@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { test } from "vitest";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
+import { isMultitouchProofSatisfied } from "../conformance/multitouch-proof.mjs";
 import {
   compareCaptures,
   compareScreenSpaceGlyphs,
@@ -442,6 +443,52 @@ test("native workflow runs the complete checksum-locked Android emulator parity 
   assert.match(workflow, /download-deps\.mjs --android/u);
   assert.match(workflow, /--target android --device emulator-5554/u);
   assert.doesNotMatch(workflow, /implemented-only/u);
+});
+
+test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const proof = registry.tests.find((entry) => entry.id === "90-multitouch-input");
+  assert.deepEqual(proof, {
+    category: "input",
+    desktopGate: false,
+    id: "90-multitouch-input",
+    inputProof: "multitouch",
+    required: true,
+    scene: "conformance/scenes/shared/multitouch-input.js",
+    status: "implemented",
+    title: "simultaneous stick and jump input",
+    tolerance: { perceptualDeltaE: 3, pixelMismatchRatio: 0.01 },
+  });
+  const runner = readFileSync(join(root, "conformance/run-conformance.mjs"), "utf8");
+  assert.match(runner, /androidMultitouchScript/u);
+  assert.match(runner, /isMultitouchProofSatisfied\(proof\)/u);
+  assert.match(runner, /TN_MULTITOUCH_PROOF_PASS/u);
+});
+
+test("multitouch proof rejects sequential contacts and accepts overlapping contacts", () => {
+  const sequential = [
+    { leftGround: false, moved: true, pointers: 1, simultaneous: false },
+    { leftGround: true, moved: true, pointers: 1, simultaneous: false },
+  ];
+  const overlapping = [
+    { leftGround: false, moved: true, pointers: 2, simultaneous: false },
+    { leftGround: true, moved: true, pointers: 2, simultaneous: true },
+  ];
+
+  assert.equal(sequential.some(isMultitouchProofSatisfied), false);
+  assert.equal(overlapping.some(isMultitouchProofSatisfied), true);
+});
+
+test("multitouch proof rejects two pointers that never overlapped the stick and jump halves", () => {
+  assert.equal(
+    isMultitouchProofSatisfied({
+      leftGround: true,
+      moved: true,
+      pointers: 2,
+      simultaneous: false,
+    }),
+    false,
+  );
 });
 
 test("Android screenshot capture preserves PNG bytes", () => {

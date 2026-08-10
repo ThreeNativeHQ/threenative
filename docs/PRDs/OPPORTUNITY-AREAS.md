@@ -61,7 +61,7 @@ do not treat this original score table as an execution queue.
 | 4 | Hot reload with state preservation | **80** | 28 | 24 | 12 | 16 |
 | 5 | Save/load & deterministic replay | **82** | 30 | 18 | 20 | 14 |
 
-### 1. Asset discovery & licensing — 94 · live gate failed; kill switch pending
+### 1. Asset discovery & licensing — 94 · live gate failed; retained by owner with evidence gap
 
 Three.js ships a `GLTFLoader` and nothing that tells you *where a legally usable model
 lives*. All three current templates now contain `.mcp.json` and install the external asset
@@ -69,17 +69,23 @@ MCP; no server code is vendored. The live surface is still 32 tools, not the bou
 profile proposed by PRD-032. The 2026-08-09 live-agent gate completed: the positive arm
 downloaded and credited real Poly Haven and Kenney assets, but a blind critic preferred the
 no-MCP control `4/5` to `3/5` overall because its authored crate was clearer and fit the scene
-better. PRD-032's predeclared kill switch fired. Deletion of the generated asset-MCP surface
-is pending explicit confirmation; the smaller-profile publication is no longer the next move.
+better. PRD-032's predeclared visual-improvement condition therefore failed. The product
+owner explicitly retained the generated asset-MCP surface instead of applying the destructive
+kill-switch deletion; this is not relabeled as a pass. The smaller-profile publication is
+still an evidence gap, not the next move until a future owner-approved experiment earns it.
+
+The dated evidence record preserves the commands, screenshots, provider hashes, attribution
+and blind reviewer scores: [PRD-032 asset proof](../verification/PRD-032-asset-proof/README.md).
 
 It also attacks the "looks good" axis without violating §5b. Real assets are the biggest
 visual delta available, and shipping *discovery* is not shipping *the look* — the agent
 still writes its own materials and lighting around what it found.
 
 **Ceiling: none.** It is a tool call, not an API surface the model must learn.
-**Watch:** the legacy server is 10,847 LOC and 25+ tools. That is a maintenance surface
-even outside the budget, and 25 tools is a discovery cost of its own. Ship the subset that
-the paired arm actually reaches for.
+**Watch:** the pinned `0.4.0` server exposes 32 tools, while the unpublished upstream
+`game-assets` profile would expose eight. That is a maintenance and discovery surface even
+outside the budget. The retained 32-tool path is an explicit owner decision, not evidence
+that the bounded-profile or visual-improvement hypotheses passed.
 
 ### ✅ 2. Agent self-verification — 90 · shipped; arm-neutral diagnostics repaired
 

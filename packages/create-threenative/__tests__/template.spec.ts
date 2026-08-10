@@ -171,6 +171,42 @@ describe("template contracts", () => {
     );
   });
 
+  /**
+   * Source checks above prove the HUD is written. This pins the proof that it *runs*: a
+   * scenario each template's `pnpm test` executes must observe the booted HUD's live glyph
+   * count. Delete the assertion from a scenario and this goes red, so the observation cannot
+   * quietly disappear and leave the source checks looking like coverage.
+   *
+   * The assertion is `changed`, not a floor: any floor is already satisfied by the warmup
+   * value, which the runner correctly rejects as trivial.
+   */
+  it("should observe the booted HUD in the minimal template's scenario", async () => {
+    for (const template of typecheckTemplates) {
+      // Every template's HUD has to expose the count, whether or not its scenario reads it.
+      const source = await readFile(path.join(templateRoot, template, "src/render/hud.ts"), "utf8");
+      expect(source, template).toMatch(/glyphs:\s*0/u);
+      expect(source, template).toContain("this.glyphs = instance");
+    }
+
+    const root = path.join(templateRoot, "minimal");
+    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    expect(manifest.scripts?.test ?? "").toContain("playtests/play.playtest.json");
+    // Without the bridge the scenario fails closed on TN_PLAYTEST_BRIDGE_MISSING.
+    expect(await readFile(path.join(root, "src/game.ts"), "utf8")).toContain("playtest(");
+
+    const scenario = JSON.parse(
+      await readFile(path.join(root, "playtests/play.playtest.json"), "utf8"),
+    );
+    const hud = (scenario.assert?.components ?? []).find(
+      (entry: { entity?: string }) => entry.entity === "hud",
+    );
+    expect(hud, "the minimal template boots without observing its HUD").toEqual({
+      changed: true,
+      component: "glyphs",
+      entity: "hud",
+    });
+  });
+
   it("should call every exported render integration symbol", async () => {
     for (const template of templates) {
       const root = path.join(templateRoot, template);

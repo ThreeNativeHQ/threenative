@@ -4,9 +4,11 @@ prd_contract: v1
 
 # PRD-032 — Asset discovery: the scaffold hands the agent a licensed-asset tool
 
-**Status:** **REOPENED — the live-agent exit gate failed and the kill switch fired**
-(2026-08-09). The generated wiring still exists pending explicit confirmation before its
-destructive removal; it must not be described as proved or done.
+**Status:** **CLOSED — RETAINED BY PRODUCT OWNER WITH EVIDENCE GAP**
+(2026-08-09). The live-agent exit gate failed its visual-improvement condition: the no-MCP
+control produced the better frame. The product owner explicitly chose to retain the
+generated asset-MCP capability, so the predeclared destructive deletion is intentionally
+not applied. This is an owner disposition, not a pass.
 
 The void was correct about its facts and wrong about its conclusion. Re-checked before
 un-voiding: `npm view threenative-asset-mcp version` still returns `0.4.0`, `npm whoami`
@@ -14,13 +16,14 @@ still returns `ENEEDAUTH`, and the profile commit `6d1f9ebf` in the separate
 `threejs-to-bevy` checkout is **not an ancestor of that repo's HEAD** — its working tree has
 no `src/profile.ts` at all, so the prerequisite is further from done than the void recorded.
 
-Rather than delete the feature, Phases 2–5 ship against the version that actually resolves.
-Every generated project pins `0.4.0`, installs it, and hands its agent **32 tools, not 8**.
-The §2 subset survives as the loop the generated `AGENTS.md` teaches, not as a tool filter.
-The bounded profile in §4 Phase 1 is still unpublished, but it is no longer the decisive
-gap. Phase 5's matched live-agent control produced a better frame without the MCP. Under the
-gate written before implementation, that result rejects the feature's premise and calls for
-deletion. Evidence is in `docs/verification/PRD-032-asset-proof/`.
+Phases 2–4 and the distribution path of Phase 5 shipped against the version that actually
+resolves. Every generated project pins `0.4.0`, installs it, and hands its agent **32 tools,
+not 8**. The §2 subset survives as the loop the generated `AGENTS.md` teaches, not as a tool
+filter. The bounded profile in §4 Phase 1 is still unpublished, and the consumer-scoped
+visual-improvement condition is unmet. The matched live-agent control produced the better
+frame without the MCP; the exact commands, screenshots, hashes and reviewer scores are
+preserved in `docs/verification/PRD-032-asset-proof/`. The retained capability must not be
+described as a proved visual win.
 
 **Complexity: 6 → MEDIUM mode** (touches 10+ files +3, new mechanism from scratch — the
 upstream tool-profile selector +2, external API integration +1).
@@ -61,6 +64,31 @@ change when it lands.
   crate, a tree); anything bespoke is written in `src/render/`. Without this the tool's
   failure mode is a weird downloaded model dropped into a scene it does not fit — which is
   §5b's concern arriving through the front door.
+
+### Closure disposition — 2026-08-09
+
+Accepted in this closure:
+
+- the external `threenative-asset-mcp@0.4.0` distribution path, pinned in all three
+  generated templates and launched from each project's own `node_modules`;
+- the generated `.mcp.json` integrity guard, the recorded 32-tool `tools/list` surface,
+  the scaffold-smoke set-equality assertion, the budget externality check, and the
+  generated asset-use documentation; and
+- the real-provider plumbing proof: the positive arm found, licensed, downloaded and
+  hash-verified Poly Haven and Kenney assets without leaving the project.
+
+Not accepted as a product win, and therefore still an evidence gap:
+
+- the original bounded `--profile game-assets` contract, because the published `0.4.0`
+  has no profile selector and the generated project exposes 32 tools; and
+- the consumer-scoped claim that MCP improves the captured frame. The live comparison gave
+  the no-MCP control `4/5` overall versus `3/5` with MCP, so the predeclared kill-switch
+  condition was observed rather than passed.
+
+The product owner chose to retain the generated asset-MCP capability despite that result,
+because deleting a currently reachable authoring capability is intentionally deferred for a
+future owner-approved experiment. This decision does not relabel the failed comparison, does
+not change the recorded tool surface, and does not change `threenative-sculpt-mcp`.
 
 ---
 
@@ -235,7 +263,7 @@ below.
 ```mermaid
 flowchart LR
     A["pnpm create threenative my-game"] --> B[".mcp.json + dependency<br/>in the generated project"]
-    B --> C["user's agent starts<br/>tools/list → 8 tools"]
+    B --> C["user's agent starts<br/>tools/list → 32 recorded tools"]
     C --> D["asset_search_sources<br/>license + attribution"]
     D --> E["polyhaven_search_assets<br/>/ audio_search_assets"]
     E --> F["polyhaven_list_files<br/>URL · hash · size"]
@@ -247,7 +275,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant U as User agent
-    participant M as threenative-asset-mcp (--profile game-assets)
+    participant M as threenative-asset-mcp (0.4.0 default surface)
     participant P as Poly Haven API
     U->>M: asset_search_sources(category="texture")
     M-->>U: agent-ready sources + licence + attribution
@@ -275,13 +303,13 @@ means the phase is incomplete.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `--profile game-assets` selector (upstream, `../threejs-to-bevy`) | `templates/*/.mcp.json` `args`, launched by the user's MCP host | the all-32 default surface | n/a — the default stays for other hosts | pass `--profile nonsense` → server exits non-zero; CI asserts the exit code, not just that it started |
-| 2 | `templates/starter/.mcp.json` | `packages/create-threenative/src/index.ts:TBD` (`cp` copies it; the new assertion reads it) | nothing — no generated project has ever had MCP config | n/a | delete the file from the template → `createProject` throws; `scaffold.spec.ts` records the throw |
-| 3 | `.mcp.json` integrity assertion in `createProject` | `packages/create-threenative/src/index.ts:TBD`, called from `createProject` (the only scaffold entry point) | silent production of a tool-less project | n/a | point `args[0]` at a package the template does not depend on → scaffold smoke fails |
-| 4 | `threenative-asset-mcp` in each template's `package.json` | the three generated `package.json` files, consumed by `pnpm install` in the generated project | agents writing `BoxGeometry` because nothing else is reachable | n/a | add it to any `@threenative/*` package → new test fails: no workspace package may depend on it |
-| 5 | `tools/list` = the 8 profile names | `.github/workflows/ci.yml:TBD`, scaffold-smoke job, against the installed server in the generated project | an unverified claim about the tool surface | n/a | drop `--profile` from the `.mcp.json` → the job sees 32 and fails |
-| 6 | Asset-tool section in each template's `AGENTS.md` | generated `AGENTS.md`, mirrored `CLAUDE.md` | undocumented tools the agent never calls | n/a | `pnpm sync:agents --check` fails on drift |
-| 7 | Externality assertion in the budget script | `scripts/check-budgets.ts:TBD` | an unstated assumption | n/a | move the package into `packages/` → `pnpm budgets` fails on both the LOC and package caps |
+| 1 | Bounded `--profile game-assets` selector (upstream prerequisite, not shipped) | **No live caller in this repository**; upstream commit `6d1f9ebf` is not on `threejs-to-bevy` HEAD | the all-32 default surface | n/a — generated projects intentionally retain the default | `0.4.0` has no selector; an attempted profile flag is ignored, so the 8-tool claim cannot be accepted |
+| 2 | `.mcp.json` in all templates, including `starter` | `packages/create-threenative/src/index.ts:188-193` (`cp`, render, and validation in the only scaffold entry point) | nothing — no generated project had MCP config | n/a | remove a template `.mcp.json` → `createProject` throws; `scaffold.spec.ts` records the throw |
+| 3 | `.mcp.json` integrity assertion in `createProject` | `packages/create-threenative/src/index.ts:107-161,193` | silent production of a tool-less project | n/a | point `args[0]` at a package the project does not depend on → scaffold smoke fails |
+| 4 | `threenative-asset-mcp@0.4.0` in each template manifest | `packages/create-threenative/templates/minimal/package.json:29`, `starter/package.json:39`, `platformer/package.json:38`, consumed by `pnpm install` in the generated project | agents writing `BoxGeometry` because nothing else is reachable | n/a | add it to any `@threenative/*` package → template/budget tests fail |
+| 5 | Recorded `tools/list` = the 32 pinned-version names | `.github/workflows/ci.yml:106-200`, scaffold-smoke against the installed server and `asset-mcp-tools.json` | an unverified claim about the tool surface | n/a | alter/remove the recorded surface or server config → exact set equality fails; 8 is not claimed |
+| 6 | Asset-tool section in each template's `AGENTS.md` | `packages/create-threenative/templates/minimal/AGENTS.md:150`, `platformer/AGENTS.md:68`, `starter/AGENTS.md:169`, copied into generated projects | undocumented tools the agent never calls | n/a | `pnpm sync:agents --check` fails on mirror drift |
+| 7 | Externality assertion in the budget script | `scripts/check-budgets.ts:31-43`, consumed by `pnpm budgets` | an unstated assumption | n/a | move the package into `packages/` → `pnpm budgets` fails on the external-MCP check |
 
 ### Reachability
 
@@ -302,15 +330,18 @@ that appear in `public/` and `CREDITS.md`.
 **Full flow:**
 1. A user runs `pnpm create threenative my-game`, then `pnpm install`.
 2. Their agent starts in the project directory and its host reads `.mcp.json`.
-3. It reaches the new feature via `mcpServers.threenative-assets.args` →
-   `./node_modules/threenative-asset-mcp/dist/index.js --profile game-assets`.
-4. The outcome shows up as: 8 tools in the agent's tool list, a real file in `public/`, an
-   attribution line in `CREDITS.md`, and the asset visible in the captured frame.
+3. It reaches the retained feature via `mcpServers.threenative-assets.args` →
+   `./node_modules/threenative-asset-mcp/dist/index.js`, with the generated environment
+   directing downloads into `public/`.
+4. The outcome shows up as: the 32 recorded tools in the agent's tool list, the recommended
+   eight-tool loop in `AGENTS.md`, a real file in `public/`, an attribution line in
+   `CREDITS.md`, and an asset available to the game. The dated Phase 5 comparison does not
+   prove that this produces a better frame than the no-MCP control.
 
 **What does this replace?** Nothing — genuinely new behavior. No incumbent exists: no
 generated ThreeNative project has ever contained MCP configuration of any kind
-(`grep -rn "mcpServers" packages/create-threenative` returns nothing today, which is the
-baseline every gate below must be run against).
+(`grep -rn "mcpServers" packages/create-threenative` is now the caller census for the
+retained integration; the pre-Phase-2 empty result is preserved in the historical evidence.)
 
 ---
 
@@ -318,10 +349,11 @@ baseline every gate below must be run against).
 
 Every phase edits at least one pre-existing file. Max 5 files each.
 
-#### Phase 1: the prerequisite — a publishable server with a bounded surface
+#### Phase 1: the prerequisite — a publishable server with a bounded surface (unmet)
 
 **Outcome:** `npm view threenative-asset-mcp version` returns a version that exposes
-exactly 8 tools under `--profile game-assets`, or this PRD is void in writing.
+exactly 8 tools under `--profile game-assets`. This outcome remains unmet; the closure
+retains the resolvable `0.4.0` path by explicit product-owner decision.
 
 **Files:** work happens in `../threejs-to-bevy/packages/asset-mcp` (out of tree, its own
 license and third-party-notice review). In tree: `docs/strategy/ROADMAP.md` EDIT (line 129
@@ -364,26 +396,29 @@ publishable, in which case **this PRD is void** and `ROADMAP.md` Phase 2's asset
 deleted rather than left as a promise.
 
 **Superseded 2026-08-08.** The finding stands; the void does not. Phases 2–5 shipped against
-the resolvable `0.4.0` and its full 32-tool surface — see §0. This phase reopens as the one
-piece of outstanding work, and it is now larger than the void recorded: `6d1f9ebf` is an
-orphan commit, so restoring the profile means cherry-picking it onto `threejs-to-bevy` HEAD,
-re-running its checks, and publishing with credentials this machine does not have. When it
-lands, the only file to change here is `packages/create-threenative/asset-mcp-tools.json`
-(plus the pinned version in three template `package.json` files) — CI fails until they agree.
+the resolvable `0.4.0` and its full 32-tool surface — see §0. Phase 1 remains the recorded
+upstream evidence gap: `6d1f9ebf` is an orphan commit, so restoring the profile means
+cherry-picking it onto `threejs-to-bevy` HEAD, re-running its checks, and publishing with
+credentials this machine does not have. The product owner chose to close this PRD while
+retaining the current capability. If the profile later lands, the only in-tree surface
+records to change are `packages/create-threenative/asset-mcp-tools.json` and the pinned
+version in the three template manifests; CI must keep them coherent.
 
 ---
 
-#### Phase 2: a scaffolded starter project hands its agent 8 asset tools
+#### Phase 2: a scaffolded starter project hands its agent the retained asset tools
 
-**Outcome:** `pnpm create threenative my-game --template starter && pnpm install`, and the
-agent's tool list contains `polyhaven_search_assets` and 7 siblings — and nothing else.
+**Outcome as-built:** `pnpm create threenative my-game --template starter && pnpm install`
+launches the pinned server from the generated project. Its tool list contains the recorded
+32 names; `AGENTS.md` teaches the recommended eight-tool loop, but does not claim that the
+server filters the other names.
 
 **Files (5, three pre-existing):**
-- `packages/create-threenative/templates/starter/.mcp.json` — NEW: `mcpServers.threenative-assets`, `command: "node"`, `args: ["./node_modules/threenative-asset-mcp/dist/index.js", "--profile", "game-assets"]`
+- `packages/create-threenative/templates/starter/.mcp.json` — NEW: `mcpServers.threenative-assets`, `command: "node"`, `args: ["./node_modules/threenative-asset-mcp/dist/index.js"]`, with project-local asset and audio download directories
 - `packages/create-threenative/templates/starter/package.json` — EDIT: add the literal pinned version to `dependencies` (templates ship real versions; CI already asserts no `catalog:` survives)
 - `packages/create-threenative/src/index.ts` — EDIT: after `renderTemplate`, assert the generated `.mcp.json` parses, and that every `args[0]` under `mcpServers` names a package listed in the generated `package.json`. Throw otherwise.
 - `packages/create-threenative/__tests__/scaffold.spec.ts` — EDIT: add `.mcp.json` to `STARTER_PATHS` and add the cases below
-- `.github/workflows/ci.yml` — EDIT: in `scaffold-smoke`, after `pnpm --dir "$target" install`, spawn the installed server over stdio, send `tools/list`, and assert the returned names equal the 8
+- `.github/workflows/ci.yml` — EDIT: in `scaffold-smoke`, after `pnpm --dir "$target" install`, spawn the installed server over stdio, send `tools/list`, and assert the returned names equal the recorded 32
 
 **Wiring:**
 - [ ] Caller edited: `packages/create-threenative/src/index.ts` — `createProject` now reads and validates `.mcp.json`
@@ -395,11 +430,11 @@ agent's tool list contains `polyhaven_search_assets` and 7 siblings — and noth
 
 | Test File | Test Name | Assertion | Negative control (observed red) |
 |---|---|---|---|
-| `__tests__/scaffold.spec.ts` | `should write .mcp.json when the starter is scaffolded` | file exists, `mcpServers["threenative-assets"].args` contains `--profile` and `game-assets` | run at `HEAD~1` → fails, because no template had `.mcp.json` |
+| `__tests__/scaffold.spec.ts` | `should write .mcp.json when the starter is scaffolded` | file exists, uses the local `node_modules/threenative-asset-mcp` entry point, and sets project-local download directories | run at `HEAD~1` → fails, because no template had `.mcp.json` |
 | `__tests__/scaffold.spec.ts` | `should throw when .mcp.json names a package the project does not depend on` | `createProject` rejects; message names the package | remove the assertion from `index.ts` → the test goes red |
 | `__tests__/scaffold.spec.ts` | `should throw when .mcp.json is missing from the template` | `createProject` rejects | as above |
 | `__tests__/scaffold.spec.ts` | `should launch the server from the project's own node_modules` | `command === "node"`, `args[0]` starts `./node_modules/`, no `npx` anywhere in the file | change `args` to `npx -y …` → red |
-| CI `scaffold-smoke` | `tools/list` names equal the 8 | exact set equality, sorted, **not** `length >= 1` | remove `--profile` from `.mcp.json` → the job must fail on 32, not pass on "some tools" |
+| CI `scaffold-smoke` | `tools/list` names equal the recorded 32 | exact set equality, sorted, **not** `length >= 1`; the 8-tool profile remains an unmet upstream target | change/remove the recorded surface or generated server config → the job fails on set drift |
 
 **Revert check:** rename `.mcp.json` in the starter template → `scaffold.spec.ts`'s
 `STARTER_PATHS` loop and the new `createProject` assertion both fail, and `scaffold-smoke`
@@ -414,7 +449,9 @@ silent tool-less project. Before this package is ever published, run
 the tarball.
 
 **User Verification:** scaffold a starter, `pnpm install`, open the project with an MCP
-host, and read the tool list. Expected: 8 names, all from §2.
+host, and read the tool list. Expected as-built: the 32 names in
+`packages/create-threenative/asset-mcp-tools.json`; use the documented eight-tool loop for
+the recommended path.
 
 ---
 
@@ -445,11 +482,11 @@ into `packages/` becomes a CI failure rather than a code review opinion.
 **Revert check:** delete the externality assertion → `budgets.spec.ts` goes red.
 
 **User Verification:** `pnpm create threenative m --template minimal`; the agent's tool
-list is the same 8.
+list is the same recorded 32, and the local-download directories are present in `.mcp.json`.
 
 ---
 
-#### Phase 4: the agent knows how to use them, and records the license
+#### Phase 4: the agent knows how to use the recommended loop, and records the license
 
 **Outcome:** an agent reading the generated `AGENTS.md` searches sources before providers,
 reads the license before downloading, and writes `CREDITS.md` in the same turn.
@@ -480,7 +517,7 @@ reads the license before downloading, and writes `CREDITS.md` in the same turn.
 
 | Test File | Test Name | Assertion | Negative control (observed red) |
 |---|---|---|---|
-| `__tests__/scaffold.spec.ts` | `should document every tool the profile advertises` | the generated `AGENTS.md` mentions all 8 names, **and mentions no tool name absent from the profile** | add `fab_search_assets` to the prose → red. This is the assertion that catches documentation drifting ahead of the profile |
+| `__tests__/scaffold.spec.ts` | `should document only tools the pinned surface serves` | the generated `AGENTS.md` mentions every recommended name, **and mentions no tool name absent from the recorded 32-tool surface** | add an unserved tool name to the prose → red. This catches documentation drifting ahead of the pinned server |
 | `scripts/__tests__/sync-agent-docs.spec.ts` (existing) | mirrors in sync | `pnpm sync:agents --check` clean | edit `AGENTS.md` without regenerating → red |
 
 **Revert check:** delete the asset section from `templates/starter/AGENTS.md` → the new
@@ -509,18 +546,20 @@ decides whether the feature is real.
    capture renders a blank canvas and proves nothing).
 5. Gates: `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, plus `scaffold-smoke`.
 
-**Pass condition — all four, and any one missing is a fail:**
-- [ ] The downloaded file exists in `public/` and its hash matches what `*_list_files`
+**Observed result against the predeclared pass condition:**
+- [x] The downloaded file exists in `public/` and its hash matches what `*_list_files`
       reported.
-- [ ] `CREDITS.md` names the source, the license and the URL, and every claim in it traces
+- [x] `CREDITS.md` names the source, the license and the URL, and every claim in it traces
       to a tool result.
-- [ ] The captured frame is **visibly different from the same scaffold's baseline capture**
-      — put both in front of a person. `OPPORTUNITY-AREAS.md` records six genre presets that
-      passed all six automated metrics and produced indistinguishable arenas; an automated
-      pixel-delta alone repeats that mistake.
-- [ ] The agent reached the asset **without leaving the project** — no browser, no manual
-      download, no human paste. If a human touched a download, the gate failed regardless of
-      how the frame looks.
+- [ ] The MCP arm did not earn a visual-improvement pass: the no-MCP frame was preferred by
+      the blind critic (`4/5` overall versus `3/5`). `OPPORTUNITY-AREAS.md` records why an
+      automated pixel delta is insufficient.
+- [x] The agent reached the asset **without leaving the project** — no browser, manual
+      download or human paste was used.
+
+The plumbing and licensing portions are accepted. The consumer-scoped visual criterion is
+not accepted, and the product owner intentionally retained the capability rather than
+applying the deletion action that the failed comparison would otherwise trigger.
 
 **Negative control for the gate itself:** run the identical brief in a scaffold with
 `.mcp.json` removed. The agent must fall back to `BoxGeometry` and the capture must be
@@ -552,15 +591,15 @@ working asset tool. Three mechanisms would do it, and each has a control:
 | Silent-pass mechanism | Control |
 |---|---|
 | `.mcp.json` ships but the dependency is missing, so `args[0]` never resolves and the host silently lists no tools | `scaffold-smoke` spawns the **installed** server and asserts the tool names. A host that lists zero tools fails set-equality; it cannot pass by being empty |
-| The assertion is `tools.length > 0` or `tools.includes("polyhaven_search_assets")` | **Set equality against the sorted 8.** Any other shape is rejected in review — the whole point is that 32 must fail |
-| The new scaffold test passes at the previous commit | Every new test in Phases 2–4 is run at `HEAD~1` before it is recorded as passing. Today's tree has no `.mcp.json` anywhere, so each must be red there |
+| The assertion is `tools.length > 0` or `tools.includes("polyhaven_search_assets")` | **Set equality against the sorted recorded surface.** The pinned `0.4.0` surface has 32 names; any other shape is rejected, and the original 8-tool target remains an explicit gap |
+| The new scaffold test passes at the previous commit | The historical pre-Phase-2 parent `21a32c0` of implementation commit `12b3d3d` had no `.mcp.json`; the Phase 2–4 tests were observed red there. The retained tree is intentionally non-empty |
 | `pnpm sync:agents` never runs and the mirrors drift | existing `--check` in CI |
 | The Phase 5 frame "looks different" because of lighting noise | Compare against the same scaffold's own baseline capture, and have a person look at both |
 
 **Integration proof commands (paste the output, do not summarize):**
 
 ```sh
-# 1. Baseline — must return nothing before Phase 2, and this is what makes the new tests real
+# 1. Historical baseline — this was empty before Phase 2; it is intentionally non-empty now
 grep -rn "mcpServers\|threenative-asset-mcp" packages/ scripts/ .github/ | grep -v node_modules
 
 # 2. Caller census — the config is referenced by the scaffolder, not only by tests
@@ -588,21 +627,31 @@ pnpm budgets
 | "documentation describes the tools" | "the same brief run without `.mcp.json` produces a visibly worse frame" |
 | "the server is external" | "`pnpm budgets` reports the same package count and framework LOC as before this PRD" |
 
-**Done checks:**
-- [ ] All phases complete (Phase 6 is conditional and does not block)
-- [ ] All specified tests pass
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` passes
-- [ ] `pnpm budgets` passes with **no cap raised** and **no cap moved**
-- [ ] `scaffold-smoke` green, including the `tools/list` set-equality step
-- [ ] All automated checkpoint reviews passed (`prd-work-reviewer` after each phase)
+**Closure checks — this is a retained-decision close, not a claim that every original
+acceptance criterion passed:**
+- [x] Phases 2–4 and the distribution-path portion of Phase 5 are complete; Phase 6 is
+      conditional and was not started.
+- [x] The generated asset MCP, dependency, recorded 32-tool surface, scaffold assertions,
+      documentation and externality guard remain intact.
+- [x] Focused closure gates and the repository checks that run in this environment are
+      recorded below with their exact outcomes.
+- [ ] Phase 1's published bounded 8-tool profile remains unresolved (`0.4.0` exposes 32).
+- [ ] The consumer-scoped visual-improvement criterion is unmet: the no-MCP control won.
+- [x] The product-owner decision to retain the capability, without relabeling the failed
+      comparison, is recorded in this PRD, the roadmap, and product/opportunity docs.
 
-**Integration gates — any unchecked box means NOT done:**
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`
-- [ ] Caller census pasted (proof command 2)
-- [ ] Revert check passed: removing `.mcp.json` from a template breaks `scaffold.spec.ts` and `scaffold-smoke`
-- [ ] Every gate has a negative control that was **observed failing** — in particular, every Phase 2–4 test was run at `HEAD~1` and seen red
-- [ ] The capability was proved on the real subject: a live agent run against real providers, not a mocked `tools/list`
-- [ ] Phase 5's negative control ran, and the no-MCP arm produced the worse frame
+**Integration gates — status at closure:**
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
+- [x] Caller census is pasted below from the retained implementation.
+- [x] Revert controls were observed: removing `.mcp.json` from a template breaks the scaffold
+      guard/test and the installed-server smoke path.
+- [x] Every declared Phase 2–4 negative control has historical observed-red evidence in §8,
+      including the `HEAD~1` runs recorded during implementation.
+- [x] The capability was proved on the real subject: a live agent used real providers and
+      hash-verified downloads; the result is retained as evidence, not as a visual pass.
+- [x] Phase 5's negative control ran; [ ] the no-MCP arm produced the worse frame. It produced
+      the better frame, which is the recorded evidence gap and why the owner decision is
+      explicitly called out.
 
 ---
 
@@ -638,7 +687,7 @@ All rows below were run on 2026-08-08 on this machine.
 | 2 | starter scaffolds with `.mcp.json`, launched from `node_modules` | **PASS.** `scaffold.spec.ts`, 12 tests | Three in-suite controls, each observed red before the guard existed: the file removed from the template → `createProject` throws "no .mcp.json"; `args[0]` pointed at `not-a-dependency` → throws naming it; `command: npx -y` → throws "must launch from './node_modules/'" |
 | 3 | all three templates; `pnpm budgets` externality | **PASS.** `budgets.spec.ts`, 7 tests; `budgets ok: 7 packages, 4231 framework LOC, 7 PRD files` — **identical to before this PRD** | Fixture with `packages/asset-mcp/package.json` → error; fixture with `packages/core` depending on it → error; real tree → clean. Both directions run |
 | 4 | `AGENTS.md` documents only tools the pinned version serves | **PASS.** Doc test parses tool-shaped code spans out of all three `AGENTS.md` and rejects any name absent from `asset-mcp-tools.json`; `pnpm sync:agents` clean | The test caught a real false positive (`node_modules`) on its first run, and caught nothing fabricated after the namespace filter |
-| 5 | the capability is real, on the real subject | **PASS on the distribution path; NOT RUN on the live-agent frame.** See below | — |
+| 5 | the capability is real, on the real subject | **PASS on the distribution path and real-provider run; visual-improvement comparison FAIL.** See below | no-MCP control won the blind comparison |
 
 That historical row is superseded by the 2026-08-09 rerun below.
 
@@ -657,8 +706,10 @@ material credibility (`4/5` versus `3/5`) but made the target crate harder to id
 meets Phase 5's predeclared deletion condition: the no-MCP arm produced a good frame and won.
 
 Exact hashes, commands, attribution, screenshots and the blind verdict are preserved in
-`docs/verification/PRD-032-asset-proof/README.md`. Removal is pending confirmation because
-it deletes a currently generated capability; no acceptance box is closed.
+`docs/verification/PRD-032-asset-proof/README.md`. The failed comparison is not relabeled as
+a pass. The product owner intentionally did not apply the destructive deletion because it
+would remove a currently generated capability; the retained plumbing is accepted while the
+visual-improvement criterion remains unmet.
 
 **Phase 5, what was actually proved** (`scratchpad/sandbox-proof.sh`, exit 0):
 
@@ -676,11 +727,11 @@ it deletes a currently generated capability; no acceptance box is closed.
 6. `polyhaven_list_files` called with a wrong argument name returned a validation **error**,
    not an empty result — the fail-closed behaviour §5 depends on, observed by accident.
 
-**Not run, and therefore not claimed:** the live-agent arm of Phase 5 — an agent given only
-the generated `AGENTS.md` and the brief *"give the crate a real material and a pickup sound"*,
-its captured frame, and the no-`.mcp.json` negative control. The plumbing is proved; **that a
-model actually uses it well is not.** That run, and the human look at both frames, is the
-remaining exit gate, and §6's consumer-scoped criteria stay unchecked until it happens.
+**What remains unproven:** the live-agent run demonstrated that an agent can use the retained
+tools, but it did not demonstrate that the MCP arm improves the consumer's frame. The no-MCP
+control authored the clearer crate and won the blind comparison. A future owner-approved
+experiment would need a new brief or a stronger asset-fit hypothesis before this capability
+can claim visual lift; the existing evidence remains the honest failed result.
 
 **Repo gates:** `pnpm lint` clean for every file this PRD touched. `pnpm test` — 1019 tests
 pass, then `packages/playtest` fails its `orphan-cleanup.sh` step on a leftover headless

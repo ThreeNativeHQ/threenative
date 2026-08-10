@@ -84,7 +84,7 @@ export class CharacterBody3D {
       mass: 0,
       position: this.object.position,
       rotation: this.object.quaternion,
-      sensor: false,
+      sensor: shape.sensor,
       shape,
       type: "character",
     });

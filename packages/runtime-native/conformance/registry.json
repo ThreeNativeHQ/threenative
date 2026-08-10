@@ -898,6 +898,20 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "90-multitouch-input",
+      "title": "simultaneous stick and jump input",
+      "category": "input",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/multitouch-input.js",
+      "inputProof": "multitouch",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
     }
   ]
 }

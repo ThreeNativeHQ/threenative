@@ -20,6 +20,7 @@ installPhysicsSimulationBackend({
     const host = nativePhysicsHost();
     return wrapNativeSimulation(nativeSimulation(host.createSimulation(options)), host.version);
   },
+  createShape: (shape) => Object.freeze({ backend: "native", kind: shape.kind }),
   simulationForWorld: (world) => {
     if (typeof world !== "object" || world === null)
       throw new Error("TN_NATIVE_PHYSICS_INVALID: native world must be an object");

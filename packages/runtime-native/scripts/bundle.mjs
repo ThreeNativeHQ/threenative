@@ -15,7 +15,7 @@
  *   node scripts/bundle.mjs --entry game.js --output dist/bundle
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, writeSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -207,7 +207,8 @@ if (typeof globalThis.requestAnimationFrame === "function") {
     },
     load(id) {
       if (id !== resolvedVirtualEntry) return null;
-      return `import game from ${JSON.stringify(absoluteEntry)};
+      return `import * as gameModule from ${JSON.stringify(absoluteEntry)};
+const game = gameModule.default;
 void game.start().catch((error) => console.error(
   \`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`,
 ));`;
@@ -337,6 +338,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  writeSync(2, `${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

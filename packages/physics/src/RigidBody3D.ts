@@ -55,7 +55,7 @@ export class RigidBody3D {
       mass: options.mass ?? 0,
       position: this.object.position,
       rotation: this.object.quaternion,
-      sensor: false,
+      sensor: shape.sensor,
       shape,
       type: this.type,
     });

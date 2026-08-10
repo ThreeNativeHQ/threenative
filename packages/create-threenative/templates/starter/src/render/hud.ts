@@ -20,6 +20,7 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
   root.renderOrder = 10_000;
   camera.add(root);
   return {
+    glyphs: 0,
     update(values: { counter: number; primary: number; seconds: number }): void {
       const minutes = Math.floor(values.seconds / 60);
       const seconds = Math.floor(values.seconds % 60);
@@ -37,7 +38,7 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
           }
         }
       }
-      root.count = instance;
+      root.count = this.glyphs = instance;
       root.instanceMatrix.needsUpdate = true;
       const height = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2));
       root.position.set(-height * camera.aspect * 0.46, height * 0.42, -1);
