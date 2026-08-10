@@ -24,20 +24,18 @@ and keep their executed-evidence requirement in full.
 | [PRD-045](PRD-045-playtest-on-device.md) — playtest on device | Criteria 1–6 and 8 MET; Phases 0–3 and 5 closed | Criterion 7 / Phase 4: the same scenario and its three negative controls on the iOS simulator |
 | [PRD-056](PRD-056-physical-mobile-qualification.md) — physical mobile production qualification | Planning complete; the qualification command, evidence envelope and fail-closed contract are specified in full | Every criterion. It needs a physical Android device, a physical iOS device, a production-signed Android artifact, an Apple signing identity and an Apple provisioning profile. None exists on this machine. An untracked byte-identical duplicate under `docs/PRDs/production-readiness/` was removed on 2026-08-09 |
 | [PRD-057](PRD-057-native-audio-parity.md) — native audio parity | The isolated lane is committed and its manager gate packet passed all 16 command-level negative controls | Review cap reached with five new implementation defects: physical/virtual identity, rendered-output truth, aggregate target enforcement, stale identity validation, and the standalone smoke negative control; physical audible rows also remain blocked |
+| [PRD-058](PRD-058-performance-reliability-observability.md) — performance, reliability, and privacy-safe observability | Isolated lane commit `5865937`; manager reran all 21 declared controls with exact observed-red evidence | Physical/current desktop evidence, physical Android/iOS soak and resource artifacts, physical OS crash/ANR artifacts, and the root marker-control collection remain unavailable; implementation is not squashed |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) — promoted consumer distribution | Planning packet retained; no release implementation was started | Exact-candidate PRD-054 parity, PRD-059 provenance, a completed release run, public npm cohort, and npm/desktop/Android/Apple signing credentials are unavailable |
 
 **Number collision, recorded not fixed:** `done/PRD-056-scene-picking-abstraction.md` also
 claims 056. PRD-057, 058 and 060 reference "PRD-056" meaning the physical qualification one.
 Renumbering is a separate change; nothing here depends on it being done first.
 
-## Why 058 and 059 are not here
+## Why 059 is not here
 
 Rule 4. Each still has non-hardware work that can start today, so a blocked final criterion
 does not make a blocked PRD:
 
-- **PRD-058** (performance, reliability, observability) — the profiler, the `performance`
-  assertion contract, redaction and the evidence manifest run on web and Linux desktop. Only
-  the physical mobile and soak phases wait.
 - **PRD-059** (dependency provenance and SBOM) — fully executable on this host, hardware-free.
 
 ## Why 046, 047 and 048 are not here

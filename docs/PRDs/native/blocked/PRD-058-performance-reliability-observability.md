@@ -4,8 +4,11 @@ prd_contract: v1
 
 # PRD-058: Performance, Reliability, and Privacy-Safe Observability
 
-**Status:** NOT STARTED  
-**Owner:** Runtime and playtest maintainers  
+**Status:** BLOCKED — IMPLEMENTATION COMMITTED IN ISOLATED LANE; NOT SQUASHED
+**Lane commit:** `5865937c4d9de45a4adc28961b17eefc80fad675`
+
+**Manager gate:** 21 declared controls reran with exact observed-red evidence; delivery remains blocked by unavailable physical/current-artifact evidence and the root marker-control collection mismatch.
+**Owner:** Runtime and playtest maintainers
 **Goal:** G5 — profiling  
 **Committed baseline:** `cb754d9`  
 **Complexity: 10 → HIGH mode.**  
