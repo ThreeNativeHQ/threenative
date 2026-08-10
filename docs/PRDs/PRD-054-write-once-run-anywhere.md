@@ -1,19 +1,24 @@
 # PRD-054 — write once, run anywhere: a parity gate that proves it
 
-**Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-10.** The complete visual registry has
-the bounded 66/66 result on browser, Linux desktop, and the Android emulator. The PRD-053
-Android multi-touch supplemental now passes its positive and one-pointer negative controls;
-the current aggregate parity rerun remains non-green/incomplete for the reasons recorded in
-`packages/runtime-native/docs/G2-conformance.md`. The stated clean-machine prerequisites do
-not include the desktop C++ toolchain.
+**Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-10.** The unsandboxed aggregate rerun
+produced browser `66 pass / 1 fail / 0 blocked`, Linux desktop `65 pass / 1 fail / 1 blocked`,
+and Android `0 pass / 0 fail / 67 blocked`. Browser `90-multitouch-input` and desktop
+`25-camera-parented-overlay` reproduced genuine failures; desktop multitouch remained blocked
+because native injection is unsupported. Android rows were blocked by the lack of an online
+emulator/device. The separate Android multitouch supplemental reached APK assembly and exposed a
+real missing `SDL3-3.2.8.aar` before APK creation. Criterion 1 remains open.
 
 The precondition handling was repaired on 2026-08-09. `--target desktop` now runs the
 repository's own `download-deps.mjs` and `native-build.mjs` before it can fail a row, and a
 host that cannot run them reports every desktop row `blocked` with the command output rather
-than as an assertion failure. `--target android` refuses physical hardware and reports a
-missing or uninstalled AVD as a blocked precondition. `tests/parity-contract.test.mjs` drives
-those decisions directly instead of manufacturing a fake runtime. **A clean-machine run is
-still not executed here**, so criterion 1 stays open.
+than as an assertion failure. This run used the resulting Linux runtime successfully. The
+Android row loop stopped at `TN_PARITY_ANDROID_DEVICE_BLOCKED: No online Android device found
+(none listed).` Its separate supplemental pre-APK proof reached Gradle with JDK 17 and the
+Android SDK, then failed because
+`packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar` was absent. No SDK/NDK/toolchain
+or sandbox blocker was observed. `tests/parity-contract.test.mjs` drives those decisions
+directly instead of manufacturing a fake runtime. **A clean-machine run is still not executed
+here**, so criterion 1 stays open.
 
 Evidence:
 `docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
@@ -274,12 +279,13 @@ the very divergence this PRD exists to expose. The trigger is accepted and not r
 
 ## Criterion 1 aggregate rerun — 2026-08-10
 
-The batch rerun is recorded in
+The unsandboxed batch rerun is recorded in
 [`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../verification/prd-054-aggregate-rerun-2026-08-10.md).
-`pnpm parity` exited `1`. The browser listener failed with `listen EPERM: operation not
-permitted 127.0.0.1`, so no browser report or rows were produced. The desktop and Android
-reports each recorded 0 pass, 0 fail, and 67 blocked. Desktop was blocked during the native
-runtime-build preflight; Android stopped earlier at the ADB preflight with
-`spawnSync /home/joao/Android/Sdk/platform-tools/adb EPERM`, before the missing-AAR check.
-No browser rows executed, no desktop row failures were observed, and no Android missing-AAR
-block is attributed to this rerun. Criterion 1 remains open.
+`pnpm parity` exited `1` after writing all three reports. Browser recorded 66 passes and the
+genuine `90-multitouch-input` failure. Linux desktop recorded 65 passes, the genuine
+`25-camera-parented-overlay` failure, and blocked `90-multitouch-input` because desktop native
+multitouch injection is unsupported. Android recorded 0 passes, 0 failures, and 67 blocked rows
+with `TN_PARITY_ANDROID_DEVICE_BLOCKED` because no online emulator/device was listed. The
+separate Android multitouch supplemental reached the pre-APK Gradle step and failed because the
+SDL3 Android AAR was missing; it did not fail for an SDK/NDK/toolchain or sandbox reason. No
+Android parity row executed. Criterion 1 remains open.
