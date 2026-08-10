@@ -167,6 +167,26 @@ describe("budget gate", () => {
     expect(budgetErrors(report).join("\n")).toContain("runtime is allowed only");
   });
 
+  it("should ignore a scratch git worktree that checks the runtime out again", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(
+      root,
+      ".worktrees",
+      "prd-000-scratch",
+      "packages",
+      "runtime-native",
+      "include",
+      "mystral",
+    );
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "runtime.h"), "#pragma once\n");
+    const report = await collectBudgets(root);
+    expect(report.vendoredNativeRuntime).toEqual([]);
+    expect(budgetErrors(report)).not.toContainEqual(
+      expect.stringContaining("runtime is allowed only"),
+    );
+  });
+
   it("should trigger review when native runtime LOC exceeds 50000 without charging framework LOC", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "runtime-native", "src");

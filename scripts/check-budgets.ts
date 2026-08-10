@@ -68,6 +68,7 @@ const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
 const WALK_EXCLUSIONS = new Set([
   ".cache",
   ".git",
+  ".worktrees",
   "artifacts",
   "coverage",
   "dist",
