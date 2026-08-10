@@ -314,12 +314,10 @@ Four CLI commands, ever: `dev`, `build`, `test`, `ship`.
 React renders the HUD, menus, and overlays. It does not touch `THREE.Scene`. This is
 the same split Bone Tide shipped: a shared TypeScript engine, with only the UI in React.
 
-```
-Web                          Desktop / Mobile
-─────────────────────        ─────────────────────────
-React 19 + react-dom         OPEN
-Tailwind 4                   OPEN
-```
+| Web | Desktop / Mobile |
+|---|---|
+| React 19 + react-dom | OPEN |
+| Tailwind 4 | OPEN |
 
 **The native UI stack is an open question, not a decision.** The runtime (§7) is a host
 with no DOM and no React Native layer, so neither `react-dom` nor NativeWind applies, and
@@ -360,12 +358,15 @@ NativeWind means the same class strings work on device.
 
 **Write once, run everywhere.**
 
-```
-Shared TypeScript game code
-        ├── browser WebGPU ──────────────► web
-        └── owned Mystral runtime ───────► desktop / Android / iOS
-                                             │
-                                             └── native Rapier, coarse bulk ABI
+```mermaid
+flowchart LR
+    game["Shared TypeScript game code"]
+    web["Browser WebGPU<br/>web"]
+    native["Owned Mystral runtime<br/>desktop / Android / iOS"]
+    rapier["Native Rapier<br/>coarse bulk ABI"]
+
+    game --> web
+    game --> native --> rapier
 ```
 
 **One codebase reaches three platforms.** That is the product, not a bet — the question of

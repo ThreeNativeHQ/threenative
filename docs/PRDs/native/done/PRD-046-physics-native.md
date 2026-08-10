@@ -1,11 +1,16 @@
 # PRD-046 — native physics
 
-**Status: IN PROGRESS — implementation contract repaired; final archive awaits PRD-048's
-clean consumer gate.** Phases 0–3 and 5 are complete; Phase 3 passed on current SHA `e38439c`
-in GitHub run `31313092745`. The local artifact/install contract is complete; published
-consumer distribution remains open and owned by PRD-048. Physical arm64 execution and
-performance remain explicitly open. Retargeted by PRD-047 — transport and packaging revised,
-correctness gates unchanged.** Three things in the original design are now historical and are marked
+**Status: DONE 2026-08-09, with two criteria explicitly waived by the product owner.** Phases
+0–3 and 5 are complete; Phase 3 passed on SHA `e38439c` in GitHub run `31313092745`. The local
+artifact/install contract is complete, and the sensor contract was repaired and covered on both
+targets before landing.
+
+**Waived, not met:** physical arm64 execution and performance parity. The owner has no arm64
+hardware and stated on 2026-08-09 that these will be validated separately; they are recorded
+here as open facts, not as passes. Published consumer distribution is owned by
+[PRD-048](PRD-048-native-distribution.md), which closed on the same terms.
+
+Retargeted by PRD-047 — transport and packaging revised, correctness gates unchanged. Three things in the original design are now historical and are marked
 inline where they appear: the **JSI transport**, the separate **`@threenative/physics-native`
 package**, and the **concrete-Rapier-object escape hatch**. The active design compiles Rapier
 into the absorbed `packages/runtime-native` runtime and selects a host-neutral adapter from

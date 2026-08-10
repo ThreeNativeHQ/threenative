@@ -5,21 +5,26 @@ vocabulary), §10 (4 CLI commands), §11.4 (borrowed vocabulary).
 
 ## The workflow this replaces
 
-```
-User asks for a feature  →  model rewrites random files  →  game may or may not run
-                         →  user manually finds the breakage
+```mermaid
+flowchart LR
+    ask["User asks for a feature"] --> rewrite["model rewrites random files"]
+    rewrite --> game["game may or may not run"]
+    game --> find["user manually finds the breakage"]
 ```
 
 What it should be:
 
-```
-User describes an outcome
-   → agent inspects the project and live game state
-   → small plan, bounded patch
-   → typecheck + unit tests + gameplay scenario
-   → launch, capture telemetry and screenshots
-   → compare against performance and visual budgets
-   → present result, diff, one-click rollback
+```mermaid
+flowchart TB
+    outcome["User describes an outcome"]
+    inspect["agent inspects the project and live game state"]
+    plan["small plan, bounded patch"]
+    verify["typecheck + unit tests + gameplay scenario"]
+    launch["launch, capture telemetry and screenshots"]
+    compare["compare against performance and visual budgets"]
+    result["present result, diff, one-click rollback"]
+
+    outcome --> inspect --> plan --> verify --> launch --> compare --> result
 ```
 
 Steps 3 and 4 are the ones nobody else has, and both are half-built here already:

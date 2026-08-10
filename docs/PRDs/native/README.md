@@ -35,14 +35,14 @@ published-distribution rows, not the old calendar phase label.
 
 ## The active sequence
 
-```
-PRD-047  ──►  PRD-045  ──►  PRD-046  ──►  PRD-048  ──►  PRD-050
-absorbed      playtest      native        CLI and       the build
-runtime       on device     physics       distribution  tells the truth
-                                                            │
-                                              PRD-051 ◄─────┴─────► PRD-052
-                                              HUD on native         pathfinding
-                                              (decide first)        on mobile
+```mermaid
+flowchart LR
+    p047["PRD-047<br/>absorbed runtime"] --> p045["PRD-045<br/>playtest on device"]
+    p045 --> p046["PRD-046<br/>native physics"]
+    p046 --> p048["PRD-048<br/>CLI and distribution"]
+    p048 --> p050["PRD-050<br/>the build tells the truth"]
+    p050 --> p051["PRD-051<br/>HUD on native<br/>(decide first)"]
+    p050 --> p052["PRD-052<br/>pathfinding on mobile"]
 ```
 
 | # | PRD | What it buys | State |

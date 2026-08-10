@@ -1,15 +1,20 @@
 # Native runtime
 
-**Status:** owned-host absorption in progress. Desktop framework smoke and Android emulator
-runtime proof pass; Android framework-version parity, physics, iOS and physical hardware
-remain open. **Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
+**This document is the design.** Its task state lives in
+[`docs/strategy/ROADMAP.md` → Phase 3 → Native lane](../strategy/ROADMAP.md#native-lane--done-and-left),
+with `docs/PRDs/native/README.md` holding the per-PRD sequence and evidence pointers. Do not
+re-record status here; it drifts.
+
+**One-line status (2026-08-09):** desktop, Android emulator and iOS simulator execute;
+**no physical hardware and no published prebuilt distribution.**
+**Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
 
 ## The path
 
-```
-Shared TypeScript game code
-        ├── browser WebGPU ──────────────► web
-        └── owned Mystral runtime ───────► desktop / Android / iOS
+```mermaid
+flowchart LR
+    game["Shared TypeScript game code"] --> web["Browser WebGPU<br/>web"]
+    game --> native["Owned Mystral runtime<br/>desktop / Android / iOS"]
 ```
 
 One game codebase, two release lanes. Mystral's host source, CMake and platform projects
@@ -46,22 +51,17 @@ is not a foundation.
 
 ## Thread and process split
 
-```
-┌────────────────────────────────────────────┐
-│ Web / platform UI runtime                  │
-│ HUD, menus, navigation, accessibility      │
-└──────────────────┬─────────────────────────┘
-                   │ bounded semantic events
-                   ▼
-┌────────────────────────────────────────────┐
-│ Game runtime                               │
-│ scenes, entities, Three.js, fixed loop     │
-└────────────┬───────────────────┬───────────┘
-             ▼                   ▼
-┌─────────────────────┐  ┌─────────────────────┐
-│ Native simulation   │  │ WebGPU compute      │
-│ physics, nav, casts │  │ particles, culling  │
-└─────────────────────┘  └─────────────────────┘
+```mermaid
+flowchart TB
+    ui["Web / platform UI runtime<br/>HUD, menus, navigation, accessibility"]
+    events["Bounded semantic events"]
+    game["Game runtime<br/>scenes, entities, Three.js, fixed loop"]
+    native["Native simulation<br/>physics, nav, casts"]
+    gpu["WebGPU compute<br/>particles, culling"]
+
+    ui --> events --> game
+    game --> native
+    game --> gpu
 ```
 
 ## Both boundaries must be coarse
@@ -99,16 +99,17 @@ supposed to buy performance spends it back per call.
 
 ## Evidence gates, in order
 
-**0a — rendering.** Upstream `three/webgpu` now runs on desktop and the Android emulator.
-The unchanged framework core bundle runs 300 desktop frames. The next gate is that exact
-catalog-version bundle on Android, followed by iOS simulator and physical hardware.
+**0a — rendering.** Upstream `three/webgpu` runs the unchanged framework bundle at the
+catalog version, on every target claimed.
 
 **0b — physics.** Native Rapier drops a cube onto a plane through the versioned bulk ABI,
-then PRD-045 asserts the trajectory and demonstrates a deliberately broken run failing.
+PRD-045 asserts the trajectory and demonstrates a deliberately broken run failing, and
+PRD-049 measures web/host/device agreement with negative controls.
 
-No mobile-ready claim exists until Android framework parity, fail-closed device playtest,
-native physics and iOS evidence all pass. Emulator results never claim physical-driver,
-arm64 performance or phone frame-rate evidence.
+Both are passed on emulated and simulated targets and open on physical hardware — the
+roadmap's native-lane table is where that state is tracked. **Emulator and simulator results
+never become physical-driver, arm64-performance or phone frame-rate evidence**, and no
+combination of them is a mobile-ready claim.
 
 ## Explicitly not doing
 

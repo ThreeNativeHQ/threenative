@@ -70,12 +70,13 @@ it costs nothing.
 
 A source artifact compiles to platform variants:
 
-```
-dragon-source.glb
-   ├── web-high.glb
-   ├── mobile-high.glb
-   ├── mobile-mid.glb
-   └── mobile-low.glb
+```mermaid
+flowchart TD
+    source["dragon-source.glb"]
+    source --> web["web-high.glb"]
+    source --> mobileHigh["mobile-high.glb"]
+    source --> mobileMid["mobile-mid.glb"]
+    source --> mobileLow["mobile-low.glb"]
 ```
 
 Operations: optimize geometry · deduplicate materials · resize and compress textures ·

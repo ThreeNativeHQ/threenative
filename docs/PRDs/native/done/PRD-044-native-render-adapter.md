@@ -128,12 +128,12 @@ Widen five seams in `core` so they take an injected platform source instead of r
 for a browser global. Ship the RN implementations of those sources as
 `@threenative/native`. Web behaviour is unchanged, and that is a gate, not an aspiration.
 
-```
-@threenative/core            @threenative/native
-  createRenderer(factory)  ←   rnWebGPUFactory()
-  viewport(resizeSource)   ←   rnLayoutResize()
-  input(eventSource)       ←   rnInputSource()
-  audio(backend)           ←   rnAudioBackend()
+```mermaid
+flowchart LR
+    renderer["rnWebGPUFactory()"] --> coreRenderer["@threenative/core<br/>createRenderer(factory)"]
+    resize["rnLayoutResize()"] --> coreViewport["@threenative/core<br/>viewport(resizeSource)"]
+    input["rnInputSource()"] --> coreInput["@threenative/core<br/>input(eventSource)"]
+    audio["rnAudioBackend()"] --> coreAudio["@threenative/core<br/>audio(backend)"]
 ```
 
 ### 2.1 Explicitly rejected

@@ -46,7 +46,7 @@ persistent unused-export evidence comes from `pnpm round:deletions`.
 ## Strategy
 
 - [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse
-- [strategy/ROADMAP.md](strategy/ROADMAP.md) — the measured path from 30/100 to 80/100; Gate 0 and Phase 1 closed, Phase 2 active
+- [strategy/ROADMAP.md](strategy/ROADMAP.md) — the path to a production-ready beta, every item marked ✅/⚠️/❌; Gate 0 and Phase 1 closed, Phase 2 active, native lane state merged in
 - [strategy/BUSINESS-MODEL.md](strategy/BUSINESS-MODEL.md) — open core, pricing hypotheses, revenue order
 - [strategy/METRICS.md](strategy/METRICS.md) — north star and the metrics that are not vanity
 - [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `CHARTER.md`

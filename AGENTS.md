@@ -29,6 +29,8 @@ the real build before you move on. If it fails, fix it before continuing.
 5. **Never claim a gate you did not run.** Paste the failure. "Unverified" is an acceptable
    answer; "verified" without a run is not.
 
+**Diagrams:** Whenever a diagram is needed, use Mermaid rather than ASCII art.
+
 ## Where a change goes
 
 | What you are adding | Where it belongs |

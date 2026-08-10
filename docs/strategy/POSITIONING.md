@@ -30,13 +30,16 @@ repo. Treat as directional, not as data.)*
 
 ## The stage we own
 
-```
-1. Make it playable      ← crowded
-2. Make it maintainable  ┐
-3. Make it portable      │
-4. Make it performant    ├─ ours
-5. Make it shippable     │
-6. Keep it operational   ┘
+```mermaid
+flowchart TB
+    playable["1. Make it playable<br/>crowded"]
+    maintainable["2. Make it maintainable"]
+    portable["3. Make it portable"]
+    performant["4. Make it performant<br/>ours"]
+    shippable["5. Make it shippable"]
+    operational["6. Keep it operational"]
+
+    playable --> maintainable --> portable --> performant --> shippable --> operational
 ```
 
 This restates `CHARTER.md` §3 criterion 3 — *"ships to iOS; still works after the 20th

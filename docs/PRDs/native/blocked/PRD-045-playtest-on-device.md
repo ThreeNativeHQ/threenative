@@ -105,13 +105,16 @@ unchanged.**
 Extract the transport behind an interface. Playwright becomes one implementation; a device
 transport becomes the second. Everything above the transport is untouched.
 
-```
-scenario.ts · assertions.ts · report.ts      ← unchanged, pure
-                    │
-            BridgeTransport                  ← the new seam
-           ╱                ╲
-  PlaywrightTransport   DeviceTransport
-   page.evaluate         adb mailbox ↔ app
+```mermaid
+flowchart TB
+    source["scenario.ts · assertions.ts · report.ts<br/>unchanged, pure"]
+    seam["BridgeTransport<br/>the new seam"]
+    playwright["PlaywrightTransport<br/>page.evaluate"]
+    device["DeviceTransport<br/>adb mailbox ↔ app"]
+
+    source --> seam
+    seam --> playwright
+    seam --> device
 ```
 
 The app side is a small addition to the existing bridge: when a `TN_PLAYTEST_ENDPOINT` is
