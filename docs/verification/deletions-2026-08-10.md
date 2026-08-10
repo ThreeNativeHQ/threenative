@@ -254,7 +254,7 @@ query still observed the frozen 167-candidate list.
 | equivalent `node --import tsx/esm` query | pass — current round 3, previous round 2, 167 candidates |
 | `pnpm typecheck` | pass; exit 0 |
 | `pnpm lint` | pass; Biome checked 391 files |
-| `pnpm test` | setup-blocked at `@publint/pack`: `Failed to find packed tarball file` although the pack subprocess returned exit 0 |
-| `pnpm test:templates` | setup-blocked at `tsx` IPC; direct-loader retry reached the same `@publint/pack` failure |
-| `pnpm budgets` | setup-blocked at `tsx` IPC; direct check passed with review trigger 61,554 / 50,000 |
+| `pnpm test` | pass; exit 0 — root Vitest: 84 files / 628 tests; runtime-native: 35 files / 175 passed / 37 skipped; native physics parity: 1 test passed |
+| `pnpm test:templates` | pass; exit 0 — minimal, starter, and platformer scaffolded playtests passed (25 scenarios total) |
+| `pnpm budgets` | pass; exit 0 — 6 framework packages, 3 example workspaces, 5,975/15,000 framework LOC, 61,617/50,000 native runtime LOC, 4 PRD files, largest template 1,395 LOC; native runtime review trigger is non-fatal |
 | Android AAR preflight unit test | pass — 1 test, 31 skipped |
