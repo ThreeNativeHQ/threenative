@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-062 — the native LOC trigger has no owner
 
-**Status: COMPLETE, 2026-08-10.** The 61,589-line measurement, attribution, area verdicts,
+**Status: COMPLETE, 2026-08-10.** The 61,605-line measurement, attribution, area verdicts,
 owning-PRD justifications, and residual are recorded in the verification file. The trigger
 and `LIMITS.nativeRuntimeLoc` remain unchanged.
 
@@ -28,10 +28,10 @@ worse than no number."*
 The direct budget command on 2026-08-10 produced:
 
 ```
-budgets trigger: native runtime LOC review trigger: 61589 lines (trigger 50000, +11589).
+budgets trigger: native runtime LOC review trigger: 61605 lines (trigger 50000, +11605).
                  Justify in the owning PRD and run the kill switch over what was added.
 budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC,
-            61589/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
+            61605/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
 At kickoff, the trigger had fired on every run for at least a week and **no PRD carried the
@@ -52,12 +52,12 @@ runtime, this PRD produces the evidence and stops, and the owner decides separat
 | Area | Lines | First read |
 |---|---:|---|
 | `src/` | 37,179 | the host itself — render, platform, shims, physics ABI |
-| `conformance/` | 5,611 | PRD-054's parity registry and its runners |
-| `tests/` | 4,936 | fail-closed contract tests |
+| `conformance/` | 5,613 | PRD-054's parity registry and its runners |
+| `tests/` | 4,950 | fail-closed contract tests |
 | `scripts/` | 4,827 | build, download-deps, release, emulator lanes |
 | `include/` | 3,550 | public headers |
 | `android/`, `native/`, CMake, iOS, manifests, config | 5,486 | platform packaging and build configuration |
-| **Total** | **61,589** | trigger is 50,000 |
+| **Total** | **61,605** | trigger is 50,000 |
 
 That table is a starting read, not the attribution the charter asks for. Phase 0 produces the
 real one.
@@ -79,10 +79,10 @@ one-sentence justification and stay.
 
 Three areas need the verdict stated explicitly because they are the cheapest to rationalize:
 
-- `conformance/` (5,554) — is a parity registry runtime code, or is it a gate that belongs
+- `conformance/` (5,613) — is a parity registry runtime code, or is it a gate that belongs
   beside the tests? If it is a gate, say so and record why it counts against a runtime budget.
-- `scripts/` (4,807) — build and release orchestration measured as runtime lines.
-- `tests/` (4,863) — the fail-closed contract suite. Deleting tests to clear a budget is
+- `scripts/` (4,827) — build and release orchestration measured as runtime lines.
+- `tests/` (4,950) — the fail-closed contract suite. Deleting tests to clear a budget is
   forbidden; if tests are the reason the number is over, that is the finding.
 
 **Phase 2 — write the justification where the charter says it goes.** Each owning native PRD
