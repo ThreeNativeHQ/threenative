@@ -135,13 +135,36 @@ test('Android proof emits two contacts in one protocol-B report and releases bot
   const down = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, MULTITOUCH_PROOF_ROTATION);
   const up = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, false, MULTITOUCH_PROOF_ROTATION);
 
-  assert.match(down, /sendevent \/dev\/input\/event2 3 47 0/);
-  assert.match(down, /sendevent \/dev\/input\/event2 3 57 7/);
-  assert.match(down, /sendevent \/dev\/input\/event2 3 57 3/);
-  assert.match(down, /sendevent \/dev\/input\/event2 3 53 540/);
-  assert.match(down, /sendevent \/dev\/input\/event2 3 54 144/);
-  assert.match(down, /sendevent \/dev\/input\/event2 3 54 575/);
-  assert.match(down, /sendevent \/dev\/input\/event2 0 0 0/);
-  assert.match(up, /sendevent \/dev\/input\/event2 3 57 -1/gu);
-  assert.equal((up.match(/sendevent \/dev\/input\/event2 3 57 -1/gu) ?? []).length, 2);
+  assert.match(down, /send_event \/dev\/input\/event2 3 47 0/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 57 7/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 57 3/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 53 540/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 54 144/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 54 575/);
+  assert.match(down, /send_event \/dev\/input\/event2 0 0 0/);
+  assert.match(up, /send_event \/dev\/input\/event2 3 57 -1/gu);
+  assert.equal((up.match(/send_event \/dev\/input\/event2 3 57 -1/gu) ?? []).length, 2);
+  assert.match(down, /su 0 sendevent "[$]@"/u);
+  assert.match(down, /send_event \/dev\/input\/event2 3 55 0/u);
+  assert.match(down, /send_event \/dev\/input\/event2 3 48 1/u);
+  assert.match(down, /send_event \/dev\/input\/event2 3 49 1/u);
+  assert.match(down, /send_event \/dev\/input\/event2 3 58 512/u);
+});
+
+test('Android proof parses current getevent output without numeric event codes', () => {
+  const device = parseAndroidTouchDevice(`add device 3: /dev/input/event2
+  name:     "virtio_input_multi_touch_1"
+  events:
+    ABS (0003): ABS_MT_SLOT           : value 0, min 0, max 10, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+`);
+
+  assert.deepEqual(device, {
+    name: 'virtio_input_multi_touch_1',
+    path: '/dev/input/event2',
+    slot: { min: 0, max: 10 },
+    x: { min: 0, max: 32767 },
+    y: { min: 0, max: 32767 },
+  });
 });

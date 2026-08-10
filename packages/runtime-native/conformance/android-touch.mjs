@@ -2,9 +2,13 @@ const EV_SYN = 0;
 const EV_KEY = 1;
 const EV_ABS = 3;
 const ABS_MT_SLOT = 47;
+const ABS_MT_TOUCH_MAJOR = 48;
+const ABS_MT_TOUCH_MINOR = 49;
 const ABS_MT_TRACKING_ID = 57;
 const ABS_MT_POSITION_X = 53;
 const ABS_MT_POSITION_Y = 54;
+const ABS_MT_TOOL_TYPE = 55;
+const ABS_MT_PRESSURE = 58;
 const BTN_TOUCH = 330;
 const BTN_TOOL_FINGER = 325;
 const SYN_REPORT = 0;
@@ -57,6 +61,10 @@ export function androidMultitouchScript(device, points, down, rotation = 0) {
     if (down) {
       const coordinates = orientedCoordinates(point.x, point.y, rotation);
       events.push(
+        [EV_ABS, ABS_MT_TOOL_TYPE, 0],
+        [EV_ABS, ABS_MT_TOUCH_MAJOR, 1],
+        [EV_ABS, ABS_MT_TOUCH_MINOR, 1],
+        [EV_ABS, ABS_MT_PRESSURE, 512],
         [EV_ABS, ABS_MT_POSITION_X, coordinate(coordinates.x, device.x)],
         [EV_ABS, ABS_MT_POSITION_Y, coordinate(coordinates.y, device.y)],
       );
@@ -69,14 +77,21 @@ export function androidMultitouchScript(device, points, down, rotation = 0) {
   );
   return [
     "set -e",
-    ...events.map(([type, code, value]) => `sendevent ${device.path} ${type} ${code} ${value}`),
+    "send_event() {",
+    "  if su 0 id >/dev/null 2>&1; then",
+    "    su 0 sendevent \"$@\"",
+    "  else",
+    "    sendevent \"$@\"",
+    "  fi",
+    "}",
+    ...events.map(([type, code, value]) => `send_event ${device.path} ${type} ${code} ${value}`),
   ].join("\n");
 }
 
 function absoluteRange(block, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const match = new RegExp(
-    `^\\s*(?:[A-Z_]+\\s+\\([^)]*\\)\\s*:\\s*)?${escaped}\\s+\\([^)]*\\)\\s*:\\s*.*?\\bmin\\s+(-?\\d+),\\s+max\\s+(-?\\d+)`,
+    `^\\s*(?:[A-Z_]+\\s+\\([^)]*\\)\\s*:\\s*)?${escaped}(?:\\s+\\([^)]*\\))?\\s*:\\s*.*?\\bmin\\s+(-?\\d+),\\s+max\\s+(-?\\d+)`,
     "mu",
   ).exec(block);
   if (match === null) return undefined;

@@ -223,7 +223,12 @@ export class InputMap {
       releasePointerCapture?: (id: number) => void;
       setPointerCapture?: (id: number) => void;
     };
-    if (down === true) capture.setPointerCapture?.(id);
-    if (down === false) capture.releasePointerCapture?.(id);
+    // Browser conformance injects untrusted PointerEvents with dispatchEvent(). Chromium
+    // rejects pointer capture for those events because no physical pointer is active.
+    // Real browser input remains captured; native hosts may omit isTrusted and keep their stub.
+    if (pointer.isTrusted !== false) {
+      if (down === true) capture.setPointerCapture?.(id);
+      if (down === false) capture.releasePointerCapture?.(id);
+    }
   }
 }

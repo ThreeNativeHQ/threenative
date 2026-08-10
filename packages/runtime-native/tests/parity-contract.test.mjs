@@ -71,15 +71,13 @@ test("the parity registry implements Tier 1 and Tier 2 rows and documents exclus
     assert.equal(row?.status, "implemented", `${id} must be implemented`);
     assert.ok(row?.scene && existsSync(join(root, row.scene)), `${id} scene must exist`);
   }
-  assert.deepEqual(
-    value.exclusions.map(({ id, owner }) => [id, owner]),
-    [
-      ["react-dom-tailwind-hud", "PRD-055"],
-      ["rapier-wasm-mobile", "PRD-046"],
-      ["recast-wasm-mobile", "PRD-052"],
-      ["raw-glsl-shader-material-webgpu", "PRD-054"],
-    ],
-  );
+  assert.deepEqual(value.exclusions.map(({ id, owner }) => [id, owner]), [
+    ["react-dom-tailwind-hud", "PRD-055"],
+    ["rapier-wasm-mobile", "PRD-046"],
+    ["recast-wasm-mobile", "PRD-052"],
+    ["raw-glsl-shader-material-webgpu", "PRD-054"],
+    ["desktop-multitouch-input", "PRD-064"],
+  ]);
 });
 
 test("registry validation rejects undocumented or malformed exclusions", () => {
@@ -109,6 +107,29 @@ test("execution reports have only pass, fail, and blocked states", () => {
   assert.deepEqual(validateReport(report, value), []);
   report.results[0].status = "planned";
   assert.match(validateReport(report, value).join("\n"), /may not use status planned/u);
+});
+
+test("an excluded desktop row cannot be claimed as a pass", () => {
+  const value = registry();
+  const results = value.tests.map(({ id }) => ({ id, status: "blocked" }));
+  const row = results.find(({ id }) => id === "90-multitouch-input");
+  Object.assign(row, {
+    status: "pass",
+    browser: { completed: true, uniform: false },
+    native: { completed: true, uniform: false },
+    metrics: { pixelMismatchRatio: 0, perceptualDeltaE: 0 },
+    gpuValidationErrors: [],
+  });
+  const report = {
+    schemaVersion: "0.2.0",
+    registrySchemaVersion: value.schemaVersion,
+    threeVersion: value.threeVersion,
+    mode: "execution",
+    target: "desktop",
+    summary: { pass: 1, fail: 0, blocked: results.length - 1, planned: 0, validated: 0 },
+    results,
+  };
+  assert.match(validateReport(report, value).join("\n"), /desktop-multitouch-input is excluded/u);
 });
 
 test("native captures are inspected for uniformity and marker liveness after settling", () => {

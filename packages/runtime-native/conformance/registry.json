@@ -38,6 +38,16 @@
       "status": "excluded",
       "reason": "Raw GLSL ShaderMaterial fails under Three.js WebGPURenderer on every target.",
       "owner": "PRD-054"
+    },
+    {
+      "id": "desktop-multitouch-input",
+      "title": "Desktop multitouch input injection",
+      "category": "input",
+      "status": "excluded",
+      "reason": "The desktop lane has no native multitouch injector; browser PointerEvents and Android sendevent cover the simultaneous-touch proof.",
+      "owner": "PRD-064",
+      "target": "desktop",
+      "row": "90-multitouch-input"
     }
   ],
   "tests": [

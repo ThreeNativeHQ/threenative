@@ -160,6 +160,13 @@ export function validateReport(report, registry) {
   if (JSON.stringify(resultIds) !== JSON.stringify(expectedIds)) {
     errors.push("report result IDs/order must exactly match the registry");
   }
+  for (const exclusion of registry.exclusions ?? []) {
+    if (exclusion.target !== report.target || typeof exclusion.row !== "string") continue;
+    const result = report.results.find((entry) => entry.id === exclusion.row);
+    if (result?.status === "pass") {
+      errors.push(`${exclusion.row}: ${exclusion.id} is excluded for target ${report.target}`);
+    }
+  }
   const executionStatuses = new Set(["pass", "fail", "blocked"]);
   const dryStatuses = new Set(["fail", "blocked", "planned", "validated"]);
   const actualSummary = { pass: 0, fail: 0, blocked: 0, planned: 0, validated: 0 };
@@ -230,7 +237,7 @@ function makeEntry(test, target, port, entryRoot) {
       : "";
   const proofWait = test.inputProof === "multitouch"
     ? `await new Promise((resolve, reject) => {
-  const deadline = setTimeout(() => reject(new Error('multitouch proof timed out')), 60000);
+  const deadline = setTimeout(() => reject(new Error('multitouch proof timed out')), ${Number(process.env.TN_MULTITOUCH_TIMEOUT_MS || 60000)});
   const check = () => {
     const proof = globalThis.__TN_MULTITOUCH_PROOF__;
     if (isMultitouchProofSatisfied(proof)) {
@@ -469,6 +476,10 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       await page.waitForFunction(() => globalThis.__TN_MULTITOUCH_INPUT_READY__ === true, null, {
         timeout: Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000),
       });
+      const proofPoints =
+        process.env.TN_MULTITOUCH_DROP_POINTER === "1"
+          ? MULTITOUCH_PROOF_POINTS.slice(0, 1)
+          : MULTITOUCH_PROOF_POINTS;
       await page.evaluate((points) => {
         const canvas = document.querySelector("canvas");
         if (!(canvas instanceof EventTarget)) throw new Error("multitouch proof canvas is missing");
@@ -483,7 +494,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
             pointerType: "touch",
           }));
         }
-      }, MULTITOUCH_PROOF_POINTS);
+      }, proofPoints);
     }
     const outcome = await completion;
     broker.cancel(test.id);
@@ -1344,7 +1355,8 @@ async function main(argv = process.argv.slice(2)) {
       } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
         result.status = "blocked";
         result.blockedReason =
-          "The simultaneous-touch proof requires browser PointerEvents or the Android sendevent injector; desktop native input injection is not implemented.";
+          "TN_PARITY_ROW_EXCLUDED: desktop-multitouch-input — the desktop lane has no native " +
+          "multitouch injector; browser PointerEvents and Android sendevent cover the proof.";
       } else {
         result.status = dryRun ? "validated" : "pass";
         let bundled;

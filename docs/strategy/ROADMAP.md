@@ -39,8 +39,8 @@ static `abyss` ratio — that one is a regression ratchet (`docs/benchmark/PROTO
 | 1 | `pnpm typecheck && pnpm lint && pnpm test` green, budgets green, no cap raised | ✅ held on every landed change |
 | 2 | Three templates scaffold, build, and pass their playtests from a clean machine | ✅ `pnpm test:templates`, scaffold-smoke in CI |
 | 3 | A paired result the vanilla arm cannot match — the Phase 2 exit gate | ⚠️ not yet; round 3 lost visual and cost |
-| 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ 66/66 visual rows on 3 targets; current aggregate rerun is non-green |
-| 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ PRD-048 desktop passes; Android release rerun and prebuilt distribution open |
+| 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ Tier 1 not reached — [PRD-064 ledger](../verification/tier-1-2026-08-10.md) records the measured browser, desktop, and Android outcomes; the aggregate remains non-green |
+| 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ Tier 1 not reached — [PRD-064 ledger](../verification/tier-1-2026-08-10.md) records the Phase 4 performance gate as **UNVERIFIED** because `profile:production` is not present in this checkout |
 
 Rows 3–5 are the beta blockers. Rows 1–2 are held, not finished — they stay green or the
 change does not land.

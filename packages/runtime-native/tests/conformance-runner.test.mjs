@@ -526,6 +526,13 @@ test("the parity registry binds the simultaneous stick-and-jump proof to Android
   assert.match(runner, /TN_MULTITOUCH_PROOF_PASS/u);
 });
 
+test("the browser multitouch control can drop one pointer and remains fail-closed", () => {
+  const runner = readFileSync(join(root, "conformance/run-conformance.mjs"), "utf8");
+  assert.match(runner, /TN_MULTITOUCH_DROP_POINTER/u);
+  assert.match(runner, /MULTITOUCH_PROOF_POINTS\.slice\(0, 1\)/u);
+  assert.match(runner, /TN_MULTITOUCH_TIMEOUT_MS/u);
+});
+
 test("multitouch proof rejects sequential contacts and accepts overlapping contacts", () => {
   const sequential = [
     { leftGround: false, moved: true, pointers: 1, simultaneous: false },
