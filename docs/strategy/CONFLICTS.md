@@ -17,6 +17,7 @@ made here.
 | 6 | Prefab/behaviour API (`definePrefab`, `chasePlayer()`) as the default surface | §2: no recipe/preset system — "0 of 7 presets ever reproduced their genre" | Rejected. Prefabs are template code in `src/entities/`, which the scaffold already generates. See [../architecture/ENTITY-MODEL.md](../architecture/ENTITY-MODEL.md). |
 | 7 | Marketplace, multiplayer, live ops | §2, §10 | Not before the benchmark resolves. Each is a separate company. |
 | 8 | Cloud builds, device lab, store submission | §7: the mobile gate is *resolved on paper, unrun in practice* | Every cloud claim is downstream of Phase 0a/0b running on a physical phone. Do not sell what has not booted. |
+| 9 | A shipping bar reached without physical hardware — [ROADMAP.md](ROADMAP.md)'s Tier 1 | §3 criterion 3 and §7 make mobile a *promise* and own the device matrix; neither admits a tier that stops at the emulator | **Stage, do not repeal.** Tier 1 licenses one sentence — browser, desktop, Android emulator, iOS packaging — and no mobile-readiness claim. §7's matrix stays the definition of done; Tier 2 restarts on §12 criterion 3. Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md). **Open decision:** whether §7 should be amended to name the tiers, or keep the tension recorded here. |
 
 ## The package-cap problem is already live
 

@@ -8,6 +8,27 @@ is deferred, never waived.
 simulator, no physical iOS device. Linux and Android (adb, emulator) lanes are unaffected
 and keep their executed-evidence requirement in full.
 
+## Tier 2 — parked, with one unlock condition (owner decision, 2026-08-10)
+
+Every PRD in this folder is **Tier 2** under
+[ROADMAP.md](../../../strategy/ROADMAP.md)'s native reliability tiers. Parked means *not
+worked and not re-reviewed each batch* — the churn of restating "still blocked" is what the
+tier split exists to stop.
+
+| Unlock | Reopens |
+|---|---|
+| A physical Android device on this machine | the Android half of PRD-056, PRD-057 and PRD-058 |
+| An Apple machine + signing identity + provisioning profile | every iOS row, including PRD-045 criterion 7 |
+| npm, GitHub and platform-signing release credentials | PRD-060 |
+| A hosted same-candidate native prerelease | PRD-059 |
+| `CHARTER.md` §12 criterion 3 — a stranger plays a ThreeNative game for five minutes | the tier as a whole |
+
+**One device-free exception:** PRD-058 **Phase 5 only** (same-hardware web vs native desktop
+performance and cold start) needs no device and is executed by
+[PRD-064](../../PRD-064-tier-1-native-reliability.md). The rest of PRD-058 stays parked here.
+
+Parking changes no criterion. An unmet criterion is still unmet; rule 3 below is unchanged.
+
 ## Rules
 
 1. **Do not summarize a PRD in here as done.** It is "implemented, evidence blocked."

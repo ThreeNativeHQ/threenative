@@ -45,6 +45,26 @@ static `abyss` ratio — that one is a regression ratchet (`docs/benchmark/PROTO
 Rows 3–5 are the beta blockers. Rows 1–2 are held, not finished — they stay green or the
 change does not land.
 
+## Native reliability tiers — owner decision, 2026-08-10
+
+"Reliable" is split into what this machine can prove and what only physical hardware can.
+Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md); see
+[UNBLOCK-CHAIN.md](UNBLOCK-CHAIN.md) for the dependency order.
+
+| Tier | Bar | Licenses the sentence |
+|---|---|---|
+| **Tier 1** — the shipping bar | Renders-the-same, controls, and UI green on browser + Linux desktop + Android emulator; performance and soak green on web + native desktop | *"Runs on browser WebGPU, desktop Linux/macOS/Windows, and the Android emulator; iOS builds and packages."* **Nothing else.** |
+| **Tier 2** — deferred, not dropped | Physical Android and iOS: real GPU drivers, arm64, frame-rate parity, device soak, signed distribution | mobile readiness — **unclaimable until executed on hardware** |
+
+**Tier 2 reopen trigger, from `CHARTER.md` §12 criterion 3:** a stranger has played a
+ThreeNative game for five minutes — concretely, the first external user who installs the
+framework and asks for a device build. A physical Android device arriving earlier reopens the
+Android half alone; it does not reopen iOS. Until then PRD-056, 057, 058 (device rows), 060
+and every iOS reliability row are parked, not worked.
+
+Tier 1 is a *staging* of `CHARTER.md` §3 criterion 3 and §7, not a repeal of them. The tension
+is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
+
 ## Done
 
 | Item | PRD | State |
@@ -71,13 +91,14 @@ change does not land.
 
 | Item | PRD | State |
 |---|---|---|
+| **Tier 1 native reliability** | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) | ❌ not started — **every phase is executable on this host.** Finishes PRD-054 criterion 1, PRD-055 criterion 2 and PRD-058 Phase 5; defines the tier split above |
 | **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/PRD-061-round-4-paired-capability-proof.md) | ❌ not started — **the only PRD pointing at beta row 3**; needs no hardware. Round 3's `budget` stop condition must clear first |
 | Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | ⚠️ closed — live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so the visual-improvement evidence stays unmet |
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; current aggregate rerun remains non-green |
 | The HUD hole on native | [PRD-055](../PRDs/native/blocked/PRD-055-native-hud-reopened.md) | ⚠️ blocked at touch playability and row 25 |
 | Playtest on physical device | [native/blocked/PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) | ❌ no hardware on this machine |
 | Physical mobile production qualification | [native/blocked/PRD-056](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md) | ❌ filed under `native/blocked/` — every criterion needs a physical device or an Apple signing identity; an untracked duplicate under `production-readiness/` was removed 2026-08-09 |
-| Production readiness: audio parity, profiling, SBOM, promoted distribution | [production-readiness/PRD-057…060](../PRDs/production-readiness/) | ❌ planned, not started — 059 is fully executable here; 057 and 058 have executable phases; 060 waits on credentials |
+| Production readiness: audio parity, profiling, SBOM, promoted distribution | [native/blocked/PRD-057…060](../PRDs/native/blocked/) | ❌ **Tier 2, parked.** Moved out of `production-readiness/` (now empty) on 2026-08-10. PRD-058 Phase 5 is the one device-free part and is executed by PRD-064; 059 needs a hosted prerelease, 060 needs release credentials |
 | Build-time asset pipeline | none | ❌ deferred behind two measured triggers (`docs/product/ASSET-PIPELINE.md`) |
 | Device spikes 0a / 0b | none — forbidden | ❌ never a PRD (`CHARTER.md:364`); both were answered by the native lane instead |
 
