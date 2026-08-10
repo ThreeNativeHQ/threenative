@@ -356,3 +356,12 @@ the relevant `@threenative/physics` typecheck passes. The package `publint` subs
 clean-machine consumer gate are owned by PRD-048. `pnpm budgets` passes through the direct
 Node loader and retains the existing native LOC review trigger without a hard-invariant
 violation. This record is an implementation checkpoint, not the final archive decision.
+
+## Budget justification
+
+2026-08-10: PRD-046 owns the native physics portions of `src/`, `include/`, `native/`, and
+their contract tests. The exact current count and commit attribution are in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps the coarse,
+bulk-typed physics ABI and its fail-closed tests because they are the single native backend
+behind the shared public node API; deleting them would leave native physics unimplemented or
+reopen the forbidden per-object path. The review trigger is accepted, not raised.

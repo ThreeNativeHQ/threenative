@@ -365,3 +365,12 @@ Absorption means ThreeNative maintains a C++ runtime — Dawn and V8 bumps, thre
 platform toolchains, and any upstream security fix, applied by hand. Nothing in this PRD
 reduces that cost; §2.3's invariants only stop it from spreading into the TypeScript
 framework. **This is a staffing decision, taken knowingly on 2026-08-08.**
+
+## Budget justification
+
+2026-08-10: PRD-047 owns the absorbed host baseline in `src/`, `include/`, build configuration,
+and the native lifecycle portions of the runtime. The measurement and per-commit attribution
+are in `docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps the single
+host package because the plain alternative does not run the game on native; it does not add a
+second renderer, Three.js fork, or per-object physics hot path. The 50,000-line review trigger
+is disclosed and unchanged.

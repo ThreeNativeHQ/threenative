@@ -467,3 +467,12 @@ says so — PRD-046 acceptance criterion 8 stays open, not quietly closed by thi
   decision with its own LOC cost and its own proof burden.
 - It does not close PRD-046's iOS or clean-machine criteria. Those are blocked on hardware
   and on PRD-048 respectively, and nothing here changes either.
+
+## Budget justification
+
+2026-08-10: PRD-049 owns the native physics-parity verifier, parity controls, and their
+fail-closed `tests/`, `scripts/`, `src/`, and `native/` portions. The current measurement and
+commit attribution are recorded in `docs/verification/native-loc-trigger-2026-08-10.md`. The
+kill switch keeps them because removing the verifier would leave web/native agreement as an
+unmeasured claim; the deleted proof-only incumbent is already represented by its negative
+commit delta. The native LOC trigger is unchanged.

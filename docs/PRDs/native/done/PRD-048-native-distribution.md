@@ -331,3 +331,13 @@ Physical hardware remains open with no path to close here.
 
 The Charter defines no numerical PRD budget. `pnpm budgets` reports direct `docs/PRDs/`
 files for visibility; this subfolder is an organizational sequence, not a cap workaround.
+
+## Budget justification
+
+2026-08-10: PRD-048 owns the native packaging, Android/iOS consumer, build-script, manifest,
+and release-test portions of `android/`, `ios/`, `scripts/`, CMake, and `tests/`. The exact
+61,351-line measurement, commit attribution, and kill-switch table are in
+`docs/verification/native-loc-trigger-2026-08-10.md`. These lines stay because they make the
+no-toolchain packed consumer and checksum/failure controls executable; deleting them would
+turn distribution claims into manual assertions. The trigger remains a review trigger and no
+limit was changed.

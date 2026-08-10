@@ -262,3 +262,12 @@ Kill switch: delete a scene or version-matrix branch if it cannot distinguish it
 regression, delete project mode if it requires more source than running the scaffold's native
 entry directly, and delete any report field that does not fail closed or change a release
 decision. Physical-hardware rows remain blocked until executed and contribute no claimed pass.
+
+## Budget justification
+
+2026-08-10: PRD-054 owns the native parity registry, runner, metrics, version matrix, host
+observation, and fail-closed tests in `conformance/`, `src/`, `scripts/`, `android/`, and
+`tests/`. The current measurement and commit attribution are in
+`docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps these areas because
+they are the executable parity gate; deleting conformance, scripts, or tests would suppress
+the very divergence this PRD exists to expose. The trigger is accepted and not raised.

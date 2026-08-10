@@ -400,65 +400,6 @@ function reachabilityEnvelope(value: unknown): IPlaytestReachabilityAssertion["e
     : undefined;
 }
 
-export function oneShotScenario(options: {
-  expectAxis?: string;
-  expectMoved: boolean;
-  follow?: { entityId: string; within: number };
-  frames: number;
-  movementThreshold: number;
-  press: string;
-  subject: string;
-  target?: PlaytestTarget;
-  viewport?: IPlaytestViewport;
-}): IPlaytestScenario {
-  return {
-    assert: {
-      ...(options.expectMoved || options.expectAxis !== undefined
-        ? { movement: { axis: options.expectAxis, entity: options.subject, minDistance: options.expectMoved ? options.movementThreshold : undefined } }
-        : {}),
-      ...(options.follow === undefined ? {} : { camera: { entity: options.follow.entityId, follows: options.subject, within: options.follow.within } }),
-    },
-    name: `${safeFilePart(options.subject)}-${safeFilePart(options.press)}`,
-    schemaVersion: 1,
-    steps: [{ holdFrames: options.frames, press: options.press, release: true }],
-    subject: options.subject,
-    target: options.target ?? "web",
-    viewport: options.viewport ?? { height: 720, width: 1280 },
-    warmupFrames: 0,
-  };
-}
-
-export function applyScenarioOverrides(
-  scenario: IPlaytestScenario,
-  overrides: { target?: PlaytestTarget; viewport?: IPlaytestViewport },
-): IPlaytestScenario {
-  return {
-    ...scenario,
-    ...(overrides.target === undefined ? {} : { target: overrides.target }),
-    ...(overrides.viewport === undefined ? {} : { viewport: overrides.viewport }),
-  };
-}
-
-export function parsePlaytestTarget(value: string | undefined): PlaytestTarget | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return value === "web" || value === "desktop" || value === "bevy" ? value : undefined;
-}
-
-export function parseViewport(value: string | undefined): IPlaytestViewport | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const match = /^(\d+)x(\d+)$/.exec(value);
-  if (match === null) {
-    return undefined;
-  }
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  return Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0 ? { height, width } : undefined;
-}
-
 function validatePlaytestScenario(value: unknown, scenarioPath: string, absolutePath?: string): IPlaytestScenario {
   if (!isRecord(value)) {
     throw invalidScenario(scenarioPath, "Scenario root must be a JSON object.");
@@ -1524,10 +1465,6 @@ function validateNumberTuple(value: unknown, length: 3 | 4): [number, number, nu
     return undefined;
   }
   return value as [number, number, number] | [number, number, number, number];
-}
-
-function safeFilePart(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
