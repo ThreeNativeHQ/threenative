@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cstring>
 #include <cmath>
+#include <limits>
 
 // stb_image for image loading (implementation in stb_impl.cpp)
 #include "stb_image.h"
@@ -512,6 +513,59 @@ static WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format) {
     return format;
 }
 
+static bool readCanvasDimension(
+    js::JSValueHandle canvas,
+    const char* propertyName,
+    uint32_t& dimension
+) {
+    if (!g_engine || g_engine->isNull(canvas) || g_engine->isUndefined(canvas)) return false;
+
+    const double value = g_engine->toNumber(g_engine->getProperty(canvas, propertyName));
+    if (!std::isfinite(value) || value <= 0 || std::floor(value) != value ||
+        value > static_cast<double>(std::numeric_limits<uint32_t>::max())) {
+        return false;
+    }
+
+    dimension = static_cast<uint32_t>(value);
+    return true;
+}
+
+/**
+ * Keep the native presentation surface in lockstep with renderer.setSize().
+ * Three.js changes the canvas backing dimensions directly; unlike a browser
+ * GPUCanvasContext, the native surface is not reconfigured by that property
+ * write, so acquire must apply the pending size before creating the color view.
+ */
+static bool syncSurfaceSizeToCanvas(js::JSValueHandle canvas) {
+    if (!g_surface) return true;
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if (!readCanvasDimension(canvas, "width", width) ||
+        !readCanvasDimension(canvas, "height", height)) {
+        return false;
+    }
+
+    if (width == g_canvasWidth && height == g_canvasHeight) return true;
+
+    WGPUSurfaceConfiguration config = {};
+    config.device = g_device;
+    config.format = g_nativeSurfaceFormat;
+    config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    config.width = width;
+    config.height = height;
+    config.presentMode = WGPUPresentMode_Fifo;
+    wgpuSurfaceConfigure(g_surface, &config);
+
+    g_canvasWidth = width;
+    g_canvasHeight = height;
+    if (g_verboseLogging) {
+        std::cout << "[WebGPU] Surface resized from canvas: " << width << "x" << height << std::endl;
+    }
+    return true;
+}
+
 static WGPUTexture createLinearPresentationTexture() {
     WGPUTextureDescriptor descriptor = {};
     descriptor.size = {g_canvasWidth, g_canvasHeight, 1};
@@ -906,6 +960,11 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
             // context.getCurrentTexture() -> GPUTexture
             g_engine->setProperty(canvasContext, "getCurrentTexture",
                 g_engine->newFunction("getCurrentTexture", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                    if (!syncSurfaceSizeToCanvas(g_engine->getGlobalProperty("canvas"))) {
+                        g_engine->throwException("Canvas dimensions must be positive integer pixels");
+                        return g_engine->newUndefined();
+                    }
+
                     // Get current swapchain texture
                     WGPUTexture texture = getCurrentSwapchainTexture();
                     if (!texture) {
@@ -1461,8 +1520,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
                                     g_screenshotBuffer = wgpuDeviceCreateBuffer(g_device, &bufferDesc);
                                     g_screenshotBufferSize = requiredSize;
-                                    g_screenshotBytesPerRow = bytesPerRow;
                                 }
+                                g_screenshotBytesPerRow = bytesPerRow;
 
                                 // Create encoder to copy texture to buffer
                                 WGPUCommandEncoderDescriptor encDesc = {};
