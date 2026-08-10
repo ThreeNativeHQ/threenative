@@ -105,7 +105,7 @@ to 61,589:
 | `conformance/` | 5,611 | PRD-054, PRD-055, PRD-053 | **keep** — the shared registry is executable parity evidence; removing it makes cross-target claims untestable |
 | `tests/` | 4,936 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055 | **keep** — fail-closed contract tests are required evidence; deleting tests to clear a trigger is forbidden |
 | `scripts/` | 4,827 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054 | **keep** — packaging, build, emulator, and verifier orchestration has no plain native alternative |
-| `include/` | 3,541 | PRD-047, PRD-046, PRD-053 | **keep** — these headers are the host and coarse physics/input ABI contracts |
+| `include/` | 3,550 | PRD-047, PRD-046, PRD-053 | **keep** — these headers are the host and coarse physics/input ABI contracts |
 | `android/` | 1,738 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054 | **keep** — APK lifecycle, SDL glue, and device transport are needed to execute the Android proof |
 | `native/` | 1,590 | PRD-046, PRD-049 | **keep** — the Rust physics backend is the native implementation behind the shared API |
 | root `CMakeLists.txt` | 1,579 | PRD-047, PRD-048, PRD-050 | **keep** — opt-in native build configuration |

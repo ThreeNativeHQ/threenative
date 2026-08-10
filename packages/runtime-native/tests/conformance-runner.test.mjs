@@ -442,6 +442,20 @@ test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", (
   }
 });
 
+test("Android parity blocks a partial packaged layout even when the source AAR exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-android-partial-prebuilt-"));
+  try {
+    mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
+    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+    mkdirSync(join(dir, "android/prebuilt"), { recursive: true });
+    writeFileSync(join(dir, "android/prebuilt/SDL3-3.2.8.aar"), "fixture");
+
+    assert.ok(androidDependencyBlocker(dir));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Android parity accepts a complete packaged dependency layout", () => {
   const dir = mkdtempSync(join(tmpdir(), "threenative-android-prebuilt-"));
   try {

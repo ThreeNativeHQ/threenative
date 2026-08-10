@@ -940,10 +940,12 @@ export function androidDependencyBlocker(root = runtimeRoot) {
   ];
   const sourceComplete = existsSync(sourceAar);
   const prebuiltMissing = prebuiltFiles.filter((file) => !existsSync(file));
-  if (!sourceComplete && prebuiltMissing.length > 0) {
+  const prebuiltComplete = prebuiltMissing.length === 0;
+  const prebuiltPresent = prebuiltMissing.length < prebuiltFiles.length;
+  if (!prebuiltComplete && (!sourceComplete || prebuiltPresent)) {
     return (
       "TN_PARITY_ANDROID_DEPS_BLOCKED: checked source and packaged Android dependency layouts. " +
-      `source (${sourceRoot}): ${sourceAar} does not exist; ` +
+      `source (${sourceRoot}): ${sourceAar} ${sourceComplete ? "exists" : "does not exist"}; ` +
       `packaged (${prebuiltRoot}): missing ${prebuiltMissing.join(", ")}. ` +
       `Run "pnpm native:build" to download the Android third-party dependencies.`
     );
