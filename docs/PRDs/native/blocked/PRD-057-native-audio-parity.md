@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-057 — Native audio parity
 
-**Status:** PLANNED — implementation and target execution are UNVERIFIED.
+**Status:** BLOCKED — implementation review cap reached after two reviews; physical audible
+output is also unverified. The isolated lane is committed at `f9e9e95` with manager gates, but
+five new defects require a specification reopen before another repair. See the lane review
+packet and verification evidence in the execution worktree.
 
 **Owner:** Native audio lane.
 
