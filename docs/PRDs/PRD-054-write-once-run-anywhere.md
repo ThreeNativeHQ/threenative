@@ -276,10 +276,10 @@ the very divergence this PRD exists to expose. The trigger is accepted and not r
 
 The batch rerun is recorded in
 [`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../verification/prd-054-aggregate-rerun-2026-08-10.md).
-`pnpm parity` executed the browser and Linux desktop lanes, then reached Android, but exited
-1. Browser row `90-multitouch-input` failed on `setPointerCapture` page errors; desktop row
-`25-camera-parented-overlay` failed on depth-attachment size validation and row
-`90-multitouch-input` was blocked because desktop injection is not implemented; all 67 Android
-rows were **blocked** before execution because `third_party/sdl3-android/SDL3-3.2.8.aar` is
-absent. Under acceptance criterion 4, setup-blocked rows are not parity failures. The full
-clean-checkout criterion remains open; no target is claimed green by this rerun.
+`pnpm parity` exited `1`. The browser listener failed with `listen EPERM: operation not
+permitted 127.0.0.1`, so no browser report or rows were produced. The desktop and Android
+reports each recorded 0 pass, 0 fail, and 67 blocked. Desktop was blocked during the native
+runtime-build preflight; Android stopped earlier at the ADB preflight with
+`spawnSync /home/joao/Android/Sdk/platform-tools/adb EPERM`, before the missing-AAR check.
+No browser rows executed, no desktop row failures were observed, and no Android missing-AAR
+block is attributed to this rerun. Criterion 1 remains open.

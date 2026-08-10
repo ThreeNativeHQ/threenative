@@ -168,10 +168,8 @@ unchanged.
 
 The lane result is recorded in
 [`docs/verification/prd-055-touch-criterion-2-2026-08-10.md`](../verification/prd-055-touch-criterion-2-2026-08-10.md).
-The audit checks both allowed paths against the actual source: the platformer has 25 source
-files and 1,131 TypeScript/TSX lines but zero real touch-control behavior; the framework has
-42 pointer-API matches, while the template has zero pointer bindings and zero raw-pointer
-consumers (its three input consumers are keyboard actions). Neither path qualifies. The
-Android proof was rerun against `emulator-5554`, but stopped during APK assembly because
-`third_party/sdl3-android/SDL3-3.2.8.aar` is absent; no touch assertions ran. Criterion 2
-therefore remains open and is not claimed.
+The actual template contains a 181-line touch-controls implementation wired through
+`Level.ts`, so Path 1's source contract is satisfied. Android execution remains blocked
+before touch assertions by the recorded ADB result:
+`TN_PARITY_ANDROID_ADB_BLOCKED: spawnSync /home/joao/Android/Sdk/platform-tools/adb EPERM`.
+Criterion 2 remains open; no Android touch-playability claim is made.

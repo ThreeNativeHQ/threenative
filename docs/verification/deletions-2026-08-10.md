@@ -38,18 +38,19 @@ is a candidate generator; the table below records the required caller dispositio
 
 ## Phase 1 — dispositions
 
-Counts: 48 reached externally, 113 internal only, 1 public by contract, 5 dead; total 167.
+Counts: 48 reached externally, 106 internal only, 8 public by contract, 5 dead; total 167.
 
 A `reached externally` row has a caller outside its declaring package, including the playtest
 CLI's runner subpath; an `internal only` row has callers only in that package's `src` or
-`__tests__`. The `version` row is public by contract because
-`packages/core/__tests__/build.spec.ts:14` asserts the built core package exports
-`module.version === "0.1.0"`. Dead exports are deleted in this commit.
+`__tests__`. The public-by-contract rows are documented in `packages/core/AGENTS.md`, the
+generated template agent instructions, or the PRD-039 consumer example. The `version` row is
+public by contract because `packages/core/__tests__/build.spec.ts:14` asserts the built core
+package exports `module.version === "0.1.0"`. Dead exports are deleted in this commit.
 
 | Export | Disposition | Evidence |
 | --- | --- | --- |
 | `AnimationPlayOptions` | **internal only** | packages/core/src/animation.ts:40: play(name: string, options: AnimationPlayOptions = {}): void { |
-| `AnimationPlayer` | **internal only** | packages/core/__tests__/animation.spec.ts:3: import { AnimationPlayer } from "../src/animation.js"; |
+| `AnimationPlayer` | **public by contract** | packages/create-threenative/templates/starter/AGENTS.md:192: `AnimationPlayer` is exported by `@threenative/core`; docs/PRDs/done/PRD-039-animation-state-machine.md:164: import { AnimationPlayer } from "@threenative/core"; |
 | `AnimationPlayerOptions` | **internal only** | packages/core/src/animation.ts:21: constructor(options: AnimationPlayerOptions) { |
 | `Area3DOptions` | **internal only** | packages/physics/src/Area3D.ts:57: constructor(options: Area3DOptions) { |
 | `AreaContact` | **internal only** | packages/physics/src/Area3D.ts:138: drainContacts(): AreaContact[] { |
@@ -57,8 +58,8 @@ CLI's runner subpath; an `internal only` row has callers only in that package's 
 | `AreaHandler` | **internal only** | packages/physics/src/Area3D.ts:51: #listeners: Record<AreaEvent, Set<AreaHandler>> = { |
 | `AssetLoader` | **internal only** | packages/core/src/assets.ts:35: export function createAssetLoader(options: AssetLoaderOptions = {}): AssetLoader { |
 | `AssetLoaderOptions` | **internal only** | packages/core/src/game.ts:2: import { type AssetLoader, type AssetLoaderOptions, createAssetLoader } from "./assets.js"; |
-| `AudioBusOptions` | **internal only** | packages/core/src/audio.ts:33: constructor(options: AudioBusOptions) { |
-| `AudioPlayOptions` | **internal only** | packages/core/src/audio.ts:103: music(buffer: AudioBuffer, options: AudioPlayOptions = {}): ThreeAudio { |
+| `AudioBusOptions` | **public by contract** | packages/core/AGENTS.md:65: `AudioBusOptions` configures the listener; packages/core/src/audio.ts:3: export interface AudioBusOptions { |
+| `AudioPlayOptions` | **public by contract** | packages/core/AGENTS.md:65: `AudioPlayOptions` configures voice cleanup; packages/core/src/audio.ts:10: export interface AudioPlayOptions { |
 | `CameraConfig` | **internal only** | packages/core/src/game.ts:144: function validateCameraConfig(config: CameraConfig \\| undefined): void { |
 | `CharacterBody3DOptions` | **internal only** | packages/physics/src/CharacterBody3D.ts:69: constructor(options: CharacterBody3DOptions) { |
 | `CollisionShapeKind` | **internal only** | packages/physics/src/CollisionShape3D.ts:156: static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): CollisionShape3D { |
@@ -166,7 +167,7 @@ CLI's runner subpath; an `internal only` row has callers only in that package's 
 | `PlaytestTarget` | **internal only** | packages/playtest/src/assertions.ts:2: import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js"; |
 | `PlaytestVec3` | **reached externally** | packages/playtest/src/runner/androidRunner.ts:138: const pathPositions: PlaytestVec3[] = []; |
 | `PluginCleanup` | **internal only** | packages/core/src/game.ts:42: function installDevTools(entities: Registry, host: DevToolsHost \\| undefined): PluginCleanup { |
-| `Random` | **internal only** | packages/core/src/random.ts:8: export function createRandom(seed?: number): Random { |
+| `Random` | **public by contract** | packages/core/AGENTS.md:67: `Random` is a public type; packages/core/src/random.ts:1: export interface Random { |
 | `RawInputState` | **internal only** | packages/core/src/input.ts:59: readonly raw: RawInputState; |
 | `Registry` | **internal only** | packages/core/__tests__/entities.spec.ts:3: import { Registry } from "../src/entities.js"; |
 | `RendererKind` | **internal only** | packages/core/src/renderer.ts:59: function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike { |
@@ -176,8 +177,8 @@ CLI's runner subpath; an `internal only` row has callers only in that package's 
 | `RigidBodyType` | **internal only** | packages/physics/src/RigidBody3D.ts:17: readonly type?: RigidBodyType; |
 | `SceneConstructor` | **internal only** | packages/core/src/game.ts:10: import type { Ctx, Scene, SceneConstructor, SceneFrame } from "./scene.js"; |
 | `SceneEnterResult` | **internal only** | packages/core/src/scene.ts:20: enter(_ctx: Ctx<TState, TPhysics>): SceneEnterResult<TState, TPhysics> { |
-| `ScheduleHandle` | **internal only** | packages/core/src/scene.ts:8: import type { ScheduleHandle } from "./schedule.js"; |
-| `Scheduler` | **internal only** | packages/core/__tests__/schedule.spec.ts:4: import { Scheduler } from "../src/schedule.js"; |
+| `ScheduleHandle` | **public by contract** | packages/core/AGENTS.md:63-64: `ScheduleHandle` is a public supporting type; packages/core/src/schedule.ts:1: export type ScheduleHandle = (() => void) & { |
+| `Scheduler` | **public by contract** | packages/core/AGENTS.md:63-64: `Scheduler` is the public scheduler supporting type; packages/core/src/schedule.ts:21: export class Scheduler { |
 | `StatePatch` | **internal only** | packages/core/src/state.ts:29: gameStore.set = (patch: StatePatch<T>) => { |
 | `ThreePlaytestEntityRegistry` | **internal only** | packages/playtest/__tests__/three-bridge.spec.ts:5: import { ThreePlaytestEntityRegistry } from "../src/three/entities.js"; |
 | `ThreePlaytestRenderer` | **internal only** | packages/playtest/src/three/bridge.ts:15: import { sampleThreeObservations, type ThreePlaytestRenderer } from "./observations.js"; |
@@ -192,7 +193,7 @@ CLI's runner subpath; an `internal only` row has callers only in that package's 
 | `connectPlaytestBridge` | **reached externally** | packages/playtest/src/runner/runner.ts:24: import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js"; |
 | `createAssetLoader` | **internal only** | packages/core/__tests__/assets.spec.ts:2: import { createAssetLoader } from "../src/assets.js"; |
 | `createGameStore` | **internal only** | packages/core/__tests__/state.spec.ts:2: import { createGameStore } from "../src/state.js"; |
-| `createRandom` | **internal only** | packages/core/__tests__/replay.spec.ts:33: const ctx = { input, random: createRandom(90210) } as unknown as Ctx; |
+| `createRandom` | **public by contract** | packages/core/AGENTS.md:67: `createRandom` is a public randomness surface; packages/core/src/random.ts:8: export function createRandom(seed?: number): Random { |
 | `createRenderer` | **internal only** | packages/core/__tests__/renderer.spec.ts:2: import { createRenderer } from "../src/renderer.js"; |
 | `evaluateRichPlaytestAssertions` | **reached externally** | packages/playtest/src/runner/runner.ts:6: evaluateRichPlaytestAssertions, |
 | `initStandalonePlaytest` | **reached externally** | packages/playtest/src/runner/cli.ts:14: import { initStandalonePlaytest } from "./init.js"; |
@@ -218,7 +219,7 @@ CLI's runner subpath; an `internal only` row has callers only in that package's 
 
 ## Phase 2 — deletion result
 
-The package entrypoints now un-export all 113 `internal only` candidates while keeping their
+The package entrypoints now un-export all 106 `internal only` candidates while keeping their
 declarations module-local. Internal tests that still exercise those symbols import the declaring
 module directly; a test-only caller does not restore a package export.
 
@@ -230,9 +231,11 @@ The five `dead` candidates were deleted with their private-only implementations:
 - `parsePlaytestTarget`
 - `parseViewport`
 
-The `version` export is the one `public by contract` candidate, retained for the built-package
-contract recorded above. The 48 `reached externally` rows retain public exports and record the
-external package, template, example, or playtest CLI caller in the evidence column.
+The eight `public by contract` candidates are `AnimationPlayer`, `AudioBusOptions`,
+`AudioPlayOptions`, `Random`, `ScheduleHandle`, `Scheduler`, `createRandom`, and `version`;
+each is retained in the package entrypoint with the file:line evidence recorded above. The 48
+`reached externally` rows retain public exports and record the external package, template,
+example, or playtest CLI caller in the evidence column.
 
 ## Verification commands
 

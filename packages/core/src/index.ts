@@ -1,6 +1,10 @@
 export const version = "0.1.0";
 
+export { AnimationPlayer } from "./animation.js";
+export type { AudioBusOptions, AudioPlayOptions } from "./audio.js";
 export { AudioBus } from "./audio.js";
+export { createRandom } from "./random.js";
+export type { Random } from "./random.js";
 export { defineGame } from "./game.js";
 export type {
   Game,
@@ -13,6 +17,8 @@ export { ScenePicker } from "./picking.js";
 export type { RaycastOptions, ScenePickerOptions } from "./picking.js";
 export { createReplayDriver, replay } from "./replay.js";
 export type { Recording } from "./replay.js";
+export { Scheduler } from "./schedule.js";
+export type { ScheduleHandle } from "./schedule.js";
 export { Scene } from "./scene.js";
 export type { Ctx, SceneFrame } from "./scene.js";
 export type { RawInputPointer } from "./input.js";
