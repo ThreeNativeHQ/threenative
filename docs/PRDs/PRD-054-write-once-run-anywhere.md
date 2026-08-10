@@ -271,3 +271,14 @@ observation, and fail-closed tests in `conformance/`, `src/`, `scripts/`, `andro
 `docs/verification/native-loc-trigger-2026-08-10.md`. The kill switch keeps these areas because
 they are the executable parity gate; deleting conformance, scripts, or tests would suppress
 the very divergence this PRD exists to expose. The trigger is accepted and not raised.
+
+## Criterion 1 aggregate rerun — 2026-08-10
+
+The batch rerun is recorded in
+[`docs/verification/prd-054-aggregate-rerun-2026-08-10.md`](../verification/prd-054-aggregate-rerun-2026-08-10.md).
+`pnpm parity` executed the browser and Linux desktop lanes, then reached Android, but exited
+1. Browser row `90-multitouch-input` failed on `setPointerCapture` page errors; desktop row
+`25-camera-parented-overlay` failed on depth-attachment size validation and row
+`90-multitouch-input` was blocked because desktop injection is not implemented; Android rows
+failed during APK assembly because `third_party/sdl3-android/SDL3-3.2.8.aar` is absent. The
+full clean-checkout criterion remains open; no target is claimed green by this rerun.

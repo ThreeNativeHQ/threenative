@@ -163,3 +163,13 @@ coverage in `conformance/` and `tests/`. The exact count and commit attribution 
 because they distinguish a readable native HUD from a blank or stale frame; it does not create
 a framework widget, layout system, or native UI abstraction. The native LOC trigger remains
 unchanged.
+
+## Criterion 2 rerun — 2026-08-10
+
+The lane result is recorded in
+[`docs/verification/prd-055-touch-criterion-2-2026-08-10.md`](../verification/prd-055-touch-criterion-2-2026-08-10.md).
+The shipped-source check is red because this lane has no
+`platformer/src/render/touch-controls.ts`. The Android proof was rerun against
+`emulator-5554`, but stopped during APK assembly because
+`third_party/sdl3-android/SDL3-3.2.8.aar` is absent; no touch assertions ran. Criterion 2
+therefore remains open and is not claimed from the failed setup.
