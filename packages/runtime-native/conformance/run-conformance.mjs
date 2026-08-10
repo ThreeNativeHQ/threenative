@@ -7,6 +7,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageAndroidAssets } from "../scripts/package-android.mjs";
+import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 import {
   ACTIVITY,
   APP_ID,
@@ -18,7 +20,19 @@ import {
   parseAdbDevices,
   selectDevice,
 } from "../scripts/verify-android-first-proof.mjs";
-import { compareCaptures, inspectCapture } from "./metrics.mjs";
+import {
+  compareCaptures,
+  compareScreenSpaceGlyphs,
+  inspectCapture,
+  inspectScreenSpaceGlyphs,
+} from "./metrics.mjs";
+import { runAndroidMultitouchProof, shouldRunAndroidMultitouch } from "./parity-extras.mjs";
+import {
+  createProjectRegistry,
+  projectId,
+  resolveParityProject,
+  writeProjectScene,
+} from "./project-mode.mjs";
 
 const REPORT_SCHEMA_VERSION = "0.2.0";
 const REGISTRY_SCHEMA_VERSION = "0.1.0";
@@ -29,7 +43,10 @@ const runnerPath = fileURLToPath(import.meta.url);
 function usage() {
   return `Usage: node conformance/run-conformance.mjs [options]
 
-  --target web|desktop|android|all  Run one lane or the full matrix (default: all)
+  --target web|desktop|android|all
+                                  Run one lane or the default web/desktop/emulator matrix
+  --target android-hardware       Run only with an explicitly selected physical device
+  --project PATH                  Run the configured native entry of a scaffolded project
   --only-tests id,id               Run selected rows; every other row is blocked
   --reference DIR                  Browser capture directory for native comparison
   --device SERIAL                  Android emulator/device serial
@@ -52,7 +69,7 @@ function loadRegistry() {
   return JSON.parse(readFileSync(join(runtimeRoot, "conformance/registry.json"), "utf8"));
 }
 
-function validateRegistry(registry) {
+export function validateRegistry(registry) {
   const errors = [];
   if (registry.schemaVersion !== REGISTRY_SCHEMA_VERSION) {
     errors.push(`registry schemaVersion must be ${REGISTRY_SCHEMA_VERSION}`);
@@ -94,10 +111,28 @@ function validateRegistry(registry) {
       }
     }
   }
+  if (!Array.isArray(registry.exclusions) || registry.exclusions.length === 0) {
+    errors.push("registry.exclusions must be a non-empty array");
+  } else {
+    for (const [index, entry] of registry.exclusions.entries()) {
+      const label = entry?.id || `exclusion ${index}`;
+      if (!entry?.id || !/^[a-z0-9][a-z0-9-]*$/u.test(entry.id)) {
+        errors.push(`${label}: invalid exclusion id`);
+      }
+      if (ids.has(entry?.id)) errors.push(`${label}: duplicate id`);
+      ids.add(entry?.id);
+      if (entry?.status !== "excluded") errors.push(`${label}: status must be excluded`);
+      for (const field of ["title", "category", "reason", "owner"]) {
+        if (typeof entry?.[field] !== "string" || entry[field].trim() === "") {
+          errors.push(`${label}: ${field} must be a non-empty string`);
+        }
+      }
+    }
+  }
   return errors;
 }
 
-function validateReport(report, registry) {
+export function validateReport(report, registry) {
   const errors = [];
   if (report.schemaVersion !== REPORT_SCHEMA_VERSION) {
     errors.push(`report schemaVersion must be ${REPORT_SCHEMA_VERSION}`);
@@ -160,6 +195,17 @@ function validateReport(report, registry) {
   for (const [status, count] of Object.entries(actualSummary)) {
     if (report.summary?.[status] !== count) errors.push(`summary.${status} must equal ${count}`);
   }
+  if (report.mode === "execution" && report.target === "android" && report.project === null) {
+    const multitouch = report.supplemental?.androidMultitouch;
+    if (!multitouch || !["pass", "fail"].includes(multitouch.status)) {
+      errors.push("Android report requires supplemental.androidMultitouch pass or fail evidence");
+    } else if (
+      (multitouch.status === "pass" && multitouch.exitCode !== 0) ||
+      (multitouch.status === "fail" && multitouch.exitCode === 0)
+    ) {
+      errors.push("supplemental.androidMultitouch status must match its exitCode");
+    }
+  }
   return errors;
 }
 
@@ -171,7 +217,7 @@ function makeEntry(test, target, port, entryRoot) {
     target === "browser" ? "document.getElementById('c')" : "globalThis.canvas";
   const completion =
     target === "browser"
-      ? `await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      ? `for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
 if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();
 const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
 const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
@@ -203,7 +249,7 @@ ${asyncEnd}
   return entryAbs;
 }
 
-function bundle(entry, out, result, side, esbuildBin, dryRun, format = "esm") {
+function bundle(entry, out, result, side, esbuildBin, dryRun, format = "esm", conditions = []) {
   if (!existsSync(esbuildBin)) {
     result.status = dryRun ? "fail" : "blocked";
     result.blockedReason =
@@ -219,6 +265,12 @@ function bundle(entry, out, result, side, esbuildBin, dryRun, format = "esm") {
       `--format=${format}`,
       "--platform=browser",
       "--sourcemap",
+      ...(side === "native"
+        ? [
+            '--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}',
+          ]
+        : []),
+      ...conditions.map((condition) => `--conditions=${condition}`),
     ],
     { cwd: runtimeRoot, encoding: "utf8", timeout: 120_000 },
   );
@@ -302,19 +354,28 @@ function createCompletionBroker(captureRoot) {
   };
 }
 
-async function withServer(captureRoot, fn) {
+async function withServer(captureRoot, assetRoot, fn) {
   const broker = createCompletionBroker(captureRoot);
   const rootPrefix = runtimeRoot.endsWith(sep) ? runtimeRoot : `${runtimeRoot}${sep}`;
+  const assetPrefix = assetRoot && (assetRoot.endsWith(sep) ? assetRoot : `${assetRoot}${sep}`);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (await broker.handle(req, res, url.pathname)) return;
-    const file = resolve(runtimeRoot, `.${decodeURIComponent(url.pathname)}`);
-    if (file !== runtimeRoot && !file.startsWith(rootPrefix)) {
+    const pathname = `.${decodeURIComponent(url.pathname)}`;
+    const runtimeFile = resolve(runtimeRoot, pathname);
+    const assetFile = assetRoot ? resolve(assetRoot, pathname) : null;
+    if (runtimeFile !== runtimeRoot && !runtimeFile.startsWith(rootPrefix)) {
+      res.writeHead(403);
+      res.end("forbidden");
+      return;
+    }
+    if (assetFile && assetFile !== assetRoot && !assetFile.startsWith(assetPrefix)) {
       res.writeHead(403);
       res.end("forbidden");
       return;
     }
     try {
+      const file = assetFile && existsSync(assetFile) ? assetFile : runtimeFile;
       const data = readFileSync(file);
       res.writeHead(200, { "content-type": contentType(file), "access-control-allow-origin": "*" });
       res.end(data);
@@ -351,7 +412,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
   const bundleRelative = `/${relative(runtimeRoot, bundlePath).replaceAll("\\", "/")}`;
   writeFileSync(
     html,
-    `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:1280px;height:720px;overflow:hidden}canvas{display:block}</style><canvas id="c" width="1280" height="720"></canvas><script type="module" src="${bundleRelative}"></script>`,
+    `<!doctype html><meta charset="utf-8"><base href="/"><style>html,body{margin:0;width:1280px;height:720px;overflow:hidden}canvas{display:block}</style><canvas id="c" width="1280" height="720"></canvas><script type="module" src="${bundleRelative}"></script>`,
   );
   const url = `http://127.0.0.1:${port}/${htmlRelative}`;
   let browser;
@@ -390,6 +451,9 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       result.browser.uniform = inspection.uniform;
       result.browser.width = inspection.width;
       result.browser.height = inspection.height;
+      if (test.id === "30-screen-space-text") {
+        result.browser.glyphRaster = inspectScreenSpaceGlyphs(readFileSync(outcome.screenshot));
+      }
     } catch (error) {
       result.status = "fail";
       result.browser.error = error instanceof Error ? error.message : String(error);
@@ -417,19 +481,21 @@ function validationErrors(output) {
   return output.match(pattern) || [];
 }
 
-function runDesktop(test, bundlePath, result, runtime, captureRoot) {
+function runDesktop(test, bundlePath, result, runtime, captureRoot, assets) {
   if (!runtime || !existsSync(runtime)) {
     result.status = "blocked";
     result.blockedReason =
-      "Build the desktop runtime or set THREENATIVE_RUNTIME_BINARY/TN_RUNTIME.";
+      "TN_PARITY_DESKTOP_RUNTIME_MISSING: build the desktop runtime or set THREENATIVE_RUNTIME_BINARY/TN_RUNTIME. A clean build additionally requires CMake, a C++ compiler, and platform development libraries; Node 20, JDK 17, and an Android SDK are insufficient.";
     return;
   }
   const screenshot = join(captureRoot, `${test.id}.png`);
+  const staging = assets ? mkdtempSync(join(tmpdir(), "threenative-parity-desktop-")) : null;
+  const executableBundle = staging ? stageDesktopFiles(bundlePath, assets, staging) : bundlePath;
   const proc = spawnSync(
     runtime,
     [
       "run",
-      bundlePath,
+      executableBundle,
       "--screenshot",
       screenshot,
       "--frames",
@@ -439,8 +505,17 @@ function runDesktop(test, bundlePath, result, runtime, captureRoot) {
       "--height",
       "720",
     ],
-    { cwd: runtimeRoot, encoding: "utf8", env: process.env, timeout: 180_000 },
+    {
+      cwd: staging || runtimeRoot,
+      encoding: "utf8",
+      env:
+        process.platform === "linux"
+          ? { ...process.env, SDL_VIDEODRIVER: "x11" }
+          : process.env,
+      timeout: 180_000,
+    },
   );
+  if (staging) rmSync(staging, { recursive: true, force: true });
   const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
   const hasScreenshot = existsSync(screenshot);
   result.native = {
@@ -509,6 +584,13 @@ function androidLog(adb, serial) {
   );
 }
 
+export function androidSystemDialog(windowDump) {
+  const match = String(windowDump).match(
+    /(?:Application Not Responding|Application Error):\s*[^\r\n}]+/u,
+  );
+  return match?.[0]?.trim() || null;
+}
+
 function wait(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
@@ -535,7 +617,7 @@ function verifyApkBundle(apk, bundle, javaHome) {
   }
 }
 
-async function runAndroid(test, bundlePath, result, device, captureRoot) {
+async function runAndroid(test, bundlePath, result, device, captureRoot, assets) {
   let tools;
   try {
     tools = discoverTools();
@@ -554,6 +636,7 @@ async function runAndroid(test, bundlePath, result, device, captureRoot) {
     return;
   }
   const androidDir = join(runtimeRoot, "android");
+  stageAndroidAssets(assets);
   const gradlew = process.platform === "win32" ? join(androidDir, "gradlew.bat") : "bash";
   const bundleHash = sha256(readFileSync(bundlePath));
   const gradleEnv = {
@@ -596,6 +679,11 @@ async function runAndroid(test, bundlePath, result, device, captureRoot) {
     runCommand(tools.adb, androidArgs(serial, ...args), { timeout: 120_000 });
   let displayRestore = null;
   try {
+    runCommand(tools.adb, androidArgs(serial, "uninstall", APP_ID), {
+      allowFailure: true,
+      timeout: 120_000,
+    });
+    await wait(2_000);
     const install = common("install", "-r", "-t", apk);
     if (!/Success/iu.test(String(install.stdout)))
       throw new Error(`adb install did not report Success: ${install.stdout}`);
@@ -638,12 +726,23 @@ async function runAndroid(test, bundlePath, result, device, captureRoot) {
     if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
     if (!androidPid(tools.adb, serial))
       throw new Error(`Android process died during the ${settleMs} ms settle window.`);
-    const png = runCommand(
-      tools.adb,
-      androidArgs(serial, "exec-out", "screencap", "-p"),
-      { binary: true, timeout: 30_000 },
-    ).stdout;
+    const beforeCaptureDialog = androidSystemDialog(
+      common("shell", "dumpsys", "window", "windows").stdout,
+    );
+    if (beforeCaptureDialog) {
+      throw new Error(`TN_ANDROID_SYSTEM_DIALOG: ${beforeCaptureDialog}`);
+    }
+    const png = runCommand(tools.adb, androidArgs(serial, "exec-out", "screencap", "-p"), {
+      binary: true,
+      timeout: 30_000,
+    }).stdout;
     inspectScreenshot(png);
+    const afterCaptureDialog = androidSystemDialog(
+      common("shell", "dumpsys", "window", "windows").stdout,
+    );
+    if (afterCaptureDialog) {
+      throw new Error(`TN_ANDROID_SYSTEM_DIALOG: ${afterCaptureDialog}`);
+    }
     const screenshot = join(captureRoot, `${test.id}.png`);
     writeFileSync(screenshot, png);
     if (!androidPid(tools.adb, serial))
@@ -656,6 +755,7 @@ async function runAndroid(test, bundlePath, result, device, captureRoot) {
       pid,
       bundleSha256: bundleHash,
       apkBundleVerified: true,
+      freshInstall: true,
       webgpuLogChannel: true,
       settleMs,
       log: appLog.slice(-4000),
@@ -686,7 +786,41 @@ async function runAndroid(test, bundlePath, result, device, captureRoot) {
   }
 }
 
-function createReport(registry, mode, target, runtime) {
+export function androidDeviceKind(properties) {
+  return /^1$/mu.test(properties.qemu || "") ||
+    /^(goldfish|ranchu)$/mu.test(properties.hardware || "")
+    ? "emulator"
+    : "physical";
+}
+
+function physicalAndroidBlocker(device) {
+  if (!device) {
+    return "TN_PARITY_PHYSICAL_DEVICE_REQUIRED: pass --device SERIAL for an attached physical Android device.";
+  }
+  try {
+    const tools = discoverTools();
+    const devices = parseAdbDevices(String(runCommand(tools.adb, ["devices", "-l"]).stdout));
+    const serial = selectDevice(devices, device);
+    const qemu = String(
+      runCommand(tools.adb, androidArgs(serial, "shell", "getprop", "ro.kernel.qemu"), {
+        timeout: 10_000,
+      }).stdout || "",
+    ).trim();
+    const hardware = String(
+      runCommand(tools.adb, androidArgs(serial, "shell", "getprop", "ro.hardware"), {
+        timeout: 10_000,
+      }).stdout || "",
+    ).trim();
+    if (androidDeviceKind({ qemu, hardware }) === "emulator") {
+      return `TN_PARITY_PHYSICAL_DEVICE_REQUIRED: ${serial} identifies as an emulator, not physical hardware.`;
+    }
+    return null;
+  } catch (error) {
+    return `TN_PARITY_PHYSICAL_DEVICE_BLOCKED: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function createReport(registry, mode, target, runtime, project) {
   return {
     schemaVersion: REPORT_SCHEMA_VERSION,
     registrySchemaVersion: registry.schemaVersion,
@@ -694,6 +828,7 @@ function createReport(registry, mode, target, runtime) {
     threeVersion: registry.threeVersion,
     mode,
     target,
+    project: project ? { root: project.root, nativeEntry: project.nativeEntry } : null,
     host: {
       platform: process.platform,
       arch: process.arch,
@@ -737,6 +872,7 @@ function referencePath(referenceArg, id) {
 }
 
 function applyReferenceAndMetrics(test, result, reference) {
+  if (result.status !== "pass") return;
   if (!existsSync(reference)) {
     result.status = "blocked";
     result.blockedReason = `Missing browser reference capture: ${reference}`;
@@ -751,11 +887,16 @@ function applyReferenceAndMetrics(test, result, reference) {
       width: inspection.width,
       height: inspection.height,
     };
-    if (result.status !== "pass") return;
     result.metrics = compareCaptures(
       readFileSync(reference),
       readFileSync(result.native.screenshot),
     );
+    if (test.id === "30-screen-space-text") {
+      result.glyphRaster = compareScreenSpaceGlyphs(
+        readFileSync(reference),
+        readFileSync(result.native.screenshot),
+      );
+    }
     if (
       result.metrics.pixelMismatchRatio > test.tolerance.pixelMismatchRatio ||
       result.metrics.perceptualDeltaE > test.tolerance.perceptualDeltaE
@@ -786,14 +927,16 @@ function runAll(argv) {
   const onlyTests = valueAfter(argv, "--only-tests");
   const device = valueAfter(argv, "--device");
   const targetArg = valueAfter(argv, "--lane");
+  const project = valueAfter(argv, "--project");
   const targets = targetArg ? [targetArg] : ["web", "desktop", "android"];
   let exitCode = 0;
   for (const target of targets) {
-    if (!["web", "desktop", "android"].includes(target))
+    if (!["web", "desktop", "android", "android-hardware"].includes(target))
       throw new Error(`Unknown --lane target: ${target}`);
     const args = [runnerPath, "--target", target, "--out", join(base, target)];
     if (onlyTests) args.push("--only-tests", onlyTests);
     if (device) args.push("--device", device);
+    if (project) args.push("--project", project);
     if (target !== "web") args.push("--reference", join(base, "web"));
     const proc = spawnSync(process.execPath, args, {
       cwd: runtimeRoot,
@@ -812,7 +955,28 @@ async function main(argv = process.argv.slice(2)) {
     process.stdout.write(usage());
     return;
   }
-  const registry = loadRegistry();
+  const baseRegistry = loadRegistry();
+  const baseRegistryErrors = validateRegistry(baseRegistry);
+  if (baseRegistryErrors.length > 0) {
+    throw new Error(`Invalid conformance registry:\n- ${baseRegistryErrors.join("\n- ")}`);
+  }
+  const projectArgument = valueAfter(argv, "--project");
+  const project = projectArgument ? resolveParityProject(projectArgument) : null;
+  const projectScene = join(
+    runtimeRoot,
+    `artifacts/conformance/project-scene${project ? `-${projectId(project)}` : ""}.js`,
+  );
+  if (project) {
+    mkdirSync(dirname(projectScene), { recursive: true });
+    writeProjectScene(project, projectScene);
+  }
+  const registry = project
+    ? createProjectRegistry(
+        baseRegistry,
+        relative(runtimeRoot, projectScene).replaceAll("\\", "/"),
+        project,
+      )
+    : baseRegistry;
   const registryErrors = validateRegistry(registry);
   if (registryErrors.length > 0) {
     throw new Error(`Invalid conformance registry:\n- ${registryErrors.join("\n- ")}`);
@@ -832,8 +996,10 @@ async function main(argv = process.argv.slice(2)) {
     runAll(argv);
     return;
   }
-  if (!["web", "desktop", "android"].includes(target)) {
-    throw new Error(`--target must be web, desktop, android, or all; received ${target}`);
+  if (!["web", "desktop", "android", "android-hardware"].includes(target)) {
+    throw new Error(
+      `--target must be web, desktop, android, android-hardware, or all; received ${target}`,
+    );
   }
   const dryRun = argv.includes("--dry-run");
   const selectedIds = valueAfter(argv, "--only-tests")?.split(",").filter(Boolean) ?? null;
@@ -853,7 +1019,11 @@ async function main(argv = process.argv.slice(2)) {
   const entryRoot = join(artifactRoot, "entries");
   const bundleRoot = join(artifactRoot, `${target}-bundles`);
   for (const path of [entryRoot, bundleRoot, captureRoot]) mkdirSync(path, { recursive: true });
-  const report = createReport(registry, dryRun ? "dry-run" : "execution", target, runtime);
+  const report = createReport(registry, dryRun ? "dry-run" : "execution", target, runtime, project);
+  const targetBlocker =
+    !dryRun && target === "android-hardware"
+      ? physicalAndroidBlocker(valueAfter(argv, "--device"))
+      : null;
   const esbuildBin =
     process.platform === "win32"
       ? join(runtimeRoot, "node_modules/.bin/esbuild.cmd")
@@ -867,6 +1037,9 @@ async function main(argv = process.argv.slice(2)) {
       } else if (selectedIds !== null && !selectedIds.includes(test.id)) {
         result.status = "blocked";
         result.blockedReason = "Not selected by this bounded execution run.";
+      } else if (targetBlocker) {
+        result.status = "blocked";
+        result.blockedReason = targetBlocker;
       } else {
         result.status = dryRun ? "validated" : "pass";
         let bundled;
@@ -891,6 +1064,8 @@ async function main(argv = process.argv.slice(2)) {
             "native",
             esbuildBin,
             true,
+            "esm",
+            project ? ["threenative-native"] : [],
           );
           if (browserBundled && nativeBundled) {
             result.browserBundle = relative(runtimeRoot, browserBundle).replaceAll("\\", "/");
@@ -908,20 +1083,28 @@ async function main(argv = process.argv.slice(2)) {
             entryTarget,
             esbuildBin,
             false,
-            target === "android" ? "iife" : "esm",
+            ["android", "android-hardware"].includes(target) ? "iife" : "esm",
+            project && target !== "web" ? ["threenative-native"] : [],
           );
         }
         if (!dryRun && bundled && target === "web") {
           await runBrowser(test, bundlePath, result, port, broker, captureRoot);
         } else if (!dryRun && bundled && target === "desktop") {
-          runDesktop(test, bundlePath, result, runtime, captureRoot);
+          runDesktop(test, bundlePath, result, runtime, captureRoot, project?.publicDir);
           applyReferenceAndMetrics(
             test,
             result,
             referencePath(valueAfter(argv, "--reference"), test.id),
           );
-        } else if (!dryRun && bundled && target === "android") {
-          await runAndroid(test, bundlePath, result, valueAfter(argv, "--device"), captureRoot);
+        } else if (!dryRun && bundled && ["android", "android-hardware"].includes(target)) {
+          await runAndroid(
+            test,
+            bundlePath,
+            result,
+            valueAfter(argv, "--device"),
+            captureRoot,
+            project?.publicDir,
+          );
           applyReferenceAndMetrics(
             test,
             result,
@@ -934,7 +1117,18 @@ async function main(argv = process.argv.slice(2)) {
     }
   };
   if (dryRun || target !== "web") await executeRows(0);
-  else await withServer(captureRoot, ({ port, broker }) => executeRows(port, broker));
+  else
+    await withServer(captureRoot, project?.publicDir, ({ port, broker }) =>
+      executeRows(port, broker),
+    );
+  if (shouldRunAndroidMultitouch({ dryRun, project, target })) {
+    report.supplemental = {
+      androidMultitouch: runAndroidMultitouchProof({
+        device: valueAfter(argv, "--device"),
+        runtimeRoot,
+      }),
+    };
+  }
   const reportErrors = validateReport(report, registry);
   if (reportErrors.length > 0) {
     throw new Error(`Generated an invalid conformance report:\n- ${reportErrors.join("\n- ")}`);
@@ -943,10 +1137,15 @@ async function main(argv = process.argv.slice(2)) {
   process.stdout.write(
     `${JSON.stringify({ wrote: reportPath, target, mode: report.mode, summary: report.summary }, null, 2)}\n`,
   );
-  if (!dryRun || !argv.includes("--allow-blocked")) process.exitCode = reportExitCode(report);
+  if (!dryRun || !argv.includes("--allow-blocked")) {
+    process.exitCode =
+      report.supplemental?.androidMultitouch?.status === "fail" ? 1 : reportExitCode(report);
+  }
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && resolve(process.argv[1]) === runnerPath) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

@@ -3,14 +3,9 @@ import { Area3D, CollisionShape3D, type PhysicsContext } from "@threenative/phys
 import { Group, Mesh, SphereGeometry, type Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
 import type { GameState } from "../state.js";
-import type { Character } from "./Character.js";
+import type { Character, PLATFORMER_FEEL } from "./Character.js";
 
 type GameCtx = Ctx<GameState, PhysicsContext>;
-type PatrolFeel = {
-  readonly patrolSpeed: number;
-  readonly stompFallSpeed: number;
-  readonly stompHeight: number;
-};
 
 export class Patrol {
   readonly mesh: Group;
@@ -20,7 +15,7 @@ export class Patrol {
   #from: Vector3;
   #to: Vector3;
   #direction = 1;
-  #feel: PatrolFeel;
+  #feel: typeof PLATFORMER_FEEL;
   #unsubscribe: () => void;
 
   constructor(
@@ -30,7 +25,7 @@ export class Patrol {
     to: Vector3,
     onStomp: () => void,
     onTouch: (fromX: number) => void,
-    feel: PatrolFeel,
+    feel: typeof PLATFORMER_FEEL,
   ) {
     this.#from = from.clone();
     this.#to = to.clone();

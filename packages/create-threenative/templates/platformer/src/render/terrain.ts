@@ -1,13 +1,11 @@
 import { Group, type Object3D } from "three";
 import { rockBox } from "./palette.js";
 
-export interface TerrainOptions {
-  readonly depth?: number;
-  readonly seed?: number;
-  readonly oneWay?: boolean;
-}
-
-export function platform(width: number, height: number, options: TerrainOptions = {}): Object3D {
+export function platform(
+  width: number,
+  height: number,
+  options: { readonly depth?: number; readonly seed?: number; readonly oneWay?: boolean } = {},
+): Object3D {
   const depth = options.depth ?? 6;
   if (options.oneWay === true) {
     const group = new Group();

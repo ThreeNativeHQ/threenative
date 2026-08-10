@@ -37,6 +37,24 @@ if (!available(cmake) || !available(ninja)) {
 }
 
 const configureArgs = ['--preset', preset, `-DCMAKE_MAKE_PROGRAM=${ninja}`];
+const rustVersion = spawnSync('rustc', ['-vV'], { cwd: root, encoding: 'utf8' });
+const rustHost = rustVersion.status === 0
+  ? /^host:\s*(\S+)$/mu.exec(rustVersion.stdout)?.[1]
+  : null;
+if (!rustHost) throw new Error('rustc is required to build the desktop native physics ABI');
+run(process.execPath, [join(root, 'scripts', 'build-native-physics.mjs'), '--desktop']);
+const physicsLibrary = join(
+  root,
+  '.runtime',
+  'physics-target',
+  rustHost,
+  'release',
+  rustHost.includes('windows') ? 'threenative_native_physics.lib' : 'libthreenative_native_physics.a',
+);
+configureArgs.push(
+  '-DTN_ENABLE_NATIVE_PHYSICS=ON',
+  `-DTHREENATIVE_PHYSICS_LIBRARY=${physicsLibrary}`,
+);
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
 if (windows && vcpkgRoot) {
   configureArgs.push(

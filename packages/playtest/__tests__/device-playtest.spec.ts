@@ -30,11 +30,13 @@ interface NativeHost {
 
 class FakeAndroidDriver implements IAndroidDriver {
   installation?: IDeviceBridgeInstallation;
+  pointerSets: number[][] = [];
   prepared = false;
 
   constructor(
     private readonly bridge?: IPlaytestBridgeV1,
     private readonly consoleEntries: Array<{ text: string; type: string }> = [],
+    private readonly onPointers: (ids: readonly number[]) => void = () => undefined,
   ) {}
 
   async captureConsole() {
@@ -51,6 +53,13 @@ class FakeAndroidDriver implements IAndroidDriver {
   }
 
   async screenshot() {}
+
+  async setPointers(pointers: readonly { id: number }[]) {
+    const ids = pointers.map(({ id }) => id);
+    this.pointerSets.push(ids);
+    this.onPointers(ids);
+    return { activeIds: ids, injection: "adb-emu-event-protocol-b" as const, rotation: 0, trackingIds: ids };
+  }
 
   async stop() {
     this.installation?.close();
@@ -165,10 +174,33 @@ test("network assertions fail explicitly unsupported instead of being skipped", 
   expect(driver.prepared).toBe(false);
 });
 
+test("Android multi-pointer steps deliver complete held sets and release in finally", async () => {
+  const moving = movingBridge();
+  const driver = new FakeAndroidDriver(moving.bridge, [], (ids) => moving.setHeld(ids.length === 2));
+  const result = await runDevice(
+    { movement: { entity: "player", minDistance: 2 } },
+    driver,
+    1_000,
+    [
+      { holdFrames: 2, pointers: [{ id: 7, x: 0.2, y: 0.8 }], release: false },
+      {
+        holdFrames: 3,
+        pointers: [{ id: 7, x: 0.25, y: 0.8 }, { id: 3, x: 0.8, y: 0.8 }],
+        release: true,
+      },
+    ],
+  );
+
+  expect(result.pass).toBe(true);
+  expect(driver.pointerSets.slice(0, 3)).toEqual([[7], [7, 3], []]);
+  expect(driver.pointerSets.at(-1)).toEqual([]);
+});
+
 async function runDevice(
   assert: unknown,
   driver: FakeAndroidDriver,
   timeoutMs = 1_000,
+  steps: unknown[] = [{ holdFrames: 3, press: "KeyW", release: true }],
 ) {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-device-"));
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
@@ -176,7 +208,7 @@ async function runDevice(
     assert,
     name: "same-cross-target-scenario",
     schemaVersion: 1,
-    steps: [{ holdFrames: 3, press: "KeyW", release: true }],
+    steps,
     subject: "player",
     target: "web",
     viewport: { height: 360, width: 640 },

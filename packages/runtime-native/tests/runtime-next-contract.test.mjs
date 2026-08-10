@@ -105,13 +105,16 @@ test('upstream Three.js GLTFLoader/module/polyfill compatibility sources cover r
   assert.doesNotMatch(glb, /Mystral\.loadGLTF|__loadGLTF|globalThis\.loadGLTF/, 'GLTF conformance must use upstream JS GLTFLoader, not native loader');
 
   const external = read('conformance/scenes/shared/gltf-loader-external.js');
-  assert.match(external, /DamagedHelmet\.gltf/);
   assert.match(external, /GLTFLoader/);
+  assert.match(external, /setURLModifier/);
+  assert.match(external, /fixture\.bin/);
+  assert.match(external, /fixture\.png/);
 
   const texture = read('conformance/scenes/shared/texture-blob-imagebitmap.js');
   for (const token of ['Blob', 'blob.stream', 'URL.createObjectURL', 'URL.revokeObjectURL', 'createImageBitmap']) {
     assert.match(texture, new RegExp(token.replace('.', '\\.')));
   }
+  assert.doesNotMatch(texture, /mesh\.rotation/u, 'texture parity capture must be frame-stable');
 
   const runtime = read('conformance/scenes/shared/runtime-events.js');
   for (const token of ['addEventListener', 'dispatchEvent', 'PointerEvent', 'TouchEvent', 'requestAnimationFrame', 'cancelAnimationFrame']) {

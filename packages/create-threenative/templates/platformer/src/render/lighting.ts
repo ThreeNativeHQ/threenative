@@ -1,4 +1,3 @@
-// Generated for you. Keep the three-light rig editable in this project.
 import {
   AmbientLight,
   DirectionalLight,

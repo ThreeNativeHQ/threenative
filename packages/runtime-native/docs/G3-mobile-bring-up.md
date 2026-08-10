@@ -123,6 +123,22 @@ close the released-consumer or physical-device rows.
 This closes the PRD-047 Phase 3 Android emulator row. It does not prove physical-device
 transport or any physics behavior.
 
+## Android multi-touch proof — blocked, 2026-08-09
+
+`native:verify:android:multitouch --device emulator-5556` passed the existing 300-frame,
+clean-log, screenshot, bundle-hash and process-liveness first proof, then failed closed on
+the positive two-pointer scenario. The native-smoke state remained `maxPointers=0`, both
+simultaneous move/jump latches stayed false, and X movement stayed zero. The one-pointer
+negative control reached assertions and failed with exit code 1.
+
+Rootless `adb emu event send` protocol-B frames were confirmed with `getevent -lt` on
+`/dev/input/event2`, including slot, tracking ids, X/Y, touch-major, pressure and numeric
+`EV_SYN:0:0`. Android did not promote them into SDL touch events on this API-35 AVD. After
+three bounded attempts, the doubtful assumption is display-0 InputReader routing for the
+emulator console's virtio touchscreen. PRD-053 therefore remains blocked and Android
+multi-touch is not claimed. Full commands and hashes are in
+`docs/verification/prd-053-multitouch-2026-08-09.md`.
+
 ## Open rows
 
 - iOS simulator build, install, launch, unified logs and nonblank screenshot.

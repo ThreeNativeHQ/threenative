@@ -28,8 +28,12 @@
     "test": "pnpm run build"
   },
   "devDependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
     "@types/node": "20.19.43",
+    "@types/three": "0.185.3",
     "publint": "0.3.22",
+    "three": "catalog:",
     "tsup": "8.5.1",
     "typescript": "catalog:"
   }

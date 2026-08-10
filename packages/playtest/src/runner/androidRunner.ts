@@ -13,7 +13,12 @@ import {
   type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
-import { AdbAndroidDriver, type IAndroidDriver } from "./android.js";
+import {
+  AdbAndroidDriver,
+  type IAndroidDriver,
+  type IAndroidPointer,
+  type IAndroidPointerInjection,
+} from "./android.js";
 import {
   connectPlaytestBridgeTransport,
   PlaytestBridgeError,
@@ -41,6 +46,7 @@ export interface IDevicePlaytestDriver {
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
   screenshot(path: string): Promise<void>;
+  setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   stop(): Promise<void>;
   writeFile?(path: string, contents: string): Promise<void>;
 }
@@ -85,6 +91,17 @@ export async function runDevicePlaytest(
   await mkdir(config.artifactDirectory, { recursive: true });
   const unsupported = unsupportedAssertion(scenario, target.name);
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
+  if (
+    target.name === "android"
+    && scenario.steps.some((step) => step.pointers !== undefined)
+    && typeof target.driver.setPointers !== "function"
+  ) {
+    return failureReport(config, scenario, unsupportedDiagnostic(
+      "complete held-pointer input",
+      "Use the emulator-backed Android driver; multi-pointer steps cannot fall back to one-pointer bridge input.",
+      target.name,
+    ), target.name);
+  }
   const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
   const transport = target.transport ?? createDeviceTransport(target.driver, endpoint, target.mailboxPaths);
   let bridge: IPlaytestBridgeClient | undefined;
@@ -133,6 +150,9 @@ export async function runDevicePlaytest(
           y: step.pointerPosition.y * scenario.viewport.height,
         });
       }
+      if (step.pointers !== undefined) {
+        await target.driver.setPointers?.(step.pointers);
+      }
       const pressed = typeof step.press === "string" ? [step.press] : step.press ?? [];
       for (const key of [...heldKeys]) {
         if (!pressed.includes(key)) {
@@ -172,6 +192,10 @@ export async function runDevicePlaytest(
           pointerButtons = 0;
           await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
         }
+        if (step.pointers !== undefined) {
+          await target.driver.setPointers?.([]);
+          await bridge.advance(1);
+        }
       }
     }
     const after = await bridge.sample(sampleRequest);
@@ -207,6 +231,9 @@ export async function runDevicePlaytest(
     }
     throw error;
   } finally {
+    if (target.name === "android" && scenario.steps.some((step) => step.pointers !== undefined)) {
+      await target.driver.setPointers?.([]).catch(() => undefined);
+    }
     await target.driver.stop().catch(() => undefined);
     await bridge?.close().catch(() => undefined);
     await transport.close().catch(() => undefined);
@@ -241,6 +268,14 @@ function unsupportedAssertion(
   scenario: IPlaytestScenario,
   target: "android" | "ios",
 ): IPlaytestProtocolDiagnostic | undefined {
+  const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
+  if (hasMultiPointerInput && target === "ios") {
+    return unsupportedDiagnostic(
+      "complete held-pointer input",
+      "Run this scenario on --target browser or --target android; iOS multi-pointer injection is not implemented.",
+      target,
+    );
+  }
   if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
     return unsupportedDiagnostic(
       "network assertions",

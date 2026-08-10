@@ -1,14 +1,34 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { test } from "vitest";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
-import { compareCaptures, inspectCapture } from "../conformance/metrics.mjs";
+import {
+  compareCaptures,
+  compareScreenSpaceGlyphs,
+  inspectCapture,
+  inspectScreenSpaceGlyphs,
+} from "../conformance/metrics.mjs";
+import {
+  androidMultitouchArgs,
+  shouldRunAndroidMultitouch,
+} from "../conformance/parity-extras.mjs";
+import {
+  createProjectRegistry,
+  projectId,
+  resolveParityProject,
+} from "../conformance/project-mode.mjs";
+import {
+  androidDeviceKind,
+  androidSystemDialog,
+  validateRegistry,
+  validateReport,
+} from "../conformance/run-conformance.mjs";
 import {
   buildAndroidConformanceAsset,
   parseConformanceBundleArgs,
@@ -38,6 +58,16 @@ test("the workspace test lane stays runtime-free and runs the native contract su
   );
 });
 
+test("Android supplemental proof forwards the device without a literal option separator", () => {
+  assert.deepEqual(androidMultitouchArgs("/runtime", "emulator-5556"), [
+    "--dir",
+    "/runtime",
+    "native:verify:android:multitouch",
+    "--device",
+    "emulator-5556",
+  ]);
+});
+
 test("dry run validates and bundles implemented rows without a browser or native runtime", () => {
   const dir = mkdtempSync(join(tmpdir(), "threenative-conformance-"));
   try {
@@ -50,14 +80,18 @@ test("dry run validates and bundles implemented rows without a browser or native
 
     assert.equal(proc.status, 0, proc.stderr || proc.stdout);
     const report = JSON.parse(readFileSync(out, "utf8"));
-    const implemented = JSON.parse(
-      readFileSync(join(root, "conformance/registry.json"), "utf8"),
-    ).tests.filter((entry) => entry.status === "implemented").length;
+    const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+    const implemented = registry.tests.filter((entry) => entry.status === "implemented").length;
     assert.equal(report.mode, "dry-run");
     assert.equal(report.summary.validated, implemented);
     assert.equal(report.summary.pass, 0, "dry run must not claim runtime conformance passes");
     assert.equal(report.host.browser, null);
     assert.equal(report.host.runtime, null);
+    assert.deepEqual(
+      report.results.map((result) => result.id),
+      registry.tests.map((entry) => entry.id),
+      "non-project reports must retain every registry row in exact order",
+    );
     assert.ok(
       report.results
         .filter((result) => result.status === "validated")
@@ -66,6 +100,160 @@ test("dry run validates and bundles implemented rows without a browser or native
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}, 60_000);
+
+test("project mode resolves the configured native entry and dry-bundles only that project", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-parity-project-"));
+  try {
+    mkdirSync(join(dir, "src"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ threenative: { nativeEntry: "src/portable.ts" } }),
+    );
+    writeFileSync(
+      join(dir, "src/portable.ts"),
+      "const isDev = import.meta.env?.DEV === true; export default { ctx: null, async start() { this.ctx = { renderer: { isDev }, scene: {}, camera: {} }; } };\n",
+    );
+    const out = join(dir, "dry-report.json");
+    const proc = run(["--dry-run", "--project", dir, "--out", out]);
+
+    assert.equal(proc.status, 0, proc.stderr || proc.stdout);
+    const report = JSON.parse(readFileSync(out, "utf8"));
+    assert.equal(report.project.root, dir);
+    assert.equal(report.project.nativeEntry, "src/portable.ts");
+    assert.equal(report.results.length, 1);
+    assert.equal(report.results[0].status, "validated");
+    assert.match(report.results[0].id, /^project-[a-f0-9]{12}$/u);
+    assert.ok(report.results[0].browserBundle);
+    assert.ok(report.results[0].nativeBundle);
+    const nativeBundle = readFileSync(join(root, report.results[0].nativeBundle), "utf8");
+    assert.doesNotThrow(
+      () => Function(nativeBundle),
+      "native project bundles must compile in the runtime's plain-script mode",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("project mode fails closed for a missing or escaping native entry", () => {
+  const dir = mkdtempSync(join(tmpdir(), "threenative-parity-project-"));
+  try {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ threenative: { nativeEntry: "../outside.ts" } }),
+    );
+    assert.throws(() => resolveParityProject(dir), /TN_PARITY_NATIVE_ENTRY_OUTSIDE_PROJECT/u);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ threenative: { nativeEntry: "src/missing.ts" } }),
+    );
+    assert.throws(() => resolveParityProject(dir), /TN_PARITY_NATIVE_ENTRY_MISSING/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("concurrent project lanes use project-specific generated scene identities", () => {
+  assert.notEqual(projectId({ root: "/project/minimal" }), projectId({ root: "/project/starter" }));
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /project-scene.*projectId\(project\)/u);
+});
+
+test("project browser captures wait for asynchronous WebGPU pipelines to render", () => {
+  const registry = createProjectRegistry(
+    { schemaVersion: 1, threeVersion: "test", exclusions: [] },
+    "scene.js",
+    { root: "/project", nativeEntry: "src/game.ts" },
+  );
+  assert.equal(registry.tests[0].captureFrames, 60);
+  assert.deepEqual(registry.tests[0].tolerance, {
+    pixelMismatchRatio: 0.03,
+    perceptualDeltaE: 6,
+  });
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /test\.captureFrames \?\? 2/u);
+});
+
+test("browser capture resolves scaffold public assets from the server root", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /<base href="\/">/u);
+});
+
+test("physical Android target distinguishes emulators and requires an explicit device", () => {
+  assert.equal(androidDeviceKind({ qemu: "1", hardware: "ranchu" }), "emulator");
+  assert.equal(androidDeviceKind({ qemu: "0", hardware: "qcom" }), "physical");
+  const dir = mkdtempSync(join(tmpdir(), "threenative-physical-report-"));
+  try {
+    const out = join(dir, "report.json");
+    const proc = run(["--target", "android-hardware", "--out", out]);
+    assert.equal(proc.status, 2, proc.stderr || proc.stdout);
+    const report = JSON.parse(readFileSync(out, "utf8"));
+    assert.equal(report.target, "android-hardware");
+    assert.ok(report.results.every((result) => result.status === "blocked"));
+    assert.match(
+      report.results.find((result) => result.blockedReason)?.blockedReason ?? "",
+      /TN_PARITY_PHYSICAL_DEVICE_REQUIRED/u,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Android capture rejects system ANR and error overlays", () => {
+  assert.equal(
+    androidSystemDialog(
+      "Window #6 Window{c387534 u0 Application Not Responding: com.android.systemui}:\n",
+    ),
+    "Application Not Responding: com.android.systemui",
+  );
+  assert.equal(
+    androidSystemDialog("Window{123 u0 Application Error: com.example.game}\n"),
+    "Application Error: com.example.game",
+  );
+  assert.equal(androidSystemDialog("mCurrentFocus=Window{123 u0 com.mystral.engine}"), null);
+});
+
+test("Android rows uninstall the test package before each large debug APK install", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /androidArgs\(serial, "uninstall", APP_ID\)/u);
+  assert.match(source, /await wait\(2_000\);\s+const install/u);
+  assert.match(source, /freshInstall: true/u);
+});
+
+test("Android parity owns the standalone multitouch proof without contaminating project mode", () => {
+  assert.equal(
+    shouldRunAndroidMultitouch({ dryRun: false, project: null, target: "android" }),
+    true,
+  );
+  assert.equal(
+    shouldRunAndroidMultitouch({ dryRun: false, project: { root: "/project" }, target: "android" }),
+    false,
+  );
+  assert.equal(
+    shouldRunAndroidMultitouch({ dryRun: true, project: null, target: "android" }),
+    false,
+  );
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /report\.supplemental[\s\S]*androidMultitouch/u);
+  assert.match(source, /androidMultitouch\?\.status === "fail" \? 1 : reportExitCode/u);
+});
+
+test("Android reports fail closed when multitouch supplemental evidence is missing", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const report = {
+    schemaVersion: "0.2.0",
+    registrySchemaVersion: registry.schemaVersion,
+    threeVersion: registry.threeVersion,
+    mode: "execution",
+    target: "android",
+    project: null,
+    summary: { pass: 0, fail: 0, blocked: registry.tests.length, planned: 0, validated: 0 },
+    results: registry.tests.map(({ id }) => ({ id, status: "blocked" })),
+  };
+  assert.match(validateReport(report, registry).join("\n"), /androidMultitouch pass or fail/u);
+  report.supplemental = { androidMultitouch: { status: "fail", exitCode: 1 } };
+  assert.deepEqual(validateReport(report, registry), []);
 });
 
 test("report validation rejects a pass with null metrics or incomplete browser execution", () => {
@@ -120,6 +308,20 @@ test("bounded execution rejects unknown conformance ids before claiming a report
   assert.match(proc.stderr, /Unknown --only-tests/u);
 });
 
+test("registry exclusions fail closed without an owner, reason, or explicit excluded status", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  assert.deepEqual(validateRegistry(registry), []);
+
+  const malformed = structuredClone(registry);
+  malformed.exclusions[0].owner = "";
+  malformed.exclusions[1].reason = "";
+  malformed.exclusions[2].status = "planned";
+  const errors = validateRegistry(malformed).join("\n");
+  assert.match(errors, /owner must be a non-empty string/u);
+  assert.match(errors, /reason must be a non-empty string/u);
+  assert.match(errors, /status must be excluded/u);
+});
+
 test("help exits without starting any parity lane", () => {
   const proc = run(["--help"]);
   assert.equal(proc.status, 0, proc.stderr || proc.stdout);
@@ -149,6 +351,11 @@ test("execution reports use only pass, fail, or blocked and blocked exits 2", ()
     assert.equal(report.mode, "execution");
     assert.ok(report.results.every(({ status }) => ["pass", "fail", "blocked"].includes(status)));
     assert.ok(report.summary.blocked > 0);
+    assert.match(
+      report.results.find((result) => result.id === "15-mesh-toon-material-gradientmap")
+        ?.blockedReason ?? "",
+      /TN_PARITY_DESKTOP_RUNTIME_MISSING/u,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -169,6 +376,34 @@ test("uniform captures fail closed even when reference and candidate bytes match
     width: 2,
     height: 1,
   });
+});
+
+test("screen-space glyph raster fails closed on missing pixels and drifting bounds", () => {
+  const glyphCapture = (offsetX, count = 1_000) => {
+    const png = new PNG({ width: 64, height: 32 });
+    png.data.fill(255);
+    for (let index = 0; index < png.data.length; index += 4) {
+      png.data[index] = 20;
+      png.data[index + 1] = 24;
+      png.data[index + 2] = 32;
+    }
+    for (let pixel = 0; pixel < count; pixel += 1) {
+      const x = offsetX + (pixel % 40);
+      const y = 3 + Math.floor(pixel / 40);
+      const index = (y * png.width + x) * 4;
+      png.data.set([246, 224, 94, 255], index);
+    }
+    return PNG.sync.write(png);
+  };
+  assert.equal(inspectScreenSpaceGlyphs(glyphCapture(4)).brightPixels, 1_000);
+  assert.deepEqual(compareScreenSpaceGlyphs(glyphCapture(4), glyphCapture(5)).boundsDelta, [
+    1, 0, 1, 0,
+  ]);
+  assert.throws(() => inspectScreenSpaceGlyphs(glyphCapture(4, 999)), /expected at least 1000/u);
+  assert.throws(
+    () => compareScreenSpaceGlyphs(glyphCapture(4), glyphCapture(6)),
+    /bounds drift/u,
+  );
 });
 
 test("Android conformance override requires an explicit matching bundle hash", () => {
@@ -200,6 +435,15 @@ test("root parity command and Gradle lane use an explicit checksum-locked overri
   assert.match(gradle, /else dependsOn\("buildAndroidFirstProofBundle"\)/u);
 });
 
+test("native workflow runs the complete checksum-locked Android emulator parity lane", () => {
+  const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+  assert.match(workflow, /packages\/runtime-native\/\*\*/u);
+  assert.match(workflow, /android-actions\/setup-android@v4/u);
+  assert.match(workflow, /download-deps\.mjs --android/u);
+  assert.match(workflow, /--target android --device emulator-5554/u);
+  assert.doesNotMatch(workflow, /implemented-only/u);
+});
+
 test("Android screenshot capture preserves PNG bytes", () => {
   const source = readFileSync(runner, "utf8");
   assert.match(
@@ -218,4 +462,17 @@ test("Android capture uses reference dimensions and restores the prior display o
     source,
     /androidArgs\(serial, "shell", "wm", "size", displayRestore\)[\s\S]*?allowFailure: true/u,
   );
+});
+
+test("Android checks liveness after its marker, settle window, and screenshot", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(
+    source,
+    /conformance marker[\s\S]*?await wait\(settleMs\)[\s\S]*?settle window[\s\S]*?screencap[\s\S]*?after screenshot capture/u,
+  );
+});
+
+test("Linux desktop parity selects SDL X11 because the native surface does not support Wayland", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /process\.platform === "linux"[\s\S]*SDL_VIDEODRIVER: "x11"/u);
 });

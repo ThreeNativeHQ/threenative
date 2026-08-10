@@ -1005,16 +1005,21 @@ bool Context::configureSurface(uint32_t width, uint32_t height) {
         std::cout << "  [" << i << "] = " << capabilities.formats[i] << std::endl;
     }
 
-    // Prefer BGRA8Unorm (non-sRGB) to match browser behavior
-    // Fall back to first format if not available
+    // Prefer a non-sRGB surface to match the byte-encoded output Three.js writes for the
+    // browser canvas. Bindings add a presentation bridge only when the platform exposes no
+    // linear surface format.
     preferredFormat_ = capabilities.formats[0];
     for (uint32_t i = 0; i < capabilities.formatCount; i++) {
         if (capabilities.formats[i] == WGPUTextureFormat_BGRA8Unorm) {
             preferredFormat_ = WGPUTextureFormat_BGRA8Unorm;
             break;
         }
+        if (capabilities.formats[i] == WGPUTextureFormat_RGBA8Unorm) {
+            preferredFormat_ = WGPUTextureFormat_RGBA8Unorm;
+        }
     }
     std::cout << "[WebGPU] Using surface format: " << preferredFormat_ << std::endl;
+    TN_CONTEXT_LOGI("surface format %u", static_cast<unsigned>(preferredFormat_));
 
     // Configure surface
     WGPUSurfaceConfiguration config = {};
@@ -1074,9 +1079,9 @@ void Context::present() {
 // Note: Extra padding added due to observed stack corruption during initialization
 struct BufferMapData {
     bool completed = false;
-    uint8_t _pad1[7] = {};  // Padding to align status
+    uint8_t _pad1[7] = {};
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
-    uint8_t _pad2[12] = {}; // Extra padding to absorb any overwrites
+    uint8_t _pad2[12] = {};
 };
 
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
@@ -1102,8 +1107,39 @@ uint32_t getCurrentTextureHeight();
 void* getScreenshotBuffer();
 size_t getScreenshotBufferSize();
 uint32_t getScreenshotBytesPerRow();
+uint32_t getScreenshotFormat();
 bool isScreenshotReady();
 void clearScreenshotReady();
+
+static bool copyScreenshotPixels(
+    const uint8_t* source,
+    uint32_t width,
+    uint32_t height,
+    uint32_t bytesPerRow,
+    uint32_t format,
+    std::vector<uint8_t>& destination
+) {
+    const bool bgra = format == WGPUTextureFormat_BGRA8Unorm ||
+                      format == WGPUTextureFormat_BGRA8UnormSrgb;
+    const bool rgba = format == WGPUTextureFormat_RGBA8Unorm ||
+                      format == WGPUTextureFormat_RGBA8UnormSrgb;
+    if (!bgra && !rgba) return false;
+
+    destination.resize(width * height * 4);
+    for (uint32_t y = 0; y < height; y++) {
+        const uint8_t* sourceRow = source + y * bytesPerRow;
+        uint8_t* destinationRow = destination.data() + y * width * 4;
+        for (uint32_t x = 0; x < width; x++) {
+            const uint8_t* pixel = sourceRow + x * 4;
+            uint8_t* output = destinationRow + x * 4;
+            output[0] = bgra ? pixel[2] : pixel[0];
+            output[1] = pixel[1];
+            output[2] = bgra ? pixel[0] : pixel[2];
+            output[3] = pixel[3];
+        }
+    }
+    return true;
+}
 
 bool Context::saveScreenshot(const char* filename) {
     if (!device_ || !queue_) {
@@ -1128,6 +1164,7 @@ bool Context::saveScreenshot(const char* filename) {
     uint32_t height = getCurrentTextureHeight();
     uint32_t bytesPerRow = getScreenshotBytesPerRow();
     size_t bufferSize = getScreenshotBufferSize();
+    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, getScreenshotFormat(), bufferSize);
 
     // Map the screenshot buffer (it was already populated during submit)
     BufferMapData mapData;
@@ -1172,6 +1209,7 @@ bool Context::saveScreenshot(const char* filename) {
         std::cerr << "[Screenshot] Buffer map failed with status: " << mapData.status << std::endl;
         return false;
     }
+    TN_CONTEXT_LOGI("renderer capture map complete");
 
     // Read the data
     const void* mappedData = wgpuBufferGetConstMappedRange(screenshotBuffer, 0, bufferSize);
@@ -1197,31 +1235,30 @@ bool Context::saveScreenshot(const char* filename) {
     }
     std::cout << std::endl;
 
-    // Convert BGRA to RGBA and remove row padding
-    std::vector<uint8_t> rgbaData(width * height * 4);
-    const uint8_t* src = static_cast<const uint8_t*>(mappedData);
-    uint8_t* dst = rgbaData.data();
-
-    for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* srcRow = src + y * bytesPerRow;
-        uint8_t* dstRow = dst + y * width * 4;
-        for (uint32_t x = 0; x < width; x++) {
-            // BGRA -> RGBA
-            dstRow[x * 4 + 0] = srcRow[x * 4 + 2];  // R <- B
-            dstRow[x * 4 + 1] = srcRow[x * 4 + 1];  // G <- G
-            dstRow[x * 4 + 2] = srcRow[x * 4 + 0];  // B <- R
-            dstRow[x * 4 + 3] = srcRow[x * 4 + 3];  // A <- A
-        }
+    std::vector<uint8_t> rgbaData;
+    if (!copyScreenshotPixels(
+            static_cast<const uint8_t*>(mappedData),
+            width,
+            height,
+            bytesPerRow,
+            getScreenshotFormat(),
+            rgbaData)) {
+        std::cerr << "[Screenshot] Unsupported surface format: " << getScreenshotFormat() << std::endl;
+        wgpuBufferUnmap(screenshotBuffer);
+        return false;
     }
+    TN_CONTEXT_LOGI("renderer capture pixel copy complete");
 
     // Unmap the screenshot buffer (keep it for future screenshots)
     wgpuBufferUnmap(screenshotBuffer);
+    TN_CONTEXT_LOGI("renderer capture buffer unmapped");
 
     // Save as PNG using stb_image_write
     if (!stbi_write_png(filename, width, height, 4, rgbaData.data(), width * 4)) {
         std::cerr << "[Screenshot] Failed to write PNG: " << filename << std::endl;
         return false;
     }
+    TN_CONTEXT_LOGI("renderer capture PNG written");
 
     std::cout << "[Screenshot] Saved: " << filename << " (" << width << "x" << height << ")" << std::endl;
     return true;
@@ -1289,21 +1326,15 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
         return false;
     }
 
-    // Convert BGRA to RGBA and remove row padding
-    outData.resize(outWidth * outHeight * 4);
-    const uint8_t* src = static_cast<const uint8_t*>(mappedData);
-    uint8_t* dst = outData.data();
-
-    for (uint32_t y = 0; y < outHeight; y++) {
-        const uint8_t* srcRow = src + y * bytesPerRow;
-        uint8_t* dstRow = dst + y * outWidth * 4;
-        for (uint32_t x = 0; x < outWidth; x++) {
-            // BGRA -> RGBA
-            dstRow[x * 4 + 0] = srcRow[x * 4 + 2];  // R <- B
-            dstRow[x * 4 + 1] = srcRow[x * 4 + 1];  // G <- G
-            dstRow[x * 4 + 2] = srcRow[x * 4 + 0];  // B <- R
-            dstRow[x * 4 + 3] = srcRow[x * 4 + 3];  // A <- A
-        }
+    if (!copyScreenshotPixels(
+            static_cast<const uint8_t*>(mappedData),
+            outWidth,
+            outHeight,
+            bytesPerRow,
+            getScreenshotFormat(),
+            outData)) {
+        wgpuBufferUnmap(screenshotBuffer);
+        return false;
     }
 
     wgpuBufferUnmap(screenshotBuffer);

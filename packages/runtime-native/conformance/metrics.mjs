@@ -92,6 +92,56 @@ export function compareCaptures(referenceContents, candidateContents) {
   };
 }
 
+export const SCREEN_SPACE_GLYPH_BRIGHT_FLOOR = 1_000;
+export const SCREEN_SPACE_GLYPH_BOUNDS_TOLERANCE = 1;
+
+export function inspectScreenSpaceGlyphs(contents) {
+  const { png, width, height } = inspectCapture(contents);
+  let brightPixels = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const [red, green, blue, alpha] = png.data.subarray(offset, offset + 4);
+      if (red < 180 || green < 160 || blue > 160 || alpha === 0) continue;
+      brightPixels += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (brightPixels < SCREEN_SPACE_GLYPH_BRIGHT_FLOOR) {
+    throw new Error(
+      `screen-space glyph raster has ${brightPixels} bright pixels; expected at least ${SCREEN_SPACE_GLYPH_BRIGHT_FLOOR}`,
+    );
+  }
+  return { brightPixels, bounds: [minX, minY, maxX, maxY] };
+}
+
+export function compareScreenSpaceGlyphs(referenceContents, candidateContents) {
+  const reference = inspectScreenSpaceGlyphs(referenceContents);
+  const candidate = inspectScreenSpaceGlyphs(candidateContents);
+  const boundsDelta = reference.bounds.map((value, index) =>
+    Math.abs(value - candidate.bounds[index]),
+  );
+  if (boundsDelta.some((value) => value > SCREEN_SPACE_GLYPH_BOUNDS_TOLERANCE)) {
+    throw new Error(
+      `screen-space glyph bounds drift ${boundsDelta.join(",")} exceeds ${SCREEN_SPACE_GLYPH_BOUNDS_TOLERANCE}px`,
+    );
+  }
+  return {
+    brightFloor: SCREEN_SPACE_GLYPH_BRIGHT_FLOOR,
+    boundsTolerance: SCREEN_SPACE_GLYPH_BOUNDS_TOLERANCE,
+    boundsDelta,
+    reference,
+    candidate,
+  };
+}
+
 function valueAfter(argv, flag) {
   const index = argv.indexOf(flag);
   if (index === -1) return null;

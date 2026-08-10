@@ -1,7 +1,11 @@
 # PRD-054 — write once, run anywhere: a parity gate that proves it
 
-**Status: PROPOSED, 2026-08-09.** Evidence:
-`docs/verification/probe-real-game-cross-platform-2026-08-09.md`.
+**Status: BLOCKED AT ACCEPTANCE CRITERION 1, 2026-08-09.** The complete visual registry now
+passes 66/66 on browser, Linux desktop, and the Android emulator. Aggregate parity still
+fails on PRD-053 multi-touch, and the stated clean-machine prerequisites do not include the
+desktop C++ toolchain. Evidence:
+`docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
+`docs/verification/prd-054-android-color-2026-08-09.md`.
 
 **The goal this owns, stated as the product promise:** *any game written against this
 framework or against vanilla Three.js runs on web, desktop and mobile without issues.
@@ -232,3 +236,17 @@ tolerance lives per row in the registry and is a reviewed number.
 No claim about a platform that has not executed. iOS rows stay `blocked` until Apple hardware
 exists here — the honest state, and one this gate is designed to keep visible rather than
 quietly absent.
+
+## Native LOC review trigger
+
+The current budget report for this implementation is 60,433 native-runtime lines against the
+50,000-line review trigger. The overage is accepted for the complete 66-row conformance
+registry, same-source scenes, checksum-locked Android verification, native WebGPU callback
+observation, event plumbing, and the two-version wgpu-native matrix because each piece records
+executable evidence for the exact cross-backend regressions this PRD gates; the number is
+disclosed rather than routed around.
+
+Kill switch: delete a scene or version-matrix branch if it cannot distinguish its named
+regression, delete project mode if it requires more source than running the scaffold's native
+entry directly, and delete any report field that does not fail closed or change a release
+decision. Physical-hardware rows remain blocked until executed and contribute no claimed pass.

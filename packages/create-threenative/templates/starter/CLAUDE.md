@@ -36,9 +36,9 @@ clean-machine distribution proof; macOS, Windows, iOS, and physical hardware rem
 Four things break there, and none of them fail on the web build:
 
 1. **The native host has no DOM and does not run React.** A desktop or mobile build ships
-   `src/scenes/` and `src/entities/` without `src/ui/`. So gameplay, scoring and state
-   transitions live in the scene; a component reads `useGameState()` and draws. The moment a
-   rule lives in a `.tsx` file, that rule is missing on native.
+   `src/scenes/` and `src/render/hud.ts` without `src/ui/`. Gameplay, scoring and state
+   transitions live in the scene; React remains a web convenience, while the generated
+   camera-parented geometry HUD carries the score, counter and clock on every target.
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
@@ -55,13 +55,19 @@ src/
   main.ts               defineGame(...) + React mount
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/             Player.ts, Crate.ts — plain classes, not an ECS
-  render/               palette, camera, sky, lighting, materials, postprocessing — YOURS
+  render/               palette, camera, sky, lighting, HUD geometry, materials, post — YOURS
   ui/                   App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4
   state.ts              the state shape the HUD subscribes to
 playtests/*.playtest.json      committed browser scenarios, run by pnpm test
 playtest/boot-to-play.json  Boot-to-Play jump proof for the standalone runner
 threenative.config.ts   renderer + plugins. No visual options, by design.
 ```
+
+`src/render/hud.ts` is generated user-owned Three.js source, not a package widget. It uses
+instanced plane geometry rather than `CanvasTexture`; rewrite its glyphs, labels, colours or
+layout freely. `src/ui/` can add richer React presentation on web without becoming gameplay.
+Touch controls are not generated yet: add the small pointer-action mapping after the core
+multitouch surface from PRD-053 lands.
 
 ## How to write gameplay here
 

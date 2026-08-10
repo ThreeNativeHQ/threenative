@@ -26,6 +26,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <atomic>
 #include <cstring>
 #include <cmath>
 
@@ -138,7 +139,16 @@ static WGPUTexture g_offscreenTexture = nullptr;
 static WGPUTextureView g_offscreenTextureView = nullptr;
 
 // Canvas context state
-static WGPUTextureFormat g_surfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;  // Default, updated from context
+// The format exposed to JavaScript may differ from the native presentation format. Some
+// Android surfaces expose only an sRGB attachment. Three.js already writes display-encoded
+// output, so rendering it directly into that attachment applies the transfer twice. In that
+// case JavaScript renders into the matching linear format and a native fullscreen pass
+// linearizes once before the sRGB surface stores it.
+static WGPUTextureFormat g_surfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
+static WGPUTextureFormat g_nativeSurfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
+static bool g_requiresSrgbPresentationBridge = false;
+static WGPURenderPipeline g_srgbPresentationPipeline = nullptr;
+static WGPUBindGroupLayout g_srgbPresentationBindGroupLayout = nullptr;
 static uint32_t g_canvasWidth = 800;
 static uint32_t g_canvasHeight = 600;
 static bool g_contextConfigured = false;
@@ -225,6 +235,136 @@ struct BufferMapData {
     std::string errorMessage;
 };
 static BufferMapData g_bufferMapData;
+
+struct ErrorScopeData {
+    std::atomic<int> callbackReferences{2};
+    std::atomic<bool> completed{false};
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPUPopErrorScopeStatus status = WGPUPopErrorScopeStatus_Force32;
+#endif
+    WGPUErrorType type = WGPUErrorType_Unknown;
+    std::string message;
+};
+
+struct QueueWorkDoneData {
+    std::atomic<int> callbackReferences{2};
+    std::atomic<bool> completed{false};
+    WGPUQueueWorkDoneStatus status = WGPUQueueWorkDoneStatus_Error;
+    std::string message;
+};
+
+template <typename CallbackData>
+static void releaseCallbackData(CallbackData* data) {
+    if (data->callbackReferences.fetch_sub(1, std::memory_order_acq_rel) == 1) delete data;
+}
+
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+static void onErrorScopePopped(WGPUPopErrorScopeStatus status,
+                               WGPUErrorType type,
+                               WGPUStringView message,
+                               void* userdata1,
+                               void*) {
+    auto* data = static_cast<ErrorScopeData*>(userdata1);
+    data->status = status;
+    data->type = type;
+    data->message = WGPU_PRINT_STRING_VIEW(message);
+    data->completed.store(true, std::memory_order_release);
+    releaseCallbackData(data);
+}
+#else
+static void onErrorScopePopped(WGPUErrorType type, const char* message, void* userdata) {
+    auto* data = static_cast<ErrorScopeData*>(userdata);
+    data->type = type;
+    data->message = message ? message : "";
+    data->completed.store(true, std::memory_order_release);
+    releaseCallbackData(data);
+}
+#endif
+
+#if defined(MYSTRAL_WEBGPU_DAWN)
+static void onQueueWorkDone(WGPUQueueWorkDoneStatus status,
+                            WGPUStringView message,
+                            void* userdata1,
+                            void*) {
+    auto* data = static_cast<QueueWorkDoneData*>(userdata1);
+    data->status = status;
+    data->message = WGPU_PRINT_STRING_VIEW(message);
+    data->completed.store(true, std::memory_order_release);
+    releaseCallbackData(data);
+}
+#elif defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+static void onQueueWorkDone(WGPUQueueWorkDoneStatus status, void* userdata1, void*) {
+    auto* data = static_cast<QueueWorkDoneData*>(userdata1);
+    data->status = status;
+    data->completed.store(true, std::memory_order_release);
+    releaseCallbackData(data);
+}
+#else
+static void onQueueWorkDone(WGPUQueueWorkDoneStatus status, void* userdata) {
+    auto* data = static_cast<QueueWorkDoneData*>(userdata);
+    data->status = status;
+    data->completed.store(true, std::memory_order_release);
+    releaseCallbackData(data);
+}
+#endif
+
+static bool waitForWebGpuCallback(const std::atomic<bool>& completed) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!completed.load(std::memory_order_acquire)) {
+#if defined(MYSTRAL_WEBGPU_WGPU)
+        if (g_device) wgpuDevicePoll(g_device, false, nullptr);
+#else
+        if (g_instance) wgpuInstanceProcessEvents(g_instance);
+        if (g_device) wgpuDeviceTick(g_device);
+#endif
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+static std::string jsStringLiteral(const std::string& value) {
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result = "\"";
+    for (const unsigned char character : value) {
+        switch (character) {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (character < 0x20) {
+                    result += "\\u00";
+                    result += hex[(character >> 4) & 0x0f];
+                    result += hex[character & 0x0f];
+                } else {
+                    result += static_cast<char>(character);
+                }
+        }
+    }
+    result += '"';
+    return result;
+}
+
+static js::JSValueHandle resolvedPromise(const std::string& expression, const char* filename) {
+    const std::string source = "Promise.resolve(" + expression + ")";
+    return g_engine->evalScriptWithResult(source.c_str(), filename);
+}
+
+static js::JSValueHandle rejectedPromise(const std::string& message, const char* filename) {
+    const std::string source = "Promise.reject(new Error(" + jsStringLiteral(message) + "))";
+    return g_engine->evalScriptWithResult(source.c_str(), filename);
+}
+
+static const char* gpuErrorName(WGPUErrorType type) {
+    switch (type) {
+        case WGPUErrorType_Validation: return "GPUValidationError";
+        case WGPUErrorType_OutOfMemory: return "GPUOutOfMemoryError";
+        case WGPUErrorType_Internal: return "GPUInternalError";
+        default: return "GPUError";
+    }
+}
 
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
 // Dawn buffer map callback (4 params)
@@ -361,6 +501,212 @@ static WGPUCompareFunction stringToCompareFunction(const std::string& func) {
     return WGPUCompareFunction_Undefined;  // Default (no comparison)
 }
 
+static bool isSrgbSurfaceFormat(WGPUTextureFormat format) {
+    return format == WGPUTextureFormat_RGBA8UnormSrgb ||
+           format == WGPUTextureFormat_BGRA8UnormSrgb;
+}
+
+static WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format) {
+    if (format == WGPUTextureFormat_RGBA8UnormSrgb) return WGPUTextureFormat_RGBA8Unorm;
+    if (format == WGPUTextureFormat_BGRA8UnormSrgb) return WGPUTextureFormat_BGRA8Unorm;
+    return format;
+}
+
+static WGPUTexture createLinearPresentationTexture() {
+    WGPUTextureDescriptor descriptor = {};
+    descriptor.size = {g_canvasWidth, g_canvasHeight, 1};
+    descriptor.mipLevelCount = 1;
+    descriptor.sampleCount = 1;
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.format = g_surfaceFormat;
+    descriptor.usage = WGPUTextureUsage_RenderAttachment |
+                       WGPUTextureUsage_TextureBinding |
+                       WGPUTextureUsage_CopySrc;
+    return wgpuDeviceCreateTexture(g_device, &descriptor);
+}
+
+static bool ensureSrgbPresentationPipeline() {
+    if (g_srgbPresentationPipeline) return true;
+
+    const char* shaderCode = R"(
+        @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
+
+        @vertex
+        fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+            var positions = array<vec2f, 3>(
+                vec2f(-1.0, -1.0),
+                vec2f(3.0, -1.0),
+                vec2f(-1.0, 3.0)
+            );
+            return vec4f(positions[vertexIndex], 0.0, 1.0);
+        }
+
+        fn srgbToLinear(value: vec3f) -> vec3f {
+            let low = value / 12.92;
+            let high = pow((value + 0.055) / 1.055, vec3f(2.4));
+            return select(high, low, value <= vec3f(0.04045));
+        }
+
+        @fragment
+        fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+            let encoded = textureLoad(sourceTexture, vec2i(position.xy), 0);
+            return vec4f(srgbToLinear(encoded.rgb), encoded.a);
+        }
+    )";
+
+    WGPUShaderModuleWGSLDescriptor_Compat wgslDescriptor = {};
+    WGPUShaderModuleDescriptor shaderDescriptor = {};
+    setupShaderModuleWGSL(&shaderDescriptor, &wgslDescriptor, shaderCode);
+    WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(g_device, &shaderDescriptor);
+    if (!shaderModule) return false;
+
+    WGPUBindGroupLayoutEntry bindGroupEntry = {};
+    bindGroupEntry.binding = 0;
+    bindGroupEntry.visibility = WGPUShaderStage_Fragment;
+    bindGroupEntry.texture.sampleType = WGPUTextureSampleType_Float;
+    bindGroupEntry.texture.viewDimension = WGPUTextureViewDimension_2D;
+    bindGroupEntry.texture.multisampled = false;
+
+    WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
+    bindGroupLayoutDescriptor.entryCount = 1;
+    bindGroupLayoutDescriptor.entries = &bindGroupEntry;
+    g_srgbPresentationBindGroupLayout =
+        wgpuDeviceCreateBindGroupLayout(g_device, &bindGroupLayoutDescriptor);
+    if (!g_srgbPresentationBindGroupLayout) {
+        wgpuShaderModuleRelease(shaderModule);
+        return false;
+    }
+
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
+    pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+    pipelineLayoutDescriptor.bindGroupLayouts = &g_srgbPresentationBindGroupLayout;
+    WGPUPipelineLayout pipelineLayout =
+        wgpuDeviceCreatePipelineLayout(g_device, &pipelineLayoutDescriptor);
+    if (!pipelineLayout) {
+        wgpuBindGroupLayoutRelease(g_srgbPresentationBindGroupLayout);
+        g_srgbPresentationBindGroupLayout = nullptr;
+        wgpuShaderModuleRelease(shaderModule);
+        return false;
+    }
+
+    WGPUColorTargetState colorTarget = {};
+    colorTarget.format = g_nativeSurfaceFormat;
+    colorTarget.writeMask = WGPUColorWriteMask_All;
+
+    WGPUFragmentState fragmentState = {};
+    fragmentState.module = shaderModule;
+    WGPU_SET_ENTRY_POINT(fragmentState, "fs_main");
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    WGPURenderPipelineDescriptor pipelineDescriptor = {};
+    pipelineDescriptor.layout = pipelineLayout;
+    pipelineDescriptor.vertex.module = shaderModule;
+    WGPU_SET_ENTRY_POINT(pipelineDescriptor.vertex, "vs_main");
+    pipelineDescriptor.fragment = &fragmentState;
+    pipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    pipelineDescriptor.multisample.count = 1;
+    pipelineDescriptor.multisample.mask = 0xffffffff;
+    g_srgbPresentationPipeline =
+        wgpuDeviceCreateRenderPipeline(g_device, &pipelineDescriptor);
+
+    wgpuPipelineLayoutRelease(pipelineLayout);
+    wgpuShaderModuleRelease(shaderModule);
+    if (!g_srgbPresentationPipeline) {
+        wgpuBindGroupLayoutRelease(g_srgbPresentationBindGroupLayout);
+        g_srgbPresentationBindGroupLayout = nullptr;
+        return false;
+    }
+    return true;
+}
+
+static bool presentLinearTextureToSrgbSurface(WGPUTextureView sourceView) {
+    if (!sourceView || !ensureSrgbPresentationPipeline()) return false;
+
+    WGPUSurfaceTexture surfaceTexture = {};
+    wgpuSurfaceGetCurrentTexture(g_surface, &surfaceTexture);
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) return false;
+
+    WGPUTextureViewDescriptor surfaceViewDescriptor = {};
+    surfaceViewDescriptor.format = g_nativeSurfaceFormat;
+    surfaceViewDescriptor.dimension = WGPUTextureViewDimension_2D;
+    surfaceViewDescriptor.baseMipLevel = 0;
+    surfaceViewDescriptor.mipLevelCount = 1;
+    surfaceViewDescriptor.baseArrayLayer = 0;
+    surfaceViewDescriptor.arrayLayerCount = 1;
+    surfaceViewDescriptor.aspect = WGPUTextureAspect_All;
+    WGPUTextureView surfaceView =
+        wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDescriptor);
+    if (!surfaceView) {
+        wgpuTextureRelease(surfaceTexture.texture);
+        return false;
+    }
+
+    WGPUBindGroupEntry bindGroupEntry = {};
+    bindGroupEntry.binding = 0;
+    bindGroupEntry.textureView = sourceView;
+    WGPUBindGroupDescriptor bindGroupDescriptor = {};
+    bindGroupDescriptor.layout = g_srgbPresentationBindGroupLayout;
+    bindGroupDescriptor.entryCount = 1;
+    bindGroupDescriptor.entries = &bindGroupEntry;
+    WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(g_device, &bindGroupDescriptor);
+    if (!bindGroup) {
+        wgpuTextureViewRelease(surfaceView);
+        wgpuTextureRelease(surfaceTexture.texture);
+        return false;
+    }
+
+    WGPUCommandEncoderDescriptor encoderDescriptor = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(g_device, &encoderDescriptor);
+    if (!encoder) {
+        wgpuBindGroupRelease(bindGroup);
+        wgpuTextureViewRelease(surfaceView);
+        wgpuTextureRelease(surfaceTexture.texture);
+        return false;
+    }
+    WGPURenderPassColorAttachment colorAttachment = {};
+    colorAttachment.view = surfaceView;
+    colorAttachment.loadOp = WGPULoadOp_Clear;
+    colorAttachment.storeOp = WGPUStoreOp_Store;
+    colorAttachment.clearValue = {0.0, 0.0, 0.0, 1.0};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor renderPassDescriptor = {};
+    renderPassDescriptor.colorAttachmentCount = 1;
+    renderPassDescriptor.colorAttachments = &colorAttachment;
+    WGPURenderPassEncoder renderPass =
+        wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+    if (!renderPass) {
+        wgpuCommandEncoderRelease(encoder);
+        wgpuBindGroupRelease(bindGroup);
+        wgpuTextureViewRelease(surfaceView);
+        wgpuTextureRelease(surfaceTexture.texture);
+        return false;
+    }
+    wgpuRenderPassEncoderSetPipeline(renderPass, g_srgbPresentationPipeline);
+    wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
+    wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(renderPass);
+    wgpuRenderPassEncoderRelease(renderPass);
+
+    WGPUCommandBufferDescriptor commandBufferDescriptor = {};
+    WGPUCommandBuffer commandBuffer =
+        wgpuCommandEncoderFinish(encoder, &commandBufferDescriptor);
+    const bool encoded = commandBuffer != nullptr;
+    if (encoded) {
+        wgpuQueueSubmit(g_queue, 1, &commandBuffer);
+        wgpuSurfacePresent(g_surface);
+    }
+
+    if (commandBuffer) wgpuCommandBufferRelease(commandBuffer);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuBindGroupRelease(bindGroup);
+    wgpuTextureViewRelease(surfaceView);
+    wgpuTextureRelease(surfaceTexture.texture);
+    return encoded;
+}
+
 /**
  * Get the current swapchain texture (or offscreen texture in no-SDL mode)
  */
@@ -373,6 +719,10 @@ static WGPUTexture getCurrentSwapchainTexture() {
         }
         std::cerr << "[WebGPU] No surface and no offscreen texture available" << std::endl;
         return nullptr;
+    }
+
+    if (g_requiresSrgbPresentationBridge) {
+        return createLinearPresentationTexture();
     }
 
     WGPUSurfaceTexture surfaceTexture;
@@ -411,11 +761,19 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
     // Set canvas dimensions from window size
     g_canvasWidth = width;
     g_canvasHeight = height;
-    g_surfaceFormat = (WGPUTextureFormat)surfaceFormat;
+    g_nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
+    g_requiresSrgbPresentationBridge =
+        g_surface != nullptr && isSrgbSurfaceFormat(g_nativeSurfaceFormat);
+    g_surfaceFormat = g_requiresSrgbPresentationBridge
+        ? linearSurfaceFormat(g_nativeSurfaceFormat)
+        : g_nativeSurfaceFormat;
 
     if (g_verboseLogging) {
         std::cout << "[WebGPU] Initializing JavaScript bindings..." << std::endl;
-        std::cout << "[WebGPU] Surface format: " << surfaceFormat << std::endl;
+        std::cout << "[WebGPU] Native surface format: " << surfaceFormat
+                  << ", canvas format: " << g_surfaceFormat
+                  << ", sRGB presentation bridge: "
+                  << (g_requiresSrgbPresentationBridge ? "enabled" : "disabled") << std::endl;
     }
 
     // ========================================================================
@@ -519,7 +877,15 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
                     // Get format
                     std::string format = g_engine->toString(g_engine->getProperty(descriptor, "format"));
-                    g_surfaceFormat = stringToFormat(format);
+                    const WGPUTextureFormat configuredFormat = stringToFormat(format);
+                    if (g_requiresSrgbPresentationBridge &&
+                        configuredFormat != linearSurfaceFormat(g_nativeSurfaceFormat)) {
+                        g_engine->throwException(
+                            "GPUCanvasContext.configure format does not match the native presentation bridge"
+                        );
+                        return g_engine->newUndefined();
+                    }
+                    g_surfaceFormat = configuredFormat;
                     // Note: alphaMode and device are stored but surface is already configured
 
                     g_contextConfigured = true;
@@ -798,7 +1164,15 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 }
                                 auto descriptor = args[0];
                                 std::string format = g_engine->toString(g_engine->getProperty(descriptor, "format"));
-                                g_surfaceFormat = stringToFormat(format);
+                                const WGPUTextureFormat configuredFormat = stringToFormat(format);
+                                if (g_requiresSrgbPresentationBridge &&
+                                    configuredFormat != linearSurfaceFormat(g_nativeSurfaceFormat)) {
+                                    g_engine->throwException(
+                                        "GPUCanvasContext.configure format does not match the native presentation bridge"
+                                    );
+                                    return g_engine->newUndefined();
+                                }
+                                g_surfaceFormat = configuredFormat;
                                 g_contextConfigured = true;
                                 if (g_verboseLogging) std::cout << "[Canvas] Offscreen context configured with format: " << format << std::endl;
                                 return g_engine->newUndefined();
@@ -1142,7 +1516,13 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             // This prevents presenting before the render commands are in this submit
                             if (g_surface && g_currentTexture && g_surfaceRenderPassEnded) {
                                 if (g_verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
-                                wgpuSurfacePresent(g_surface);
+                                const bool presented = g_requiresSrgbPresentationBridge
+                                    ? presentLinearTextureToSrgbSurface(g_currentTextureView)
+                                    : (wgpuSurfacePresent(g_surface), true);
+                                if (!presented) {
+                                    std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+                                    g_engine->throwException("sRGB presentation bridge failed");
+                                }
 
                                 // Reset surface render tracking for next frame
                                 g_surfaceRenderEncoder = nullptr;
@@ -1155,9 +1535,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                     g_currentTextureView = nullptr;
                                 }
 
-                                // Surface texture handles must be released after present before
-                                // the next frame can be acquired. Drop every alias so screenshot
-                                // capture cannot dereference the just-presented texture.
+                                // Drop every alias so screenshot capture cannot dereference the
+                                // just-presented surface texture or the consumed linear bridge
+                                // texture.
                                 if (g_currentSurfaceTextureId != 0) {
                                     g_textureRegistry.erase(g_currentSurfaceTextureId);
                                     g_currentSurfaceTextureId = 0;
@@ -1590,10 +1970,34 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // queue.onSubmittedWorkDone() - returns Promise that resolves when GPU work is done
                     g_engine->setProperty(queue, "onSubmittedWorkDone",
                         g_engine->newFunction("onSubmittedWorkDone", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                            // For now, return a Promise that resolves immediately
-                            // Dawn's wgpuQueueOnSubmittedWorkDone is callback-based, which is complex to integrate
-                            // Since we're running single-threaded and submit() is synchronous, work is already done
-                            return g_engine->evalWithResult("Promise.resolve()", "<onSubmittedWorkDone>");
+                            auto* data = new QueueWorkDoneData();
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            WGPUQueueWorkDoneCallbackInfo callbackInfo = {};
+                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+                            callbackInfo.callback = onQueueWorkDone;
+                            callbackInfo.userdata1 = data;
+                            callbackInfo.userdata2 = nullptr;
+                            (void)wgpuQueueOnSubmittedWorkDone(g_queue, callbackInfo);
+#else
+                            wgpuQueueOnSubmittedWorkDone(g_queue, onQueueWorkDone, data);
+#endif
+                            if (!waitForWebGpuCallback(data->completed)) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(
+                                    "GPUQueue.onSubmittedWorkDone timed out waiting for native completion.",
+                                    "onSubmittedWorkDone-timeout"
+                                );
+                            }
+                            const WGPUQueueWorkDoneStatus status = data->status;
+                            const std::string nativeMessage = data->message;
+                            releaseCallbackData(data);
+                            if (status != WGPUQueueWorkDoneStatus_Success) {
+                                std::string message = "GPUQueue.onSubmittedWorkDone failed with native status "
+                                    + std::to_string(static_cast<int>(status));
+                                if (!nativeMessage.empty()) message += ": " + nativeMessage;
+                                return rejectedPromise(message, "onSubmittedWorkDone-error");
+                            }
+                            return resolvedPromise("undefined", "onSubmittedWorkDone-success");
                         })
                     );
 
@@ -4191,11 +4595,18 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // Used by Three.js for error handling during pipeline creation
                     g_engine->setProperty(device, "pushErrorScope",
                         g_engine->newFunction("pushErrorScope", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                            // In native runtime, we can use Dawn's error scope API
-                            // For now, just no-op since Dawn reports errors to the error callback
+                            const std::string filterName = args.empty() ? "validation" : g_engine->toString(args[0]);
+                            WGPUErrorFilter filter;
+                            if (filterName == "validation") filter = WGPUErrorFilter_Validation;
+                            else if (filterName == "out-of-memory") filter = WGPUErrorFilter_OutOfMemory;
+                            else if (filterName == "internal") filter = WGPUErrorFilter_Internal;
+                            else {
+                                g_engine->throwException("GPUDevice.pushErrorScope received an unknown filter");
+                                return g_engine->newUndefined();
+                            }
+                            wgpuDevicePushErrorScope(g_device, filter);
                             if (g_verboseLogging) {
-                                std::string filter = args.empty() ? "validation" : g_engine->toString(args[0]);
-                                std::cout << "[WebGPU] pushErrorScope: " << filter << std::endl;
+                                std::cout << "[WebGPU] pushErrorScope: " << filterName << std::endl;
                             }
                             return g_engine->newUndefined();
                         })
@@ -4205,14 +4616,48 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // Returns Promise<GPUError | null>
                     g_engine->setProperty(device, "popErrorScope",
                         g_engine->newFunction("popErrorScope", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                            // Return a Promise that resolves to null (no error)
-                            // In a full implementation, this would check for actual errors
                             if (g_verboseLogging) {
                                 std::cout << "[WebGPU] popErrorScope" << std::endl;
                             }
-                            // Use evalScriptWithResult (not evalWithResult) to get the actual Promise value
-                            // evalWithResult uses module mode which returns module evaluation result, not expression value
-                            return g_engine->evalScriptWithResult("Promise.resolve(null)", "popErrorScope");
+                            auto* data = new ErrorScopeData();
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            WGPUPopErrorScopeCallbackInfo callbackInfo = {};
+                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+                            callbackInfo.callback = onErrorScopePopped;
+                            callbackInfo.userdata1 = data;
+                            callbackInfo.userdata2 = nullptr;
+                            (void)wgpuDevicePopErrorScope(g_device, callbackInfo);
+#else
+                            wgpuDevicePopErrorScope(g_device, onErrorScopePopped, data);
+#endif
+                            if (!waitForWebGpuCallback(data->completed)) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(
+                                    "GPUDevice.popErrorScope timed out waiting for native observation.",
+                                    "popErrorScope-timeout"
+                                );
+                            }
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            const WGPUPopErrorScopeStatus popStatus = data->status;
+                            if (popStatus != WGPUPopErrorScopeStatus_Success) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(
+                                    "GPUDevice.popErrorScope failed with native status "
+                                        + std::to_string(static_cast<int>(popStatus)),
+                                    "popErrorScope-status"
+                                );
+                            }
+#endif
+                            const WGPUErrorType errorType = data->type;
+                            const std::string errorMessage = data->message;
+                            releaseCallbackData(data);
+                            if (errorType == WGPUErrorType_NoError) {
+                                return resolvedPromise("null", "popErrorScope-empty");
+                            }
+                            const std::string errorExpression = "{ name: "
+                                + jsStringLiteral(gpuErrorName(errorType))
+                                + ", message: " + jsStringLiteral(errorMessage) + " }";
+                            return resolvedPromise(errorExpression, "popErrorScope-observed");
                         })
                     );
 
@@ -4897,6 +5342,10 @@ uint32_t getScreenshotBytesPerRow() {
     return g_screenshotBytesPerRow;
 }
 
+uint32_t getScreenshotFormat() {
+    return static_cast<uint32_t>(g_surfaceFormat);
+}
+
 bool isScreenshotReady() {
     return g_screenshotReady;
 }
@@ -5065,7 +5514,7 @@ void compositeCanvas2DToWebGPU() {
         fragmentState.targetCount = 1;
 
         WGPUColorTargetState colorTarget = {};
-        colorTarget.format = g_surfaceFormat;
+        colorTarget.format = g_nativeSurfaceFormat;
         colorTarget.writeMask = WGPUColorWriteMask_All;
         fragmentState.targets = &colorTarget;
 
@@ -5139,7 +5588,7 @@ void compositeCanvas2DToWebGPU() {
     }
 
     WGPUTextureViewDescriptor surfaceViewDesc = {};
-    surfaceViewDesc.format = g_surfaceFormat;
+    surfaceViewDesc.format = g_nativeSurfaceFormat;
     surfaceViewDesc.dimension = WGPUTextureViewDimension_2D;
     surfaceViewDesc.baseMipLevel = 0;
     surfaceViewDesc.mipLevelCount = 1;

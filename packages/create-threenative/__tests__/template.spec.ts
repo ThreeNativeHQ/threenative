@@ -48,6 +48,34 @@ function referencePattern(name: string): RegExp {
   return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u");
 }
 
+function hudGlyphProof(source: string, text: string) {
+  const characters = /const CHARS = "([^"]+)"/u.exec(source)?.[1];
+  const encoded = /"([0-9a-f ]+)"\s*\.split\(" "\)/u.exec(source)?.[1];
+  if (characters === undefined || encoded === undefined)
+    throw new Error("Malformed HUD glyph data");
+  const glyphs = encoded.split(" ").map((hex) => BigInt(`0x${hex}`));
+  if (glyphs.length !== characters.length) throw new Error("HUD glyph table is incomplete");
+  const points: Array<[number, number]> = [];
+  for (const [character, value] of [...text].entries()) {
+    if (value === " ") continue;
+    const glyph = glyphs[characters.indexOf(value)];
+    if (glyph === undefined) throw new Error(`Missing HUD glyph: ${value}`);
+    for (let pixel = 0; pixel < 35; pixel += 1)
+      if ((glyph & (1n << BigInt(pixel))) !== 0n)
+        points.push([character * 6 + (pixel % 5), Math.floor(pixel / 5)]);
+  }
+  if (points.length === 0) throw new Error("HUD glyph proof is blank");
+  return {
+    brightPixels: points.length,
+    bounds: [
+      Math.min(...points.map(([x]) => x)),
+      Math.min(...points.map(([, y]) => y)),
+      Math.max(...points.map(([x]) => x)),
+      Math.max(...points.map(([, y]) => y)),
+    ],
+  };
+}
+
 async function linkDependency(target: string, name: string, source: string): Promise<void> {
   const link = path.join(target, "node_modules", name);
   await mkdir(path.dirname(link), { recursive: true });
@@ -114,6 +142,33 @@ describe("template contracts", () => {
         ).not.toEqual([]);
       }
     }
+  });
+
+  it("should ship a user-owned geometry HUD in every template", async () => {
+    for (const template of typecheckTemplates) {
+      const root = path.join(templateRoot, template);
+      const hud = await readFile(path.join(root, "src/render/hud.ts"), "utf8");
+      const scene = await readFile(
+        path.join(root, template === "platformer" ? "src/scenes/Level.ts" : "src/scenes/Play.ts"),
+        "utf8",
+      );
+      expect(hud, template).toContain("InstancedMesh");
+      expect(hud, template).toContain("camera.add(root)");
+      expect(hud, template).toContain("renderOrder");
+      expect(hud, template).toContain("TIME ");
+      expect(hud, template).not.toMatch(/CanvasTexture|document\.|window\.|@threenative\//u);
+      expect(scene, template).toContain("createHud(");
+      expect(scene, template).toMatch(/ctx\.add\((?:ctx\.)?camera\)/u);
+      expect(scene, template).toContain("hud.update(");
+      expect(scene, template).toMatch(/ctx\.entities\.add\(\s*"hud"/u);
+      expect(hudGlyphProof(hud, "SCORE 1200"), template).toEqual({
+        brightPixels: 161,
+        bounds: [0, 0, 58, 6],
+      });
+    }
+    expect(() => hudGlyphProof('const CHARS = "";', "SCORE 1200")).toThrow(
+      "Malformed HUD glyph data",
+    );
   });
 
   it("should call every exported render integration symbol", async () => {

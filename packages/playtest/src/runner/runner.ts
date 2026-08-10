@@ -19,7 +19,7 @@ import {
   type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import { reconcileBrowserPointers } from "./browser.js";
@@ -521,6 +521,11 @@ async function runStep(
   }
   if (step.pointers !== undefined && step.release) {
     await setBrowserPointers(page, inputState, [], viewport);
+    if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
+      await bridge.advance(1);
+    } else {
+      await waitFrames(page, 1);
+    }
   }
 }
 
@@ -528,6 +533,7 @@ type StepInputState = {
   heldKeys: Set<string>;
   pointerButtons: number;
   pointers: Map<number, { buttons: number; id: number; x: number; y: number }>;
+  touchSession?: CDPSession;
 };
 
 async function setBrowserPointers(
@@ -537,22 +543,33 @@ async function setBrowserPointers(
   viewport: IPlaytestScenario["viewport"],
 ): Promise<void> {
   const changes = reconcileBrowserPointers(inputState.pointers, next);
-  for (const change of changes) {
-    await page.evaluate(({ change, viewport }) => {
-      const target = document.querySelector("canvas");
-      if (!(target instanceof EventTarget)) {
-        throw new Error("TN_PLAYTEST_POINTER_TARGET_MISSING: multi-pointer input requires a canvas.");
-      }
-      target.dispatchEvent(new PointerEvent(change.type, {
-        bubbles: true,
-        buttons: change.pointer.buttons,
-        clientX: change.pointer.x * viewport.width,
-        clientY: change.pointer.y * viewport.height,
-        isPrimary: change.isPrimary,
-        pointerId: change.pointer.id,
-        pointerType: "touch",
-      }));
-    }, { change, viewport });
+  if (next.some(({ buttons }) => buttons !== undefined && buttons !== 1)) {
+    throw new Error("Browser touch injection supports buttons=1 only.");
+  }
+  inputState.touchSession ??= await page.context().newCDPSession(page);
+  const session = inputState.touchSession;
+  const points = (pointers: typeof next) => pointers.map((pointer) => ({
+    force: 1,
+    id: pointer.id,
+    radiusX: 1,
+    radiusY: 1,
+    x: pointer.x * viewport.width,
+    y: pointer.y * viewport.height,
+  }));
+  const removed = changes.filter(({ type }) => type === "pointerup").map(({ pointer }) => pointer);
+  const added = changes.filter(({ type }) => type === "pointerdown").map(({ pointer }) => pointer);
+  const moved = changes.filter(({ type }) => type === "pointermove").map(({ pointer }) => pointer);
+  if (removed.length > 0) {
+    await session.send("Input.dispatchTouchEvent", {
+      touchPoints: points(removed),
+      type: "touchEnd",
+    });
+  }
+  if (added.length > 0) {
+    await session.send("Input.dispatchTouchEvent", { touchPoints: points(added), type: "touchStart" });
+  }
+  if (moved.length > 0) {
+    await session.send("Input.dispatchTouchEvent", { touchPoints: points(moved), type: "touchMove" });
   }
   inputState.pointers = new Map(next.map((pointer) => [pointer.id, {
     buttons: pointer.buttons ?? 1,

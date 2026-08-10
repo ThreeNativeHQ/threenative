@@ -1,6 +1,8 @@
 # PRD-055 — the HUD hole, reopened with a real game's evidence
 
-**Status: PROPOSED, 2026-08-09.** Reopens the candidate-D decision in
+**Status: BLOCKED AT TOUCH PLAYABILITY AND ROW 25, 2026-08-09.** Candidate G now renders
+generated HUD source on browser, desktop, and the Android emulator; acceptance criterion 2
+and the four-viewport row-25 proof remain blocked. Reopens the candidate-D decision in
 `docs/PRDs/native/done/PRD-051-native-ui-layer.md`, which requires "a new PRD with new
 evidence". Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-09.md`.
 

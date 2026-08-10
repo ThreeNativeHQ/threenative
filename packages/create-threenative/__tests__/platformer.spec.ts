@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
 
-type Point = { x: number; y: number; z: number; clone(): Point; copy(value: Point): Point };
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
-function point(x: number): Point {
-  return { clone: () => point(x), copy: (value) => point(value.x), x, y: 0.75, z: 0 };
+function point(x: number): Vector3 {
+  return new Vector3(x, 0.75, 0);
 }
 
-function checkpoints(points: readonly Point[]): ConstructorParameters<typeof Checkpoints>[0] {
-  return points as unknown as ConstructorParameters<typeof Checkpoints>[0];
+function checkpoints(points: readonly Vector3[]): ConstructorParameters<typeof Checkpoints>[0] {
+  return points;
 }
 
 function target(): Target {
@@ -27,7 +27,7 @@ const feel = {
   hurtHorizontalSpeed: 4.5,
   hurtVerticalSpeed: 5.5,
   invulnerabilityTime: 1.2,
-};
+} as unknown as ConstructorParameters<typeof Checkpoints>[2];
 
 describe("platformer checkpoints", () => {
   it("rejects an empty checkpoint list", () => {

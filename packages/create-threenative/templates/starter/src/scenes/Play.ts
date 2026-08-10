@@ -5,6 +5,7 @@ import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
 import { pickAt } from "../pick.js";
 import { createSpringArm } from "../render/camera.js";
+import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createMaterials } from "../render/materials.js";
 import { createParticles } from "../render/particles.js";
@@ -58,10 +59,15 @@ export class Play extends Scene<GameState, PhysicsContext> {
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    ctx.add(ctx.camera);
     if (ctx.renderer.kind === "webgpu") ctx.add(createParticles());
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
       lookAhead: new Vector3(0, 0.9, -0.4),
     });
+    const hud = ctx.entities.add(
+      "hud",
+      createHud(ctx.camera as PerspectiveCamera, "SCORE", "ITEMS"),
+    );
 
     const materials = createMaterials();
     const sculptureMesh = sculpture(materials.crate);
@@ -105,7 +111,9 @@ export class Play extends Scene<GameState, PhysicsContext> {
     springArm.snap(player.mesh.position);
     ctx.state.set({ levelX });
     ctx.entities.add("player", player);
-    ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
+    ctx.state.set({
+      entityCount: Object.keys(ctx.entities.snapshot()).filter((id) => id !== "hud").length,
+    });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },
@@ -115,7 +123,9 @@ export class Play extends Scene<GameState, PhysicsContext> {
       if (body !== player.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
       ctx.entities.remove("pickup");
-      ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
+      ctx.state.set({
+        entityCount: Object.keys(ctx.entities.snapshot()).filter((id) => id !== "hud").length,
+      });
       pickup.monitoring = false;
       pickupVisual.visible = false;
       ctx.after(3, () => {
@@ -131,6 +141,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
       pickupVisual.visible = false;
     }
 
+    let elapsed = 0;
     return (frameCtx, dt) => {
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
@@ -140,6 +151,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
         return;
       }
       player.update(frameCtx, dt);
+      elapsed += dt;
       let respawned = false;
       if (player.mesh.position.y < KILL_PLANE) {
         player.respawn();
@@ -150,13 +162,14 @@ export class Play extends Scene<GameState, PhysicsContext> {
       pickAt(frameCtx);
       const debug = player.debug();
       const previous = frameCtx.state.getState();
+      hud.update({ counter: previous.entityCount, primary: previous.score, seconds: elapsed });
       frameCtx.state.set({
         coyoteJumps: debug.coyoteJumps,
         jumps: debug.jumps,
         peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
         playerX: player.mesh.position.x,
         respawns: previous.respawns + (respawned ? 1 : 0),
-        entityCount: Object.keys(frameCtx.entities.snapshot()).length,
+        entityCount: Object.keys(frameCtx.entities.snapshot()).filter((id) => id !== "hud").length,
       });
       if (respawned) frameCtx.state.flush();
     };

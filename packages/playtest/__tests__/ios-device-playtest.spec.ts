@@ -88,14 +88,35 @@ test("network assertions fail explicitly unsupported on iOS", async () => {
   expect(driver.prepared).toBe(false);
 });
 
-async function runIos(assert: unknown, driver: FakeIosDriver, timeoutMs = 1_000) {
+test("iOS multi-pointer scenarios block explicitly before launch", async () => {
+  const driver = new FakeIosDriver(bridge());
+  const result = await runIos(
+    { diagnostics: { runtimeReady: true } },
+    driver,
+    1_000,
+    [{ holdFrames: 2, pointers: [{ id: 1, x: 0.2, y: 0.8 }], release: true }],
+  );
+
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+    message: expect.stringContaining("complete held-pointer input"),
+  }));
+  expect(driver.prepared).toBe(false);
+});
+
+async function runIos(
+  assert: unknown,
+  driver: FakeIosDriver,
+  timeoutMs = 1_000,
+  steps: unknown[] = [{ waitFrames: 1 }],
+) {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-ios-"));
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     artifacts: { screenshots: false },
     assert,
     name: "ios-cross-target-scenario",
     schemaVersion: 1,
-    steps: [{ waitFrames: 1 }],
+    steps,
     subject: "player",
     target: "web",
     viewport: { height: 360, width: 640 },

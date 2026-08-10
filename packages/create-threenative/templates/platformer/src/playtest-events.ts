@@ -1,8 +1,8 @@
-export interface PlaytestEvent {
+type PlaytestEvent = {
   readonly [key: string]: string;
   readonly entity: string;
   readonly name: string;
-}
+};
 
 const pendingEvents: PlaytestEvent[] = [];
 

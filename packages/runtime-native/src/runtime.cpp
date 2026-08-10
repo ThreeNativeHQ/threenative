@@ -3555,6 +3555,12 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
             })
         );
 
+        jsEngine_->setProperty(canvas, "dispatchEvent",
+            jsEngine_->newFunction("dispatchEvent", [this, canvas](void*, const std::vector<js::JSValueHandle>& args) {
+                return dispatchConstructedEvent("canvas", canvas, args);
+            })
+        );
+
         // canvas.getBoundingClientRect
         jsEngine_->setProperty(canvas, "getBoundingClientRect",
             jsEngine_->newFunction("getBoundingClientRect", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
@@ -3670,6 +3676,12 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                 }
 
                 return jsEngine_->newUndefined();
+            })
+        );
+
+        jsEngine_->setProperty(document, "dispatchEvent",
+            jsEngine_->newFunction("dispatchEvent", [this, document](void*, const std::vector<js::JSValueHandle>& args) {
+                return dispatchConstructedEvent("document", document, args);
             })
         );
 
@@ -3835,6 +3847,117 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                 return jsEngine_->newUndefined();
             })
         );
+
+        jsEngine_->setProperty(window, "dispatchEvent",
+            jsEngine_->newFunction("dispatchEvent", [this, window](void*, const std::vector<js::JSValueHandle>& args) {
+                return dispatchConstructedEvent("window", window, args);
+            })
+        );
+
+        const char* eventConstructorsSetup = R"JS(
+            (function() {
+                class Event {
+                    constructor(type, init) {
+                        if (arguments.length === 0) {
+                            throw new TypeError("Event constructor requires a type");
+                        }
+                        init = init || {};
+                        this.type = String(type);
+                        this.bubbles = Boolean(init.bubbles);
+                        this.cancelable = Boolean(init.cancelable);
+                        this.composed = Boolean(init.composed);
+                        this.defaultPrevented = false;
+                        this.target = null;
+                        this.currentTarget = null;
+                        this.eventPhase = 0;
+                        this.isTrusted = false;
+                        this.cancelBubble = false;
+                        this._immediatePropagationStopped = false;
+                    }
+
+                    preventDefault() {
+                        if (this.cancelable) this.defaultPrevented = true;
+                    }
+
+                    stopPropagation() {
+                        this.cancelBubble = true;
+                    }
+
+                    stopImmediatePropagation() {
+                        this.cancelBubble = true;
+                        this._immediatePropagationStopped = true;
+                    }
+                }
+
+                class PointerEvent extends Event {
+                    constructor(type, init) {
+                        init = init || {};
+                        super(type, init);
+                        this.pointerId = Number(init.pointerId || 0);
+                        this.pointerType = String(init.pointerType || "");
+                        this.isPrimary = Boolean(init.isPrimary);
+                        this.clientX = Number(init.clientX || 0);
+                        this.clientY = Number(init.clientY || 0);
+                        this.screenX = Number(init.screenX || 0);
+                        this.screenY = Number(init.screenY || 0);
+                        this.pageX = Number(init.pageX || 0);
+                        this.pageY = Number(init.pageY || 0);
+                        this.offsetX = Number(init.offsetX || 0);
+                        this.offsetY = Number(init.offsetY || 0);
+                        this.movementX = Number(init.movementX || 0);
+                        this.movementY = Number(init.movementY || 0);
+                        this.button = Number(init.button || 0);
+                        this.buttons = Number(init.buttons || 0);
+                        this.pressure = Number(init.pressure || 0);
+                        this.width = Number(init.width || 1);
+                        this.height = Number(init.height || 1);
+                        this.ctrlKey = Boolean(init.ctrlKey);
+                        this.shiftKey = Boolean(init.shiftKey);
+                        this.altKey = Boolean(init.altKey);
+                        this.metaKey = Boolean(init.metaKey);
+                    }
+                }
+
+                class TouchEvent extends Event {
+                    constructor(type, init) {
+                        init = init || {};
+                        super(type, init);
+                        this.touches = init.touches || [];
+                        this.targetTouches = init.targetTouches || [];
+                        this.changedTouches = init.changedTouches || [];
+                        this.ctrlKey = Boolean(init.ctrlKey);
+                        this.shiftKey = Boolean(init.shiftKey);
+                        this.altKey = Boolean(init.altKey);
+                        this.metaKey = Boolean(init.metaKey);
+                    }
+                }
+
+                class KeyboardEvent extends Event {
+                    constructor(type, init) {
+                        init = init || {};
+                        super(type, init);
+                        this.key = String(init.key || "");
+                        this.code = String(init.code || "");
+                        this.location = Number(init.location || 0);
+                        this.repeat = Boolean(init.repeat);
+                        this.isComposing = Boolean(init.isComposing);
+                        this.keyCode = Number(init.keyCode || 0);
+                        this.charCode = Number(init.charCode || 0);
+                        this.which = Number(init.which || 0);
+                        this.ctrlKey = Boolean(init.ctrlKey);
+                        this.shiftKey = Boolean(init.shiftKey);
+                        this.altKey = Boolean(init.altKey);
+                        this.metaKey = Boolean(init.metaKey);
+                    }
+                }
+
+                globalThis.Event = Event;
+                globalThis.PointerEvent = PointerEvent;
+                globalThis.TouchEvent = TouchEvent;
+                globalThis.KeyboardEvent = KeyboardEvent;
+            })();
+        )JS";
+        jsEngine_->eval(eventConstructorsSetup, "event-constructors-setup");
 
         // window.innerWidth / window.innerHeight
         jsEngine_->setProperty(window, "innerWidth", jsEngine_->newNumber(width_));
@@ -4173,6 +4296,48 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         jsEngine_->setProperty(event, "type", jsEngine_->newString("resize"));
 
         dispatchToListeners("window", "resize", event);
+    }
+
+    js::JSValueHandle dispatchConstructedEvent(
+        const std::string& target,
+        js::JSValueHandle targetObject,
+        const std::vector<js::JSValueHandle>& args
+    ) {
+        if (args.empty() || !jsEngine_->isObject(args[0])) {
+            return jsEngine_->newBoolean(false);
+        }
+
+        const auto event = args[0];
+        const auto typeValue = jsEngine_->getProperty(event, "type");
+        if (jsEngine_->isUndefined(typeValue) || jsEngine_->isNull(typeValue)) {
+            return jsEngine_->newBoolean(false);
+        }
+        const std::string eventType = jsEngine_->toString(typeValue);
+        if (eventType.empty()) return jsEngine_->newBoolean(false);
+
+        jsEngine_->setProperty(event, "target", targetObject);
+        jsEngine_->setProperty(event, "currentTarget", targetObject);
+        jsEngine_->setProperty(event, "eventPhase", jsEngine_->newNumber(2));
+
+        const auto targetIt = eventListeners_.find(target);
+        if (targetIt != eventListeners_.end()) {
+            const auto typeIt = targetIt->second.find(eventType);
+            if (typeIt != targetIt->second.end()) {
+                const auto listeners = typeIt->second;
+                for (const auto& listener : listeners) {
+                    jsEngine_->call(listener.callback, targetObject, {event});
+                    const auto stopped = jsEngine_->getProperty(event, "_immediatePropagationStopped");
+                    if (!jsEngine_->isUndefined(stopped) && jsEngine_->toBoolean(stopped)) break;
+                }
+            }
+        }
+
+        jsEngine_->setProperty(event, "currentTarget", jsEngine_->newNull());
+        jsEngine_->setProperty(event, "eventPhase", jsEngine_->newNumber(0));
+        const auto defaultPrevented = jsEngine_->getProperty(event, "defaultPrevented");
+        return jsEngine_->newBoolean(
+            jsEngine_->isUndefined(defaultPrevented) || !jsEngine_->toBoolean(defaultPrevented)
+        );
     }
 
     void dispatchToListeners(const std::string& target, const std::string& eventType, js::JSValueHandle event) {

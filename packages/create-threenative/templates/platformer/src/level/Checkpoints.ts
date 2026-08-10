@@ -1,23 +1,8 @@
-type CharacterBody3D = {
-  teleport(position: { x: number; y: number; z: number }): void;
-  velocity: { set(x: number, y: number, z: number): void };
-};
-type Vector3 = { x: number; y: number; z: number; clone(): Vector3; copy(value: Vector3): Vector3 };
-type Object3D = { position: Vector3; visible: boolean };
-type CheckpointFeel = {
-  readonly blinkRate: number;
-  readonly hurtHorizontalSpeed: number;
-  readonly hurtVerticalSpeed: number;
-  readonly invulnerabilityTime: number;
-};
+import type { Vector3 } from "three";
+import type { Character, PLATFORMER_FEEL } from "../entities/Character.js";
 
-export interface RespawnTarget {
-  readonly body: CharacterBody3D;
-  readonly mesh: Object3D;
-  readonly visual: Object3D;
-}
+type RespawnTarget = Pick<Character, "body" | "mesh" | "visual">;
 
-/** Ordered checkpoints, heart damage, and the short post-respawn blink. */
 export class Checkpoints {
   readonly points: readonly Vector3[];
   readonly maxHearts: number;
@@ -25,9 +10,9 @@ export class Checkpoints {
   currentIndex = 0;
   respawns = 0;
   #invulnerable = 0;
-  #feel: CheckpointFeel;
+  #feel: typeof PLATFORMER_FEEL;
 
-  constructor(points: readonly Vector3[], maxHearts: number, feel: CheckpointFeel) {
+  constructor(points: readonly Vector3[], maxHearts: number, feel: typeof PLATFORMER_FEEL) {
     if (points.length === 0) throw new Error("Checkpoints requires at least one checkpoint.");
     if (!Number.isInteger(maxHearts) || maxHearts <= 0)
       throw new Error("Checkpoints requires a positive heart count.");

@@ -1,4 +1,3 @@
-// Generated for you: ordinary Three.js; edit the output graph to own the look.
 import { ACESFilmicToneMapping, type Camera, type Scene } from "three";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { pass } from "three/tsl";

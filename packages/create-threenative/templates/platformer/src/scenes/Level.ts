@@ -10,6 +10,7 @@ import { Checkpoints } from "../level/Checkpoints.js";
 import { createPlatform } from "../level/Platform.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
+import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -38,6 +39,8 @@ export class Level extends Scene<GameState, PhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
+    ctx.add(camera);
+    const hud = ctx.entities.add("hud", createHud(camera, "HEARTS", "COINS"));
     ctx.viewport.resize();
     createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
     createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
@@ -123,7 +126,9 @@ export class Level extends Scene<GameState, PhysicsContext> {
     ctx.entities.add("chaser", chaser);
     ctx.entities.add("chaser.avoidance", avoidanceChaser);
     followCamera(spawn, 1);
+    let elapsed = 0;
     return (frameCtx, dt) => {
+      elapsed += dt;
       character.update(frameCtx, dt);
       chaser.update(dt);
       avoidanceChaser.update(dt);
@@ -138,6 +143,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
       const rise = Math.max(0, character.mesh.position.y - SPAWN.y);
       const speed = Math.hypot(character.body.velocity.x, character.body.velocity.z);
       const previous = frameCtx.state.getState();
+      hud.update({ counter: coins, primary: checkpoints.hearts, seconds: elapsed });
       frameCtx.state.set({
         checkpoint: checkpoints.currentIndex,
         coins,

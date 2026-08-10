@@ -201,12 +201,24 @@ importers:
 
   packages/create-threenative:
     devDependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)

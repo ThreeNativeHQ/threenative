@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-multitouch",
+  "target": "web",
+  "subject": "multitouch-player",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 2,
+  "steps": [
+    {
+      "pointers": [{ "id": 7, "x": 0.2, "y": 0.8 }],
+      "holdFrames": 2,
+      "release": false
+    },
+    {
+      "label": "airborne-two-pointers",
+      "pointers": [{ "id": 7, "x": 0.2, "y": 0.8 }, { "id": 3, "x": 0.8, "y": 0.8 }],
+      "holdFrames": 8,
+      "release": true
+    }
+  ],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "diagnostics": {
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU popErrorScope diagnostic; input assertions remain authoritative."
+    },
+    "movement": {
+      "entity": "multitouch-player",
+      "minAxisDelta": { "axis": "x", "min": 0.01 }
+    },
+    "resources": [
+      { "id": "GameState", "path": "maxPointers", "gte": 2 },
+      { "id": "GameState", "path": "movedWithTwoPointers", "equals": true },
+      { "id": "GameState", "path": "leftGroundWithTwoPointers", "equals": true },
+      {
+        "id": "GameState",
+        "path": "airborne",
+        "atSteps": [{ "label": "airborne-two-pointers", "equals": true }]
+      },
+      {
+        "id": "GameState",
+        "path": "currentPointers",
+        "equals": 0,
+        "allowTrivial": true
+      }
+    ]
+  }
+}

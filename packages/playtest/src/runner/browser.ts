@@ -1,11 +1,11 @@
+import type { IPlaytestPointer } from "../scenario.js";
+
 export const WEBGPU_BROWSER_ARGS = [
   "--ozone-platform=x11",
   "--enable-unsafe-webgpu",
   "--disable-gpu-sandbox",
   "--ignore-gpu-blocklist",
 ] as const;
-
-import type { IPlaytestPointer } from "../scenario.js";
 
 export interface IBrowserPointerChange {
   isPrimary: boolean;

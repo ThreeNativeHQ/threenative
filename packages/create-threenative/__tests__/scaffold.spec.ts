@@ -46,6 +46,7 @@ const STARTER_PATHS = [
   "src/scenes/Boot.ts",
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
+  "src/render/hud.ts",
   "src/render/postprocessing.ts",
   "src/render/particles.ts",
   "src/render/palette.ts",
@@ -80,6 +81,7 @@ const MINIMAL_RENDER_PATHS = [
   "src/render/camera.ts",
   "src/render/sky.ts",
   "src/render/lighting.ts",
+  "src/render/hud.ts",
   "src/render/materials.ts",
   "src/render/postprocessing.ts",
 ] as const;
@@ -102,6 +104,7 @@ const PLATFORMER_PATHS = [
   "src/render/palette.ts",
   "src/render/camera.ts",
   "src/render/lighting.ts",
+  "src/render/hud.ts",
   "src/render/materials.ts",
   "src/render/rig.ts",
   "src/render/sky.ts",

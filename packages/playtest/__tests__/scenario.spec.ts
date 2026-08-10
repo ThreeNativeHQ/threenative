@@ -37,6 +37,49 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
   expect({ ...parsed, sourcePath: undefined }).toEqual({ ...scenario, inputDelivery: "deterministic", sourcePath: undefined });
 });
 
+test("scenario parser preserves complete held-pointer sets in arrival order", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-pointers-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { diagnostics: { runtimeReady: true } },
+    name: "two-pointers",
+    schemaVersion: 1,
+    steps: [
+      { holdFrames: 2, pointers: [{ id: 7, x: 0.2, y: 0.8 }], release: false },
+      {
+        holdFrames: 8,
+        pointers: [
+          { id: 7, x: 0.25, y: 0.8 },
+          { buttons: 1, id: 3, x: 0.8, y: 0.8 },
+        ],
+        release: true,
+      },
+    ],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.steps[1]?.pointers?.map(({ id }) => id)).toEqual([7, 3]);
+});
+
+test.each([
+  ["non-array set", { pointers: {}, waitFrames: 1 }],
+  ["duplicate ids", { pointers: [{ id: 1, x: 0.2, y: 0.8 }, { id: 1, x: 0.8, y: 0.8 }] }],
+  ["unknown pointer field", { pointers: [{ id: 1, x: 0.2, y: 0.8, zone: "left" }] }],
+  ["zero buttons", { pointers: [{ buttons: 0, id: 1, x: 0.2, y: 0.8 }] }],
+  ["out-of-range coordinate", { pointers: [{ id: 1, x: 1.1, y: 0.8 }] }],
+])("scenario parser rejects malformed multi-pointer input: %s", async (_label, step) => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-pointers-invalid-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "invalid-pointers",
+    schemaVersion: 1,
+    steps: [step],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { code: expect.stringMatching(/^TN_PLAYTEST_SCENARIO_(?:INVALID|STEP_INVALID)$/u) },
+  });
+});
+
 test("world assertions preserve and validate a deterministic runtime fingerprint", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-"));
   const scenario = {

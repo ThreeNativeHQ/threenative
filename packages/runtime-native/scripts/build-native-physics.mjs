@@ -11,7 +11,7 @@ const manifest = join(runtimeRoot, 'native', 'physics', 'Cargo.toml');
 const targetDir = join(runtimeRoot, '.runtime', 'physics-target');
 const requested = new Set(process.argv.slice(2));
 const checkOnly = requested.delete('--check');
-const supported = new Set(['--android', '--ios', '--ios-device', '--ios-simulator']);
+const supported = new Set(['--android', '--desktop', '--ios', '--ios-device', '--ios-simulator']);
 for (const argument of requested) {
   if (!supported.has(argument)) {
     throw new Error(`Unknown native physics target option: ${argument}`);
@@ -24,6 +24,14 @@ if (requested.has('--ios')) {
 }
 
 const targets = [];
+if (requested.has('--desktop')) {
+  const rustVersion = spawnSync('rustc', ['-vV'], { encoding: 'utf8' });
+  const host = rustVersion.status === 0
+    ? /^host:\s*(\S+)$/mu.exec(rustVersion.stdout)?.[1]
+    : null;
+  if (!host) throw new Error('rustc -vV did not report a host target for desktop physics');
+  targets.push([host]);
+}
 if (requested.has('--android')) {
   const gradleProperties = readFileSync(join(runtimeRoot, 'android', 'gradle.properties'), 'utf8');
   const ndkVersion = gradleProperties.match(/^android\.ndkVersion=(.+)$/m)?.[1];
@@ -64,7 +72,10 @@ if (
 }
 
 for (const [target, linker] of targets) {
-  const artifact = join(targetDir, target, 'release', 'libthreenative_native_physics.a');
+  const libraryName = target.includes('windows')
+    ? 'threenative_native_physics.lib'
+    : 'libthreenative_native_physics.a';
+  const artifact = join(targetDir, target, 'release', libraryName);
   if (checkOnly) {
     console.log(`${target}: ${artifact}`);
     continue;

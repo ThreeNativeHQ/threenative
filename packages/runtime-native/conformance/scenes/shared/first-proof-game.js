@@ -15,6 +15,7 @@ export async function startFirstProofGame(canvas, dimensions) {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
   const material = new THREE.MeshStandardMaterial({ color: 0x4488ff, roughness: 0.45, metalness: 0.05 });
   const cube = new THREE.Mesh(geometry, material);
+  cube.rotation.set(0.35, 0.55, 0);
   scene.add(cube);
 
   const light = new THREE.DirectionalLight(0xffffff, 3);
@@ -22,8 +23,6 @@ export async function startFirstProofGame(canvas, dimensions) {
   scene.add(light);
 
   function frame() {
-    cube.rotation.x += 0.01;
-    cube.rotation.y += 0.015;
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

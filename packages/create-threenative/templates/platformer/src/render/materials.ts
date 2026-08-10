@@ -1,4 +1,3 @@
-// Generated for you. These are ordinary Three.js materials; own the look here.
 import { MeshStandardMaterial } from "three";
 import { palette, toon } from "./palette.js";
 

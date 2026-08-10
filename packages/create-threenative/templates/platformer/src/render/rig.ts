@@ -1,13 +1,6 @@
 import { BoxGeometry, Group, Mesh, SphereGeometry } from "three";
 import { createMaterials } from "./materials.js";
 
-export interface CharacterRig {
-  readonly arms: [Group, Group];
-  readonly legs: [Group, Group];
-  readonly root: Group;
-  readonly torso: Group;
-}
-
 function limb(
   side: number,
   y: number,
@@ -22,7 +15,7 @@ function limb(
   return joint;
 }
 
-export function createCharacterRig(): CharacterRig {
+export function createCharacterRig() {
   const materials = createMaterials();
   const root = new Group();
   const torso = new Group();
@@ -52,7 +45,7 @@ export function createCharacterRig(): CharacterRig {
 }
 
 export function animateCharacter(
-  rig: CharacterRig,
+  rig: ReturnType<typeof createCharacterRig>,
   state: string,
   time: number,
   speed: number,

@@ -10,6 +10,7 @@ export async function startScene(canvas, dimensions) {
   const camera = new THREE.PerspectiveCamera(65, dimensions.width / dimensions.height, 0.1, 100);
   camera.position.z = 3;
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xff8844 }));
+  mesh.rotation.set(0.35, 0.55, 0);
   scene.add(mesh);
 
   let resizeSeen = false;
@@ -25,8 +26,6 @@ export async function startScene(canvas, dimensions) {
   cancelAnimationFrame(rafId);
 
   function frame() {
-    mesh.rotation.x += 0.02;
-    mesh.rotation.y += 0.01;
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

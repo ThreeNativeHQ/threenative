@@ -1,7 +1,8 @@
 # PRD-053 — multi-touch input, and what actually caps core
 
-**Status: PROPOSED, 2026-08-09.** Evidence:
-`docs/verification/probe-real-game-cross-platform-2026-08-09.md`.
+**Status: BLOCKED AT ANDROID DEVICE PROOF, 2026-08-09.** Evidence:
+`docs/verification/probe-real-game-cross-platform-2026-08-09.md` and
+`docs/verification/prd-053-multitouch-2026-08-09.md`.
 
 **What this owns:** whether `InputMap` reports more than one pointer, and what number (if
 any) limits the size of `@threenative/core`.
@@ -96,7 +97,20 @@ owning the meaning, which is the same split the physics and render boundaries al
    written and **not proven on any platform**.
 5. No new interpretation surface in core: no zone, gesture, joystick or button concept.
 
-## 6. Open
+## 6. Native budget review
+
+The focused native tree is **56,974 lines**, above the charter's 50,000-line review trigger.
+PRD-053 adds only the SDL finger-event bridge needed to preserve touch identity through the
+owned host and the standalone Android verifier needed to prove the same behavior against the
+real APK. Neither is gameplay or an alternate input model.
+
+The kill switch is direct: if the SDL bridge cannot deliver stable simultaneous pointer ids,
+delete it rather than grow a parallel native gesture/input abstraction; if the verifier cannot
+produce a fail-closed real-emulator result, keep it out of parity and do not claim Android
+support. The failed API-35 device run is recorded in the verification evidence, so this PRD
+remains here rather than moving to `done/`.
+
+## 7. Open
 
 Whether `pressure`, `width`/`height` and `pointerType` should be carried through. The host
 already dispatches them. Nothing in the probe needed them, so this PRD does not add them.

@@ -1,4 +1,3 @@
-// Generated for you. Camera framing is yours to edit.
 import type { PerspectiveCamera } from "three";
 
 export function setupCamera(camera: PerspectiveCamera): void {

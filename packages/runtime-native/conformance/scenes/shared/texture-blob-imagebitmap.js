@@ -30,7 +30,6 @@ export async function startScene(canvas, dimensions) {
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff }));
   scene.add(mesh);
   function frame() {
-    mesh.rotation.z += 0.01;
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

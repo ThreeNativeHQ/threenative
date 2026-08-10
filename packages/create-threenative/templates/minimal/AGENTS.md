@@ -32,9 +32,9 @@ clean-machine distribution proof; macOS, Windows, iOS, and physical hardware rem
 `pnpm build --target desktop` runs this same source on a native host with **no browser**.
 Three things break there, and none of them fail on the web build:
 
-1. **No real DOM.** `document` exists only as a Three.js compatibility stub. The DOM HUD in
-   `main.ts` is web-only, so keep gameplay, scoring and state transitions in the scene and
-   let the HUD be a read-only view of `ctx.state`.
+1. **No real DOM.** `document` exists only as a Three.js compatibility stub. The accessible
+   DOM score in `main.ts` remains a web convenience; the generated `src/render/hud.ts` is
+   camera-parented Three.js geometry, so its score, counter and clock run with the game.
 2. **No dynamic `import()` and no `window.localStorage` reach.** The native build is one
    bundled file; save games go through your own JSON via `ctx.state`.
 3. **`.raw` is web-only.** `ctx.physics.world.raw` is a Rapier object in the browser and
@@ -47,14 +47,20 @@ without thinking about it. If you only ever ship to the web, ignore this section
 
 ```
 src/
-  main.ts               defineGame(...); HUD is plain DOM here
+  main.ts               defineGame(...) + accessible web DOM score
   scenes/Play.ts        gameplay: load, enter, update, exit
   entities/Player.ts    a plain class, not an ECS
-  render/               palette, camera, sky, lighting, materials, postprocessing — YOURS
-  state.ts              the state shape the HUD reads
+  render/               palette, camera, lighting, HUD geometry, materials, post — YOURS
+  state.ts              the state shape gameplay publishes
 playtests/play.playtest.json  one scenario, run by pnpm test
 threenative.config.ts   renderer + plugins. No visual options, by design.
 ```
+
+`src/render/hud.ts` is generated user-owned source, not a framework widget. It uses instanced
+plane geometry rather than `CanvasTexture`, and the scene registers it with `ctx.entities` so
+native and web dispose it the same way. Rewrite its glyphs, labels, colours or layout freely.
+Touch controls are not generated yet: keep keyboard mappings for now, then add the small
+pointer-action mapping when the core multitouch surface from PRD-053 is available.
 
 ## How to write gameplay here
 

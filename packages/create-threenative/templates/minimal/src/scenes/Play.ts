@@ -3,6 +3,7 @@ import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@thr
 import { BoxGeometry, Mesh, type PerspectiveCamera } from "three";
 import { Player } from "../entities/Player.js";
 import { setupCamera } from "../render/camera.js";
+import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { floorMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -19,6 +20,11 @@ export class Play extends Scene<GameState, PhysicsContext> {
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     setupCamera(ctx.camera as PerspectiveCamera);
+    ctx.add(ctx.camera);
+    const hud = ctx.entities.add(
+      "hud",
+      createHud(ctx.camera as PerspectiveCamera, "SCORE", "ITEMS"),
+    );
     const floor = new Mesh(new BoxGeometry(10, 0.2, 4), floorMaterial);
     floor.position.y = -0.1;
     floor.receiveShadow = true;
@@ -40,8 +46,16 @@ export class Play extends Scene<GameState, PhysicsContext> {
       if (body === player.body) ctx.state.set((state) => ({ score: state.score + 1 }));
     });
 
+    let elapsed = 0;
     return (frameCtx, dt) => {
       player.update(frameCtx, dt);
+      elapsed += dt;
+      const state = frameCtx.state.getState();
+      hud.update({
+        counter: Math.abs(player.mesh.position.x) * 10,
+        primary: state.score,
+        seconds: elapsed,
+      });
       frameCtx.state.set({ playerX: player.mesh.position.x });
     };
   }

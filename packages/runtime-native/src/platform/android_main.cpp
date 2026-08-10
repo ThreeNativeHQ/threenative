@@ -146,7 +146,6 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
         );
         LOGI("Device playtest mailbox configured");
     }
-
     // Execute the script
     LOGI("About to call evalScript...");
     bool success = runtime->evalScript(scriptContent, scriptPath);

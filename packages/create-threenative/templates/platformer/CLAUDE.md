@@ -36,11 +36,17 @@ Godot-named nodes keeps that correct without thinking about it.
   route with the level. General navmesh pathfinding is browser-only.
 - `src/entities/Pickup.ts` is an ordinary gameplay class.
 - `src/level/` contains plain level helpers and checkpoint state.
-- `src/render/` is ordinary Three.js source. It has no framework imports. The six baseline
-  files are `palette.ts`, `camera.ts`, `sky.ts`, `lighting.ts`, `materials.ts`, and
-  `postprocessing.ts`.
+- `src/render/` is ordinary Three.js source. It has no framework imports. Its baseline
+  concerns include palette, camera, sky, lighting, materials, postprocessing, and the
+  camera-parented geometry HUD in `hud.ts`.
 - `src/scenes/Level.ts` is the live caller that wires the pieces together.
 - `playtests/` proves movement, collection, stomping, respawn, and one-way platforms.
+
+`src/render/hud.ts` is generated user-owned source, not a framework widget. It renders hearts,
+coins and a clock as instanced planes without `CanvasTexture`, so it follows the portable game
+onto desktop and Android. The React HUD and menu remain web conveniences. Touch controls are
+not generated yet; add the small pointer-action mapping after the core multitouch surface from
+PRD-053 lands.
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
 `.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
