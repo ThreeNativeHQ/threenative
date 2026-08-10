@@ -13,7 +13,7 @@ Everything below is the original 2026-08-02 plan and its failed run, retained be
 as the record of what had *not* been observed at the time. **Do not execute it.** The RN
 route it prescribes is deleted; `react-native-webgpu` is not a dependency of this repo.
 Physical-hardware and frame-rate debt stays open — see
-[`../PRDs/production-readiness/PRD-056-physical-mobile-qualification.md`](../PRDs/production-readiness/PRD-056-physical-mobile-qualification.md).
+[`../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md`](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md).
 
 **Original charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
 **Background:** [`../architecture/NATIVE-RUNTIME.md`](../architecture/NATIVE-RUNTIME.md) —

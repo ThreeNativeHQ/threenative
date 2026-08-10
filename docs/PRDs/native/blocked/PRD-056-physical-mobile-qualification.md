@@ -4,6 +4,9 @@ prd_contract: v1
 
 # PRD-056 — Physical mobile production qualification
 
+**Filed under `native/blocked/`** — every remaining item needs hardware or a signing identity
+this machine does not have. See that folder's README for the rule.
+
 **Status:** PLANNING COMPLETE; EXECUTION BLOCKED. No physical Android device, physical iOS
 device, Android production-signed artifact, Apple signing identity, or Apple provisioning
 profile was supplied to this author lane. PRD-053 and PRD-054 are also currently blocked in
