@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-060 — Promoted consumer distribution
 
-**Status:** PLANNING ONLY — EXECUTION BLOCKED. PRD-054 does not have an exact-candidate
+**Status:** BLOCKED — NOT STARTED. PRD-054 does not have an exact-candidate
 three-target parity PASS, PRD-059 is not implemented, no exact-candidate release run has
 completed, `create-threenative` and `@threenative/runtime-native` return npm `E404`, and the
 required npm, desktop-signing, Android-signing, and Apple signing/notarization credentials were
