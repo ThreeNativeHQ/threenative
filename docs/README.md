@@ -1,5 +1,10 @@
 # Docs map
 
+**Picking up the native lane?** Start at
+[NEXT-STEPS-2026-08-09.md](NEXT-STEPS-2026-08-09.md) — the executable work queue as of
+`fd92899`, with its evidence in
+[verification/unblocked-2026-08-09-android-touch.md](verification/unblocked-2026-08-09-android-touch.md).
+
 [`CHARTER.md`](architecture/CHARTER.md) is the **only binding document**. Everything
 under `docs/` either implements it (PRDs, verification) or explores what comes after it
 (strategy, architecture, product). When a doc here disagrees, `CHARTER.md` wins until it is
