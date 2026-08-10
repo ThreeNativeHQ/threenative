@@ -91,7 +91,7 @@ is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 
 | Item | PRD | State |
 |---|---|---|
-| **Tier 1 native reliability** | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) | ❌ not started — **every phase is executable on this host.** Finishes PRD-054 criterion 1, PRD-055 criterion 2 and PRD-058 Phase 5; defines the tier split above |
+| **Tier 1 native reliability** | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) | ⚠️ executed; **Tier 1 not reached** — [ledger](../verification/tier-1-2026-08-10.md) records Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android emulator `27/40/0/1`; all three Phase 4 controls are **UNVERIFIED** with exit `254`. The PRD makes no mobile-readiness claim. |
 | **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/PRD-061-round-4-paired-capability-proof.md) | ❌ not started — **the only PRD pointing at beta row 3**; needs no hardware. Round 3's `budget` stop condition must clear first |
 | Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | ⚠️ closed — live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so the visual-improvement evidence stays unmet |
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; current aggregate rerun remains non-green |

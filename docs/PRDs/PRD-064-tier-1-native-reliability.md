@@ -1,7 +1,10 @@
 # PRD-064 — Tier 1 native reliability: finish what a device-free machine can prove
 
-**Status: NOT STARTED, 2026-08-10.** Every phase below is executable on this host. No
-physical device, no Apple identity, no release credential, no CI minute is required.
+**Status: TIER 1 NOT REACHED, 2026-08-10.** Evidence: `docs/verification/tier-1-2026-08-10.md`.
+The executed target split is Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android
+emulator `27/40/0/1`; the three Phase 4 controls are **UNVERIFIED** with exit `254`. This PRD
+makes no mobile-readiness claim. Every phase below is executable on this host. No physical
+device, no Apple identity, no release credential, no CI minute is required.
 
 **Complexity: 6 → MEDIUM mode.** Two red conformance rows, one blocked row decision, one
 unrun emulator matrix, one same-hardware performance proof, one ledger.
