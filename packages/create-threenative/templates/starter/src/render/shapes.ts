@@ -73,14 +73,14 @@ export function roundedBox(
   return welded;
 }
 
-export interface ShapeOptions {
+export interface IShapeOptions {
   readonly castShadow?: boolean;
   readonly radius?: number;
   readonly receiveShadow?: boolean;
   readonly segments?: number;
 }
 
-function shadowed(mesh: Mesh, options: ShapeOptions): Mesh {
+function shadowed(mesh: Mesh, options: IShapeOptions): Mesh {
   mesh.castShadow = options.castShadow ?? true;
   mesh.receiveShadow = options.receiveShadow ?? true;
   return mesh;
@@ -92,13 +92,13 @@ export function block(
   height: number,
   depth: number,
   material: Material,
-  options: ShapeOptions = {},
+  options: IShapeOptions = {},
 ): Mesh {
   const geometry = roundedBox(width, height, depth, options.radius ?? 0.14, options.segments ?? 3);
   return shadowed(new Mesh(geometry, material), options);
 }
 
-export function ball(radius: number, material: Material, options: ShapeOptions = {}): Mesh {
+export function ball(radius: number, material: Material, options: IShapeOptions = {}): Mesh {
   const segments = options.segments ?? 16;
   const geometry = new SphereGeometry(radius, segments, Math.max(6, Math.round(segments / 2)));
   return shadowed(new Mesh(geometry, material), options);
@@ -109,7 +109,7 @@ export function tube(
   radiusBottom: number,
   height: number,
   material: Material,
-  options: ShapeOptions = {},
+  options: IShapeOptions = {},
 ): Mesh {
   const geometry = new CylinderGeometry(radiusTop, radiusBottom, height, options.segments ?? 16);
   return shadowed(new Mesh(geometry, material), options);
@@ -119,7 +119,7 @@ export function spike(
   radius: number,
   height: number,
   material: Material,
-  options: ShapeOptions = {},
+  options: IShapeOptions = {},
 ): Mesh {
   const geometry = new ConeGeometry(radius, height, options.segments ?? 14);
   return shadowed(new Mesh(geometry, material), options);

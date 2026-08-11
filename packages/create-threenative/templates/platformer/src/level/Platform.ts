@@ -1,4 +1,4 @@
-import { CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
+import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type { Vector3 } from "three";
 import { platform as platformMesh } from "../render/terrain.js";
 import type { GameCtx } from "../scenes/Level.js";

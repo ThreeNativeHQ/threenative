@@ -5,9 +5,24 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, test } from 'vitest';
 
-import { packageIosSimulator, stageIosSimulatorApp } from '../scripts/package-ios.mjs';
+import {
+  packageIosSimulator,
+  runIosPackageCli,
+  stageIosSimulatorApp,
+} from '../scripts/package-ios.mjs';
 
 const roots = [];
+const VALID_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC',
+  'base64',
+);
+const infoPlist = `<plist><dict>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+</dict></plist>`;
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
@@ -23,7 +38,7 @@ test('staging replaces the bundle and records every packaged game asset checksum
   mkdirSync(join(templateApp, 'game'), { recursive: true });
   mkdirSync(join(assets, 'models'), { recursive: true });
   mkdirSync(join(assets, 'textures'), { recursive: true });
-  writeFileSync(join(templateApp, 'Info.plist'), '<plist/>');
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(join(templateApp, 'game', 'stale.bin'), 'stale');
@@ -31,12 +46,18 @@ test('staging replaces the bundle and records every packaged game asset checksum
   writeFileSync(join(assets, 'models', 'level.glb'), 'model');
   writeFileSync(join(assets, 'textures', 'x.png'), 'texture');
 
-  const report = stageIosSimulatorApp({ assets, bundle, output, templateApp });
+  const report = stageIosSimulatorApp({ assets, bundle, orientation: 'portrait', output, templateApp });
   assert.equal(readFileSync(join(output, 'threenative-ios'), 'utf8'), 'prebuilt-host');
   assert.equal(readFileSync(join(output, 'native-smoke.js'), 'utf8'), 'new-game');
   assert.equal(readFileSync(join(output, 'game', 'textures', 'x.png'), 'utf8'), 'texture');
   assert.equal(existsSync(join(output, 'game', 'stale.bin')), false);
   assert.equal(report.host, 'ios-simulator-arm64');
+  assert.equal(report.orientation, 'portrait');
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
+  assert.doesNotMatch(
+    readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /UIInterfaceOrientationLandscape/u,
+  );
   assert.equal(report.bundleSha256, createHash('sha256').update('new-game').digest('hex'));
   assert.deepEqual(report.assets, [
     {
@@ -59,6 +80,24 @@ test('staging replaces the bundle and records every packaged game asset checksum
   );
 });
 
+test('iOS no-config staging preserves the compatibility version in the artifact', () => {
+  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-defaults-'));
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+
+  const report = stageIosSimulatorApp({ bundle, output, templateApp });
+  const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
+  assert.match(plist, /<key>CFBundleShortVersionString<\/key>\s*<string>0\.1\.13<\/string>/u);
+  assert.equal(report.version, '0.1.13');
+});
+
 test('iOS staging allows missing assets, clears stale files, and rejects a file path', () => {
   const root = mkdtempSync(join(tmpdir(), 'threenative-ios-assets-missing-'));
   roots.push(root);
@@ -66,7 +105,7 @@ test('iOS staging allows missing assets, clears stale files, and rejects a file 
   const output = join(root, 'game.app');
   const bundle = join(root, 'game.js');
   mkdirSync(join(templateApp, 'game'), { recursive: true });
-  writeFileSync(join(templateApp, 'Info.plist'), '<plist/>');
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(join(templateApp, 'game', 'stale.bin'), 'stale');
@@ -90,6 +129,84 @@ test('iOS staging allows missing assets, clears stale files, and rejects a file 
   );
 });
 
+test('iOS staging maps configured app fields and compiles a declared icon into the app artifact', () => {
+  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-icon-'));
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  const icon = join(root, 'icon.png');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  writeFileSync(icon, VALID_PNG);
+
+  const report = stageIosSimulatorApp({
+    assets: undefined,
+    bundle,
+    config: {
+      app: {
+        id: 'com.studio.vulpine',
+        name: 'Vulpine',
+        version: '9.8.7',
+        build: 42,
+        icon,
+      },
+      display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true },
+      window: { title: 'Vulpine Window', width: 1111, height: 777, resizable: false },
+    },
+    output,
+    templateApp,
+    compileIcon: (catalog, compiled) => {
+      assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024.png')).equals(VALID_PNG), true);
+      writeFileSync(join(compiled, 'Assets.car'), Buffer.from('compiled-app-icon'));
+    },
+  });
+
+  assert.equal(readFileSync(join(output, 'native-smoke.js'), 'utf8'), 'new-game');
+  assert.equal(readFileSync(join(output, 'Assets.car'), 'utf8'), 'compiled-app-icon');
+  assert.equal(existsSync(join(output, 'Assets.xcassets')), false);
+  assert.deepEqual(
+    {
+      appId: report.appId,
+      appName: report.appName,
+      version: report.version,
+      build: report.build,
+      orientation: report.orientation,
+    },
+    {
+      appId: 'com.studio.vulpine',
+      appName: 'Vulpine',
+      version: '9.8.7',
+      build: 42,
+      orientation: 'portrait',
+    },
+  );
+  const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
+  for (const pattern of [
+    /<key>CFBundleIdentifier<\/key>\s*<string>com\.studio\.vulpine<\/string>/u,
+    /<key>CFBundleDisplayName<\/key>\s*<string>Vulpine<\/string>/u,
+    /<key>CFBundleName<\/key>\s*<string>Vulpine<\/string>/u,
+    /<key>CFBundleShortVersionString<\/key>\s*<string>9\.8\.7<\/string>/u,
+    /<key>CFBundleVersion<\/key>\s*<string>42<\/string>/u,
+    /<string>UIInterfaceOrientationPortrait<\/string>/u,
+    /<key>TNFullscreen<\/key>\s*<false\/>/u,
+    /<key>TNKeepScreenOn<\/key>\s*<true\/>/u,
+    /<key>TNWindowTitle<\/key>\s*<string>Vulpine Window<\/string>/u,
+    /<key>TNWindowWidth<\/key>\s*<integer>1111<\/integer>/u,
+    /<key>TNWindowHeight<\/key>\s*<integer>777<\/integer>/u,
+    /<key>TNWindowResizable<\/key>\s*<false\/>/u,
+    /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
+  ]) {
+    assert.match(plist, pattern);
+  }
+  assert.doesNotMatch(plist, /UIInterfaceOrientationLandscape/u);
+  assert.equal(report.icon, icon);
+  assert.equal(report.iconArtifact, 'Assets.car');
+});
+
 test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', async () => {
   await assert.rejects(
     packageIosSimulator({ arch: 'x64', bundle: 'game.js', output: 'game.app', platform: 'linux' }),
@@ -111,6 +228,20 @@ test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', 
     }),
     /checksum mismatch/u,
   );
+});
+
+test('iOS CLI forwards the declared orientation before host validation', async () => {
+  const forwarded = [];
+  const report = await runIosPackageCli(
+    ['--bundle', 'game.js', '--output', 'game.app', '--orientation', 'portrait'],
+    async (options) => {
+      forwarded.push(options);
+      return { orientation: options.orientation };
+    },
+  );
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].orientation, 'portrait');
+  assert.equal(report.orientation, 'portrait');
 });
 
 test('the published package includes the iOS packager without C++ source', () => {

@@ -14,7 +14,7 @@ namespace mystral {
 struct RuntimeConfig {
     int width = 800;
     int height = 600;
-    const char* title = "Mystral Game";
+    const char* title = "ThreeNative Game";
     bool fullscreen = false;
     bool vsync = true;
     bool resizable = true;

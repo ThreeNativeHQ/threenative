@@ -1,11 +1,11 @@
-import type { Ctx } from "@threenative/core";
-import { Area3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { Area3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, Mesh, SphereGeometry, type Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
 import type { GameState } from "../state.js";
 import type { Character, PLATFORMER_FEEL } from "./Character.js";
 
-type GameCtx = Ctx<GameState, PhysicsContext>;
+type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 export class Patrol {
   readonly mesh: Group;

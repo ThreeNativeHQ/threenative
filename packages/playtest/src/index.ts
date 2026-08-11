@@ -30,6 +30,8 @@ export type {
   IPlaytestDeviceResponse,
   IPlaytestGameplayObservation,
   IPlaytestObservationSnapshot,
+  IPlaytestPerformanceObservation,
+  IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   IPlaytestSetupRequest,
   IPlaytestWorldObservation,
@@ -49,6 +51,7 @@ export {
 } from "./scenario.js";
 export type {
   IPlaytestPathAssertion,
+  IPlaytestPerformanceAssertion,
   IPlaytestPointer,
   IPlaytestScenario,
   IPlaytestSignalAssertion,

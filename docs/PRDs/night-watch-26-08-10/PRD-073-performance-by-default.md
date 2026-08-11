@@ -4,12 +4,12 @@ prd_contract: v1
 
 # PRD-073 — Performance shipped by default: build the instrument, then close the gaps that are the framework's to close
 
-**Status: SCOPING, 2026-08-10. NOTHING IN THIS PRD IS IMPLEMENTED, AND NOTHING IN IT IS
-MEASURED.** Every finding in §2 and §3 is a **code read** of this working tree at commit
-`ac6fed9`, quoted with `file:line`. No frame was timed, no scene was profiled, and no
-before/after exists. That is the finding, not an omission: **no gate in this repository
-measures the frame cost of a framework game on any platform**, so "high performance by
-default" is currently an unverified claim. Phase 0 exists to stop it being one.
+**Status: PHASE 0 PROVEN; PHASES 1, 3, AND 4 IMPLEMENTED; PHASE 2 OPEN, 2026-08-11.**
+The opening findings in §2 and §3 are a **code read** of the starting tree at commit
+`ac6fed9`; the implementation and desktop-web measurements are recorded in §7. Phase 0
+now measures the real render loop and fails closed when performance observations disappear.
+Compressed-asset decoder design and implementation remain open. No mobile-readiness, device
+performance, or physical-hardware claim is made.
 
 No mobile-readiness claim, no iOS claim, no physical-hardware claim is made anywhere in this
 document.
@@ -56,11 +56,12 @@ Two things are true at once today:
    leaks every texture it ever loaded. A game running at 22 fps passes every gate in this
    repository. None of these announce themselves.
 
-The reason they stay quiet is the same in all three cases: **there is no instrument.**
-`ctx.fps` exists and one example prints it (`examples/abyss-framework/src/scenes/Abyss.ts:240`),
-but nothing observes it, no assertion reads it, and `renderer.info` — draw calls, triangles,
-GPU memory — is not referenced anywhere in `packages/`. So a performance regression is
-invisible to CI and to a playtest, which means it is invisible full stop.
+At the starting commit, the reason they stayed quiet was the same in all three cases:
+**there was no instrument.** `ctx.fps` existed and one example printed it
+(`examples/abyss-framework/src/scenes/Abyss.ts:240`), but nothing observed it, no assertion
+read it, and `renderer.info` — draw calls, triangles, GPU memory — was not referenced in
+`packages/`. Phase 0 now closes the frame-cost part of that gap; the remaining asset and
+render decisions stay phase-gated and target-scoped.
 
 That ordering is the whole shape of this PRD. **Phase 0 builds the instrument. Nothing else
 in this document is authorised to start until Phase 0 produces a number**, because every
@@ -131,10 +132,10 @@ Consequence: a change that halves the frame rate of every scaffolded game passes
 repository's stated rule is that a check reporting green while asserting nothing is its most
 dangerous failure. This is that, for performance.
 
-There is already a home for the fix: `runtimeDiagnosticsSeries`, the per-frame observation
-channel used by `visual.entityVisible.throughoutFrames`
-(`packages/playtest/src/assertions.ts:583-587`). A frame-cost series belongs in the same
-channel, not in a new one.
+There is already a home for the fix: the bounded bridge `runtimeDiagnosticsSeries` provider.
+The runner now records its performance-only samples as `performanceSeries`; visual
+`entityVisible.throughoutFrames` data remains in the visual observation series, so the two
+sample kinds cannot be mistaken for one another.
 
 ### G2 — The asset loader cannot open a compressed asset. Engine gap.
 
@@ -212,13 +213,15 @@ is the model for what G5's fix looks like.
 
 ## 4. Solution, phased
 
-### Phase 0 — The instrument. Gates every phase below it.
+### Phase 0 — The instrument. IMPLEMENTED AND PROVEN FOR DESKTOP WEB.
 
 Frame cost becomes an observed, assertable quantity on both halves of the codebase.
 
 1. The playtest bridge reports a per-frame cost sample — at minimum frame milliseconds from
    the loop, plus `renderer.info` draw calls and triangles where the active renderer exposes
-   them — into the existing `runtimeDiagnosticsSeries` channel.
+   them — through the existing `runtimeDiagnosticsSeries` provider. The standalone report
+   stores those performance-only samples under `performanceSeries`, separate from visual
+   throughout-frame observations.
 2. A `performance` assertion family joins the vocabulary in
    `packages/playtest/src/assertions.ts`, with bounds phrased as maxima a scenario opts into
    (`maxFrameMsP95`, `maxDrawCalls`, `maxTriangles`). Fail closed: a scenario asking for a
@@ -233,11 +236,12 @@ The `--target android|ios` path the same runner already supports means the same 
 produces device numbers without new harness work. Whether it is run here is an operator
 call, not this PRD's claim.
 
-**Exit criterion:** a deliberately regressed scene — one that draws visibly more than the
-template ships — fails a performance assertion that the unmodified template passes. Until
-that is demonstrated, the instrument is not proven and Phases 1–4 stay closed.
+**Exit criterion:** met by the permanent real render-loop regressed-scene control in the
+focused playtest suite and by the three unmodified desktop-web template scenarios recorded
+in §7. The control fails when draw-call or triangle observation is removed and when the real
+scene exceeds its declared bounds.
 
-### Phase 1 — Dispose what was loaded. Authorised on G3's code read alone.
+### Phase 1 — Dispose what was loaded. IMPLEMENTED AND UNIT-TESTED.
 
 `release()` and `clear()` dispose the GPU resources they drop: `Texture.dispose()` for
 textures, and a traversal disposing geometries, materials, and material-held textures for a
@@ -248,7 +252,7 @@ double-dispose.
 This phase does not need a Phase 0 number — an unfreed GPU allocation is a defect at any
 frame rate — but it lands after Phase 0 so its effect is visible.
 
-### Phase 2 — Compressed assets, without breaking native. Needs a Phase 0 number.
+### Phase 2 — Compressed assets, without breaking native. OPEN.
 
 Design question first, code second. The decoders are WASM; native has no WASM and no dynamic
 import. Candidate answers, none chosen here:
@@ -266,7 +270,7 @@ Whichever wins, the framework rule stands: **a backend that cannot honour an opt
 construction.** Silently loading an uncompressed fallback on one platform is a gameplay bug
 that only appears on that platform.
 
-### Phase 3 — Make resolution a decision. Needs a Phase 0 number.
+### Phase 3 — Make resolution a decision. IMPLEMENTED; broader tuning remains open.
 
 Record the current DPR-1 behaviour as an intentional default — comment, test, and one line of
 documentation — and expose a single resolution scale on the renderer config so a game can
@@ -274,7 +278,7 @@ ask for more or less. **No adaptive-resolution controller ships in this phase.**
 frame-rate-driven feedback loop is a tuning system, and tuning systems are how v1 died; if
 Phase 0's numbers argue for one it gets its own PRD and its own evidence.
 
-### Phase 4 — A measured pass over the template render layer. Needs a Phase 0 number.
+### Phase 4 — A measured pass over the template render layer. IMPLEMENTED IN GENERATED USER SOURCE.
 
 With draw calls and frame milliseconds visible, revisit shadow map size, shadow camera
 extent, and static-transform flags in each template's `src/render/`, and write the trade into
@@ -307,25 +311,57 @@ work spent.
 Following the repository's fail-closed rule everywhere.
 
 - **Units.** `packages/core/__tests__/assets.spec.ts` for disposal, including the
-  double-release case. `packages/playtest/__tests__/` for the new assertion family, including
-  the empty-series case, which must fail rather than vacuously pass.
-- **The game.** One playtest scenario per template asserting the performance family against
-  the real build, re-run on every later change to the render or asset path.
-- **The negative control.** The regressed-scene scenario from Phase 0's exit criterion is
-  kept as a permanent test. Without it, an assertion that stopped observing anything would
-  keep reporting green — the precise v1 failure this repository exists to avoid.
+  double-release case. `packages/playtest/__tests__/` covers the separated performance and
+  visual channels, real renderer-count bounds, missing-count failure, and the empty-series
+  case, which must fail rather than vacuously pass.
+- **The game.** One playtest scenario per template asserts the performance family against
+  the real build; §7 records the actual desktop-web frame, draw-call, and triangle values.
+  Re-run these scenarios on every later change to the render or asset path.
+- **The negative control.** The permanent regressed-scene control drives Three.js geometry
+  through `FixedStepLoop` and `installThreePlaytestBridge`. It turns red both when the scene
+  exceeds declared draw/triangle bounds and when those observations are removed. Without
+  it, an assertion that stopped observing anything could keep reporting green — the precise
+  v1 failure this repository exists to avoid.
 - **What will not be claimed.** No result from this PRD says mobile-ready. Web and desktop
   results say what they are; a device number is claimed only where a device executed it, on
   named hardware, with the run pasted.
 
-## 7. Open questions
+## 7. Implementation and verification record
 
-1. **What does a frame actually cost today?** Unknown on every platform, for every template.
-   Phase 0 answers it, and until it does, the ranking in §3 is reasoning from code, not from
-   measurement, and may be wrong about which gap matters most.
-2. **Is DPR 1 the right default?** It is currently an accident that is probably correct.
-   Phase 0 plus Phase 3 turn it into a decision either way.
-3. **Which Phase 2 answer?** Blocked on Phase 0 and on PRD-071's bundle-size position.
+The Phase 0 template runs below are desktop-web executions in headed Chromium under the
+repository's Linux `xvfb` display. The values are the first retained live entries in each
+scenario's `performanceSeries`, copied from the runner JSON; they are observations, not
+thresholds owned by this PRD.
+
+| Template | Scenario | First observed frame sample | Result |
+| --- | --- | --- | --- |
+| minimal | `play` | `{"frameMs":1099.9,"drawCalls":18,"triangles":1357}` | PASS |
+| starter | `play` | `{"frameMs":183.39999999999986,"drawCalls":1,"triangles":1}` | PASS |
+| platformer | `platformer-jump` | `{"frameMs":116.69999999999982,"drawCalls":64,"triangles":3977}` | PASS |
+
+Run command:
+
+```text
+xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates
+```
+
+Observed result: exit 0; minimal, starter, and platformer scaffolded playtests passed. The
+three rows above are desktop-web evidence only. No Android, iOS, simulator, physical-device,
+or mobile-readiness claim follows from them.
+
+The permanent negative control is unit-driven but uses the production `FixedStepLoop` and
+Three.js bridge: a 32-box scene reports 32 draw calls and 384 triangles against declared
+maximums of 8 and 96, and the same real loop reports a failed assertion when those two
+observations are removed. The empty performance series also fails closed.
+
+## 8. Open questions
+
+1. **What does a frame actually cost today?** Three desktop-web template runs now answer
+   this for the committed workloads in §7. Native and device values remain unmeasured here.
+2. **Is DPR 1 the right default?** Phase 3 records it as the intentional default and exposes
+   a scale; whether a future game needs a tuned value remains a game decision.
+3. **Which Phase 2 answer?** Still blocked on the Phase 0 numbers and on PRD-071's
+   bundle-size position.
 4. **Does `pnpm test:browser`'s headless environment produce frame timings worth asserting
    on?** WebGPU already needs `xvfb` for non-blank output here. If headless timing proves too
    noisy to gate, the performance assertions may have to be recorded-only in CI and enforced

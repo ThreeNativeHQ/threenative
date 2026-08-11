@@ -2,7 +2,7 @@ import { type BufferAttribute, Mesh, PerspectiveCamera, PlaneGeometry, Vector2 }
 import { acceleratedRaycast } from "three-mesh-bvh";
 import { describe, expect, it, vi } from "vitest";
 import { ScenePicker } from "../src/picking.js";
-import { Viewport, type ViewportSize } from "../src/viewport.js";
+import { type IViewportSize, Viewport } from "../src/viewport.js";
 
 function renderer(canvas: HTMLCanvasElement) {
   return {
@@ -19,8 +19,8 @@ function renderer(canvas: HTMLCanvasElement) {
   };
 }
 
-function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: ViewportSize } {
-  const canvas = new EventTarget() as HTMLCanvasElement & { size: ViewportSize };
+function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: IViewportSize } {
+  const canvas = new EventTarget() as HTMLCanvasElement & { size: IViewportSize };
   Object.defineProperties(canvas, {
     clientHeight: { configurable: true, get: () => canvas.size.height },
     clientWidth: { configurable: true, get: () => canvas.size.width },

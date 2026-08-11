@@ -1,19 +1,19 @@
 import { AudioListener, Object3D, PositionalAudio, Audio as ThreeAudio, type Vector3 } from "three";
 
-export interface AudioBusOptions {
+export interface IAudioBusOptions {
   readonly camera: Object3D;
   readonly gestureTarget?: EventTarget;
   readonly listener?: AudioListener;
   readonly source?: () => EventTarget | undefined;
 }
 
-export interface AudioPlayOptions {
+export interface IAudioPlayOptions {
   readonly fade?: number;
   readonly loop?: boolean;
   readonly volume?: number;
 }
 
-export interface AudioRuntimeSnapshot {
+export interface IAudioRuntimeSnapshot {
   readonly queued: number;
   readonly voices: number;
 }
@@ -30,7 +30,7 @@ export class AudioBus {
   #unlocked = false;
   #disposed = false;
 
-  constructor(options: AudioBusOptions) {
+  constructor(options: IAudioBusOptions) {
     this.#camera = options.camera;
     this.listener = options.listener ?? new AudioListener();
     const source = options.source ?? (() => (typeof window === "undefined" ? undefined : window));
@@ -71,7 +71,7 @@ export class AudioBus {
     for (const { start } of queued) start();
   }
 
-  play(buffer: AudioBuffer, options: AudioPlayOptions = {}): ThreeAudio {
+  play(buffer: AudioBuffer, options: IAudioPlayOptions = {}): ThreeAudio {
     assertBuffer(buffer);
     const voice = new ThreeAudio(this.listener);
     configureVoice(voice, options);
@@ -83,7 +83,7 @@ export class AudioBus {
   playAt(
     buffer: AudioBuffer,
     source: Object3D | Vector3,
-    options: AudioPlayOptions = {},
+    options: IAudioPlayOptions = {},
   ): PositionalAudio {
     assertBuffer(buffer);
     if (typeof (this.listener.context as { createPanner?: unknown }).createPanner !== "function")
@@ -100,7 +100,7 @@ export class AudioBus {
     return voice;
   }
 
-  music(buffer: AudioBuffer, options: AudioPlayOptions = {}): ThreeAudio {
+  music(buffer: AudioBuffer, options: IAudioPlayOptions = {}): ThreeAudio {
     return this.play(buffer, { ...options, loop: options.loop ?? true });
   }
 
@@ -154,7 +154,7 @@ export class AudioBus {
   }
 }
 
-export function audioRuntimeSnapshot(): AudioRuntimeSnapshot {
+export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let queued = 0;
   let voices = 0;
   for (const bus of buses) {
@@ -164,7 +164,7 @@ export function audioRuntimeSnapshot(): AudioRuntimeSnapshot {
   return { queued, voices };
 }
 
-function configureVoice(voice: ThreeAudio<AudioNode>, options: AudioPlayOptions): void {
+function configureVoice(voice: ThreeAudio<AudioNode>, options: IAudioPlayOptions): void {
   const volume = options.volume ?? 1;
   if (!Number.isFinite(volume) || volume < 0)
     throw new RangeError("volume must be finite and non-negative.");

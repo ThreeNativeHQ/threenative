@@ -14,18 +14,18 @@ const MOVE_RADIUS = 72;
 const BUTTON_RADIUS = 64;
 const EDGE = 36;
 
-interface TouchPointer {
+interface ITouchPointer {
   readonly position: Vector2;
 }
 
-interface TouchViewport {
+interface ITouchViewport {
   readonly height: number;
   readonly width: number;
 }
 
 type TouchControlName = "dash" | "jump" | "move";
 
-export function touchControlPoint(size: TouchViewport, name: TouchControlName): Vector2 {
+export function touchControlPoint(size: ITouchViewport, name: TouchControlName): Vector2 {
   if (name === "move") return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS - EDGE);
 
   if (size.height > size.width) {
@@ -41,7 +41,7 @@ export function touchControlPoint(size: TouchViewport, name: TouchControlName): 
   return new Vector2(x, size.height - BUTTON_RADIUS - EDGE);
 }
 
-export interface TouchInput {
+export interface ITouchInput {
   readonly dashPressed: boolean;
   readonly jumpPressed: boolean;
   readonly move: Vector2;
@@ -50,7 +50,7 @@ export interface TouchInput {
 export class TouchControls {
   readonly root = new Group();
   #camera: PerspectiveCamera;
-  #input: TouchInput = { dashPressed: false, jumpPressed: false, move: new Vector2() };
+  #input: ITouchInput = { dashPressed: false, jumpPressed: false, move: new Vector2() };
   #wasDash = false;
   #wasJump = false;
   #moveBase: Mesh;
@@ -94,7 +94,7 @@ export class TouchControls {
     camera.add(this.root);
   }
 
-  update(pointers: ReadonlyMap<number, TouchPointer>, size: TouchViewport): TouchInput {
+  update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
     const jumpCenter = touchControlPoint(size, "jump");
     const dashCenter = touchControlPoint(size, "dash");
     const jump = this.#at(pointers, jumpCenter, BUTTON_RADIUS);
@@ -142,7 +142,7 @@ export class TouchControls {
     this.#activeMaterial.dispose();
   }
 
-  #layout(size: TouchViewport): void {
+  #layout(size: ITouchViewport): void {
     const worldHeight = 2 * Math.tan(MathUtils.degToRad(this.#camera.fov / 2));
     const pixels = worldHeight / Math.max(1, size.height);
     const worldWidth = size.width * pixels;
@@ -157,8 +157,8 @@ export class TouchControls {
   }
 
   #isMovementPointer(
-    pointer: TouchPointer,
-    size: TouchViewport,
+    pointer: ITouchPointer,
+    size: ITouchViewport,
     dashCenter: Vector2,
     jumpCenter: Vector2,
   ): boolean {
@@ -172,7 +172,7 @@ export class TouchControls {
     );
   }
 
-  #at(pointers: ReadonlyMap<number, TouchPointer>, center: Vector2, radius: number): boolean {
+  #at(pointers: ReadonlyMap<number, ITouchPointer>, center: Vector2, radius: number): boolean {
     const radiusSquared = radius * radius;
     return [...pointers.values()].some(
       (pointer) => pointer.position.distanceToSquared(center) <= radiusSquared,

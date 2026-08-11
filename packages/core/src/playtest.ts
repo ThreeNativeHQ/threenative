@@ -12,8 +12,8 @@ import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenat
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
-import type { GamePluginHooks, GamePluginRuntime } from "./game.js";
-import type { Ctx } from "./scene.js";
+import type { IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import type { ICtx } from "./scene.js";
 
 const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
@@ -21,7 +21,7 @@ const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userA
 export function playtest<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
->(options: PlaytestOptions = {}): GamePluginHooks<TState, TPhysics> {
+>(options: IPlaytestOptions = {}): IGamePluginHooks<TState, TPhysics> {
   let dispose: (() => void) | undefined;
   let attached: Promise<void> | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
@@ -43,6 +43,9 @@ export function playtest<
         entities: () => bridgeEntities(ctx),
         components: () => componentObservations(ctx.entities.snapshot()),
         ...(runtime === undefined ? {} : { fixedStep: runtime.fixedStep, tick: runtime.tick }),
+        ...(runtime?.runtimeDiagnosticsSeries === undefined
+          ? {}
+          : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
         ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime),
         gameplayChannels: () => gameplayChannels(ctx),
@@ -59,7 +62,7 @@ export function playtest<
         attached = undefined;
         contactHistory = [];
       };
-      // Game.start() awaits plugin setup and only calls gameLoop.start() afterwards, so
+      // IGame.start() awaits plugin setup and only calls gameLoop.start() afterwards, so
       // awaiting here holds the entire loop -- including the physics plugin's first
       // simulation step -- until the runner is on the line.
       if (attached !== undefined) {
@@ -92,7 +95,7 @@ export const PLAYTEST_ATTACH_TIMEOUT_MS = 30_000;
  */
 function holdUntilAttached(
   bridge: IPlaytestBridgeV1,
-  options: PlaytestOptions,
+  options: IPlaytestOptions,
 ): Promise<void> | undefined {
   if (options.holdUntilAttached !== true) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -118,7 +121,7 @@ function holdUntilAttached(
   });
 }
 
-export interface PlaytestOptions {
+export interface IPlaytestOptions {
   readonly events?: () => JsonValue[];
   /**
    * Hold the frame loop until a runner attaches. Default false.
@@ -155,7 +158,7 @@ function runtimeObservation(
   };
 }
 function bridgeEntities<TState extends Record<string, unknown>, TPhysics>(
-  ctx: Ctx<TState, TPhysics>,
+  ctx: ICtx<TState, TPhysics>,
 ): IThreePlaytestEntity[] {
   return [
     { id: "camera.main", object: ctx.camera },
@@ -173,7 +176,7 @@ function entityObject(entity: object | undefined): ThreeObject3D | undefined {
   return candidate instanceof Object3D ? candidate : undefined;
 }
 function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
-  ctx: Ctx<TState, TPhysics>,
+  ctx: ICtx<TState, TPhysics>,
   contactHistory: IPlaytestContactObservation[],
   seed: number | null,
   replayRuntime: IPlaytestWorldObservation["runtime"],
@@ -213,22 +216,22 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
   };
 }
 type GameplayChannel = "runtime.contacts" | "runtime.tags";
-interface ContactEvent {
+interface IContactEvent {
   readonly body: object;
   readonly entity?: string;
   readonly started: boolean;
 }
-interface ContactSource {
-  drainContacts(): readonly ContactEvent[];
+interface IContactSource {
+  drainContacts(): readonly IContactEvent[];
 }
 
 function gameplayChannels<TState extends Record<string, unknown>, TPhysics>(
-  _ctx: Ctx<TState, TPhysics>,
+  _ctx: ICtx<TState, TPhysics>,
 ): GameplayChannel[] {
   return ["runtime.contacts", "runtime.tags"];
 }
 function drainContacts<TState extends Record<string, unknown>, TPhysics>(
-  ctx: Ctx<TState, TPhysics>,
+  ctx: ICtx<TState, TPhysics>,
   history: IPlaytestContactObservation[],
 ): IPlaytestContactObservation[] {
   for (const id of Object.keys(ctx.entities.snapshot())) {
@@ -247,10 +250,10 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   }
   return [...history];
 }
-function entitySources(entity: object | undefined): ContactSource[] {
+function entitySources(entity: object | undefined): IContactSource[] {
   if (entity === undefined) return [];
   return Object.values(entity).filter(
-    (value): value is ContactSource =>
+    (value): value is IContactSource =>
       typeof value === "object" &&
       value !== null &&
       "drainContacts" in value &&
@@ -258,7 +261,7 @@ function entitySources(entity: object | undefined): ContactSource[] {
   );
 }
 function findEntityId<TState extends Record<string, unknown>, TPhysics>(
-  ctx: Ctx<TState, TPhysics>,
+  ctx: ICtx<TState, TPhysics>,
   target: object,
 ): string | undefined {
   return Object.keys(ctx.entities.snapshot()).find((id) => {
@@ -288,7 +291,7 @@ function componentObservations(
 }
 
 function stateResources<TState extends Record<string, unknown>, TPhysics>(
-  ctx: Ctx<TState, TPhysics>,
+  ctx: ICtx<TState, TPhysics>,
 ) {
   return {
     read: () => {
@@ -296,7 +299,10 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
       const state = ctx.state.getState();
       assertJsonSafe(state);
       const value = state as Record<string, JsonValue>;
-      return { GameState: value, state: value };
+      return Object.fromEntries([
+        ["GameState", value],
+        ["state", value],
+      ]);
     },
   };
 }

@@ -1,14 +1,14 @@
 import type { IPlaytestScenario, IPlaytestStep } from "../scenario.js";
 import { invalidScenario, rejectUnknownKeys } from "../scenario.js";
 
-interface RecordingSample {
+interface IRecordingSample {
   keys: string[];
   pointer?: [number, number, number, number, number];
   tick: number;
 }
 
-interface RecordingValue {
-  input: RecordingSample[];
+interface IRecordingValue {
+  input: IRecordingSample[];
   randomState: number;
   runtime: { agent: string; core: string; rapier: string | null; step: number };
   seed: number;
@@ -16,7 +16,7 @@ interface RecordingValue {
   version: 1;
 }
 
-interface RecordingOracle {
+interface IRecordingOracle {
   movement: {
     entity: string;
     position: [number, number, number];
@@ -70,7 +70,7 @@ function recordPointer(value: unknown, path: string): [number, number, number, n
   return pointer;
 }
 
-function validateRecording(value: unknown, scenarioPath: string): RecordingValue {
+function validateRecording(value: unknown, scenarioPath: string): IRecordingValue {
   const root = recordObject(value, scenarioPath);
   rejectUnknownKeys(root, ["input", "randomState", "runtime", "seed", "ticks", "version"], scenarioPath, "recording");
   if (root.version !== 1) throw invalidScenario(scenarioPath, "recording.version must be 1.");
@@ -109,7 +109,7 @@ function validateRecording(value: unknown, scenarioPath: string): RecordingValue
   return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
 }
 
-function validateRecordingOracle(value: unknown, scenarioPath: string): RecordingOracle {
+function validateRecordingOracle(value: unknown, scenarioPath: string): IRecordingOracle {
   if (value === undefined) {
     throw invalidScenario(
       scenarioPath,
@@ -134,7 +134,7 @@ function validateRecordingOracle(value: unknown, scenarioPath: string): Recordin
 }
 
 function sampleSteps(
-  sample: RecordingSample,
+  sample: IRecordingSample,
   ticks: number,
   release: boolean,
   label: string | undefined,
@@ -159,7 +159,7 @@ function sampleSteps(
   };
 }
 
-function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestStep[] {
+function emitSteps(recording: IRecordingValue, scenarioPath: string): IPlaytestStep[] {
   const steps: IPlaytestStep[] = [];
   const first = recording.input[0];
   if (first === undefined) throw invalidScenario(scenarioPath, "recording input is empty.");
@@ -178,8 +178,8 @@ function emitSteps(recording: RecordingValue, scenarioPath: string): IPlaytestSt
 }
 
 function behaviorAssertions(
-  recording: RecordingValue,
-  oracle: RecordingOracle,
+  recording: IRecordingValue,
+  oracle: IRecordingOracle,
   scenarioPath: string,
 ) {
   const activeTicks = recording.input.reduce((total, sample, index) => {

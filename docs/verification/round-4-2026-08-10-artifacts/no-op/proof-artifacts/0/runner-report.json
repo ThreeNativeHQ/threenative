@@ -1,0 +1,795 @@
+{
+  "after": {
+    "frame": 6,
+    "position": [-5, 0.7, 0],
+    "rotation": [0, 0, 0, 1],
+    "tick": 308
+  },
+  "before": {
+    "frame": 0,
+    "position": [-5, 0.7, 0],
+    "rotation": [0, 0, 0, 1],
+    "tick": 15
+  },
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'replayMatches'.",
+      "severity": "error",
+      "suggestion": "Observed resource value did not change during the scenario. Inspect effect-log.json for the owning system's resource writes, run tn build --project . --json for undeclared writes, and check whether duplicate/stale systems or route/collision setup prevented the state transition."
+    },
+    {
+      "code": "TN_PLAYTEST_RESOURCE_TRANSITION_ASSERTION_FAILED",
+      "message": "Resource 'state' path 'replayMatches' did not match the expected labeled-step transition.",
+      "observedRuntimePath": "observations.json/resourceSeries",
+      "severity": "error",
+      "suggestion": "Inspect the failed and restored labeled samples and fix the retry transition."
+    },
+    {
+      "code": "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+      "message": "Entity 'mission' state 'playing' did not equal 'won'.",
+      "severity": "error",
+      "suggestion": "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact."
+    },
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "1 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "1 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    },
+    {
+      "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+      "message": "Entity 'player' moved 0.000000, below required 1.5.",
+      "severity": "error",
+      "suggestion": "Check input bindings, collision response, and whether the scenario holds input long enough."
+    },
+    {
+      "code": "TN_PLAYTEST_AXIS_DELTA_ASSERTION_FAILED",
+      "message": "Entity 'player' did not move 1.5 units on +x.",
+      "severity": "error",
+      "suggestion": "Check route setup, collision response, and whether the scenario ends on the expected vertical surface."
+    },
+    {
+      "artifactPath": "effect-log.json",
+      "code": "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
+      "message": "Expected contact/trigger for 'player' was not observed 1 time(s).",
+      "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=player] | effect-log.json/entries[kind=service|event,entity=player]",
+      "path": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json/assert/contacts/player",
+      "severity": "error",
+      "sourcePath": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json",
+      "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+    },
+    {
+      "artifactPath": "effect-log.json",
+      "code": "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
+      "message": "Expected contact/trigger for 'mission' was not observed 1 time(s).",
+      "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=mission] | effect-log.json/entries[kind=service|event,entity=mission]",
+      "path": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json/assert/contacts/mission",
+      "severity": "error",
+      "sourcePath": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json",
+      "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+    },
+    {
+      "artifactPath": "observations.json",
+      "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
+      "message": "Expected mean settled-pose distance for 'crate' to reach 0.05m from step 'drop'; observed unavailablem across 0 bodies.",
+      "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
+      "path": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json/assert/settled/crate",
+      "severity": "error",
+      "sourcePath": "/tmp/threenative-proof-Yhga12/physics-puzzle.playtest.json",
+      "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
+    }
+  ],
+  "distance": 0,
+  "entity": "player",
+  "expectMoved": true,
+  "frames": 290,
+  "movementDelta": [0, 0, 0],
+  "observations": {
+    "components": {
+      "player": {
+        "isObject3D": {
+          "before": true,
+          "after": true
+        },
+        "uuid": {
+          "before": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+          "after": "9ead6070-5d04-4ef9-98ae-1fb828985a0e"
+        },
+        "name": {
+          "before": "",
+          "after": ""
+        },
+        "type": {
+          "before": "Mesh",
+          "after": "Mesh"
+        },
+        "up": {
+          "before": [0, 1, 0],
+          "after": [0, 1, 0]
+        },
+        "position": {
+          "before": [-5, 0.7, 0],
+          "after": [-5, 0.7, 0]
+        },
+        "rotation": {
+          "before": [0, 0, 0, "XYZ"],
+          "after": [0, 0, 0, "XYZ"]
+        },
+        "quaternion": {
+          "before": [0, 0, 0, 1],
+          "after": [0, 0, 0, 1]
+        },
+        "scale": {
+          "before": [1, 1, 1],
+          "after": [1, 1, 1]
+        },
+        "matrix": {
+          "before": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+          "after": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1]
+        },
+        "matrixWorld": {
+          "before": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+          "after": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1]
+        },
+        "matrixAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldNeedsUpdate": {
+          "before": false,
+          "after": false
+        },
+        "visible": {
+          "before": true,
+          "after": true
+        },
+        "castShadow": {
+          "before": false,
+          "after": false
+        },
+        "receiveShadow": {
+          "before": false,
+          "after": false
+        },
+        "frustumCulled": {
+          "before": true,
+          "after": true
+        },
+        "renderOrder": {
+          "before": 0,
+          "after": 0
+        },
+        "static": {
+          "before": false,
+          "after": false
+        },
+        "isMesh": {
+          "before": true,
+          "after": true
+        },
+        "count": {
+          "before": 1,
+          "after": 1
+        }
+      },
+      "mission": {
+        "state": {
+          "before": "playing",
+          "after": "playing"
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "drop",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 24
+      },
+      {
+        "label": "settled",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 114
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 187
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 211
+      },
+      {
+        "label": "replay-sequence",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 284
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "player": {
+            "isObject3D": true,
+            "uuid": "9ead6070-5d04-4ef9-98ae-1fb828985a0e",
+            "name": "",
+            "type": "Mesh",
+            "up": [0, 1, 0],
+            "position": [-5, 0.7, 0],
+            "rotation": [0, 0, 0, "XYZ"],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixWorld": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0.7, 0, 1],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 0,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          },
+          "mission": {
+            "state": "playing"
+          }
+        },
+        "tick": 308
+      }
+    ],
+    "console": [
+      {
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "text": "TN_SCENE_COLLAPSE:{\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":1,\"mergedMeshes\":0,\"movingParts\":0}",
+        "type": "info"
+      },
+      {
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "physicsDebugSeries": [],
+    "resources": {
+      "GameState": {
+        "before": {
+          "cratesAtRest": 0,
+          "mission": "playing",
+          "playerX": -5,
+          "replayMatches": false,
+          "score": 0
+        },
+        "after": {
+          "cratesAtRest": 0,
+          "mission": "playing",
+          "playerX": -5,
+          "replayMatches": false,
+          "score": 0
+        }
+      },
+      "state": {
+        "before": {
+          "cratesAtRest": 0,
+          "mission": "playing",
+          "playerX": -5,
+          "replayMatches": false,
+          "score": 0
+        },
+        "after": {
+          "cratesAtRest": 0,
+          "mission": "playing",
+          "playerX": -5,
+          "replayMatches": false,
+          "score": 0
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "drop",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 24
+      },
+      {
+        "label": "settled",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 114
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 187
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 211
+      },
+      {
+        "label": "replay-sequence",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 284
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "GameState": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          },
+          "state": {
+            "cratesAtRest": 0,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 308
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [
+        {
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        }
+      ],
+      "scene": {
+        "renderedEntities": [
+          {
+            "id": "player",
+            "projectedBounds": {
+              "max": [-0.3146689538934887, 0.09000256299156095],
+              "min": [-0.38960510059642217, -0.06895606656804198]
+            },
+            "visible": true
+          }
+        ]
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {
+          "mission": "playing"
+        },
+        "tags": {},
+        "audio": {
+          "queued": 0,
+          "voices": 0
+        },
+        "world": {
+          "seed": 6132,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+            "core": "0.1.0",
+            "randomState": 6132,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "drop",
+        "signals": [],
+        "tick": 24
+      },
+      {
+        "label": "settled",
+        "signals": [],
+        "tick": 114
+      },
+      {
+        "label": "push-to-goal",
+        "signals": [],
+        "tick": 187
+      },
+      {
+        "label": "goal-contact",
+        "signals": [],
+        "tick": 211
+      },
+      {
+        "label": "replay-sequence",
+        "signals": [],
+        "tick": 284
+      },
+      {
+        "label": "replay-complete",
+        "signals": [],
+        "tick": 308
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/tmp/round4-noop-physics/proof-artifacts/0",
+  "assertionResults": [
+    {
+      "details": {
+        "after": false,
+        "before": false,
+        "expected": {
+          "atSteps": [
+            {
+              "equals": false,
+              "label": "settled"
+            },
+            {
+              "equals": true,
+              "label": "replay-sequence"
+            }
+          ],
+          "equals": true,
+          "changed": true
+        },
+        "id": "state",
+        "path": "replayMatches",
+        "trivial": false
+      },
+      "id": "resource.state.replayMatches",
+      "pass": false
+    },
+    {
+      "details": {
+        "samples": [
+          {
+            "expected": {
+              "equals": false,
+              "label": "settled"
+            },
+            "pass": true,
+            "value": false
+          },
+          {
+            "expected": {
+              "equals": true,
+              "label": "replay-sequence"
+            },
+            "pass": false,
+            "value": false
+          }
+        ]
+      },
+      "id": "resource.state.replayMatches.atSteps",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": 6132,
+        "expectedRuntime": null,
+        "observed": 6132,
+        "observedRuntime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "core": "0.1.0",
+          "randomState": 6132,
+          "rapier": null,
+          "step": 0.016666666666666666
+        }
+      },
+      "id": "world.seed",
+      "pass": true
+    },
+    {
+      "details": {
+        "entity": "mission",
+        "expected": "won",
+        "observed": "playing"
+      },
+      "id": "states.mission",
+      "pass": false
+    },
+    {
+      "details": {
+        "consoleErrors": 1,
+        "networkErrors": 0,
+        "runtimeDiagnostics": 1
+      },
+      "id": "diagnostics",
+      "pass": false
+    },
+    {
+      "details": {
+        "distance": 0,
+        "minimum": 1.5
+      },
+      "id": "movement.distance",
+      "pass": false
+    },
+    {
+      "details": {
+        "axis": "+x",
+        "min": 1.5,
+        "rawDelta": 0,
+        "signedDelta": 0
+      },
+      "id": "movement.axisDelta",
+      "pass": false
+    },
+    {
+      "details": {
+        "count": 0,
+        "entity": "player",
+        "kind": "contact",
+        "minCount": 1,
+        "with": "solid-body"
+      },
+      "id": "contact.player",
+      "pass": false
+    },
+    {
+      "details": {
+        "count": 0,
+        "entity": "mission",
+        "kind": "trigger",
+        "minCount": 1,
+        "with": "goal"
+      },
+      "id": "contact.mission",
+      "pass": false
+    },
+    {
+      "details": {
+        "atStep": "settled",
+        "bodies": 0,
+        "compareToStep": "drop",
+        "entity": "crate",
+        "minimum": 30,
+        "sleeping": 0
+      },
+      "id": "settled.crate",
+      "pass": false
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "physics-puzzle-contact-settle-replay-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5190"
+}

@@ -1,5 +1,5 @@
 import { createReplayDriver } from "@threenative/core";
-import type { Game, GamePluginRuntime, Recording } from "@threenative/core";
+import type { IGame, IGamePluginRuntime, Recording } from "@threenative/core";
 import type { AbyssState } from "./scenes/Abyss.js";
 
 type ReplayPlugin = { readonly recording: Recording | undefined };
@@ -24,7 +24,7 @@ function dispatchKeys(target: EventTarget, held: Set<string>, keys: readonly str
   for (const key of keys) held.add(key);
 }
 
-function playerSnapshot(game: Game<AbyssState>): ReplayTrace[number] {
+function playerSnapshot(game: IGame<AbyssState>): ReplayTrace[number] {
   const player = game.ctx?.entities.snapshot().player;
   const position = player?.position;
   const score = player?.score;
@@ -51,9 +51,9 @@ function proofStepTicks(step: ReplayProofStep): number {
 }
 
 export function installReplayProof(
-  game: Game<AbyssState>,
+  game: IGame<AbyssState>,
   replayPlugin: ReplayPlugin,
-  getRuntime: () => GamePluginRuntime | undefined,
+  getRuntime: () => IGamePluginRuntime | undefined,
 ): void {
   Object.assign(globalThis, {
     __THREENATIVE_REPLAY__: {

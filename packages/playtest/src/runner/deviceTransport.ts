@@ -9,7 +9,7 @@ import {
   type IPlaytestDeviceResponse,
   type JsonValue,
 } from "../index.js";
-import { type BridgeTransport, PlaytestBridgeError } from "./bridgeClient.js";
+import { type IBridgeTransport, PlaytestBridgeError } from "./bridgeClient.js";
 
 export const ANDROID_TRANSPORT_CAPABILITIES = [
   "browser.console",
@@ -29,22 +29,22 @@ export interface IDeviceMailboxPaths {
   response: string;
 }
 
-export interface DevicePlaytestTransport extends BridgeTransport {
+export interface IDevicePlaytestTransport extends IBridgeTransport {
   start(): Promise<void>;
 }
 
-interface PendingCall {
+interface IPendingCall {
   reject(error: Error): void;
   resolve(value: unknown): void;
   timeout: ReturnType<typeof setTimeout>;
 }
 
-export class DeviceBridgeTransport implements DevicePlaytestTransport {
+export class DeviceBridgeTransport implements IDevicePlaytestTransport {
   readonly capabilities = ANDROID_TRANSPORT_CAPABILITIES;
   readonly endpoint: URL;
   private connected = false;
   private nextId = 1;
-  private readonly pending = new Map<string, PendingCall>();
+  private readonly pending = new Map<string, IPendingCall>();
   private readonly queue: IPlaytestDeviceRequest[] = [];
   private server?: Server;
   private waiters: Array<(connected: boolean) => void> = [];
@@ -152,7 +152,7 @@ export class DeviceBridgeTransport implements DevicePlaytestTransport {
   }
 }
 
-export class DeviceMailboxTransport implements DevicePlaytestTransport {
+export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   readonly capabilities = ANDROID_TRANSPORT_CAPABILITIES;
   private connected = false;
   private closed = false;

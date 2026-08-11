@@ -69,7 +69,10 @@ function validateScaffold() {
   if (!main.includes('TN_PLAYTEST_MAILBOX') || !main.includes('native-smoke')) {
     throw new Error('iOS entry point is missing the shared proof or playtest mailbox.');
   }
-  if (!plist.includes('$(PRODUCT_BUNDLE_IDENTIFIER)') || !plist.includes('<string>metal</string>')) {
+  if (
+    (!plist.includes('$(PRODUCT_BUNDLE_IDENTIFIER)') && !plist.includes('com.threenative.game')) ||
+    !plist.includes('<string>metal</string>')
+  ) {
     throw new Error('iOS Info.plist is missing its bundle identifier or Metal requirement.');
   }
 }

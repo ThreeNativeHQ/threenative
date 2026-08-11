@@ -1,6 +1,6 @@
 import { Vector2 } from "three";
 
-export interface InputAction {
+export interface IInputAction {
   readonly buttons?: readonly number[];
   readonly down?: readonly string[];
   readonly left?: readonly string[];
@@ -9,29 +9,29 @@ export interface InputAction {
   readonly up?: readonly string[];
 }
 
-export type InputBindings = Record<string, InputAction>;
+export type InputBindings = Record<string, IInputAction>;
 
-export interface InputGamepad {
+export interface IInputGamepad {
   readonly axes: ArrayLike<number>;
   readonly buttons: readonly { readonly pressed: boolean }[];
 }
 
-export type InputPlatformSource = () => readonly (InputGamepad | null)[];
+export type InputPlatformSource = () => readonly (IInputGamepad | null)[];
 
-export interface RawInputPointer {
+export interface IRawInputPointer {
   readonly id: number;
   buttons: number;
   readonly position: Vector2;
 }
 
-export interface RawInputState {
+export interface IRawInputState {
   readonly keys: ReadonlySet<string>;
   readonly pointer: {
     buttons: number;
     down: boolean;
     readonly position: Vector2;
   };
-  readonly pointers: ReadonlyMap<number, RawInputPointer>;
+  readonly pointers: ReadonlyMap<number, IRawInputPointer>;
   readonly gamepad: {
     axes: readonly number[];
     buttons: readonly boolean[];
@@ -56,13 +56,13 @@ const browserGamepads: InputPlatformSource = () =>
   (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
 
 export class InputMap {
-  readonly raw: RawInputState;
+  readonly raw: IRawInputState;
   #bindings: InputBindings;
   #target: EventTarget;
   #heldKeys = new Set<string>();
   #pointerPosition = new Vector2();
   #pointerButtons = 0;
-  #pointers = new Map<number, RawInputPointer>();
+  #pointers = new Map<number, IRawInputPointer>();
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
   #previousPressed = new Map<string, boolean>();
@@ -209,7 +209,7 @@ export class InputMap {
       tracked.buttons = buttons;
       tracked.position.set(x, y);
     }
-    const primary = this.#pointers.values().next().value as RawInputPointer | undefined;
+    const primary = this.#pointers.values().next().value as IRawInputPointer | undefined;
     if (primary !== undefined) {
       this.#pointerButtons = primary.buttons;
       this.#pointerPosition.copy(primary.position);

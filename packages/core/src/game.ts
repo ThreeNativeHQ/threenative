@@ -1,50 +1,52 @@
 import { type Camera, OrthographicCamera, PerspectiveCamera, Scene as ThreeScene } from "three";
-import { type AssetLoader, type AssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { SceneCollapse } from "./collapse.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
-import { FixedStepLoop } from "./loop.js";
+import { FixedStepLoop, type IRenderPerformanceSample } from "./loop.js";
 import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
-import { type Random, createRandom } from "./random.js";
-import { type RendererLike, type RendererOptions, createRenderer } from "./renderer.js";
-import type { Ctx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
+import { type IRandom, createRandom } from "./random.js";
+import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
+import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
-import { Viewport, type ViewportOptions } from "./viewport.js";
+import { type IViewportOptions, Viewport } from "./viewport.js";
 
 export type PluginCleanup = () => void;
 
-export interface GamePluginRuntime {
+export interface IGamePluginRuntime {
   readonly fixedStep: (ticks: number) => number;
   readonly tick: () => number;
-  readonly random?: Pick<Random, "state">;
+  readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
+  readonly random?: Pick<IRandom, "state">;
   rapier?: string | null;
   readonly seed: number | null;
   readonly step: number;
 }
 
-interface DevTools {
+interface IDevTools {
   snapshot(): EntitySnapshot;
 }
 
-type DevToolsHost = Record<string, unknown> & { __THREENATIVE__?: DevTools };
+type DevToolsHost = Record<string, unknown> & Partial<Record<"__THREENATIVE__", IDevTools>>;
 
-export interface GamePlatformSource {
+export interface IGamePlatformSource {
   readonly devToolsHost?: Record<string, unknown>;
   readonly input: NonNullable<ConstructorParameters<typeof InputMap>[3]>;
   readonly inputTarget?: EventTarget;
-  readonly renderer: NonNullable<RendererOptions["source"]>;
-  readonly viewport: NonNullable<ViewportOptions["source"]>;
+  readonly renderer: NonNullable<IRendererOptions["source"]>;
+  readonly viewport: NonNullable<IViewportOptions["source"]>;
   mountCanvas(canvas: HTMLCanvasElement, container?: HTMLElement): void;
   unmountCanvas(canvas: HTMLCanvasElement): void;
 }
 
 function installDevTools(entities: Registry, host: DevToolsHost | undefined): PluginCleanup {
-  const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+  const isDev =
+    (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev || host === undefined) return () => undefined;
-  const devTools: DevTools = {
-    ...(host.__THREENATIVE__ as (DevTools & Record<string, unknown>) | undefined),
+  const devTools: IDevTools = {
+    ...(host.__THREENATIVE__ as (IDevTools & Record<string, unknown>) | undefined),
     snapshot: () => entities.snapshot(),
   };
   host.__THREENATIVE__ = devTools;
@@ -54,39 +56,39 @@ function installDevTools(entities: Registry, host: DevToolsHost | undefined): Pl
       Object.entries(devTools).filter(([key]) => key !== "snapshot"),
     );
     host.__THREENATIVE__ =
-      Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as DevTools);
+      Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as IDevTools);
   };
 }
 
 export type GamePluginFunction<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
-> = (ctx: Ctx<TState, TPhysics>) => undefined | PluginCleanup;
+> = (ctx: ICtx<TState, TPhysics>) => undefined | PluginCleanup;
 
-export interface GamePluginHooks<
+export interface IGamePluginHooks<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
   setup?(
-    ctx: Ctx<TState, TPhysics>,
-    runtime?: GamePluginRuntime,
+    ctx: ICtx<TState, TPhysics>,
+    runtime?: IGamePluginRuntime,
   ): undefined | PluginCleanup | Promise<undefined | PluginCleanup>;
-  beforeUpdate?(ctx: Ctx<TState, TPhysics>, dt: number): void;
-  update?(ctx: Ctx<TState, TPhysics>, dt: number): void;
-  sceneExit?(ctx: Ctx<TState, TPhysics>): void;
-  dispose?(ctx: Ctx<TState, TPhysics>): void;
+  beforeUpdate?(ctx: ICtx<TState, TPhysics>, dt: number): void;
+  update?(ctx: ICtx<TState, TPhysics>, dt: number): void;
+  sceneExit?(ctx: ICtx<TState, TPhysics>): void;
+  dispose?(ctx: ICtx<TState, TPhysics>): void;
 }
 
 export type GamePlugin<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
-> = GamePluginFunction<TState, TPhysics> | GamePluginHooks<TState, TPhysics>;
+> = GamePluginFunction<TState, TPhysics> | IGamePluginHooks<TState, TPhysics>;
 
-export interface GameConfig<
+export interface IGameConfig<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
-  readonly assets?: AssetLoaderOptions;
+  readonly assets?: IAssetLoaderOptions;
   readonly camera?: CameraConfig;
   readonly canvas?: HTMLCanvasElement;
   readonly container?: HTMLElement;
@@ -94,10 +96,10 @@ export interface GameConfig<
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
   readonly maxSteps?: number;
-  readonly platform?: GamePlatformSource;
+  readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
-  readonly render?: Pick<RendererOptions, "preferWebGPU">;
-  readonly renderer?: RendererOptions;
+  readonly render?: Pick<IRendererOptions, "preferWebGPU">;
+  readonly renderer?: IRendererOptions;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
   readonly step?: number;
@@ -105,27 +107,27 @@ export interface GameConfig<
   readonly stateFlushMs?: number;
 }
 
-export interface PerspectiveCameraConfig {
+export interface IPerspectiveCameraConfig {
   readonly projection: "perspective";
   readonly fov?: number;
   readonly near?: number;
   readonly far?: number;
 }
 
-export interface OrthogonalCameraConfig {
+export interface IOrthogonalCameraConfig {
   readonly projection: "orthogonal";
   readonly size: number;
   readonly near?: number;
   readonly far?: number;
 }
 
-export type CameraConfig = PerspectiveCameraConfig | OrthogonalCameraConfig;
+export type CameraConfig = IPerspectiveCameraConfig | IOrthogonalCameraConfig;
 
-export interface Game<
+export interface IGame<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
-  readonly ctx: Ctx<TState, TPhysics> | undefined;
+  readonly ctx: ICtx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
   /** Rebuilds the requested scene from the game's declared initial state. */
@@ -165,6 +167,28 @@ function clearScene(scene: ThreeScene, particles: Set<GPUParticles3D>): void {
   scene.fog = null;
 }
 
+function rendererPerformanceMetrics(raw: unknown): {
+  drawCalls?: number;
+  triangles?: number;
+} {
+  if (typeof raw !== "object" || raw === null) return {};
+  const info = (raw as { info?: unknown }).info;
+  if (typeof info !== "object" || info === null) return {};
+  const render = (info as { render?: unknown }).render;
+  if (typeof render !== "object" || render === null) return {};
+  const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
+  const calls = drawCalls ?? (render as { calls?: unknown }).calls;
+  const triangles = (render as { triangles?: unknown }).triangles;
+  return {
+    ...(typeof calls === "number" && Number.isFinite(calls) && calls >= 0
+      ? { drawCalls: calls }
+      : {}),
+    ...(typeof triangles === "number" && Number.isFinite(triangles) && triangles >= 0
+      ? { triangles }
+      : {}),
+  };
+}
+
 function createCamera(config: CameraConfig | undefined): Camera {
   if (config === undefined) return new PerspectiveCamera(60, 1, 0.1, 2_000);
   validateCameraConfig(config);
@@ -176,12 +200,14 @@ function createCamera(config: CameraConfig | undefined): Camera {
   return new OrthographicCamera(-size, size, size, -size, near, far);
 }
 
-class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game<TState, TPhysics> {
-  #config: GameConfig<TState, TPhysics>;
-  #ctx: Ctx<TState, TPhysics> | undefined;
+class GameImpl<TState extends Record<string, unknown>, TPhysics>
+  implements IGame<TState, TPhysics>
+{
+  #config: IGameConfig<TState, TPhysics>;
+  #ctx: ICtx<TState, TPhysics> | undefined;
   #scene: Scene<TState, TPhysics> | undefined;
   #sceneFrame: SceneFrame<TState, TPhysics> | undefined;
-  #renderer: RendererLike | undefined;
+  #renderer: IRendererLike | undefined;
   #viewport: Viewport | undefined;
   #input: InputMap | undefined;
   #state: GameStore<TState>;
@@ -191,18 +217,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #cleanup: Array<() => void> = [];
   #particles = new Set<GPUParticles3D>();
   #entities: Registry | undefined;
-  #random: Random | undefined;
+  #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
   #scheduler: Scheduler | undefined;
-  #activePlugins: Array<GamePluginHooks<TState, TPhysics>> = [];
-  #disposedPlugins = new Set<GamePluginHooks<TState, TPhysics>>();
+  #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
+  #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
   #paused = false;
   #started = false;
 
-  constructor(config: GameConfig<TState, TPhysics>) {
+  constructor(config: IGameConfig<TState, TPhysics>) {
     this.#config = config;
     validateCameraConfig(config.camera);
     const startScene = this.#config.scenes[this.#config.start];
@@ -219,7 +245,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#initialState = { ...initialState };
   }
 
-  get ctx(): Ctx<TState, TPhysics> | undefined {
+  get ctx(): ICtx<TState, TPhysics> | undefined {
     return this.#ctx;
   }
 
@@ -239,7 +265,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     return this.#goto(name, this.#ctx);
   }
 
-  #goto(name: string, ctx: Ctx<TState, TPhysics>): Promise<void> {
+  #goto(name: string, ctx: ICtx<TState, TPhysics>): Promise<void> {
     const SceneType = this.#config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
@@ -262,7 +288,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     return Promise.resolve(loaded).then(() => this.#enterScene(scene, ctx));
   }
 
-  #enterScene(scene: Scene<TState, TPhysics>, ctx: Ctx<TState, TPhysics>): void {
+  #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
     const frame = scene.enter(ctx);
     if (frame !== undefined && typeof frame !== "function") {
       throw new Error("Scene.enter() must return a frame function or undefined.");
@@ -346,7 +372,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     // startup is doing, and the answer is this pass.
     const collapse = new SceneCollapse(threeScene as never);
     this.#collapse = collapse;
-    const ctx: Ctx<TState, TPhysics> = {
+    const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
         if (object instanceof GPUParticles3D) {
@@ -417,6 +443,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         this.#collapse?.frame();
         renderer.render(threeScene, camera);
         this.#scene?.render(ctx);
+        return rendererPerformanceMetrics(renderer.raw);
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
@@ -434,13 +461,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     });
     loopState.current = gameLoop;
     this.#loop = gameLoop;
-    const runtime: GamePluginRuntime = {
+    const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
       tick: gameLoop.tick,
       random,
       rapier: null,
       seed: this.#config.seed ?? null,
       step: gameLoop.step,
+      runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
     for (const plugin of this.#config.plugins ?? []) {
       const cleanup =
@@ -484,13 +512,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#teardown();
   }
 
-  #disposePlugin(plugin: GamePluginHooks<TState, TPhysics>, ctx: Ctx<TState, TPhysics>): void {
+  #disposePlugin(plugin: IGamePluginHooks<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
     if (this.#disposedPlugins.has(plugin)) return;
     this.#disposedPlugins.add(plugin);
     plugin.dispose?.(ctx);
   }
 
-  #teardown(startingCtx?: Ctx<TState, TPhysics>): void {
+  #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
     const ctx = this.#ctx ?? startingCtx;
     this.#loop?.stop();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
@@ -527,12 +555,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     this.#paused = false;
     this.#started = false;
     if ((ctx?.scene.children.length ?? 0) > 0)
-      throw new Error("Game teardown leaked scene objects.");
+      throw new Error("IGame teardown leaked scene objects.");
   }
 }
 
 export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>(
-  config: GameConfig<TState, TPhysics>,
-): Game<TState, TPhysics> {
+  config: IGameConfig<TState, TPhysics>,
+): IGame<TState, TPhysics> {
   return new GameImpl<TState, TPhysics>(config);
 }

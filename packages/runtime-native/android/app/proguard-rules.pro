@@ -4,7 +4,7 @@
 -keep class org.libsdl.app.** { *; }
 
 # Keep JNI classes
--keep class com.mystral.engine.** { *; }
+-keep class com.threenative.runtime.** { *; }
 
 # Keep native methods
 -keepclasseswithmembernames class * {

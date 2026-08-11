@@ -1,7 +1,7 @@
-import game, { type SmokeStatus, status } from "./game.js";
+import game, { type ISmokeStatus, status } from "./game.js";
 
 declare global {
-  var __THREENATIVE_NATIVE_SMOKE__: SmokeStatus | undefined;
+  var __THREENATIVE_NATIVE_SMOKE__: ISmokeStatus | undefined;
 }
 globalThis.__THREENATIVE_NATIVE_SMOKE__ = status;
 

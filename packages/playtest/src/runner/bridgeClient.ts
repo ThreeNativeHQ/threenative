@@ -35,7 +35,7 @@ const BROWSER_CAPABILITIES = [
 ] as const;
 
 /** The only seam between assertion orchestration and an application bridge. */
-export interface BridgeTransport {
+export interface IBridgeTransport {
   readonly capabilities: readonly string[];
   call<T>(method: string, argument?: unknown): Promise<T>;
   close(): Promise<void>;
@@ -57,7 +57,7 @@ export interface IPlaytestBridgeClient {
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
-export class PlaywrightTransport implements BridgeTransport {
+export class PlaywrightTransport implements IBridgeTransport {
   readonly capabilities = BROWSER_CAPABILITIES;
 
   constructor(
@@ -90,7 +90,7 @@ export async function connectPlaytestBridge(
 }
 
 export async function connectPlaytestBridgeTransport(
-  transport: BridgeTransport,
+  transport: IBridgeTransport,
   scenario: IPlaytestScenario,
   timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
 ): Promise<IPlaytestBridgeClient | undefined> {

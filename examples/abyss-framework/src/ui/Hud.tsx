@@ -1,4 +1,4 @@
-import type { Game } from "@threenative/core";
+import type { IGame } from "@threenative/core";
 import { useGameState } from "@threenative/ui";
 import type { AbyssState } from "../scenes/Abyss.js";
 
@@ -13,7 +13,7 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div className="text-[10px] text-dim">{children}</div>;
 }
 
-function Meter({ critical = false, fill, label, value }: MeterProps) {
+function Meter({ critical = false, fill, label, value }: IMeterProps) {
   return (
     <div className="w-[92px]">
       <div className="flex justify-between gap-2 text-[10px] text-dim">
@@ -30,14 +30,14 @@ function Meter({ critical = false, fill, label, value }: MeterProps) {
   );
 }
 
-interface MeterProps {
+interface IMeterProps {
   critical?: boolean;
   fill: string;
   label: string;
   value: number;
 }
 
-export function Hud({ game }: { game: Game<AbyssState> }) {
+export function Hud({ game }: { game: IGame<AbyssState> }) {
   const { elapsed, energy, fps, hull, hunters, pulsing, score, status } = useGameState(game);
   const depth = 4_180 + Math.floor(elapsed * 7);
 

@@ -11,6 +11,7 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "performance": {},
     "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 1.5 } },
     "resources": [
       { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },

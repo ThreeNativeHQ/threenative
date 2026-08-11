@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Game, defineGame } from "../src/game.js";
+import { type IGame, defineGame } from "../src/game.js";
 import { acceptHotUpdate } from "../src/hot.js";
 import { Scene } from "../src/scene.js";
 
@@ -140,7 +140,7 @@ describe("acceptHotUpdate", () => {
       },
       state: {},
       stop: () => undefined,
-    } as unknown as Game<State, undefined>;
+    } as unknown as IGame<State, undefined>;
 
     acceptHotUpdate(current, hotContext());
 
@@ -158,7 +158,7 @@ describe("acceptHotUpdate", () => {
       },
       state: {},
       stop: () => undefined,
-    } as unknown as Game<State, { numBodies: () => number }>;
+    } as unknown as IGame<State, { numBodies: () => number }>;
 
     acceptHotUpdate(current, hotContext());
 

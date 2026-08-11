@@ -1,5 +1,5 @@
-import { AudioBus, type Ctx, Scene, type SceneFrame } from "@threenative/core";
-import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
+import { AudioBus, type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { DoubleSide, Group, Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
 import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
@@ -15,11 +15,11 @@ import { ball, block, makeRandom, roundedBox, sculpture, spike, tube } from "../
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
-export type GameCtx = Ctx<GameState, PhysicsContext>;
+export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const KILL_PLANE = -4;
 
-export class Play extends Scene<GameState, PhysicsContext> {
+export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Group | undefined;
 
   static override readonly initialState: GameState = {
@@ -50,7 +50,7 @@ export class Play extends Scene<GameState, PhysicsContext> {
     console.info("TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb");
   }
 
-  override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     if (this.#assetProof === undefined) throw new Error("Starter proof assets did not load.");
     this.#assetProof.position.set(0, 1.7, -1.5);
     ctx.add(this.#assetProof);

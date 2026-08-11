@@ -1,26 +1,26 @@
 import type { Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
-import type { PhysicsBodyHandle, PhysicsColliderHandle, PhysicsWorldHandle } from "./handles.js";
-import type { PhysicsBody3D, PhysicsContext } from "./plugin.js";
-import { type PhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
+import type { IPhysicsContext, PhysicsBody3D } from "./plugin.js";
+import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
 export type AreaHandler = (body: PhysicsBody3D) => void;
 const MAX_CONTACT_LOG = 1_000;
 
-export interface AreaContact {
+export interface IAreaContact {
   readonly area: Area3D;
   readonly body: PhysicsBody3D;
   readonly entity?: string;
   readonly started: boolean;
 }
 
-export interface Area3DOptions {
+export interface IArea3DOptions {
   readonly entity?: string;
-  readonly physics?: PhysicsContext;
+  readonly physics?: IPhysicsContext;
   /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
-  readonly world?: PhysicsWorldHandle | unknown;
+  readonly world?: IPhysicsWorldHandle | unknown;
   readonly shape: CollisionShape3D;
   readonly position?: Pick<Vector3, "x" | "y" | "z">;
   /** Godot's collision_layer — which layers this area occupies. Default 1. */
@@ -34,19 +34,19 @@ type TransformRecord = [number, number, number, number, number, number, number, 
 function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
   const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
   if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("PhysicsSimulation returned a malformed transform.");
+    throw new Error("IPhysicsSimulation returned a malformed transform.");
   return result as TransformRecord;
 }
 
 export class Area3D {
   readonly entity: string | undefined;
-  readonly body: PhysicsBodyHandle;
-  readonly collider: PhysicsColliderHandle;
-  readonly #simulation: PhysicsSimulation;
-  readonly #physics: PhysicsContext | undefined;
+  readonly body: IPhysicsBodyHandle;
+  readonly collider: IPhysicsColliderHandle;
+  readonly #simulation: IPhysicsSimulation;
+  readonly #physics: IPhysicsContext | undefined;
   readonly #position = { x: 0, y: 0, z: 0 };
   #entered = new Map<number, PhysicsBody3D>();
-  #contacts: AreaContact[] = [];
+  #contacts: IAreaContact[] = [];
   #monitoring = true;
   #listeners: Record<AreaEvent, Set<AreaHandler>> = {
     bodyEntered: new Set(),
@@ -54,7 +54,7 @@ export class Area3D {
   };
   #disposed = false;
 
-  constructor(options: Area3DOptions) {
+  constructor(options: IArea3DOptions) {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.entity = options.entity;
@@ -135,7 +135,7 @@ export class Area3D {
     for (const handler of this.#listeners.bodyExited) handler(entered);
   }
 
-  drainContacts(): AreaContact[] {
+  drainContacts(): IAreaContact[] {
     const contacts = this.#contacts;
     this.#contacts = [];
     return contacts;

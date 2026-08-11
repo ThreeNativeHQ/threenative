@@ -33,7 +33,7 @@ phase gates are this file's subject. If a number disagrees, the value-propositio
 | 2 | Three templates scaffold, build, and pass their playtests from a clean machine | ✅ `pnpm test:templates`, scaffold-smoke in CI |
 | 3 | A paired result the vanilla arm cannot match — the Phase 2 exit gate | ⚠️ not yet; round 3 lost visual and cost |
 | 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ Tier 1 not reached — [PRD-064 ledger](../verification/tier-1-2026-08-10.md) records the measured browser, desktop, and Android outcomes; the aggregate remains non-green |
-| 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ Tier 1 not reached — [PRD-064 ledger](../verification/tier-1-2026-08-10.md) records the Phase 4 performance gate as **UNVERIFIED** because `profile:production` is not present in this checkout |
+| 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ Tier 1 not reached — [PRD-064 ledger](../verification/tier-1-2026-08-10.md) records all three Phase 4 negative controls as observed red; the positive unmodified-platformer performance measurement was not reached |
 
 Rows 3–5 are the beta blockers. Rows 1–2 are held, not finished — they stay green or the
 change does not land.
@@ -91,8 +91,8 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 
 | Item | PRD | State |
 |---|---|---|
-| **Tier 1 native reliability** | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) | ⚠️ executed; **Tier 1 not reached** — [ledger](../verification/tier-1-2026-08-10.md) records Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android emulator `27/40/0/1`; all three Phase 4 controls are **UNVERIFIED** with exit `254`. The PRD makes no mobile-readiness claim. |
-| **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/night-watch-26-08-10/PRD-061-round-4-paired-capability-proof.md) | ⚠️ **cleared to start 2026-08-10 — the owner granted one completed round 4.** The only PRD pointing at beta row 3; needs no hardware. Phase 0 must clear the `round:next` gate by writing `docs/verification/round-4-<date>.md` as its evidence arrives, **not** by editing round 3's ledger |
+| **Tier 1 native reliability** | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) | ⚠️ executed; **Tier 1 not reached** — [ledger](../verification/tier-1-2026-08-10.md) records Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android emulator `27/40/0/1`; all three Phase 4 controls are observed red with exit `1`, but the positive unmodified-platformer measurement was not reached. The PRD makes no mobile-readiness claim. |
+| **Round 4 — the Phase 2 paired proof** | [done/PRD-061](../PRDs/done/PRD-061-round-4-paired-capability-proof.md) | ⚠️ executed; **still not green** — physics-puzzle paired proof tied functionally at 0/1, while the framework won blind visual polish and vanilla won fair authored cost by 2 LOC; the real arms preserve their fail-closed missing-`runtime.physics` result, and the repaired no-op control reached assertion evaluation and failed the physics assertions. The kill switch is recorded; no fifth genre or arm rerun. Evidence: [round-4-2026-08-10.md](../verification/round-4-2026-08-10.md) |
 | Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | ⚠️ closed — live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so the visual-improvement evidence stays unmet |
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; the rerun is green on Browser (`67/0/0`) and Android emulator (`67/0/0`), while Desktop Linux is `66/0/1` because the desktop registry explicitly blocks native multitouch — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
 | The HUD hole on native | [PRD-055](../PRDs/native/blocked/PRD-055-native-hud-reopened.md) | ⚠️ open; `25-camera-parented-overlay` passes on desktop and Android, Android multitouch passes, and only the explicit desktop native-multitouch exclusion remains in the matrix — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
@@ -119,10 +119,14 @@ non-positive in two, no genre losing both, budgets green with no cap raised. Evi
 
 **⚠️ Phase 2 — capabilities vanilla does not have.** *Gate to exit:* hot reload/state
 preservation or physics reach ships with consumer-scoped proof the paired vanilla arm cannot
-match inside the same brief. *Not green:* round 3 was that instrument and the framework arm
-**lost** visual and cost on `open-world` while tying functionally
-(`verification/round-3-2026-08-09.md`). Hot reload is built; the paired comparison is not
-done. **+15 → ~75/100.**
+match inside the same brief. **Still not green:** round 3 lost visual and cost on `open-world`
+while tying functionally, and round 4's `physics-puzzle` proof also tied functionally at 0/1;
+the framework won blind visual polish, but vanilla won fair authored cost by 2 LOC; no framework-only capability
+was demonstrated because both real arms failed closed on missing `runtime.physics`. The
+no-op control reached assertion evaluation and failed its physics assertions, so the negative
+control is now physics-specific. Evidence: [round-4-2026-08-10.md](../verification/round-4-2026-08-10.md)
+and `verification/round-3-2026-08-09.md`. The kill switch prohibits a fifth genre or arm rerun.
+**+15 → ~75/100.**
 
 **⚠️ Phase 3 — the platform question.** Does not formally start until Phase 2 is green, but
 the native lane has already executed most of it. Spike 0a (rendering) and 0b (native physics)

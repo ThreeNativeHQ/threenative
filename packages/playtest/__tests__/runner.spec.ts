@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
+import type { JsonValue } from "../src/protocol.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { buildReport, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
@@ -208,6 +209,63 @@ test("frame-timed steps stay on the live browser loop", () => {
   expect(playtestStepWaitTicks({ release: true, waitTicks: 5 })).toBe(5);
 });
 
+test("runner carries performance samples in their separate report channel", () => {
+  const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [
+      { frameMs: 16, drawCalls: 2, triangles: 12 },
+      { frameMs: 18, drawCalls: 3, triangles: 20 },
+    ],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "performance.maxFrameMsP95", pass: true }));
+  expect(result.pass).toBe(true);
+});
+
+test("runner keeps performance samples out of visual throughout-frame observations", () => {
+  const currentScenario = scenario({
+    performance: { maxFrameMsP95: 20 },
+    visual: [{ entityVisible: { entity: "player", minProjectedPixels: 1, throughoutFrames: true } }],
+  });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, triangles: 12 }],
+  };
+  const visualSeries = [{
+    scene: {
+      renderedEntities: [{ id: "player", projectedBounds: { max: [0.5, 0.5], min: [-0.5, -0.5] } }],
+    },
+  }];
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], [], undefined, {}, true, {
+    runtimeDiagnosticsSeries: visualSeries,
+  });
+
+  expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
+  expect(result.observations?.visual?.runtimeDiagnosticsSeries).toEqual(visualSeries);
+  expect(result.assertionResults).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "performance.maxFrameMsP95", pass: true }),
+    expect.objectContaining({ id: "visual.0.entityVisible", pass: true }),
+  ]));
+  expect(result.pass).toBe(true);
+});
+
+test("runner does not reinterpret the shared series for visual-only scenarios", () => {
+  const currentScenario = scenario({ visual: [{ entityVisible: { entity: "player", minProjectedPixels: 1 } }] });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, triangles: 12 }],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.observations?.visual?.runtimeDiagnosticsSeries).toBeUndefined();
+});
+
 test("runner derives semantic series from labeled snapshots and the exported field list", () => {
   const currentScenario: IPlaytestScenario = {
     assert: {
@@ -253,5 +311,45 @@ test("runner derives semantic series from labeled snapshots and the exported fie
   expect(result.observations?.resourceSeries).toHaveLength(2);
   expect(result.observations?.componentSeries?.[1]?.snapshots.player?.health).toBe(2);
   expect(result.observations?.signals).toHaveLength(2);
+  expect(result.pass).toBe(true);
+});
+
+test("runner preserves physics debug series for contact and settled assertions", () => {
+  const currentScenario = scenario({
+    contacts: [{ atStep: "contact", entity: "player", kind: "contact", minCount: 1, with: "solid-body" }],
+    settled: [{
+      atStep: "settled",
+      compareToStep: "drop",
+      entity: "crate",
+      minBodies: 2,
+      minMeanPoseDistance: 0.05,
+    }],
+  });
+  const debugSnapshot = (offset: number, includeContact: boolean): JsonValue => ({
+    artifact: {
+      primitives: [
+        ...(includeContact ? [{ category: "contact", id: "player:solid-body" }] : []),
+        { category: "sleep", entity: "crate.0", value: 1 },
+        { category: "sleep", entity: "crate.1", value: 1 },
+        { category: "center-of-mass", entity: "crate.0", position: [offset, 0, 0] },
+        { category: "center-of-mass", entity: "crate.1", position: [offset, 1, 0] },
+      ],
+    },
+  });
+  const physicsDebugSeries = [
+    { label: "drop", snapshot: debugSnapshot(0, false), tick: 1 },
+    { label: "contact", snapshot: debugSnapshot(1, true), tick: 2 },
+    { label: "settled", snapshot: debugSnapshot(1, false), tick: 3 },
+  ];
+  const afterSnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 3 },
+    physicsDebugSeries,
+  };
+
+  const result = buildReport(CONFIG, currentScenario, undefined, afterSnapshot, [], []);
+
+  expect(result.observations?.physicsDebugSeries).toEqual(physicsDebugSeries);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.player", pass: true }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
   expect(result.pass).toBe(true);
 });

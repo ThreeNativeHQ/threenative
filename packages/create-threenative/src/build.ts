@@ -1,19 +1,20 @@
 import { spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
+export type NativeOrientation = IResolvedThreeNativeConfig["display"]["orientation"];
 
-export interface BuildOptions {
+export interface IBuildOptions {
   cwd?: string;
   target: BuildTarget;
   viteArgs?: readonly string[];
 }
 
 const TARGETS: readonly BuildTarget[] = ["web", "desktop", "android", "ios"];
-
 function projectRequire(cwd: string): NodeJS.Require {
   return createRequire(path.join(cwd, "package.json"));
 }
@@ -80,18 +81,12 @@ export async function assertNativeBundleCompatible(
 }
 
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
+  await loadConfig(cwd);
   await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
 }
 
-async function nativeEntry(cwd: string): Promise<string> {
-  const manifest = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8")) as {
-    threenative?: { nativeEntry?: unknown };
-  };
-  const configured = manifest.threenative?.nativeEntry;
-  if (configured !== undefined && (typeof configured !== "string" || configured.length === 0)) {
-    throw new Error("TN_NATIVE_ENTRY_MISSING: threenative.nativeEntry must name a source file.");
-  }
-  const relative = configured ?? "src/game.ts";
+async function nativeEntry(cwd: string, config?: IResolvedThreeNativeConfig): Promise<string> {
+  const relative = (config ?? (await loadConfig(cwd))).nativeEntry;
   const entry = path.resolve(cwd, relative);
   try {
     if (!(await stat(entry)).isFile()) throw new Error("not a file");
@@ -99,6 +94,28 @@ async function nativeEntry(cwd: string): Promise<string> {
     throw new Error(`TN_NATIVE_ENTRY_MISSING: ${relative} does not exist.`);
   }
   return entry;
+}
+
+export async function nativeOrientation(cwd: string): Promise<NativeOrientation> {
+  return (await loadConfig(cwd)).display.orientation;
+}
+
+async function writePackagingConfig(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+): Promise<string> {
+  const directory = path.join(cwd, ".threenative", "build");
+  await mkdir(directory, { recursive: true });
+  const artifact = {
+    ...config,
+    app: {
+      ...config.app,
+      ...(config.app.icon === undefined ? {} : { icon: path.resolve(cwd, config.app.icon) }),
+    },
+  };
+  const output = path.join(directory, "config.json");
+  await writeFile(output, `${JSON.stringify(artifact, null, 2)}\n`);
+  return output;
 }
 
 async function bundleNative(
@@ -135,7 +152,10 @@ function installedRuntime(runtimeRoot: string): string {
 }
 
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
-  const entry = await nativeEntry(cwd);
+  const config = await loadConfig(cwd);
+  const entry = await nativeEntry(cwd, config);
+  const orientation = config.display.orientation;
+  const configPath = await writePackagingConfig(cwd, config);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
   const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
   await assertNativeBundleCompatible(bundle, target);
@@ -150,6 +170,10 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        "--orientation",
+        orientation,
+        "--config",
+        configPath,
         "--output",
         output,
       ],
@@ -167,6 +191,10 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        "--orientation",
+        orientation,
+        "--config",
+        configPath,
         "--output",
         output,
       ],
@@ -183,6 +211,8 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
       bundle,
       "--assets",
       assets,
+      "--config",
+      configPath,
       "--runtime",
       installedRuntime(runtimeRoot),
       "--output",
@@ -192,7 +222,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
   );
 }
 
-export async function build(options: BuildOptions): Promise<void> {
+export async function build(options: IBuildOptions): Promise<void> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   if (options.target === "web") await buildWeb(cwd, options.viteArgs);
   else {
@@ -205,7 +235,7 @@ export async function build(options: BuildOptions): Promise<void> {
   }
 }
 
-export function parseBuildArgs(argv: readonly string[]): BuildOptions {
+export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (argv[0] !== "build") {
     throw new Error("Usage: threenative build [--target web|desktop|android|ios]");
   }

@@ -1,7 +1,13 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+
+const run = promisify(execFile);
 
 describe("core package build", () => {
   it("should emit ESM and types for every export", async () => {
@@ -16,4 +22,42 @@ describe("core package build", () => {
     expect(module.Scheduler).toBeDefined();
     expect(module.createRandom).toBeDefined();
   });
+
+  it("should bundle a usable import-meta declaration for the hot subpath", async () => {
+    const dist = path.resolve("packages/core/dist");
+    const hotDeclaration = await readFile(path.join(dist, "hot.d.ts"), "utf8");
+    expect(hotDeclaration).toContain("interface IImportMeta");
+
+    const consumer = await mkdtemp(path.join(os.tmpdir(), "threenative-core-hot-"));
+    try {
+      await writeFile(
+        path.join(consumer, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            lib: ["ES2022", "DOM"],
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            noEmit: true,
+            skipLibCheck: false,
+            strict: true,
+            target: "ES2022",
+          },
+          files: [path.join(consumer, "consumer.ts")],
+        }),
+      );
+      await writeFile(
+        path.join(consumer, "consumer.ts"),
+        [
+          `import { acceptHotUpdate } from ${JSON.stringify(path.join(dist, "hot.js"))};`,
+          "type HotUpdater = typeof acceptHotUpdate;",
+          "const useHotUpdater: HotUpdater | undefined = acceptHotUpdate;",
+          "void useHotUpdater;",
+        ].join("\n"),
+      );
+
+      await run("pnpm", ["exec", "tsc", "-p", path.join(consumer, "tsconfig.json")]);
+    } finally {
+      await rm(consumer, { force: true, recursive: true });
+    }
+  }, 15_000);
 });

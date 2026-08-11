@@ -1,10 +1,10 @@
 import { NavMesh, NavMeshQuery } from "recast-navigation";
 import { generateSoloNavMesh } from "recast-navigation/generators";
 import { type BufferGeometry, type Object3D, Vector3 } from "three";
-import type { NavigationContext } from "./index.js";
+import type { INavigationContext } from "./index.js";
 
-export interface NavigationRegion3DOptions {
-  readonly navigation: NavigationContext;
+export interface INavigationRegion3DOptions {
+  readonly navigation: INavigationContext;
   readonly meshes: readonly Object3D[];
   readonly cellSize?: number;
   readonly cellHeight?: number;
@@ -23,7 +23,7 @@ const DEFAULTS = {
   cellSize: 0.1,
 } as const;
 
-interface GeometryData {
+interface IGeometryData {
   readonly indices: number[];
   readonly positions: number[];
 }
@@ -40,7 +40,7 @@ function finiteNonNegative(name: string, value: number): number {
   return value;
 }
 
-function collectGeometry(meshes: readonly Object3D[]): GeometryData {
+function collectGeometry(meshes: readonly Object3D[]): IGeometryData {
   const positions: number[] = [];
   const indices: number[] = [];
   const vertex = new Vector3();
@@ -79,14 +79,14 @@ function emptyNavigationMesh(): { readonly navMesh: NavMesh; readonly query: Nav
 }
 
 export class NavigationRegion3D {
-  readonly navigation: NavigationContext;
+  readonly navigation: INavigationContext;
   readonly meshes: readonly Object3D[];
   navigationMesh: NavMesh;
-  #options: NavigationRegion3DOptions;
+  #options: INavigationRegion3DOptions;
   #enabled = true;
   #disposed = false;
 
-  constructor(options: NavigationRegion3DOptions) {
+  constructor(options: INavigationRegion3DOptions) {
     if (options.navigation === undefined)
       throw new Error("NavigationRegion3D requires a navigation context.");
     this.navigation = options.navigation;

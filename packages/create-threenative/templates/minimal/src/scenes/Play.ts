@@ -1,5 +1,5 @@
-import { type Ctx, Scene, type SceneFrame } from "@threenative/core";
-import { Area3D, CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
+import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Mesh, type PerspectiveCamera } from "three";
 import { Player } from "../entities/Player.js";
 import { setupCamera } from "../render/camera.js";
@@ -11,12 +11,12 @@ import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
-export type GameCtx = Ctx<GameState, PhysicsContext>;
+export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
-export class Play extends Scene<GameState, PhysicsContext> {
+export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = { playerX: -2, score: 0 };
 
-  override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);

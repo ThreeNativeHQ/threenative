@@ -55,7 +55,7 @@ flowchart TD
     render["render/<br/>palette, camera, lighting, HUD geometry,<br/>materials, post — YOURS"]
     state["state.ts<br/>state shape gameplay publishes"]
     playtest["playtests/play.playtest.json<br/>one scenario, run by pnpm test"]
-    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    config["threenative.config.ts<br/>app identity, icon, display, desktop window, renderer"]
 
     project --> src
     src --> main
@@ -66,6 +66,11 @@ flowchart TD
     project --> playtest
     project --> config
 ```
+
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+icon, mobile orientation and display flags, desktop window, renderer preference, and native
+entry there. `package.json` may retain only `threenative.nativeEntry` as a compatibility
+fallback for older projects.
 
 `src/render/hud.ts` is generated user-owned source, not a framework widget. It uses instanced
 plane geometry rather than `CanvasTexture`, and the scene registers it with `ctx.entities` so

@@ -1,9 +1,9 @@
 import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3 } from "recast-navigation";
 import type { Object3D, Vector3 } from "three";
-import type { NavigationContext } from "./index.js";
+import type { INavigationContext } from "./index.js";
 
-export interface NavigationObstacle3DOptions {
-  readonly navigation: NavigationContext;
+export interface INavigationObstacle3DOptions {
+  readonly navigation: INavigationContext;
   readonly object: Object3D;
   readonly radius?: number;
   readonly height?: number;
@@ -23,7 +23,7 @@ function toNavigationVector(value: Pick<Vector3, "x" | "y" | "z">): NavigationVe
   return { x: value.x, y: value.y, z: value.z };
 }
 
-function crowdFor(navigation: NavigationContext, radius: number): Crowd {
+function crowdFor(navigation: INavigationContext, radius: number): Crowd {
   if (navigation.crowd !== undefined) return navigation.crowd;
   const crowd = new Crowd(navigation.navMesh, {
     maxAgents: MAX_CROWD_AGENTS,
@@ -34,7 +34,7 @@ function crowdFor(navigation: NavigationContext, radius: number): Crowd {
 }
 
 export class NavigationObstacle3D {
-  readonly navigation: NavigationContext;
+  readonly navigation: INavigationContext;
   readonly object: Object3D;
   readonly radius: number;
   readonly height: number;
@@ -42,7 +42,7 @@ export class NavigationObstacle3D {
   #avoidanceEnabled: boolean;
   #disposed = false;
 
-  constructor(options: NavigationObstacle3DOptions) {
+  constructor(options: INavigationObstacle3DOptions) {
     if (options.navigation === undefined)
       throw new Error("NavigationObstacle3D requires a navigation context.");
     this.navigation = options.navigation;

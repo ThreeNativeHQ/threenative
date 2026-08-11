@@ -3,7 +3,7 @@ import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { GPUParticles3D } from "../src/particles.js";
-import type { RendererLike } from "../src/renderer.js";
+import type { IRendererLike } from "../src/renderer.js";
 
 function computeNode() {
   return Fn(() => {})().compute(1);
@@ -19,7 +19,7 @@ function particles(options: Partial<ConstructorParameters<typeof GPUParticles3D>
   });
 }
 
-function renderer(dispatched: unknown[]): RendererLike {
+function renderer(dispatched: unknown[]): IRendererLike {
   const canvas = new EventTarget() as HTMLCanvasElement;
   return {
     compileAsync: async () => undefined,

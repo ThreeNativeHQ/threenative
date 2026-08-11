@@ -63,6 +63,11 @@ export interface IPlaytestTagObservation {
   count: number;
 }
 
+export interface IPlaytestPerformanceObservation {
+  drawCalls?: number;
+  triangles?: number;
+}
+
 export interface IPlaytestWorldRuntimeObservation {
   agent: string;
   core: string;
@@ -84,6 +89,13 @@ export interface IPlaytestGameplayObservation {
   world?: IPlaytestWorldObservation;
 }
 
+/** Per-render samples shared by the browser and native playtest bridges. */
+export interface IPlaytestRuntimeDiagnosticsSample {
+  drawCalls?: number;
+  frameMs: number;
+  triangles?: number;
+}
+
 export interface IPlaytestObservationSnapshot {
   clock: {
     mode: PlaytestClockMode;
@@ -94,6 +106,9 @@ export interface IPlaytestObservationSnapshot {
   components?: Record<string, Record<string, JsonValue>>;
   entities?: IPlaytestEntityObservation[];
   gameplay?: IPlaytestGameplayObservation;
+  physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
+  performance?: IPlaytestPerformanceObservation;
+  runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;
 }
 

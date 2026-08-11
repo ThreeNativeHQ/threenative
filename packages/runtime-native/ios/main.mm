@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 #include <cstdlib>
 #include <fstream>
@@ -63,10 +64,15 @@ int main(int, char**) {
         }
 
         mystral::RuntimeConfig config;
+        NSDictionary* info = NSBundle.mainBundle.infoDictionary;
+        NSString* title = info[@"TNWindowTitle"] ?: info[@"CFBundleDisplayName"] ?: @"ThreeNative";
+        const BOOL fullscreen = info[@"TNFullscreen"] == nil ? YES : [info[@"TNFullscreen"] boolValue];
+        const BOOL keepScreenOn = [info[@"TNKeepScreenOn"] boolValue];
+        [[UIApplication sharedApplication] setIdleTimerDisabled:keepScreenOn];
         config.width = 0;
         config.height = 0;
-        config.title = "ThreeNative";
-        config.fullscreen = true;
+        config.title = title.UTF8String;
+        config.fullscreen = fullscreen;
         config.resizable = false;
         auto runtime = mystral::Runtime::create(config);
         if (!runtime) {

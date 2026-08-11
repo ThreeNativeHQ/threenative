@@ -1,0 +1,41 @@
+{
+  "samples": [
+    {
+      "label": "sample-01",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "yes",
+      "evidence": "A large colorful crate stack and a distinct solid red body are legible with the player, cyan goal, floor, wall, and status panel, but the foreground wall consumes much of the frame and the upper stack is clipped.",
+      "biggestGap": "The close camera crops the stack and leaves little room to read the whole puzzle layout.",
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      }
+    },
+    {
+      "label": "sample-02",
+      "playability": 3,
+      "visuals": 4,
+      "screenshotWorthy": "yes",
+      "evidence": "A wide isometric room shows the stack, distinct solid red body, player, cyan goal, walls, floor, and status panel with balanced spacing and a clear route across the room.",
+      "biggestGap": "The crates read smaller, and a still frame cannot demonstrate motion, collision, or the pass-through distinction.",
+      "polish": {
+        "behavior": 3,
+        "visuals": 4,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      }
+    }
+  ],
+  "comparisonVerdict": {
+    "betterSample": "sample-02",
+    "confidence": "medium",
+    "rationale": "It communicates the complete puzzle layout more clearly through balanced framing, readable landmarks, and enough empty space around the playable route."
+  }
+}

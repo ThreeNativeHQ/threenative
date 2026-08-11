@@ -29,11 +29,23 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { readAndroidConfig } from "./package-android.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const APP_ID = "com.mystral.engine";
-const ACTIVITY = `${APP_ID}/.MystralActivity`;
+// The identity a game declares in `threenative.config.ts`, which the packaging step already
+// resolves. Measuring a launch means launching the app the game shipped, so the id is read from
+// the same place rather than restated here — `--config` points at the resolved config, and the
+// packaging default applies when a run does not pass one.
+// The activity is the runtime host's and keeps its own package; only the application id is the
+// game's to declare. Writing it relative to the app id resolved to a class that does not exist and
+// the launch failed with "Activity class does not exist" — observed on a Pixel 8.
+const ACTIVITY_CLASS = "com.threenative.runtime.MystralActivity";
 const MARKER = "TN_COLD_START:";
+
+function appIdentity(configPath) {
+  const appId = readAndroidConfig(configPath).app.id;
+  return { appId, activity: `${appId}/${ACTIVITY_CLASS}` };
+}
 
 /**
  * The launch, in order. `first_frame` comes from the present that actually reached the display,
@@ -197,6 +209,7 @@ export function parseArgs(argv) {
     settleMs: 20_000,
     report: undefined,
     optimization: "-O2",
+    config: undefined,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -211,6 +224,7 @@ export function parseArgs(argv) {
     else if (arg === "--settle-ms") options.settleMs = Number(next());
     else if (arg === "--report") options.report = next();
     else if (arg === "--optimization") options.optimization = next();
+    else if (arg === "--config") options.config = next();
     else throw new ColdStartError(`TN_COLD_START_ARG_UNKNOWN:${arg}`, 2);
   }
   if (options.device === undefined) throw new ColdStartError("TN_COLD_START_DEVICE_REQUIRED", 2);
@@ -241,6 +255,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   assertPhysicalDevice(options.device);
   const serial = options.device;
+  const { appId, activity } = appIdentity(options.config);
 
   const listing = adb(serial, ["shell", "getprop", "ro.product.model"]).trim();
   const qemu = adb(serial, ["shell", "getprop", "ro.kernel.qemu"]).trim();
@@ -249,17 +264,17 @@ async function main() {
   adb(serial, ["logcat", "-G", "64M"]);
   const samples = [];
   for (let launch = 0; launch < options.launches; launch += 1) {
-    adb(serial, ["shell", "am", "force-stop", APP_ID]);
+    adb(serial, ["shell", "am", "force-stop", appId]);
     // A warm page cache is a different measurement. Killing the process and clearing the log is
     // the most this can do without root; the report says "cold start" meaning process cold.
     adb(serial, ["logcat", "-c"]);
     await sleep(1_500);
-    adb(serial, ["shell", "am", "start", "-n", ACTIVITY]);
+    adb(serial, ["shell", "am", "start", "-n", activity]);
     await sleep(options.settleMs);
     const logcat = adb(serial, ["logcat", "-d"]);
     samples.push(breakdown(parseMarkers(logcat)));
   }
-  adb(serial, ["shell", "am", "force-stop", APP_ID]);
+  adb(serial, ["shell", "am", "force-stop", appId]);
 
   const apkPath = join(runtimeRoot, "android/app/build/outputs/apk/debug/app-debug.apk");
   const apkSha256 = existsSync(apkPath)

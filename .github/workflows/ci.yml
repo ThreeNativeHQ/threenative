@@ -317,6 +317,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm budgets
+      - run: pnpm quality
       - run: pnpm sync:agents --check
 
   # The native lane guards targets that any package change can break, so it is

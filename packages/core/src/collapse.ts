@@ -20,47 +20,47 @@ import { StorageBufferAttribute } from "three/webgpu";
  * declines and says why — it never collapses anyway.
  */
 
-interface MaterialLike {
+interface IMaterialLike {
   type: string;
   uuid: string;
-  clone(): MaterialLike;
+  clone(): IMaterialLike;
   positionNode?: unknown;
   normalNode?: unknown;
 }
 
-interface ObjectLike {
-  readonly children: ObjectLike[];
+interface IObjectLike {
+  readonly children: IObjectLike[];
   isLight?: boolean;
-  parent: ObjectLike | null;
+  parent: IObjectLike | null;
   visible: boolean;
   matrix: { elements: ArrayLike<number> };
   matrixWorld: Matrix4;
   isCamera?: boolean;
   isMesh?: boolean;
-  geometry?: GeometryLike;
-  material?: MaterialLike | MaterialLike[];
+  geometry?: IGeometryLike;
+  material?: IMaterialLike | IMaterialLike[];
   renderOrder?: number;
   /** Render-layer mask. The camera pass parks consumed overlays on a layer nothing renders. */
   layers?: { mask: number };
-  add(child: ObjectLike): void;
-  remove(child: ObjectLike): void;
-  traverse(callback: (object: ObjectLike) => void): void;
+  add(child: IObjectLike): void;
+  remove(child: IObjectLike): void;
+  traverse(callback: (object: IObjectLike) => void): void;
   updateMatrixWorld(force?: boolean): void;
 }
 
-interface GeometryLike {
+interface IGeometryLike {
   readonly attributes: Record<string, { count: number }>;
   readonly index: unknown;
-  clone(): GeometryLike;
-  toNonIndexed(): GeometryLike;
-  applyMatrix4(matrix: Matrix4): GeometryLike;
-  deleteAttribute(name: string): GeometryLike;
-  setAttribute(name: string, value: unknown): GeometryLike;
+  clone(): IGeometryLike;
+  toNonIndexed(): IGeometryLike;
+  applyMatrix4(matrix: Matrix4): IGeometryLike;
+  deleteAttribute(name: string): IGeometryLike;
+  setAttribute(name: string, value: unknown): IGeometryLike;
   getAttribute(name: string): { count: number } | undefined;
   dispose(): void;
 }
 
-export interface SceneCollapseReport {
+export interface ISceneCollapseReport {
   /** True once the scene was replaced by merged geometry. */
   readonly collapsed: boolean;
   /** Why the pass declined, when it did. Absent on success. */
@@ -86,7 +86,7 @@ export interface SceneCollapseReport {
   readonly bakeMs?: number;
 }
 
-export interface SceneCollapseOptions {
+export interface ISceneCollapseOptions {
   /**
    * Frames to watch before deciding what moves. Too few and a slow-moving object is baked static;
    * the watchdog catches that and restores, but the restore costs a visible hitch.
@@ -104,12 +104,12 @@ export interface SceneCollapseOptions {
    */
   readonly bakeBudgetMs?: number;
   /** Called once, when the pass collapses or declines. */
-  readonly onReport?: (report: SceneCollapseReport) => void;
+  readonly onReport?: (report: ISceneCollapseReport) => void;
 }
 
-interface MovingPart {
+interface IMovingPart {
   readonly index: number;
-  readonly object: ObjectLike;
+  readonly object: IObjectLike;
   /**
    * True when the part's scale is uniform. The normal matrix is then proportional to the rotation
    * already sitting in the transform, and since the shader normalises what it reads, the upper
@@ -119,9 +119,9 @@ interface MovingPart {
   readonly uniformScale: boolean;
 }
 
-interface CollapseGroup {
-  readonly material: MaterialLike;
-  readonly chunks: GeometryLike[];
+interface ICollapseGroup {
+  readonly material: IMaterialLike;
+  readonly chunks: IGeometryLike[];
   readonly dynamic: boolean;
 }
 
@@ -148,7 +148,7 @@ const OVERLAY_FLOOR = 12;
  * Only `position` and `normal` are touched, which is all this pass keeps; the caller has already
  * dropped everything outside `CANONICAL_ATTRIBUTES`, so there is no tangent left to rotate.
  */
-function bakeTransform(geometry: GeometryLike, matrix: Matrix4, normalMatrix: Matrix3): void {
+function bakeTransform(geometry: IGeometryLike, matrix: Matrix4, normalMatrix: Matrix3): void {
   const position = geometry.getAttribute("position") as { array?: Float32Array } | undefined;
   const positions = position?.array;
   if (positions !== undefined) {
@@ -192,7 +192,7 @@ function bakeTransform(geometry: GeometryLike, matrix: Matrix4, normalMatrix: Ma
 }
 
 /** A subtree holding any light stays in the scene, whatever else it also holds. */
-function containsLight(object: ObjectLike): boolean {
+function containsLight(object: IObjectLike): boolean {
   let found = false;
   object.traverse((child) => {
     if (child.isLight === true) found = true;
@@ -250,7 +250,7 @@ function objectKey(
   return key;
 }
 
-function colorOf(material: MaterialLike): { r: number; g: number; b: number } | undefined {
+function colorOf(material: IMaterialLike): { r: number; g: number; b: number } | undefined {
   const color = (material as { color?: { r: number; g: number; b: number } }).color;
   return color === undefined || typeof color.r !== "number" ? undefined : color;
 }
@@ -341,7 +341,7 @@ const LOOK_FIELDS = [
  * field — class, maps, transparency, side, ramp — is part of how the game looks, so any
  * disagreement keeps them in separate groups rather than silently picking one.
  */
-function materialSignature(material: MaterialLike): string {
+function materialSignature(material: IMaterialLike): string {
   const source = material as unknown as Record<string, unknown>;
   const parts: string[] = [material.type];
   for (const key of LOOK_FIELDS) {
@@ -360,7 +360,7 @@ function materialSignature(material: MaterialLike): string {
   return parts.join("|");
 }
 
-function materialOf(object: ObjectLike): MaterialLike | undefined {
+function materialOf(object: IObjectLike): IMaterialLike | undefined {
   const material = object.material;
   if (material === undefined) return undefined;
   return Array.isArray(material) ? material[0] : material;
@@ -401,7 +401,7 @@ function hasUniformScale(matrix: Matrix4): boolean {
   return Math.max(Math.abs(x - y), Math.abs(y - z), Math.abs(x - z)) / largest < 1e-4;
 }
 
-function writeNormals(target: Float32Array, part: MovingPart, scratch: Matrix3): void {
+function writeNormals(target: Float32Array, part: IMovingPart, scratch: Matrix3): void {
   const offset = part.index * 16;
   if (part.uniformScale) {
     const e = part.object.matrixWorld.elements;
@@ -430,7 +430,7 @@ function sameMatrix(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
  * a fabricated UV or normal is a silent visual change — the pass merges on the intersection and
  * declines the group if `position` is not in it.
  */
-function sharedAttributeNames(chunks: GeometryLike[]): string[] {
+function sharedAttributeNames(chunks: IGeometryLike[]): string[] {
   let shared: string[] | undefined;
   for (const chunk of chunks) {
     const names = Object.keys(chunk.attributes);
@@ -440,17 +440,17 @@ function sharedAttributeNames(chunks: GeometryLike[]): string[] {
 }
 
 export class SceneCollapse {
-  readonly #scene: ObjectLike;
+  readonly #scene: IObjectLike;
   readonly #observeFrames: number;
   readonly #minMeshes: number;
-  readonly #onReport: (report: SceneCollapseReport) => void;
-  readonly #samples = new Map<ObjectLike, Float64Array>();
-  readonly #moving = new Set<ObjectLike>();
-  readonly #changes = new Map<ObjectLike, number>();
+  readonly #onReport: (report: ISceneCollapseReport) => void;
+  readonly #samples = new Map<IObjectLike, Float64Array>();
+  readonly #moving = new Set<IObjectLike>();
+  readonly #changes = new Map<IObjectLike, number>();
   #observed = 0;
   #meshCount = -1;
   #reportedSmall = false;
-  #report: SceneCollapseReport | undefined;
+  #report: ISceneCollapseReport | undefined;
   readonly #bakeBudgetMs: number;
   #steps: Generator<number, void, void> | undefined;
   #bakeProgress = 0;
@@ -460,7 +460,7 @@ export class SceneCollapse {
   #restore: (() => void) | undefined;
   #update: (() => void) | undefined;
 
-  constructor(scene: ObjectLike, options: SceneCollapseOptions = {}) {
+  constructor(scene: IObjectLike, options: ISceneCollapseOptions = {}) {
     const observeFrames = options.observeFrames ?? 45;
     const minMeshes = options.minMeshes ?? 200;
     const bakeBudgetMs = options.bakeBudgetMs ?? 12;
@@ -481,7 +481,7 @@ export class SceneCollapse {
     });
     const report =
       options.onReport ??
-      ((value: SceneCollapseReport) => {
+      ((value: ISceneCollapseReport) => {
         console.info(`TN_SCENE_COLLAPSE:${JSON.stringify(value)}`);
       });
     // Every exit from this pass goes through one callback, so `whenSettled` cannot miss a verdict
@@ -531,7 +531,7 @@ export class SceneCollapse {
     return this.#settled;
   }
 
-  get report(): SceneCollapseReport | undefined {
+  get report(): ISceneCollapseReport | undefined {
     return this.#report;
   }
 
@@ -673,12 +673,12 @@ export class SceneCollapse {
   #collapseCameras(): { overlayMeshes: number; overlayDraws: number } {
     let overlayMeshes = 0;
     let overlayDraws = 0;
-    const cameras: ObjectLike[] = [];
+    const cameras: IObjectLike[] = [];
     this.#scene.traverse((object) => {
       if (object.isCamera === true) cameras.push(object);
     });
     for (const camera of cameras) {
-      const meshes: ObjectLike[] = [];
+      const meshes: IObjectLike[] = [];
       camera.traverse((object) => {
         if (object === camera || object.isMesh !== true) return;
         if (object.geometry?.getAttribute("position") === undefined) return;
@@ -689,8 +689,8 @@ export class SceneCollapse {
       if (meshes.length < OVERLAY_FLOOR) continue;
       camera.updateMatrixWorld(true);
       const cameraInverse = new Matrix4().copy(camera.matrixWorld).invert();
-      const groups = new Map<string, { material: MaterialLike; chunks: GeometryLike[] }>();
-      const parts: { object: ObjectLike; index: number }[] = [];
+      const groups = new Map<string, { material: IMaterialLike; chunks: IGeometryLike[] }>();
+      const parts: { object: IObjectLike; index: number }[] = [];
       let renderOrder = 0;
       let usable = true;
       for (const mesh of meshes) {
@@ -733,8 +733,8 @@ export class SceneCollapse {
       const ownerMatrix = storage(transformAttribute, "mat4", slots).element(ownerIdNode);
       const ownerNormalMatrix = storage(normalAttribute, "mat4", slots).element(ownerIdNode);
 
-      const added: ObjectLike[] = [];
-      const patched: { material: MaterialLike; position: unknown; normal: unknown }[] = [];
+      const added: IObjectLike[] = [];
+      const patched: { material: IMaterialLike; position: unknown; normal: unknown }[] = [];
       let failed = false;
       for (const group of groups.values()) {
         const shared = sharedAttributeNames(group.chunks);
@@ -755,7 +755,7 @@ export class SceneCollapse {
         // The game's own material instance, mutated rather than cloned. A clone would sever the
         // link the HUD relies on: `heart.material.color.setHex()` writes to this object, and a
         // copy would keep showing the colour it was copied at. `restore()` puts the nodes back.
-        const material = group.material as MaterialLike & {
+        const material = group.material as IMaterialLike & {
           positionNode?: unknown;
           normalNode?: unknown;
         };
@@ -771,8 +771,8 @@ export class SceneCollapse {
         // An overlay drew last because it was added last. Merged into one object it needs to say
         // so explicitly, or the level draws over the HUD.
         mesh.renderOrder = renderOrder;
-        camera.add(mesh as never as ObjectLike);
-        added.push(mesh as never as ObjectLike);
+        camera.add(mesh as never as IObjectLike);
+        added.push(mesh as never as IObjectLike);
         overlayDraws += 1;
       }
       if (failed) {
@@ -785,7 +785,7 @@ export class SceneCollapse {
         continue;
       }
 
-      const masks = new Map<ObjectLike, number>();
+      const masks = new Map<IObjectLike, number>();
       for (const part of parts) {
         const layers = part.object.layers;
         if (layers === undefined) continue;
@@ -838,8 +838,8 @@ export class SceneCollapse {
   }
 
   /** True when the game currently wants this overlay mesh on screen, ancestors included. */
-  #drawn(object: ObjectLike, camera: ObjectLike): boolean {
-    for (let current: ObjectLike | null = object; current !== null; current = current.parent) {
+  #drawn(object: IObjectLike, camera: IObjectLike): boolean {
+    for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
       if (current.visible !== true) return false;
       if (current === camera) break;
     }
@@ -856,8 +856,8 @@ export class SceneCollapse {
    * subtree wherever the camera happened to be standing. `#collapseCameras` folds it in camera
    * space instead, once this pass is done.
    */
-  #excluded(object: ObjectLike): boolean {
-    for (let current: ObjectLike | null = object; current !== null; current = current.parent) {
+  #excluded(object: IObjectLike): boolean {
+    for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
       if (current.isCamera === true) return true;
     }
     return false;
@@ -870,9 +870,9 @@ export class SceneCollapse {
    * geometry for good — the fox's limbs glitching mid-stride. Uploading the parent's world matrix
    * carries the whole chain every frame and assumes nothing.
    */
-  #ownerOf(object: ObjectLike): ObjectLike | undefined {
+  #ownerOf(object: IObjectLike): IObjectLike | undefined {
     let animated = false;
-    for (let current: ObjectLike | null = object; current !== null; current = current.parent) {
+    for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
       if (this.#moving.has(current)) {
         animated = true;
         break;
@@ -892,7 +892,7 @@ export class SceneCollapse {
    */
   *#collapseSteps(): Generator<number, void, void> {
     this.#scene.updateMatrixWorld(true);
-    const meshes: ObjectLike[] = [];
+    const meshes: IObjectLike[] = [];
     this.#scene.traverse((object) => {
       if (object.isMesh !== true) return;
       if (this.#excluded(object)) return;
@@ -907,10 +907,10 @@ export class SceneCollapse {
       return;
     }
 
-    const movingParts: MovingPart[] = [];
-    const movingIndex = new Map<ObjectLike, number>();
-    const groups = new Map<string, CollapseGroup>();
-    const bakedFrom: { mesh: ObjectLike; parent: ObjectLike }[] = [];
+    const movingParts: IMovingPart[] = [];
+    const movingIndex = new Map<IObjectLike, number>();
+    const groups = new Map<string, ICollapseGroup>();
+    const bakedFrom: { mesh: IObjectLike; parent: IObjectLike }[] = [];
     const inverse = new Matrix4();
     const bakeMatrix = new Matrix4();
     const bakeNormalMatrix = new Matrix3();
@@ -1033,7 +1033,7 @@ export class SceneCollapse {
     const ownerMatrix = transformNode.element(ownerIdNode);
     const ownerNormalMatrix = normalNodes.element(ownerIdNode);
 
-    const added: ObjectLike[] = [];
+    const added: IObjectLike[] = [];
     let mergedMeshes = 0;
     for (const group of groups.values()) {
       const shared = sharedAttributeNames(group.chunks);
@@ -1095,8 +1095,8 @@ export class SceneCollapse {
       const mesh = new Mesh(geometry as never, material as never);
       // The merged geometry spans the level, so a bounding-sphere test can only ever say "visible".
       mesh.frustumCulled = false;
-      this.#scene.add(mesh as never as ObjectLike);
-      added.push(mesh as never as ObjectLike);
+      this.#scene.add(mesh as never as IObjectLike);
+      added.push(mesh as never as IObjectLike);
       mergedMeshes += 1;
     }
 
@@ -1106,7 +1106,7 @@ export class SceneCollapse {
     // all. The consumed hierarchy leaves the scene entirely; the game keeps its own references
     // and goes on animating them, and this pass recomputes the moving subtrees by hand.
     for (const entry of bakedFrom) entry.parent.remove(entry.mesh);
-    const detached: ObjectLike[] = [];
+    const detached: IObjectLike[] = [];
     for (const child of [...this.#scene.children]) {
       if (child.isCamera === true || added.includes(child)) continue;
       // Lights are not geometry and were never collapsed, but they live in the same tree. Sweeping
@@ -1116,7 +1116,7 @@ export class SceneCollapse {
       detached.push(child);
       this.#scene.remove(child);
     }
-    const movingRoots: ObjectLike[] = [];
+    const movingRoots: IObjectLike[] = [];
     for (const part of movingParts) {
       let root = part.object;
       while (root.parent !== null) root = root.parent;

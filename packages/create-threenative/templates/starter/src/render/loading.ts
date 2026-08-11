@@ -98,6 +98,19 @@ export function createLoadingScreen(host: LoadingHost) {
   track.position.set(0, -height * 0.05, -distance * 0.999);
   fill.position.set(0, -height * 0.05, -distance * 0.998);
 
+  // Sizing the bar is one function called before the first frame, not only from `update()`. A
+  // `PlaneGeometry(1, 1)` left at its default scale is a full world unit square — about seventy
+  // times the height of the bar — so a screen that renders before the first update flashes a green
+  // square across the middle. Observed on a Pixel 8.
+  const setProgress = (progress: number): void => {
+    const clamped = Math.max(0, Math.min(1, progress));
+    const full = width * 0.5;
+    // Scaled from the left edge rather than the centre, so the bar fills instead of growing.
+    fill.scale.set(Math.max(full * 0.002, full * clamped), height * 0.012, 1);
+    fill.position.x = -full / 2 + (full * clamped) / 2;
+  };
+  setProgress(0);
+
   let done = false;
   const finish = (): void => {
     if (done) return;
@@ -121,11 +134,7 @@ export function createLoadingScreen(host: LoadingHost) {
     /** Call once per frame. Fills the bar, then holds while the collapse bakes. */
     update(): void {
       if (done) return;
-      const clamped = Math.max(0, Math.min(1, host.startup.progress));
-      const full = width * 0.5;
-      // Scaled from the left edge rather than the centre, so the bar fills instead of growing.
-      fill.scale.set(Math.max(full * 0.002, full * clamped), height * 0.012, 1);
-      fill.position.x = -full / 2 + (full * clamped) / 2;
+      setProgress(host.startup.progress);
     },
     /** Reveals the world early. The screen takes itself down without this. */
     finish,

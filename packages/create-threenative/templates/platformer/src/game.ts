@@ -1,6 +1,7 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { rapier } from "@threenative/physics";
+import config from "../threenative.config.js";
 import { drainPlaytestEvents as events } from "./playtest-events.js";
 import { Boot } from "./scenes/Boot.js";
 import { Level } from "./scenes/Level.js";
@@ -10,6 +11,7 @@ export default defineGame({
     jump: { buttons: [0], down: ["Space"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), playtest({ events })],
+  render: config.renderer,
   scenes: { boot: Boot, level: Level },
   start: "boot",
 });

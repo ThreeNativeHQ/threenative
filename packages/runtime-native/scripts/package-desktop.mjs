@@ -8,21 +8,38 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+export const DEFAULT_DESKTOP_CONFIG = {
+  app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
+  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false },
+  window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
+};
+
+function readConfig(configPath) {
+  if (configPath === undefined) return DEFAULT_DESKTOP_CONFIG;
+  try {
+    return JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`TN_CONFIG_FILE_INVALID: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 export function parseArgs(args) {
   const options = {};
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!['--assets', '--bundle', '--output', '--runtime'].includes(flag) || !value) {
-      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR]');
+    if (!['--assets', '--bundle', '--config', '--output', '--runtime'].includes(flag) || !value) {
+      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR] [--config FILE]');
     }
     options[flag.slice(2)] = resolve(value);
   }
@@ -46,7 +63,12 @@ export function packageDesktop(options) {
   mkdirSync(dirname(output), { recursive: true });
   const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-'));
   try {
-    const stagedEntry = stageDesktopFiles(options.bundle, options.assets, staging);
+    const stagedEntry = stageDesktopFiles(
+      options.bundle,
+      options.assets,
+      staging,
+      options.config === undefined ? undefined : readConfig(options.config),
+    );
     const args = [
       'compile',
       stagedEntry,
@@ -69,7 +91,7 @@ export function packageDesktop(options) {
   return output;
 }
 
-export function stageDesktopFiles(bundle, assets, staging) {
+export function stageDesktopFiles(bundle, assets, staging, config = undefined) {
   mkdirSync(staging, { recursive: true });
   if (assets && existsSync(assets)) {
     if (!statSync(assets).isDirectory()) {
@@ -85,6 +107,9 @@ export function stageDesktopFiles(bundle, assets, staging) {
   const entry = join(staging, '.threenative', 'game.js');
   mkdirSync(dirname(entry), { recursive: true });
   copyFileSync(bundle, entry);
+  if (config !== undefined) {
+    writeFileSync(join(staging, '.threenative', 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
+  }
   return entry;
 }
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { GamePluginRuntime } from "../src/game.js";
+import type { IGamePluginRuntime } from "../src/game.js";
 import { InputMap } from "../src/input.js";
 import { createRandom } from "../src/random.js";
 import { type Recording, createReplayDriver, replay } from "../src/replay.js";
-import type { Ctx } from "../src/scene.js";
+import type { ICtx } from "../src/scene.js";
 
 function keyEvent(type: "keydown" | "keyup", code: string): Event {
   const event = new Event(type);
@@ -15,7 +15,7 @@ function runtime(
   fixedStep: (ticks: number) => number = () => 0,
   random = createRandom(1),
   rapier: string | null = null,
-): GamePluginRuntime {
+): IGamePluginRuntime {
   return { fixedStep, random, rapier, seed: 90210, step: 1 / 60, tick: () => 0 };
 }
 
@@ -25,12 +25,12 @@ async function recordThreeTicks(): Promise<{
   recording: Recording;
   trace: string[][];
   target: EventTarget;
-  ctx: Ctx;
+  ctx: ICtx;
 }> {
   const target = new EventTarget();
   const input = new InputMap(undefined, target);
   const plugin = replay();
-  const ctx = { input, random: createRandom(90210) } as unknown as Ctx;
+  const ctx = { input, random: createRandom(90210) } as unknown as ICtx;
   const trace: string[][] = [];
   await plugin.setup?.(ctx, runtime());
   target.dispatchEvent(keyEvent("keydown", "KeyW"));
@@ -216,7 +216,7 @@ describe("replay", () => {
       input,
       random: createRandom(90210),
       renderer: { domElement: canvas },
-    } as unknown as Ctx;
+    } as unknown as ICtx;
     await plugin.setup?.(ctx, runtime());
     canvas.dispatchEvent(
       Object.assign(new Event("pointerdown"), {

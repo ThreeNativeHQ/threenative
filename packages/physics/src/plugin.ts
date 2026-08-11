@@ -1,28 +1,28 @@
-import type { Ctx, GamePluginHooks } from "@threenative/core";
+import type { ICtx, IGamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
 import { physicsHandle, physicsWorldHandle } from "./handles.js";
-import type { NavigationContext } from "./navigation/index.js";
+import type { INavigationContext } from "./navigation/index.js";
 import {
+  type IPhysicsInputSnapshot,
+  type IPhysicsSimulation,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
-  type PhysicsInputSnapshot,
-  type PhysicsSimulation,
   physicsSimulationBackend,
 } from "./simulation.js";
 
-export interface PhysicsOptions {
+export interface IPhysicsOptions {
   readonly gravity?: { readonly x: number; readonly y: number; readonly z: number };
 }
 
 export type PhysicsBody3D = RigidBody3D | CharacterBody3D;
 
-export interface PhysicsContext {
+export interface IPhysicsContext {
   readonly world: ReturnType<typeof physicsWorldHandle>;
   readonly eventQueue: ReturnType<typeof physicsHandle>;
-  readonly simulation: PhysicsSimulation;
-  navigation?: NavigationContext;
+  readonly simulation: IPhysicsSimulation;
+  navigation?: INavigationContext;
   add(body: PhysicsBody3D): void;
   numBodies(): number;
   kinematicMotion?(
@@ -33,7 +33,7 @@ export interface PhysicsContext {
   removeArea(area: Area3D): void;
 }
 
-export type PhysicsPlugin = GamePluginHooks<Record<string, unknown>, PhysicsContext>;
+export type PhysicsPlugin = IGamePluginHooks<Record<string, unknown>, IPhysicsContext>;
 
 function growFloat(
   buffer: Float32Array<ArrayBufferLike>,
@@ -63,14 +63,14 @@ function isSmallBufferError(error: unknown): boolean {
 function visibleId(buffer: Readonly<Float32Array>, offset: number): number {
   const value = buffer[offset];
   if (value === undefined || !Number.isInteger(value) || value < 0)
-    throw new Error("PhysicsSimulation returned an invalid visible body id.");
+    throw new Error("IPhysicsSimulation returned an invalid visible body id.");
   return value;
 }
 
-export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
+export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   const backend = physicsSimulationBackend();
-  let simulation: PhysicsSimulation | undefined;
-  let context: PhysicsContext | undefined;
+  let simulation: IPhysicsSimulation | undefined;
+  let context: IPhysicsContext | undefined;
   const bodies = new Set<PhysicsBody3D>();
   const bodiesById = new Map<number, PhysicsBody3D>();
   const areas = new Map<number, Area3D>();
@@ -83,7 +83,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
   let events: Uint32Array<ArrayBufferLike> = new Uint32Array(64);
 
   return {
-    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>, runtime) => {
+    setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       await backend.initialize();
       const selected = backend.createSimulation(options);
       simulation = selected;
@@ -130,7 +130,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         area.writeKinematic(kinematic, count * PHYSICS_TRANSFORM_STRIDE);
         count += 1;
       }
-      const input: PhysicsInputSnapshot = {
+      const input: IPhysicsInputSnapshot = {
         kinematicCount: count,
         kinematicTransforms: kinematic,
       };
@@ -146,7 +146,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         else {
           const area = areas.get(id);
           if (area === undefined)
-            throw new Error("PhysicsSimulation returned an unknown visible body id.");
+            throw new Error("IPhysicsSimulation returned an unknown visible body id.");
           area.applyTransform(visible, offset);
         }
       }
@@ -172,7 +172,7 @@ export function rapier(options: PhysicsOptions = {}): PhysicsPlugin {
         const right = events[offset + 1];
         const started = events[offset + 2] === 1;
         if (left === undefined || right === undefined)
-          throw new Error("PhysicsSimulation returned a malformed collision event.");
+          throw new Error("IPhysicsSimulation returned a malformed collision event.");
         const leftArea = areas.get(left);
         const rightArea = areas.get(right);
         const leftBody = bodiesById.get(left);

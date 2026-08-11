@@ -1,5 +1,5 @@
-import type { Ctx } from "@threenative/core";
-import { CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
 
 export class Crate {
@@ -7,7 +7,7 @@ export class Crate {
   readonly body: RigidBody3D;
 
   constructor(
-    ctx: Ctx<{ playerX: number; score: number }, PhysicsContext>,
+    ctx: ICtx<{ playerX: number; score: number }, IPhysicsContext>,
     x: number,
     y: number,
     z = 0,

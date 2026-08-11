@@ -17,7 +17,7 @@ const PROOF_PORT = 5190;
 export const SWEEP_PROOF_REPORT_MAX_BYTES = 16 * 1024 * 1024;
 
 interface PlaytestReport {
-  readonly assertionResults: readonly unknown[];
+  readonly assertionResults?: readonly unknown[];
   readonly diagnostics: readonly unknown[];
   readonly pass: boolean;
   readonly verdict?: "fail" | "pass";
@@ -240,12 +240,22 @@ function validateRunnerReport(value: unknown): PlaytestReport {
     (value.verdict !== "fail" || value.pass !== false)
   )
     throw new Error("runner output verdict does not match pass");
+  if (!Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic))
+    throw new Error("runner output diagnostics are malformed");
+  if (value.assertionResults === undefined) {
+    if (
+      value.pass !== false ||
+      value.diagnostics.every(
+        (diagnostic) => isDiagnostic(diagnostic) && diagnostic.severity !== "error",
+      )
+    )
+      throw new Error("runner output without assertionResults must contain an error diagnostic");
+    return value as unknown as PlaytestReport;
+  }
   if (!Array.isArray(value.assertionResults) || value.assertionResults.length === 0)
     throw new Error("runner output must contain non-empty assertionResults");
   if (!value.assertionResults.every(isAssertionResult))
     throw new Error("runner output assertionResults are malformed");
-  if (!Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic))
-    throw new Error("runner output diagnostics are malformed");
   const assertionsPass = value.assertionResults.every(
     (assertion) => isAssertionResult(assertion) && assertion.pass,
   );
@@ -267,7 +277,7 @@ export function reportFromOutput(
     if (typeof pass !== "boolean") throw new Error("runner exit status must be boolean");
     const report = validateRunnerReport(JSON.parse(stdout.trim()));
     return {
-      assertions: report.assertionResults,
+      assertions: report.assertionResults ?? [],
       diagnostics: report.diagnostics,
       name,
       verdict: report.pass === true && pass ? "pass" : "fail",
@@ -279,7 +289,7 @@ export function reportFromOutput(
       .join("\n")
       .slice(0, 4_000);
     return {
-      assertions: [{ id: "sweep-proof.output", pass: false }],
+      assertions: [],
       diagnostics: [
         {
           code: "TN_SWEEP_PROOF_INVALID_OUTPUT",

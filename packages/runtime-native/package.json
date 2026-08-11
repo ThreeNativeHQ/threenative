@@ -25,6 +25,8 @@
     "scripts/package-android.mjs",
     "scripts/package-desktop.mjs",
     "scripts/package-ios.mjs",
+    "scripts/production-evidence.mjs",
+    "scripts/profile-production.mjs",
     "scripts/verify-starter-desktop.mjs",
     "LICENSE",
     "NOTICE"
@@ -38,6 +40,7 @@
     "native:physics:parity:device": "node scripts/verify-android-physics-parity.mjs",
     "native:verify:desktop": "node scripts/verify-desktop-core.mjs",
     "native:verify:android:multitouch": "pnpm --dir ../playtest build && node scripts/verify-android-multitouch.mjs",
+    "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",
     "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity"

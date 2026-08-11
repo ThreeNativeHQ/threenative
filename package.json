@@ -17,6 +17,7 @@
     "test:templates": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/verify-template-playtests.ts",
     "visuals": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/visual-gate.ts",
     "lint": "biome check .",
+    "quality": "tsx scripts/check-quality.ts",
     "budgets": "tsx scripts/check-budgets.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
@@ -32,7 +33,8 @@
     "sweep:pair": "tsx scripts/sweep-pair.ts",
     "round:next": "tsx scripts/round-next.ts",
     "round:deletions": "tsx scripts/round-deletions.ts",
-    "profile:starter": "tsx scripts/profile-starter.ts"
+    "profile:starter": "tsx scripts/profile-starter.ts",
+    "profile:production": "node packages/runtime-native/scripts/profile-production.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

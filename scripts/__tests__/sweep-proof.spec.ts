@@ -115,7 +115,37 @@ describe("sealed proof runner", () => {
     ],
   ])("fails closed for %s", (_label, report) => {
     expect(reportFromOutput("fixture", JSON.stringify(report), "", true)).toMatchObject({
-      assertions: [{ id: "sweep-proof.output", pass: false }],
+      assertions: [],
+      name: "fixture",
+      verdict: "fail",
+    });
+  });
+
+  it("preserves a missing-capability preflight without fabricating assertion results", () => {
+    const result = reportFromOutput(
+      "fixture",
+      JSON.stringify({
+        diagnostics: [
+          {
+            code: "TN_PLAYTEST_CAPABILITY_MISSING",
+            message: "Scenario requires missing capability 'runtime.physics'.",
+            severity: "error",
+          },
+        ],
+        pass: false,
+      }),
+      "",
+      false,
+    );
+    expect(result).toEqual({
+      assertions: [],
+      diagnostics: [
+        {
+          code: "TN_PLAYTEST_CAPABILITY_MISSING",
+          message: "Scenario requires missing capability 'runtime.physics'.",
+          severity: "error",
+        },
+      ],
       name: "fixture",
       verdict: "fail",
     });
@@ -136,7 +166,7 @@ describe("sealed proof runner", () => {
     ).toMatchObject({ assertions: [{ id: "movement.player", pass: true }], verdict: "pass" });
   });
 
-  it("keeps a structured runner failure in invalid-output evidence", () => {
+  it("keeps a structured runner failure as runner evidence", () => {
     const result = reportFromOutput(
       "fixture",
       JSON.stringify({
@@ -148,8 +178,12 @@ describe("sealed proof runner", () => {
       "",
       false,
     );
-    expect(result.diagnostics[0]).toMatchObject({
-      message: expect.stringContaining("TN_PLAYTEST_BRIDGE_MISSING"),
+    expect(result).toMatchObject({
+      assertions: [],
+      diagnostics: [
+        { code: "TN_PLAYTEST_BRIDGE_MISSING", message: "bridge missing", severity: "error" },
+      ],
+      verdict: "fail",
     });
   });
 

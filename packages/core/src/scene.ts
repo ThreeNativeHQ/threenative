@@ -1,10 +1,10 @@
 import type { Camera, Intersection, Object3D, Scene as ThreeScene } from "three";
-import type { AssetLoader } from "./assets.js";
+import type { IAssetLoader } from "./assets.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
-import type { RaycastOptions } from "./picking.js";
-import type { Random } from "./random.js";
-import type { RendererLike } from "./renderer.js";
+import type { IRaycastOptions } from "./picking.js";
+import type { IRandom } from "./random.js";
+import type { IRendererLike } from "./renderer.js";
 import type { ScheduleHandle } from "./schedule.js";
 import type { GameStore } from "./state.js";
 import type { Viewport } from "./viewport.js";
@@ -15,17 +15,17 @@ export abstract class Scene<
 > {
   static readonly initialState: Record<string, unknown> | undefined = undefined;
 
-  load(_ctx: Ctx<TState, TPhysics>): void | Promise<void> {}
+  load(_ctx: ICtx<TState, TPhysics>): void | Promise<void> {}
 
-  enter(_ctx: Ctx<TState, TPhysics>): SceneEnterResult<TState, TPhysics> {
+  enter(_ctx: ICtx<TState, TPhysics>): SceneEnterResult<TState, TPhysics> {
     return undefined;
   }
 
-  exit(_ctx: Ctx<TState, TPhysics>): void {}
+  exit(_ctx: ICtx<TState, TPhysics>): void {}
 
-  update(_ctx: Ctx<TState, TPhysics>, _dt: number): void {}
+  update(_ctx: ICtx<TState, TPhysics>, _dt: number): void {}
 
-  render(_ctx: Ctx<TState, TPhysics>): void {}
+  render(_ctx: ICtx<TState, TPhysics>): void {}
 }
 
 export type SceneConstructor<
@@ -36,7 +36,7 @@ export type SceneConstructor<
 export type SceneFrame<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
-> = (ctx: Ctx<TState, TPhysics>, dt: number) => void;
+> = (ctx: ICtx<TState, TPhysics>, dt: number) => void;
 
 export type SceneEnterResult<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -44,7 +44,7 @@ export type SceneEnterResult<
 > = // biome-ignore lint/suspicious/noConfusingVoidType: void preserves existing Scene.enter overrides.
 void | SceneFrame<TState, TPhysics>;
 
-export interface StartupStatus {
+export interface IStartupStatus {
   /**
    * `observing` while the collapse watches what moves, `collapsing` during the single frame it
    * bakes in, `ready` once the world is safe to show.
@@ -56,19 +56,19 @@ export interface StartupStatus {
   whenReady(): Promise<void>;
 }
 
-export interface Ctx<
+export interface ICtx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
   readonly fps: number;
-  readonly renderer: RendererLike;
+  readonly renderer: IRendererLike;
   readonly viewport: Viewport;
   readonly scene: ThreeScene;
   readonly camera: Camera;
   readonly entities: Registry;
   readonly add: (object: Object3D) => Object3D;
   readonly input: InputMap;
-  readonly assets: AssetLoader;
+  readonly assets: IAssetLoader;
   readonly after: (delay: number, callback: () => void) => ScheduleHandle;
   readonly every: (callback: (dt: number) => void) => ScheduleHandle;
   readonly state: GameStore<TState>;
@@ -77,8 +77,8 @@ export interface Ctx<
     properties: { [K in keyof T]?: number },
     duration: number,
   ) => Promise<void>;
-  readonly random: Random;
-  readonly raycast: (options?: RaycastOptions) => Intersection | undefined;
+  readonly random: IRandom;
+  readonly raycast: (options?: IRaycastOptions) => Intersection | undefined;
   /**
    * The framework's own startup work — what a loading screen waits on.
    *
@@ -90,7 +90,7 @@ export interface Ctx<
    * shaders that would have been compiled for geometry the collapse then throws away are never
    * compiled at all, so waiting is *faster* than not waiting.
    */
-  readonly startup: StartupStatus;
+  readonly startup: IStartupStatus;
   readonly goto: (name: string) => Promise<void>;
   physics: TPhysics;
 }

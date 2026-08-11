@@ -101,6 +101,31 @@ describe("createRenderer", () => {
     }
   });
 
+  it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
+    const canvas = testCanvas();
+    const sizes: Array<[number, number]> = [];
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      resolutionScale: 0.5,
+      webgl2Factory: () => ({
+        dispose: () => undefined,
+        domElement: canvas,
+        render: () => undefined,
+        setSize: (width: number, height: number) => sizes.push([width, height]),
+      }),
+    });
+
+    expect(sizes).toEqual([[160, 90]]);
+    renderer.dispose();
+  });
+
+  it("should reject an invalid resolution scale at construction", async () => {
+    await expect(createRenderer({ resolutionScale: 0 })).rejects.toThrow(
+      "renderer.resolutionScale must be finite and positive.",
+    );
+  });
+
   it("dispatches compute only through WebGPU and fails closed on WebGL2", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

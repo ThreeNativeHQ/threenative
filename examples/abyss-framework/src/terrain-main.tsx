@@ -1,12 +1,12 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { type PhysicsContext, rapier } from "@threenative/physics";
+import { type IPhysicsContext, rapier } from "@threenative/physics";
 import "./style.css";
 import { createRoot } from "react-dom/client";
 import { TerrainProbe, type TerrainState } from "./scenes/TerrainProbe.js";
 import { TerrainApp } from "./ui/TerrainApp.js";
 
-const game = defineGame<TerrainState, PhysicsContext>({
+const game = defineGame<TerrainState, IPhysicsContext>({
   assets: {
     basePath: "/terrain-assets",
     model: async () => ({}),
@@ -22,7 +22,7 @@ const game = defineGame<TerrainState, PhysicsContext>({
     },
   },
   initialState: { chunks: 0, playerX: 0 },
-  plugins: [rapier(), playtest<TerrainState, PhysicsContext>()],
+  plugins: [rapier(), playtest<TerrainState, IPhysicsContext>()],
   renderer: { preferWebGPU: true },
   scenes: { terrain: TerrainProbe },
   seed: 20260808,

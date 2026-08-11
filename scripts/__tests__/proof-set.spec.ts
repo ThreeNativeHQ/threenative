@@ -142,4 +142,33 @@ describe("sealed genre proof set", () => {
       expect.arrayContaining(["shots", "reload"]),
     );
   });
+
+  it("requires the physics replay result to change at the supplied replay step", async () => {
+    const root = path.join(process.cwd(), "docs/benchmark/genres/physics-puzzle");
+    const source = JSON.parse(
+      await readFile(path.join(root, "proof/physics-puzzle.playtest.json"), "utf8"),
+    ) as {
+      assert?: {
+        resources?: Array<{
+          atSteps?: Array<{ equals?: unknown; label: string }>;
+          changed?: boolean;
+          equals?: unknown;
+          id: string;
+          path?: string;
+        }>;
+      };
+      steps?: Array<{ kind?: string; label?: string }>;
+    };
+    const replayStep = source.steps?.find(({ label }) => label === "replay-sequence");
+    const replayAssertion = source.assert?.resources?.find(
+      ({ id, path: resourcePath }) => id === "state" && resourcePath === "replayMatches",
+    );
+
+    expect(replayStep?.kind).toBe("input");
+    expect(replayAssertion).toMatchObject({ changed: true, equals: true });
+    expect(replayAssertion?.atSteps).toEqual([
+      { label: "settled", equals: false },
+      { label: "replay-sequence", equals: true },
+    ]);
+  });
 });

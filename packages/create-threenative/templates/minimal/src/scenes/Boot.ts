@@ -1,5 +1,5 @@
 import { Scene } from "@threenative/core";
-import type { PhysicsContext } from "@threenative/physics";
+import type { IPhysicsContext } from "@threenative/physics";
 import type { GameState } from "../state.js";
 
-export class Boot extends Scene<GameState, PhysicsContext> {}
+export class Boot extends Scene<GameState, IPhysicsContext> {}

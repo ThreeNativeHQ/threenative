@@ -1,0 +1,38 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// Key, bounce, rim, ambient. The rim is the one people forget: without a cool
+// back light, silhouettes read as flat cut-outs against the background.
+import {
+  AmbientLight,
+  DirectionalLight,
+  HemisphereLight,
+  PCFSoftShadowMap,
+  type Scene,
+} from "three";
+import { palette } from "./palette.js";
+
+type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
+
+export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+
+  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.6));
+
+  const key = new DirectionalLight(palette.accent, 3);
+  key.position.set(4, 7, 3);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 60;
+  key.shadow.bias = -0.0008;
+  key.shadow.normalBias = 0.03;
+  scene.add(key);
+
+  const rim = new DirectionalLight(palette.player, 0.75);
+  rim.position.set(-5, 3, -6);
+  scene.add(rim);
+
+  scene.add(new AmbientLight(palette.shadow, 0.28));
+}

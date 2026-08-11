@@ -3,7 +3,7 @@ import { RenderPipeline } from "three/webgpu";
 
 export type RendererKind = "webgpu" | "webgl2";
 
-export interface RendererLike {
+export interface IRendererLike {
   readonly domElement: HTMLCanvasElement;
   readonly kind: RendererKind;
   readonly raw: unknown;
@@ -26,17 +26,19 @@ export interface RendererLike {
   dispose(): void;
 }
 
-export interface RendererPlatformSource {
+export interface IRendererPlatformSource {
   createCanvas(): HTMLCanvasElement;
   hasWebGPU(): boolean;
   observeResize(canvas: HTMLCanvasElement, resize: () => void): () => void;
   readSize(canvas: HTMLCanvasElement): readonly [width: number, height: number];
 }
 
-export interface RendererOptions {
+export interface IRendererOptions {
   canvas?: HTMLCanvasElement;
   preferWebGPU?: boolean;
-  source?: RendererPlatformSource;
+  /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
+  resolutionScale?: number;
+  source?: IRendererPlatformSource;
   webgpuFactory?: (canvas: HTMLCanvasElement) => Promise<unknown> | unknown;
   webgl2Factory?: (canvas: HTMLCanvasElement) => unknown;
 }
@@ -69,7 +71,7 @@ export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => voi
   return () => globalThis.removeEventListener("resize", resize);
 }
 
-function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
+function wrapRenderer(raw: RendererInstance, kind: RendererKind): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
 
   return {
@@ -111,13 +113,18 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
 }
 
 function addResizeHandling(
-  renderer: RendererLike,
-  source: RendererPlatformSource | undefined,
+  renderer: IRendererLike,
+  source: IRendererPlatformSource | undefined,
+  resolutionScale: number,
 ): () => void {
   const resize = () => {
     const [width, height] =
       source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
-    renderer.setSize(width, height, false);
+    renderer.setSize(
+      Math.max(1, Math.round(width * resolutionScale)),
+      Math.max(1, Math.round(height * resolutionScale)),
+      false,
+    );
   };
   resize();
   return (
@@ -126,11 +133,14 @@ function addResizeHandling(
   );
 }
 
-export async function createRenderer(options: RendererOptions = {}): Promise<RendererLike> {
+export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
+  const resolutionScale = options.resolutionScale ?? 1;
+  if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
+    throw new Error("renderer.resolutionScale must be finite and positive.");
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
   const preferWebGPU = options.preferWebGPU ?? true;
-  let renderer: RendererLike | undefined;
+  let renderer: IRendererLike | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
@@ -152,7 +162,7 @@ export async function createRenderer(options: RendererOptions = {}): Promise<Ren
     renderer = wrapRenderer(raw as RendererInstance, "webgl2");
   }
 
-  const stopResize = addResizeHandling(renderer, source);
+  const stopResize = addResizeHandling(renderer, source, resolutionScale);
   const dispose = renderer.dispose;
   renderer.dispose = () => {
     stopResize();

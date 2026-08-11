@@ -37,7 +37,7 @@ function bridge(): IPlaytestBridgeV1 {
   return value as IPlaytestBridgeV1;
 }
 
-describe("Random", () => {
+describe("IRandom", () => {
   it("should produce an identical sequence for an identical seed", () => {
     const first = createRandom(90210);
     const second = createRandom(90210);
@@ -76,7 +76,7 @@ describe("Random", () => {
     }).toThrow(TypeError);
   });
 
-  it("should expose the configured deterministic stream through Ctx", async () => {
+  it("should expose the configured deterministic stream through ICtx", async () => {
     const draws: number[] = [];
     class TestScene extends Scene {
       override enter(ctx: Parameters<Scene["enter"]>[0]): void {

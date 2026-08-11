@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { loadConfig } from "../src/config.js";
 import { createProject, parseArgs } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -74,6 +75,7 @@ const STARTER_PATHS = [
   "playtests/pick.playtest.json",
   "public/native-proof.glb",
   "public/native-proof.png",
+  "public/icon.png",
   "public/pickup.ogg",
 ];
 
@@ -92,6 +94,7 @@ const PLATFORMER_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
   "package.json",
+  "threenative.config.ts",
   "src/game.ts",
   "src/main.ts",
   "src/state.ts",
@@ -113,6 +116,7 @@ const PLATFORMER_PATHS = [
   "src/render/sky.ts",
   "src/render/postprocessing.ts",
   "src/render/terrain.ts",
+  "public/icon.png",
   "playtests/jump.playtest.json",
   "playtests/patrol.playtest.json",
   "playtests/collect.playtest.json",
@@ -123,6 +127,7 @@ const PLATFORMER_PATHS = [
   "playtests/collision-layers.playtest.json",
   "playtests/chase.playtest.json",
   "playtests/avoidance.playtest.json",
+  "playtests/performance.playtest.json",
 ];
 
 describe("create-threenative", () => {
@@ -161,6 +166,23 @@ describe("create-threenative", () => {
         ),
       );
       expect(renderFiles.join("\n")).not.toContain("@threenative/");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should generate loader-valid identifiers at the leading-digit boundary", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-scaffold-identifiers-"));
+    try {
+      for (const [target, expectedId] of [
+        ["123-game", "com.threenative.game123game"],
+        ["fox-game", "com.threenative.foxgame"],
+      ] as const) {
+        const result = await createProject({ install: false, target, template: "minimal" }, root);
+        await expect(loadConfig(result.target)).resolves.toMatchObject({
+          app: { id: expectedId },
+        });
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

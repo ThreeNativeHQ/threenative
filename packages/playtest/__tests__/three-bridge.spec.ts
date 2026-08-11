@@ -8,8 +8,8 @@ import { ThreePlaytestEntityRegistry } from "../src/three/entities.js";
 // therefore matched no pattern in vitest.config.ts — the three.js adapter, the one
 // piece every real application installs, had zero executing coverage.
 //
-// The bridge only ever reads `getDrawingBufferSize` off the renderer, so a stub is
-// enough and keeps the suite off the GPU.
+// A stub for the renderer size and optional `info.render` counters is enough and
+// keeps the suite off the GPU.
 const renderer = {
   getDrawingBufferSize(target: Vector2) {
     return target.set(1280, 720);
@@ -37,6 +37,48 @@ test("bridge samples registered transforms and projected bounds without owning a
   expect(snapshot.entities?.[0]?.visible).toBe(true);
   expect((await installation.bridge.describe()).capabilities).not.toContain("runtime.fixedStep");
   installation.dispose();
+});
+
+test("bridge exposes WebGPU render.drawCalls and finite triangles", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer: {
+      ...renderer,
+      info: { render: { calls: 99, drawCalls: 17, triangles: 42 } },
+    } as unknown as WebGLRenderer,
+    scene: new Scene(),
+  });
+
+  expect((await installation.bridge.sample({})).performance).toEqual({ drawCalls: 17, triangles: 42 });
+  installation.dispose();
+});
+
+test("bridge falls back to WebGL render.calls when render.drawCalls is unavailable", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer: {
+      ...renderer,
+      info: { render: { calls: 17, triangles: 42 } },
+    } as WebGLRenderer,
+    scene: new Scene(),
+  });
+
+  expect((await installation.bridge.sample({})).performance).toEqual({ drawCalls: 17, triangles: 42 });
+  installation.dispose();
+});
+
+test("bridge omits unavailable and non-finite renderer counters", async () => {
+  const missing = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer: {
+      ...renderer,
+      info: { render: { calls: Number.POSITIVE_INFINITY, drawCalls: Number.NaN, triangles: "unavailable" } },
+    } as unknown as WebGLRenderer,
+    scene: new Scene(),
+  });
+
+  expect((await missing.bridge.sample({})).performance).toBeUndefined();
+  missing.dispose();
 });
 
 test("duplicate ids fail with both conflicting object paths", () => {
@@ -81,6 +123,28 @@ test("fixed-step and resource providers advertise only installed capabilities", 
   const capabilities = (await installation.bridge.describe()).capabilities;
   expect(capabilities).toContain("runtime.fixedStep");
   expect(capabilities).toContain("runtime.resources");
+  installation.dispose();
+});
+
+test("reports the bounded runtime diagnostics series through the bridge", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    runtimeDiagnosticsSeries: () => [
+      { drawCalls: 4, frameMs: 16.7, triangles: 96 },
+      { frameMs: 17.2 },
+    ],
+    scene: new Scene(),
+  });
+
+  const description = await installation.bridge.describe();
+  const snapshot = await installation.bridge.sample({});
+
+  expect(description.capabilities).toContain("runtime.performance");
+  expect(snapshot.runtimeDiagnosticsSeries).toEqual([
+    { drawCalls: 4, frameMs: 16.7, triangles: 96 },
+    { frameMs: 17.2 },
+  ]);
   installation.dispose();
 });
 

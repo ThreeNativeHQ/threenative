@@ -1,10 +1,10 @@
-import type { Ctx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { type Material, Mesh } from "three";
 import { roundedBox } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
-type GameCtx = Ctx<GameState, PhysicsContext>;
+type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 // Tune these two timers for jump feel; they forgive a late or early button press.
 const COYOTE_TIME = 0.12;

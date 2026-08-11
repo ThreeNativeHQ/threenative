@@ -1,9 +1,9 @@
-import type { Ctx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, Mesh, SphereGeometry, Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
 import type { Character } from "./Character.js";
-type GameCtx = Ctx<Record<string, unknown>, PhysicsContext>;
+type GameCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
 const SPEED = 3.4;
 const STOP_DISTANCE = 0.7;
 export class Chaser {

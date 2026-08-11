@@ -1,8 +1,8 @@
-import type { Ctx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, Mesh, MeshNormalMaterial } from "three";
 
-type GameCtx = Ctx<{ playerX: number; score: number }, PhysicsContext>;
+type GameCtx = ICtx<{ playerX: number; score: number }, IPhysicsContext>;
 
 export class Player {
   readonly mesh: Mesh;

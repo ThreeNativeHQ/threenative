@@ -1,17 +1,28 @@
-export interface FixedStepLoopOptions {
+export interface IFixedStepLoopOptions {
   readonly step?: number;
   readonly maxSteps?: number;
   readonly onUpdate: (dt: number) => void;
-  readonly onRender?: () => void;
+  readonly onRender?: () => undefined | IRenderPerformanceMetrics;
   readonly requestFrame?: (callback: (time: number) => void) => number;
   readonly cancelFrame?: (handle: number) => void;
 }
+
+export interface IRenderPerformanceMetrics {
+  readonly drawCalls?: number;
+  readonly triangles?: number;
+}
+
+export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
+  readonly frameMs: number;
+}
+
+const MAX_RENDER_PERFORMANCE_SAMPLES = 1_024;
 
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
   #onUpdate: (dt: number) => void;
-  #onRender: () => void;
+  #onRender: () => undefined | IRenderPerformanceMetrics;
   #requestFrame: (callback: (time: number) => void) => number;
   #cancelFrame: (handle: number) => void;
   #accumulator = 0;
@@ -21,8 +32,9 @@ export class FixedStepLoop {
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
+  #renderPerformanceSamples: IRenderPerformanceSample[] = [];
 
-  constructor(options: FixedStepLoopOptions) {
+  constructor(options: IFixedStepLoopOptions) {
     this.step = options.step ?? 1 / 60;
     this.maxSteps = options.maxSteps ?? 5;
     this.#onUpdate = options.onUpdate;
@@ -47,6 +59,9 @@ export class FixedStepLoop {
   get fps(): number {
     return this.#fps;
   }
+  runtimeDiagnosticsSeries(): readonly IRenderPerformanceSample[] {
+    return this.#renderPerformanceSamples.map((sample) => ({ ...sample }));
+  }
   readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
@@ -55,6 +70,7 @@ export class FixedStepLoop {
     this.#lastRenderTime = undefined;
     this.#tick = 0;
     this.#fps = 0;
+    this.#renderPerformanceSamples = [];
     this.#frameHandle = this.#requestFrame((time) => this.#frame(time));
   }
   stop(): void {
@@ -77,14 +93,29 @@ export class FixedStepLoop {
       updates += 1;
     }
     if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
+    let frameMs: number | undefined;
     if (Number.isFinite(now)) {
       if (this.#lastRenderTime !== undefined) {
-        const frameMs = now - this.#lastRenderTime;
+        frameMs = now - this.#lastRenderTime;
         if (frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
       }
       this.#lastRenderTime = now;
     }
-    this.#onRender();
+    const metrics = this.#onRender();
+    if (frameMs !== undefined && frameMs > 0) {
+      const sample: IRenderPerformanceSample = {
+        frameMs,
+        ...(metrics === undefined || metrics.drawCalls === undefined
+          ? {}
+          : { drawCalls: metrics.drawCalls }),
+        ...(metrics === undefined || metrics.triangles === undefined
+          ? {}
+          : { triangles: metrics.triangles }),
+      };
+      this.#renderPerformanceSamples.push(sample);
+      if (this.#renderPerformanceSamples.length > MAX_RENDER_PERFORMANCE_SAMPLES)
+        this.#renderPerformanceSamples.shift();
+    }
     return updates;
   }
 

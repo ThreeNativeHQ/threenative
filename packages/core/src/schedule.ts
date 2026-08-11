@@ -5,7 +5,7 @@ export type ScheduleHandle = (() => void) & {
 
 type TweenProperties<T extends object> = { [K in keyof T]?: number };
 
-interface ScheduleEntry {
+interface IScheduleEntry {
   active: boolean;
   cancel(): void;
   tick(dt: number): void;
@@ -19,7 +19,7 @@ function createHandle(cancel: () => void, active: () => boolean): ScheduleHandle
 }
 
 export class Scheduler {
-  readonly #entries = new Set<ScheduleEntry>();
+  readonly #entries = new Set<IScheduleEntry>();
 
   get size(): number {
     return this.#entries.size;
@@ -104,8 +104,8 @@ export class Scheduler {
   #add(
     tick: (dt: number) => void,
     onCancel?: () => void,
-  ): ScheduleEntry & { handle: ScheduleHandle } {
-    const entry: ScheduleEntry & { handle: ScheduleHandle } = {
+  ): IScheduleEntry & { handle: ScheduleHandle } {
+    const entry: IScheduleEntry & { handle: ScheduleHandle } = {
       active: true,
       cancel: () => {
         if (!entry.active) return;

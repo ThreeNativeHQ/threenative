@@ -1,0 +1,21 @@
+{
+  "acceptanceId": "prd-064-performance",
+  "artifacts": { "screenshots": "after" },
+  "assert": {
+    "performance": {
+      "maxDrawCalls": 180,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 100000
+    }
+  },
+  "name": "production-performance",
+  "schemaVersion": 1,
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdFrames": 60, "release": true },
+    { "kind": "wait", "waitFrames": 600, "release": true }
+  ],
+  "subject": "player",
+  "target": "web",
+  "viewport": { "height": 1080, "width": 1920 },
+  "warmupFrames": 60
+}

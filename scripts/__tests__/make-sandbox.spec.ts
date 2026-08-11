@@ -92,6 +92,9 @@ describe("genre sandbox", () => {
       "/src/main.ts",
     );
     const agents = await readFile(path.join(result.out, "AGENTS.md"), "utf8");
+    expect(agents).toContain(
+      "You may install any npm package you choose, including a physics engine.",
+    );
     expect(agents).toContain("fixedStep");
     expect(agents).toContain("diagnostics: () => []");
     expect(agents).toContain("gameplay: () => ({");

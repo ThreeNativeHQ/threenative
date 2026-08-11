@@ -1,18 +1,18 @@
-import type { Game } from "@threenative/core";
+import type { IGame } from "@threenative/core";
 import { useEffect, useRef } from "react";
 
-export interface GameCanvasProps<
+export interface IGameCanvasProps<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
   className?: string;
-  game: Game<TState, TPhysics>;
+  game: IGame<TState, TPhysics>;
 }
 
 export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
   className,
   game,
-}: GameCanvasProps<TState, TPhysics>) {
+}: IGameCanvasProps<TState, TPhysics>) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

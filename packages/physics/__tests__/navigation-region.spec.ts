@@ -1,12 +1,12 @@
-import type { Ctx } from "@threenative/core";
+import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import "../src/index.js";
 import { NavigationRegion3D, recast } from "../src/navigation/index.js";
-import type { PhysicsContext } from "../src/plugin.js";
+import type { IPhysicsContext } from "../src/plugin.js";
 import { rapier } from "../src/plugin.js";
 
-type TestCtx = Ctx<Record<string, unknown>, PhysicsContext>;
+type TestCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
 
 const plugins: Array<ReturnType<typeof rapier> | ReturnType<typeof recast>> = [];
 
@@ -39,7 +39,7 @@ async function setup(): Promise<{ ctx: TestCtx; navigationPlugin: ReturnType<typ
   return { ctx, navigationPlugin };
 }
 
-function navigation(ctx: TestCtx): NonNullable<PhysicsContext["navigation"]> {
+function navigation(ctx: TestCtx): NonNullable<IPhysicsContext["navigation"]> {
   const value = ctx.physics.navigation;
   if (value === undefined) throw new Error("Test setup did not install navigation.");
   return value;

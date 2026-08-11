@@ -11,7 +11,7 @@ const roots = [
   "create-threenative",
 ] as const;
 
-interface Manifest {
+interface IManifest {
   bin?: Record<string, string>;
   exports?: Record<string, string | Record<string, string>>;
   name: string;
@@ -20,10 +20,10 @@ interface Manifest {
   version: string;
 }
 
-async function manifest(root: (typeof roots)[number]): Promise<Manifest> {
+async function manifest(root: (typeof roots)[number]): Promise<IManifest> {
   return JSON.parse(
     await readFile(path.resolve("packages", root, "package.json"), "utf8"),
-  ) as Manifest;
+  ) as IManifest;
 }
 
 function shippedTargets(value: string | Record<string, string>): string[] {

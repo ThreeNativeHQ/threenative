@@ -1,5 +1,5 @@
 import { defineGame, replay } from "@threenative/core";
-import type { GamePluginHooks, GamePluginRuntime } from "@threenative/core";
+import type { IGamePluginHooks, IGamePluginRuntime } from "@threenative/core";
 import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import "./style.css";
@@ -11,8 +11,8 @@ import { App } from "./ui/App.js";
 
 const viewportProbe = new URLSearchParams(globalThis.location.search).has("viewport");
 const replayPlugin = replay<AbyssState>();
-let gameRuntime: GamePluginRuntime | undefined;
-const replayRuntime: GamePluginHooks<AbyssState> = {
+let gameRuntime: IGamePluginRuntime | undefined;
+const replayRuntime: IGamePluginHooks<AbyssState> = {
   setup: (_ctx, runtime) => {
     gameRuntime = runtime;
     return undefined;

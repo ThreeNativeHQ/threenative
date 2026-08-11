@@ -190,6 +190,12 @@ excluding salvage and native) and 50,000 native runtime LOC. Crossing one oblige
 justification in the owning PRD and a kill-switch pass over what you added. Never silence a
 trigger; a number routed around is worse than no number.
 
+`pnpm quality` reports file length, suppressions, and lint-coverage holes as review signals;
+cognitive complexity is a warn-level `pnpm lint` diagnostic. These threshold reports and
+warnings never fail a build. The interface naming signal is the exception: interfaces are
+`I`-prefixed, so it is enforced after the tree is clean. Run `pnpm --silent quality --json` first
+when a hard change needs a machine-readable target list.
+
 `threenative-asset-mcp` is the asset-discovery server each template pins and each generated
 project installs — an external process, never vendored. Its surface of record is
 `packages/create-threenative/asset-mcp-tools.json`, updated by running the pinned server,
@@ -203,6 +209,8 @@ never by reading its docs.
   package. Template `package.json` files are the exception: they ship real versions, and CI
   asserts no `catalog:` survives scaffolding.
 - Biome owns formatting and lint (100 columns, spaces, organized imports). Do not hand-format.
+- Interfaces are `I`-prefixed; classes and type aliases are not, so Godot-borrowed node names
+  remain unchanged.
 - Unit tests are `<package>/__tests__/*.spec.ts`, vitest, node environment — anything
   touching the DOM or a GPU needs a stub. `examples/**` is excluded; browser proof goes
   through Playwright or a playtest.

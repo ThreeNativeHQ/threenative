@@ -1,6 +1,6 @@
 # PRD-061 — round 4: the paired proof Phase 2 has been missing
 
-**Status: CLEARED TO START, 2026-08-10 — the owner granted the round-4 budget.** The block that
+**Status: COMPLETE, 2026-08-11 — round 4 executed; Phase 2 remains not green; this PRD is not a new runnable round.** The block that
 held this PRD since 2026-08-09 is resolved: round 3 stopped on `budget`, and the owner has now
 granted one completed round 4. Nothing else blocks it — no device, no credential, no toolchain
 beyond what `pnpm test` already requires.

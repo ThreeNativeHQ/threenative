@@ -224,6 +224,42 @@ describe("paired sweep", () => {
     expect(() => pairSweeps(framework, vanilla, root)).toThrow(/missing proof.json/);
   });
 
+  it("preserves a missing-capability preflight without fabricating sealed assertion ids", async () => {
+    const root = await fixtureRoot();
+    const framework = await writeArchive(root, "framework", { arm: "framework" });
+    const vanilla = await writeArchive(root, "vanilla", { arm: "vanilla" });
+    const manifest = JSON.parse(await readFile(path.join(vanilla, "sweep.json"), "utf8")) as {
+      arm: string;
+      genre: string;
+      proofHash: string;
+    };
+    await writeFile(
+      path.join(vanilla, "proof.json"),
+      JSON.stringify({
+        arm: manifest.arm,
+        genre: manifest.genre,
+        proofHash: manifest.proofHash,
+        scenarios: [
+          {
+            name: "fixture",
+            verdict: "fail",
+            assertions: [],
+            diagnostics: [
+              {
+                code: "TN_PLAYTEST_CAPABILITY_MISSING",
+                message: "Scenario requires missing capability 'runtime.physics'.",
+                severity: "error",
+              },
+            ],
+          },
+        ],
+        passed: 0,
+        total: 1,
+      }),
+    );
+    expect(pairSweeps(framework, vanilla, root).vanilla).toMatchObject({ passed: 0, total: 1 });
+  });
+
   it("rejects a vanilla archive that declares framework dependencies", async () => {
     const root = await fixtureRoot();
     const framework = await writeArchive(root, "framework", { arm: "framework" });

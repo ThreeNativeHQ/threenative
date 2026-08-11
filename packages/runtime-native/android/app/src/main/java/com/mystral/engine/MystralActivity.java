@@ -1,6 +1,9 @@
-package com.mystral.engine;
+package com.threenative.runtime;
 
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.view.WindowManager;
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -17,9 +20,25 @@ import org.libsdl.app.SDLActivity;
  */
 public class MystralActivity extends SDLActivity {
 
+    private Bundle applicationMetadata() {
+        try {
+            ApplicationInfo applicationInfo = getPackageManager().getApplicationInfo(
+                getPackageName(), PackageManager.GET_META_DATA);
+            return applicationInfo.metaData;
+        } catch (PackageManager.NameNotFoundException exception) {
+            return null;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Bundle metadata = applicationMetadata();
+        if (metadata != null && metadata.getBoolean("TN_KEEP_SCREEN_ON", false)) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 
     /**
@@ -51,6 +70,9 @@ public class MystralActivity extends SDLActivity {
     protected String[] getArguments() {
         String endpoint = getIntent().getStringExtra("TN_PLAYTEST_ENDPOINT");
         String mailboxRoot = getIntent().getStringExtra("TN_PLAYTEST_MAILBOX_ROOT");
+        Bundle metadata = applicationMetadata();
+        String title = metadata == null ? "ThreeNative" : metadata.getString("TN_WINDOW_TITLE", "ThreeNative");
+        boolean fullscreen = metadata == null || metadata.getBoolean("TN_FULLSCREEN", true);
         if (mailboxRoot == null) {
             java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
@@ -58,7 +80,9 @@ public class MystralActivity extends SDLActivity {
         return new String[] {
             "asset://scripts/main.js",
             endpoint == null ? "" : endpoint,
-            mailboxRoot
+            mailboxRoot,
+            title,
+            Boolean.toString(fullscreen)
         };
     }
 }

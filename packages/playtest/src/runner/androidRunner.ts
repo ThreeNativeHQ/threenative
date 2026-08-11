@@ -29,14 +29,14 @@ import {
   androidMailboxPaths,
   DeviceBridgeTransport,
   DeviceMailboxTransport,
-  type DevicePlaytestTransport,
+  type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
 import { buildReport, type IStandalonePlaytestReport } from "./runner.js";
 
 export interface IAndroidPlaytestDependencies {
   driver?: IAndroidDriver;
-  transport?: DevicePlaytestTransport;
+  transport?: IDevicePlaytestTransport;
 }
 
 export interface IDevicePlaytestDriver {
@@ -56,7 +56,7 @@ export interface IDevicePlaytestTarget {
   mailboxPaths: ReturnType<typeof androidMailboxPaths>;
   name: "android" | "ios";
   processName: string;
-  transport?: DevicePlaytestTransport;
+  transport?: IDevicePlaytestTransport;
 }
 
 export async function runAndroidPlaytest(
@@ -244,7 +244,7 @@ function createDeviceTransport(
   driver: IDevicePlaytestDriver,
   endpoint: string,
   paths: ReturnType<typeof androidMailboxPaths>,
-): DevicePlaytestTransport {
+): IDevicePlaytestTransport {
   if (isMailboxDriver(driver)) {
     const mailbox: IDeviceMailbox = {
       read: (path) => driver.readFile(path),

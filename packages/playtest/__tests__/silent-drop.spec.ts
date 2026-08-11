@@ -185,23 +185,14 @@ test("names an unavailable labeled movement series", async () => {
   expect(error.diagnostic.path).toBe("effectLogSeries");
 });
 
-test("names an unavailable labeled physics series", async () => {
+test("allows a labeled physics series to reach assertion evaluation", async () => {
   const directory = await writeScenario(
     { contacts: [{ atStep: "hit", entity: "player", minCount: 1 }] },
     [{ label: "hit", release: true, waitFrames: 1 }],
   );
   const scenario = await loadPlaytestScenario(directory, "scenario.json");
-  let caught: unknown;
-  try {
-    await connectPlaytestBridge(fakePage(["entity.observe", "runtime.contacts"]), scenario);
-  } catch (error) {
-    caught = error;
-  }
-
-  expect(caught).toBeInstanceOf(PlaytestBridgeError);
-  const error = caught as PlaytestBridgeError;
-  expect(error.diagnostic.code).toBe("TN_PLAYTEST_OBSERVATION_UNAVAILABLE");
-  expect(error.diagnostic.path).toBe("physicsDebugSeries");
+  const client = await connectPlaytestBridge(fakePage(["entity.observe", "runtime.contacts"]), scenario);
+  expect(client).toBeDefined();
 });
 
 test("keeps a supported observation kind connected", async () => {

@@ -240,13 +240,87 @@ static std::string extractJsonString(const std::string& json, const std::string&
     size_t colonPos = json.find(':', keyPos);
     if (colonPos == std::string::npos) return "";
 
-    size_t quoteStart = json.find('"', colonPos);
+    size_t quoteStart = json.find('"', colonPos + 1);
     if (quoteStart == std::string::npos) return "";
 
-    size_t quoteEnd = json.find('"', quoteStart + 1);
-    if (quoteEnd == std::string::npos) return "";
+    auto hexDigit = [](char value) -> int {
+        if (value >= '0' && value <= '9') return value - '0';
+        if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+        if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+        return -1;
+    };
+    auto readUnicodeEscape = [&](size_t start, unsigned int& value) -> bool {
+        if (start + 4 >= json.size() || json[start] != 'u') return false;
+        value = 0;
+        for (size_t offset = 1; offset <= 4; ++offset) {
+            const int digit = hexDigit(json[start + offset]);
+            if (digit < 0) return false;
+            value = (value << 4) | static_cast<unsigned int>(digit);
+        }
+        return true;
+    };
+    auto appendCodePoint = [](std::string& result, unsigned int value) {
+        if (value <= 0x7f) {
+            result.push_back(static_cast<char>(value));
+        } else if (value <= 0x7ff) {
+            result.push_back(static_cast<char>(0xc0 | (value >> 6)));
+            result.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+        } else if (value <= 0xffff) {
+            result.push_back(static_cast<char>(0xe0 | (value >> 12)));
+            result.push_back(static_cast<char>(0x80 | ((value >> 6) & 0x3f)));
+            result.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+        } else {
+            result.push_back(static_cast<char>(0xf0 | (value >> 18)));
+            result.push_back(static_cast<char>(0x80 | ((value >> 12) & 0x3f)));
+            result.push_back(static_cast<char>(0x80 | ((value >> 6) & 0x3f)));
+            result.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+        }
+    };
 
-    return json.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+    std::string result;
+    for (size_t index = quoteStart + 1; index < json.size(); ++index) {
+        const char value = json[index];
+        if (value == '"') return result;
+        if (value != '\\') {
+            if (static_cast<unsigned char>(value) < 0x20) return "";
+            result.push_back(value);
+            continue;
+        }
+        if (++index >= json.size()) return "";
+        switch (json[index]) {
+            case '"': result.push_back('"'); break;
+            case '\\': result.push_back('\\'); break;
+            case '/': result.push_back('/'); break;
+            case 'b': result.push_back('\b'); break;
+            case 'f': result.push_back('\f'); break;
+            case 'n': result.push_back('\n'); break;
+            case 'r': result.push_back('\r'); break;
+            case 't': result.push_back('\t'); break;
+            case 'u': {
+                unsigned int codePoint = 0;
+                if (!readUnicodeEscape(index, codePoint)) return "";
+                index += 4;
+                if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
+                    if (index + 6 >= json.size() || json[index + 1] != '\\' || json[index + 2] != 'u') {
+                        return "";
+                    }
+                    unsigned int lowSurrogate = 0;
+                    if (!readUnicodeEscape(index + 2, lowSurrogate) ||
+                        lowSurrogate < 0xdc00 || lowSurrogate > 0xdfff) {
+                        return "";
+                    }
+                    codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (lowSurrogate - 0xdc00);
+                    index += 6;
+                } else if (codePoint >= 0xdc00 && codePoint <= 0xdfff) {
+                    return "";
+                }
+                appendCodePoint(result, codePoint);
+                break;
+            }
+            default: return "";
+        }
+    }
+    return "";
 }
 
 /**
@@ -273,6 +347,19 @@ static double extractJsonNumber(const std::string& json, const std::string& key,
             return defaultValue;
         }
     }
+    return defaultValue;
+}
+
+static bool extractJsonBool(const std::string& json, const std::string& key, bool defaultValue) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return defaultValue;
+    size_t colonPos = json.find(':', keyPos);
+    if (colonPos == std::string::npos) return defaultValue;
+    size_t start = colonPos + 1;
+    while (start < json.size() && (json[start] == ' ' || json[start] == '\t' || json[start] == '\n' || json[start] == '\r')) start++;
+    if (json.compare(start, 4, "true") == 0) return true;
+    if (json.compare(start, 5, "false") == 0) return false;
     return defaultValue;
 }
 
@@ -407,7 +494,8 @@ struct CLIOptions {
     std::string scriptPath;
     int width = 1280;
     int height = 720;
-    std::string title = "Mystral";
+    std::string title = "ThreeNative";
+    bool resizable = true;
     bool showHelp = false;
     bool showVersion = false;
     bool headless = false;
@@ -445,6 +533,19 @@ struct CLIOptions {
     int bakeSamples = 64;        // Rays per texel
     int bakeBounces = 2;         // Light bounces for GI
 };
+
+static void applyEmbeddedConfig(CLIOptions& opts) {
+    std::vector<uint8_t> bytes;
+    if (!mystral::vfs::readEmbeddedFile(".threenative/config.json", bytes)) return;
+    const std::string config(bytes.begin(), bytes.end());
+    const std::string title = extractJsonString(config, "title");
+    if (!title.empty()) opts.title = title;
+    const double width = extractJsonNumber(config, "width", opts.width);
+    const double height = extractJsonNumber(config, "height", opts.height);
+    if (width > 0) opts.width = static_cast<int>(width);
+    if (height > 0) opts.height = static_cast<int>(height);
+    opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
+}
 
 CLIOptions parseArgs(int argc, char* argv[]) {
     CLIOptions opts;
@@ -1305,7 +1406,7 @@ int runScript(const CLIOptions& opts) {
     bool videoMode = !opts.videoPath.empty();
 
     if (!opts.quiet) {
-        std::cout << "=== Mystral Native Runtime ===" << std::endl;
+        std::cout << "=== ThreeNative Native Runtime ===" << std::endl;
         std::cout << "Version: " << mystral::getVersion() << std::endl;
         std::cout << "Script: " << opts.scriptPath << std::endl;
         std::cout << "Window: " << opts.width << "x" << opts.height << std::endl;
@@ -1342,6 +1443,7 @@ int runScript(const CLIOptions& opts) {
     config.width = opts.width;
     config.height = opts.height;
     config.title = opts.title.c_str();
+    config.resizable = opts.resizable;
     config.noSdl = opts.noSdl;
     config.watch = opts.watch;
     config.debug = debugMode;
@@ -2142,6 +2244,7 @@ int main(int argc, char* argv[]) {
         opts.command = "run";
         opts.scriptPath = embeddedEntry;
     }
+    applyEmbeddedConfig(opts);
 
     // Handle no args with no embedded entry
     if (opts.command.empty() && argc < 2) {

@@ -1,25 +1,25 @@
-import * as RAPIER from "@dimforge/rapier3d-compat";
+import * as rapier from "@dimforge/rapier3d-compat";
 import {
-  type PhysicsSimulation,
+  type IPhysicsSimulation,
   createWebPhysicsShape,
   createWebPhysicsSimulation,
   installPhysicsSimulationBackend,
 } from "./simulation.js";
 
 let initialized: Promise<void> | undefined;
-const simulations = new WeakMap<object, PhysicsSimulation>();
+const simulations = new WeakMap<object, IPhysicsSimulation>();
 
 installPhysicsSimulationBackend({
   initialize: () => {
-    initialized ??= RAPIER.init();
+    initialized ??= rapier.init();
     return initialized;
   },
   createSimulation: (options = {}) => {
-    const world = new RAPIER.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
+    const world = new rapier.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
     const simulation = createWebPhysicsSimulation({
-      eventQueue: new RAPIER.EventQueue(true),
-      rapier: RAPIER,
-      version: RAPIER.version(),
+      eventQueue: new rapier.EventQueue(true),
+      rapier,
+      version: rapier.version(),
       world,
     });
     simulations.set(world, simulation);
@@ -31,13 +31,13 @@ installPhysicsSimulationBackend({
     const simulation = simulations.get(world);
     if (simulation !== undefined) return simulation;
     const created = createWebPhysicsSimulation({
-      eventQueue: new RAPIER.EventQueue(true),
-      rapier: RAPIER,
-      version: RAPIER.version(),
-      world: world as RAPIER.World,
+      eventQueue: new rapier.EventQueue(true),
+      rapier,
+      version: rapier.version(),
+      world: world as rapier.World,
     });
     simulations.set(world, created);
     return created;
   },
-  createShape: (shape) => createWebPhysicsShape(RAPIER, shape),
+  createShape: (shape) => createWebPhysicsShape(rapier, shape),
 });

@@ -4,9 +4,9 @@ import {
   nativeSimulation,
 } from "./native/host.js";
 import { installPhysicsSimulationBackend } from "./simulation.js";
-import type { PhysicsSimulation } from "./simulation.js";
+import type { IPhysicsSimulation } from "./simulation.js";
 
-const simulations = new WeakMap<object, PhysicsSimulation>();
+const simulations = new WeakMap<object, IPhysicsSimulation>();
 
 function wrapNativeSimulation(raw: ReturnType<typeof nativeSimulation>, version: string) {
   const simulation = createNativePhysicsSimulation(raw, version);

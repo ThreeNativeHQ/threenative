@@ -2,13 +2,13 @@ import { join } from "node:path";
 
 import { runDevicePlaytest, type IDevicePlaytestDriver } from "./androidRunner.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
-import { deviceMailboxPaths, type DevicePlaytestTransport } from "./deviceTransport.js";
+import { deviceMailboxPaths, type IDevicePlaytestTransport } from "./deviceTransport.js";
 import { XcrunIosDriver } from "./ios.js";
 import type { IStandalonePlaytestReport } from "./runner.js";
 
 export interface IIosPlaytestDependencies {
   driver?: IDevicePlaytestDriver & { getMailboxRoot?(): string };
-  transport?: DevicePlaytestTransport;
+  transport?: IDevicePlaytestTransport;
 }
 
 export async function runIosPlaytest(

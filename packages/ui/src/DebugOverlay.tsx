@@ -2,11 +2,10 @@ import { type CSSProperties, useEffect, useState } from "react";
 
 export type DebugSnapshot = Record<string, Record<string, unknown>>;
 
-type DevWindow = Window & {
-  __THREENATIVE__?: { snapshot?: () => DebugSnapshot };
-};
+type DevWindow = Window & Partial<Record<"__THREENATIVE__", { snapshot?: () => DebugSnapshot }>>;
 
-const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+const isDev =
+  (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
 
 /*
  * Styled inline rather than with Tailwind classes. CHARTER.md §6b mandates

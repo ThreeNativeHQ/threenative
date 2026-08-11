@@ -38,6 +38,10 @@ export function setupSky(scene: Scene, options?: SkyOptions): void {
     geometry,
     new MeshBasicMaterial({ side: BackSide, toneMapped: false, vertexColors: true }),
   );
+  // The dome is authored at the origin and never moves; freeze only this
+  // known-static render object, leaving gameplay transforms under user control.
+  dome.updateMatrix();
+  dome.matrixAutoUpdate = false;
   dome.frustumCulled = false;
   scene.background = top;
   scene.fog = new Fog(bottom, 18, 80);

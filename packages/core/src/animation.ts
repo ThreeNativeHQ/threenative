@@ -1,11 +1,11 @@
 import { type AnimationAction, type AnimationClip, AnimationMixer, type Object3D } from "three";
 
-export interface AnimationPlayerOptions {
+export interface IAnimationPlayerOptions {
   readonly clips: readonly AnimationClip[];
   readonly root: Object3D;
 }
 
-export interface AnimationPlayOptions {
+export interface IAnimationPlayOptions {
   readonly fade?: number;
 }
 
@@ -18,7 +18,7 @@ export class AnimationPlayer {
   #fadeElapsed = 0;
   #fadeDuration = 0;
 
-  constructor(options: AnimationPlayerOptions) {
+  constructor(options: IAnimationPlayerOptions) {
     this.mixer = new AnimationMixer(options.root);
     for (const clip of options.clips) {
       if (this.#actions.has(clip.name)) throw new Error(`Duplicate animation clip '${clip.name}'.`);
@@ -37,7 +37,7 @@ export class AnimationPlayer {
     return this.#advancedFrames;
   }
 
-  play(name: string, options: AnimationPlayOptions = {}): void {
+  play(name: string, options: IAnimationPlayOptions = {}): void {
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
     if (this.#current === name) return;

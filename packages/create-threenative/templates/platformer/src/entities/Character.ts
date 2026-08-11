@@ -1,11 +1,11 @@
-import type { Ctx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, Vector3 } from "three";
 import { ONE_WAY_LAYER } from "../level/Platform.js";
 import { animateCharacter, createCharacterRig } from "../render/rig.js";
-import type { TouchInput } from "../render/touch-controls.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
-type GameCtx = Ctx<GameState, PhysicsContext>;
+type GameCtx = ICtx<GameState, IPhysicsContext>;
 export const PLAYER_LAYER = 1;
 export const PLATFORMER_FEEL = {
   airAcceleration: 24,
@@ -73,7 +73,7 @@ export class Character {
     });
   }
 
-  update(ctx: GameCtx, dt: number, touch?: TouchInput): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     this.#time += dt;
     this.#dashTimer = Math.max(0, this.#dashTimer - dt);
     this.#dashCooldown = Math.max(0, this.#dashCooldown - dt);

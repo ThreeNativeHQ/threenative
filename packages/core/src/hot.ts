@@ -1,8 +1,8 @@
 /// <reference path="./import-meta.d.ts" />
 
 import { audioRuntimeSnapshot } from "./audio.js";
-import type { Game } from "./game.js";
-export interface HotDiagnostics {
+import type { IGame } from "./game.js";
+export interface IHotDiagnostics {
   readonly reloads: number;
   readonly entities: number;
   readonly sceneObjects: number;
@@ -11,13 +11,14 @@ export interface HotDiagnostics {
   readonly physics: number | null;
 }
 type HotData = { readonly state: Record<string, unknown>; readonly reloads: number };
-const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
+const isDev =
+  (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
 export function assertPortableState(state: unknown): void {
   visitPortable(state, "state", new Set<object>());
 }
 export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>(
-  game: Game<TState, TPhysics>,
-  hot: ImportMeta["hot"],
+  game: IGame<TState, TPhysics>,
+  hot: IImportMeta["hot"],
 ): void {
   if (hot === undefined) return;
   hot.accept();
@@ -25,9 +26,8 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   const reloads = carried?.reloads ?? 0;
   if (carried !== undefined) restoreState(game, carried.state);
   if (isDev && typeof window !== "undefined") {
-    const host = window as unknown as {
-      __THREENATIVE__?: Record<string, unknown> & { hot?: () => HotDiagnostics };
-    };
+    const host = window as unknown as Record<string, unknown> &
+      Partial<Record<"__THREENATIVE__", Record<string, unknown> & { hot?: () => IHotDiagnostics }>>;
     host.__THREENATIVE__ = {
       ...host.__THREENATIVE__,
       hot: () => diagnostics(game, reloads),
@@ -53,7 +53,7 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   });
 }
 function restoreState<TState extends Record<string, unknown>, TPhysics>(
-  game: Game<TState, TPhysics>,
+  game: IGame<TState, TPhysics>,
   carried: Record<string, unknown>,
 ): void {
   assertPortableState(carried);
@@ -71,9 +71,9 @@ function restoreState<TState extends Record<string, unknown>, TPhysics>(
     );
 }
 function diagnostics<TState extends Record<string, unknown>, TPhysics>(
-  game: Game<TState, TPhysics>,
+  game: IGame<TState, TPhysics>,
   reloads: number,
-): HotDiagnostics {
+): IHotDiagnostics {
   const ctx = game.ctx;
   let sceneObjects = 0;
   ctx?.scene.traverse(() => {
@@ -113,4 +113,18 @@ function visitPortable(value: unknown, path: string, ancestors: Set<object>): vo
   for (const key of Object.keys(value))
     visitPortable((value as Record<string, unknown>)[key], `${path}.${key}`, ancestors);
   ancestors.delete(value);
+}
+
+interface IImportMeta {
+  readonly env?: {
+    readonly DEV?: boolean;
+  };
+  readonly hot?: IViteHotContext;
+}
+
+interface IViteHotContext {
+  readonly data: Record<string, unknown>;
+  accept(): void;
+  dispose(callback: (data: Record<string, unknown>) => void): void;
+  invalidate(message?: string): void;
 }

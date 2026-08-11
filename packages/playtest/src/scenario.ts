@@ -207,6 +207,12 @@ export interface IPlaytestDiagnosticsAssertion {
   runtimeReady?: boolean;
 }
 
+export interface IPlaytestPerformanceAssertion {
+  maxDrawCalls?: number;
+  maxFrameMsP95?: number;
+  maxTriangles?: number;
+}
+
 export interface IPlaytestVisualAssertion {
   entityVisible?: { entity: string; minProjectedPixels: number; throughoutFrames?: boolean };
   frameDiff?: { baselineImage?: string; maxChangedPixelRatio?: number; minChangedPixelRatio?: number };
@@ -261,6 +267,7 @@ export interface IPlaytestScenarioAssertions {
   movement?: IPlaytestMovementAssertion;
   occluded?: IPlaytestOccludedAssertion[];
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
+  performance?: IPlaytestPerformanceAssertion;
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
@@ -813,6 +820,9 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
+  const performance = isRecord(value.performance)
+    ? validatePerformanceAssertion(value.performance, scenarioPath, "assert.performance")
+    : undefined;
   const world = isRecord(value.world) ? value.world : undefined;
   if (diagnostics?.noRuntimeDiagnostics === false
     && (typeof diagnostics.runtimeDiagnosticsOptOutReason !== "string" || diagnostics.runtimeDiagnosticsOptOutReason.trim() === "")) {
@@ -854,6 +864,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
           },
         }),
     ...(Array.isArray(value.hud) ? { hud: value.hud.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
+    ...(performance === undefined ? {} : { performance }),
     ...(movement === undefined
       ? {}
       : {
@@ -1206,6 +1217,15 @@ function optionalNumber(value: Record<string, unknown>, key: string, scenarioPat
   return raw;
 }
 
+function optionalNonNegativeNumber(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a finite non-negative number, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
 function optionalNonNegativeInteger(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
   const raw = value[key];
   if (raw === undefined) return undefined;
@@ -1250,6 +1270,16 @@ function optionalTargetArray(value: Record<string, unknown>, key: string, scenar
 /** Spread helper: omits an absent key, keeps a validated one. */
 function present<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
   return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
+}
+
+function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxTriangles"], scenarioPath, objectPath);
+  return {
+    ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
+    ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
+    ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
+  };
 }
 
 function validateStateAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestStateAssertion {

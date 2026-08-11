@@ -3995,6 +3995,12 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // the normal SDL input path remains unchanged for players.
         auto nativeHost = jsEngine_->getGlobalProperty("__THREENATIVE_NATIVE__");
         if (jsEngine_->isUndefined(nativeHost)) nativeHost = jsEngine_->newObject();
+        jsEngine_->setProperty(nativeHost, "captureScreenshot",
+            jsEngine_->newFunction("captureScreenshot", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(saveScreenshot(jsEngine_->toString(args[0])));
+            })
+        );
         auto playtestHost = jsEngine_->newObject();
         jsEngine_->setProperty(playtestHost, "keyboard",
             jsEngine_->newFunction("keyboard", [this](void*, const std::vector<js::JSValueHandle>& args) {

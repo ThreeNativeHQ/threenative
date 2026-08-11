@@ -27,6 +27,10 @@ function skyDome(): Mesh {
     geometry,
     new MeshBasicMaterial({ side: BackSide, toneMapped: false, vertexColors: true }),
   );
+  // The dome is authored at the origin and never moves; freeze only this
+  // known-static render object, leaving gameplay transforms under user control.
+  mesh.updateMatrix();
+  mesh.matrixAutoUpdate = false;
   mesh.frustumCulled = false;
   return mesh;
 }

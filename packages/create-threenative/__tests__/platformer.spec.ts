@@ -119,11 +119,11 @@ describe("platformer checkpoints", () => {
       "utf8",
     );
 
-    expect(controls).toContain("ReadonlyMap<number, TouchPointer>");
+    expect(controls).toContain("ReadonlyMap<number, ITouchPointer>");
     expect(controls).toContain("TouchControls");
     expect(level).toContain('ctx.entities.add("touch-controls"');
     expect(level).toContain("frameCtx.input.raw.pointers");
-    expect(character).toContain("TouchInput");
+    expect(character).toContain("ITouchInput");
     expect(character).toContain("touch?.jumpPressed === true");
     expect(character).toContain("touch?.dashPressed === true");
   });
@@ -186,5 +186,38 @@ describe("platformer checkpoints", () => {
     expect(first.jumpPressed).toBe(true);
     expect(second.jumpPressed).toBe(false);
     controls.dispose();
+  });
+
+  it("ships the production performance scenario without changing the platformer workload", async () => {
+    const level = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+      "utf8",
+    );
+    const performance = await readFile(
+      path.resolve(
+        "packages/create-threenative/templates/platformer/playtests/performance.playtest.json",
+      ),
+      "utf8",
+    );
+    const scenario = JSON.parse(performance) as {
+      assert: {
+        performance: {
+          maxDrawCalls: number;
+          maxFrameMsP95: number;
+          maxTriangles: number;
+        };
+      };
+      steps: Array<Record<string, unknown>>;
+    };
+
+    expect(scenario.assert.performance).toEqual({
+      maxDrawCalls: 180,
+      maxFrameMsP95: 33,
+      maxTriangles: 100000,
+    });
+    expect(scenario.steps.map((step) => step.kind)).toEqual(["input", "wait"]);
+    expect(scenario.steps).not.toContainEqual(expect.objectContaining({ kind: "performance" }));
+    expect(scenario.steps).not.toContainEqual(expect.objectContaining({ sampleSeconds: 10 }));
+    expect(level).toContain("const SPAWN = new Vector3(0, 0.75, 0);");
   });
 });

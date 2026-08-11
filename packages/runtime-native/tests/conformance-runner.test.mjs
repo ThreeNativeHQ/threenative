@@ -215,7 +215,7 @@ test("Android capture rejects system ANR and error overlays", () => {
     androidSystemDialog("Window{123 u0 Application Error: com.example.game}\n"),
     "Application Error: com.example.game",
   );
-  assert.equal(androidSystemDialog("mCurrentFocus=Window{123 u0 com.mystral.engine}"), null);
+  assert.equal(androidSystemDialog("mCurrentFocus=Window{123 u0 com.threenative.game}"), null);
 });
 
 test("Android capture waits for the pinned landscape size instead of reporting a rotation as a pixel mismatch", () => {

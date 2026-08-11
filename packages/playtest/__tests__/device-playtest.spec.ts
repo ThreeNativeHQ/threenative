@@ -20,7 +20,7 @@ import {
   type IDeviceBridgeInstallation,
 } from "../src/three/device.js";
 
-interface NativeHost {
+interface INativeHost {
   __THREENATIVE_NATIVE__?: {
     playtestInput: {
       keyboard(type: string, key: string, code: string): void;
@@ -69,7 +69,7 @@ class FakeAndroidDriver implements IAndroidDriver {
 
 test("one device scenario reaches the same semantic evaluator and passes", async () => {
   const { bridge, setHeld } = movingBridge();
-  const host = globalThis as typeof globalThis & NativeHost;
+  const host = globalThis as typeof globalThis & INativeHost;
   const previous = host.__THREENATIVE_NATIVE__;
   host.__THREENATIVE_NATIVE__ = {
     playtestInput: {
@@ -93,7 +93,7 @@ test("one device scenario reaches the same semantic evaluator and passes", async
 
 test("a deliberately wrong value fails on the device path with exit code 1", async () => {
   const { bridge, setHeld } = movingBridge();
-  const host = globalThis as typeof globalThis & NativeHost;
+  const host = globalThis as typeof globalThis & INativeHost;
   const previous = host.__THREENATIVE_NATIVE__;
   host.__THREENATIVE_NATIVE__ = {
     playtestInput: {
@@ -114,7 +114,7 @@ test("a deliberately wrong value fails on the device path with exit code 1", asy
 });
 
 test("an Android runtime error reaches the diagnostics assertion with exit code 1", async () => {
-  const host = globalThis as typeof globalThis & NativeHost;
+  const host = globalThis as typeof globalThis & INativeHost;
   const previous = host.__THREENATIVE_NATIVE__;
   host.__THREENATIVE_NATIVE__ = {
     playtestInput: { keyboard: () => undefined, pointer: () => undefined },

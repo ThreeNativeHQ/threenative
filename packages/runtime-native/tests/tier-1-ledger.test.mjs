@@ -95,15 +95,10 @@ export function validateLedger(markdown) {
 
   const controlsTable = parseTable(markdown, "## Controls", CONTROL_COLUMNS);
   assert.equal(controlsTable.rows.length, CONTROL_IDS.length, "control row count changed");
-  for (const [index, id] of CONTROL_IDS.entries()) {
+  for (const id of CONTROL_IDS) {
     const row = uniqueRow(controlsTable.rows, `\`${id}\``, "Controls");
-    if (index < 3) {
-      assert.match(row[2], /^Observed red:/u, `${id} was not observed red`);
-      assert.equal(row[3], "1", `${id} must exit 1`);
-    } else {
-      assert.match(row[2], /\bUNVERIFIED\b/u, `${id} must be UNVERIFIED`);
-      assert.equal(row[3], "254", `${id} must exit 254`);
-    }
+    assert.match(row[2], /^Observed red:/u, `${id} was not observed red`);
+    assert.equal(row[3], "1", `${id} must exit 1`);
   }
 
   const gatesTable = parseTable(markdown, "## Gates", GATE_COLUMNS);

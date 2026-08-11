@@ -11,7 +11,7 @@
 import type { PerspectiveCamera, Vector3 } from "three";
 import { Vector3 as Vec3 } from "three";
 
-export interface SpringArmOptions {
+export interface ISpringArmOptions {
   /** Where the camera sits relative to its target, before smoothing. */
   readonly offset?: Vector3;
   /** How far ahead of the target the camera looks. Lead the action. */
@@ -20,7 +20,7 @@ export interface SpringArmOptions {
   readonly damping?: number;
 }
 
-export interface SpringArm {
+export interface ISpringArm {
   /** Call once per frame from `update(dt)`. */
   readonly follow: (target: Vector3, dt: number) => void;
   /** Jump the camera to its resting pose — use on spawn and respawn. */
@@ -29,8 +29,8 @@ export interface SpringArm {
 
 export function createSpringArm(
   camera: PerspectiveCamera,
-  options: SpringArmOptions = {},
-): SpringArm {
+  options: ISpringArmOptions = {},
+): ISpringArm {
   // Keep the starter's target-relative distance below the 9.5-unit look budget
   // so the player and nearby route stay readable after the camera settles.
   const offset = options.offset ?? new Vec3(0, 4.2, 8.45);

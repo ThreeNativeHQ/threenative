@@ -1,7 +1,7 @@
 import type { Mesh } from "three";
 import { interactionGroups } from "./collision.js";
 import {
-  type PhysicsShapeDescriptor,
+  type IPhysicsShapeDescriptor,
   type PhysicsShapeKind,
   physicsSimulationBackend,
 } from "./simulation.js";
@@ -9,7 +9,7 @@ import {
 export type CollisionShapeKind = PhysicsShapeKind;
 
 /** A backend-specific escape hatch: Rapier on web, opaque on native. */
-export interface CollisionShapeHandle {
+export interface ICollisionShapeHandle {
   readonly raw: unknown;
 }
 
@@ -49,15 +49,15 @@ function applyRaw(raw: unknown, method: string, ...args: unknown[]): void {
 }
 
 export class CollisionShape3D {
-  readonly #descriptor: PhysicsShapeDescriptor;
+  readonly #descriptor: IPhysicsShapeDescriptor;
   #backendRaw: unknown;
 
-  private constructor(descriptor: PhysicsShapeDescriptor) {
+  private constructor(descriptor: IPhysicsShapeDescriptor) {
     this.#descriptor = descriptor;
   }
 
-  /** Backend-neutral data consumed by the selected PhysicsSimulation adapter. */
-  get descriptor(): PhysicsShapeDescriptor {
+  /** Backend-neutral data consumed by the selected IPhysicsSimulation adapter. */
+  get descriptor(): IPhysicsShapeDescriptor {
     return this.#descriptor;
   }
 

@@ -1,5 +1,5 @@
-import type { Ctx } from "@threenative/core";
-import { CollisionShape3D, type PhysicsContext, RigidBody3D } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Material, Mesh } from "three";
 import { roundedBox } from "../render/shapes.js";
 import type { GameState } from "../state.js";
@@ -9,7 +9,7 @@ export class Crate {
   readonly body: RigidBody3D;
 
   constructor(
-    ctx: Ctx<GameState, PhysicsContext>,
+    ctx: ICtx<GameState, IPhysicsContext>,
     x: number,
     y: number,
     z: number,

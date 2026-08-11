@@ -4,7 +4,6 @@
     "ignore": [
       "**/dist/**",
       ".worktrees/**",
-      "packages/playtest/**",
       "packages/runtime-native/**",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
@@ -25,7 +24,98 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 15 }
+        }
+      },
+      "style": {
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "conventions": [{ "selector": { "kind": "interface" }, "match": "I(.*)" }],
+            "strictCase": false,
+            "requireAscii": false
+          }
+        }
+      }
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["**/*.ts", "**/*.tsx"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
+      "include": [
+        "packages/core/src/**",
+        "packages/physics/src/**",
+        "packages/ui/src/**",
+        "packages/create-threenative/src/**",
+        "packages/playtest/src/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [{ "selector": { "kind": "interface" }, "match": "I(.*)" }],
+                "strictCase": false,
+                "requireAscii": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "include": ["packages/playtest/**"],
+      "formatter": { "enabled": false },
+      "organizeImports": { "enabled": false },
+      "linter": {
+        "rules": {
+          "recommended": true,
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "warn",
+              "options": { "maxAllowedComplexity": 15 }
+            },
+            "noForEach": "warn"
+          },
+          "style": {
+            "noNonNullAssertion": "warn",
+            "noParameterAssign": "warn",
+            "useNamingConvention": "warn",
+            "useImportType": "warn",
+            "useTemplate": "warn"
+          },
+          "suspicious": { "noConfusingVoidType": "warn" },
+          "performance": { "noDelete": "warn" }
+        }
+      }
+    },
+    {
+      "include": ["packages/playtest/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [
+                  { "selector": { "kind": "interface" }, "match": "I(.*)" },
+                  { "match": ".*" }
+                ],
+                "strictCase": false,
+                "requireAscii": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

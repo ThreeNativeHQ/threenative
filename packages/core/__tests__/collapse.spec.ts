@@ -9,7 +9,7 @@ import {
   Scene,
 } from "three";
 import { describe, expect, it } from "vitest";
-import { SceneCollapse, type SceneCollapseReport } from "../src/collapse.js";
+import { type ISceneCollapseReport, SceneCollapse } from "../src/collapse.js";
 
 const GEOMETRY = new BoxGeometry(1, 1, 1);
 
@@ -29,7 +29,7 @@ function run(
   frames: number,
   options: { observeFrames?: number; minMeshes?: number } = {},
 ) {
-  let report: SceneCollapseReport | undefined;
+  let report: ISceneCollapseReport | undefined;
   const collapse = new SceneCollapse(scene as never, {
     observeFrames: options.observeFrames ?? 3,
     minMeshes: options.minMeshes ?? 8,
@@ -135,7 +135,7 @@ describe("SceneCollapse", () => {
     arm.add(armMesh);
     scene.add(arm);
 
-    let report: SceneCollapseReport | undefined;
+    let report: ISceneCollapseReport | undefined;
     const collapse = new SceneCollapse(scene as never, {
       observeFrames: 3,
       minMeshes: 8,
@@ -158,7 +158,7 @@ describe("SceneCollapse", () => {
   it("settles with real progress, and settles even when the scene is too small to collapse", async () => {
     const scene = new Scene();
     fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);
-    let report: SceneCollapseReport | undefined;
+    let report: ISceneCollapseReport | undefined;
     const collapse = new SceneCollapse(scene as never, {
       observeFrames: 4,
       minMeshes: 8,
@@ -302,7 +302,7 @@ describe("SceneCollapse", () => {
     fill(camera, new MeshToonMaterial({ color: 0xff0000 }), 14);
     // Stop the instant it settles. Pumping further frames would run the per-frame update and fill
     // the buffer anyway, which is what made the first version of this test pass without the fix.
-    let report: SceneCollapseReport | undefined;
+    let report: ISceneCollapseReport | undefined;
     const collapse = new SceneCollapse(scene as never, {
       observeFrames: 3,
       minMeshes: 8,

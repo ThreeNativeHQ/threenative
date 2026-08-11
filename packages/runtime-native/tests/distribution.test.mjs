@@ -321,3 +321,19 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   );
   assert.equal(manifest.scripts.install, 'node scripts/install-prebuilt.mjs');
 });
+
+test('the packed archive reaches the production profile command and evaluator', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'threenative-profile-pack-'));
+  roots.push(root);
+  const packed = await packRuntime(root);
+  const manifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(manifest.scripts['profile:production'], 'node scripts/profile-production.mjs');
+  for (const file of ['scripts/profile-production.mjs', 'scripts/production-evidence.mjs']) {
+    assert.ok(packed.files.includes(file), `pnpm pack omitted ${file}`);
+  }
+  const archive = await run('tar', ['-tf', packed.archive]);
+  assert.match(archive.stdout, /package\/scripts\/profile-production\.mjs\n/u);
+  assert.match(archive.stdout, /package\/scripts\/production-evidence\.mjs\n/u);
+});

@@ -18,8 +18,9 @@ import {
 
 export { FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
-export const APP_ID = 'com.mystral.engine';
-export const ACTIVITY = `${APP_ID}/.MystralActivity`;
+export const APP_ID = 'com.threenative.game';
+export const ACTIVITY_CLASS = 'com.threenative.runtime.MystralActivity';
+export const ACTIVITY = `${APP_ID}/${ACTIVITY_CLASS}`;
 export const SUCCESS_MARKER = FRAME_MARKER;
 export const REQUIRED_MARKERS = [
   THREE_VERSION_MARKER,

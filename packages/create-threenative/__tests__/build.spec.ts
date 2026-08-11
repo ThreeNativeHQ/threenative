@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertNativeBundleCompatible, build, buildWeb, parseBuildArgs } from "../src/build.js";
+import {
+  assertNativeBundleCompatible,
+  build,
+  buildWeb,
+  nativeOrientation,
+  parseBuildArgs,
+} from "../src/build.js";
 import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -102,8 +108,44 @@ describe("threenative build", () => {
       expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
         "@threenative/runtime-native",
       );
-      expect(manifest.threenative?.nativeEntry, template).toBe("src/game.ts");
+      expect(manifest.threenative, template).toBeUndefined();
+      await expect(
+        readFile(`packages/create-threenative/templates/${template}/threenative.config.ts`, "utf8"),
+      ).resolves.toContain("display");
     }
+  });
+
+  it("parses every orientation and defaults missing orientation to landscape", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-orientation-"));
+    roots.push(root);
+    const manifest = path.join(root, "package.json");
+    const config = path.join(root, "threenative.config.ts");
+    await writeFile(manifest, JSON.stringify({ name: "orientation-proof" }));
+    for (const orientation of ["landscape", "portrait", "sensor"] as const) {
+      await writeFile(config, `export default { display: { orientation: "${orientation}" } };\n`);
+      await expect(nativeOrientation(root)).resolves.toBe(orientation);
+    }
+    await writeFile(config, "export default {};\n");
+    await expect(nativeOrientation(root)).resolves.toBe("landscape");
+  });
+
+  it("fails the native build with a named code for an unrecognised orientation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-invalid-orientation-"));
+    roots.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "invalid-orientation" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { display: { orientation: "sideways" } };\n',
+    );
+
+    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
+      /TN_NATIVE_ORIENTATION_INVALID/u,
+    );
   });
 
   it("guards web-only UI on every native target and WASM on mobile only", async () => {

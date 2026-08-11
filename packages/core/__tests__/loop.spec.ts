@@ -46,6 +46,22 @@ describe("FixedStepLoop", () => {
     expect(loop.fps).toBeLessThan(steady);
   });
 
+  it("should record frame timing and renderer metrics after each rendered frame", () => {
+    const loop = new FixedStepLoop({
+      onRender: () => ({ drawCalls: 3, triangles: 24 }),
+      onUpdate: () => undefined,
+    });
+
+    loop.stepFrame(0);
+    loop.stepFrame(16);
+    loop.stepFrame(32);
+
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([
+      { drawCalls: 3, frameMs: 16, triangles: 24 },
+      { drawCalls: 3, frameMs: 16, triangles: 24 },
+    ]);
+  });
+
   it("should schedule the next frame when rendering throws", () => {
     const callbacks: Array<(time: number) => void> = [];
     const loop = new FixedStepLoop({

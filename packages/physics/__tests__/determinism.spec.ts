@@ -1,18 +1,18 @@
 import { Worker } from "node:worker_threads";
 import * as RAPIER from "@dimforge/rapier3d-compat";
-import type { Ctx } from "@threenative/core";
+import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh } from "three";
 import { describe, expect, it } from "vitest";
 import { FixedStepLoop } from "../../core/src/loop.js";
 import "../src/index.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
-import { type PhysicsContext, rapier } from "../src/plugin.js";
+import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 async function simulate(frameRate: number): Promise<number> {
   await RAPIER.init();
   const plugin = rapier();
-  const ctx = { physics: undefined } as unknown as Ctx<Record<string, unknown>, PhysicsContext>;
+  const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
   await plugin.setup?.(ctx);
   const mesh = new Mesh(new BoxGeometry(1, 1, 1));
   mesh.position.y = 5;

@@ -6,13 +6,14 @@ import {
   type IPlaytestBridgeHost,
   type IPlaytestBridgeV1,
   type IPlaytestGameplayObservation,
+  type IPlaytestRuntimeDiagnosticsSample,
   type IPlaytestSetupRequest,
   type JsonValue,
 } from "../protocol.js";
 import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
-import { sampleThreeObservations, type ThreePlaytestRenderer } from "./observations.js";
+import { sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
 import {
   connectDevicePlaytestBridge,
   type IDeviceBridgeInstallation,
@@ -32,8 +33,9 @@ export interface IThreePlaytestBridgeOptions {
   fixedStep?: (ticks: number) => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
+  runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   events?: () => JsonValue[];
-  renderer: ThreePlaytestRenderer;
+  renderer: IThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
   tick?: () => number;
@@ -64,6 +66,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(Object.keys(options.components?.() ?? {}).length === 0 ? [] : ["runtime.components"]),
     ...(options.events === undefined ? [] : ["runtime.events"]),
     ...(options.gameplay === undefined ? [] : ["runtime.animation", "runtime.state"]),
+    ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
   ];
@@ -107,6 +110,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         clockMode: options.fixedStep === undefined ? "render-frame" : "fixed-step",
         diagnostics: options.diagnostics,
         gameplay: options.gameplay,
+        runtimeDiagnosticsSeries: options.runtimeDiagnosticsSeries,
         registry,
         renderer: options.renderer,
         resources: options.resources === undefined ? undefined : () => options.resources!.read(),

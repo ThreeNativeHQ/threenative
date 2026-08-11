@@ -5,7 +5,7 @@ import { Area3D } from "../src/Area3D.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
-import { type NativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
+import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
 import {
   Area3D as NativeArea3D,
   CharacterBody3D as NativeCharacterBody3D,
@@ -27,7 +27,7 @@ describe("native physics contract", () => {
       throw new Error("unsupported shapes must not reach the native host");
     });
     const native = createNativePhysicsSimulation(
-      { createBody } as unknown as NativeSimulation,
+      { createBody } as unknown as INativeSimulation,
       "0.30.0",
     );
 
@@ -51,7 +51,7 @@ describe("native physics contract", () => {
   it("requires matching sensor metadata on both adapters and keeps native raw values opaque", async () => {
     const createBody = vi.fn().mockReturnValueOnce(7).mockReturnValueOnce(8);
     const native = createNativePhysicsSimulation(
-      { createBody } as unknown as NativeSimulation,
+      { createBody } as unknown as INativeSimulation,
       "0.30.0",
     );
     const sensorShape = CollisionShape3D.capsule(0.35, 0.3).setSensor(true);
@@ -109,7 +109,7 @@ describe("native physics contract", () => {
   it("passes a sensor shape through the shared rigid-body node", () => {
     const createBody = vi.fn().mockReturnValue(9);
     const native = createNativePhysicsSimulation(
-      { createBody } as unknown as NativeSimulation,
+      { createBody } as unknown as INativeSimulation,
       "0.30.0",
     );
     new RigidBody3D({
@@ -125,7 +125,7 @@ describe("native physics contract", () => {
     const createBody = vi.fn().mockReturnValue(10);
     const configureCharacter = vi.fn();
     const native = createNativePhysicsSimulation(
-      { configureCharacter, createBody } as unknown as NativeSimulation,
+      { configureCharacter, createBody } as unknown as INativeSimulation,
       "0.30.0",
     );
     new CharacterBody3D({

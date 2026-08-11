@@ -1,6 +1,6 @@
-import { type Ctx, Scene, type SceneFrame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import { CollisionShape3D, RigidBody3D } from "@threenative/physics";
-import type { PhysicsContext } from "@threenative/physics";
+import type { IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Character, PLATFORMER_FEEL } from "../entities/Character.js";
 import { Chaser } from "../entities/Chaser.js";
@@ -18,10 +18,10 @@ import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
-export type GameCtx = Ctx<GameState, PhysicsContext>;
+export type GameCtx = ICtx<GameState, IPhysicsContext>;
 const SPAWN = new Vector3(0, 0.75, 0);
 const KILL_PLANE = -8;
-export class Level extends Scene<GameState, PhysicsContext> {
+export class Level extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState = {
     checkpoint: 0,
     coins: 0,
@@ -35,7 +35,7 @@ export class Level extends Scene<GameState, PhysicsContext> {
     respawns: 0,
     topSpeed: 0,
   };
-  override enter(ctx: GameCtx): SceneFrame<GameState, PhysicsContext> {
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);

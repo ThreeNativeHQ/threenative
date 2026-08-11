@@ -1,17 +1,17 @@
 import type { Object3D } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
-import type { PhysicsBodyHandle, PhysicsColliderHandle, PhysicsWorldHandle } from "./handles.js";
-import type { PhysicsContext } from "./plugin.js";
-import { type PhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
+import type { IPhysicsContext } from "./plugin.js";
+import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
-export interface RigidBody3DOptions {
+export interface IRigidBody3DOptions {
   readonly object: Object3D;
-  readonly physics?: PhysicsContext;
+  readonly physics?: IPhysicsContext;
   /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
-  readonly world?: PhysicsWorldHandle | unknown;
+  readonly world?: IPhysicsWorldHandle | unknown;
   readonly shape: CollisionShape3D;
   readonly mass?: number;
   readonly type?: RigidBodyType;
@@ -26,21 +26,21 @@ type TransformRecord = [number, number, number, number, number, number, number, 
 function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
   const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
   if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("PhysicsSimulation returned a malformed transform.");
+    throw new Error("IPhysicsSimulation returned a malformed transform.");
   return result as TransformRecord;
 }
 
 export class RigidBody3D {
-  readonly body: PhysicsBodyHandle;
-  readonly collider: PhysicsColliderHandle;
+  readonly body: IPhysicsBodyHandle;
+  readonly collider: IPhysicsColliderHandle;
   readonly object: Object3D;
   readonly type: RigidBodyType;
-  readonly #simulation: PhysicsSimulation;
-  readonly #physics: PhysicsContext | undefined;
+  readonly #simulation: IPhysicsSimulation;
+  readonly #physics: IPhysicsContext | undefined;
   #lastPosition: { x: number; y: number; z: number };
   #disposed = false;
 
-  constructor(options: RigidBody3DOptions) {
+  constructor(options: IRigidBody3DOptions) {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.object = options.object;

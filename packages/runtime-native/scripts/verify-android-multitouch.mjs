@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  ACTIVITY_CLASS,
   parseArgs as parseFirstProofArgs,
   verifyAndroidFirstProof,
 } from './verify-android-first-proof.mjs';
@@ -74,7 +75,7 @@ class ReportingAndroidDriver {
 function playtestConfig({ adbPath, device, endpoint, scenarioPath, artifactDirectory }) {
   return {
     adbPath,
-    android: { activity: '.MystralActivity', packageName: 'com.mystral.engine' },
+    android: { activity: ACTIVITY_CLASS, packageName: 'com.threenative.game' },
     artifactDirectory,
     device,
     endpoint,
@@ -130,9 +131,9 @@ export async function verifyAndroidMultitouch(options) {
   const drivers = [];
   try {
     const positiveDriver = new ReportingAndroidDriver(new AdbAndroidDriver({
-      activity: '.MystralActivity',
+      activity: ACTIVITY_CLASS,
       adbPath: firstProof.tools.adb,
-      packageName: 'com.mystral.engine',
+      packageName: 'com.threenative.game',
       serial: firstProof.deviceSerial,
     }));
     drivers.push(positiveDriver);
@@ -145,9 +146,9 @@ export async function verifyAndroidMultitouch(options) {
     }), { driver: positiveDriver });
 
     const negativeDriver = new ReportingAndroidDriver(new AdbAndroidDriver({
-      activity: '.MystralActivity',
+      activity: ACTIVITY_CLASS,
       adbPath: firstProof.tools.adb,
-      packageName: 'com.mystral.engine',
+      packageName: 'com.threenative.game',
       serial: firstProof.deviceSerial,
     }));
     drivers.push(negativeDriver);

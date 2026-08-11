@@ -46,6 +46,11 @@ onto desktop and Android. The React HUD and menu remain web conveniences. `src/r
 draws the thumbstick, jump and dash surfaces and maps `ctx.input.raw.pointers` in the scene, so
 the platformer remains playable without a keyboard on a touch target.
 
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+icon, mobile orientation and display flags, desktop window, renderer preference, and native
+entry there. `package.json` may retain only `threenative.nativeEntry` as a compatibility
+fallback for older projects.
+
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
 `.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
 and update the player beside the entity that owns the loaded model.

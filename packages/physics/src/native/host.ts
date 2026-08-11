@@ -1,10 +1,10 @@
 import { physicsBodyHandle, physicsColliderHandle, physicsHandle } from "../handles.js";
 import type {
-  PhysicsBodyCreateOptions,
-  PhysicsInputSnapshot,
-  PhysicsRuntimeSimulation,
-  PhysicsShapeDescriptor,
-  PhysicsSimulation,
+  IPhysicsBodyCreateOptions,
+  IPhysicsInputSnapshot,
+  IPhysicsRuntimeSimulation,
+  IPhysicsShapeDescriptor,
+  IPhysicsSimulation,
 } from "../simulation.js";
 import {
   requirePhysicsBodySensor,
@@ -13,7 +13,7 @@ import {
   requirePhysicsStepInput,
 } from "../simulation.js";
 
-export interface NativeShapeDescriptor {
+export interface INativeShapeDescriptor {
   readonly kind: "box" | "capsule" | "sphere";
   readonly x: number;
   readonly y: number;
@@ -23,7 +23,7 @@ export interface NativeShapeDescriptor {
   sensor: boolean;
 }
 
-export interface NativeBodyOptions {
+export interface INativeBodyOptions {
   readonly collisionLayer: number;
   readonly collisionMask: number;
   readonly mass: number;
@@ -35,17 +35,17 @@ export interface NativeBodyOptions {
     readonly z: number;
   };
   readonly sensor: boolean;
-  readonly shape: NativeShapeDescriptor;
+  readonly shape: INativeShapeDescriptor;
   readonly type: "character" | "dynamic" | "fixed" | "kinematic";
 }
 
 /** Raw object installed by the C++ runtime. It is wrapped before shared nodes see it. */
-export interface NativeSimulation {
+export interface INativeSimulation {
   configureCharacter(
     id: number,
-    options: Parameters<PhysicsSimulation["configureCharacter"]>[1],
+    options: Parameters<IPhysicsSimulation["configureCharacter"]>[1],
   ): void;
-  createBody(options: NativeBodyOptions): number;
+  createBody(options: INativeBodyOptions): number;
   dispose(): void;
   drainCollisionEvents(buffer: Uint32Array): number;
   removeBody(id: number): void;
@@ -56,19 +56,19 @@ export interface NativeSimulation {
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
   readAreaIntersections(buffer: Uint32Array): number;
-  step(deltaTime: number, inputSnapshot?: PhysicsInputSnapshot): void;
+  step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
 }
 
-export interface NativePhysicsHost {
+export interface INativePhysicsHost {
   readonly version: string;
-  createSimulation(options?: unknown): NativeSimulation;
+  createSimulation(options?: unknown): INativeSimulation;
 }
 
 declare global {
-  var __THREENATIVE_NATIVE__: { readonly physics?: NativePhysicsHost } | undefined;
+  var __THREENATIVE_NATIVE__: { readonly physics?: INativePhysicsHost } | undefined;
 }
 
-export function nativePhysicsHost(): NativePhysicsHost {
+export function nativePhysicsHost(): INativePhysicsHost {
   const host = globalThis.__THREENATIVE_NATIVE__?.physics;
   if (
     host === undefined ||
@@ -80,7 +80,7 @@ export function nativePhysicsHost(): NativePhysicsHost {
   return host;
 }
 
-export function nativeSimulation(value: unknown): NativeSimulation {
+export function nativeSimulation(value: unknown): INativeSimulation {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -105,16 +105,16 @@ export function nativeSimulation(value: unknown): NativeSimulation {
   ) {
     throw new Error("TN_NATIVE_PHYSICS_INVALID: physics world is not a native simulation");
   }
-  return value as NativeSimulation;
+  return value as INativeSimulation;
 }
 
-function primitiveShape(shape: PhysicsShapeDescriptor): NativeShapeDescriptor {
+function primitiveShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
   if (shape.kind !== "box" && shape.kind !== "sphere" && shape.kind !== "capsule")
     throw new Error(`TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED: ${shape.kind} remains OPEN on native`);
-  return shape as NativeShapeDescriptor;
+  return shape as INativeShapeDescriptor;
 }
 
-function opaqueNativeShape(shape: NativeShapeDescriptor): unknown {
+function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
   return Object.freeze({ backend: "native", kind: shape.kind });
 }
 
@@ -129,9 +129,9 @@ function growUint32(buffer: Uint32Array, minimum: number): Uint32Array {
 }
 
 export function createNativePhysicsSimulation(
-  raw: NativeSimulation,
+  raw: INativeSimulation,
   version: string,
-): PhysicsRuntimeSimulation {
+): IPhysicsRuntimeSimulation {
   const bodyIds = new Set<number>();
   const areaIds = new Set<number>();
   const characterIds = new Set<number>();
@@ -194,11 +194,11 @@ export function createNativePhysicsSimulation(
     }
     areaIntersectionsDirty = false;
   };
-  const simulation: PhysicsRuntimeSimulation = {
+  const simulation: IPhysicsRuntimeSimulation = {
     version,
     rawEventQueue: raw,
     rawWorld: raw,
-    createBody: (options: PhysicsBodyCreateOptions) => {
+    createBody: (options: IPhysicsBodyCreateOptions) => {
       const shape = primitiveShape(options.shape);
       const sensor = requirePhysicsBodySensor(options);
       const id = raw.createBody({

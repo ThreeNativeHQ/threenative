@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-11T12:15:14.603Z",
+  "counts": {
+    "interface-in-disguise": 6,
+    "file-length": 7,
+    "suppression/unknown-cast": 10,
+    "suppression/biome-ignore": 1,
+    "lint-coverage-hole": 1
+  },
+  "findings": [
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 23,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/collapse.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 439,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/game.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 526,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/game.ts",
+      "line": 58,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/hot.ts",
+      "line": 13,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/hot.ts",
+      "line": 29,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/playtest.ts",
+      "line": 112,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/renderer.ts",
+      "line": 32,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/renderer.ts",
+      "line": 86,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/replay.ts",
+      "line": 7,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/replay.ts",
+      "line": 31,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/replay.ts",
+      "line": 61,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/scene.ts",
+      "line": 44,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/physics/src/simulation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 584,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/assertions.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2290,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/replay.ts",
+      "line": 73,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/androidRunner.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 407,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/deviceTransport.ts",
+      "line": 272,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 868,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 532,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 632,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/scenario.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1617,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/three/device.ts",
+      "line": 187,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/runtime-native/src",
+      "line": 1,
+      "signal": "lint-coverage-hole",
+      "value": "ignored",
+      "threshold": "linted"
+    },
+    {
+      "file": "packages/ui/src/useGameState.ts",
+      "line": 15,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    }
+  ]
+}

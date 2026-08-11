@@ -1,8 +1,8 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { type ICtx, Scene } from "@threenative/core";
 import {
   CharacterBody3D,
   CollisionShape3D,
-  type PhysicsContext,
+  type IPhysicsContext,
   RigidBody3D,
 } from "@threenative/physics";
 import * as THREE from "three";
@@ -18,7 +18,7 @@ const initialState = {
 };
 
 export type TerrainState = typeof initialState;
-type TerrainCtx = Ctx<TerrainState, PhysicsContext>;
+type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
 class TerrainChunk {
   readonly mesh: THREE.Mesh;
@@ -116,7 +116,7 @@ class TerrainPlayer {
   }
 }
 
-export class TerrainProbe extends Scene<TerrainState, PhysicsContext> {
+export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   static override readonly initialState = initialState;
 
   #chunks = new Map<number, TerrainChunk>();

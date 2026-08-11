@@ -2,14 +2,14 @@ import { AudioContext, PerspectiveCamera } from "three";
 import { describe, expect, it } from "vitest";
 import { AudioBus, audioRuntimeSnapshot } from "../src/audio.js";
 
-interface FakeAudioParam {
+interface IFakeAudioParam {
   value: number;
   linearRampToValueAtTime(value: number): void;
   setTargetAtTime(value: number): void;
   setValueAtTime(value: number): void;
 }
 
-function parameter(value = 1): FakeAudioParam {
+function parameter(value = 1): IFakeAudioParam {
   return {
     value,
     linearRampToValueAtTime(next) {

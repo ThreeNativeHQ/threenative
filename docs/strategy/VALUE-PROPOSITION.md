@@ -146,7 +146,7 @@ Ranked by how much the sentence at the top would move, cheapest first.
 
 | # | Change | Moves | Blocked on |
 |---|---|---|---|
-| 1 | **Round 4 paired capability proof** — a brief the vanilla arm cannot match inside the same spec | Axis 1 from *tie* to *win*; closes beta row 3 and Phase 2 | Nothing. [PRD-061](../PRDs/night-watch-26-08-10/PRD-061-round-4-paired-capability-proof.md), needs no hardware — **the only open PRD pointing at the top-line claim** |
+| 1 | **Round 4 paired capability proof** — a brief the vanilla arm cannot match inside the same spec | Axis 1 remains a *tie*; Phase 2 is still not green | Completed 2026-08-11. [PRD-061](../PRDs/done/PRD-061-round-4-paired-capability-proof.md) records the measured outcome and kill switch; no fifth genre or arm rerun |
 | 2 | **A stranger plays for five minutes** | Every adoption claim — this is the project's decisive test | An afternoon and one external person |
 | 3 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
 | 4 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+emulator sentence outright | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |

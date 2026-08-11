@@ -10,21 +10,21 @@ import {
 import { MeshBVH } from "three-mesh-bvh";
 import type { Viewport } from "./viewport.js";
 
-export interface RaycastOptions {
+export interface IRaycastOptions {
   /** Screen point in canvas pixels. Defaults to the current pointer position. */
   readonly screen?: Vector2;
   /** What to test. Defaults to the whole scene. */
   readonly targets?: Object3D | readonly Object3D[];
 }
 
-export interface ScenePickerOptions {
+export interface IScenePickerOptions {
   readonly camera: Camera;
   readonly pointer: () => Vector2;
   readonly scene: Object3D;
   readonly viewport: Viewport;
 }
 
-interface CachedTree {
+interface ICachedTree {
   readonly tree: MeshBVH;
   readonly version: number;
 }
@@ -48,9 +48,9 @@ export class ScenePicker {
   #raycaster: AcceleratedRaycaster = new Raycaster();
   #ndc = new Vector2();
   #hits: Intersection[] = [];
-  #trees = new WeakMap<BufferGeometry, CachedTree>();
+  #trees = new WeakMap<BufferGeometry, ICachedTree>();
 
-  constructor(options: ScenePickerOptions) {
+  constructor(options: IScenePickerOptions) {
     this.#camera = options.camera;
     this.#pointer = options.pointer;
     this.#scene = options.scene;
@@ -59,12 +59,12 @@ export class ScenePicker {
   }
 
   /** The closest hit under the screen point, or `undefined` when the ray hits nothing. */
-  raycast(options: RaycastOptions = {}): Intersection | undefined {
+  raycast(options: IRaycastOptions = {}): Intersection | undefined {
     const screen = options.screen ?? this.#pointer();
     if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y))
-      throw new Error("Ctx.raycast screen point must be finite.");
+      throw new Error("ICtx.raycast screen point must be finite.");
     const { height, width } = this.#viewport.size;
-    if (width <= 0 || height <= 0) throw new Error("Ctx.raycast needs a sized viewport.");
+    if (width <= 0 || height <= 0) throw new Error("ICtx.raycast needs a sized viewport.");
     this.#ndc.set((screen.x / width) * 2 - 1, -(screen.y / height) * 2 + 1);
     this.#raycaster.setFromCamera(this.#ndc, this.#camera);
 
@@ -82,7 +82,7 @@ export class ScenePicker {
 
   /** Drops every cached hierarchy. The next `raycast` rebuilds what it needs. */
   dispose(): void {
-    this.#trees = new WeakMap<BufferGeometry, CachedTree>();
+    this.#trees = new WeakMap<BufferGeometry, ICachedTree>();
     this.#hits.length = 0;
   }
 

@@ -1,4 +1,4 @@
-import { type Ctx, GPUParticles3D, Scene, type SceneFrame } from "@threenative/core";
+import { GPUParticles3D, type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import {
   Fn,
   If,
@@ -40,7 +40,7 @@ export type AbyssState = typeof initialState;
 /** React asks for a run by dispatching this; the scene owns what starting means. */
 export const START_EVENT = "abyss:start";
 
-type AbyssCtx = Ctx<AbyssState>;
+type AbyssCtx = ICtx<AbyssState>;
 type Pearl = { drift: THREE.Vector2; mesh: THREE.Mesh };
 type Hunter = { mesh: THREE.Mesh; speed: number; spin: number };
 

@@ -1,5 +1,5 @@
-import type { Game } from "@threenative/core";
-import type { PhysicsContext } from "@threenative/physics";
+import type { IGame } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { useGameState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
@@ -24,7 +24,7 @@ function Meter({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function Hud({ game }: { game: Game<GameState, PhysicsContext> }) {
+export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
   const score = useGameState(game, (state) => state.score);
   const playerX = useGameState(game, (state) => state.playerX);
   const hovered = useGameState(game, (state) => state.hovered);

@@ -1,11 +1,11 @@
-import type { Ctx, GamePluginHooks } from "@threenative/core";
+import type { ICtx, IGamePluginHooks } from "@threenative/core";
 import { type Crowd, NavMesh, NavMeshQuery, init } from "recast-navigation";
-import type { PhysicsContext } from "../plugin.js";
+import type { IPhysicsContext } from "../plugin.js";
 import type { NavigationAgent3D } from "./NavigationAgent3D.js";
 import type { NavigationObstacle3D } from "./NavigationObstacle3D.js";
 import type { NavigationRegion3D } from "./NavigationRegion3D.js";
 
-export interface NavigationContext {
+export interface INavigationContext {
   navMesh: NavMesh;
   query: NavMeshQuery;
   readonly regions: Set<NavigationRegion3D>;
@@ -14,7 +14,7 @@ export interface NavigationContext {
   crowd?: Crowd;
 }
 
-export type NavigationPlugin = GamePluginHooks<Record<string, unknown>, PhysicsContext>;
+export type NavigationPlugin = IGamePluginHooks<Record<string, unknown>, IPhysicsContext>;
 
 let initialized: Promise<void> | undefined;
 
@@ -30,7 +30,7 @@ function emptyNavigation(): { readonly navMesh: NavMesh; readonly query: NavMesh
   return { navMesh, query };
 }
 
-function disposeNavigation(navigation: NavigationContext): void {
+function disposeNavigation(navigation: INavigationContext): void {
   for (const obstacle of [...navigation.obstacles]) obstacle.dispose();
   for (const agent of [...navigation.agents]) agent.dispose();
   for (const region of [...navigation.regions]) region.dispose();
@@ -44,9 +44,9 @@ function disposeNavigation(navigation: NavigationContext): void {
 }
 
 export function recast(): NavigationPlugin {
-  let navigation: NavigationContext | undefined;
+  let navigation: INavigationContext | undefined;
   return {
-    setup: async (ctx: Ctx<Record<string, unknown>, PhysicsContext>) => {
+    setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
       await initialize();
       if (ctx.physics === undefined)
         throw new Error("recast() requires rapier() earlier in the plugins array.");
@@ -86,11 +86,11 @@ export function recast(): NavigationPlugin {
 
 export { NavigationAgent3D } from "./NavigationAgent3D.js";
 export type {
-  NavigationAgent3DOptions,
+  INavigationAgent3DOptions,
   NavigationAgentEvent,
   NavigationAgentHandler,
 } from "./NavigationAgent3D.js";
 export { NavigationObstacle3D } from "./NavigationObstacle3D.js";
-export type { NavigationObstacle3DOptions } from "./NavigationObstacle3D.js";
+export type { INavigationObstacle3DOptions } from "./NavigationObstacle3D.js";
 export { NavigationRegion3D } from "./NavigationRegion3D.js";
-export type { NavigationRegion3DOptions } from "./NavigationRegion3D.js";
+export type { INavigationRegion3DOptions } from "./NavigationRegion3D.js";

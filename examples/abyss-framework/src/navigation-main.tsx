@@ -1,13 +1,13 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { type PhysicsContext, rapier } from "@threenative/physics";
+import { type IPhysicsContext, rapier } from "@threenative/physics";
 import { recast } from "@threenative/physics/navigation";
 import { DebugOverlay, GameCanvas } from "@threenative/ui";
 import "./style.css";
 import { createRoot } from "react-dom/client";
-import { NavigationProbe, type NavigationState } from "./scenes/NavigationProbe.js";
+import { type INavigationState, NavigationProbe } from "./scenes/NavigationProbe.js";
 
-const game = defineGame<NavigationState, PhysicsContext>({
+const game = defineGame<INavigationState, IPhysicsContext>({
   camera: { far: 100, near: 0.1, projection: "orthogonal", size: 24 },
   inputTarget: window,
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), recast(), playtest()],

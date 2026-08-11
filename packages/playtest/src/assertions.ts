@@ -1,5 +1,6 @@
 import type { IPlaytestReport } from "./report.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
+import type { IPlaytestRuntimeDiagnosticsSample } from "./protocol.js";
+import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestPerformanceAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -269,6 +270,22 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "not-applicable",
   },
   {
+    description: "Proves a live render sample exists and optionally bounds frame time, draw calls, and triangles.",
+    example: { performance: { maxDrawCalls: 100, maxFrameMsP95: 33, maxTriangles: 10_000 } },
+    fields: [
+      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds.", name: "maxFrameMsP95", type: "number" },
+      { description: "Maximum observed renderer draw-call count.", name: "maxDrawCalls", type: "number" },
+      { description: "Maximum observed renderer triangle count.", name: "maxTriangles", type: "number" },
+    ],
+    cardinality: "object",
+    kind: "performance",
+    observationPath: "performanceSeries",
+    requiredCapabilities: ["runtime.performance"],
+    resultIdPrefix: "performance.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+  },
+  {
     description: "Proves projected entity visibility in the viewport.",
     example: { visibility: [{ entity: "player", minProjectedPixels: 1200, maxOffscreenRatio: 0.05 }] },
     fields: [
@@ -457,6 +474,7 @@ export interface IPlaytestObservations {
   network: Array<{ method: string; url: string }>;
   physicsDebug?: unknown;
   physicsDebugSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
+  performanceSeries?: unknown[];
   resources: Record<string, { after?: unknown; before?: unknown }>;
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;
@@ -468,6 +486,7 @@ export interface IPlaytestObservations {
     changedPixelRatio?: number;
     comparisonSource?: string;
     nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
+    /** Visual frame observations only; performance samples live in performanceSeries. */
     runtimeDiagnosticsSeries?: unknown[];
   };
 }
@@ -589,6 +608,15 @@ export function evaluateRichPlaytestAssertions(input: {
       assertions.push({ id: `visual.${index}.entityVisible`, pass, details: { entity: visual.entityVisible.entity, hasRequiredSeries, projectedPixels: projected } });
       if (!pass) diagnostics.push({ code: "TN_PLAYTEST_ENTITY_VISIBILITY_DROPPED", message: `Entity '${visual.entityVisible.entity}' dropped below ${visual.entityVisible.minProjectedPixels} projected pixels.`, severity: "error", suggestion: "Check per-frame visibility, camera clipping, scale, and renderer state." });
     }
+  }
+  if (scenarioAssertions.performance !== undefined) {
+    const result = evaluatePerformanceAssertion(
+      scenarioAssertions.performance,
+      input.report.observations?.performanceSeries,
+      input.scenario.sourcePath,
+    );
+    assertions.push(...result.assertions);
+    diagnostics.push(...result.diagnostics);
   }
   for (const assertion of scenarioAssertions.resources ?? []) {
     if (assertion.anyOf !== undefined) {
@@ -1934,6 +1962,107 @@ function countMatchingEntries(effectLog: unknown, tokens: readonly string[]): nu
     const text = JSON.stringify(entry);
     return tokens.every((token) => text.includes(token));
   }).length;
+}
+
+function evaluatePerformanceAssertion(
+  assertion: IPlaytestPerformanceAssertion,
+  series: readonly unknown[] | undefined,
+  sourcePath: string | undefined,
+): { assertions: IPlaytestAssertionResult[]; diagnostics: IPlaytestDiagnostic[] } {
+  const samples = series ?? [];
+  const validSamples = samples.length > 0 && samples.every(isRuntimeDiagnosticsSample);
+  const observed = validSamples ? samples as IPlaytestRuntimeDiagnosticsSample[] : [];
+  const frameTimes = observed.map(({ frameMs }) => frameMs);
+  const drawCalls = observed.flatMap(({ drawCalls: value }) => value === undefined ? [] : [value]);
+  const triangles = observed.flatMap(({ triangles: value }) => value === undefined ? [] : [value]);
+  const frameMsP95 = nearestRank(frameTimes, 0.95);
+  const maxObservedDrawCalls = drawCalls.length === 0 ? undefined : Math.max(...drawCalls);
+  const maxObservedTriangles = triangles.length === 0 ? undefined : Math.max(...triangles);
+  const results: IPlaytestAssertionResult[] = [];
+  const diagnostics: IPlaytestDiagnostic[] = [];
+  const path = `${sourcePath ?? "playtest"}/observations.json/performanceSeries`;
+  const samplesPass = validSamples;
+  results.push({
+    details: { sampleCount: samples.length, valid: validSamples },
+    id: "performance.samples",
+    pass: samplesPass,
+  });
+  if (!samplesPass) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_PERFORMANCE_SAMPLES_MISSING",
+      message: samples.length === 0
+        ? "Performance assertion received no render samples."
+        : "Performance assertion received an invalid render sample series.",
+      observedRuntimePath: path,
+      severity: "error",
+      sourcePath,
+      suggestion: "Run the scenario against the real render loop and keep the performance bridge provider installed.",
+    });
+  }
+
+  const addBound = (
+    id: string,
+    expected: number,
+    actual: number | undefined,
+    unit: string,
+    pass: boolean,
+  ): void => {
+    results.push({ details: { actual: actual ?? null, expected, sampleCount: samples.length, unit }, id, pass });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+      message: `${id} expected at most ${expected} ${unit}, observed ${actual ?? "unavailable"}.`,
+      observedRuntimePath: path,
+      severity: "error",
+      sourcePath,
+      suggestion: "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression.",
+    });
+  };
+
+  if (assertion.maxFrameMsP95 !== undefined) {
+    addBound(
+      "performance.maxFrameMsP95",
+      assertion.maxFrameMsP95,
+      frameMsP95,
+      "ms",
+      samplesPass && frameMsP95 !== undefined && frameMsP95 <= assertion.maxFrameMsP95,
+    );
+  }
+  if (assertion.maxDrawCalls !== undefined) {
+    addBound(
+      "performance.maxDrawCalls",
+      assertion.maxDrawCalls,
+      maxObservedDrawCalls,
+      "draw calls",
+      samplesPass && drawCalls.length === samples.length && maxObservedDrawCalls !== undefined && maxObservedDrawCalls <= assertion.maxDrawCalls,
+    );
+  }
+  if (assertion.maxTriangles !== undefined) {
+    addBound(
+      "performance.maxTriangles",
+      assertion.maxTriangles,
+      maxObservedTriangles,
+      "triangles",
+      samplesPass && triangles.length === samples.length && maxObservedTriangles !== undefined && maxObservedTriangles <= assertion.maxTriangles,
+    );
+  }
+  return { assertions: results, diagnostics };
+}
+
+function isRuntimeDiagnosticsSample(value: unknown): value is IPlaytestRuntimeDiagnosticsSample {
+  if (!isRecord(value)
+    || typeof value.frameMs !== "number"
+    || !Number.isFinite(value.frameMs)
+    || value.frameMs <= 0) {
+    return false;
+  }
+  return (value.drawCalls === undefined || (typeof value.drawCalls === "number" && Number.isFinite(value.drawCalls) && value.drawCalls >= 0))
+    && (value.triangles === undefined || (typeof value.triangles === "number" && Number.isFinite(value.triangles) && value.triangles >= 0));
+}
+
+function nearestRank(values: readonly number[], percentile: number): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.max(0, Math.ceil(values.length * percentile) - 1)];
 }
 
 function mergeEffectLogs(effectLog: unknown, series: IPlaytestObservations["effectLogSeries"]): { entries: unknown[] } {

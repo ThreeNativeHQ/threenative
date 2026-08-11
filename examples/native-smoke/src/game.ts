@@ -1,8 +1,8 @@
-import { type Ctx, Scene, defineGame } from "@threenative/core";
+import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { BoxGeometry, Matrix4, Mesh, MeshBasicMaterial, Quaternion, Vector3 } from "three";
 
-interface SmokeState extends Record<string, unknown> {
+interface ISmokeState extends Record<string, unknown> {
   airborne: boolean;
   currentPointers: number;
   frames: number;
@@ -11,7 +11,7 @@ interface SmokeState extends Record<string, unknown> {
   movedWithTwoPointers: boolean;
 }
 
-export interface SmokeStatus {
+export interface ISmokeStatus {
   error?: string;
   frames: number;
   ready: boolean;
@@ -33,7 +33,7 @@ declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   warmupFrames: number;
 }>;
 
-export const status: SmokeStatus = { frames: 0, ready: false };
+export const status: ISmokeStatus = { frames: 0, ready: false };
 
 const profile = __TN_JS_ENGINE_PROFILE__;
 
@@ -96,10 +96,10 @@ function requireRuntimeCanvas(): HTMLCanvasElement {
 const runtimeCanvas = requireRuntimeCanvas();
 runtimeCanvas.style.touchAction = "none";
 
-class NativeSmoke extends Scene<SmokeState> {
+class NativeSmoke extends Scene<ISmokeState> {
   #profileFirstFrameAt: number | undefined;
   #profileFrames = 0;
-  static override readonly initialState: SmokeState = {
+  static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
     frames: 0,
@@ -108,7 +108,7 @@ class NativeSmoke extends Scene<SmokeState> {
     movedWithTwoPointers: false,
   };
 
-  override enter(ctx: Ctx<SmokeState>) {
+  override enter(ctx: ICtx<ISmokeState>) {
     ctx.camera.position.z = 3;
     const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
     ctx.entities.add("cube", cube);
@@ -144,7 +144,7 @@ class NativeSmoke extends Scene<SmokeState> {
     let movedWithTwoPointers = false;
     let leftGroundWithTwoPointers = false;
     let verticalVelocity = 0;
-    return (frameCtx: Ctx<SmokeState>, dt: number) => {
+    return (frameCtx: ICtx<ISmokeState>, dt: number) => {
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
       const pointers = [...frameCtx.input.raw.pointers.values()];
@@ -195,7 +195,7 @@ class NativeSmoke extends Scene<SmokeState> {
   }
 }
 
-const game = defineGame<SmokeState>({
+const game = defineGame<ISmokeState>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
   plugins: __TN_PLAYTEST_ENABLED__ ? [playtest()] : [],

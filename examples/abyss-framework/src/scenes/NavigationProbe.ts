@@ -1,8 +1,8 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { type ICtx, Scene } from "@threenative/core";
 import {
   CharacterBody3D,
   CollisionShape3D,
-  type PhysicsContext,
+  type IPhysicsContext,
   RigidBody3D,
 } from "@threenative/physics";
 import { NavigationAgent3D, NavigationRegion3D } from "@threenative/physics/navigation";
@@ -11,11 +11,11 @@ import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 const TARGET = new Vector3(0, 0.75, 0);
 const SPEED = 3.4;
 
-export interface NavigationState extends Record<string, unknown> {
+export interface INavigationState extends Record<string, unknown> {
   distanceToTarget: number;
 }
 
-type NavigationCtx = Ctx<NavigationState, PhysicsContext>;
+type NavigationCtx = ICtx<INavigationState, IPhysicsContext>;
 
 class Navigator {
   readonly mesh: Mesh;
@@ -23,7 +23,7 @@ class Navigator {
   readonly #body: CharacterBody3D;
   readonly #direction = new Vector3();
 
-  constructor(ctx: NavigationCtx, navigation: NonNullable<PhysicsContext["navigation"]>) {
+  constructor(ctx: NavigationCtx, navigation: NonNullable<IPhysicsContext["navigation"]>) {
     this.mesh = new Mesh(
       new BoxGeometry(0.7, 1.4, 0.7),
       new MeshBasicMaterial({ color: 0xffc857 }),
@@ -73,7 +73,7 @@ class Navigator {
   }
 }
 
-export class NavigationProbe extends Scene<NavigationState, PhysicsContext> {
+export class NavigationProbe extends Scene<INavigationState, IPhysicsContext> {
   static override readonly initialState = { distanceToTarget: 7.5 };
 
   override enter(ctx: NavigationCtx): (frameCtx: NavigationCtx, dt: number) => void {

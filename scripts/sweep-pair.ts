@@ -123,6 +123,18 @@ function isStoredProofDiagnostic(value: unknown): value is StoredProofDiagnostic
   );
 }
 
+function isMissingCapabilityPreflight(
+  scenario: Pick<StoredProofScenario, "assertions" | "diagnostics" | "verdict">,
+): boolean {
+  return (
+    scenario.verdict === "fail" &&
+    scenario.assertions.length === 0 &&
+    scenario.diagnostics.some(
+      ({ code, severity }) => code === "TN_PLAYTEST_CAPABILITY_MISSING" && severity === "error",
+    )
+  );
+}
+
 function recordField(
   value: Record<string, unknown>,
   key: string,
@@ -346,6 +358,7 @@ function requireScenarioSet(
     const sealed = expected.find(({ name }) => name === scenario.name);
     if (sealed === undefined) continue;
     const actualIds = scenario.assertions.map(({ id }) => id);
+    if (isMissingCapabilityPreflight(scenario)) continue;
     if (
       new Set(actualIds).size !== actualIds.length ||
       new Set(sealed.assertionIds).size !== sealed.assertionIds.length ||
@@ -620,8 +633,6 @@ function readProof(root: string, manifest: SweepManifest): StoredProof {
       throw new Error(
         `Cannot pair '${root}': proof.json has a malformed scenario entry at ${index}.`,
       );
-    if (scenario.assertions.length === 0)
-      throw new Error(`Cannot pair '${root}': proof.json scenario ${index} has no assertions.`);
     if (!scenario.assertions.every(isStoredProofAssertion))
       throw new Error(
         `Cannot pair '${root}': proof.json scenario ${index} has malformed assertions.`,
@@ -632,6 +643,11 @@ function readProof(root: string, manifest: SweepManifest): StoredProof {
       );
     const assertions = scenario.assertions as readonly StoredProofAssertion[];
     const diagnostics = scenario.diagnostics as readonly StoredProofDiagnostic[];
+    if (
+      assertions.length === 0 &&
+      !isMissingCapabilityPreflight({ ...scenario, assertions, diagnostics })
+    )
+      throw new Error(`Cannot pair '${root}': proof.json scenario ${index} has no assertions.`);
     if (scenario.verdict === "pass" && assertions.some(({ pass }) => !pass))
       throw new Error(
         `Cannot pair '${root}': proof.json scenario ${index} is marked pass with a failed assertion.`,

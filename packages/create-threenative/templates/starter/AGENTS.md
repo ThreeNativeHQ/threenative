@@ -60,7 +60,7 @@ flowchart TD
     state["state.ts<br/>state shape the HUD subscribes to"]
     scenarios["playtests/*.playtest.json<br/>committed browser scenarios, run by pnpm test"]
     boot["playtest/boot-to-play.json<br/>Boot-to-Play jump proof"]
-    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    config["threenative.config.ts<br/>app identity, icon, display, desktop window, renderer"]
 
     project --> src
     src --> main
@@ -73,6 +73,11 @@ flowchart TD
     project --> boot
     project --> config
 ```
+
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+icon, mobile orientation and display flags, desktop window, renderer preference, and native
+entry there. `package.json` may retain only `threenative.nativeEntry` as a compatibility
+fallback for older projects.
 
 `src/render/hud.ts` is generated user-owned Three.js source, not a package widget. It uses
 instanced plane geometry rather than `CanvasTexture`; rewrite its glyphs, labels, colours or

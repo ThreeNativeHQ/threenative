@@ -1,9 +1,9 @@
-import type { Game } from "@threenative/core";
-import type { PhysicsContext } from "@threenative/physics";
+import type { IGame } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { type KeyboardEvent, useState } from "react";
 import type { GameState } from "../state.js";
 
-export function Menu({ game }: { game: Game<GameState, PhysicsContext> }) {
+export function Menu({ game }: { game: IGame<GameState, IPhysicsContext> }) {
   const [paused, setPaused] = useState(false);
   const togglePause = () => {
     if (paused) game.resume();

@@ -1,9 +1,9 @@
-import type * as RAPIER from "@dimforge/rapier3d-compat";
+import type * as rapier from "@dimforge/rapier3d-compat";
 import { interactionGroups } from "./collision.js";
 import {
-  type PhysicsBodyHandle,
-  type PhysicsColliderHandle,
-  type PhysicsHandle,
+  type IPhysicsBodyHandle,
+  type IPhysicsColliderHandle,
+  type IPhysicsHandle,
   physicsBodyHandle,
   physicsColliderHandle,
   physicsHandle,
@@ -23,7 +23,7 @@ export type PhysicsShapeKind =
   | "heightfield";
 
 /** Portable shape data. Backend-specific objects are created only by a simulation adapter. */
-export interface PhysicsShapeDescriptor {
+export interface IPhysicsShapeDescriptor {
   readonly kind: PhysicsShapeKind;
   readonly x: number;
   readonly y: number;
@@ -42,9 +42,9 @@ export interface PhysicsShapeDescriptor {
 
 export type PhysicsBodyType = "character" | "dynamic" | "fixed" | "kinematic";
 
-export interface PhysicsBodyCreateOptions {
+export interface IPhysicsBodyCreateOptions {
   readonly type: PhysicsBodyType;
-  readonly shape: PhysicsShapeDescriptor;
+  readonly shape: IPhysicsShapeDescriptor;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
   readonly rotation: {
     readonly x: number;
@@ -57,15 +57,15 @@ export interface PhysicsBodyCreateOptions {
   readonly sensor: boolean;
 }
 
-export interface PhysicsBodyRegistration {
-  readonly body: PhysicsBodyHandle;
-  readonly collider: PhysicsColliderHandle;
-  readonly controller?: PhysicsHandle;
+export interface IPhysicsBodyRegistration {
+  readonly body: IPhysicsBodyHandle;
+  readonly collider: IPhysicsColliderHandle;
+  readonly controller?: IPhysicsHandle;
   /** The backend shape object to expose through `CollisionShape3D.raw`. */
   readonly rawShape: unknown;
 }
 
-export interface PhysicsCharacterOptions {
+export interface IPhysicsCharacterOptions {
   readonly offset: number;
   readonly maxSlopeClimbAngle: number;
   readonly autostep?: {
@@ -77,28 +77,28 @@ export interface PhysicsCharacterOptions {
   readonly oneWayLayers: number;
 }
 
-export interface PhysicsCharacterState {
+export interface IPhysicsCharacterState {
   readonly grounded: boolean;
   readonly groundCollider?: number;
 }
 
-export interface PhysicsInputSnapshot {
+export interface IPhysicsInputSnapshot {
   /** One eight-float record per kinematic body. The buffer is caller-owned and reusable. */
   readonly kinematicTransforms: Readonly<Float32Array>;
   readonly kinematicCount: number;
 }
 
 /** The backend seam used by all shared physics nodes. */
-export interface PhysicsSimulation {
-  createBody(options: PhysicsBodyCreateOptions): PhysicsBodyRegistration;
-  configureCharacter(id: number, options: PhysicsCharacterOptions): void;
+export interface IPhysicsSimulation {
+  createBody(options: IPhysicsBodyCreateOptions): IPhysicsBodyRegistration;
+  configureCharacter(id: number, options: IPhysicsCharacterOptions): void;
   removeBody(id: number): void;
   /** Cold-path repositioning for teleport/setup. Per-frame kinematics use `step()` input. */
   setBodyTransform(
     id: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
   ): void;
-  step(deltaTime: number, inputSnapshot?: PhysicsInputSnapshot): void;
+  step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readBodyTransform?(id: number):
     | {
@@ -112,7 +112,7 @@ export interface PhysicsSimulation {
       }
     | undefined;
   /** Reflects the most recently completed step, independent of visible-transform reads. */
-  readCharacterState?(id: number): PhysicsCharacterState | undefined;
+  readCharacterState?(id: number): IPhysicsCharacterState | undefined;
   /** Reflects the most recently completed step, independent of visible-transform reads. */
   areaIntersections?(id: number): ReadonlySet<number>;
   drainCollisionEvents(buffer: Uint32Array): number;
@@ -120,96 +120,96 @@ export interface PhysicsSimulation {
 }
 
 /** Runtime metadata needed to expose backend-specific escape hatches without leaking them. */
-export interface PhysicsRuntimeSimulation extends PhysicsSimulation {
+export interface IPhysicsRuntimeSimulation extends IPhysicsSimulation {
   readonly version: string;
   readonly rawWorld: unknown;
   readonly rawEventQueue: unknown;
 }
 
-export interface PhysicsSimulationBackend {
+export interface IPhysicsSimulationBackend {
   initialize(): Promise<void>;
   createSimulation(options?: {
     readonly gravity?: { readonly x: number; readonly y: number; readonly z: number };
-  }): PhysicsRuntimeSimulation;
-  createShape?(shape: PhysicsShapeDescriptor): unknown;
-  simulationForWorld?(world: unknown): PhysicsSimulation;
+  }): IPhysicsRuntimeSimulation;
+  createShape?(shape: IPhysicsShapeDescriptor): unknown;
+  simulationForWorld?(world: unknown): IPhysicsSimulation;
 }
 
-let selectedBackend: PhysicsSimulationBackend | undefined;
+let selectedBackend: IPhysicsSimulationBackend | undefined;
 
-export function installPhysicsSimulationBackend(backend: PhysicsSimulationBackend): void {
+export function installPhysicsSimulationBackend(backend: IPhysicsSimulationBackend): void {
   selectedBackend = backend;
 }
 
-export function physicsSimulationBackend(): PhysicsSimulationBackend {
+export function physicsSimulationBackend(): IPhysicsSimulationBackend {
   if (selectedBackend === undefined)
-    throw new Error("TN_PHYSICS_BACKEND_MISSING: no PhysicsSimulation backend was selected");
+    throw new Error("TN_PHYSICS_BACKEND_MISSING: no IPhysicsSimulation backend was selected");
   return selectedBackend;
 }
 
-interface SimulationBody {
+interface ISimulationBody {
   readonly id: number;
-  readonly body: RAPIER.RigidBody;
-  readonly collider: RAPIER.Collider;
+  readonly body: rapier.RigidBody;
+  readonly collider: rapier.Collider;
   readonly type: PhysicsBodyType;
-  controller?: RAPIER.KinematicCharacterController;
-  controllerHandle?: PhysicsHandle;
-  character?: PhysicsCharacterOptions;
+  controller?: rapier.KinematicCharacterController;
+  controllerHandle?: IPhysicsHandle;
+  character?: IPhysicsCharacterOptions;
   groundCollider?: number;
 }
 
-interface WebPhysicsSimulationOptions {
-  readonly rapier: typeof RAPIER;
-  readonly world: RAPIER.World;
-  readonly eventQueue: RAPIER.EventQueue;
+interface IWebPhysicsSimulationOptions {
+  readonly rapier: typeof rapier;
+  readonly world: rapier.World;
+  readonly eventQueue: rapier.EventQueue;
   readonly version: string;
 }
 
 export function requirePhysicsStepInput(
   deltaTime: number,
-  inputSnapshot: PhysicsInputSnapshot | undefined,
+  inputSnapshot: IPhysicsInputSnapshot | undefined,
   bodyExists: (id: number) => boolean,
 ): void {
   if (!Number.isFinite(deltaTime) || deltaTime <= 0)
-    throw new Error("PhysicsSimulation.step requires a positive finite deltaTime.");
+    throw new Error("IPhysicsSimulation.step requires a positive finite deltaTime.");
   if (inputSnapshot === undefined) return;
   if (!(inputSnapshot.kinematicTransforms instanceof Float32Array))
-    throw new Error("PhysicsSimulation input must use a Float32Array.");
+    throw new Error("IPhysicsSimulation input must use a Float32Array.");
   if (
     !Number.isSafeInteger(inputSnapshot.kinematicCount) ||
     inputSnapshot.kinematicCount < 0 ||
     inputSnapshot.kinematicCount >
       Math.floor(inputSnapshot.kinematicTransforms.length / PHYSICS_TRANSFORM_STRIDE)
   ) {
-    throw new Error("PhysicsSimulation input has an invalid kinematic record count.");
+    throw new Error("IPhysicsSimulation input has an invalid kinematic record count.");
   }
   for (let index = 0; index < inputSnapshot.kinematicCount; index += 1) {
     const offset = index * PHYSICS_TRANSFORM_STRIDE;
     for (let scalar = 0; scalar < PHYSICS_TRANSFORM_STRIDE; scalar += 1) {
       if (!Number.isFinite(inputSnapshot.kinematicTransforms[offset + scalar]))
-        throw new Error("PhysicsSimulation input contains a non-finite transform.");
+        throw new Error("IPhysicsSimulation input contains a non-finite transform.");
     }
     const id = inputSnapshot.kinematicTransforms[offset] as number;
     if (!Number.isInteger(id) || id < 0)
-      throw new Error("PhysicsSimulation input contains an invalid body id.");
-    if (!bodyExists(id)) throw new Error("PhysicsSimulation input contains an unknown body id.");
+      throw new Error("IPhysicsSimulation input contains an invalid body id.");
+    if (!bodyExists(id)) throw new Error("IPhysicsSimulation input contains an unknown body id.");
   }
 }
 
 export function requirePhysicsRenderBuffer(renderBuffer: Float32Array, bodyCount: number): void {
   if (!(renderBuffer instanceof Float32Array))
-    throw new Error("PhysicsSimulation output must use a Float32Array.");
+    throw new Error("IPhysicsSimulation output must use a Float32Array.");
   if (renderBuffer.length < bodyCount * PHYSICS_TRANSFORM_STRIDE)
-    throw new Error("PhysicsSimulation output buffer is too small for visible transforms.");
+    throw new Error("IPhysicsSimulation output buffer is too small for visible transforms.");
 }
 
 export function requirePhysicsEventBuffer(buffer: Uint32Array): void {
   if (!(buffer instanceof Uint32Array))
-    throw new Error("PhysicsSimulation events must use a Uint32Array.");
+    throw new Error("IPhysicsSimulation events must use a Uint32Array.");
 }
 
 export function requirePhysicsBodySensor(
-  options: Pick<PhysicsBodyCreateOptions, "sensor" | "shape">,
+  options: Pick<IPhysicsBodyCreateOptions, "sensor" | "shape">,
 ): boolean {
   if (options.sensor !== options.shape.sensor)
     throw new Error(
@@ -219,11 +219,11 @@ export function requirePhysicsBodySensor(
 }
 
 export function createWebPhysicsShape(
-  rapier: typeof RAPIER,
-  shape: PhysicsShapeDescriptor,
+  rapier: typeof import("@dimforge/rapier3d-compat"),
+  shape: IPhysicsShapeDescriptor,
   sensor = shape.sensor,
-): RAPIER.ColliderDesc {
-  let descriptor: RAPIER.ColliderDesc | null;
+): rapier.ColliderDesc {
+  let descriptor: rapier.ColliderDesc | null;
   if (shape.kind === "box") descriptor = rapier.ColliderDesc.cuboid(shape.x, shape.y, shape.z);
   else if (shape.kind === "sphere") descriptor = rapier.ColliderDesc.ball(shape.x);
   else if (shape.kind === "capsule") descriptor = rapier.ColliderDesc.capsule(shape.x, shape.y);
@@ -258,12 +258,12 @@ export function createWebPhysicsShape(
 }
 
 function bodyDescription(
-  rapier: typeof RAPIER,
+  rapier: typeof import("@dimforge/rapier3d-compat"),
   type: PhysicsBodyType,
-  position: PhysicsBodyCreateOptions["position"],
-  rotation: PhysicsBodyCreateOptions["rotation"],
+  position: IPhysicsBodyCreateOptions["position"],
+  rotation: IPhysicsBodyCreateOptions["rotation"],
   mass: number,
-): RAPIER.RigidBodyDesc {
+): rapier.RigidBodyDesc {
   const description =
     type === "fixed"
       ? rapier.RigidBodyDesc.fixed()
@@ -278,9 +278,9 @@ function bodyDescription(
 }
 
 function characterState(
-  simulationBody: SimulationBody,
-  byCollider: ReadonlyMap<number, SimulationBody>,
-): PhysicsCharacterState {
+  simulationBody: ISimulationBody,
+  byCollider: ReadonlyMap<number, ISimulationBody>,
+): IPhysicsCharacterState {
   const controller = simulationBody.controller;
   if (controller === undefined) return { grounded: false };
   let groundCollider: number | undefined;
@@ -300,10 +300,10 @@ function characterState(
 
 /** Web adapter. It is the only implementation that names Rapier's JS objects. */
 export function createWebPhysicsSimulation(
-  options: WebPhysicsSimulationOptions,
-): PhysicsRuntimeSimulation {
-  const bodies = new Map<number, SimulationBody>();
-  const byCollider = new Map<number, SimulationBody>();
+  options: IWebPhysicsSimulationOptions,
+): IPhysicsRuntimeSimulation {
+  const bodies = new Map<number, ISimulationBody>();
+  const byCollider = new Map<number, ISimulationBody>();
   const pendingCollisionEvents: number[][] = [];
   let nextId = 0;
   let disposed = false;
@@ -312,7 +312,7 @@ export function createWebPhysicsSimulation(
     if (disposed) throw new Error("Physics simulation is disposed.");
   };
 
-  const simulation: PhysicsRuntimeSimulation = {
+  const simulation: IPhysicsRuntimeSimulation = {
     version: options.version,
     rawWorld: options.world,
     rawEventQueue: options.eventQueue,
@@ -334,7 +334,7 @@ export function createWebPhysicsSimulation(
         ),
       );
       const rawCollider = options.world.createCollider(rawShape, rawBody);
-      const entry: SimulationBody = {
+      const entry: ISimulationBody = {
         body: rawBody,
         collider: rawCollider,
         id,
@@ -400,7 +400,7 @@ export function createWebPhysicsSimulation(
           const offset = index * PHYSICS_TRANSFORM_STRIDE;
           const id = inputSnapshot.kinematicTransforms[offset] as number;
           const entry = bodies.get(id);
-          if (entry === undefined) throw new Error("PhysicsSimulation input body disappeared.");
+          if (entry === undefined) throw new Error("IPhysicsSimulation input body disappeared.");
           const target = {
             x: inputSnapshot.kinematicTransforms[offset + 1] as number,
             y: inputSnapshot.kinematicTransforms[offset + 2] as number,
@@ -433,7 +433,7 @@ export function createWebPhysicsSimulation(
                 : characterGroups;
             const filterPredicate =
               config.oneWayLayers !== 0 && desired.y > 0
-                ? (collider: RAPIER.Collider) =>
+                ? (collider: rapier.Collider) =>
                     ((collider.collisionGroups() >>> 16) & config.oneWayLayers) === 0
                 : undefined;
             controller.computeColliderMovement(
@@ -451,7 +451,7 @@ export function createWebPhysicsSimulation(
             });
           } else {
             if (!entry.body.isKinematic())
-              throw new Error("PhysicsSimulation received kinematic input for a dynamic body.");
+              throw new Error("IPhysicsSimulation received kinematic input for a dynamic body.");
             entry.body.setNextKinematicTranslation(target);
           }
           entry.body.setNextKinematicRotation(rotation);
@@ -531,7 +531,7 @@ export function createWebPhysicsSimulation(
           pendingCollisionEvents.push([left, right, Number(started), 1]);
       });
       if (buffer.length < pendingCollisionEvents.length * PHYSICS_COLLISION_EVENT_STRIDE)
-        throw new Error("PhysicsSimulation collision event buffer is too small.");
+        throw new Error("IPhysicsSimulation collision event buffer is too small.");
       pendingCollisionEvents.forEach((event, index) =>
         buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE),
       );
@@ -558,9 +558,9 @@ export function createWebPhysicsSimulation(
 }
 
 export function requirePhysicsSimulation(
-  physics: { readonly simulation?: PhysicsSimulation } | undefined,
+  physics: { readonly simulation?: IPhysicsSimulation } | undefined,
   world: unknown,
-): PhysicsSimulation {
+): IPhysicsSimulation {
   if (physics?.simulation !== undefined) return physics.simulation;
   const candidate =
     typeof world === "object" && world !== null && "simulation" in world
@@ -574,11 +574,11 @@ export function requirePhysicsSimulation(
     "step" in candidate &&
     typeof candidate.step === "function"
   )
-    return candidate as PhysicsSimulation;
+    return candidate as IPhysicsSimulation;
   const backend = selectedBackend;
   if (world !== undefined && backend?.simulationForWorld !== undefined)
     return backend.simulationForWorld(candidate);
   throw new Error(
-    "Physics nodes require a PhysicsContext. Passing a raw backend world is deprecated and backend-specific.",
+    "Physics nodes require an IPhysicsContext. Passing a raw backend world is deprecated and backend-specific.",
   );
 }

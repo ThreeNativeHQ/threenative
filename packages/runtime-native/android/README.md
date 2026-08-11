@@ -41,7 +41,7 @@ node packages/runtime-native/scripts/verify-android-first-proof.mjs
 The gate performs the complete first-proof sequence:
 
 1. Builds the debug APK from the public-API `examples/native-smoke` bundle at catalog Three.js 0.185.1.
-2. Installs and launches `com.mystral.engine/.MystralActivity` on the only online device.
+2. Installs and launches `com.threenative.game/com.threenative.runtime.MystralActivity` on the only online device.
 3. Captures app logcat to `artifacts/android/first-proof-logcat.txt`.
 4. Requires ordered ready, first-frame, and 300-frame markers plus a live 3-second stability window.
 5. Rejects JS/WebGPU failures and always captures a screenshot with dimensions and SHA-256.
@@ -128,7 +128,7 @@ flowchart TD
 
 Scripts can be loaded from:
 - **Assets**: `asset://scripts/main.js`
-- **Internal storage**: `/data/data/com.mystral.engine/files/game.js`
+- **Internal storage**: `/data/data/com.threenative.game/files/game.js`
 - **External URL**: `https://example.com/game.js` (requires INTERNET permission)
 
 ## Debugging
@@ -138,7 +138,7 @@ Scripts can be loaded from:
 adb logcat -s Mystral SDL
 
 # View all logs from app
-adb logcat --pid=$(adb shell pidof com.mystral.engine)
+adb logcat --pid=$(adb shell pidof com.threenative.game)
 ```
 
 Run the gate's emulator-free unit coverage with:

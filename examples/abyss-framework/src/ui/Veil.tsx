@@ -1,4 +1,4 @@
-import type { Game } from "@threenative/core";
+import type { IGame } from "@threenative/core";
 import { useGameState } from "@threenative/ui";
 import { Fragment } from "react";
 import type { AbyssState } from "../scenes/Abyss.js";
@@ -33,7 +33,7 @@ function Final({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function Veil({ game }: { game: Game<AbyssState> }) {
+export function Veil({ game }: { game: IGame<AbyssState> }) {
   const { best, elapsed, score, status } = useGameState(game);
   if (status === "play") return null;
   const over = status === "over";

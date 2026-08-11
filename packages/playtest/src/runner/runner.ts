@@ -43,7 +43,7 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   url: string;
 }
 
-interface LabeledPlaytestSample {
+interface ILabeledPlaytestSample {
   label: string;
   signals: unknown[];
   snapshot: IPlaytestObservationSnapshot;
@@ -110,8 +110,18 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     ).catch(() => false);
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
-    const sampleRequest = { entities: entityIds, include: ["components", "diagnostics", "entities", "resources"], resources: resourceIds } as const;
-    const labeledSamples: LabeledPlaytestSample[] = [];
+    const sampleRequest = {
+      entities: entityIds,
+      include: [
+        "components",
+        "diagnostics",
+        "entities",
+        "resources",
+        ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+      ],
+      resources: resourceIds,
+    } as const;
+    const labeledSamples: ILabeledPlaytestSample[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const beforeSnapshot = await bridge?.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
@@ -230,7 +240,7 @@ export function buildReport(
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
   runtimeReady = true,
   visual: IPlaytestObservations["visual"] = undefined,
-  labeledSamples: readonly LabeledPlaytestSample[] = [],
+  labeledSamples: readonly ILabeledPlaytestSample[] = [],
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
@@ -242,6 +252,9 @@ export function buildReport(
     ? undefined
     : subtract(afterPosition, beforePosition);
   const distance = movementDelta === undefined ? 0 : length(movementDelta);
+  const performanceSeries = scenario.assert?.performance === undefined
+    ? undefined
+    : afterSnapshot?.runtimeDiagnosticsSeries ?? beforeSnapshot?.runtimeDiagnosticsSeries;
   const diagnostics: IPlaytestDiagnostic[] = [];
   if (runtimeReady === false && scenario.assert?.diagnostics?.runtimeReady === true) {
     diagnostics.push({
@@ -276,10 +289,14 @@ export function buildReport(
           }),
       hud,
       network: networkEntries,
+      ...(performanceSeries === undefined ? {} : { performanceSeries }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
       ...(afterSnapshot?.gameplay === undefined
         ? {}
         : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
+      ...(afterSnapshot?.physicsDebugSeries === undefined
+        ? {}
+        : { physicsDebugSeries: afterSnapshot.physicsDebugSeries }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
       ...(visual === undefined ? {} : { visual }),
     }),

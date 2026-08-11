@@ -1,18 +1,18 @@
 import { Sprite } from "three";
 import { instancedArray } from "three/tsl";
 import type { ComputeNode, SpriteNodeMaterial, StorageBufferNode } from "three/webgpu";
-import type { RendererLike } from "./renderer.js";
+import type { IRendererLike } from "./renderer.js";
 
-export interface GPUParticles3DBuffers {
+export interface IGPUParticles3DBuffers {
   readonly positions: StorageBufferNode<"vec3">;
   readonly velocities: StorageBufferNode<"vec3">;
 }
 
-export interface GPUParticles3DOptions {
+export interface IGPUParticles3DOptions {
   readonly amount: number;
   readonly material: SpriteNodeMaterial;
-  readonly start: (buffers: GPUParticles3DBuffers) => ComputeNode;
-  readonly process: (buffers: GPUParticles3DBuffers) => ComputeNode;
+  readonly start: (buffers: IGPUParticles3DBuffers) => ComputeNode;
+  readonly process: (buffers: IGPUParticles3DBuffers) => ComputeNode;
 }
 
 function computeNode(name: string, value: unknown): ComputeNode {
@@ -28,14 +28,14 @@ function computeNode(name: string, value: unknown): ComputeNode {
 
 export class GPUParticles3D extends Sprite {
   readonly amount: number;
-  readonly buffers: GPUParticles3DBuffers;
+  readonly buffers: IGPUParticles3DBuffers;
   emitting = true;
   #start: ComputeNode;
   #process: ComputeNode;
-  #renderer: RendererLike | undefined;
+  #renderer: IRendererLike | undefined;
   #released = false;
 
-  constructor(options: GPUParticles3DOptions) {
+  constructor(options: IGPUParticles3DOptions) {
     if (!Number.isInteger(options.amount) || options.amount <= 0)
       throw new Error("GPUParticles3D.amount must be a positive integer.");
     if (options.material === undefined) throw new Error("GPUParticles3D.material is required.");
@@ -61,7 +61,7 @@ export class GPUParticles3D extends Sprite {
     return this.#released;
   }
 
-  attachRenderer(renderer: RendererLike): void {
+  attachRenderer(renderer: IRendererLike): void {
     if (this.#released) throw new Error("GPUParticles3D cannot be attached after release.");
     if (this.#renderer === renderer) return;
     this.#renderer = renderer;

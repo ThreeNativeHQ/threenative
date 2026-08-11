@@ -1,18 +1,18 @@
-import { type Ctx, type GamePluginHooks, Scene, defineGame } from "@threenative/core";
+import { type ICtx, type IGamePluginHooks, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
   Area3D,
   CharacterBody3D,
   CollisionShape3D,
+  type IPhysicsContext,
   type PhysicsBody3D,
-  type PhysicsContext,
   RigidBody3D,
   rapier,
 } from "@threenative/physics";
 import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 
 type VectorTuple = readonly [number, number, number];
-interface ScenarioBody {
+interface IScenarioBody {
   readonly id: number;
   readonly name: string;
   readonly type: "character" | "dynamic" | "fixed" | "kinematic";
@@ -24,13 +24,13 @@ interface ScenarioBody {
   readonly collisionMask: number;
   readonly sensor: boolean;
 }
-interface ScenarioMotion {
+interface IScenarioMotion {
   readonly bodyId: number;
   readonly startStep: number;
   readonly endStep: number;
   readonly delta: VectorTuple;
 }
-interface ParityScenario {
+interface IParityScenario {
   readonly schemaVersion: number;
   readonly expectedRapierVersions: { readonly web: string; readonly rust: string };
   readonly gravity: VectorTuple;
@@ -41,7 +41,7 @@ interface ParityScenario {
   readonly teleportAtStep: number;
   readonly teleportBodyId: number;
   readonly teleportPosition: VectorTuple;
-  readonly bodies: readonly ScenarioBody[];
+  readonly bodies: readonly IScenarioBody[];
   readonly character: {
     readonly bodyId: number;
     readonly offset: number;
@@ -50,11 +50,11 @@ interface ParityScenario {
     readonly snapToGround: number;
     readonly oneWayLayers: number;
   };
-  readonly motions: readonly ScenarioMotion[];
+  readonly motions: readonly IScenarioMotion[];
   readonly checkpoints: readonly number[];
 }
 
-interface ParityObservation extends Record<string, unknown> {
+interface IParityObservation extends Record<string, unknown> {
   areaMembership: readonly string[];
   areaMembershipSnapshots: readonly string[];
   characterDisplacement: VectorTuple;
@@ -73,8 +73,8 @@ interface ParityObservation extends Record<string, unknown> {
   };
   steps: number;
 }
-interface PhysicsState extends Record<string, unknown> {
-  parity: ParityObservation;
+interface IPhysicsState extends Record<string, unknown> {
+  parity: IParityObservation;
 }
 
 declare global {
@@ -86,7 +86,7 @@ declare const __TN_PHYSICS_SCENARIO_SHA256__: string;
 declare const __TN_PLAYTEST_ENABLED__: boolean;
 declare const __TN_RUNTIME__: "native" | "web";
 
-const scenario = JSON.parse(__TN_PHYSICS_SCENARIO_BYTES__) as ParityScenario;
+const scenario = JSON.parse(__TN_PHYSICS_SCENARIO_BYTES__) as IParityScenario;
 if (scenario.schemaVersion !== 1) throw new Error("TN_PHYSICS_PARITY_SCENARIO_INVALID");
 const bodiesByFixtureId = new Map<number, PhysicsBody3D>();
 const namesByRuntimeId = new Map<number, string>();
@@ -105,7 +105,7 @@ const sceneReady = new Promise<void>((resolve) => {
   markSceneReady = resolve;
 });
 
-function collisionShape(body: ScenarioBody): CollisionShape3D {
+function collisionShape(body: IScenarioBody): CollisionShape3D {
   if (body.shape === "capsule")
     return CollisionShape3D.capsule(body.shapeSize[0], body.shapeSize[1]);
   if (body.shape === "sphere") return CollisionShape3D.sphere(body.shapeSize[0]);
@@ -126,7 +126,7 @@ function position(body: PhysicsBody3D): VectorTuple {
   return [body.object.position.x, body.object.position.y, body.object.position.z];
 }
 
-function observer(): GamePluginHooks<PhysicsState, PhysicsContext> {
+function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
   return {
     setup: (ctx, runtime) => {
       const simulation = ctx.physics.simulation;
@@ -207,13 +207,13 @@ function observer(): GamePluginHooks<PhysicsState, PhysicsContext> {
   };
 }
 
-function gatedPlaytest(): GamePluginHooks<PhysicsState, PhysicsContext> {
+function gatedPlaytest(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
   // The proof runs scenario.steps fixed steps from frame 0 -- about three seconds at 60fps.
   // Without holding for the runner it can finish before the first observation, which reports
   // TN_PLAYTEST_ASSERTION_TRIVIAL and a zero-distance movement failure purely as a function of
   // how fast the device booted. Holding in the plugin also holds the physics plugin's first
   // step, which gating this file's observer alone would not.
-  const plugin = playtest<PhysicsState, PhysicsContext>({ holdUntilAttached: true });
+  const plugin = playtest<IPhysicsState, IPhysicsContext>({ holdUntilAttached: true });
   return {
     setup: async (ctx, runtime) => {
       const cleanup = await plugin.setup?.(ctx, runtime);
@@ -234,7 +234,7 @@ function gatedPlaytest(): GamePluginHooks<PhysicsState, PhysicsContext> {
   };
 }
 
-const initialParity: ParityObservation = {
+const initialParity: IParityObservation = {
   areaMembership: [],
   areaMembershipSnapshots: [],
   characterDisplacement: [0, 0, 0],
@@ -254,10 +254,10 @@ const initialParity: ParityObservation = {
   steps: 0,
 };
 
-class NativePhysicsParity extends Scene<PhysicsState, PhysicsContext> {
-  static override readonly initialState: PhysicsState = { parity: initialParity };
+class NativePhysicsParity extends Scene<IPhysicsState, IPhysicsContext> {
+  static override readonly initialState: IPhysicsState = { parity: initialParity };
 
-  override enter(ctx: Ctx<PhysicsState, PhysicsContext>) {
+  override enter(ctx: ICtx<IPhysicsState, IPhysicsContext>) {
     ctx.camera.position.set(0, 2, 8);
     for (const spec of scenario.bodies) {
       const object = ctx.add(
@@ -358,7 +358,7 @@ if (runtimeCanvas === undefined)
 
 const gravityY =
   __TN_PHYSICS_CONTROL__ === "wrong-gravity" ? -scenario.gravity[1] : scenario.gravity[1];
-const game = defineGame<PhysicsState, PhysicsContext>({
+const game = defineGame<IPhysicsState, IPhysicsContext>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
   plugins: [

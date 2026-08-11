@@ -4,6 +4,8 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "console",
   "hud",
   "network",
+  "physicsDebugSeries",
+  "performanceSeries",
   "resources",
   "resourceSeries",
   "runtimeDiagnostics",

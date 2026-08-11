@@ -1,4 +1,4 @@
-import { type Ctx, Scene } from "@threenative/core";
+import { type ICtx, Scene } from "@threenative/core";
 import {
   AmbientLight,
   BoxGeometry,
@@ -8,7 +8,7 @@ import {
 } from "three";
 import { Abyss, type AbyssState } from "./Abyss.js";
 
-type ProbeCtx = Ctx<AbyssState>;
+type ProbeCtx = ICtx<AbyssState>;
 
 export class ViewportProbe extends Scene<AbyssState> {
   static override readonly initialState = Abyss.initialState;

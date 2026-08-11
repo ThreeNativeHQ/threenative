@@ -1,11 +1,11 @@
 import { type IReplayRecording, parseReplayRecording } from "@threenative/playtest";
-import type { GamePluginHooks, GamePluginRuntime } from "./game.js";
+import type { IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
 type Pointer = readonly [number, number, number, number, number];
 type Point = readonly [number, number, number];
 type ReplayContext = { renderer?: { domElement: HTMLCanvasElement } };
-type Random = NonNullable<GamePluginRuntime["random"]>;
+type Random = NonNullable<IGamePluginRuntime["random"]>;
 let replayDepth = 0;
 export type Recording = IReplayRecording;
 function fail(message: string, code = "TN_REPLAY_INVALID"): never {
@@ -62,7 +62,7 @@ type ReplayPublic = { readonly recording: Recording | undefined; readonly runId:
 export function replay<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
->(): GamePluginHooks<TState, TPhysics> & ReplayPublic {
+>(): IGamePluginHooks<TState, TPhysics> & ReplayPublic {
   const runId = Symbol("replay");
   const samples: Array<Recording["input"][number]> = [];
   let header: Omit<Recording, "input" | "ticks"> | undefined;
@@ -107,7 +107,7 @@ export function replay<
     },
   };
 }
-function validateRuntime(runtime: GamePluginRuntime, recording: Recording): Random {
+function validateRuntime(runtime: IGamePluginRuntime, recording: Recording): Random {
   const random = runtime.random;
   if (
     runtime.seed !== recording.seed ||
@@ -138,7 +138,7 @@ export function createReplayDriver(
   const samples = new Map(value.input.map((sample) => [sample.tick, sample]));
   let preparedRandom: Pick<Random, "state"> | undefined;
   const driver = Object.assign(
-    (runtime: GamePluginRuntime) => {
+    (runtime: IGamePluginRuntime) => {
       const random = validateRuntime(runtime, value);
       if (preparedRandom !== random) restoreRandomState(random, value.randomState);
       preparedRandom = undefined;
@@ -164,7 +164,7 @@ export function createReplayDriver(
       }
     },
     {
-      prepare: (runtime: GamePluginRuntime) => {
+      prepare: (runtime: IGamePluginRuntime) => {
         preparedRandom = restoreRandomState(validateRuntime(runtime, value), value.randomState);
       },
       runId: Symbol("replay-driver"),

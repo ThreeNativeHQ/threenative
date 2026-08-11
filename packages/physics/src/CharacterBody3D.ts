@@ -2,23 +2,23 @@ import type { Object3D, Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type {
-  PhysicsBodyHandle,
-  PhysicsColliderHandle,
-  PhysicsHandle,
-  PhysicsWorldHandle,
+  IPhysicsBodyHandle,
+  IPhysicsColliderHandle,
+  IPhysicsHandle,
+  IPhysicsWorldHandle,
 } from "./handles.js";
-import type { PhysicsContext } from "./plugin.js";
+import type { IPhysicsContext } from "./plugin.js";
 import {
-  type PhysicsCharacterOptions,
-  type PhysicsSimulation,
+  type IPhysicsCharacterOptions,
+  type IPhysicsSimulation,
   requirePhysicsSimulation,
 } from "./simulation.js";
 
-export interface CharacterBody3DOptions {
+export interface ICharacterBody3DOptions {
   readonly object: Object3D;
-  readonly physics?: PhysicsContext;
+  readonly physics?: IPhysicsContext;
   /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
-  readonly world?: PhysicsWorldHandle | unknown;
+  readonly world?: IPhysicsWorldHandle | unknown;
   readonly shape: CollisionShape3D;
   readonly offset?: number;
   readonly maxSlopeClimbAngle?: number;
@@ -43,22 +43,22 @@ type TransformRecord = [number, number, number, number, number, number, number, 
 function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
   const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
   if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("PhysicsSimulation returned a malformed transform.");
+    throw new Error("IPhysicsSimulation returned a malformed transform.");
   return result as TransformRecord;
 }
 
 export class CharacterBody3D {
-  readonly body: PhysicsBodyHandle;
-  readonly collider: PhysicsColliderHandle;
-  readonly controller: PhysicsHandle;
+  readonly body: IPhysicsBodyHandle;
+  readonly collider: IPhysicsColliderHandle;
+  readonly controller: IPhysicsHandle;
   readonly object: Object3D;
   readonly velocity: Vector3;
   gravity: number;
   maxFallSpeed: number;
   readonly oneWayLayers: number;
   grounded = false;
-  readonly #simulation: PhysicsSimulation;
-  readonly #physics: PhysicsContext | undefined;
+  readonly #simulation: IPhysicsSimulation;
+  readonly #physics: IPhysicsContext | undefined;
   #desired = { x: 0, y: 0, z: 0 };
   #sliding = false;
   #groundCollider: number | undefined;
@@ -66,7 +66,7 @@ export class CharacterBody3D {
   #desiredY = 0;
   #disposed = false;
 
-  constructor(options: CharacterBody3DOptions) {
+  constructor(options: ICharacterBody3DOptions) {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.object = options.object;
@@ -96,7 +96,7 @@ export class CharacterBody3D {
     this.body = registration.body;
     this.collider = registration.collider;
     this.controller = registration.controller;
-    const characterOptions: PhysicsCharacterOptions = {
+    const characterOptions: IPhysicsCharacterOptions = {
       autostep:
         options.autostep === undefined
           ? undefined

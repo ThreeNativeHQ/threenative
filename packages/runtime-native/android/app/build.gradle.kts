@@ -149,12 +149,12 @@ dependencies {
 }
 
 android {
-    namespace = "com.mystral.engine"
+    namespace = "com.threenative.game"
     compileSdk = 35
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "com.mystral.engine"
+        applicationId = "com.threenative.game"
         minSdk = 24  // Android 7.0 - minimum for Vulkan
         targetSdk = 35
         versionCode = 1

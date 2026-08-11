@@ -1,14 +1,14 @@
 export type EntitySnapshot = Record<string, Record<string, unknown> & { tags?: string[] }>;
 
-export interface Debuggable {
+export interface IDebuggable {
   debug(): Record<string, unknown>;
 }
 
-interface Disposable {
+interface IDisposable {
   dispose(): void;
 }
 
-interface TaggedEntity {
+interface ITaggedEntity {
   tags?: unknown;
 }
 
@@ -28,7 +28,7 @@ export function autoFields(entity: object): Record<string, unknown> {
 }
 
 function disposeEntity(entity: object): void {
-  const dispose = (entity as Partial<Disposable>).dispose;
+  const dispose = (entity as Partial<IDisposable>).dispose;
   if (typeof dispose === "function") dispose.call(entity);
 }
 
@@ -60,9 +60,9 @@ export class Registry {
   snapshot(): EntitySnapshot {
     const result: EntitySnapshot = {};
     for (const [name, entity] of this.#named) {
-      const debug = (entity as Partial<Debuggable>).debug;
+      const debug = (entity as Partial<IDebuggable>).debug;
       const fields = typeof debug === "function" ? debug.call(entity) : autoFields(entity);
-      const tags = (entity as TaggedEntity).tags;
+      const tags = (entity as ITaggedEntity).tags;
       result[name] = {
         ...fields,
         ...(Array.isArray(tags) && tags.every((tag) => typeof tag === "string")

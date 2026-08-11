@@ -1,9 +1,9 @@
-import type { Ctx } from "@threenative/core";
-import type { PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { Mesh } from "three";
 import type { GameState } from "./state.js";
 
-type PickCtx = Ctx<GameState, PhysicsContext>;
+type PickCtx = ICtx<GameState, IPhysicsContext>;
 
 const FAST_PICK_BUDGET_MS = 1;
 let trackedTarget: Mesh | undefined;

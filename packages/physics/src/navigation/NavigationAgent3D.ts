@@ -1,12 +1,12 @@
 import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3 } from "recast-navigation";
 import { type Object3D, Vector3 } from "three";
-import type { NavigationContext } from "./index.js";
+import type { INavigationContext } from "./index.js";
 
 export type NavigationAgentEvent = "targetReached" | "navigationFinished" | "pathChanged";
 export type NavigationAgentHandler = () => void;
 
-export interface NavigationAgent3DOptions {
-  readonly navigation: NavigationContext;
+export interface INavigationAgent3DOptions {
+  readonly navigation: INavigationContext;
   readonly object: Object3D;
   readonly radius?: number;
   readonly height?: number;
@@ -55,7 +55,7 @@ function navigationPointMatchesTarget(
   );
 }
 
-function crowdFor(navigation: NavigationContext, radius: number): Crowd {
+function crowdFor(navigation: INavigationContext, radius: number): Crowd {
   if (navigation.crowd !== undefined) return navigation.crowd;
   const crowd = new Crowd(navigation.navMesh, {
     maxAgents: MAX_CROWD_AGENTS,
@@ -66,7 +66,7 @@ function crowdFor(navigation: NavigationContext, radius: number): Crowd {
 }
 
 export class NavigationAgent3D {
-  readonly navigation: NavigationContext;
+  readonly navigation: INavigationContext;
   readonly object: Object3D;
   readonly radius: number;
   readonly height: number;
@@ -86,7 +86,7 @@ export class NavigationAgent3D {
   };
   #crowdAgent: CrowdAgent | undefined;
 
-  constructor(options: NavigationAgent3DOptions) {
+  constructor(options: INavigationAgent3DOptions) {
     if (options.navigation === undefined)
       throw new Error("NavigationAgent3D requires a navigation context.");
     if (options.navigation.regions.size === 0)

@@ -27,11 +27,15 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   const key = new DirectionalLight(palette.accent, 3);
   key.position.set(4, 7, 3);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  // 1024² is one quarter of a 2048² map's texel storage and fill work while
+  // retaining enough resolution for this small authored route. Increase it
+  // only when a larger level makes the 18-unit camera extent visibly soft.
+  key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 0.5;
   key.shadow.camera.far = 60;
-  // A shadow camera tight enough to stay crisp cannot also cover a big level.
-  // Widen this, or move the light with the player, when the world grows.
+  // A shadow camera tight enough to stay crisp cannot also cover a big level;
+  // this extent matches the generated route. Widen it, or move the light with
+  // the player, when the world grows.
   const extent = 18;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;

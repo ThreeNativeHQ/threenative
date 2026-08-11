@@ -4,20 +4,20 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { type NativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
+import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
 import {
+  type IPhysicsBodyCreateOptions,
+  type IPhysicsRuntimeSimulation,
+  type IPhysicsSimulation,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
-  type PhysicsBodyCreateOptions,
-  type PhysicsRuntimeSimulation,
-  type PhysicsSimulation,
   createWebPhysicsSimulation,
 } from "../src/simulation.js";
 
-interface ScenarioBody {
+interface IScenarioBody {
   readonly id: number;
   readonly name: string;
-  readonly type: PhysicsBodyCreateOptions["type"];
+  readonly type: IPhysicsBodyCreateOptions["type"];
   readonly shape: "box" | "capsule" | "sphere";
   readonly shapeSize: readonly [number, number, number];
   readonly position: readonly [number, number, number];
@@ -27,14 +27,14 @@ interface ScenarioBody {
   readonly sensor: boolean;
 }
 
-interface ScenarioMotion {
+interface IScenarioMotion {
   readonly bodyId: number;
   readonly startStep: number;
   readonly endStep: number;
   readonly delta: readonly [number, number, number];
 }
 
-interface ParityScenario {
+interface IParityScenario {
   readonly schemaVersion: number;
   readonly expectedRapierVersions: { readonly web: string; readonly rust: string };
   readonly gravity: readonly [number, number, number];
@@ -45,7 +45,7 @@ interface ParityScenario {
   readonly teleportAtStep: number;
   readonly teleportBodyId: number;
   readonly teleportPosition: readonly [number, number, number];
-  readonly bodies: readonly ScenarioBody[];
+  readonly bodies: readonly IScenarioBody[];
   readonly character: {
     readonly bodyId: number;
     readonly offset: number;
@@ -54,11 +54,11 @@ interface ParityScenario {
     readonly snapToGround: number;
     readonly oneWayLayers: number;
   };
-  readonly motions: readonly ScenarioMotion[];
+  readonly motions: readonly IScenarioMotion[];
   readonly checkpoints: readonly number[];
 }
 
-interface ArmObservation {
+interface IArmObservation {
   readonly arm: "web";
   readonly rapierVersion: string;
   readonly scenarioSha256: string;
@@ -96,11 +96,11 @@ const webArtifactPath = resolve(
   "../../runtime-native/native/physics/target/parity-web.json",
 );
 const fixtureBytes = readFileSync(fixturePath);
-const scenario = JSON.parse(fixtureBytes.toString("utf8")) as ParityScenario;
+const scenario = JSON.parse(fixtureBytes.toString("utf8")) as IParityScenario;
 const scenarioSha256 = createHash("sha256").update(fixtureBytes).digest("hex");
-let observation: ArmObservation;
+let observation: IArmObservation;
 
-function shape(body: ScenarioBody): PhysicsBodyCreateOptions["shape"] {
+function shape(body: IScenarioBody): IPhysicsBodyCreateOptions["shape"] {
   return {
     collisionLayer: body.collisionLayer,
     collisionMask: body.collisionMask,
@@ -112,7 +112,7 @@ function shape(body: ScenarioBody): PhysicsBodyCreateOptions["shape"] {
   };
 }
 
-function createSimulation(): PhysicsRuntimeSimulation {
+function createSimulation(): IPhysicsRuntimeSimulation {
   return createWebPhysicsSimulation({
     eventQueue: new RAPIER.EventQueue(true),
     rapier: RAPIER,
@@ -125,7 +125,7 @@ function createSimulation(): PhysicsRuntimeSimulation {
   });
 }
 
-function transforms(simulation: PhysicsRuntimeSimulation): Map<number, [number, number, number]> {
+function transforms(simulation: IPhysicsRuntimeSimulation): Map<number, [number, number, number]> {
   const buffer = new Float32Array(scenario.bodies.length * PHYSICS_TRANSFORM_STRIDE);
   const count = simulation.readVisibleTransforms(buffer);
   const result = new Map<number, [number, number, number]>();
@@ -150,12 +150,12 @@ function outcome(action: () => void): string {
 }
 
 function validationAdapters(): {
-  readonly native: PhysicsSimulation;
-  readonly raw: NativeSimulation;
-  readonly web: PhysicsSimulation;
+  readonly native: IPhysicsSimulation;
+  readonly raw: INativeSimulation;
+  readonly web: IPhysicsSimulation;
 } {
   let nextId = 0;
-  const raw: NativeSimulation = {
+  const raw: INativeSimulation = {
     configureCharacter: vi.fn(),
     createBody: vi.fn(() => nextId++),
     dispose: vi.fn(),
@@ -169,7 +169,7 @@ function validationAdapters(): {
   };
   const web = createSimulation();
   const native = createNativePhysicsSimulation(raw, "0.30.0");
-  const body: PhysicsBodyCreateOptions = {
+  const body: IPhysicsBodyCreateOptions = {
     mass: 0,
     position: { x: 0, y: 0, z: 0 },
     rotation: { w: 1, x: 0, y: 0, z: 0 },
@@ -250,7 +250,7 @@ function validationOutcomes(): Record<string, string> {
   return outcomes;
 }
 
-function drainEvents(simulation: PhysicsRuntimeSimulation): string[] {
+function drainEvents(simulation: IPhysicsRuntimeSimulation): string[] {
   const buffer = new Uint32Array(
     scenario.bodies.length * scenario.bodies.length * PHYSICS_COLLISION_EVENT_STRIDE,
   );
@@ -265,7 +265,7 @@ function drainEvents(simulation: PhysicsRuntimeSimulation): string[] {
   return events;
 }
 
-function runScenario(): ArmObservation {
+function runScenario(): IArmObservation {
   const simulation = createSimulation();
   for (const body of scenario.bodies) {
     const created = simulation.createBody({
@@ -394,7 +394,7 @@ function runScenario(): ArmObservation {
   const areaMembership = [...(simulation.areaIntersections?.(5) ?? [])].sort(
     (left, right) => left - right,
   );
-  const result: ArmObservation = {
+  const result: IArmObservation = {
     arm: "web",
     areaMembership,
     areaMembershipSnapshots: areaSnapshots,
@@ -467,7 +467,7 @@ describe("physics parity web measurement arm", () => {
   });
 
   it("should write the observation artifact consumed by the Rust arm", () => {
-    const written = JSON.parse(readFileSync(webArtifactPath, "utf8")) as ArmObservation;
+    const written = JSON.parse(readFileSync(webArtifactPath, "utf8")) as IArmObservation;
     expect(written).toEqual(observation);
   });
 });
@@ -475,7 +475,7 @@ describe("physics parity web measurement arm", () => {
 describe("native adapter freshness", () => {
   it("refreshes state and area caches independently without reading visible transforms", () => {
     let nextId = 0;
-    const raw: NativeSimulation = {
+    const raw: INativeSimulation = {
       configureCharacter: vi.fn(),
       createBody: vi.fn(() => nextId++),
       dispose: vi.fn(),
@@ -599,7 +599,7 @@ describe("native adapter freshness", () => {
 });
 
 describe("physics adapter fail-closed symmetry", () => {
-  const rejectedInputs: readonly (readonly [string, (simulation: PhysicsSimulation) => void])[] = [
+  const rejectedInputs: readonly (readonly [string, (simulation: IPhysicsSimulation) => void])[] = [
     ["non-finite delta", (simulation) => simulation.step(Number.NaN)],
     [
       "Float64 input",
@@ -638,7 +638,7 @@ describe("physics adapter fail-closed symmetry", () => {
       (_, index) =>
         [
           `non-finite record scalar ${index}`,
-          (simulation: PhysicsSimulation) =>
+          (simulation: IPhysicsSimulation) =>
             simulation.step(1 / 60, {
               kinematicCount: 1,
               kinematicTransforms: transformWith(index, Number.NaN),

@@ -1,10 +1,10 @@
-import type { Ctx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type PhysicsContext } from "@threenative/physics";
+import type { ICtx } from "@threenative/core";
+import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, Mesh } from "three";
 import { defaultMaterial } from "../render/materials.js";
 import type { GameState } from "../state.js";
 
-type GameCtx = Ctx<GameState, PhysicsContext>;
+type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.14;

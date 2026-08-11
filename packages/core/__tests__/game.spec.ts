@@ -1,7 +1,7 @@
 import { Mesh, OrthographicCamera, PerspectiveCamera, SphereGeometry } from "three";
 import { describe, expect, it } from "vitest";
-import { type GamePlatformSource, defineGame } from "../src/game.js";
-import { type Ctx, Scene } from "../src/scene.js";
+import { type IGamePlatformSource, defineGame } from "../src/game.js";
+import { type ICtx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -45,7 +45,7 @@ class EmptyScene extends Scene {
   static override readonly initialState = {};
 }
 
-describe("Game", () => {
+describe("IGame", () => {
   it("should read input from a custom target when inputTarget is provided", async () => {
     const customTarget = new EventTarget();
     const unrelatedTarget = new EventTarget();
@@ -54,7 +54,7 @@ describe("Game", () => {
     class InputScene extends Scene {
       static override readonly initialState = {};
 
-      override update(ctx: Ctx): void {
+      override update(ctx: ICtx): void {
         pressed = ctx.input.pressed("move");
       }
     }
@@ -95,7 +95,7 @@ describe("Game", () => {
     class InputScene extends Scene {
       static override readonly initialState = {};
 
-      override update(ctx: Ctx): void {
+      override update(ctx: ICtx): void {
         pressed = ctx.input.pressed("move");
       }
     }
@@ -234,7 +234,7 @@ describe("Game", () => {
     class LeakyScene extends Scene {
       static override readonly initialState = {};
 
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         ctx.add(new Mesh());
       }
     }
@@ -245,10 +245,10 @@ describe("Game", () => {
     });
     await game.start();
     const scene = game.ctx?.scene;
-    if (scene === undefined) throw new Error("Game did not expose its scene.");
+    if (scene === undefined) throw new Error("IGame did not expose its scene.");
     scene.clear = () => scene;
 
-    expect(() => game.stop()).toThrow("Game teardown leaked scene objects.");
+    expect(() => game.stop()).toThrow("IGame teardown leaked scene objects.");
     expect(game.ctx).toBeUndefined();
   });
 
@@ -346,7 +346,7 @@ describe("Game", () => {
     class ReturnedScene extends Scene<Record<string, unknown>> {
       static override readonly initialState = {};
 
-      override enter(): (ctx: Ctx, dt: number) => void {
+      override enter(): (ctx: ICtx, dt: number) => void {
         return () => {
           calls += 1;
         };
@@ -397,13 +397,13 @@ describe("Game", () => {
     class Boot extends Scene {
       static override readonly initialState = {};
 
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         void ctx.goto("play");
       }
     }
 
     class Play extends Scene {
-      override enter(): (ctx: Ctx, dt: number) => void {
+      override enter(): (ctx: ICtx, dt: number) => void {
         return () => {
           updates += 1;
         };
@@ -431,7 +431,7 @@ describe("Game", () => {
     game.stop();
   });
 
-  it("exposes goto on Game, reconstructs the current scene, and clears its scheduler", async () => {
+  it("exposes goto on IGame, reconstructs the current scene, and clears its scheduler", async () => {
     let advance: ((ticks: number) => number) | undefined;
     let enters = 0;
     let scheduled = 0;
@@ -439,7 +439,7 @@ describe("Game", () => {
     class Restartable extends Scene<{ score: number }> {
       static override readonly initialState = { score: 0 };
 
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         enters += 1;
         ctx.entities.add(`entity-${enters}`, {});
         ctx.every(() => scheduled++);
@@ -488,7 +488,7 @@ describe("Game", () => {
     class First extends Scene {
       static override readonly initialState = {};
 
-      override enter(ctx: Ctx): (ctx: Ctx, dt: number) => void {
+      override enter(ctx: ICtx): (ctx: ICtx, dt: number) => void {
         return () => {
           void ctx.goto("second");
           return;
@@ -497,7 +497,7 @@ describe("Game", () => {
     }
 
     class Second extends Scene {
-      override enter(): (ctx: Ctx, dt: number) => void {
+      override enter(): (ctx: ICtx, dt: number) => void {
         return () => {
           destinationUpdates += 1;
         };
@@ -546,7 +546,7 @@ describe("Game", () => {
         events.push("first.load");
       }
 
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         events.push("first.enter");
         ctx.entities.add("first", {});
         navigate = ctx.goto;
@@ -562,7 +562,7 @@ describe("Game", () => {
         events.push("second.load");
       }
 
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         events.push("second.enter");
         expect(ctx.entities.get("first")).toBeUndefined();
         ctx.entities.add("second", {});
@@ -598,7 +598,7 @@ describe("Game", () => {
     let sceneExits = 0;
 
     class First extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         child = new Mesh(new SphereGeometry(1), undefined);
         ctx.add(child);
         ctx.entities.add("resource", {
@@ -639,7 +639,7 @@ describe("Game", () => {
     let navigate: ((name: string) => Promise<void>) | undefined;
 
     class First extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         navigate = ctx.goto;
       }
     }
@@ -663,7 +663,7 @@ describe("Game", () => {
     let advance: ((ticks: number) => number) | undefined;
 
     class TestScene extends Scene {
-      override update(_ctx: Ctx, dt: number): void {
+      override update(_ctx: ICtx, dt: number): void {
         observedStep = dt;
       }
     }
@@ -736,7 +736,7 @@ describe("Game", () => {
     let disposed = 0;
     let resizeDisposals = 0;
     const rendererSizes: Array<[number, number]> = [];
-    const platform: GamePlatformSource = {
+    const platform: IGamePlatformSource = {
       input: () => [{ axes: [0.5, -0.25], buttons: [{ pressed: true }] }],
       inputTarget,
       mountCanvas: (mountedCanvas) => {

@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import {
+  ACTIVITY,
   FIRST_FRAME_MARKER,
   discoverTools,
   parseArgs as parseFirstProofArgs,
@@ -25,7 +26,7 @@ import {
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_DEVICE = "37251FDJH0037Z";
-const APP_ID = "com.mystral.engine";
+const APP_ID = "com.threenative.game";
 const MARKERS = {
   frame: "TN_ANDROID_JS_FRAME:",
   native: "TN_ANDROID_JS_NATIVE:",
@@ -440,7 +441,7 @@ async function measureColdStarts(
     adb(adbExecutable, serial, "shell", "am", "force-stop", APP_ID);
     adb(adbExecutable, serial, "logcat", "-c");
     const startedAt = performance.now();
-    const launch = adb(adbExecutable, serial, "shell", "am", "start", "-W", "-n", `${APP_ID}/.MystralActivity`);
+    const launch = adb(adbExecutable, serial, "shell", "am", "start", "-W", "-n", ACTIVITY);
     if (!/Status:\s*ok/iu.test(launch)) {
       throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_COLD_START_LAUNCH_FAILED:${runIndex + 1}`);
     }
@@ -715,7 +716,7 @@ async function installAndLaunchMeasuredSubject(adbExecutable, serial, apk) {
     "start",
     "-W",
     "-n",
-    `${APP_ID}/.MystralActivity`,
+    ACTIVITY,
   );
   if (!/Status:\s*ok/iu.test(launch)) {
     throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_LAUNCH_FAILED:${launch.trim()}`);

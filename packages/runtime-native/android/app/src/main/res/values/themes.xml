@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Fullscreen theme for games -->
-    <style name="Theme.MystralNative" parent="android:Theme.NoTitleBar.Fullscreen">
+    <style name="Theme.ThreeNative" parent="android:Theme.NoTitleBar.Fullscreen">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>

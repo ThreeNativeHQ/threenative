@@ -1,6 +1,6 @@
 import { OrthographicCamera, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
-import { Viewport, type ViewportSize } from "../src/viewport.js";
+import { type IViewportSize, Viewport } from "../src/viewport.js";
 
 class FakeResizeObserver {
   static current: FakeResizeObserver | undefined;
@@ -38,8 +38,8 @@ function renderer(canvas: HTMLCanvasElement) {
   };
 }
 
-function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: ViewportSize } {
-  const canvas = new EventTarget() as HTMLCanvasElement & { size: ViewportSize };
+function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: IViewportSize } {
+  const canvas = new EventTarget() as HTMLCanvasElement & { size: IViewportSize };
   Object.defineProperties(canvas, {
     clientHeight: { configurable: true, get: () => canvas.size.height },
     clientWidth: { configurable: true, get: () => canvas.size.width },
@@ -66,7 +66,7 @@ describe("Viewport", () => {
     const camera = new PerspectiveCamera(60, 1, 0.1, 100);
     const before = camera.projectionMatrix.clone();
     const viewport = new Viewport({ camera, renderer: renderer(canvas) });
-    const sizes: ViewportSize[] = [];
+    const sizes: IViewportSize[] = [];
     const stop = viewport.onResize((size) => sizes.push(size));
 
     expect(viewport.size).toEqual({ aspect: 1280 / 720, height: 720, width: 1280 });

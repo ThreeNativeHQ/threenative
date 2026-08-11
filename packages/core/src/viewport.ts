@@ -7,40 +7,40 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { type RendererLike, observeCanvasResize, readCanvasSize } from "./renderer.js";
+import { type IRendererLike, observeCanvasResize, readCanvasSize } from "./renderer.js";
 
-export interface ViewportSize {
+export interface IViewportSize {
   readonly aspect: number;
   readonly height: number;
   readonly width: number;
 }
 
-export interface ViewportOptions {
+export interface IViewportOptions {
   readonly camera: Camera;
-  readonly renderer: RendererLike;
-  readonly source?: ViewportPlatformSource;
+  readonly renderer: IRendererLike;
+  readonly source?: IViewportPlatformSource;
 }
 
-export type ViewportResizeHandler = (size: ViewportSize) => void;
+export type ViewportResizeHandler = (size: IViewportSize) => void;
 
-export interface ViewportPlatformSource {
+export interface IViewportPlatformSource {
   observeResize(canvas: HTMLCanvasElement, resize: () => void): () => void;
-  readSize(canvas: HTMLCanvasElement): ViewportSize;
+  readSize(canvas: HTMLCanvasElement): IViewportSize;
 }
 
 export class Viewport {
   readonly camera: Camera;
-  readonly renderer: RendererLike;
-  #source: ViewportPlatformSource | undefined;
+  readonly renderer: IRendererLike;
+  #source: IViewportPlatformSource | undefined;
   #listeners = new Set<ViewportResizeHandler>();
-  #size: ViewportSize = { aspect: 1, height: 1, width: 1 };
+  #size: IViewportSize = { aspect: 1, height: 1, width: 1 };
   #stopObserving: () => void = () => undefined;
   #disposed = false;
   #raycaster = new Raycaster();
   #plane = new Plane(new Vector3(0, 0, 1));
   #projected = new Vector3();
 
-  constructor(options: ViewportOptions) {
+  constructor(options: IViewportOptions) {
     this.camera = options.camera;
     this.renderer = options.renderer;
     this.#source = options.source;
@@ -50,7 +50,7 @@ export class Viewport {
     this.resize();
   }
 
-  get size(): ViewportSize {
+  get size(): IViewportSize {
     return this.#size;
   }
 

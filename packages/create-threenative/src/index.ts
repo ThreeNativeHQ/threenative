@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export type ScaffoldTemplate = "minimal" | "platformer" | "starter";
 
-export interface ScaffoldOptions {
+export interface IScaffoldOptions {
   install?: boolean;
   packageSources?: Partial<
     Record<
@@ -23,7 +23,7 @@ export interface ScaffoldOptions {
   template?: ScaffoldTemplate;
 }
 
-export interface ScaffoldResult {
+export interface IScaffoldResult {
   installed: boolean;
   target: string;
   template: ScaffoldTemplate;
@@ -52,23 +52,30 @@ async function isEmpty(directory: string): Promise<boolean> {
   return entries.length === 0;
 }
 
-async function renderTemplate(directory: string, projectName: string): Promise<void> {
+async function renderTemplate(
+  directory: string,
+  replacements: Readonly<Record<string, string>>,
+): Promise<void> {
   const files = await readdir(directory, { withFileTypes: true });
   for (const entry of files) {
     const source = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      await renderTemplate(source, projectName);
+      await renderTemplate(source, replacements);
       continue;
     }
     if (!TEXT_FILE_EXTENSIONS.has(path.extname(entry.name))) continue;
     const content = await readFile(source, "utf8");
-    await writeFile(source, content.replaceAll("__PROJECT_NAME__", projectName));
+    let rendered = content;
+    for (const [placeholder, value] of Object.entries(replacements)) {
+      rendered = rendered.replaceAll(placeholder, value);
+    }
+    await writeFile(source, rendered);
   }
 }
 
 async function applyPackageSources(
   target: string,
-  packageSources: ScaffoldOptions["packageSources"],
+  packageSources: IScaffoldOptions["packageSources"],
 ): Promise<void> {
   if (packageSources === undefined) return;
   const packagePath = path.join(target, "package.json");
@@ -172,9 +179,9 @@ async function runInstall(target: string): Promise<void> {
 }
 
 export async function createProject(
-  options: ScaffoldOptions,
+  options: IScaffoldOptions,
   cwd = process.cwd(),
-): Promise<ScaffoldResult> {
+): Promise<IScaffoldResult> {
   const template = options.template ?? "starter";
   if (!TEMPLATE_NAMES.includes(template)) {
     throw new Error(`Unknown template '${template}'. Choose minimal, starter, or platformer.`);
@@ -188,7 +195,19 @@ export async function createProject(
   await mkdir(target, { recursive: true });
   const source = path.join(templateRoot(), template);
   await cp(source, target, { recursive: true, errorOnExist: true });
-  await renderTemplate(target, packageName(target));
+  const projectName = packageName(target);
+  const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
+  const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
+  // Entries rather than an object literal: these are template tokens, not identifiers. Written as
+  // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
+  // neither ours to rename nor expressible in camelCase.
+  await renderTemplate(
+    target,
+    Object.fromEntries([
+      ["__PROJECT_NAME__", projectName],
+      ["__PROJECT_ID__", projectId],
+    ]),
+  );
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
 
@@ -202,7 +221,7 @@ function readFlag(argv: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : argv[index + 1];
 }
 
-export function parseArgs(argv: readonly string[]): ScaffoldOptions {
+export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   const target = argv.find(
     (value, index) => !value.startsWith("-") && (index === 0 || !argv[index - 1]?.startsWith("--")),
   );

@@ -1,6 +1,7 @@
 import type {
   IPlaytestEntityObservation,
   IPlaytestObservationSnapshot,
+  IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   JsonValue,
   PlaytestClockMode,
@@ -14,15 +15,23 @@ export interface IThreeObservationInput {
   clockMode: PlaytestClockMode;
   diagnostics?: () => JsonValue[];
   registry: ThreePlaytestEntityRegistry;
-  renderer: ThreePlaytestRenderer;
+  renderer: IThreePlaytestRenderer;
+  runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   resources?: () => Record<string, JsonValue>;
   scene: Scene;
   gameplay?: () => IPlaytestObservationSnapshot["gameplay"];
   tick?: number;
 }
 
-export interface ThreePlaytestRenderer {
+export interface IThreePlaytestRenderer {
   getDrawingBufferSize(target: Vector2): Vector2;
+  info?: {
+    render?: {
+      drawCalls?: unknown;
+      calls?: unknown;
+      triangles?: unknown;
+    };
+  };
 }
 
 export function sampleThreeObservations(input: IThreeObservationInput, request: IPlaytestSampleRequest): IPlaytestObservationSnapshot {
@@ -31,6 +40,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
   const rendererSize = input.renderer.getDrawingBufferSize(new Vector2());
   const entities = input.registry.select(request.entities).map(({ id, object }) =>
     observeEntity(id, object, input.camera, rendererSize.x, rendererSize.y));
+  const renderPerformance = rendererPerformance(input.renderer);
   return {
     clock: {
       mode: input.clockMode,
@@ -39,8 +49,33 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics() }),
     entities,
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
+    ...(renderPerformance === undefined ? {} : { performance: renderPerformance }),
+    ...(input.runtimeDiagnosticsSeries === undefined
+      ? {}
+      : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),
     ...(input.resources === undefined ? {} : { resources: input.resources() }),
   };
+}
+
+function rendererPerformance(
+  renderer: IThreePlaytestRenderer,
+): IPlaytestObservationSnapshot["performance"] {
+  const render = renderer.info?.render;
+  const drawCalls = finiteNumber(render?.drawCalls)
+    ? render.drawCalls
+    : finiteNumber(render?.calls)
+      ? render.calls
+      : undefined;
+  const triangles = finiteNumber(render?.triangles) ? render.triangles : undefined;
+  if (drawCalls === undefined && triangles === undefined) return undefined;
+  return {
+    ...(drawCalls === undefined ? {} : { drawCalls }),
+    ...(triangles === undefined ? {} : { triangles }),
+  };
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function observeEntity(

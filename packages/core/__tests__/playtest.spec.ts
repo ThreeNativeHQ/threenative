@@ -3,7 +3,7 @@ import { BoxGeometry, Mesh, MeshBasicMaterial, type Vector2 } from "three";
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
-import { type Ctx, Scene } from "../src/scene.js";
+import { type ICtx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -23,11 +23,62 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("playtest plugin", () => {
+  it("reports loop frame timing and active renderer counts", async () => {
+    const canvas = testCanvas();
+    const callbacks: Array<(time: number) => void> = [];
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          info: { render: { calls: 99, drawCalls: 7, triangles: 42 } },
+          render: () => undefined,
+          setSize: () => undefined,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+        }),
+      },
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      callbacks.shift()?.(0);
+      callbacks.shift()?.(16);
+      expect((await bridge().sample({})).runtimeDiagnosticsSeries).toEqual([
+        { drawCalls: 7, frameMs: 16, triangles: 42 },
+      ]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      if (cancelFrame === undefined) Reflect.deleteProperty(globalThis, "cancelAnimationFrame");
+      else Object.defineProperty(globalThis, "cancelAnimationFrame", { value: cancelFrame });
+    }
+  });
+
   it("observes registry entities and camera.main while advertising supplied channels only", async () => {
     const canvas = testCanvas();
     let drawingBufferReads = 0;
     class TestScene extends Scene<{ score: number }> {
-      override enter(ctx: Ctx<{ score: number }>): void {
+      override enter(ctx: ICtx<{ score: number }>): void {
         const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(player);
         ctx.entities.add("player", { mesh: player });
@@ -68,6 +119,7 @@ describe("playtest plugin", () => {
         "runtime.resources",
         "runtime.animation",
         "runtime.state",
+        "runtime.performance",
         "runtime.contacts",
         "runtime.tags",
         "runtime.audio",
@@ -86,6 +138,7 @@ describe("playtest plugin", () => {
         world: { seed: null },
       });
       expect(snapshot.resources).toEqual({ GameState: { score: 0 }, state: { score: 0 } });
+      expect(snapshot.runtimeDiagnosticsSeries).toEqual([]);
       expect(drawingBufferReads).toBeGreaterThan(0);
     } finally {
       game.stop();
@@ -95,7 +148,7 @@ describe("playtest plugin", () => {
   it("exposes registry fields as components only when fields exist", async () => {
     const canvas = testCanvas();
     class TestScene extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(player);
         ctx.entities.add("player", { debug: () => ({ health: 2 }), mesh: player });
@@ -136,7 +189,7 @@ describe("playtest plugin", () => {
       drainContacts: () => [{ body, entity: "coin.3", started: true }],
     };
     class TestScene extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         const fox = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         const coin = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(fox);
@@ -216,7 +269,7 @@ describe("playtest plugin", () => {
     let navigate: ((name: string) => Promise<void>) | undefined;
 
     class FirstScene extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         const first = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(first);
         ctx.entities.add("first", { mesh: first });
@@ -225,7 +278,7 @@ describe("playtest plugin", () => {
     }
 
     class SecondScene extends Scene {
-      override enter(ctx: Ctx): void {
+      override enter(ctx: ICtx): void {
         const second = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(second);
         ctx.entities.add("second", { mesh: second });

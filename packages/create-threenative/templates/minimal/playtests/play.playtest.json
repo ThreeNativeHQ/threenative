@@ -26,6 +26,7 @@
         "component": "glyphs",
         "entity": "hud"
       }
-    ]
+    ],
+    "performance": {}
   }
 }

@@ -1,6 +1,6 @@
 import { BoxGeometry, DataTexture, Mesh, MeshToonMaterial, Scene } from "three";
 import { expect, it } from "vitest";
-import { SceneCollapse, type SceneCollapseReport } from "../src/collapse.js";
+import { type ISceneCollapseReport, SceneCollapse } from "../src/collapse.js";
 
 it("collapses a fox-sized palette scene to a handful of draws", () => {
   const scene = new Scene();
@@ -18,7 +18,7 @@ it("collapses a fox-sized palette scene to a handful of draws", () => {
     mesh.position.set(i % 50, Math.floor(i / 50), 0);
     scene.add(mesh);
   }
-  let report: SceneCollapseReport | undefined;
+  let report: ISceneCollapseReport | undefined;
   const collapse = new SceneCollapse(scene as never, {
     observeFrames: 3,
     onReport: (v) => {

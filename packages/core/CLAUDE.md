@@ -48,14 +48,17 @@ native. Concretely:
 is a design decision, not an implementation detail. Subpath exports (`./*`) provide
 modularity — a new package does not.
 
+Public and module-local interfaces use an `I` prefix. Classes and type aliases do not; in
+particular, Godot-borrowed node names stay unchanged.
+
 ## Shape of the runtime
 
-- `defineGame(config)` returns a `Game` with `start()` / `stop()`. `stop()` must fully
+- `defineGame(config)` returns an `IGame` with `start()` / `stop()`. `stop()` must fully
   reverse `start()`: loop stopped, scene exited, registry cleared, plugin `dispose` called,
   cleanups drained, input disposed, store stopped, renderer disposed.
 - A `Scene` is a class with five optional methods — `load`, `enter`, `update`, `exit`,
   `render`. Do not add a sixth.
-- `Ctx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real
+- `ICtx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real
   camera, `ctx.physics` is whatever the plugin installed. There is no wrapper to unwrap, and
   none may be introduced.
 - `ctx.state.set()` is called at loop rate and coalesces; the store flushes on an interval
@@ -64,9 +67,9 @@ modularity — a new package does not.
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and
   `ScheduleHandle` are the public supporting types, and transitions cancel it.
-- `AudioBus` is the audio sink; `AudioBusOptions` and `AudioPlayOptions` configure listener
+- `AudioBus` is the audio sink; `IAudioBusOptions` and `IAudioPlayOptions` configure listener
   and voice cleanup.
-- `ctx.random` is the seeded randomness surface playtest reports; `createRandom` and `Random`
+- `ctx.random` is the seeded randomness surface playtest reports; `createRandom` and `IRandom`
   are its public types.
 
 ## Tests

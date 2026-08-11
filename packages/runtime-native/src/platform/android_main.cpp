@@ -69,9 +69,6 @@ static std::string readAsset(const std::string& assetPath) {
  * Must be visible and use C linkage for SDL to find it via dlsym.
  */
 extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* argv[]) {
-    // Android does not reliably route Rust/C stderr through logcat. Preserve
-    // backend panic diagnostics in app-private storage for the runtime gate.
-    std::freopen("/data/user/0/com.mystral.engine/files/native-stderr.log", "w", stderr);
     mystral::coldStartMark("process");
     LOGI("SDL_main called with %d arguments", argc);
     for (int i = 0; i < argc; i++) {
@@ -112,8 +109,10 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     mystral::RuntimeConfig config;
     config.width = 0;   // Use full screen width (0 = auto)
     config.height = 0;  // Use full screen height (0 = auto)
-    config.title = "Mystral Engine";
-    config.fullscreen = true;  // Android is always fullscreen
+    std::string windowTitle = "ThreeNative";
+    if (argc > 4 && argv[4] && argv[4][0] != '\0') windowTitle = argv[4];
+    config.title = windowTitle.c_str();
+    config.fullscreen = argc <= 5 || !argv[5] || std::string(argv[5]) == "true";
 #if TN_ANDROID_VSYNC
     config.vsync = true;
 #else

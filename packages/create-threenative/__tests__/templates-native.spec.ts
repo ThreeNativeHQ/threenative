@@ -148,6 +148,17 @@ export default { start: async () => console.info(marker) };
   it("passes public assets to every native packager", async () => {
     const project = await projectRoot("threenative-native-assets-");
     const runtime = path.join(project, "node_modules/@threenative/runtime-native");
+    await writeFile(
+      path.join(project, "package.json"),
+      JSON.stringify({
+        name: "native-assets",
+        type: "module",
+      }),
+    );
+    await writeFile(
+      path.join(project, "threenative.config.ts"),
+      'export default { display: { orientation: "portrait" } };\n',
+    );
     await mkdir(path.join(project, "public"), { recursive: true });
     await mkdir(path.join(runtime, "scripts"), { recursive: true });
     await writeFile(
@@ -181,6 +192,60 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       ) as string[];
       expect(args, `${target} must receive public/`).toContain("--assets");
       expect(args, `${target} must receive public/`).toContain(path.join(project, "public"));
+      if (target !== "desktop") {
+        expect(args, `${target} must receive orientation`).toContain("--orientation");
+        expect(args[args.indexOf("--orientation") + 1], `${target} orientation`).toBe("portrait");
+      }
     }
+  });
+
+  it("builds a project with no config file through all native targets using defaults", async () => {
+    const project = await projectRoot("threenative-native-no-config-");
+    await writeFile(
+      path.join(project, "src/game.ts"),
+      "export default { start: async () => {} };\n",
+    );
+    const runtime = path.join(project, "node_modules/@threenative/runtime-native");
+    await mkdir(path.join(runtime, "scripts"), { recursive: true });
+    await writeFile(
+      path.join(runtime, "package.json"),
+      '{"name":"@threenative/runtime-native","type":"module"}\n',
+    );
+    await writeFile(
+      path.join(runtime, "scripts/bundle.mjs"),
+      `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "export default { start() {} };\\n");
+`,
+    );
+    for (const target of ["desktop", "android", "ios"] as const) {
+      await writeFile(
+        path.join(runtime, `scripts/package-${target}.mjs`),
+        `import { writeFile } from "node:fs/promises";
+await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringify(process.argv.slice(2)));
+`,
+      );
+
+      await expect(build({ cwd: project, target })).resolves.toBeUndefined();
+      const args = JSON.parse(
+        await readFile(path.join(runtime, `${target}-args.json`), "utf8"),
+      ) as string[];
+      expect(args, `${target} must receive the resolved config`).toContain("--config");
+      if (target !== "desktop") {
+        expect(args, `${target} must receive the default orientation`).toContain("--orientation");
+        expect(args[args.indexOf("--orientation") + 1]).toBe("landscape");
+      }
+    }
+    const resolved = JSON.parse(
+      await readFile(path.join(project, ".threenative/build/config.json"), "utf8"),
+    );
+    expect(resolved).toMatchObject({
+      app: { id: "com.threenative.entryproof", name: "entry-proof" },
+      display: { orientation: "landscape", fullscreen: true, keepScreenOn: false },
+      window: { title: "entry-proof", width: 1280, height: 720, resizable: true },
+      renderer: { preferWebGPU: true },
+    });
   });
 });

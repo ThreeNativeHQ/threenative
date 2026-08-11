@@ -1,11 +1,11 @@
-interface ImportMeta {
+interface IImportMeta {
   readonly env?: {
     readonly DEV?: boolean;
   };
-  readonly hot?: ViteHotContext;
+  readonly hot?: IViteHotContext;
 }
 
-interface ViteHotContext {
+interface IViteHotContext {
   readonly data: Record<string, unknown>;
   accept(): void;
   dispose(callback: (data: Record<string, unknown>) => void): void;

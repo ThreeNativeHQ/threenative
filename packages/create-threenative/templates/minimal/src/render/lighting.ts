@@ -23,9 +23,17 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   const key = new DirectionalLight(palette.accent, 3);
   key.position.set(4, 7, 3);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  // 1024² keeps the default shadow pass at one quarter of a 2048² map's
+  // texel storage and fill work. The small generated scene fits this 12-unit
+  // extent; widen it when the playable area grows, accepting softer shadows.
+  key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 0.5;
   key.shadow.camera.far = 60;
+  const extent = 12;
+  key.shadow.camera.left = -extent;
+  key.shadow.camera.right = extent;
+  key.shadow.camera.top = extent;
+  key.shadow.camera.bottom = -extent;
   key.shadow.bias = -0.0008;
   key.shadow.normalBias = 0.03;
   scene.add(key);
