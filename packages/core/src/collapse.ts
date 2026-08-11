@@ -471,9 +471,9 @@ export class SceneCollapse {
   #update: (() => void) | undefined;
 
   constructor(scene: IObjectLike, options: ISceneCollapseOptions = {}) {
-    const observeFrames = options.observeFrames ?? 45;
+    const observeFrames = options.observeFrames ?? 12;
     const minMeshes = options.minMeshes ?? 200;
-    const bakeBudgetMs = options.bakeBudgetMs ?? 12;
+    const bakeBudgetMs = options.bakeBudgetMs ?? 100;
     if (!Number.isInteger(observeFrames) || observeFrames < 1)
       throw new Error("SceneCollapse.observeFrames must be a positive integer.");
     if (!Number.isInteger(minMeshes) || minMeshes < 1)
