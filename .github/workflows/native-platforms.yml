@@ -1,18 +1,14 @@
 name: Native platform evidence
 
+# When this lane runs is owned by ci.yml, not by a path filter here.
+#
+# The filter used to list only packages/runtime-native/**, so a change to core,
+# playtest, create-threenative or native-smoke — every package the native app
+# actually bundles — could break these targets with nothing reporting it. On
+# 2026-08-11 three separate reds on main turned out to be stale for exactly that
+# reason. Path filters also fired push and pull_request together, running the
+# whole 24-minute matrix twice per PR.
 on:
-  push:
-    paths:
-      - "packages/runtime-native/**"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/native-platforms.yml"
-  pull_request:
-    paths:
-      - "packages/runtime-native/**"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/native-platforms.yml"
   workflow_dispatch:
   workflow_call:
 

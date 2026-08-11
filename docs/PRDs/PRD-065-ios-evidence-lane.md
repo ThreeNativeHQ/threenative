@@ -78,7 +78,7 @@ it changes, and reading its result requires opening a 4,400-line log.
 |---|---|---|
 | 0 | **The lane was not testing iOS.** `chooseSimulator()` flattened `simctl list devices available --json`, discarding the runtime key, and took `devices[0]`. On `macos-15` that is an **Apple Vision Pro** (visionOS). Both the last green run and the current one recorded `"name": "Apple Vision Pro"`, a 2732×2048 screenshot, and **no `runtime` field at all** — simctl device objects carry no runtime, so nothing could catch it | `simulator-report.json` from runs `31313092745` (`e38439c`) and `31434881982` (`00cfad2`) |
 | 1 | ~~**The lane is red.**~~ **RESOLVED, stale.** The consumer handoff failed `TN_PLAYTEST_BRIDGE_MISSING` at `frames: 0` at `00cfad2`, which predates `2e53c85`. The whole iOS job passes at current `main` | red: run `31434881982`; green: run `31446340434` |
-| 2 | **It does not run when it can break.** `on.push.paths` / `on.pull_request.paths` list only `packages/runtime-native/**` and the lockfiles; `ci.yml` never `workflow_call`s it | `.github/workflows/native-platforms.yml:4-14`; `grep -c native-platforms .github/workflows/ci.yml` → `0` |
+| 2 | ~~**It does not run when it can break.**~~ **FIXED 2026-08-11.** Path filters removed; `ci.yml` now calls the lane on PRs into `main` and pushes to `main`. Also ends the duplicate push+pull_request double-run | was `.github/workflows/native-platforms.yml:4-14`; now `ci.yml` job `native-platforms` |
 | 3 | **No video.** `grep -rn recordVideo` across `packages` and `scripts` → 0 hits | a still frame cannot show a hang, a flicker, or a one-frame-then-freeze |
 | 4 | **No legible verdict.** `grep -rn GITHUB_STEP_SUMMARY .github/workflows/` → 0 hits | reading a result means opening the raw log |
 | 5 | **No frame-timing diagnostic** | `300_FRAMES:300` proves the count, not that it took a plausible amount of time |
@@ -296,12 +296,25 @@ runs. This cannot be shortened locally — there is no Apple hardware on this ma
   `packages/core/**`, `packages/playtest/**`, `packages/create-threenative/**`,
   `examples/native-smoke/**`
 
-**Implementation:**
+**Implementation — DONE 2026-08-11:**
 
-- [ ] Gate the `workflow_call` on PRs targeting `main` and pushes to `main` only
-- [ ] Keep `workflow_dispatch`
-- [ ] State the added wall-clock cost in the PR description; macOS runners are free on public
-      repos, so the constraint is queue time, not billing
+- [x] `native-platforms.yml` triggers reduced to `workflow_dispatch` + `workflow_call`. The
+      path filter is gone; ci.yml owns when the lane runs.
+- [x] `ci.yml` gains a `native-platforms` job, `needs: test`, gated
+      `(push && ref == refs/heads/main) || (pull_request && base_ref == main)`.
+- [x] `needs: test` keeps 24 minutes of macOS from running behind a red unit suite.
+
+**A second defect fixed in passing:** the old config listed both `push:` and `pull_request:`
+with the same paths, so every PR ran the entire matrix **twice** — visible in runs
+`31446318261` and `31446340434`, and again in `31447447040` and `31447449669`. One call site
+means one run.
+
+**Observable control.** `native-platforms.yml` no longer has `push` or `pull_request`
+triggers, so it cannot start on its own. After this change the matrix appears as
+`native-platforms / <job>` inside the CI run, and **no standalone "Native platform evidence"
+workflow run exists** — that absence is the proof the path trigger is gone rather than merely
+widened. A core-only change reaching the lane is criterion 4 and needs one such commit on
+`main` to record; it is not claimed until then.
 
 **Wiring:** `ci.yml` gains a real job entry. Ledger row 2 filled.
 
