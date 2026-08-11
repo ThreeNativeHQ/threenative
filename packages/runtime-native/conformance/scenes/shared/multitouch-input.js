@@ -35,17 +35,18 @@ export async function startScene(canvas, dimensions) {
     const halfWidth = dimensions.width / 2;
     const stick = pointers.some((pointer) => pointer.position.x < halfWidth);
     const jump = pointers.some((pointer) => pointer.position.x >= halfWidth);
-    if (stick) {
-      player.position.x = Math.min(2.4, player.position.x + 0.025);
-      state.moved = true;
-    }
-    if (jump) {
-      player.position.y = -0.35;
-      state.leftGround = true;
-    }
+    if (stick) state.moved = true;
+    if (jump) state.leftGround = true;
     // Latches only when both halves are held in the *same* frame. Two sequential one-finger
     // touches set `moved` and `leftGround` but never this, which is what the proof checks.
     if (stick && jump) state.simultaneous = true;
+    // The pose is a pure function of the latches, never an integration over frames. Each target
+    // holds the contacts for a different number of frames — the browser dispatches and captures
+    // immediately, while the Android lane holds until a logcat poll observes the proof marker —
+    // so a per-frame displacement rendered the same proof at a different player position and the
+    // screenshots diverged on a timing difference rather than on behaviour.
+    player.position.x = state.moved ? 2.4 : 0;
+    player.position.y = state.leftGround ? -0.35 : -0.7;
     globalThis.__TN_MULTITOUCH_PROOF__ = {
       leftGround: state.leftGround,
       moved: state.moved,

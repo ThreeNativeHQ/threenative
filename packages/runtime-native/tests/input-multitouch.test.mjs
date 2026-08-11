@@ -6,9 +6,15 @@ import { test } from 'vitest';
 import {
   androidMultitouchScript,
   MULTITOUCH_PROOF_POINTS,
-  MULTITOUCH_PROOF_ROTATION,
   parseAndroidTouchDevice,
+  parseAndroidTouchViewport,
 } from '../conformance/android-touch.mjs';
+
+// The emulator lane's real geometry: `wm size 1280x720` letterboxes a landscape display into a
+// band of the 1080x2400 panel that the touch device addresses.
+const EMULATOR_DUMPSYS_INPUT = `      Viewports:
+        Viewport INTERNAL: displayId=0, uniqueId=local:4619827259835644672, port=0, orientation=0, logicalFrame=[0, 0, 1280, 720], physicalFrame=[0, 896, 1080, 1503], deviceSize=[1080, 2400], isActive=[1]
+`;
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -132,15 +138,18 @@ test('Android proof emits two contacts in one protocol-B report and releases bot
                 ABS_MT_POSITION_X (0035): value 0, min 0, max 1079, fuzz 0, flat 0, resolution 0
                 ABS_MT_POSITION_Y (0036): value 0, min 0, max 719, fuzz 0, flat 0, resolution 0
 `);
-  const down = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, MULTITOUCH_PROOF_ROTATION);
-  const up = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, false, MULTITOUCH_PROOF_ROTATION);
+  const viewport = parseAndroidTouchViewport(EMULATOR_DUMPSYS_INPUT);
+  const down = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, viewport);
+  const up = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, false, viewport);
 
   assert.match(down, /send_event \/dev\/input\/event2 3 47 0/);
   assert.match(down, /send_event \/dev\/input\/event2 3 57 7/);
   assert.match(down, /send_event \/dev\/input\/event2 3 57 3/);
-  assert.match(down, /send_event \/dev\/input\/event2 3 53 540/);
-  assert.match(down, /send_event \/dev\/input\/event2 3 54 144/);
-  assert.match(down, /send_event \/dev\/input\/event2 3 54 575/);
+  // 0.2 and 0.8 across the panel's full width, and both rows inside the letterboxed band —
+  // 896 + 0.5 * 607 = 1199.5 of 2400, which is 359 of the device's 0..719 vertical range.
+  assert.match(down, /send_event \/dev\/input\/event2 3 53 216/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 53 863/);
+  assert.match(down, /send_event \/dev\/input\/event2 3 54 359/);
   assert.match(down, /send_event \/dev\/input\/event2 0 0 0/);
   assert.match(up, /send_event \/dev\/input\/event2 3 57 -1/gu);
   assert.equal((up.match(/send_event \/dev\/input\/event2 3 57 -1/gu) ?? []).length, 2);
@@ -167,4 +176,58 @@ test('Android proof parses current getevent output without numeric event codes',
     x: { min: 0, max: 32767 },
     y: { min: 0, max: 32767 },
   });
+});
+
+test('Android proof aims contacts at the letterboxed display, not the whole panel', () => {
+  const viewport = parseAndroidTouchViewport(EMULATOR_DUMPSYS_INPUT);
+  assert.deepEqual(viewport, {
+    orientation: 0,
+    panel: { height: 2400, width: 1080 },
+    physical: { bottom: 1503, left: 0, right: 1080, top: 896 },
+  });
+
+  const device = parseAndroidTouchDevice(`add device 3: /dev/input/event2
+  name:     "virtio_input_multi_touch_1"
+  events:
+    ABS (0003): ABS_MT_SLOT           : value 0, min 0, max 10, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+`);
+  const down = androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, viewport);
+  const rows = [...down.matchAll(/send_event \S+ 3 54 (\d+)/gu)].map((match) => Number(match[1]));
+
+  assert.equal(rows.length, 2);
+  // Treating the raw range as the viewport would place y = 0.5 at 16383, which is 1200 of 2400
+  // on the panel — outside the [896, 1503] band, where Android dispatches the contact to no
+  // window at all and the app never observes a pointer.
+  for (const row of rows) {
+    const panelY = (row / 32767) * 2400;
+    assert.ok(panelY > 896 && panelY < 1503, `row ${row} maps to panel y ${panelY}, outside the display`);
+  }
+});
+
+test('Android proof refuses a viewport it has not executed', () => {
+  assert.throws(
+    () => parseAndroidTouchViewport('Viewports:\n        <none>\n'),
+    /TN_ANDROID_TOUCH_VIEWPORT_MISSING/u,
+  );
+
+  const rotated = parseAndroidTouchViewport(
+    EMULATOR_DUMPSYS_INPUT.replace('orientation=0', 'orientation=1'),
+  );
+  const device = parseAndroidTouchDevice(`add device 3: /dev/input/event2
+  name:     "virtio_input_multi_touch_1"
+  events:
+    ABS (0003): ABS_MT_SLOT           : value 0, min 0, max 10, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 32767, fuzz 0, flat 0, resolution 0
+`);
+  assert.throws(
+    () => androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, rotated),
+    /TN_ANDROID_TOUCH_ORIENTATION_UNSUPPORTED/u,
+  );
+  assert.throws(
+    () => androidMultitouchScript(device, MULTITOUCH_PROOF_POINTS, true, undefined),
+    /requires the display viewport/u,
+  );
 });

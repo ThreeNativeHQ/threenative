@@ -12,8 +12,8 @@ import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 import {
   androidMultitouchScript,
   MULTITOUCH_PROOF_POINTS,
-  MULTITOUCH_PROOF_ROTATION,
   parseAndroidTouchDevice,
+  parseAndroidTouchViewport,
 } from "./android-touch.mjs";
 import {
   ACTIVITY,
@@ -813,24 +813,23 @@ async function runAndroid(
         String(common("shell", "getevent", "-lp").stdout || ""),
         process.env.THREENATIVE_TOUCH_DEVICE,
       );
+      const touchViewport = parseAndroidTouchViewport(
+        String(common("shell", "dumpsys", "input").stdout || ""),
+      );
       const releaseScript = androidMultitouchScript(
         touchDevice,
         MULTITOUCH_PROOF_POINTS,
         false,
-        MULTITOUCH_PROOF_ROTATION,
+        touchViewport,
       );
+      // `adb shell` joins its arguments with spaces, so a script handed to `sh -c` loses its
+      // grouping and the shell swallows the first line as the command. Pass the script as the
+      // remote command line instead, which keeps `set -e` in force.
       common(
         "shell",
-        "sh",
-        "-c",
-        androidMultitouchScript(
-          touchDevice,
-          MULTITOUCH_PROOF_POINTS,
-          true,
-          MULTITOUCH_PROOF_ROTATION,
-        ),
+        androidMultitouchScript(touchDevice, MULTITOUCH_PROOF_POINTS, true, touchViewport),
       );
-      releaseMultitouch = () => common("shell", "sh", "-c", releaseScript);
+      releaseMultitouch = () => common("shell", releaseScript);
       const proofMarker = `TN_MULTITOUCH_PROOF_PASS:${test.id}`;
       const proofTimeoutAt = Date.now() + Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000);
       while (Date.now() <= proofTimeoutAt) {

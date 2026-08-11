@@ -18,7 +18,34 @@ export const MULTITOUCH_PROOF_POINTS = [
   { id: 3, x: 0.8, y: 0.5 },
 ];
 
-export const MULTITOUCH_PROOF_ROTATION = 1;
+/**
+ * Where the app's logical display actually sits on the panel the touch device reports into.
+ *
+ * `wm size 1280x720` on a 1080x2400 emulator panel does not resize the panel — it letterboxes a
+ * landscape display into a band of it (`physicalFrame=[0, 896, 1080, 1503]`). The touch device's
+ * `ABS_MT_POSITION_*` range always spans the whole panel, so a contact placed by treating that
+ * range as the app's viewport lands outside the band and Android dispatches it to nothing:
+ * `dumpsys input` reports `TouchStates: <no displays touched>` and the app never sees a pointer.
+ * Reading the viewport off the device is what keeps injection aimed at the window under test.
+ */
+export function parseAndroidTouchViewport(output) {
+  const match =
+    /Viewport INTERNAL: displayId=0,[^\n]*?orientation=(\d+), logicalFrame=\[(\d+), (\d+), (\d+), (\d+)\], physicalFrame=\[(\d+), (\d+), (\d+), (\d+)\], deviceSize=\[(\d+), (\d+)\]/u.exec(
+      output,
+    );
+  if (match === null) {
+    throw new Error(
+      "TN_ANDROID_TOUCH_VIEWPORT_MISSING: dumpsys input did not report an INTERNAL viewport for display 0.",
+    );
+  }
+  const [, orientation, , , , , left, top, right, bottom, width, height] = match.map(Number);
+  if (right <= left || bottom <= top || width <= 0 || height <= 0) {
+    throw new Error(
+      `TN_ANDROID_TOUCH_VIEWPORT_EMPTY: display 0 reported an unusable physical frame [${left}, ${top}, ${right}, ${bottom}] on a ${width}x${height} panel.`,
+    );
+  }
+  return { orientation, physical: { bottom, left, right, top }, panel: { height, width } };
+}
 
 export function parseAndroidTouchDevice(output, preferredPath) {
   const devices = output
@@ -48,9 +75,12 @@ export function parseAndroidTouchDevice(output, preferredPath) {
   return device;
 }
 
-export function androidMultitouchScript(device, points, down, rotation = 0) {
+export function androidMultitouchScript(device, points, down, viewport) {
   if (!/^\/dev\/input\/event\d+$/u.test(device.path)) {
     throw new Error(`Refusing to send Android input events to unexpected path '${device.path}'.`);
+  }
+  if (viewport === undefined) {
+    throw new Error("Android multitouch injection requires the display viewport to aim contacts.");
   }
   const events = [];
   for (const [index, point] of points.entries()) {
@@ -59,7 +89,7 @@ export function androidMultitouchScript(device, points, down, rotation = 0) {
       [EV_ABS, ABS_MT_TRACKING_ID, down ? point.id : -1],
     );
     if (down) {
-      const coordinates = orientedCoordinates(point.x, point.y, rotation);
+      const coordinates = viewportCoordinates(point.x, point.y, viewport);
       events.push(
         [EV_ABS, ABS_MT_TOOL_TYPE, 0],
         [EV_ABS, ABS_MT_TOUCH_MAJOR, 1],
@@ -103,15 +133,22 @@ function coordinate(value, range) {
   return Math.round(range.min + normalized * (range.max - range.min));
 }
 
-function orientedCoordinates(x, y, rotation) {
-  switch (rotation) {
-    case 1:
-      return { x: 1 - y, y: x };
-    case 2:
-      return { x: 1 - x, y: 1 - y };
-    case 3:
-      return { x: y, y: 1 - x };
-    default:
-      return { x, y };
+/**
+ * Map a point normalized to the app's logical display onto the panel fraction the touch device
+ * addresses. Only `orientation=0` is implemented, and a rotated viewport throws rather than
+ * guessing: the emulator lane pins a landscape logical size, so every rotation this repo has
+ * executed reports 0. An untested rotation formula would place contacts silently wrong, which is
+ * the fail-open this lane exists to prevent.
+ */
+function viewportCoordinates(x, y, viewport) {
+  if (viewport.orientation !== 0) {
+    throw new Error(
+      `TN_ANDROID_TOUCH_ORIENTATION_UNSUPPORTED: display 0 reported orientation ${viewport.orientation}; only 0 has been executed.`,
+    );
   }
+  const { panel, physical } = viewport;
+  return {
+    x: (physical.left + x * (physical.right - physical.left)) / panel.width,
+    y: (physical.top + y * (physical.bottom - physical.top)) / panel.height,
+  };
 }
