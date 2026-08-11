@@ -36,7 +36,6 @@ const STARTER_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
   "package.json",
-  "threenative.config.ts",
   "index.html",
   "tailwind.config.ts",
   "tsconfig.json",

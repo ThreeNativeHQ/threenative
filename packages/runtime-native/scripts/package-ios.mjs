@@ -18,12 +18,47 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
-function valueAfter(args, flag) {
+export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
+const IOS_ORIENTATIONS = {
+  landscape: ['UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
+  portrait: ['UIInterfaceOrientationPortrait'],
+  sensor: [
+    'UIInterfaceOrientationPortrait',
+    'UIInterfaceOrientationPortraitUpsideDown',
+    'UIInterfaceOrientationLandscapeLeft',
+    'UIInterfaceOrientationLandscapeRight',
+  ],
+};
+
+function orientationValue(value = 'landscape') {
+  if (typeof value === 'string' && NATIVE_ORIENTATIONS.includes(value)) return value;
+  throw new Error(
+    'TN_NATIVE_ORIENTATION_INVALID: threenative.orientation must be landscape, portrait, or sensor.',
+  );
+}
+
+export function renderIosInfoPlist(source, orientation = 'landscape') {
+  const value = orientationValue(orientation);
+  const entries = IOS_ORIENTATIONS[value].map((entry) => `    <string>${entry}</string>`).join('\n');
+  const key = /(<key>UISupportedInterfaceOrientations<\/key>\s*<array>)[\s\S]*?(<\/array>)/u;
+  if (!key.test(source)) {
+    throw new Error(
+      'TN_IOS_ORIENTATION_KEYS_MISSING: Info.plist has no UISupportedInterfaceOrientations array.',
+    );
+  }
+  return source.replace(key, `$1\n${entries}\n  $2`);
+}
+
+function argumentAfter(args, flag) {
   const index = args.indexOf(flag);
   if (index === -1 || !args[index + 1] || args[index + 1].startsWith('--')) {
     throw new Error(`${flag} requires a value.`);
   }
-  return resolve(args[index + 1]);
+  return args[index + 1];
+}
+
+function valueAfter(args, flag) {
+  return resolve(argumentAfter(args, flag));
 }
 
 function checksum(path) {
@@ -54,7 +89,8 @@ function findApp(directory) {
   return undefined;
 }
 
-export function stageIosSimulatorApp({ assets, bundle, output, templateApp }) {
+export function stageIosSimulatorApp({ assets, bundle, output, templateApp, orientation = 'landscape' }) {
+  const declaredOrientation = orientationValue(orientation);
   for (const [label, path] of [
     ['native bundle', bundle],
     ['verified iOS simulator host', templateApp],
@@ -73,6 +109,8 @@ export function stageIosSimulatorApp({ assets, bundle, output, templateApp }) {
   const game = join(output, 'game');
   rmSync(game, { force: true, recursive: true });
   mkdirSync(game, { recursive: true });
+  const plist = join(output, 'Info.plist');
+  writeFileSync(plist, renderIosInfoPlist(readFileSync(plist, 'utf8'), declaredOrientation));
   let assetFiles = [];
   if (assets && existsSync(assets)) {
     if (!statSync(assets).isDirectory()) {
@@ -89,6 +127,7 @@ export function stageIosSimulatorApp({ assets, bundle, output, templateApp }) {
     assets: assetFiles.map((path) => ({ path, sha256: checksum(join(game, path)) })),
     bundleSha256: checksum(bundle),
     host: 'ios-simulator-arm64',
+    orientation: declaredOrientation,
     output,
     outputBundleSha256: checksum(join(output, 'native-smoke.js')),
   };
@@ -97,6 +136,7 @@ export function stageIosSimulatorApp({ assets, bundle, output, templateApp }) {
 }
 
 export async function packageIosSimulator(options) {
+  const orientation = orientationValue(options.orientation);
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
   if (platform !== 'darwin' || arch !== 'arm64') {
@@ -141,22 +181,35 @@ export async function packageIosSimulator(options) {
       bundle: resolve(options.bundle),
       output: resolve(options.output),
       templateApp,
+      orientation,
     });
   } finally {
     rmSync(temporary, { force: true, recursive: true });
   }
 }
 
+export function parseIosPackageArgs(args) {
+  return {
+    assets: args.includes('--assets') ? valueAfter(args, '--assets') : undefined,
+    bundle: valueAfter(args, '--bundle'),
+    output: valueAfter(args, '--output'),
+    orientation: args.includes('--orientation')
+      ? argumentAfter(args, '--orientation')
+      : undefined,
+  };
+}
+
+export async function runIosPackageCli(args, packageSimulator = packageIosSimulator) {
+  return packageSimulator({
+    archive: process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE,
+    ...parseIosPackageArgs(args),
+    sha256: process.env.THREENATIVE_IOS_SIMULATOR_SHA256,
+  });
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   try {
-    const args = process.argv.slice(2);
-    const report = await packageIosSimulator({
-      archive: process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE,
-      assets: args.includes('--assets') ? valueAfter(args, '--assets') : undefined,
-      bundle: valueAfter(args, '--bundle'),
-      output: valueAfter(args, '--output'),
-      sha256: process.env.THREENATIVE_IOS_SIMULATOR_SHA256,
-    });
+    const report = await runIosPackageCli(process.argv.slice(2));
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

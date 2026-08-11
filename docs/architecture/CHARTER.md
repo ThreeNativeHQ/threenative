@@ -513,8 +513,7 @@ dependencies are a support burden.
 ```mermaid
 flowchart TD
     project["my-game/"]
-    package["package.json"]
-    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    package["package.json<br/>threenative.nativeEntry + orientation"]
     index["index.html"]
     tailwind["tailwind.config.ts"]
     src["src/"]
@@ -538,7 +537,6 @@ flowchart TD
     public["public/"]
 
     project --> package
-    project --> config
     project --> index
     project --> tailwind
     project --> src

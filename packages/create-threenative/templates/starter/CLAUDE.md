@@ -62,7 +62,7 @@ flowchart TD
     state["state.ts<br/>state shape the HUD subscribes to"]
     scenarios["playtests/*.playtest.json<br/>committed browser scenarios, run by pnpm test"]
     boot["playtest/boot-to-play.json<br/>Boot-to-Play jump proof"]
-    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    package["package.json<br/>threenative.nativeEntry + orientation"]
 
     project --> src
     src --> main
@@ -73,7 +73,7 @@ flowchart TD
     src --> state
     project --> scenarios
     project --> boot
-    project --> config
+    project --> package
 ```
 
 `src/render/hud.ts` is generated user-owned Three.js source, not a package widget. It uses

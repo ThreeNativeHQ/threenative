@@ -5,9 +5,20 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, test } from 'vitest';
 
-import { packageIosSimulator, stageIosSimulatorApp } from '../scripts/package-ios.mjs';
+import {
+  packageIosSimulator,
+  runIosPackageCli,
+  stageIosSimulatorApp,
+} from '../scripts/package-ios.mjs';
 
 const roots = [];
+const infoPlist = `<plist><dict>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+</dict></plist>`;
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
@@ -23,7 +34,7 @@ test('staging replaces the bundle and records every packaged game asset checksum
   mkdirSync(join(templateApp, 'game'), { recursive: true });
   mkdirSync(join(assets, 'models'), { recursive: true });
   mkdirSync(join(assets, 'textures'), { recursive: true });
-  writeFileSync(join(templateApp, 'Info.plist'), '<plist/>');
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(join(templateApp, 'game', 'stale.bin'), 'stale');
@@ -31,12 +42,18 @@ test('staging replaces the bundle and records every packaged game asset checksum
   writeFileSync(join(assets, 'models', 'level.glb'), 'model');
   writeFileSync(join(assets, 'textures', 'x.png'), 'texture');
 
-  const report = stageIosSimulatorApp({ assets, bundle, output, templateApp });
+  const report = stageIosSimulatorApp({ assets, bundle, orientation: 'portrait', output, templateApp });
   assert.equal(readFileSync(join(output, 'threenative-ios'), 'utf8'), 'prebuilt-host');
   assert.equal(readFileSync(join(output, 'native-smoke.js'), 'utf8'), 'new-game');
   assert.equal(readFileSync(join(output, 'game', 'textures', 'x.png'), 'utf8'), 'texture');
   assert.equal(existsSync(join(output, 'game', 'stale.bin')), false);
   assert.equal(report.host, 'ios-simulator-arm64');
+  assert.equal(report.orientation, 'portrait');
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
+  assert.doesNotMatch(
+    readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /UIInterfaceOrientationLandscape/u,
+  );
   assert.equal(report.bundleSha256, createHash('sha256').update('new-game').digest('hex'));
   assert.deepEqual(report.assets, [
     {
@@ -66,7 +83,7 @@ test('iOS staging allows missing assets, clears stale files, and rejects a file 
   const output = join(root, 'game.app');
   const bundle = join(root, 'game.js');
   mkdirSync(join(templateApp, 'game'), { recursive: true });
-  writeFileSync(join(templateApp, 'Info.plist'), '<plist/>');
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(join(templateApp, 'game', 'stale.bin'), 'stale');
@@ -111,6 +128,20 @@ test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', 
     }),
     /checksum mismatch/u,
   );
+});
+
+test('iOS CLI forwards the declared orientation before host validation', async () => {
+  const forwarded = [];
+  const report = await runIosPackageCli(
+    ['--bundle', 'game.js', '--output', 'game.app', '--orientation', 'portrait'],
+    async (options) => {
+      forwarded.push(options);
+      return { orientation: options.orientation };
+    },
+  );
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].orientation, 'portrait');
+  assert.equal(report.orientation, 'portrait');
 });
 
 test('the published package includes the iOS packager without C++ source', () => {

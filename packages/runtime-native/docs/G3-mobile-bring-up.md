@@ -1,8 +1,8 @@
 # G3 — mobile bring-up
 
 **Milestones:** M5, M6
-**State:** Android emulator `@threenative/core` catalog-parity proof PASS; iOS has no
-execution evidence.
+**State:** Android emulator and physical-orientation proof PASS; iOS has no execution
+evidence.
 
 ## Android arrival evidence — 2026-08-08
 
@@ -80,10 +80,9 @@ Two fixes, both in this commit:
   failures were equally invisible and now log too. `tests/webgpu-error-visibility.test.mjs`
   fails if either backend callback shape loses its platform log again.
 
-Still open, and not claimed here: iOS (no Apple hardware available), physical Android
-hardware, and the portrait/landscape framing of the emulator surface — the manifest locks
-`screenOrientation="landscape"` while the AVD presents 1080x2400, and telling an emulator
-quirk from a real viewport bug needs a device.
+Still open, and not claimed here: iOS (no Apple hardware available), physical Metal/Vulkan
+driver behavior, arm64 physics and phone frame rate. The portrait/landscape framing row is
+closed by the physical-device proof below.
 
 ## Android generated-asset integrity evidence — 2026-08-09
 
@@ -108,6 +107,45 @@ THREENATIVE_ANDROID_SDK=/home/joao/Android/Sdk \
 
 This closes the stale Gradle asset-cache hole in the source-emulator proof. It does not
 close the released-consumer or physical-device rows.
+
+## Android game-declared orientation — PASS, 2026-08-10
+
+The fox-native portable entry was bundled and packaged twice with the current Android
+packager, once with `--orientation portrait` and once with `--orientation landscape`:
+
+```sh
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
+ANDROID_HOME=/home/joao/Android/Sdk \
+ANDROID_SDK_ROOT=/home/joao/Android/Sdk \
+node scripts/package-android.mjs \
+  --bundle /tmp/fox-orientation/probe.js \
+  --assets /home/joao/projects/fox-native/public \
+  --orientation portrait --output /tmp/fox-orientation/probe-portrait.apk
+```
+
+The same command was repeated with `landscape` and a separate output path. `aapt2` read
+`android:screenOrientation=1` from the portrait APK and `=0` from the landscape APK. The
+source manifest had no hard-coded screen orientation after either package completed.
+
+On physical Pixel 8 serial `37251FDJH0037Z`, the portrait run logged
+`TN_PROBE_VIEWPORT 1080x2400` and the landscape run logged
+`TN_PROBE_VIEWPORT 2400x1080`. The corresponding clean game screenshots are reviewer-visible
+at these exact lane-relative paths and remain ignored/untracked:
+
+- `packages/runtime-native/artifacts/android/prd-067-portrait.png`: 1080x2400, SHA-256
+  `596ff5be94ade89455186431069e515c3cb6ca54f5bb1e226f58fed8f44bf682`.
+- `packages/runtime-native/artifacts/android/prd-067-landscape.png`: 1080x2400 raw
+  `adb screencap` capture, SHA-256
+  `39227d18a6e12a857dede45a3f2ba163bb21aebfab71cc7e4738a0f8c98e2199`.
+
+The raw capture remains 1080x2400 because the device display is physically portrait; the
+landscape app surface and the viewport marker are 2400x1080. Android also showed its
+existing 16 KB compatibility warning for the native libraries; it was dismissed for the
+clean captures and is outside this orientation change.
+
+The iOS packager accepts the same orientation field and rewrites
+`UISupportedInterfaceOrientations`; its contract tests pass. No Apple host, simulator or
+device was available, so iOS execution is **UNEXECUTED**.
 
 ## Android lifecycle and device proof — 2026-08-08
 

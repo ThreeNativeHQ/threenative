@@ -5,6 +5,7 @@ import path from "node:path";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
+export type NativeOrientation = "landscape" | "portrait" | "sensor";
 
 export interface BuildOptions {
   cwd?: string;
@@ -13,6 +14,7 @@ export interface BuildOptions {
 }
 
 const TARGETS: readonly BuildTarget[] = ["web", "desktop", "android", "ios"];
+const ORIENTATIONS: readonly NativeOrientation[] = ["landscape", "portrait", "sensor"];
 
 function projectRequire(cwd: string): NodeJS.Require {
   return createRequire(path.join(cwd, "package.json"));
@@ -83,10 +85,16 @@ export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): P
   await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
 }
 
-async function nativeEntry(cwd: string): Promise<string> {
-  const manifest = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8")) as {
-    threenative?: { nativeEntry?: unknown };
+async function readProjectManifest(
+  cwd: string,
+): Promise<{ threenative?: { nativeEntry?: unknown; orientation?: unknown } }> {
+  return JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8")) as {
+    threenative?: { nativeEntry?: unknown; orientation?: unknown };
   };
+}
+
+async function nativeEntry(cwd: string): Promise<string> {
+  const manifest = await readProjectManifest(cwd);
   const configured = manifest.threenative?.nativeEntry;
   if (configured !== undefined && (typeof configured !== "string" || configured.length === 0)) {
     throw new Error("TN_NATIVE_ENTRY_MISSING: threenative.nativeEntry must name a source file.");
@@ -99,6 +107,17 @@ async function nativeEntry(cwd: string): Promise<string> {
     throw new Error(`TN_NATIVE_ENTRY_MISSING: ${relative} does not exist.`);
   }
   return entry;
+}
+
+export async function nativeOrientation(cwd: string): Promise<NativeOrientation> {
+  const configured = (await readProjectManifest(cwd)).threenative?.orientation;
+  if (configured === undefined) return "landscape";
+  if (typeof configured === "string" && ORIENTATIONS.includes(configured as NativeOrientation)) {
+    return configured as NativeOrientation;
+  }
+  throw new Error(
+    "TN_NATIVE_ORIENTATION_INVALID: threenative.orientation must be landscape, portrait, or sensor.",
+  );
 }
 
 async function bundleNative(
@@ -136,6 +155,7 @@ function installedRuntime(runtimeRoot: string): string {
 
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const entry = await nativeEntry(cwd);
+  const orientation = await nativeOrientation(cwd);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
   const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
   await assertNativeBundleCompatible(bundle, target);
@@ -150,6 +170,8 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        "--orientation",
+        orientation,
         "--output",
         output,
       ],
@@ -167,6 +189,8 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        "--orientation",
+        orientation,
         "--output",
         output,
       ],

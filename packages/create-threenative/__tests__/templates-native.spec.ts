@@ -148,6 +148,14 @@ export default { start: async () => console.info(marker) };
   it("passes public assets to every native packager", async () => {
     const project = await projectRoot("threenative-native-assets-");
     const runtime = path.join(project, "node_modules/@threenative/runtime-native");
+    await writeFile(
+      path.join(project, "package.json"),
+      JSON.stringify({
+        name: "native-assets",
+        threenative: { orientation: "portrait" },
+        type: "module",
+      }),
+    );
     await mkdir(path.join(project, "public"), { recursive: true });
     await mkdir(path.join(runtime, "scripts"), { recursive: true });
     await writeFile(
@@ -181,6 +189,10 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       ) as string[];
       expect(args, `${target} must receive public/`).toContain("--assets");
       expect(args, `${target} must receive public/`).toContain(path.join(project, "public"));
+      if (target !== "desktop") {
+        expect(args, `${target} must receive orientation`).toContain("--orientation");
+        expect(args[args.indexOf("--orientation") + 1], `${target} orientation`).toBe("portrait");
+      }
     }
   });
 });

@@ -29,6 +29,33 @@ export const ANDROID_PREBUILT_ASSETS = {
   'android-x86_64-runtime': 'jniLibs/x86_64/libmystral-runtime.so',
   'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
 };
+export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
+
+const androidManifest = join(runtimeRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+
+function orientationValue(value = 'landscape') {
+  if (typeof value === 'string' && NATIVE_ORIENTATIONS.includes(value)) return value;
+  throw new Error(
+    'TN_NATIVE_ORIENTATION_INVALID: threenative.orientation must be landscape, portrait, or sensor.',
+  );
+}
+
+export function renderAndroidManifest(source, orientation = 'landscape') {
+  const value = orientationValue(orientation);
+  const activity = /<activity\b[^>]*>/u.exec(source);
+  if (!activity) throw new Error('TN_ANDROID_MANIFEST_ACTIVITY_MISSING: no activity was found.');
+  const attribute = `android:screenOrientation="${value}"`;
+  const renderedActivity = activity[0].includes('android:screenOrientation=')
+    ? activity[0].replace(/\s+android:screenOrientation="[^"]*"/u, ` ${attribute}`)
+    : activity[0].replace(/>$/u, `\n            ${attribute}>`);
+  return source.replace(activity[0], renderedActivity);
+}
+
+function installAndroidManifest(orientation) {
+  const original = readFileSync(androidManifest, 'utf8');
+  writeFileSync(androidManifest, renderAndroidManifest(original, orientation));
+  return () => writeFileSync(androidManifest, original);
+}
 
 export async function prepareAndroidPrebuilts(options = {}) {
   const downloads = await Promise.all(
@@ -98,7 +125,8 @@ export function stageAndroidAssets(
   return files;
 }
 
-export async function packageAndroid(bundle, requestedOutput, assets) {
+export async function packageAndroid(bundle, requestedOutput, assets, orientation = 'landscape') {
+  orientationValue(orientation);
   const gradlew = join(
     runtimeRoot,
     'android',
@@ -129,49 +157,57 @@ export async function packageAndroid(bundle, requestedOutput, assets) {
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
   stageAndroidAssets(assets, join(generatedAssets, 'game'));
-  const command = process.platform === 'win32' ? gradlew : 'sh';
-  const args =
-    process.platform === 'win32'
-      ? ['assembleDebug', '-x', 'buildAndroidFirstProofBundle']
-      : [gradlew, 'assembleDebug', '-x', 'buildAndroidFirstProofBundle'];
-  const result = spawnSync(command, args, {
-    cwd: join(runtimeRoot, 'android'),
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(`Gradle exited with code ${result.status ?? 'unknown'}.`);
-  const apk = join(
-    runtimeRoot,
-    'android',
-    'app',
-    'build',
-    'outputs',
-    'apk',
-    'debug',
-    'app-debug.apk',
-  );
-  if (!existsSync(apk)) throw new Error(`Gradle did not produce the expected APK: ${apk}`);
-  const output = requestedOutput ? resolve(requestedOutput) : apk;
-  if (output !== apk) {
-    mkdirSync(dirname(output), { recursive: true });
-    copyFileSync(apk, output);
+  const restoreManifest = installAndroidManifest(orientation);
+  try {
+    const command = process.platform === 'win32' ? gradlew : 'sh';
+    const args =
+      process.platform === 'win32'
+        ? ['assembleDebug', '-x', 'buildAndroidFirstProofBundle']
+        : [gradlew, 'assembleDebug', '-x', 'buildAndroidFirstProofBundle'];
+    const result = spawnSync(command, args, {
+      cwd: join(runtimeRoot, 'android'),
+      encoding: 'utf8',
+      stdio: 'inherit',
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0)
+      throw new Error(`Gradle exited with code ${result.status ?? 'unknown'}.`);
+    const apk = join(
+      runtimeRoot,
+      'android',
+      'app',
+      'build',
+      'outputs',
+      'apk',
+      'debug',
+      'app-debug.apk',
+    );
+    if (!existsSync(apk)) throw new Error(`Gradle did not produce the expected APK: ${apk}`);
+    const output = requestedOutput ? resolve(requestedOutput) : apk;
+    if (output !== apk) {
+      mkdirSync(dirname(output), { recursive: true });
+      copyFileSync(apk, output);
+    }
+    console.log(`ThreeNative Android APK: ${output}`);
+    return output;
+  } finally {
+    restoreManifest();
   }
-  console.log(`ThreeNative Android APK: ${output}`);
-  return output;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const bundleIndex = process.argv.indexOf('--bundle');
   const outputIndex = process.argv.indexOf('--output');
   const assetsIndex = process.argv.indexOf('--assets');
+  const orientationIndex = process.argv.indexOf('--orientation');
   if (
     bundleIndex === -1 ||
     !process.argv[bundleIndex + 1] ||
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
-    console.error('Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR]');
+    console.error(
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--orientation landscape|portrait|sensor]',
+    );
     process.exitCode = 1;
   } else if (
     assetsIndex !== -1 &&
@@ -185,12 +221,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   ) {
     console.error('--output requires a value.');
     process.exitCode = 1;
+  } else if (
+    orientationIndex !== -1 &&
+    (!process.argv[orientationIndex + 1] || process.argv[orientationIndex + 1].startsWith('--'))
+  ) {
+    console.error('--orientation requires a value.');
+    process.exitCode = 1;
   } else {
     try {
       await packageAndroid(
         resolve(process.argv[bundleIndex + 1]),
         outputIndex === -1 ? undefined : process.argv[outputIndex + 1],
         assetsIndex === -1 ? undefined : resolve(process.argv[assetsIndex + 1]),
+        orientationIndex === -1 ? undefined : process.argv[orientationIndex + 1],
       );
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));

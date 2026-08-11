@@ -55,7 +55,7 @@ flowchart TD
     render["render/<br/>palette, camera, lighting, HUD geometry,<br/>materials, post — YOURS"]
     state["state.ts<br/>state shape gameplay publishes"]
     playtest["playtests/play.playtest.json<br/>one scenario, run by pnpm test"]
-    config["threenative.config.ts<br/>renderer + plugins; no visual options"]
+    package["package.json<br/>threenative.nativeEntry + orientation"]
 
     project --> src
     src --> main
@@ -64,7 +64,7 @@ flowchart TD
     src --> render
     src --> state
     project --> playtest
-    project --> config
+    project --> package
 ```
 
 `src/render/hud.ts` is generated user-owned source, not a framework widget. It uses instanced
