@@ -23,9 +23,10 @@ export function playtest<
   TPhysics = undefined,
 >(options: PlaytestOptions = {}): GamePluginHooks<TState, TPhysics> {
   let dispose: (() => void) | undefined;
+  let attached: Promise<void> | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   return {
-    setup: (ctx, runtime) => {
+    setup: async (ctx, runtime) => {
       const seed = runtime?.seed ?? null;
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
@@ -51,16 +52,80 @@ export function playtest<
       });
       installRuntimeChannels(installation.bridge);
       dispose = installation.dispose;
-      return () => {
+      attached = holdUntilAttached(installation.bridge, options);
+      const cleanup = () => {
         dispose?.();
         dispose = undefined;
+        attached = undefined;
         contactHistory = [];
       };
+      // Game.start() awaits plugin setup and only calls gameLoop.start() afterwards, so
+      // awaiting here holds the entire loop -- including the physics plugin's first
+      // simulation step -- until the runner is on the line.
+      if (attached !== undefined) {
+        try {
+          await attached;
+        } catch (error) {
+          cleanup();
+          throw error;
+        }
+      }
+      return cleanup;
     },
   };
 }
+
+export const PLAYTEST_ATTACH_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolves when a runner first calls `describe()`, the handshake every runner performs before
+ * it observes anything.
+ *
+ * Without this, a scenario races the game: a proof that does finite work at startup can finish
+ * before the runner takes its first observation, and the assertion then reports
+ * TN_PLAYTEST_ASSERTION_TRIVIAL or a zero-delta failure depending only on how fast the device
+ * booted. Opt-in, because a game that holds for a runner that never arrives is worse than the
+ * race for every non-test caller.
+ *
+ * Fails closed: if no runner attaches within the timeout, setup throws rather than quietly
+ * starting anyway and reproducing the race it was added to remove.
+ */
+function holdUntilAttached(
+  bridge: IPlaytestBridgeV1,
+  options: PlaytestOptions,
+): Promise<void> | undefined {
+  if (options.holdUntilAttached !== true) return undefined;
+  const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`TN_PLAYTEST_ATTACH_TIMEOUT_INVALID: ${String(options.attachTimeoutMs)}`);
+  }
+  const describe = bridge.describe;
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `TN_PLAYTEST_ATTACH_TIMEOUT: no playtest runner called describe() within ${timeoutMs}ms.`,
+        ),
+      );
+    }, timeoutMs);
+    // Node keeps the process alive for a pending timer; a held game must not outlive its host.
+    (timer as unknown as { unref?: () => void }).unref?.();
+    bridge.describe = () => {
+      clearTimeout(timer);
+      resolve();
+      return describe();
+    };
+  });
+}
+
 export interface PlaytestOptions {
   readonly events?: () => JsonValue[];
+  /**
+   * Hold the frame loop until a runner attaches. Default false.
+   */
+  readonly holdUntilAttached?: boolean;
+  /** Milliseconds to wait when `holdUntilAttached` is set. Default {@link PLAYTEST_ATTACH_TIMEOUT_MS}. */
+  readonly attachTimeoutMs?: number;
 }
 
 function installRuntimeChannels(bridge: IPlaytestBridgeV1): void {

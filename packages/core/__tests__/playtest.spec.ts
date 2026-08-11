@@ -261,3 +261,90 @@ describe("playtest plugin", () => {
     }
   });
 });
+
+function stubRenderer(canvas: HTMLCanvasElement) {
+  return {
+    canvas,
+    preferWebGPU: false,
+    webgl2Factory: () => ({
+      dispose: () => undefined,
+      domElement: canvas,
+      getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+      render: () => undefined,
+      setSize: () => undefined,
+    }),
+  };
+}
+
+describe("playtest holdUntilAttached", () => {
+  it("does not start the loop until a runner calls describe", async () => {
+    const canvas = testCanvas();
+    let steps = 0;
+    class CountingScene extends Scene<{ score: number }> {
+      override update(): void {
+        steps += 1;
+      }
+    }
+    const game = defineGame<{ score: number }>({
+      initialState: { score: 0 },
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(canvas),
+      scenes: { main: CountingScene },
+      start: "main",
+    });
+    const started = game.start();
+    let settled = false;
+    void started.then(() => {
+      settled = true;
+    });
+
+    // The bridge is installed, but start() must still be pending: nothing has attached.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(settled).toBe(false);
+    expect(steps).toBe(0);
+
+    await bridge().describe();
+    await started;
+    expect(settled).toBe(true);
+    await game.stop();
+  });
+
+  it("fails closed when no runner attaches before the timeout", async () => {
+    const canvas = testCanvas();
+    const game = defineGame<{ score: number }>({
+      initialState: { score: 0 },
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 40 })],
+      renderer: stubRenderer(canvas),
+      scenes: { main: class extends Scene<{ score: number }> {} },
+      start: "main",
+    });
+    await expect(game.start()).rejects.toThrow(/TN_PLAYTEST_ATTACH_TIMEOUT/u);
+    await game.stop();
+  });
+
+  it("rejects a non-positive attach timeout instead of holding forever", async () => {
+    const canvas = testCanvas();
+    const game = defineGame<{ score: number }>({
+      initialState: { score: 0 },
+      plugins: [playtest({ attachTimeoutMs: 0, holdUntilAttached: true })],
+      renderer: stubRenderer(canvas),
+      scenes: { main: class extends Scene<{ score: number }> {} },
+      start: "main",
+    });
+    await expect(game.start()).rejects.toThrow(/TN_PLAYTEST_ATTACH_TIMEOUT_INVALID/u);
+    await game.stop();
+  });
+
+  it("does not hold by default", async () => {
+    const canvas = testCanvas();
+    const game = defineGame<{ score: number }>({
+      initialState: { score: 0 },
+      plugins: [playtest()],
+      renderer: stubRenderer(canvas),
+      scenes: { main: class extends Scene<{ score: number }> {} },
+      start: "main",
+    });
+    await game.start();
+    await game.stop();
+  });
+});

@@ -208,10 +208,15 @@ function observer(): GamePluginHooks<PhysicsState, PhysicsContext> {
 }
 
 function gatedPlaytest(): GamePluginHooks<PhysicsState, PhysicsContext> {
-  const plugin = playtest<PhysicsState, PhysicsContext>();
+  // The proof runs scenario.steps fixed steps from frame 0 -- about three seconds at 60fps.
+  // Without holding for the runner it can finish before the first observation, which reports
+  // TN_PLAYTEST_ASSERTION_TRIVIAL and a zero-distance movement failure purely as a function of
+  // how fast the device booted. Holding in the plugin also holds the physics plugin's first
+  // step, which gating this file's observer alone would not.
+  const plugin = playtest<PhysicsState, PhysicsContext>({ holdUntilAttached: true });
   return {
-    setup: (ctx, runtime) => {
-      const cleanup = plugin.setup?.(ctx, runtime);
+    setup: async (ctx, runtime) => {
+      const cleanup = await plugin.setup?.(ctx, runtime);
       const bridge = (
         globalThis as typeof globalThis & {
           __THREENATIVE_PLAYTEST_BRIDGE__?: {

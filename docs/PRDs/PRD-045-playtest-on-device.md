@@ -1,6 +1,50 @@
 # PRD-045 — Playtest on device
 
-**Status: DONE — 2026-08-11.** All eight criteria MET. Phase 4's executed iOS simulator
+**Status: REOPENED — 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same day on run
+`31446340434`, then reopened when run `31447449669` failed the same lane on the same device
+class. Two runs on `iPhone 17 Pro`: one pass, one fail. **A criterion satisfied by a lane that
+fails on rerun is not closed**, so this moved out of `native/done/` to the active root rather
+than leave `done/` resting on a coin flip. It is *not* in `blocked/`: nothing here needs
+hardware, and the defect is ours.
+
+**The defect (PRD-065 gap 7).** Nothing synchronises "the simulation starts" with "the observer
+is attached". `examples/native-smoke/src/physics.ts` runs `scenario.steps` (180) fixed steps
+beginning at frame 0; the runner attaches asynchronously through install → launch → poll →
+`ready()`. At 60fps the proof completes in ~3s, so a slow attach observes a finished
+simulation:
+
+```text
+TN_PLAYTEST_ASSERTION_TRIVIAL
+  Assertion 'resource.GameState' at path 'parity.steps' was already satisfied
+  before the scenario ran (value 180).
+TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED
+  Entity 'dynamicBox' moved 0.000000, below required 0.5.
+```
+
+`before` was frame 0 / tick 211 and `after` frame 1 / tick 394 at an identical position — the
+app was running, the proof was already over. It passes on desktop and Android because attach
+is faster there, and it surfaced on iOS only once PRD-065 Phase 0 moved the lane off a Vision
+Pro onto an iPhone with different boot timing. **The race is platform-independent and
+pre-existing; only its odds changed.**
+
+**Where the fix belongs: `packages/playtest` + `packages/core/src/playtest.ts`, not the
+example.** Rejected alternatives and why:
+
+| Level | Verdict |
+|---|---|
+| Example only (`physics.ts`) | **Rejected.** Gating the observer's `update` does not work — `packages/physics/src/plugin.ts:137` steps the simulation every frame regardless, so the box falls before counting starts. That trades a loud flake for a quiet wrong answer. Attempted and reverted on 2026-08-11. |
+| Example, wrapping `game.start()` | **Rejected.** The bridge that serves `ready()` is installed *during* `start()`, so the app cannot wait on it. It would need to poll the mailbox directly, reimplementing harness protocol in user-space. |
+| **Harness contract** | **Chosen.** `ready()` in `packages/playtest/src/protocol.ts:111` is already the seam; it currently means "the scene is set up" and needs to also mean "you may begin, and nothing observable has advanced yet." Holding the frame loop before the first physics step is plumbing every testable game repeats — `packages/core`'s remit — and no user could write it in 20 lines, since it needs the runner, the bridge and the frame loop to cooperate. |
+
+**This is not an engine or a physics bug.** Rapier is deterministic and correct; the framework
+plugins do what they specify. The gap is in the harness contract.
+
+Criteria 1–6 and 8 remain MET. Criterion 7 needs the handshake above plus a lane that passes on
+consecutive runs, not one green.
+
+---
+
+**Superseded: the 2026-08-11 close.** All eight criteria were briefly MET. Phase 4's executed iOS simulator
 evidence is run
 [`31446340434`](https://github.com/jonit-dev/threenative/actions/runs/31446340434) on
 `iPhone 17 Pro` / `SimRuntime.iOS-26-2`; see `docs/verification/PRD-045.md`.
