@@ -4300,19 +4300,15 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // made a two-finger gesture read as two contacts on the same side.
         platform::syncWindowSize(e.width, e.height);
 
-        // Reconfigure the swapchain before JavaScript is told anything. The surface is what
-        // actually presents, and it was only ever configured at startup: `Runtime::resize()`
-        // reconfigures it but nothing called that, so a rotation left the old dimensions in
-        // place and the game was presented letterboxed inside the new window — a landscape
-        // 2400x1080 image in a portrait 1080x2400 surface, with the bands showing whatever the
-        // compositor had there. Observed on a Pixel 8 with scripts/inspect-launch.mjs.
+        // The swapchain is deliberately NOT reconfigured here, and `Runtime::resize()` — which
+        // would — is still unreachable. Calling it from this path was tried and aborts the
+        // process: a launch rotates the display twice before the first frame, and reconfiguring
+        // the surface from inside the resize callback tears it down under the frame in flight.
+        // A Pixel 8 died with signal 6 immediately after TN_NATIVE_SMOKE_FIRST_FRAME.
         //
-        // Ordering matters: Three.js reacts to the resize event by resizing its render targets,
-        // and a target sized for a surface that has not been reconfigured is the same mismatch
-        // one frame later.
-        if (webgpu_ && e.width > 0 && e.height > 0) {
-            webgpu_->resizeSurface(static_cast<uint32_t>(e.width), static_cast<uint32_t>(e.height));
-        }
+        // Doing this correctly means deferring the reconfigure to a frame boundary, where no
+        // surface texture is acquired. That is real work and is not attempted here; what is
+        // recorded is that the obvious version is wrong.
 
         // Update window.innerWidth/innerHeight
         auto window = jsEngine_->getGlobal();
