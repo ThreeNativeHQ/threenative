@@ -25,6 +25,13 @@ export interface IResolvedThreeNativeConfig {
     readonly height: number;
     readonly resizable: boolean;
   };
+  readonly loading: {
+    readonly image?: string;
+    readonly backdropColor: string;
+    readonly trackColor: string;
+    readonly progressColor: string;
+    readonly showProgressBar: boolean;
+  };
   readonly nativeEntry: string;
   readonly renderer: {
     readonly preferWebGPU: boolean;
@@ -363,6 +370,48 @@ function validateWindow(raw: unknown, appName: string): IResolvedThreeNativeConf
   };
 }
 
+/**
+ * The loading screen's declared values. This validates them and nothing draws them: the screen
+ * itself is `src/render/loading.ts` in the generated project, which is the user's file to edit or
+ * delete. A look this cannot express is a source edit, not another option here.
+ */
+function validateLoading(raw: unknown): IResolvedThreeNativeConfig["loading"] {
+  const loading = assertRecord(raw, "loading");
+  assertKeys(loading, "loading", [
+    "image",
+    "backdropColor",
+    "trackColor",
+    "progressColor",
+    "showProgressBar",
+  ]);
+  const color = (value: unknown, fallback: string, label: string): string => {
+    if (value === undefined) return fallback;
+    if (typeof value !== "string" || !/^#[0-9a-f]{6}$/iu.test(value)) {
+      fail("TN_CONFIG_LOADING_COLOR_INVALID", `${label} must be a #rrggbb colour.`);
+    }
+    return value as string;
+  };
+  const image =
+    loading.image === undefined
+      ? undefined
+      : nonEmptyString(loading.image, "TN_CONFIG_LOADING_IMAGE_INVALID", "loading.image");
+  if (image !== undefined && path.isAbsolute(image)) {
+    fail("TN_CONFIG_LOADING_IMAGE_INVALID", "loading.image must be project-relative.");
+  }
+  return {
+    ...(image === undefined ? {} : { image }),
+    backdropColor: color(loading.backdropColor, "#0d1b2a", "loading.backdropColor"),
+    trackColor: color(loading.trackColor, "#274060", "loading.trackColor"),
+    progressColor: color(loading.progressColor, "#8fd694", "loading.progressColor"),
+    showProgressBar: booleanValue(
+      loading.showProgressBar,
+      true,
+      "TN_CONFIG_LOADING_BAR_INVALID",
+      "loading.showProgressBar",
+    ),
+  };
+}
+
 function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] {
   const renderer = assertRecord(raw, "renderer");
   assertKeys(renderer, "renderer", ["preferWebGPU"]);
@@ -383,7 +432,7 @@ export async function loadConfig(cwd: string): Promise<IResolvedThreeNativeConfi
   const packageEntry = packageNativeEntry(manifest);
   const raw = await importConfig(root);
   if (raw !== undefined) {
-    assertKeys(raw, "config", ["app", "display", "window", "nativeEntry", "renderer"]);
+    assertKeys(raw, "config", ["app", "display", "loading", "window", "nativeEntry", "renderer"]);
   }
   const configuredEntry = raw?.nativeEntry;
   if (configuredEntry !== undefined && packageEntry !== undefined) {
@@ -396,6 +445,7 @@ export async function loadConfig(cwd: string): Promise<IResolvedThreeNativeConfi
   return {
     app,
     display: validateDisplay(raw?.display),
+    loading: validateLoading(raw?.loading),
     window: validateWindow(raw?.window, app.name),
     nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
     renderer: validateRenderer(raw?.renderer),

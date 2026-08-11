@@ -11,8 +11,8 @@ import { createLoadingScreen } from "../templates/starter/src/render/loading.js"
  * sizes for a 4:1 ratio, so on a portrait phone that one-unit square covers the viewport — a
  * physical Pixel 8 recording measured the frame before the backdrop at 96.33% progress-bar green.
  */
-function host() {
-  const camera = new PerspectiveCamera(60, 1, 0.1, 2_000);
+function host(aspect = 1) {
+  const camera = new PerspectiveCamera(60, aspect, 0.1, 2_000);
   const scene = new Scene();
   scene.add(camera);
   return {
@@ -62,5 +62,46 @@ describe("template loading screen", () => {
       expect(Number.isFinite(fill.scale.x)).toBe(true);
       expect(Number.isFinite(fill.position.x)).toBe(true);
     }
+  });
+
+  // A phone is portrait about half the time, and the bar was laid out for a fixed 4:1 ratio.
+  it.each([
+    ["portrait", 1080 / 2400],
+    ["landscape", 2400 / 1080],
+    ["square", 1],
+  ])("keeps the bar inside the viewport in %s", (_name, aspect) => {
+    const source = host(aspect);
+    const loading = createLoadingScreen(source);
+    const { backdrop, track, fill } = quads(source.camera);
+
+    const visibleWidth = 2 * Math.tan((60 * Math.PI) / 360) * aspect;
+    // The track must fit the screen it is drawn on, and the backdrop must still cover it.
+    expect(track.scale.x).toBeLessThanOrEqual(visibleWidth + 1e-9);
+    expect(backdrop.scale.x).toBeGreaterThanOrEqual(visibleWidth);
+
+    // At any progress the fill stays within the track's span, so it never starts off-screen.
+    for (const progress of [0, 0.5, 1]) {
+      source.startup.progress = progress;
+      loading.update();
+      const left = fill.position.x - fill.scale.x / 2;
+      const right = fill.position.x + fill.scale.x / 2;
+      expect(left).toBeGreaterThanOrEqual(-track.scale.x / 2 - 1e-9);
+      expect(right).toBeLessThanOrEqual(track.scale.x / 2 + 1e-9);
+    }
+  });
+
+  it("relays out when the device rotates mid-load", () => {
+    const source = host(2400 / 1080);
+    const loading = createLoadingScreen(source);
+    const { track } = quads(source.camera);
+    const landscapeTrack = track.scale.x;
+
+    source.camera.aspect = 1080 / 2400;
+    source.startup.progress = 0.5;
+    loading.update();
+
+    expect(track.scale.x).toBeLessThan(landscapeTrack);
+    const visiblePortrait = 2 * Math.tan((60 * Math.PI) / 360) * (1080 / 2400);
+    expect(track.scale.x).toBeLessThanOrEqual(visiblePortrait + 1e-9);
   });
 });

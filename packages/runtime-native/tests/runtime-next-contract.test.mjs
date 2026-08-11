@@ -320,6 +320,28 @@ test('wgpu-native caps sampler LOD without changing sampler filtering', () => {
   );
 });
 
+test('the device exposes asynchronous pipeline creation', () => {
+  const bindings = read('src/webgpu/bindings.cpp');
+  // Without these, WebGPURenderer.compileAsync() throws "not a function" and every pipeline is
+  // built lazily on the draw that first needs it, mid-play, instead of behind a loading screen.
+  assert.match(
+    bindings,
+    /device\.createRenderPipelineAsync\s*=/,
+    'GPUDevice must expose createRenderPipelineAsync',
+  );
+  assert.match(
+    bindings,
+    /device\.createComputePipelineAsync\s*=/,
+    'GPUDevice must expose createComputePipelineAsync',
+  );
+  // Both must reject rather than throw synchronously: a caller awaits them.
+  assert.match(
+    bindings,
+    /return Promise\.reject\(error\)/,
+    'a failed pipeline build must reject the returned promise',
+  );
+});
+
 test('native AudioContext exposes the positional graph used by Three.js', () => {
   const audio = read('src/audio/audio_bindings.cpp');
   const audioSmoke = read('tests/audio-play-at-smoke.ts');

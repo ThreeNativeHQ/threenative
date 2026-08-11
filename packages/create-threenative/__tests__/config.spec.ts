@@ -45,6 +45,13 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).resolves.toEqual({
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true },
+      // Omitted entirely by the fixture above, so this is the defaulting path.
+      loading: {
+        backdropColor: "#0d1b2a",
+        trackColor: "#274060",
+        progressColor: "#8fd694",
+        showProgressBar: true,
+      },
       window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
@@ -86,6 +93,59 @@ describe("threenative.config.ts", () => {
       JSON.stringify({ name: "fox-game", threenative: "legacy" }),
     );
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_PACKAGE_INVALID/u);
+  });
+
+  it("reads the loading screen's declared values and rejects malformed ones", async () => {
+    const root = await project();
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      `export default {
+        loading: {
+          backdropColor: "#101820",
+          trackColor: "#223344",
+          progressColor: "#ffcc00",
+          showProgressBar: false,
+          image: "public/logo.png",
+        },
+      };\n`,
+    );
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      loading: {
+        backdropColor: "#101820",
+        trackColor: "#223344",
+        progressColor: "#ffcc00",
+        showProgressBar: false,
+        image: "public/logo.png",
+      },
+    });
+  });
+
+  it.each([
+    [
+      "a colour that is not #rrggbb",
+      `{ loading: { progressColor: "green" } }`,
+      "TN_CONFIG_LOADING_COLOR_INVALID",
+    ],
+    [
+      "a shorthand colour",
+      `{ loading: { backdropColor: "#fff" } }`,
+      "TN_CONFIG_LOADING_COLOR_INVALID",
+    ],
+    [
+      "a non-boolean bar flag",
+      `{ loading: { showProgressBar: "yes" } }`,
+      "TN_CONFIG_LOADING_BAR_INVALID",
+    ],
+    [
+      "an absolute image path",
+      `{ loading: { image: "/etc/passwd" } }`,
+      "TN_CONFIG_LOADING_IMAGE_INVALID",
+    ],
+    ["an unknown key", `{ loading: { progressColour: "#ffffff" } }`, "TN_CONFIG_UNKNOWN_KEY"],
+  ])("rejects %s", async (_name, body, code) => {
+    const root = await project();
+    await writeFile(path.join(root, "threenative.config.ts"), `export default ${body};\n`);
+    await expect(loadConfig(root)).rejects.toThrow(code);
   });
 
   it("rejects bad orientation with the named code", async () => {

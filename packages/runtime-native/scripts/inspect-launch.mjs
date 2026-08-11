@@ -1,0 +1,293 @@
+#!/usr/bin/env node
+
+/**
+ * Launch inspector — what the player sees between tapping the icon and playing.
+ *
+ * `measure-cold-start.mjs` answers how long the launch takes. This answers what it looks like,
+ * which is the half no timing number can see: a one-frame flash of the wrong colour, scene
+ * geometry leaking through the loading backdrop, or a progress bar laid out for the wrong
+ * orientation are all invisible to a stopwatch and to `pnpm test`.
+ *
+ * It records at display frame rate rather than sampling. `adb exec-out screencap` costs roughly
+ * 200 ms a shot, so a defect that lasts one frame at 120 Hz — 8 ms — is missed by it about
+ * twenty-four times out of twenty-five. Every frame of the recording is classified instead.
+ *
+ * Fail-closed, all of it:
+ *
+ *   - no frames extracted is a failure, never a clean report
+ *   - a launch that never reaches the loading screen is a failure naming that
+ *   - an unreadable palette argument is rejected before the device is touched
+ *   - anomaly frames are written to disk, because a count nobody can look at is not evidence
+ */
+
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
+
+const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+export class InspectError extends Error {
+  constructor(message, exitCode = 1) {
+    super(message);
+    this.name = "InspectError";
+    this.exitCode = exitCode;
+  }
+}
+
+/** The generated loading screen's palette. Override when a game recolours its own screen. */
+export const DEFAULT_PALETTE = {
+  backdrop: "#0d1b2a",
+  track: "#274060",
+  progress: "#8fd694",
+};
+
+export function parseColor(value, label) {
+  if (typeof value !== "string" || !/^#[0-9a-f]{6}$/iu.test(value)) {
+    throw new InspectError(`TN_INSPECT_COLOR_INVALID:${label}=${String(value)}`, 2);
+  }
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
+}
+
+const near = (r, g, b, [R, G, B], tolerance) =>
+  Math.abs(r - R) <= tolerance && Math.abs(g - G) <= tolerance && Math.abs(b - B) <= tolerance;
+
+/**
+ * One frame, reduced to the fractions that distinguish the launch phases.
+ *
+ * `foreign` is the important one: anything that is neither the loading palette nor near-black
+ * while the backdrop is on screen is either the world showing through or a rendering fault.
+ */
+export function classifyFrame(png, palette, tolerance = 14) {
+  const total = png.width * png.height;
+  let backdrop = 0;
+  let track = 0;
+  let progress = 0;
+  let dark = 0;
+  let foreign = 0;
+  for (let i = 0; i < png.data.length; i += 4) {
+    const r = png.data[i];
+    const g = png.data[i + 1];
+    const b = png.data[i + 2];
+    if (near(r, g, b, palette.backdrop, tolerance)) backdrop += 1;
+    else if (near(r, g, b, palette.track, tolerance)) track += 1;
+    else if (near(r, g, b, palette.progress, tolerance + 8)) progress += 1;
+    else if (r < 16 && g < 16 && b < 16) dark += 1;
+    else foreign += 1;
+  }
+  return {
+    width: png.width,
+    height: png.height,
+    backdrop: backdrop / total,
+    track: track / total,
+    progress: progress / total,
+    dark: dark / total,
+    foreign: foreign / total,
+  };
+}
+
+/**
+ * The launch, as phases.
+ *
+ * The loading screen is any frame the backdrop dominates. Everything before the first such frame
+ * is the launcher and the splash; everything after the last is the game.
+ */
+export function summarise(frames) {
+  if (frames.length === 0) throw new InspectError("TN_INSPECT_NO_FRAMES", 2);
+  const loadingIndexes = frames
+    .map((frame, index) => ({ frame, index }))
+    .filter(({ frame }) => frame.backdrop > 0.5)
+    .map(({ index }) => index);
+  if (loadingIndexes.length === 0) throw new InspectError("TN_INSPECT_NO_LOADING_SCREEN", 1);
+  const first = loadingIndexes[0];
+  const last = loadingIndexes[loadingIndexes.length - 1];
+
+  // While the screen is up it is meant to be opaque. Anything else on screen is the defect this
+  // harness exists to catch, so the bar is deliberately low rather than tuned to pass.
+  const leaks = [];
+  for (let index = first; index <= last; index += 1) {
+    const frame = frames[index];
+    if (frame.backdrop > 0.2 && frame.foreign > 0.01) {
+      leaks.push({ index, foreign: frame.foreign, backdrop: frame.backdrop });
+    }
+  }
+
+  // A full-screen wash of the bar's own colour is the unscaled-quad defect, which is not "foreign"
+  // because the colour is legitimate — it is the area that is wrong.
+  const progressWash = frames
+    .map((frame, index) => ({ index, progress: frame.progress }))
+    .filter(({ progress }) => progress > 0.2);
+
+  return {
+    frames: frames.length,
+    resolution: `${frames[0].width}x${frames[0].height}`,
+    orientation: frames[0].width >= frames[0].height ? "landscape" : "portrait",
+    loadingFirstFrame: first,
+    loadingLastFrame: last,
+    loadingFrames: last - first + 1,
+    maxProgressArea: frames.reduce((worst, frame) => Math.max(worst, frame.progress), 0),
+    leaks,
+    progressWash,
+  };
+}
+
+function adbPath(environment = process.env) {
+  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
+  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
+  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
+  if (!existsSync(candidate)) throw new InspectError("TN_INSPECT_ADB_MISSING", 2);
+  return candidate;
+}
+
+function adb(serial, args, timeoutMs = 180_000) {
+  const result = spawnSync(adbPath(), ["-s", serial, ...args], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: timeoutMs,
+  });
+  if (result.error) throw new InspectError(`TN_INSPECT_ADB_FAILED:${result.error.message}`);
+  return String(result.stdout ?? "");
+}
+
+function record(serial, target, outDir, seconds) {
+  const pkg = target.split("/")[0];
+  mkdirSync(outDir, { recursive: true });
+  for (const stale of readdirSync(outDir).filter((name) => name.startsWith("frame-"))) {
+    rmSync(join(outDir, stale), { force: true });
+  }
+  adb(serial, ["shell", "am", "force-stop", pkg]);
+  adb(serial, ["shell", "rm", "-f", "/sdcard/tn-launch.mp4"]);
+
+  const recorder = spawnSync(
+    adbPath(),
+    [
+      "-s",
+      serial,
+      "shell",
+      `screenrecord --time-limit ${seconds} --bit-rate 20000000 /sdcard/tn-launch.mp4 & sleep 1; am start -n ${target} >/dev/null; wait`,
+    ],
+    { encoding: "utf8", timeout: (seconds + 30) * 1000 },
+  );
+  if (recorder.error) throw new InspectError(`TN_INSPECT_RECORD_FAILED:${recorder.error.message}`);
+
+  const video = join(outDir, "launch.mp4");
+  adb(serial, ["pull", "/sdcard/tn-launch.mp4", video]);
+  adb(serial, ["shell", "am", "force-stop", pkg]);
+  if (!existsSync(video)) throw new InspectError("TN_INSPECT_RECORDING_MISSING", 1);
+
+  try {
+    execFileSync("ffmpeg", ["-loglevel", "error", "-i", video, "-vsync", "0", join(outDir, "frame-%04d.png")]);
+  } catch (error) {
+    throw new InspectError(`TN_INSPECT_FFMPEG_FAILED:${error instanceof Error ? error.message : String(error)}`, 2);
+  }
+  rmSync(video, { force: true });
+  return readdirSync(outDir)
+    .filter((name) => name.startsWith("frame-") && name.endsWith(".png"))
+    .sort();
+}
+
+export function parseArgs(argv) {
+  const options = {
+    device: undefined,
+    package: "com.threenative.game",
+    activity: "com.threenative.runtime.MystralActivity",
+    seconds: 8,
+    out: join(runtimeRoot, ".runtime/launch-inspection"),
+    palette: { ...DEFAULT_PALETTE },
+    keepFrames: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = () => {
+      const value = argv[index + 1];
+      if (value === undefined) throw new InspectError(`TN_INSPECT_ARG_MISSING:${arg}`, 2);
+      index += 1;
+      return value;
+    };
+    if (arg === "--device") options.device = next();
+    else if (arg === "--package") options.package = next();
+    else if (arg === "--activity") options.activity = next();
+    else if (arg === "--seconds") options.seconds = Number(next());
+    else if (arg === "--out") options.out = next();
+    else if (arg === "--backdrop") options.palette.backdrop = next();
+    else if (arg === "--track") options.palette.track = next();
+    else if (arg === "--progress") options.palette.progress = next();
+    else if (arg === "--keep-frames") options.keepFrames = true;
+    else throw new InspectError(`TN_INSPECT_ARG_UNKNOWN:${arg}`, 2);
+  }
+  if (options.device === undefined) throw new InspectError("TN_INSPECT_DEVICE_REQUIRED", 2);
+  if (!Number.isFinite(options.seconds) || options.seconds < 3) {
+    throw new InspectError("TN_INSPECT_SECONDS_INVALID", 2);
+  }
+  return options;
+}
+
+function percent(value) {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const palette = {
+    backdrop: parseColor(options.palette.backdrop, "backdrop"),
+    track: parseColor(options.palette.track, "track"),
+    progress: parseColor(options.palette.progress, "progress"),
+  };
+  const target = `${options.package}/${options.activity}`;
+  const files = record(options.device, target, options.out, options.seconds);
+  if (files.length === 0) throw new InspectError("TN_INSPECT_NO_FRAMES", 2);
+
+  const frames = files.map((name) => classifyFrame(PNG.sync.read(readFileSync(join(options.out, name))), palette));
+  const report = summarise(frames);
+
+  console.log(`launch inspection — ${options.device}, ${target}`);
+  console.log(`  ${report.frames} frames, ${report.resolution} (${report.orientation})`);
+  console.log(`  loading screen: frames ${report.loadingFirstFrame}–${report.loadingLastFrame} (${report.loadingFrames})`);
+  console.log(`  largest progress-colour area in any frame: ${percent(report.maxProgressArea)}`);
+
+  // Keep the frames that prove a finding; drop the rest so a run does not leave 200 PNGs behind.
+  const keep = new Set(report.leaks.map((leak) => leak.index).concat(report.progressWash.map((w) => w.index)));
+  if (!options.keepFrames) {
+    files.forEach((name, index) => {
+      if (!keep.has(index)) rmSync(join(options.out, name), { force: true });
+    });
+  }
+
+  if (report.progressWash.length > 0) {
+    console.log(`  ✗ ${report.progressWash.length} frame(s) washed by the progress colour — the bar is not sized`);
+    for (const wash of report.progressWash.slice(0, 5)) {
+      console.log(`      ${files[wash.index]} ${percent(wash.progress)}`);
+    }
+  }
+  if (report.leaks.length > 0) {
+    console.log(`  ✗ ${report.leaks.length} frame(s) leak content through the loading screen`);
+    for (const leak of report.leaks.slice(0, 8)) {
+      console.log(`      ${files[leak.index]} foreign=${percent(leak.foreign)} backdrop=${percent(leak.backdrop)}`);
+    }
+  }
+  if (report.leaks.length === 0 && report.progressWash.length === 0) {
+    console.log("  ✓ loading screen stayed opaque and the bar stayed inside the viewport");
+  }
+
+  writeFileSync(
+    join(options.out, "report.json"),
+    `${JSON.stringify({ target, device: options.device, ...report, files }, undefined, 2)}\n`,
+  );
+  console.log(`  report: ${join(options.out, "report.json")}`);
+  return report.leaks.length === 0 && report.progressWash.length === 0 ? 0 : 1;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((error) => {
+      console.error(error instanceof InspectError ? error.message : error);
+      process.exit(error instanceof InspectError ? error.exitCode : 1);
+    });
+}

@@ -89,28 +89,47 @@ export function createLoadingScreen(host: LoadingHost) {
 
   // Sized in world units one unit in front of the camera, which beats pixels and survives any
   // viewport. The backdrop is over-sized so no aspect ratio can uncover an edge.
+  //
+  // The width is the camera's own visible width, never a fixed ratio. Assuming 4:1 made the bar
+  // roughly right in landscape and wrong in portrait, where the track ran several screens wide and
+  // the fill began entirely off the left edge and swept in — read on a Pixel 8 as the bar
+  // glitching rather than filling.
   const distance = 1;
   const height = Math.tan((camera.fov * Math.PI) / 360) * distance * 2;
-  const width = height * 4;
-  backdrop.scale.set(width * 2, height * 2, 1);
-  backdrop.position.set(0, 0, -distance);
-  track.scale.set(width * 0.5, height * 0.012, 1);
-  track.position.set(0, -height * 0.05, -distance * 0.999);
-  fill.position.set(0, -height * 0.05, -distance * 0.998);
+  let width = 0;
+  let lastProgress = 0;
 
-  // Sizing the bar is one function called before the first frame, not only from `update()`. A
-  // `PlaneGeometry(1, 1)` left at its default scale is a full world unit square — about seventy
-  // times the height of the bar — so a screen that renders before the first update flashes a green
-  // square across the middle. Observed on a Pixel 8.
+  // Both the layout and the bar are one function each, re-run whenever the camera's aspect moves,
+  // because a phone can rotate while the screen is still up. Sizing once at construction left the
+  // bar laid out for the orientation the game happened to launch in.
+  const layout = (): void => {
+    const aspect = Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 1;
+    width = height * aspect;
+    backdrop.scale.set(width * 2, height * 2, 1);
+    backdrop.position.set(0, 0, -distance);
+    track.scale.set(width * 0.5, height * 0.012, 1);
+    track.position.set(0, -height * 0.05, -distance * 0.999);
+    fill.position.set(0, -height * 0.05, -distance * 0.998);
+  };
+
+  // Called before the first frame, not only from `update()`. A `PlaneGeometry(1, 1)` left at its
+  // default scale is a full world unit square — about seventy times the height of the bar — so a
+  // screen that renders before the first update flashes a green square across it. Seen on a Pixel 8.
   const setProgress = (progress: number): void => {
     // `Math.max(0, Math.min(1, NaN))` is NaN, so the obvious clamp does not clamp: one NaN reaches
     // the quad's scale and the bar stops rendering. Treat anything non-finite as no progress.
-    const clamped = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+    lastProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
     const full = width * 0.5;
-    // Scaled from the left edge rather than the centre, so the bar fills instead of growing.
-    fill.scale.set(Math.max(full * 0.002, full * clamped), height * 0.012, 1);
-    fill.position.x = -full / 2 + (full * clamped) / 2;
+    // A sliver stays visible at zero, so the bar reads as empty rather than missing.
+    const barWidth = Math.max(full * 0.002, full * lastProgress);
+    // Anchored by the width actually drawn, not by progress: using progress placed the sliver
+    // half its own width past the track's left edge.
+    fill.scale.set(barWidth, height * 0.012, 1);
+    fill.position.x = -full / 2 + barWidth / 2;
   };
+
+  let laidOutAspect = camera.aspect;
+  layout();
   setProgress(0);
 
   let done = false;
@@ -136,6 +155,12 @@ export function createLoadingScreen(host: LoadingHost) {
     /** Call once per frame. Fills the bar, then holds while the collapse bakes. */
     update(): void {
       if (done) return;
+      if (camera.aspect !== laidOutAspect) {
+        laidOutAspect = camera.aspect;
+        layout();
+        // Re-place the bar at the width it just gained or lost, or it keeps the old geometry.
+        setProgress(lastProgress);
+      }
       setProgress(host.startup.progress);
     },
     /** Reveals the world early. The screen takes itself down without this. */

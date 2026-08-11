@@ -3032,6 +3032,51 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                         })
                     );
 
+                    // device.createRenderPipelineAsync / createComputePipelineAsync
+                    //
+                    // Without these, `renderer.compileAsync()` throws "not a function" and every
+                    // pipeline is instead built lazily on the draw that first needs it — during
+                    // play, where it is a stall the player feels. A Pixel 8 recording measured a
+                    // 1,659 ms worst frame with them missing.
+                    //
+                    // The implementation is synchronous behind an asynchronous signature, which
+                    // the WebGPU specification permits: the async form promises a pipeline, never
+                    // that the compile happens off-thread. What it buys is *when* the work runs,
+                    // not what it costs — a game that awaits `compileAsync` behind its loading
+                    // screen pays for the pipelines there instead of mid-frame.
+                    {
+                        const char* installAsyncPipelines = R"JS(
+(function (device) {
+  const wrap = (syncName) => function (descriptor) {
+    try {
+      return Promise.resolve(this[syncName](descriptor));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+  if (typeof device.createRenderPipeline === "function") {
+    device.createRenderPipelineAsync = wrap("createRenderPipeline");
+  }
+  if (typeof device.createComputePipeline === "function") {
+    device.createComputePipelineAsync = wrap("createComputePipeline");
+  }
+  return (
+    typeof device.createRenderPipelineAsync === "function" &&
+    typeof device.createComputePipelineAsync === "function"
+  );
+})
+)JS";
+                        auto installer = g_engine->evalScriptWithResult(
+                            installAsyncPipelines, "install-async-pipelines");
+                        auto installed = g_engine->call(
+                            installer, g_engine->newUndefined(), {device});
+                        // Fail loudly rather than leave the renderer to discover it mid-frame.
+                        if (!g_engine->toBoolean(installed)) {
+                            std::cerr << "[WebGPU] failed to install async pipeline creation"
+                                      << std::endl;
+                        }
+                    }
+
                     // device.createCommandEncoder(descriptor?)
                     g_engine->setProperty(device, "createCommandEncoder",
                         g_engine->newFunction("createCommandEncoder", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
