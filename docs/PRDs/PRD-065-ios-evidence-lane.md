@@ -77,7 +77,7 @@ it changes, and reading its result requires opening a 4,400-line log.
 | # | Gap | Evidence |
 |---|---|---|
 | 0 | **The lane was not testing iOS.** `chooseSimulator()` flattened `simctl list devices available --json`, discarding the runtime key, and took `devices[0]`. On `macos-15` that is an **Apple Vision Pro** (visionOS). Both the last green run and the current one recorded `"name": "Apple Vision Pro"`, a 2732×2048 screenshot, and **no `runtime` field at all** — simctl device objects carry no runtime, so nothing could catch it | `simulator-report.json` from runs `31313092745` (`e38439c`) and `31434881982` (`00cfad2`) |
-| 1 | **The lane is red.** Consumer handoff fails `TN_PLAYTEST_BRIDGE_MISSING` at `frames: 0` | run `31434881982`, step 11 of 16 |
+| 1 | ~~**The lane is red.**~~ **RESOLVED, stale.** The consumer handoff failed `TN_PLAYTEST_BRIDGE_MISSING` at `frames: 0` at `00cfad2`, which predates `2e53c85`. The whole iOS job passes at current `main` | red: run `31434881982`; green: run `31446340434` |
 | 2 | **It does not run when it can break.** `on.push.paths` / `on.pull_request.paths` list only `packages/runtime-native/**` and the lockfiles; `ci.yml` never `workflow_call`s it | `.github/workflows/native-platforms.yml:4-14`; `grep -c native-platforms .github/workflows/ci.yml` → `0` |
 | 3 | **No video.** `grep -rn recordVideo` across `packages` and `scripts` → 0 hits | a still frame cannot show a hang, a flicker, or a one-frame-then-freeze |
 | 4 | **No legible verdict.** `grep -rn GITHUB_STEP_SUMMARY .github/workflows/` → 0 hits | reading a result means opening the raw log |
@@ -454,7 +454,8 @@ PASS)*
 
 | Criterion | Run URL | Green | Control observed red |
 |---|---|---|---|
-| 1 | *pending — no macOS run since Phase 0* | UNVERIFIED | local: pre-fix selector restored → `× the verifier selects through the pinned iOS selector` |
+| 1 | [31446340434](https://github.com/jonit-dev/threenative/actions/runs/31446340434) | **MET** — `iPhone 17 Pro`, `SimRuntime.iOS-26-2`, 1206×2622 | local: pre-fix selector restored → `× the verifier selects through the pinned iOS selector` |
+| 2 | [31446340434](https://github.com/jonit-dev/threenative/actions/runs/31446340434) | **MET** — the whole iOS job succeeded, consumer handoff included | pending: the consumer lane still has no bridge-disabled control |
 | 2 | | | |
 | 3 | | | |
 | 4 | | | |

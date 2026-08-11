@@ -1,7 +1,12 @@
 # PRD-045 — Playtest on device
 
-**Status: IN PROGRESS — Phases 0–3 closed on Android and Phase 5 closed; Phase 4 (executed
-iOS simulator evidence) is UNVERIFIED.**
+**Status: DONE — 2026-08-11.** All eight criteria MET. Phase 4's executed iOS simulator
+evidence is run
+[`31446340434`](https://github.com/jonit-dev/threenative/actions/runs/31446340434) on
+`iPhone 17 Pro` / `SimRuntime.iOS-26-2`; see `docs/verification/PRD-045.md`.
+
+**This is simulator evidence, not device evidence.** PRD-056 physical qualification is
+unaffected, and nothing here licenses an arm64, Metal-driver, thermal or battery claim.
 
 **Correction, 2026-08-10:** an Apple machine *is* available — the free hosted `macos-15`
 runner — and it has been executing this scenario and all its controls green since 2026-08-09.
@@ -235,11 +240,10 @@ State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
 | 4 | Network assertions on a device target fail with an explicit unsupported error; no code path skips an assertion and reports pass | **MET** |
 | 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
 | 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
-| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **UNVERIFIED, 2026-08-10** — the hosted `macos-15` lane executed the scenario and every control with its exact exit code, but on an **Apple Vision Pro / visionOS** simulator, not iOS. See the criterion 7 correction in `docs/verification/PRD-045.md`. PRD-065 Phase 0 pinned the runtime; no macOS run has executed since |
+| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **MET, 2026-08-11** — run `31446340434`, `iPhone 17 Pro` / `SimRuntime.iOS-26-2`, unchanged scenario plus four controls at their exact exit codes. An earlier green lane had run on visionOS; PRD-065 Phase 0 pinned the runtime and this is the first post-fix run |
 | 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **MET** — Phase 5 |
 
-Criterion 7 is the whole remaining scope. **This PRD does not move to `done/` until it is met
-or explicitly withdrawn**; PRD-046's Android gate reads criteria 1–4, which are met, so its
+Criterion 7 was the whole remaining scope and is now met on an executed iOS simulator; PRD-046's Android gate reads criteria 1–4, which are met, so its
 Android physics work is not blocked on iOS.
 
 ---
