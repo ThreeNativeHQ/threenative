@@ -84,6 +84,13 @@ export interface ISceneCollapseReport {
    * no single frame carries it.
    */
   readonly bakeMs?: number;
+  /**
+   * Wall time from the observation window opening to the bake starting, and the part of it this
+   * pass actually spent sampling. The difference is the game's own frames: the window is a frame
+   * count, so a slow scene makes the wait long without this pass doing any of the work.
+   */
+  readonly observeMs?: number;
+  readonly sampleMs?: number;
 }
 
 export interface ISceneCollapseOptions {
@@ -448,6 +455,9 @@ export class SceneCollapse {
   readonly #moving = new Set<IObjectLike>();
   readonly #changes = new Map<IObjectLike, number>();
   #observed = 0;
+  #windowOpenedAt: number | undefined;
+  #sampleSpentMs = 0;
+  #observeSpanMs = 0;
   #meshCount = -1;
   #reportedSmall = false;
   #report: ISceneCollapseReport | undefined;
@@ -569,9 +579,14 @@ export class SceneCollapse {
       this.#pumpBake();
       return;
     }
+    const now = (): number => globalThis.performance?.now() ?? 0;
+    this.#windowOpenedAt ??= now();
+    const sampledAt = now();
     this.#sample();
+    this.#sampleSpentMs += now() - sampledAt;
     this.#observed += 1;
     if (this.#observed >= this.#observeFrames) {
+      this.#observeSpanMs = now() - this.#windowOpenedAt;
       this.#steps = this.#collapseSteps();
       this.#pumpBake();
     }
@@ -1155,6 +1170,8 @@ export class SceneCollapse {
       overlayMeshes: overlay.overlayMeshes,
       overlayDraws: overlay.overlayDraws,
       bakeMs: this.#bakeSpentMs,
+      observeMs: this.#observeSpanMs,
+      sampleMs: this.#sampleSpentMs,
     };
     this.#onReport(this.#report);
   }
