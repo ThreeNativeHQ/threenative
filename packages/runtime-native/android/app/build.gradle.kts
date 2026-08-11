@@ -169,6 +169,19 @@ android {
     }
 
     buildTypes {
+        debug {
+            // AGP pins the debug variant's native build to CMAKE_BUILD_TYPE=Debug and ignores
+            // an -DCMAKE_BUILD_TYPE argument, so QuickJS and the runtime compile at -O0. The
+            // host is a dependency here, not the code under test, and an unoptimized
+            // interpreter costs a real game its frame rate on device. cFlags/cppFlags land
+            // after the build-type flags, so -O2 wins.
+            if (!usePrebuiltRuntime) externalNativeBuild {
+                cmake {
+                    cFlags.add("-O2")
+                    cppFlags.add("-O2")
+                }
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
