@@ -1,4 +1,11 @@
-import { Float32BufferAttribute, Matrix3, Matrix4, Mesh, Uint32BufferAttribute } from "three";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  Matrix3,
+  Matrix4,
+  Mesh,
+  Uint32BufferAttribute,
+} from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { attribute, normalLocal, positionLocal, storage, vec4 } from "three/tsl";
 import { StorageBufferAttribute } from "three/webgpu";
@@ -92,6 +99,10 @@ export interface ISceneCollapseReport {
   readonly observeMs?: number;
   /** The part of the bake spent inside `mergeGeometries`, as opposed to preparing its input. */
   readonly mergeMs?: number;
+  /** Copying each source geometry, expanding indexed ones, before anything is written to it. */
+  readonly copyMs?: number;
+  readonly transformMs?: number;
+  readonly colorMs?: number;
   readonly sampleMs?: number;
 }
 
@@ -460,6 +471,9 @@ export class SceneCollapse {
   #windowOpenedAt: number | undefined;
   #sampleSpentMs = 0;
   #mergeSpentMs = 0;
+  #copySpentMs = 0;
+  #transformSpentMs = 0;
+  #colorSpentMs = 0;
   #prepSpentMs = 0;
   #observeSpanMs = 0;
   #meshCount = -1;
@@ -966,7 +980,9 @@ export class SceneCollapse {
         this.#decline("a mesh lost its geometry between the scan and the merge", meshes.length);
         return;
       }
+      const copyStartedAt = globalThis.performance?.now() ?? 0;
       const geometry = source.index !== null ? source.toNonIndexed() : source.clone();
+      this.#copySpentMs += (globalThis.performance?.now() ?? 0) - copyStartedAt;
       // Reduce every chunk to the same canonical attributes before grouping. Merging geometries
       // whose attribute sets disagree used to intersect them, and the first casualty was `normal`:
       // lit materials then shaded from nothing and the entire level rendered black while the
@@ -980,7 +996,9 @@ export class SceneCollapse {
       if (geometry.getAttribute("normal") === undefined)
         (geometry as unknown as { computeVertexNormals(): void }).computeVertexNormals();
       bakeMatrix.copy(local);
+      const transformStartedAt = globalThis.performance?.now() ?? 0;
       bakeTransform(geometry, bakeMatrix, bakeNormalMatrix.getNormalMatrix(bakeMatrix));
+      this.#transformSpentMs += (globalThis.performance?.now() ?? 0) - transformStartedAt;
       if (ownerId !== undefined) {
         const count = geometry.getAttribute("position")?.count ?? 0;
         const ids = new Uint32Array(count);
@@ -1039,6 +1057,7 @@ export class SceneCollapse {
         painted?.normalized !== true
           ? { source: paintedArray, stride: paintedStride }
           : undefined;
+      const colorStartedAt = globalThis.performance?.now() ?? 0;
       const colors = new Float32Array(count * 3);
       // This loop runs once per vertex in the whole scene, so the shape of it is the bake's
       // largest single cost — the merge itself measured 65 ms of a 1,514 ms bake on a Pixel 8.
@@ -1069,6 +1088,7 @@ export class SceneCollapse {
         }
       }
       geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+      this.#colorSpentMs += (globalThis.performance?.now() ?? 0) - colorStartedAt;
       // Transparent materials were once held apart by identity to protect blend order. On a real
       // scene that meant 220 of 225 draws, and the frame cost of that dwarfed any ordering it
       // bought. They group by look like everything else; opacity, depthWrite and blend mode are
@@ -1222,6 +1242,9 @@ export class SceneCollapse {
       bakeMs: this.#bakeSpentMs,
       observeMs: this.#observeSpanMs,
       mergeMs: this.#mergeSpentMs,
+      copyMs: this.#copySpentMs,
+      transformMs: this.#transformSpentMs,
+      colorMs: this.#colorSpentMs,
       sampleMs: this.#sampleSpentMs,
     };
     this.#onReport(this.#report);
