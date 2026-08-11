@@ -59,19 +59,66 @@ const near = (r, g, b, [R, G, B], tolerance) =>
   Math.abs(r - R) <= tolerance && Math.abs(g - G) <= tolerance && Math.abs(b - B) <= tolerance;
 
 /**
+ * The bars `screenrecord` adds, found and removed before anything is judged.
+ *
+ * `screenrecord` captures the display in its natural orientation, so a landscape app on a portrait
+ * phone arrives as a band inside a portrait video with black above and below. Measuring that
+ * directly reports a loading screen covering 20% of the screen and a game that is letterboxed,
+ * and both conclusions are about the recorder rather than the game — a mistake this harness made
+ * before it did this.
+ *
+ * Only rows and columns that are black in *every* frame are treated as bars, so a game that is
+ * legitimately dark in one frame keeps its pixels.
+ */
+export function findContentBox(allFrames) {
+  if (allFrames.length === 0) throw new InspectError("TN_INSPECT_NO_FRAMES", 2);
+  // Only the frames the app owns. The launcher fills the whole portrait screen before the game
+  // takes over, and including it makes every row look lit, which finds no bars at all.
+  const frames = allFrames.slice(Math.floor(allFrames.length / 2));
+  const { width, height } = frames[0];
+  const rowLit = new Uint8Array(height);
+  const colLit = new Uint8Array(width);
+  for (const png of frames) {
+    if (png.width !== width || png.height !== height) {
+      throw new InspectError("TN_INSPECT_FRAME_SIZE_CHANGED", 1);
+    }
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const i = (y * width + x) * 4;
+        if (png.data[i] > 12 || png.data[i + 1] > 12 || png.data[i + 2] > 12) {
+          rowLit[y] = 1;
+          colLit[x] = 1;
+        }
+      }
+    }
+  }
+  const firstRow = rowLit.indexOf(1);
+  const firstCol = colLit.indexOf(1);
+  if (firstRow === -1 || firstCol === -1) throw new InspectError("TN_INSPECT_ALL_FRAMES_BLACK", 1);
+  let lastRow = height - 1;
+  while (lastRow > firstRow && rowLit[lastRow] === 0) lastRow -= 1;
+  let lastCol = width - 1;
+  while (lastCol > firstCol && colLit[lastCol] === 0) lastCol -= 1;
+  return { x: firstCol, y: firstRow, width: lastCol - firstCol + 1, height: lastRow - firstRow + 1 };
+}
+
+/**
  * One frame, reduced to the fractions that distinguish the launch phases.
  *
  * `foreign` is the important one: anything that is neither the loading palette nor near-black
  * while the backdrop is on screen is either the world showing through or a rendering fault.
  */
-export function classifyFrame(png, palette, tolerance = 14) {
-  const total = png.width * png.height;
+export function classifyFrame(png, palette, tolerance = 14, box) {
+  const region = box ?? { x: 0, y: 0, width: png.width, height: png.height };
+  const total = region.width * region.height;
   let backdrop = 0;
   let track = 0;
   let progress = 0;
   let dark = 0;
   let foreign = 0;
-  for (let i = 0; i < png.data.length; i += 4) {
+  for (let y = region.y; y < region.y + region.height; y += 1) {
+    for (let x = region.x; x < region.x + region.width; x += 1) {
+    const i = (y * png.width + x) * 4;
     const r = png.data[i];
     const g = png.data[i + 1];
     const b = png.data[i + 2];
@@ -80,10 +127,11 @@ export function classifyFrame(png, palette, tolerance = 14) {
     else if (near(r, g, b, palette.progress, tolerance + 8)) progress += 1;
     else if (r < 16 && g < 16 && b < 16) dark += 1;
     else foreign += 1;
+    }
   }
   return {
-    width: png.width,
-    height: png.height,
+    width: region.width,
+    height: region.height,
     backdrop: backdrop / total,
     track: track / total,
     progress: progress / total,
@@ -243,11 +291,14 @@ async function main() {
   const files = record(options.device, target, options.out, options.seconds);
   if (files.length === 0) throw new InspectError("TN_INSPECT_NO_FRAMES", 2);
 
-  const frames = files.map((name) => classifyFrame(PNG.sync.read(readFileSync(join(options.out, name))), palette));
+  const images = files.map((name) => PNG.sync.read(readFileSync(join(options.out, name))));
+  const box = findContentBox(images);
+  const frames = images.map((png) => classifyFrame(png, palette, 14, box));
   const report = summarise(frames);
 
   console.log(`launch inspection — ${options.device}, ${target}`);
   console.log(`  ${report.frames} frames, ${report.resolution} (${report.orientation})`);
+  console.log(`  recorder letterbox cropped: ${box.width}x${box.height} at ${box.x},${box.y}`);
   console.log(`  loading screen: frames ${report.loadingFirstFrame}–${report.loadingLastFrame} (${report.loadingFrames})`);
   console.log(`  largest progress-colour area in any frame: ${percent(report.maxProgressArea)}`);
 

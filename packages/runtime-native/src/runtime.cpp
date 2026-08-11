@@ -4300,6 +4300,20 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // made a two-finger gesture read as two contacts on the same side.
         platform::syncWindowSize(e.width, e.height);
 
+        // Reconfigure the swapchain before JavaScript is told anything. The surface is what
+        // actually presents, and it was only ever configured at startup: `Runtime::resize()`
+        // reconfigures it but nothing called that, so a rotation left the old dimensions in
+        // place and the game was presented letterboxed inside the new window — a landscape
+        // 2400x1080 image in a portrait 1080x2400 surface, with the bands showing whatever the
+        // compositor had there. Observed on a Pixel 8 with scripts/inspect-launch.mjs.
+        //
+        // Ordering matters: Three.js reacts to the resize event by resizing its render targets,
+        // and a target sized for a surface that has not been reconfigured is the same mismatch
+        // one frame later.
+        if (webgpu_ && e.width > 0 && e.height > 0) {
+            webgpu_->resizeSurface(static_cast<uint32_t>(e.width), static_cast<uint32_t>(e.height));
+        }
+
         // Update window.innerWidth/innerHeight
         auto window = jsEngine_->getGlobal();
         jsEngine_->setProperty(window, "innerWidth", jsEngine_->newNumber(e.width));
