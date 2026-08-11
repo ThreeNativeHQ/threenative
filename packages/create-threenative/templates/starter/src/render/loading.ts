@@ -103,7 +103,9 @@ export function createLoadingScreen(host: LoadingHost) {
   // times the height of the bar — so a screen that renders before the first update flashes a green
   // square across the middle. Observed on a Pixel 8.
   const setProgress = (progress: number): void => {
-    const clamped = Math.max(0, Math.min(1, progress));
+    // `Math.max(0, Math.min(1, NaN))` is NaN, so the obvious clamp does not clamp: one NaN reaches
+    // the quad's scale and the bar stops rendering. Treat anything non-finite as no progress.
+    const clamped = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
     const full = width * 0.5;
     // Scaled from the left edge rather than the centre, so the bar fills instead of growing.
     fill.scale.set(Math.max(full * 0.002, full * clamped), height * 0.012, 1);
