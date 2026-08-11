@@ -722,9 +722,11 @@ export class SceneCollapse {
       if (meshes.length < OVERLAY_FLOOR) continue;
       camera.updateMatrixWorld(true);
       const cameraInverse = new Matrix4().copy(camera.matrixWorld).invert();
-      const groups = new Map<string, { material: IMaterialLike; chunks: IGeometryLike[] }>();
+      const groups = new Map<
+        string,
+        { material: IMaterialLike; chunks: IGeometryLike[]; renderOrder: number }
+      >();
       const parts: { object: IObjectLike; index: number }[] = [];
-      let renderOrder = 0;
       let usable = true;
       for (const mesh of meshes) {
         const material = materialOf(mesh);
@@ -735,7 +737,6 @@ export class SceneCollapse {
         }
         const index = parts.length;
         parts.push({ object: mesh, index });
-        renderOrder = Math.max(renderOrder, mesh.renderOrder ?? 0);
         // Geometry is taken exactly as the game authored it. Placement is entirely the storage
         // matrix's job, so a layout change — a resize moving the stick — needs no rebake.
         const geometry = source.index !== null ? source.toNonIndexed() : source.clone();
@@ -751,7 +752,13 @@ export class SceneCollapse {
         // Identity, not look. Merging two materials that differ only by colour would fuse two
         // hearts into one draw, and the next life the game takes would recolour both.
         const key = objectKey(material as never);
-        const group = groups.get(key) ?? { material, chunks: [] };
+        const group = groups.get(key) ?? { material, chunks: [], renderOrder: 0 };
+        // Each group keeps its own order. Taking one maximum across every overlay and stamping it
+        // on all of them flattened the ordering between them: a loading screen at 20,000 and a
+        // camera-parented effect below it both became 20,000, the tie broke on depth, and the
+        // effect drew through the screen that was meant to cover it. Seen on a Pixel 8 as a
+        // waterfall bleeding through the loading backdrop.
+        group.renderOrder = Math.max(group.renderOrder, mesh.renderOrder ?? 0);
         group.chunks.push(geometry);
         groups.set(key, group);
       }
@@ -805,7 +812,7 @@ export class SceneCollapse {
         mesh.frustumCulled = false;
         // An overlay drew last because it was added last. Merged into one object it needs to say
         // so explicitly, or the level draws over the HUD.
-        mesh.renderOrder = renderOrder;
+        mesh.renderOrder = group.renderOrder;
         camera.add(mesh as never as IObjectLike);
         added.push(mesh as never as IObjectLike);
         overlayDraws += 1;
@@ -1201,6 +1208,23 @@ export class SceneCollapse {
       detached.push(child);
       this.#scene.remove(child);
     }
+    // Each moving part's original ancestry, captured before the merge detaches it. Afterwards the
+    // part is no longer under the parent the game hides, so the chain has to be remembered.
+    const partAncestry = new Map<IObjectLike, IObjectLike[]>();
+    for (const part of movingParts) {
+      const chain: IObjectLike[] = [];
+      for (let node: IObjectLike | null = part.object; node !== null; node = node.parent) {
+        chain.push(node);
+      }
+      partAncestry.set(part.object, chain);
+    }
+    const drawnPart = (object: IObjectLike): boolean => {
+      const chain = partAncestry.get(object);
+      if (chain === undefined) return object.visible === true;
+      for (const node of chain) if (node.visible !== true) return false;
+      return true;
+    };
+
     const movingRoots: IObjectLike[] = [];
     for (const part of movingParts) {
       let root = part.object;
@@ -1214,8 +1238,14 @@ export class SceneCollapse {
       for (const part of movingParts) {
         transformData.set(part.object.matrixWorld.elements, part.index * 16);
         writeNormals(normalData, part, normalMatrix);
-        if (part.object.visible !== true) {
+        if (!drawnPart(part.object)) {
           // A hidden part has no draw of its own to skip, so it is pushed out of the frustum.
+          //
+          // Ancestors count. A game hides a subtree by hiding its root — which is exactly what a
+          // loading screen does — and the meshes inside it keep `visible === true`. Reading only
+          // the part's own flag let every one of those keep drawing after the merge lifted it out
+          // of the hidden parent: on a Pixel 8 an animated waterfall drew through the loading
+          // backdrop for the frames between the collapse landing and the screen coming down.
           transformData[part.index * 16 + 12] = 1e9;
           transformData[part.index * 16 + 13] = 1e9;
           transformData[part.index * 16 + 14] = 1e9;

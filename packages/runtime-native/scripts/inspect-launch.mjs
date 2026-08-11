@@ -129,7 +129,28 @@ export function classifyFrame(png, palette, tolerance = 14, box) {
     else foreign += 1;
     }
   }
+  // A coarse grid of the frame, kept so consecutive frames can be compared. Thresholds cannot
+  // tell a small leak from a status bar, but a leak is a *change* against the frame before it and
+  // the loading screen is otherwise still except for the bar.
+  const cols = 48;
+  const rows = 96;
+  const grid = new Float32Array(cols * rows);
+  const counts = new Uint32Array(cols * rows);
+  for (let y = region.y; y < region.y + region.height; y += 1) {
+    const cell = Math.min(rows - 1, Math.floor(((y - region.y) / region.height) * rows)) * cols;
+    for (let x = region.x; x < region.x + region.width; x += 1) {
+      const i = (y * png.width + x) * 4;
+      const at = cell + Math.min(cols - 1, Math.floor(((x - region.x) / region.width) * cols));
+      grid[at] += (png.data[i] + png.data[i + 1] + png.data[i + 2]) / 3;
+      counts[at] += 1;
+    }
+  }
+  for (let cell = 0; cell < grid.length; cell += 1) grid[cell] /= counts[cell] || 1;
+
   return {
+    grid,
+    gridCols: cols,
+    gridRows: rows,
     width: region.width,
     height: region.height,
     backdrop: backdrop / total,
@@ -156,18 +177,48 @@ export function summarise(frames) {
   const first = loadingIndexes[0];
   const last = loadingIndexes[loadingIndexes.length - 1];
 
-  // While the screen is up it is meant to be opaque. Anything else on screen is the defect this
-  // harness exists to catch, so the bar is deliberately low rather than tuned to pass.
+  // The reveal is the defect's home, and it is one frame wide, so the window has to include the
+  // frames on either side of the screen coming down. Ending at the last backdrop-dominant frame
+  // missed it entirely: the leak *is* the frame where the backdrop stopped dominating.
+  const from = Math.max(0, first - 2);
+  const to = Math.min(frames.length - 1, last + 6);
+
+  // A phone draws its own status bar and notifications over the game, which is foreign content
+  // that is not a defect. Those cover a few percent; scene geometry breaking through covers much
+  // more. The threshold sits above the one and far below the other, and the frames are kept so
+  // the claim can be checked by eye rather than trusted.
+  const LEAK = 0.05;
   const leaks = [];
-  for (let index = first; index <= last; index += 1) {
+  for (let index = from; index <= to; index += 1) {
     const frame = frames[index];
-    if (frame.backdrop > 0.2 && frame.foreign > 0.01) {
-      leaks.push({ index, foreign: frame.foreign, backdrop: frame.backdrop });
+    if (frame.backdrop > 0.2 && frame.foreign > LEAK) {
+      leaks.push({ index, foreign: frame.foreign, backdrop: frame.backdrop, kind: "area" });
     }
   }
 
-  // A full-screen wash of the bar's own colour is the unscaled-quad defect, which is not "foreign"
-  // because the colour is legitimate — it is the area that is wrong.
+  // While the screen is up the picture is still but for the bar, so any cell that changes by more
+  // than a shade is something appearing that should not. This is what finds a leak too small for
+  // any area threshold to separate from a status bar.
+  for (let index = first + 1; index <= last; index += 1) {
+    const previous = frames[index - 1];
+    const frame = frames[index];
+    if (previous?.grid === undefined || frame.grid === undefined) continue;
+    let changed = 0;
+    let worst = 0;
+    for (let cell = 0; cell < frame.grid.length; cell += 1) {
+      // The bar lives in a band across the middle; ignore the rows it occupies so filling it is
+      // not reported as a leak.
+      const row = Math.floor(cell / frame.gridCols) / frame.gridRows;
+      if (row > 0.44 && row < 0.56) continue;
+      const delta = Math.abs(frame.grid[cell] - previous.grid[cell]);
+      if (delta > 12) changed += 1;
+      if (delta > worst) worst = delta;
+    }
+    if (changed > 4) {
+      leaks.push({ index, changedCells: changed, worstDelta: Math.round(worst), kind: "flicker" });
+    }
+  }
+
   const progressWash = frames
     .map((frame, index) => ({ index, progress: frame.progress }))
     .filter(({ progress }) => progress > 0.2);
@@ -179,7 +230,12 @@ export function summarise(frames) {
     loadingFirstFrame: first,
     loadingLastFrame: last,
     loadingFrames: last - first + 1,
+    revealWindow: { from, to },
     maxProgressArea: frames.reduce((worst, frame) => Math.max(worst, frame.progress), 0),
+    // Reported always, so a run that finds nothing still says how close it came.
+    worstForeignInReveal: frames
+      .slice(from, to + 1)
+      .reduce((worst, frame) => Math.max(worst, frame.foreign), 0),
     leaks,
     progressWash,
   };
@@ -301,6 +357,9 @@ async function main() {
   console.log(`  recorder letterbox cropped: ${box.width}x${box.height} at ${box.x},${box.y}`);
   console.log(`  loading screen: frames ${report.loadingFirstFrame}–${report.loadingLastFrame} (${report.loadingFrames})`);
   console.log(`  largest progress-colour area in any frame: ${percent(report.maxProgressArea)}`);
+  console.log(
+    `  reveal window: frames ${report.revealWindow.from}-${report.revealWindow.to}, worst foreign ${percent(report.worstForeignInReveal)}`,
+  );
 
   // Keep the frames that prove a finding; drop the rest so a run does not leave 200 PNGs behind.
   const keep = new Set(report.leaks.map((leak) => leak.index).concat(report.progressWash.map((w) => w.index)));
