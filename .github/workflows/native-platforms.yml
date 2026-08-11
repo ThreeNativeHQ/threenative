@@ -42,6 +42,12 @@ jobs:
           # "build" before the emulator is ever reached.
           rustup target add aarch64-linux-android x86_64-linux-android
           node packages/runtime-native/scripts/download-deps.mjs --android
+          # --android fetches only sdl3 glue, wgpu-android, sdl3-android and quiche-android.
+          # src/webgpu/bindings.cpp includes stb_image.h unconditionally, so the NDK build
+          # fails with "'stb_image.h' file not found" without these. The iOS lane already
+          # fetches both explicitly (verify-ios-simulator.mjs); this mirrors it.
+          node packages/runtime-native/scripts/download-deps.mjs --only stb
+          node packages/runtime-native/scripts/download-deps.mjs --only cgltf
       - name: Capture browser references
         run: |
           set +e
