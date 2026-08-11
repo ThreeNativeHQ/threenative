@@ -4,11 +4,30 @@ prd_contract: v1
 
 # PRD-070 — Cold start and first-frame hitches: the costs that are not frame rate
 
-**Status: NO GATE EXISTS, 2026-08-10.** Nothing in this repository measures launch time or a
-frame-time spike. The launch numbers in §2 came from reading logcat timestamps by hand on a
-physical Pixel 8 and are **indicative, not gated** — they are the reason to build an
-instrument, not evidence that a fix is needed. This PRD makes no mobile-readiness claim and no
-iOS claim of any kind.
+**Status: EXECUTED 2026-08-11.** Phase 0 closed with an instrument and a device number; Phases 1, 2
+and 4 closed RECOMMEND-AGAINST or NOT REACHABLE on that number; Phase 3 delivered its hitch
+instrument, the `compileAsync` surface it required, and — after the warm-up itself measured inside
+run-to-run variance and was dropped — the fix that did work: `Ctx.startup` plus a loading screen
+shipped in every template. Launch to a complete picture went **2,877 ms → 1,051 ms** and the worst
+frame **3,474 ms → 2,712 ms**, because geometry hidden behind the loading screen is never drawn and
+so its shaders are never compiled. Evidence:
+`docs/verification/cold-start-and-hitches-2026-08-11.md`.
+
+Launch on the physical Pixel 8 is **2,882 ms median / 3,031 ms p95** over five cold launches, and
+**86.8% of it is the first rendered frame**. The parse-and-compile segment that Phases 1 and 2
+were built to attack is **230 ms — 8.0%**, so precompiled bytecode is not worth its packaging and
+provenance cost on this subject; the falsifier is a subject whose compile segment exceeds ~30% of
+launch. Phase 4's persisted pipeline cache is confirmed unreachable through the API this host
+binds. **What the instrument found instead is that the largest stall in the session was not in
+launch at all**: `SceneCollapse` froze one frame for 3,608 ms. That is now 1,845 ms and reported as
+`SceneCollapseReport.bakeMs`, and `TN_FRAME_HITCH` shows it lands at frame 43 of every launch
+against a 9 ms median. **What remains is a loading-screen problem as much as a speed problem**: the
+launch and the collapse are costs this device pays somewhere, and nothing yet lets a game wait on
+them before showing the player a half-drawn map. That signal is the next piece of work.
+
+The §2 numbers below were hand-read from logcat before the instrument existed and are superseded
+by the measured breakdown. They are kept because the reasoning that led to building the instrument
+still holds. This PRD makes no mobile-readiness claim and no iOS claim of any kind.
 
 **Complexity: 6 → MEDIUM mode.** One instrument that does not exist, one packaging change with
 a real toolchain consequence, one hitch fix that mostly is not framework code, and one

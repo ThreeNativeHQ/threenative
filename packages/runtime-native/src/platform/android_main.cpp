@@ -8,6 +8,7 @@
 #ifdef __ANDROID__
 
 #include "mystral/runtime.h"
+#include "mystral/cold_start.h"
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <fstream>
@@ -71,6 +72,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     // Android does not reliably route Rust/C stderr through logcat. Preserve
     // backend panic diagnostics in app-private storage for the runtime gate.
     std::freopen("/data/user/0/com.mystral.engine/files/native-stderr.log", "w", stderr);
+    mystral::coldStartMark("process");
     LOGI("SDL_main called with %d arguments", argc);
     for (int i = 0; i < argc; i++) {
         LOGI("  arg[%d] = %s", i, argv[i]);
@@ -89,7 +91,9 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     if (scriptPath.find("asset://") == 0) {
         // Load from Android assets
         std::string assetPath = scriptPath.substr(8);  // Remove "asset://"
+        mystral::coldStartMark("asset_begin");
         scriptContent = readAsset(assetPath);
+        mystral::coldStartMark("asset_complete");
     } else {
         // Load from file system
         std::ifstream file(scriptPath);
@@ -126,6 +130,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
 
     LOGI("Runtime created successfully");
+    mystral::coldStartMark("runtime_created");
 
     if (argc > 2 && argv[2] && argv[2][0] != '\0') {
         std::string endpoint = argv[2];
@@ -153,6 +158,9 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
     // Execute the script
     LOGI("About to call evalScript...");
+    // The runtime evaluates its own bootstrap scripts first, so the engine's compile markers
+    // fire three times a launch. This brackets the one that is the game.
+    mystral::coldStartMark("game_eval_begin");
     bool success = runtime->evalScript(scriptContent, scriptPath);
     LOGI("evalScript returned: %s", success ? "true" : "false");
     if (!success) {

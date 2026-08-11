@@ -26,6 +26,7 @@ class FakeResizeObserver {
 function renderer(canvas: HTMLCanvasElement) {
   return {
     canvas,
+    compileAsync: async () => undefined,
     compute: () => undefined,
     domElement: canvas,
     kind: "webgl2" as const,

@@ -7,6 +7,18 @@ export interface RendererLike {
   readonly domElement: HTMLCanvasElement;
   readonly kind: RendererKind;
   readonly raw: unknown;
+  /**
+   * Builds and compiles a scene's pipelines before anything draws it.
+   *
+   * On a phone each distinct shader is compiled the first time something using it is drawn, which
+   * happens inside a frame the player is watching: 2,500 ms of a 2,882 ms Pixel 8 cold start sits
+   * between the bundle finishing and the first frame reaching the display. Calling this during
+   * load moves that cost somewhere the player is already waiting.
+   *
+   * It is on the wrapper for one reason: without it a game must cast through `.raw` to warm up,
+   * and a game that cannot warm up without a cast will not warm up.
+   */
+  compileAsync(scene: Object3D, camera: Camera): Promise<void>;
   compute(node: unknown): void;
   render(scene: Object3D, camera: Camera): void;
   setOutputNode(node: unknown): void;
@@ -32,6 +44,7 @@ export interface RendererOptions {
 type RendererInstance = {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
+  compileAsync?: (scene: Object3D, camera: Camera) => Promise<void>;
   compute?: (node: unknown) => void;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
@@ -63,6 +76,12 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): RendererLike {
     domElement: raw.domElement,
     kind,
     raw,
+    compileAsync: async (scene, camera) => {
+      // WebGL has no equivalent and needs none — it compiles on first draw either way. Resolving
+      // rather than throwing keeps one warm-up call working on every renderer a game may get.
+      if (typeof raw.compileAsync !== "function") return;
+      await raw.compileAsync(scene, camera);
+    },
     compute: (node) => {
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")

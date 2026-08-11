@@ -39,6 +39,9 @@ interface ObjectLike {
   isMesh?: boolean;
   geometry?: GeometryLike;
   material?: MaterialLike | MaterialLike[];
+  renderOrder?: number;
+  /** Render-layer mask. The camera pass parks consumed overlays on a layer nothing renders. */
+  layers?: { mask: number };
   add(child: ObjectLike): void;
   remove(child: ObjectLike): void;
   traverse(callback: (object: ObjectLike) => void): void;
@@ -68,6 +71,19 @@ export interface SceneCollapseReport {
   readonly mergedMeshes: number;
   /** Moving parts that kept an independent transform. */
   readonly movingParts: number;
+  /** Camera-parented meshes — HUDs and overlays — folded by the camera pass. */
+  readonly overlayMeshes?: number;
+  /** Draws those overlay meshes now resolve to, one per material instance still in use. */
+  readonly overlayDraws?: number;
+  /**
+   * Milliseconds actually spent baking, summed across the frames it was spread over — not the
+   * wall clock from start to finish, which would mostly count frames that did nothing.
+   *
+   * It is the cost of the collapse, and it is reported rather than left in a profiler nobody
+   * runs. It is no longer the length of a stall: the work is split against a per-frame budget, so
+   * no single frame carries it.
+   */
+  readonly bakeMs?: number;
 }
 
 export interface SceneCollapseOptions {
@@ -78,6 +94,15 @@ export interface SceneCollapseOptions {
   readonly observeFrames?: number;
   /** Below this mesh count the collapse costs more than it saves and the pass declines. */
   readonly minMeshes?: number;
+  /**
+   * Milliseconds of baking to spend per frame. The collapse is split across frames so it never
+   * blocks; too large and it is a stall again, too small and the wait drags on.
+   *
+   * The default is deliberately above a 60 fps frame budget. This work happens during startup,
+   * where a game should be showing a loading screen and nothing needs to animate but a progress
+   * bar — spending less per frame does not make the player wait less, it makes them wait longer.
+   */
+  readonly bakeBudgetMs?: number;
   /** Called once, when the pass collapses or declines. */
   readonly onReport?: (report: SceneCollapseReport) => void;
 }
@@ -105,6 +130,66 @@ interface CollapseGroup {
  * extra UV sets, skinning weights — is dropped deliberately rather than merged half-present.
  */
 const CANONICAL_ATTRIBUTES = ["position", "normal", "uv", "color", "tnOwnerId"];
+
+/**
+ * Camera-parented meshes below this count are left alone. A merge costs a transform slot and an
+ * upload per mesh per frame; under a dozen draws that is not a trade worth making.
+ */
+const OVERLAY_FLOOR = 12;
+
+/**
+ * Bakes a world (or owner-local) transform into a geometry's own arrays.
+ *
+ * `BufferGeometry.applyMatrix4` is the obvious call and it was measured at **1,418 ms of a
+ * 2,518 ms collapse** on a Pixel 8 — 596,502 vertices reached through `getX`/`setXYZ` accessors,
+ * which an interpreter cannot make cheap. Reading the two typed arrays directly and inlining the
+ * multiply does the identical arithmetic without the per-vertex dispatch.
+ *
+ * Only `position` and `normal` are touched, which is all this pass keeps; the caller has already
+ * dropped everything outside `CANONICAL_ATTRIBUTES`, so there is no tangent left to rotate.
+ */
+function bakeTransform(geometry: GeometryLike, matrix: Matrix4, normalMatrix: Matrix3): void {
+  const position = geometry.getAttribute("position") as { array?: Float32Array } | undefined;
+  const positions = position?.array;
+  if (positions !== undefined) {
+    const m = matrix.elements;
+    for (let index = 0; index < positions.length; index += 3) {
+      const x = positions[index] as number;
+      const y = positions[index + 1] as number;
+      const z = positions[index + 2] as number;
+      const w =
+        1 /
+        ((m[3] as number) * x + (m[7] as number) * y + (m[11] as number) * z + (m[15] as number) ||
+          1);
+      positions[index] =
+        ((m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number)) *
+        w;
+      positions[index + 1] =
+        ((m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number)) *
+        w;
+      positions[index + 2] =
+        ((m[2] as number) * x + (m[6] as number) * y + (m[10] as number) * z + (m[14] as number)) *
+        w;
+    }
+  }
+  const normal = geometry.getAttribute("normal") as { array?: Float32Array } | undefined;
+  const normals = normal?.array;
+  if (normals !== undefined) {
+    const n = normalMatrix.elements;
+    for (let index = 0; index < normals.length; index += 3) {
+      const x = normals[index] as number;
+      const y = normals[index + 1] as number;
+      const z = normals[index + 2] as number;
+      const nx = (n[0] as number) * x + (n[3] as number) * y + (n[6] as number) * z;
+      const ny = (n[1] as number) * x + (n[4] as number) * y + (n[7] as number) * z;
+      const nz = (n[2] as number) * x + (n[5] as number) * y + (n[8] as number) * z;
+      const length = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      normals[index] = nx / length;
+      normals[index + 1] = ny / length;
+      normals[index + 2] = nz / length;
+    }
+  }
+}
 
 /** A subtree holding any light stays in the scene, whatever else it also holds. */
 function containsLight(object: ObjectLike): boolean {
@@ -366,31 +451,84 @@ export class SceneCollapse {
   #meshCount = -1;
   #reportedSmall = false;
   #report: SceneCollapseReport | undefined;
+  readonly #bakeBudgetMs: number;
+  #steps: Generator<number, void, void> | undefined;
+  #bakeProgress = 0;
+  #bakeSpentMs = 0;
+  readonly #settled: Promise<void>;
+  #markSettled: () => void = () => undefined;
   #restore: (() => void) | undefined;
   #update: (() => void) | undefined;
 
   constructor(scene: ObjectLike, options: SceneCollapseOptions = {}) {
     const observeFrames = options.observeFrames ?? 45;
     const minMeshes = options.minMeshes ?? 200;
+    const bakeBudgetMs = options.bakeBudgetMs ?? 12;
     if (!Number.isInteger(observeFrames) || observeFrames < 1)
       throw new Error("SceneCollapse.observeFrames must be a positive integer.");
     if (!Number.isInteger(minMeshes) || minMeshes < 1)
       throw new Error("SceneCollapse.minMeshes must be a positive integer.");
+    if (!(bakeBudgetMs > 0) || !Number.isFinite(bakeBudgetMs))
+      throw new Error("SceneCollapse.bakeBudgetMs must be a positive number.");
     this.#scene = scene;
     this.#observeFrames = observeFrames;
     this.#minMeshes = minMeshes;
+    this.#bakeBudgetMs = bakeBudgetMs;
     // A pass that silently declines is a pass nobody can debug: the frame rate simply stays bad
     // and the reason never leaves the process. It always says what it decided.
-    this.#onReport =
+    this.#settled = new Promise((resolve) => {
+      this.#markSettled = resolve;
+    });
+    const report =
       options.onReport ??
-      ((report) => {
-        console.info(`TN_SCENE_COLLAPSE:${JSON.stringify(report)}`);
+      ((value: SceneCollapseReport) => {
+        console.info(`TN_SCENE_COLLAPSE:${JSON.stringify(value)}`);
       });
+    // Every exit from this pass goes through one callback, so `whenSettled` cannot miss a verdict
+    // that a future branch forgets to announce.
+    this.#onReport = (value) => {
+      report(value);
+      this.#markSettled();
+    };
   }
 
   /** The pass has reached a verdict — collapsed or declined. */
   get settled(): boolean {
     return this.#report !== undefined;
+  }
+
+  /**
+   * How far through its observation window the pass is, 0 to 1.
+   *
+   * Real progress, not a guess, for the only part of startup whose length is known in advance. The
+   * collapse itself is one blocking call and cannot report from inside; a bar driven by this
+   * fills, holds while the bake runs, and completes.
+   */
+  get progress(): number {
+    if (this.#report !== undefined) return 1;
+    // Observation is the first half, baking the second. Both are real fractions of real work, so
+    // a bar driven by this moves throughout instead of filling and then hanging.
+    const observing = Math.min(1, this.#observed / this.#observeFrames);
+    return this.#steps === undefined && this.#bakeProgress === 0
+      ? observing * 0.5
+      : 0.5 + this.#bakeProgress * 0.5;
+  }
+
+  /**
+   * Resolves once this pass has said something, whatever it said.
+   *
+   * A game needs this to know when it is safe to show the player the world. Without it the launch
+   * looks like the one the operator reported: a half-drawn map for several seconds, because each
+   * shader compiles the first time something using it is drawn, and then a multi-second stall when
+   * the collapse lands. Both costs are real and have to be paid somewhere; a game that can wait on
+   * this pays them behind a loading screen instead of in front of the player.
+   *
+   * It resolves on the *first* report, including the one that declines a scene too small to be
+   * worth collapsing — otherwise a small game would wait forever for a pass that is never going to
+   * run.
+   */
+  whenSettled(): Promise<void> {
+    return this.#settled;
   }
 
   get report(): SceneCollapseReport | undefined {
@@ -427,9 +565,49 @@ export class SceneCollapse {
         return;
       }
     }
+    if (this.#steps !== undefined) {
+      this.#pumpBake();
+      return;
+    }
     this.#sample();
     this.#observed += 1;
-    if (this.#observed >= this.#observeFrames) this.#collapse();
+    if (this.#observed >= this.#observeFrames) {
+      this.#steps = this.#collapseSteps();
+      this.#pumpBake();
+    }
+  }
+
+  /**
+   * Spends this frame's budget on the bake.
+   *
+   * The budget is checked between meshes rather than enforced inside one, so a single enormous
+   * mesh can still overrun it — bounding that would mean splitting a geometry mid-transform, and
+   * a half-transformed geometry is a wrong picture rather than a slow one.
+   */
+  #pumpBake(): void {
+    const steps = this.#steps;
+    if (steps === undefined) return;
+    const startedAt = globalThis.performance?.now() ?? 0;
+    const spend = (): void => {
+      this.#bakeSpentMs += (globalThis.performance?.now() ?? 0) - startedAt;
+    };
+    for (;;) {
+      const step = steps.next();
+      if (step.done === true) {
+        spend();
+        this.#steps = undefined;
+        this.#bakeProgress = 1;
+        // A run that ends without a verdict fell under the mesh floor and reset itself; let the
+        // observation window start again rather than leaving the pass wedged.
+        if (this.#report === undefined) this.#bakeProgress = 0;
+        return;
+      }
+      this.#bakeProgress = typeof step.value === "number" ? step.value : this.#bakeProgress;
+      if ((globalThis.performance?.now() ?? 0) - startedAt >= this.#bakeBudgetMs) {
+        spend();
+        return;
+      }
+    }
   }
 
   /** Put the original scene back. Used when a supposedly static object turns out to move. */
@@ -468,14 +646,215 @@ export class SceneCollapse {
     });
   }
 
+  /**
+   * Folds each camera's own subtree — where every HUD and overlay lives — into one draw per
+   * material instance.
+   *
+   * The scene pass cannot touch these: it bakes world matrices, and a camera-parented mesh baked
+   * in world space strands itself wherever the camera happened to be standing. So it skips them,
+   * and on a real game that left the HUD as ~93 of ~110 draws, worth 11 ms of a 17 ms frame on a
+   * Pixel 8 — the whole gap between 57 fps and the budget, while the scene it did collapse cost
+   * 3.6 ms. This pass bakes in *camera* space instead and attaches the result to the camera, so
+   * the overlay rides along exactly as it did.
+   *
+   * Three things a HUD does that a level does not, and each decides part of the design:
+   *
+   * - **Digits toggle `visible`.** A seven-segment counter hides segments rather than moving them,
+   *   and a 45-frame window will not see a clock tick. So nothing here is classified static:
+   *   every overlay mesh gets a transform slot, and an invisible one is pushed out of the frustum
+   *   the same way a hidden moving part is.
+   * - **Hearts recolour their own material.** So groups are keyed by material *identity*, never
+   *   merged by look and never given baked vertex colours. The game keeps writing to the same
+   *   material object and the merged draw shows it.
+   * - **The source meshes must keep updating.** They are parked on a render layer nothing draws
+   *   rather than detached, so Three.js still refreshes their world matrices and the game's own
+   *   `visible` writes still mean what they say.
+   */
+  #collapseCameras(): { overlayMeshes: number; overlayDraws: number } {
+    let overlayMeshes = 0;
+    let overlayDraws = 0;
+    const cameras: ObjectLike[] = [];
+    this.#scene.traverse((object) => {
+      if (object.isCamera === true) cameras.push(object);
+    });
+    for (const camera of cameras) {
+      const meshes: ObjectLike[] = [];
+      camera.traverse((object) => {
+        if (object === camera || object.isMesh !== true) return;
+        if (object.geometry?.getAttribute("position") === undefined) return;
+        if (object.layers === undefined) return;
+        meshes.push(object);
+      });
+      // A handful of overlay meshes cost less to draw than a merge costs to maintain.
+      if (meshes.length < OVERLAY_FLOOR) continue;
+      camera.updateMatrixWorld(true);
+      const cameraInverse = new Matrix4().copy(camera.matrixWorld).invert();
+      const groups = new Map<string, { material: MaterialLike; chunks: GeometryLike[] }>();
+      const parts: { object: ObjectLike; index: number }[] = [];
+      let renderOrder = 0;
+      let usable = true;
+      for (const mesh of meshes) {
+        const material = materialOf(mesh);
+        const source = mesh.geometry;
+        if (material === undefined || source === undefined) {
+          usable = false;
+          break;
+        }
+        const index = parts.length;
+        parts.push({ object: mesh, index });
+        renderOrder = Math.max(renderOrder, mesh.renderOrder ?? 0);
+        // Geometry is taken exactly as the game authored it. Placement is entirely the storage
+        // matrix's job, so a layout change — a resize moving the stick — needs no rebake.
+        const geometry = source.index !== null ? source.toNonIndexed() : source.clone();
+        for (const name of Object.keys(geometry.attributes)) {
+          if (!CANONICAL_ATTRIBUTES.includes(name)) geometry.deleteAttribute(name);
+        }
+        if (geometry.getAttribute("normal") === undefined)
+          (geometry as unknown as { computeVertexNormals(): void }).computeVertexNormals();
+        const count = geometry.getAttribute("position")?.count ?? 0;
+        const ids = new Uint32Array(count);
+        ids.fill(index);
+        geometry.setAttribute("tnOwnerId", new Uint32BufferAttribute(ids, 1));
+        // Identity, not look. Merging two materials that differ only by colour would fuse two
+        // hearts into one draw, and the next life the game takes would recolour both.
+        const key = objectKey(material as never);
+        const group = groups.get(key) ?? { material, chunks: [] };
+        group.chunks.push(geometry);
+        groups.set(key, group);
+      }
+      if (!usable) continue;
+
+      const slots = Math.max(1, parts.length);
+      const transformData = new Float32Array(slots * 16);
+      const normalData = new Float32Array(slots * 16);
+      const transformAttribute = new StorageBufferAttribute(transformData, 16);
+      const normalAttribute = new StorageBufferAttribute(normalData, 16);
+      const ownerIdNode = attribute("tnOwnerId", "uint") as never;
+      const ownerMatrix = storage(transformAttribute, "mat4", slots).element(ownerIdNode);
+      const ownerNormalMatrix = storage(normalAttribute, "mat4", slots).element(ownerIdNode);
+
+      const added: ObjectLike[] = [];
+      const patched: { material: MaterialLike; position: unknown; normal: unknown }[] = [];
+      let failed = false;
+      for (const group of groups.values()) {
+        const shared = sharedAttributeNames(group.chunks);
+        if (!shared.includes("position") || !shared.includes("tnOwnerId")) {
+          failed = true;
+          break;
+        }
+        for (const chunk of group.chunks) {
+          for (const name of Object.keys(chunk.attributes)) {
+            if (!shared.includes(name)) chunk.deleteAttribute(name);
+          }
+        }
+        const geometry = mergeGeometries(group.chunks as never[], false);
+        if (geometry === null) {
+          failed = true;
+          break;
+        }
+        // The game's own material instance, mutated rather than cloned. A clone would sever the
+        // link the HUD relies on: `heart.material.color.setHex()` writes to this object, and a
+        // copy would keep showing the colour it was copied at. `restore()` puts the nodes back.
+        const material = group.material as MaterialLike & {
+          positionNode?: unknown;
+          normalNode?: unknown;
+        };
+        patched.push({
+          material,
+          position: material.positionNode,
+          normal: material.normalNode,
+        });
+        material.positionNode = ownerMatrix.mul(vec4(positionLocal, 1)).xyz;
+        material.normalNode = ownerNormalMatrix.mul(vec4(normalLocal, 0)).xyz.normalize();
+        const mesh = new Mesh(geometry as never, material as never);
+        mesh.frustumCulled = false;
+        // An overlay drew last because it was added last. Merged into one object it needs to say
+        // so explicitly, or the level draws over the HUD.
+        mesh.renderOrder = renderOrder;
+        camera.add(mesh as never as ObjectLike);
+        added.push(mesh as never as ObjectLike);
+        overlayDraws += 1;
+      }
+      if (failed) {
+        for (const entry of patched) {
+          entry.material.positionNode = entry.position;
+          entry.material.normalNode = entry.normal;
+        }
+        for (const mesh of added) camera.remove(mesh);
+        overlayDraws -= added.length;
+        continue;
+      }
+
+      const masks = new Map<ObjectLike, number>();
+      for (const part of parts) {
+        const layers = part.object.layers;
+        if (layers === undefined) continue;
+        masks.set(part.object, layers.mask);
+        layers.mask = 0;
+      }
+      overlayMeshes += parts.length;
+
+      const normalMatrix = new Matrix3();
+      const world = new Matrix4();
+      const writeTransforms = (): void => {
+        camera.updateMatrixWorld(true);
+        cameraInverse.copy(camera.matrixWorld).invert();
+        for (const part of parts) {
+          world.copy(cameraInverse).multiply(part.object.matrixWorld);
+          transformData.set(world.elements, part.index * 16);
+          writeNormalMatrix(normalData, part.index * 16, normalMatrix.getNormalMatrix(world));
+          if (!this.#drawn(part.object, camera)) {
+            transformData[part.index * 16 + 12] = 1e9;
+            transformData[part.index * 16 + 13] = 1e9;
+            transformData[part.index * 16 + 14] = 1e9;
+          }
+        }
+        transformAttribute.needsUpdate = true;
+        normalAttribute.needsUpdate = true;
+      };
+      // Filled now, not on the next frame's update. The buffer starts zeroed, and one frame drawn
+      // through an all-zero matrix collapses every overlay vertex onto a point — a flash of the
+      // scene where a HUD or a loading screen should be, for exactly one frame after the collapse.
+      writeTransforms();
+      const previousUpdate = this.#update;
+      this.#update = () => {
+        previousUpdate?.();
+        writeTransforms();
+      };
+      const previousRestore = this.#restore;
+      this.#restore = () => {
+        for (const mesh of added) camera.remove(mesh);
+        for (const entry of patched) {
+          entry.material.positionNode = entry.position;
+          entry.material.normalNode = entry.normal;
+        }
+        for (const [object, mask] of masks) {
+          if (object.layers !== undefined) object.layers.mask = mask;
+        }
+        previousRestore?.();
+      };
+    }
+    return { overlayMeshes, overlayDraws };
+  }
+
+  /** True when the game currently wants this overlay mesh on screen, ancestors included. */
+  #drawn(object: ObjectLike, camera: ObjectLike): boolean {
+    for (let current: ObjectLike | null = object; current !== null; current = current.parent) {
+      if (current.visible !== true) return false;
+      if (current === camera) break;
+    }
+    return true;
+  }
+
   #decline(reason: string, sourceMeshes: number): void {
     this.#report = { collapsed: false, reason, sourceMeshes, mergedMeshes: 0, movingParts: 0 };
     this.#onReport(this.#report);
   }
 
   /**
-   * A camera-parented subtree — where every framework HUD lives — must survive untouched. Baking
-   * its world matrix would strand it wherever the camera happened to be when the pass ran.
+   * A camera-parented subtree is not the scene pass's to bake: its world matrix would strand the
+   * subtree wherever the camera happened to be standing. `#collapseCameras` folds it in camera
+   * space instead, once this pass is done.
    */
   #excluded(object: ObjectLike): boolean {
     for (let current: ObjectLike | null = object; current !== null; current = current.parent) {
@@ -503,7 +882,15 @@ export class SceneCollapse {
     return object.parent ?? object;
   }
 
-  #collapse(): void {
+  /**
+   * The collapse, as a generator that yields between meshes.
+   *
+   * Done in one call this took 3.6 s on a Pixel 8 — a freeze longer than the launch before it.
+   * Yielding lets `frame()` spend a few milliseconds per frame on it instead, so a loading bar
+   * keeps moving and nothing blocks. The merge at the end is not split: it was 138 ms of the
+   * original 2,518 ms and splitting it would mean holding half-merged geometry across frames.
+   */
+  *#collapseSteps(): Generator<number, void, void> {
     this.#scene.updateMatrixWorld(true);
     const meshes: ObjectLike[] = [];
     this.#scene.traverse((object) => {
@@ -525,8 +912,11 @@ export class SceneCollapse {
     const groups = new Map<string, CollapseGroup>();
     const bakedFrom: { mesh: ObjectLike; parent: ObjectLike }[] = [];
     const inverse = new Matrix4();
+    const bakeMatrix = new Matrix4();
+    const bakeNormalMatrix = new Matrix3();
 
-    for (const mesh of meshes) {
+    for (const [meshIndex, mesh] of meshes.entries()) {
+      yield meshIndex / meshes.length;
       const material = materialOf(mesh);
       if (material === undefined) {
         this.#decline("a mesh has no material", meshes.length);
@@ -555,18 +945,21 @@ export class SceneCollapse {
         this.#decline("a mesh lost its geometry between the scan and the merge", meshes.length);
         return;
       }
-      const geometry = (
-        source.index !== null ? source.toNonIndexed() : source.clone()
-      ).applyMatrix4(new Matrix4().copy(local));
+      const geometry = source.index !== null ? source.toNonIndexed() : source.clone();
       // Reduce every chunk to the same canonical attributes before grouping. Merging geometries
       // whose attribute sets disagree used to intersect them, and the first casualty was `normal`:
       // lit materials then shaded from nothing and the entire level rendered black while the
       // unlit HUD and waterfalls looked perfect. Missing normals are computed, never dropped.
+      //
+      // This runs *before* the transform, not after: every attribute dropped here is one the bake
+      // below would otherwise have walked vertex by vertex for nothing.
       for (const name of Object.keys(geometry.attributes)) {
         if (!CANONICAL_ATTRIBUTES.includes(name)) geometry.deleteAttribute(name);
       }
       if (geometry.getAttribute("normal") === undefined)
         (geometry as unknown as { computeVertexNormals(): void }).computeVertexNormals();
+      bakeMatrix.copy(local);
+      bakeTransform(geometry, bakeMatrix, bakeNormalMatrix.getNormalMatrix(bakeMatrix));
       if (ownerId !== undefined) {
         const count = geometry.getAttribute("position")?.count ?? 0;
         const ids = new Uint32Array(count);
@@ -753,11 +1146,15 @@ export class SceneCollapse {
       for (const entry of bakedFrom) entry.parent.add(entry.mesh);
       for (const child of detached) this.#scene.add(child);
     };
+    const overlay = this.#collapseCameras();
     this.#report = {
       collapsed: true,
       sourceMeshes: meshes.length,
       mergedMeshes,
       movingParts: movingParts.length,
+      overlayMeshes: overlay.overlayMeshes,
+      overlayDraws: overlay.overlayDraws,
+      bakeMs: this.#bakeSpentMs,
     };
     this.#onReport(this.#report);
   }

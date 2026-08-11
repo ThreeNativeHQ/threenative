@@ -44,6 +44,18 @@ export type SceneEnterResult<
 > = // biome-ignore lint/suspicious/noConfusingVoidType: void preserves existing Scene.enter overrides.
 void | SceneFrame<TState, TPhysics>;
 
+export interface StartupStatus {
+  /**
+   * `observing` while the collapse watches what moves, `collapsing` during the single frame it
+   * bakes in, `ready` once the world is safe to show.
+   */
+  readonly phase: "observing" | "collapsing" | "ready";
+  /** 0 to 1 across the observation window, then 1. Real progress for the part that has any. */
+  readonly progress: number;
+  /** Resolves on every path, including a scene too small to collapse, so it is always awaitable. */
+  whenReady(): Promise<void>;
+}
+
 export interface Ctx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -67,6 +79,18 @@ export interface Ctx<
   ) => Promise<void>;
   readonly random: Random;
   readonly raycast: (options?: RaycastOptions) => Intersection | undefined;
+  /**
+   * The framework's own startup work — what a loading screen waits on.
+   *
+   * Two costs land before a game is ready and both are real: each shader is compiled the first
+   * time something using it is drawn, and the scene collapse runs inside a single frame. On a
+   * Pixel 8 that was 2.5 s of half-drawn map followed by a 3.2 s stall, measured.
+   *
+   * Keeping the world hidden until `whenReady()` resolves does more than hide the mess: the
+   * shaders that would have been compiled for geometry the collapse then throws away are never
+   * compiled at all, so waiting is *faster* than not waiting.
+   */
+  readonly startup: StartupStatus;
   readonly goto: (name: string) => Promise<void>;
   physics: TPhysics;
 }

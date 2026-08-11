@@ -7,6 +7,7 @@ import { Viewport, type ViewportSize } from "../src/viewport.js";
 function renderer(canvas: HTMLCanvasElement) {
   return {
     canvas,
+    compileAsync: async () => undefined,
     compute: () => undefined,
     domElement: canvas,
     kind: "webgl2" as const,

@@ -218,7 +218,7 @@ collapse alone did it.
 ## 9. Related
 
 - `docs/PRDs/native-performance-fixes/PRD-066-*` — the frame-rate problem and the `-O2` fix
-- `docs/PRDs/native-performance-fixes/PRD-068-android-javascript-engine.md` — the 2% boundary
+- `docs/PRDs/done/PRD-068-android-javascript-engine.md` — the 2% boundary
   measurement that pointed at JavaScript execution, and the engine spike
 - `docs/PRDs/native-performance-fixes/PRD-069-per-draw-cost.md` — demoted by the same measurement
 - `docs/verification/android-js-engine-spike-2026-08-10.md` — candidate engine viability gates

@@ -19,6 +19,7 @@
  */
 
 #include "mystral/js/engine.h"
+#include "mystral/cold_start.h"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -1690,6 +1691,19 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                     ).count()
                                 );
 #endif
+                                if (presented) {
+                                    // The last cold-start segment. Emitted from the present that
+                                    // actually reached the display, so "first frame" means the
+                                    // player saw something rather than the loop merely ran.
+                                    static bool firstPresentReported = false;
+                                    if (!firstPresentReported) {
+                                        firstPresentReported = true;
+                                        mystral::coldStartMark("first_frame");
+                                    }
+                                    // Hitches are what the player feels after launch, and they
+                                    // are invisible to a mean. This window reports its own max.
+                                    mystral::frameHitches().record();
+                                }
                                 if (!presented) {
                                     std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
                                     g_engine->throwException("sRGB presentation bridge failed");

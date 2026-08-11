@@ -64,3 +64,40 @@ No candidate is eliminated before measurement:
 
 This table is dependency research, not engine pricing. Every performance and packaged-runtime
 cell remains **UNMEASURED**, so it supports no recommendation.
+
+## PRD-070 cold-start instrument — physical Pixel 8, 2026-08-11
+
+`scripts/measure-cold-start.mjs` closes the hole that nothing in this repository measured launch
+time. `include/mystral/cold_start.h` stamps every launch boundary from one monotonic clock as
+`TN_COLD_START:{"segment":…,"atMs":…}`, so a reader subtracts two numbers rather than two logcat
+timestamps from two different clocks.
+
+Five cold launches, `fox-native`, native runtime `-O2`, serial `37251FDJH0037Z`: total **2,882 ms
+median, 3,031 ms p95**, range 2,652–3,031 ms.
+
+| Segment | Median | Share |
+| --- | --- | --- |
+| host bring-up | 0 ms | 0.0% |
+| bundle read from APK | 13 ms | 0.4% |
+| runtime creation | 34 ms | 1.2% |
+| JavaScript parse and compile | 230 ms | 8.0% |
+| bundle top-level execution | 43 ms | 1.5% |
+| **first rendered frame** | **2,500 ms** | **86.8%** |
+
+**Consequence: QuickJS bytecode precompilation is recommended against on this subject.** It targets
+the 8.0% segment. The first-frame segment — WGSL built in JavaScript and pipelines compiled on
+first draw — is where launch lives. A persisted pipeline cache is separately confirmed unreachable:
+`wgpuDeviceCreateRenderPipeline` takes only a descriptor and the bound `webgpu.h` has no
+`PipelineCache` type.
+
+The instrument fails closed and each control was observed: an `emulator-*` serial exits 2 with
+`TN_COLD_START_EMULATOR_BLOCKED` before measuring, a single launch is rejected as malformed input,
+an unnamed build type is rejected, and a missing or malformed segment marker exits non-zero naming
+it rather than reporting a partial total. That last control fired on the first real run: the host
+evaluates two bootstrap scripts through the same `evalScript` path, so `game_eval_begin` now
+brackets the game's own compile.
+
+Largest stall in the session is not launch. `SceneCollapse` bakes inside one frame, measured at
+**3,608 ms**, now **1,845 ms** after replacing `BufferGeometry.applyMatrix4` with a direct
+typed-array transform; it is reported as `SceneCollapseReport.bakeMs`. Keeping indices instead of
+expanding to non-indexed geometry was tried and **measured worse** (2,658 ms), and reverted.

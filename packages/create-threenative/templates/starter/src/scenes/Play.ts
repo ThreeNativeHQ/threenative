@@ -7,6 +7,7 @@ import { pickAt } from "../pick.js";
 import { createSpringArm } from "../render/camera.js";
 import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
+import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { createParticles } from "../render/particles.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -142,7 +143,13 @@ export class Play extends Scene<GameState, PhysicsContext> {
     }
 
     let elapsed = 0;
+    // Built last on purpose: it hides what is in the scene when it is created, so the scene has
+    // to be populated first. It reveals the world itself once startup settles and the collapsed
+    // scene's shaders are built, so nothing here has to sequence that.
+    const loading = createLoadingScreen(ctx);
+
     return (frameCtx, dt) => {
+      loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
         frameCtx.state.set(Play.initialState);

@@ -40,7 +40,8 @@ flowchart TD
     tn1 --> plat{"Ship target?"}
     tn2 --> plat
     plat -->|browser, Linux/mac/Win desktop| ok["Proved. Go"]
-    plat -->|Android, iOS| caution["**Emulator and simulator only.**<br/>No physical-device evidence<br/>exists. Do not plan a<br/>store release on this"]
+    plat -->|Android| android["**One physical phone, measured.**<br/>~106 fps on a 2,282-mesh game,<br/>0 of 253 windows below 60.<br/>One device, no store release yet"]
+    plat -->|iOS| caution["**Simulator only.**<br/>No Apple hardware exists here.<br/>Do not plan a store release on this"]
 ```
 
 ## The score — axis by axis
@@ -57,13 +58,15 @@ Phase 3's `+5–20` are not earned. All five axes are ⚠️.
 | 2 | Looks good | "It will look better" | `pnpm sweep:judge`, blind session | Wins 2/5: platformer 3.8 vs 2.4, exploration 4.4 vs 2.8. Ties endless 3.4. **Loses** topdown 3.2 vs 3.8 and open-world | ⚠️ **genre-specific, not universal** |
 | 3 | Costs less | "You will write less code" | `pnpm sweep:pair` → `authoredLoc` | Wins 2/5: platformer **−187**, topdown **−695**. Loses endless **+442**, exploration **+95**, open-world **+8** | ⚠️ **half the corpus** |
 | 4 | Does what vanilla can't | "It does what vanilla can't" | package inventory, reach rate | `physics` and `playtest` ship; the benchmark deliberately hands `playtest` to the vanilla arm too, so it wins no comparison. Round-3 reach rate **0.55** — a fresh uninformed build touched just over half the surface. The census dispositioned 167 unreached exports as 48 external / 106 internal-only / 8 public-by-contract / 5 dead | ⚠️ **12/20** |
-| 5 | Survives the platform | "It ships where vanilla can't" | the device matrix | Browser, Linux/macOS/Windows desktop, Android **emulator**, iOS **simulator** (green once, red on rerun) | ⚠️ **no physical device, ever, on this machine** |
+| 5 | Survives the platform | "It ships where vanilla can't" | the device matrix | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and now a **physical Pixel 8**: a 2,282-mesh platformer at ~106 fps median, 0 of 253 windows below 60 | ⚠️ **one phone, no iOS hardware** — but no longer emulator-only |
 
 Evidence: [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md) (axes 1–3, four
 genres), [round-3-2026-08-09.md](../verification/round-3-2026-08-09.md) (open-world),
 [tier-1-2026-08-10.md](../verification/tier-1-2026-08-10.md) and
 [parity-2026-08-10-r2.md](../verification/parity-2026-08-10-r2.md) (axis 5),
-[deletions-2026-08-10.md](../verification/deletions-2026-08-10.md) (axis 4 reach).
+[deletions-2026-08-10.md](../verification/deletions-2026-08-10.md) (axis 4 reach),
+[native-performance-benchmarks-2026-08-11.md](../verification/native-performance-benchmarks-2026-08-11.md)
+(axis 5, physical device, and the browser and Godot comparison).
 
 ### Why LOC cannot get us to 80
 
@@ -100,11 +103,21 @@ the frozen hand-written control's — 68 lines against 138 (`pnpm tsx scripts/co
 Total ratio 91.3%, and **vanilla still wins the total** — that is the regression ratchet
 working, not a win being hidden.
 
+**4. On a real phone it holds the frame budget where a browser and Godot sit on the cap.**
+A 2,282-mesh platformer runs at **~106 fps median on a physical Pixel 8, 0 of 253 windows below
+60**, with 8–9 ms frames. The same game in Chrome on the same phone is pinned at 60 with worst
+frames of 19.6–22.5 ms; a comparable fox platformer in Godot 4.7.1 runs 50–60 fps with worst
+frames of 19.5–33.3 ms. **Read the caveats before quoting this**: both comparisons were
+vsync-locked while ours was not, the Godot subject is a different codebase, and our frame rate is
+bought by `SceneCollapse` folding 2,282 objects into ~25 draws — a scene where everything moves
+independently cannot be folded and is untested
+([native-performance-benchmarks-2026-08-11.md](../verification/native-performance-benchmarks-2026-08-11.md)).
+
 ## Where the claim is not earned — read before quoting any of the above
 
 | Not earned | Why, precisely |
 |---|---|
-| **"Ships to iOS and Android"** | Emulator and simulator only. The iOS lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64, Metal-driver, signing, touch-hardware, thermal or battery evidence exists ([PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
+| **"Ships to iOS and Android"** | **Android now has one physical phone measured**, and iOS has none. Simulator only there. The iOS lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64, Metal-driver, signing, touch-hardware, thermal or battery evidence exists ([PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so the cost axis alone tops out near **40/100** — a ceiling, not a backlog item |
 | **"Better looking"** as a general claim | Phase 1's own ledger forbids it: *"should not claim universal visual superiority from the two winning genres."* Top-down lost on HUD hierarchy |
 | **"Production ready"** | Beta rows 3, 4 and 5 are open. Tier 1 is not reached: Desktop Linux `65/1/1/1`, Android emulator `27/40/0/1`, all three Phase 4 performance controls **UNVERIFIED** at exit `254` |
@@ -130,7 +143,8 @@ Ranked by how much the sentence at the top would move, cheapest first.
 | 2 | **A stranger plays for five minutes** | Every adoption claim — this is the project's decisive test | An afternoon and one external person |
 | 3 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
 | 4 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+emulator sentence outright | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
-| 5 | **A physical Android device** | Axis 5 out of the emulator caveat, Android half only | Hardware. Tier 2, parked by owner decision |
+| 5 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time. The uncontrolled version is measured; §5 of [the benchmark record](../verification/native-performance-benchmarks-2026-08-11.md) specifies the controlled one |
+| 6 | **A second physical Android device** | Guards the one-device, one-thermal-state caveat | Hardware |
 
 ## The one-line claim, in two versions
 

@@ -342,6 +342,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
     });
     this.#picker = picker;
     const loopState: { current?: FixedStepLoop } = {};
+    // Built before the context because `ctx.startup` reads it: a game asks what the framework's
+    // startup is doing, and the answer is this pass.
+    const collapse = new SceneCollapse(threeScene as never);
+    this.#collapse = collapse;
     const ctx: Ctx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
@@ -367,6 +371,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
       physics: undefined as TPhysics,
       random,
       raycast: (options) => picker.raycast(options),
+      startup: {
+        get phase() {
+          // `collapsing` is reported for the whole window's tail rather than only the one frame
+          // the bake occupies, because that frame does not yield and nothing could read it.
+          if (collapse.settled) return "ready" as const;
+          return collapse.progress >= 1 ? ("collapsing" as const) : ("observing" as const);
+        },
+        get progress() {
+          return collapse.progress;
+        },
+        whenReady: () => collapse.whenSettled(),
+      },
       renderer: this.#renderer,
       viewport,
       scene: threeScene,
@@ -385,7 +401,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
-    this.#collapse = new SceneCollapse(threeScene as never);
     const gameLoop = new FixedStepLoop({
       maxSteps: this.#config.maxSteps,
       onRender: () => {

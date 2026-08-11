@@ -25,11 +25,12 @@ it("collapses a fox-sized palette scene to a handful of draws", () => {
       report = v;
     },
   });
-  for (let f = 0; f < 5; f += 1) {
+  // The bake is spread across frames on a time budget, so a fox-sized scene needs more than the
+  // one frame that starts it. Bounded so a pass that never settles fails instead of hanging.
+  for (let f = 0; f < 5_000 && report === undefined; f += 1) {
     scene.updateMatrixWorld(true);
     collapse.frame();
   }
-  console.log("REPORT", JSON.stringify(report));
   expect(report?.collapsed).toBe(true);
   expect(report?.mergedMeshes).toBeLessThanOrEqual(4);
 });

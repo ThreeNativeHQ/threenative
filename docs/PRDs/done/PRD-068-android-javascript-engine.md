@@ -4,8 +4,26 @@ prd_contract: v1
 
 # PRD-068 — The Android JavaScript engine: price V8, JavaScriptCore and Hermes against QuickJS with device numbers
 
-**Status: IN PROGRESS, filed 2026-08-10. Measurement plumbing is implemented and emulator-proved;
-physical acceptance remains open.** This is PRD-066 Phase 2 written out: a spike whose deliverable
+**Status: CLOSED 2026-08-11 — RECOMMEND-AGAINST swapping the engine.** The spike reached the
+outcome §14 says it must be willing to reach. On the physical Pixel 8 the shipped QuickJS build
+runs the real game at **170 fps** once the scene's draw count drops from ~110 to 17; at ~110 draws
+the same build runs it at 57. The interpreter is not the binding constraint for this game, so no
+engine is ported and none of V8, JavaScriptCore or Hermes carries a measured per-mesh figure — each
+is recorded UNMEASURED with that reason in §15. Evidence:
+`docs/verification/native-gameplay-frame-rate-2026-08-11.md`. **The residual is per-draw
+JavaScript cost, ~118 µs per draw, which PRD-069 and PRD-072 own.**
+
+**The draw-count lever was then pulled, and it closed the gate this spike was serving.** Folding
+camera-parented overlays into one draw per material instance — 76 HUD meshes to 11 draws — took
+the same QuickJS build from 55–71 fps while driven to **83–116 fps, zero of 253 windows below 60**,
+with the picture unchanged to a hue distance of 0.0074. That is the result an engine port was
+being considered to buy, obtained without one.
+
+**Superseded framing, kept because the reasoning still holds:** everything below was written while
+the split between interpreter speed and draw count was open. Its measurements stand; its
+recommendation in §7 does not, and §15 records why.
+
+Filed 2026-08-10. This is PRD-066 Phase 2 written out: a spike whose deliverable
 is a decision backed by measurements on one named physical phone, not an engine port. **No engine
 is chosen by this document.** It defines what must be measured, what each answer would mean, and
 what would falsify the recommendation it does make.
@@ -609,6 +627,73 @@ minutes are scarce on this repository's plan, and the hosted lanes have no phone
 - **Orientation and 16 KB page alignment.** Found in the same session, owned by PRD-067 and by
   the unowned row in PRD-066 §7 respectively. The page-alignment row is named in §4.1 only
   because a large new prebuilt interacts with it.
+
+---
+
+## 15. Closing decision — 2026-08-11
+
+**Recommendation: do not swap the engine.** Withdrawn in favour of reducing draw count, which is
+where the residual was measured to be.
+
+### What settled it
+
+One run on serial `37251FDJH0037Z`, full resolution, profiler off, uncapped present, subject
+`fox-native` driven with its on-screen controls. Hiding the HUD and changing nothing else:
+
+| | Draws | `renderer.render` | fps, driven |
+|---|---|---|---|
+| As the game ships | 105–119 | 15.0 ms | 55–71 |
+| HUD hidden | **17** | **3.6 ms** | **146–174** |
+
+The engine is identical across both rows — `Engine::getName()` reads `QuickJS` in each. A build
+that reaches 170 fps on the real game does not have an interpreter problem, and a port priced at
+weeks cannot be justified against a lever that is worth 3× and already understood.
+
+The frame at ~110 draws splits as: game update 0.45 ms, `SceneCollapse` 2.0 ms,
+`renderer.render` 15.0 ms, native ~1 ms. Per-draw cost is therefore roughly **118 µs of
+interpreted JavaScript**, measured on hardware against a real game. That number is this spike's
+most useful output and it belongs to PRD-069 and PRD-072.
+
+### Falsifiers from §8, resolved
+
+| # | Status |
+|---|---|
+| 1 | **Not fired.** JavaScript execution is ~98 % of the frame, as §1.2 measured. |
+| 2 | **Fired, and now moot.** No maintained V8 13 arm64-Android artifact matching the desktop pin was found; only a stale V8 10 shared library. With the recommendation withdrawn this no longer blocks anything. |
+| 3 | **Fired by the strongest possible form.** Tuned QuickJS at `-O2` reaches 170 fps on the real game at 17 draws. No candidate was given the chance to beat a build that already clears the budget by 2.8×. |
+| 4 | Not reached — no candidate was packaged. |
+| 5 | Not reached — no candidate was packaged. |
+| 6 | Not reached. JSC's arm64 baseline JIT is confirmed enabled, but no candidate was measured. |
+| 7 | **Fired, and explained.** The ~3× per-mesh disagreement between subjects is draw count, not interpreter speed: per-mesh cost tracks how many draws a scene resolves to, which is why one merged scene and one unmerged scene of similar mesh count differ so widely. |
+
+### Acceptance criteria, final state
+
+1. [x] Split recorded — boundary ~2 % (§1.2), and the 2026-08-11 record splits the gameplay frame
+       into game update, collapse, render and native.
+2. [x] Calls-per-frame exists for both subjects; the counter's negative control was observed
+       (`control-draw-baseline` 15 → `control-draw-extra` 19 calls per frame).
+3. [x] The ladder was re-run uncapped. The 0 % rung reads **7.42 ms**, against 16.67 ms for the
+       vsync control on the same subject.
+4. [x] The ~3× per-mesh disagreement is explained — draw count, see above.
+5. [x] Recorded **UNMEASURED for every candidate**, with the reason: the control build clears the
+       budget by 2.8× once draw count drops, so no candidate was built or packaged.
+6. [x] Same — UNMEASURED with the reason stated. The dependency artifacts, their pinned URLs and
+       their SHA-256 hashes are recorded in §4 and in the spike record.
+7. [x] Each branch states its iOS consequence; none claims to improve mobile performance.
+8. [x] A single recommendation exists, with every §8 falsifier marked above.
+9. [x] Controls observed on the physical device: vsync (7.42 → 16.67 ms), FFI busy loop
+       (0.008 → 0.48 ms per frame), draw counter (+4 calls), emulator rejection (exit 2).
+10. [x] `pnpm typecheck`, `pnpm lint`, `pnpm --filter @threenative/core test` and `pnpm budgets`
+        exit 0, and no native toolchain entered the default gate.
+11. [x] The two contradicted rows in `NATIVE-PERF-BOTTLENECKS.md` are corrected.
+
+**Closed alongside this PRD:** `SceneCollapse` declining camera-parented subtrees. It now folds
+them in camera space, which is what took gameplay over 60 fps.
+
+**Still open, and handed on rather than closed here:** the 60 fps gameplay *gate* — a check that
+fails closed on frame rate, as opposed to the measurement recorded here (PRD-066 Phase 4);
+per-draw cost in general, still ~118 µs (PRD-069, PRD-072); and the 3.9-second collapse bake at
+startup plus the occasional 37–47 ms frame (PRD-070).
 
 ---
 

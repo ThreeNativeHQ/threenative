@@ -6,6 +6,7 @@
  */
 
 #include "mystral/js/engine.h"
+#include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
 #include <iostream>
 #include <unordered_map>
@@ -264,6 +265,7 @@ public:
     bool evalScript(const char* code, const char* filename) override {
         const size_t codeLength = strlen(code);
         LOGI("evalScript compile begin: file=%s bytes=%zu", filename, codeLength);
+        mystral::coldStartMark("compile_begin");
         JSValue compiled = JS_Eval(context_, code, codeLength, filename,
                                    JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
 
@@ -278,10 +280,12 @@ public:
 
         JSMemoryUsage usage{};
         JS_ComputeMemoryUsage(runtime_, &usage);
+        mystral::coldStartMark("compile_complete");
         LOGI("evalScript compile complete: memory_used=%lld malloc_size=%lld",
              static_cast<long long>(usage.memory_used_size),
              static_cast<long long>(usage.malloc_size));
 
+        mystral::coldStartMark("execute_begin");
         LOGI("evalScript execute begin: file=%s", filename);
         // JS_EvalFunction consumes the compiled function value.
         JSValue result = JS_EvalFunction(context_, compiled);
@@ -295,6 +299,7 @@ public:
         }
         JS_FreeValue(context_, result);
         LOGI("evalScript execute complete: file=%s", filename);
+        mystral::coldStartMark("execute_complete");
 
         LOGI("evalScript pending jobs begin: file=%s", filename);
         const bool jobsSucceeded = executePendingJobs();

@@ -12,6 +12,62 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  // Without this on the wrapper a game must cast through `.raw` to warm up, and a game that
+  // cannot warm up without a cast will not warm up. 2,500 ms of a 2,882 ms Pixel 8 cold start is
+  // spent compiling pipelines on first draw.
+  it("forwards compileAsync so a game can warm up pipelines before the first visible frame", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      const warmed: unknown[] = [];
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: async (scene: unknown, camera: unknown) => {
+            warmed.push([scene, camera]);
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const scene = {} as never;
+      const camera = {} as never;
+      await renderer.compileAsync(scene, camera);
+      expect(warmed).toEqual([[scene, camera]]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  // A renderer that compiles on first draw needs no warm-up and must not fail one. Throwing here
+  // would push a platform branch into every game that calls it.
+  it("resolves quietly when the renderer has no compileAsync of its own", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      await expect(renderer.compileAsync({} as never, {} as never)).resolves.toBeUndefined();
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should fall back to WebGL2 when navigator.gpu is absent", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

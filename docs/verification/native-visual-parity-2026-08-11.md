@@ -1,7 +1,16 @@
 # Native visual parity and 60 fps, on the phone — 2026-08-11
 
-**Closed.** The fox platformer runs on a physical Pixel 8 at **55.7–73.5 fps** with a picture that
-matches the pre-optimisation baseline, and the game contains no code that makes that happen. This
+> **Corrected the same day — the frame-rate claim below does not hold.** The subject that produced
+> "55.7–73.5 fps" was rendering at **half resolution** (`PROBE_RENDER_SCALE = 0.5`, a leftover
+> probe in the game tree) and reported a single 300-frame window rather than the whole session.
+> Re-measured at full resolution with a rolling window, the game ran at 100–110 fps at rest and
+> **55–71 fps while it was played** — it did not clear 60 during gameplay. The cause was ~93 HUD
+> draws that `SceneCollapse` excluded because they are camera-parented; the pass now folds them
+> and gameplay holds **83–116 fps, zero of 253 windows below 60**. The visual-parity findings
+> below stand. See `native-gameplay-frame-rate-2026-08-11.md`.
+
+**Closed.** The fox platformer runs on a physical Pixel 8 with a picture that matches the
+pre-optimisation baseline, and the game contains no code that makes that happen. This
 record executes `docs/PRDs/native-performance-fixes/HANDOFF-native-visual-parity-2026-08-10.md`.
 
 Device: Pixel 8 (`shiba`, serial `37251FDJH0037Z`, arm64-v8a, Android 17). Nothing here is an

@@ -22,6 +22,7 @@ function particles(options: Partial<ConstructorParameters<typeof GPUParticles3D>
 function renderer(dispatched: unknown[]): RendererLike {
   const canvas = new EventTarget() as HTMLCanvasElement;
   return {
+    compileAsync: async () => undefined,
     compute: (node) => dispatched.push(node),
     dispose: () => undefined,
     domElement: canvas,
