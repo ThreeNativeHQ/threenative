@@ -211,3 +211,37 @@ If Phase 3 shows the Android emulator failing rows on their merits rather than e
 Tier 1 is **not** reached, the roadmap says so, and the owner's "reliable on Android" bar moves
 from "days away" to "needs a device and real work." Recording that is the point of the PRD. The
 failure mode this exists to prevent is a Tier 1 declared green by narrowing what Tier 1 meant.
+
+## 9. Native LOC review trigger — the justification this PRD owes
+
+§7 said any line added here needs its justification in this PRD, and this is it. The trigger was
+61,617 lines when that was written and is **68,396** now, against a 50,000 review trigger. The
+merge that landed the night batch moved it from 64,489 to 68,035; the rest is the launch
+inspector added afterwards.
+
+`packages/runtime-native` grew by **4,078 lines against 121 removed** since `f510673`. Where they
+went, largest first:
+
+| Lines | File | Why it is not game or framework code |
+| --- | --- | --- |
+| 1,471 | `scripts/profile-production.mjs` | Drives a packaged build on a device and records a production profile. Reachable from `pnpm profile:production`, covered by `tests/production-profile.test.mjs`, shipped in the package manifest |
+| 528 | `tests/production-profile.test.mjs` | The tests for the above |
+| 304 | `tests/android-packaging.integration.test.mjs` | Asserts a real APK's manifest and identity |
+| 293 | `scripts/inspect-launch.mjs` | Classifies every frame of a launch recording. Added because a one-frame visual defect is invisible to `screencap` sampling and to every gate in this repo |
+| 286 | `scripts/production-evidence.mjs` | The evidence writer the profiler imports |
+| 250 | `scripts/package-android.mjs` | Game-declared identity, orientation and icon, from PRD-067 |
+
+**The kill-switch pass, run over what was added.** Every file above is reachable and exercised:
+`profile-production.mjs` and `production-evidence.mjs` are npm scripts, imported by tests, and
+listed in the package `files` array with `tests/distribution.test.mjs` asserting they survive
+packing; `inspect-launch.mjs` is an operator tool whose first run found the loading surface
+letterboxed. None is dead, and none of it is a framework abstraction a game could have written in
+twenty lines — it is measurement apparatus for a runtime that had none.
+
+**What the number still means.** None of this growth is renderer or engine surface, and none of it
+ships in a game's bundle: scripts and tests are host-side apparatus. That does not retire the
+trigger. The honest reading is that the trigger counts a directory holding two different things —
+a C++ host and the harness that measures it — and it has been crossed since well before this PRD.
+Splitting the count so the host and its apparatus are reported separately would make the number
+mean something again; that is a budget change and belongs to whoever owns `check-budgets.ts`, not
+to a line item here. **Until then the trigger stays crossed and reported, never silenced.**
