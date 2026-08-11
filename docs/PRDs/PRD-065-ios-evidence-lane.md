@@ -16,11 +16,11 @@ has executed since**, so the field evidence is UNVERIFIED, and **PRD-045 criteri
 close on the existing artifacts.**
 
 The second is that the lane is **red on `main`**. Run
-[`31434881982`](https://github.com/ColdstartLabs-ca/threenative/actions/runs/31434881982) job
+[`31434881982`](https://github.com/jonit-dev/threenative/actions/runs/31434881982) job
 *iOS simulator runtime and no-Xcode consumer handoff*: step `Build and run the consumer app
 without CMake, Xcodebuild, or Rust` exits `2` with `TN_PLAYTEST_BRIDGE_MISSING`, `frames: 0`,
 scenario `native-physics-rest-collision`. The last green run of the job is
-[`31313092745`](https://github.com/ColdstartLabs-ca/threenative/actions/runs/31313092745),
+[`31313092745`](https://github.com/jonit-dev/threenative/actions/runs/31313092745),
 2026-08-09.
 
 **This PRD makes no mobile-readiness claim and does not attempt one.** Every phase runs on the
