@@ -90,6 +90,8 @@ export interface ISceneCollapseReport {
    * count, so a slow scene makes the wait long without this pass doing any of the work.
    */
   readonly observeMs?: number;
+  /** The part of the bake spent inside `mergeGeometries`, as opposed to preparing its input. */
+  readonly mergeMs?: number;
   readonly sampleMs?: number;
 }
 
@@ -457,6 +459,8 @@ export class SceneCollapse {
   #observed = 0;
   #windowOpenedAt: number | undefined;
   #sampleSpentMs = 0;
+  #mergeSpentMs = 0;
+  #prepSpentMs = 0;
   #observeSpanMs = 0;
   #meshCount = -1;
   #reportedSmall = false;
@@ -762,7 +766,9 @@ export class SceneCollapse {
             if (!shared.includes(name)) chunk.deleteAttribute(name);
           }
         }
+        const overlayMergeStartedAt = globalThis.performance?.now() ?? 0;
         const geometry = mergeGeometries(group.chunks as never[], false);
+        this.#mergeSpentMs += (globalThis.performance?.now() ?? 0) - overlayMergeStartedAt;
         if (geometry === null) {
           failed = true;
           break;
@@ -1011,14 +1017,56 @@ export class SceneCollapse {
       const painted =
         (material as unknown as { vertexColors?: boolean }).vertexColors === true
           ? (geometry.getAttribute("color") as unknown as
-              | { getX(i: number): number; getY(i: number): number; getZ(i: number): number }
+              | {
+                  getX(i: number): number;
+                  getY(i: number): number;
+                  getZ(i: number): number;
+                  array?: ArrayLike<number>;
+                  itemSize?: number;
+                  normalized?: boolean;
+                }
               | undefined)
           : undefined;
+      // Float32Array specifically: it indexes as `number` rather than `number | undefined`, and it
+      // is what a colour attribute already is. Reading it directly is only equivalent while the
+      // attribute is not normalized — a normalized one stores integers the accessors scale, and
+      // raw reads would multiply colour by 255. Anything else falls back to the accessors.
+      const paintedArray = painted?.array;
+      const paintedStride = painted?.itemSize;
+      const fastColors =
+        paintedArray instanceof Float32Array &&
+        paintedStride !== undefined &&
+        painted?.normalized !== true
+          ? { source: paintedArray, stride: paintedStride }
+          : undefined;
       const colors = new Float32Array(count * 3);
-      for (let index = 0; index < count; index += 1) {
-        colors[index * 3] = rgb.r * (painted ? painted.getX(index) : 1);
-        colors[index * 3 + 1] = rgb.g * (painted ? painted.getY(index) : 1);
-        colors[index * 3 + 2] = rgb.b * (painted ? painted.getZ(index) : 1);
+      // This loop runs once per vertex in the whole scene, so the shape of it is the bake's
+      // largest single cost — the merge itself measured 65 ms of a 1,514 ms bake on a Pixel 8.
+      // Two things were paid per vertex and neither had to be: a branch on `painted`, which
+      // cannot change inside the loop, and `getX/getY/getZ`, which are method calls over an
+      // attribute whose array can be read directly.
+      if (painted === undefined) {
+        for (let index = 0; index < count; index += 1) {
+          colors[index * 3] = rgb.r;
+          colors[index * 3 + 1] = rgb.g;
+          colors[index * 3 + 2] = rgb.b;
+        }
+      } else if (fastColors !== undefined) {
+        const { source, stride } = fastColors;
+        for (let index = 0; index < count; index += 1) {
+          const at = index * stride;
+          // `?? 0` because indexed access is checked here; a short attribute reads as black
+          // rather than NaN, and three coalesces still cost far less than three method calls.
+          colors[index * 3] = rgb.r * (source[at] ?? 0);
+          colors[index * 3 + 1] = rgb.g * (source[at + 1] ?? 0);
+          colors[index * 3 + 2] = rgb.b * (source[at + 2] ?? 0);
+        }
+      } else {
+        for (let index = 0; index < count; index += 1) {
+          colors[index * 3] = rgb.r * painted.getX(index);
+          colors[index * 3 + 1] = rgb.g * painted.getY(index);
+          colors[index * 3 + 2] = rgb.b * painted.getZ(index);
+        }
       }
       geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
       // Transparent materials were once held apart by identity to protect blend order. On a real
@@ -1061,7 +1109,9 @@ export class SceneCollapse {
           if (!shared.includes(name)) chunk.deleteAttribute(name);
         }
       }
+      const mergeStartedAt = globalThis.performance?.now() ?? 0;
       const geometry = mergeGeometries(group.chunks as never[], false);
+      this.#mergeSpentMs += (globalThis.performance?.now() ?? 0) - mergeStartedAt;
       if (geometry === null) {
         this.#decline("three.js refused to merge a group", meshes.length);
         return;
@@ -1171,6 +1221,7 @@ export class SceneCollapse {
       overlayDraws: overlay.overlayDraws,
       bakeMs: this.#bakeSpentMs,
       observeMs: this.#observeSpanMs,
+      mergeMs: this.#mergeSpentMs,
       sampleMs: this.#sampleSpentMs,
     };
     this.#onReport(this.#report);
