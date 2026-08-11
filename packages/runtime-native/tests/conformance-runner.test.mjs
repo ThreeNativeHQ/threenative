@@ -27,6 +27,8 @@ import {
 import {
   androidDeviceKind,
   androidDependencyBlocker,
+  ANDROID_CAPTURE_SIZE,
+  androidDisplaySize,
   androidSystemDialog,
   validateRegistry,
   validateReport,
@@ -214,6 +216,22 @@ test("Android capture rejects system ANR and error overlays", () => {
     "Application Error: com.example.game",
   );
   assert.equal(androidSystemDialog("mCurrentFocus=Window{123 u0 com.mystral.engine}"), null);
+});
+
+test("Android capture waits for the pinned landscape size instead of reporting a rotation as a pixel mismatch", () => {
+  assert.equal(ANDROID_CAPTURE_SIZE, "1280x720");
+  assert.equal(
+    androidDisplaySize("Physical size: 1080x2400\nOverride size: 1280x720"),
+    "1280x720",
+  );
+  // Mid-rotation the override still reads the portrait panel; that is the state that produced a
+  // 720x1280 capture and a red row blaming the pixels.
+  assert.equal(androidDisplaySize("Physical size: 1080x2400"), "1080x2400");
+  assert.equal(androidDisplaySize("wm: command not found"), null);
+
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /await waitForAndroidDisplaySize\(common, ANDROID_CAPTURE_SIZE\)/u);
+  assert.match(source, /TN_ANDROID_DISPLAY_ORIENTATION: captured \$\{capture\.width\}/u);
 });
 
 test("Android rows uninstall the test package before each large debug APK install", () => {
@@ -570,7 +588,7 @@ test("Android screenshot capture preserves PNG bytes", () => {
 
 test("Android capture uses reference dimensions and restores the prior display override", () => {
   const source = readFileSync(runner, "utf8");
-  assert.match(source, /common\("shell", "wm", "size", "1280x720"\)/u);
+  assert.match(source, /common\("shell", "wm", "size", ANDROID_CAPTURE_SIZE\)/u);
   assert.match(source, /displayRestore = \/\^Override size:/u);
   assert.match(source, /finally \{[\s\S]*?displayRestore/u);
   assert.match(
