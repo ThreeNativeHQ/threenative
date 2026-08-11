@@ -70,5 +70,7 @@ node conformance/run-conformance.mjs          # same scene, browser reference vs
 selected by `--only-tests` is reported **blocked**, never passed and never omitted. Keep it
 that way.
 
-Report what ran. Desktop and the Android emulator are green; iOS, physical hardware and
+Report what ran. Desktop and the **iOS simulator** are green — the simulator lane runs on the
+hosted `macos-15` runner and `verify-ios-simulator.mjs` pins it to a `SimRuntime.iOS-*` device,
+because before 2026-08-11 it silently selected an Apple Vision Pro. Physical hardware and
 performance parity are open. Never write mobile-ready while those rows are open.

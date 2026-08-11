@@ -84,9 +84,14 @@ package, work out what the native host does with it.
 - **`src/game.ts` is the portable entry; `src/main.ts` is the web entry.** Native builds
   read `threenative.nativeEntry` (default `src/game.ts`), import its default game export,
   and start it. Keep React mounts and other browser-only UI in `src/main.ts`.
-- **Never claim a platform you did not execute.** Desktop and the Android emulator are
-  green; iOS, physical hardware and performance parity are open. A result may say
-  desktop-ready or Android-emulator plumbing-ready — it must not say mobile-ready.
+- **Never claim a platform you did not execute.** Desktop and the **iOS simulator** are
+  green; the Android emulator is red on the hosted lane; physical hardware and performance
+  parity are open. A result may say desktop-ready, iOS-simulator-proved or
+  Android-emulator plumbing-ready — it must not say mobile-ready.
+- **The hosted `macos-15` runner is an Apple machine and it executes.** This repo's operator
+  machine has none, but simulator-class iOS evidence is producible in CI and PRD-045 closed
+  on it (2026-08-11). It proves nothing physical: arm64, real Metal, signing, touch hardware,
+  thermal and battery still need a phone.
 
 Native compilation is opt-in: the default repo gate must never require CMake, an NDK or
 Xcode. `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked.
