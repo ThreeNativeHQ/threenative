@@ -40,6 +40,11 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+          # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
+          # Gradle packages. Without these targets `:app:buildNativePhysics` fails with
+          # E0463 can't find crate for `core`, and every conformance row fails at phase
+          # "build" before the emulator is ever reached.
+          rustup target add aarch64-linux-android x86_64-linux-android
           node packages/runtime-native/scripts/download-deps.mjs --android
       - name: Capture browser references
         run: |
