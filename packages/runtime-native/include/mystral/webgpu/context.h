@@ -86,7 +86,7 @@ public:
      * @param height Window height
      * @return true on success
      */
-    bool configureSurface(uint32_t width, uint32_t height);
+    bool configureSurface(uint32_t width, uint32_t height, bool vsync = true);
 
     /**
      * Resize the surface
@@ -133,6 +133,7 @@ public:
     WGPUDevice getDevice() const { return device_; }
     WGPUQueue getQueue() const { return queue_; }
     uint32_t getPreferredFormat() const { return preferredFormat_; }
+    uint32_t getPresentMode() const { return presentMode_; }
 
     // Check if initialized
     bool isInitialized() const { return initialized_; }
@@ -161,6 +162,8 @@ private:
     uint32_t surfaceWidth_ = 0;
     uint32_t surfaceHeight_ = 0;
     uint32_t preferredFormat_ = 0;  // WGPUTextureFormat
+    uint32_t presentMode_ = 0;  // WGPUPresentMode
+    bool vsync_ = true;
 
     bool initialized_ = false;
     bool hasIndirectFirstInstance_ = false;  // Whether INDIRECT_FIRST_INSTANCE feature is available

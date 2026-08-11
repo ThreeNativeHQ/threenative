@@ -110,6 +110,11 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     config.height = 0;  // Use full screen height (0 = auto)
     config.title = "Mystral Engine";
     config.fullscreen = true;  // Android is always fullscreen
+#if TN_ANDROID_VSYNC
+    config.vsync = true;
+#else
+    config.vsync = false;
+#endif
 
     LOGI("Creating Mystral runtime...");
 

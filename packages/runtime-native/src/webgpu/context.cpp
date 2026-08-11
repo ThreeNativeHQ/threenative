@@ -971,7 +971,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     return true;
 }
 
-bool Context::configureSurface(uint32_t width, uint32_t height) {
+bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
     std::cout << "[WebGPU] configureSurface called: " << width << "x" << height << std::endl;
     std::cout << "[WebGPU] surface_=" << (void*)surface_ << ", device_=" << (void*)device_ << ", adapter_=" << (void*)adapter_ << std::endl;
 
@@ -996,7 +996,33 @@ bool Context::configureSurface(uint32_t width, uint32_t height) {
 
     if (capabilities.formatCount == 0) {
         std::cerr << "[WebGPU] No surface formats available" << std::endl;
+        wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         return false;
+    }
+
+    WGPUPresentMode selectedPresentMode = WGPUPresentMode_Fifo;
+    const char* selectedPresentModeName = "fifo";
+    if (!vsync) {
+        bool foundUncappedMode = false;
+        for (uint32_t i = 0; i < capabilities.presentModeCount; i++) {
+            if (capabilities.presentModes[i] == WGPUPresentMode_Immediate) {
+                selectedPresentMode = WGPUPresentMode_Immediate;
+                selectedPresentModeName = "immediate";
+                foundUncappedMode = true;
+                break;
+            }
+            if (capabilities.presentModes[i] == WGPUPresentMode_Mailbox) {
+                selectedPresentMode = WGPUPresentMode_Mailbox;
+                selectedPresentModeName = "mailbox";
+                foundUncappedMode = true;
+            }
+        }
+        if (!foundUncappedMode) {
+            std::cerr << "[WebGPU] Uncapped presentation requested but unsupported; refusing FIFO fallback"
+                      << std::endl;
+            wgpuSurfaceCapabilitiesFreeMembers(capabilities);
+            return false;
+        }
     }
 
     // List all available formats
@@ -1029,10 +1055,15 @@ bool Context::configureSurface(uint32_t width, uint32_t height) {
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
     config.width = width;
     config.height = height;
-    config.presentMode = WGPUPresentMode_Fifo;  // VSync
+    config.presentMode = selectedPresentMode;
 
     wgpuSurfaceConfigure(surface_, &config);
+    vsync_ = vsync;
+    presentMode_ = static_cast<uint32_t>(selectedPresentMode);
     std::cout << "[WebGPU] Surface configured: " << width << "x" << height << std::endl;
+    std::cout << "[WebGPU] Present mode: " << selectedPresentModeName
+              << " (vsync=" << (vsync ? "true" : "false") << ")" << std::endl;
+    TN_CONTEXT_LOGI("present mode %s vsync=%s", selectedPresentModeName, vsync ? "true" : "false");
 
     wgpuSurfaceCapabilitiesFreeMembers(capabilities);
     return true;
@@ -1040,7 +1071,9 @@ bool Context::configureSurface(uint32_t width, uint32_t height) {
 
 void Context::resizeSurface(uint32_t width, uint32_t height) {
     if (width != surfaceWidth_ || height != surfaceHeight_) {
-        configureSurface(width, height);
+        if (!configureSurface(width, height, vsync_)) {
+            std::cerr << "[WebGPU] Surface resize configuration failed" << std::endl;
+        }
     }
 }
 

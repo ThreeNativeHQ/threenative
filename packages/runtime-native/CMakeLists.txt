@@ -59,7 +59,14 @@ option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remai
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
 option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
+option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
+option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
+option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
+
+if(TN_ANDROID_JS_PROFILE_BUSY_LOOP AND NOT TN_ANDROID_JS_PROFILE)
+    message(FATAL_ERROR "Android JS profiling controls require TN_ANDROID_JS_PROFILE=ON")
+endif()
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
 # the C++ GLTF loader deprecated; ThreeNative GLTF conformance uses JavaScript
@@ -73,6 +80,9 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_GLTF=$<BOOL:${TN_ENABLE_NATIVE_GLTF}>
     TN_ENABLE_DEBUG_SERVER=$<BOOL:${TN_ENABLE_DEBUG_SERVER}>
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
+    TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
+    TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
+    TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
 )
 
 # ============================================================================

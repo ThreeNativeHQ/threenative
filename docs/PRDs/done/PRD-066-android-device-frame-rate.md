@@ -22,7 +22,7 @@ needs a spike before it can be scoped, one device frame-rate gate that does not 
 PRD is that Tier 2 measurement, now that a device exists. PRD-058 owns performance thresholds;
 this PRD supplies raw device numbers and does not set, tune or waive a threshold.
 
-**Related, deliberately not folded in:** PRD-067 (game-declared orientation) and the 16 KB
+**Related, deliberately not folded in:** PRD-067 (the game's app config file, orientation included) and the 16 KB
 page-alignment row in §7. They were found on the same device in the same session but they are
 not frame rate.
 

@@ -1,11 +1,31 @@
 # PRD-045 — Playtest on device
 
-**Status: REOPENED — 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same day on run
-`31446340434`, then reopened when run `31447449669` failed the same lane on the same device
-class. Two runs on `iPhone 17 Pro`: one pass, one fail. **A criterion satisfied by a lane that
-fails on rerun is not closed**, so this moved out of `native/done/` to the active root rather
-than leave `done/` resting on a coin flip. It is *not* in `blocked/`: nothing here needs
-hardware, and the defect is ours.
+**Status: BLOCKED — moved to `native/blocked/` on 2026-08-10. Criterion 7 UNVERIFIED; the code
+is written and the remaining work is execution this host cannot perform.**
+
+**Block reason, stated plainly: the only thing left is two consecutive green runs of the iOS
+simulator lane, and that lane runs only on the hosted `macos-15` GitHub runner.** This
+operator's machine has no Xcode, `xcrun`, simulator or iOS device, so the lane cannot be
+executed locally at any effort. This is *not* the Tier 2 physical-hardware block — a simulator
+is sufficient for criterion 7 — and it is not a defect block either: **the defect was ours and
+it is fixed.** `playtest({ holdUntilAttached: true })` landed in commit `0e4897a`
+(`packages/core/src/playtest.ts:93`, covered by `packages/core/__tests__/playtest.spec.ts:279`).
+Nothing in this PRD is waiting on a design decision, a package change or a device.
+
+**Unblock condition — one sentence:** run the iOS-simulator lane twice in a row on the hosted
+`macos-15` runner and record both results; criterion 7 closes if both are green on a
+`SimRuntime.iOS-*` runtime, and this PRD moves to `native/done/`. If either fails, the flake is
+still live and the PRD returns to the active root with the new evidence. Because CI minutes on
+this repo's free plan are scarce, that spend is an owner decision, which is why this sits in
+`blocked/` rather than in a nightly batch that would find nothing to do.
+
+**Superseded status — REOPENED, 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same
+day on run `31446340434`, then reopened when run `31447449669` failed the same lane on the same
+device class. Two runs on `iPhone 17 Pro`: one pass, one fail. **A criterion satisfied by a lane
+that fails on rerun is not closed**, so this moved out of `native/done/` to the active root
+rather than leave `done/` resting on a coin flip. The "not in `blocked/`" reasoning in that
+status held while the defect was unfixed; the fix landing is what turned the remaining work into
+pure lane execution.
 
 **The defect (PRD-065 gap 7).** Nothing synchronises "the simulation starts" with "the observer
 is attached". `examples/native-smoke/src/physics.ts` runs `scenario.steps` (180) fixed steps

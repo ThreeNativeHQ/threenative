@@ -30,6 +30,11 @@
 #include <cstring>
 #include <cmath>
 #include <limits>
+#include <sstream>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 // stb_image for image loading (implementation in stb_impl.cpp)
 #include "stb_image.h"
@@ -100,6 +105,7 @@ static bool g_verboseLogging = false;  // Disabled by default, enable with --deb
 static WGPUDevice g_device = nullptr;
 static WGPUQueue g_queue = nullptr;
 static WGPUSurface g_surface = nullptr;
+static WGPUPresentMode g_presentMode = WGPUPresentMode_Fifo;
 static WGPUInstance g_instance = nullptr;
 static js::Engine* g_engine = nullptr;
 
@@ -153,6 +159,77 @@ static WGPUBindGroupLayout g_srgbPresentationBindGroupLayout = nullptr;
 static uint32_t g_canvasWidth = 800;
 static uint32_t g_canvasHeight = 600;
 static bool g_contextConfigured = false;
+
+#if TN_ANDROID_JS_PROFILE
+enum class ProfiledRenderCommand : size_t {
+    SetPipeline,
+    SetBindGroup,
+    Draw,
+    DrawIndexed,
+    SetVertexBuffer,
+    SetIndexBuffer,
+    Count
+};
+
+struct AndroidJsNativeProfile {
+    uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
+    uint64_t bindingNs = 0;
+};
+
+static AndroidJsNativeProfile g_androidJsNativeProfile;
+
+static void profilingBusyLoop() {
+#if TN_ANDROID_JS_PROFILE_BUSY_LOOP
+    volatile uint32_t control = 0;
+    for (uint32_t i = 0; i < 10000; i++) control = control * 33u + i;
+    (void)control;
+#endif
+}
+
+static std::chrono::steady_clock::time_point beginProfiledBinding() {
+    const auto start = std::chrono::steady_clock::now();
+    profilingBusyLoop();
+    return start;
+}
+
+static void endProfiledBinding(
+    ProfiledRenderCommand command,
+    std::chrono::steady_clock::time_point start,
+    uint64_t count = 1
+) {
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    g_androidJsNativeProfile.counts[static_cast<size_t>(command)] += count;
+    g_androidJsNativeProfile.bindingNs +=
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+}
+
+static void emitAndroidJsNativeProfile(uint64_t submitPollNs, uint64_t presentNs) {
+    const auto& counts = g_androidJsNativeProfile.counts;
+    uint64_t calls = 0;
+    for (size_t i = 0; i < static_cast<size_t>(ProfiledRenderCommand::Count); i++) {
+        calls += counts[i];
+    }
+    std::ostringstream output;
+    output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << g_engine->getName()
+           << "\",\"calls\":" << calls
+           << ",\"bindingNs\":" << g_androidJsNativeProfile.bindingNs
+           << ",\"submitPollNs\":" << submitPollNs
+           << ",\"presentNs\":" << presentNs
+           << ",\"commands\":{\"setPipeline\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetPipeline)]
+           << ",\"setBindGroup\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
+           << ",\"draw\":" << counts[static_cast<size_t>(ProfiledRenderCommand::Draw)]
+           << ",\"drawIndexed\":" << counts[static_cast<size_t>(ProfiledRenderCommand::DrawIndexed)]
+           << ",\"setVertexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetVertexBuffer)]
+           << ",\"setIndexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
+           << "}}";
+    const std::string marker = output.str();
+    std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
+#endif
+    g_androidJsNativeProfile = {};
+}
+#endif
 
 // Current frame's texture (refreshed each frame)
 static WGPUTexture g_currentTexture = nullptr;
@@ -555,7 +632,7 @@ static bool syncSurfaceSizeToCanvas(js::JSValueHandle canvas) {
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
     config.width = width;
     config.height = height;
-    config.presentMode = WGPUPresentMode_Fifo;
+    config.presentMode = g_presentMode;
     wgpuSurfaceConfigure(g_surface, &config);
 
     g_canvasWidth = width;
@@ -796,7 +873,7 @@ static WGPUTexture getCurrentSwapchainTexture() {
 /**
  * Initialize WebGPU bindings in the JS engine
  */
-bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t width, uint32_t height, bool debug) {
+bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug) {
     if (!engine) {
         std::cerr << "[WebGPU] No JS engine provided for bindings" << std::endl;
         return false;
@@ -811,6 +888,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
     g_device = (WGPUDevice)wgpuDevice;
     g_queue = (WGPUQueue)wgpuQueue;
     g_surface = (WGPUSurface)wgpuSurface;
+    g_presentMode = static_cast<WGPUPresentMode>(presentMode);
 
     // Set canvas dimensions from window size
     g_canvasWidth = width;
@@ -1477,17 +1555,41 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             // Submit user command buffers first
                             static int submitCount = 0;
                             submitCount++;
+#if TN_ANDROID_JS_PROFILE
+                            uint64_t submitPollNs = 0;
+                            uint64_t presentNs = 0;
+#endif
                             if (!cmdBuffers.empty() && g_queue) {
+#if TN_ANDROID_JS_PROFILE
+                                const auto submitStart = std::chrono::steady_clock::now();
+#endif
                                 wgpuQueueSubmit(g_queue, cmdBuffers.size(), cmdBuffers.data());
+#if TN_ANDROID_JS_PROFILE
+                                submitPollNs = static_cast<uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - submitStart
+                                    ).count()
+                                );
+#endif
                                 // Release command buffers after submission (they're consumed by submit)
                                 for (auto cmdBuf : cmdBuffers) {
                                     wgpuCommandBufferRelease(cmdBuf);
                                 }
                                 // Tick to flush GPU work
+#if TN_ANDROID_JS_PROFILE
+                                const auto pollStart = std::chrono::steady_clock::now();
+#endif
 #if defined(MYSTRAL_WEBGPU_DAWN)
                                 wgpuDeviceTick(g_device);
 #elif defined(MYSTRAL_WEBGPU_WGPU)
                                 wgpuDevicePoll(g_device, false, nullptr);
+#endif
+#if TN_ANDROID_JS_PROFILE
+                                submitPollNs += static_cast<uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - pollStart
+                                    ).count()
+                                );
 #endif
                                 if (g_verboseLogging) std::cout << "[WebGPU] Submit #" << submitCount << ": " << cmdBuffers.size() << " command buffers, g_currentTexture=" << (void*)g_currentTexture << std::endl;
                             } else {
@@ -1575,9 +1677,19 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             // This prevents presenting before the render commands are in this submit
                             if (g_surface && g_currentTexture && g_surfaceRenderPassEnded) {
                                 if (g_verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
+#if TN_ANDROID_JS_PROFILE
+                                const auto presentStart = std::chrono::steady_clock::now();
+#endif
                                 const bool presented = g_requiresSrgbPresentationBridge
                                     ? presentLinearTextureToSrgbSurface(g_currentTextureView)
                                     : (wgpuSurfacePresent(g_surface), true);
+#if TN_ANDROID_JS_PROFILE
+                                presentNs = static_cast<uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - presentStart
+                                    ).count()
+                                );
+#endif
                                 if (!presented) {
                                     std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
                                     g_engine->throwException("sRGB presentation bridge failed");
@@ -1605,6 +1717,10 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 g_currentTexture = nullptr;
                                 g_currentViewSourceTexture = nullptr;
                             }
+
+#if TN_ANDROID_JS_PROFILE
+                            emitAndroidJsNativeProfile(submitPollNs, presentNs);
+#endif
 
                             return g_engine->newUndefined();
                         })
@@ -3093,11 +3209,17 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         g_engine->newFunction("setPipeline", [capturedRenderPassForCommands](void* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return g_engine->newUndefined();
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             WGPURenderPipeline pipeline = (WGPURenderPipeline)g_engine->getPrivateData(args[0]);
                                             if (capturedRenderPassForCommands && pipeline) {
                                                 wgpuRenderPassEncoderSetPipeline(capturedRenderPassForCommands, pipeline);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] Pipeline set" << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::SetPipeline, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })
@@ -3111,6 +3233,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 return g_engine->newUndefined();
                                             }
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             uint32_t groupIndex = (uint32_t)g_engine->toNumber(args[0]);
                                             WGPUBindGroup bindGroup = (WGPUBindGroup)g_engine->getPrivateData(args[1]);
 
@@ -3119,6 +3244,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 wgpuRenderPassEncoderSetBindGroup(capturedRenderPassForCommands, groupIndex, bindGroup, 0, nullptr);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] Set bind group at index " << groupIndex << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::SetBindGroup, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })
@@ -3129,6 +3257,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         g_engine->newFunction("draw", [capturedRenderPassForCommands](void* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return g_engine->newUndefined();
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             uint32_t vertexCount = (uint32_t)g_engine->toNumber(args[0]);
                                             uint32_t instanceCount = args.size() > 1 ? (uint32_t)g_engine->toNumber(args[1]) : 1;
                                             uint32_t firstVertex = args.size() > 2 ? (uint32_t)g_engine->toNumber(args[2]) : 0;
@@ -3138,6 +3269,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 wgpuRenderPassEncoderDraw(capturedRenderPassForCommands, vertexCount, instanceCount, firstVertex, firstInstance);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] Draw: " << vertexCount << " vertices" << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::Draw, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })
@@ -3148,6 +3282,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         g_engine->newFunction("setVertexBuffer", [capturedRenderPassForCommands](void* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return g_engine->newUndefined();
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             uint32_t slot = (uint32_t)g_engine->toNumber(args[0]);
                                             WGPUBuffer buffer = (WGPUBuffer)g_engine->getPrivateData(args[1]);
                                             uint64_t offset = args.size() > 2 ? (uint64_t)g_engine->toNumber(args[2]) : 0;
@@ -3157,6 +3294,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 wgpuRenderPassEncoderSetVertexBuffer(capturedRenderPassForCommands, slot, buffer, offset, size);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] Set vertex buffer at slot " << slot << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::SetVertexBuffer, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })
@@ -3167,6 +3307,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         g_engine->newFunction("setIndexBuffer", [capturedRenderPassForCommands](void* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return g_engine->newUndefined();
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             WGPUBuffer buffer = (WGPUBuffer)g_engine->getPrivateData(args[0]);
                                             std::string formatStr = g_engine->toString(args[1]);
                                             uint64_t offset = args.size() > 2 ? (uint64_t)g_engine->toNumber(args[2]) : 0;
@@ -3180,6 +3323,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 wgpuRenderPassEncoderSetIndexBuffer(capturedRenderPassForCommands, buffer, format, offset, size);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] Set index buffer, format: " << formatStr << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::SetIndexBuffer, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })
@@ -3190,6 +3336,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         g_engine->newFunction("drawIndexed", [capturedRenderPassForCommands](void* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return g_engine->newUndefined();
 
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             uint32_t indexCount = (uint32_t)g_engine->toNumber(args[0]);
                                             uint32_t instanceCount = args.size() > 1 ? (uint32_t)g_engine->toNumber(args[1]) : 1;
                                             uint32_t firstIndex = args.size() > 2 ? (uint32_t)g_engine->toNumber(args[2]) : 0;
@@ -3200,6 +3349,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                                 wgpuRenderPassEncoderDrawIndexed(capturedRenderPassForCommands, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
                                                 if (g_verboseLogging) std::cout << "[WebGPU] DrawIndexed: " << indexCount << " indices, firstInstance=" << firstInstance << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(ProfiledRenderCommand::DrawIndexed, profileStart);
+#endif
 
                                             return g_engine->newUndefined();
                                         })

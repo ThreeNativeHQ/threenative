@@ -284,7 +284,8 @@ Risk to the constraints: **none, if it stays a WebGPU-shaped shim.** It becomes 
 renderer the moment it starts deciding *what* to draw rather than replaying what it was told.
 That line must be written into the implementing PRD.
 
-**A pre-existing defect this lever would inherit.** `renderPass.setBindGroup` at
+**A pre-existing defect this lever would inherit — now owned by PRD-071 §3.4, so that it is
+fixed before anything inherits it.** `renderPass.setBindGroup` at
 `bindings.cpp:3107–3126` carries `// TODO: Support dynamic offsets` and passes `0, nullptr`,
 silently discarding any offsets it is given — while the bundle-encoder path at
 `bindings.cpp:4584–4604` honours them. The repository rule is that a backend which cannot
@@ -378,6 +379,14 @@ shapes, not one.
 
 **What it cannot do:** exactly what §3.2 cannot do. It attacks the linear term only. If the
 ~20 ms step owns the fox-relevant frame, this lever is worth a few milliseconds and no more.
+
+**Superseded by measurement, same day: PRD-072 owned this lever and is CLOSED UNIMPLEMENTED.**
+PRD-068 §1.2 instrumented the six bindings on the device and found all time inside them is ~2% of
+a CPU-bound frame. Fixed-arity marshalling can recover only a slice of that 2%, which does not
+fund a second calling convention across three engine adapters. The reasoning above still
+describes the code accurately; it just describes something too small to schedule. **The per-frame
+wrapper allocation named above survives as PRD-071 §3.3**, because it is a simplification that
+needs no measurement to justify it — and it is landed as a cleanup, not as a performance fix.
 
 ### 3.5 Things that are not on the list, and why
 

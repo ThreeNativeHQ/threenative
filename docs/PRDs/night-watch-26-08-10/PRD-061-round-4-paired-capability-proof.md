@@ -1,9 +1,31 @@
 # PRD-061 — round 4: the paired proof Phase 2 has been missing
 
-**Status: NOT STARTED, 2026-08-09 — blocked on an owner round-budget grant.** `pnpm round:next`
-prints `stop round 3 / Stop condition recorded: budget`; round 4 does not start until an owner
-clears it. Nothing else blocks it: it needs no device, no credential and no toolchain beyond
-the ones `pnpm test` already requires.
+**Status: CLEARED TO START, 2026-08-10 — the owner granted the round-4 budget.** The block that
+held this PRD since 2026-08-09 is resolved: round 3 stopped on `budget`, and the owner has now
+granted one completed round 4. Nothing else blocks it — no device, no credential, no toolchain
+beyond what `pnpm test` already requires.
+
+**What the grant does and does not license.** It authorises **one** completed round 4 on the
+`physics-puzzle` genre defined in §3, end to end, with its ledger. It does not authorise a
+second round, a re-run of a losing arm, or a framework line that no gap row earned.
+
+**Phase 0's first deliverable is clearing the tool gate honestly.** `pnpm round:next` still
+prints `stop round 3 / Stop condition recorded: budget`, because it reads the newest round
+ledger and round 3's stop condition is a true historical record. **Do not edit round 3's
+ledger to clear it** — round 3 did stop on budget, and rewriting that falsifies the evidence
+record this project runs on. Clear the gate the intended way: create
+`docs/verification/round-4-<date>.md` recording this grant in its `Budget:` field with
+`Stop condition met: none yet`, and let `round:next` advance because round 4 is now the latest
+round. That ledger is fail-closed — it needs real Arms, Dispositions, Gates and Firewall tables
+— so it is written **as round 4 produces each result**, never pre-filled with placeholders to
+make a command go green. A ledger authored ahead of its evidence is the exact failure mode this
+repository's verification rules exist to prevent.
+
+**Superseded status — NOT STARTED, 2026-08-09, blocked on an owner round-budget grant.** A
+2026-08-10 batch run hit this gate and correctly produced a BLOCKED ledger,
+`docs/verification/prd-061-round-4-2026-08-10.md`, creating no artifact. That record stands as
+the account of the blocked attempt; it is not a round-4 ledger and does not satisfy any
+criterion here.
 
 **Complexity: 5 → MEDIUM mode.** One new sealed genre (3 artifacts), one instrument-text
 change with a pinned test, one round executed end to end, one ledger.

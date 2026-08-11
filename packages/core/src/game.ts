@@ -1,5 +1,6 @@
 import { type Camera, OrthographicCamera, PerspectiveCamera, Scene as ThreeScene } from "three";
 import { type AssetLoader, type AssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { SceneCollapse } from "./collapse.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
 import { FixedStepLoop } from "./loop.js";
@@ -186,6 +187,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
   #state: GameStore<TState>;
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
+  #collapse: SceneCollapse | undefined;
   #cleanup: Array<() => void> = [];
   #particles = new Set<GPUParticles3D>();
   #entities: Registry | undefined;
@@ -383,6 +385,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
+    this.#collapse = new SceneCollapse(threeScene as never);
     const gameLoop = new FixedStepLoop({
       maxSteps: this.#config.maxSteps,
       onRender: () => {
@@ -394,6 +397,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics> implements Game
             particle.process(this.#renderer);
           }
         }
+        // Runs on web as well as native, so the two stay one behaviour rather than diverging
+        // into a fast path nobody tests. Scenes under its mesh floor are left alone entirely.
+        this.#collapse?.frame();
         renderer.render(threeScene, camera);
         this.#scene?.render(ctx);
       },

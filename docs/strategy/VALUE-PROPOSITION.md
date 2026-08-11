@@ -104,7 +104,7 @@ working, not a win being hidden.
 
 | Not earned | Why, precisely |
 |---|---|
-| **"Ships to iOS and Android"** | Emulator and simulator only. The iOS lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64, Metal-driver, signing, touch-hardware, thermal or battery evidence exists ([PRD-045](../PRDs/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
+| **"Ships to iOS and Android"** | Emulator and simulator only. The iOS lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64, Metal-driver, signing, touch-hardware, thermal or battery evidence exists ([PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so the cost axis alone tops out near **40/100** — a ceiling, not a backlog item |
 | **"Better looking"** as a general claim | Phase 1's own ledger forbids it: *"should not claim universal visual superiority from the two winning genres."* Top-down lost on HUD hierarchy |
 | **"Production ready"** | Beta rows 3, 4 and 5 are open. Tier 1 is not reached: Desktop Linux `65/1/1/1`, Android emulator `27/40/0/1`, all three Phase 4 performance controls **UNVERIFIED** at exit `254` |
@@ -126,10 +126,10 @@ Ranked by how much the sentence at the top would move, cheapest first.
 
 | # | Change | Moves | Blocked on |
 |---|---|---|---|
-| 1 | **Round 4 paired capability proof** — a brief the vanilla arm cannot match inside the same spec | Axis 1 from *tie* to *win*; closes beta row 3 and Phase 2 | Nothing. [PRD-061](../PRDs/PRD-061-round-4-paired-capability-proof.md), needs no hardware — **the only open PRD pointing at the top-line claim** |
+| 1 | **Round 4 paired capability proof** — a brief the vanilla arm cannot match inside the same spec | Axis 1 from *tie* to *win*; closes beta row 3 and Phase 2 | Nothing. [PRD-061](../PRDs/night-watch-26-08-10/PRD-061-round-4-paired-capability-proof.md), needs no hardware — **the only open PRD pointing at the top-line claim** |
 | 2 | **A stranger plays for five minutes** | Every adoption claim — this is the project's decisive test | An afternoon and one external person |
-| 3 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
-| 4 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+emulator sentence outright | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
+| 3 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
+| 4 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+emulator sentence outright | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
 | 5 | **A physical Android device** | Axis 5 out of the emulator caveat, Android half only | Hardware. Tier 2, parked by owner decision |
 
 ## The one-line claim, in two versions

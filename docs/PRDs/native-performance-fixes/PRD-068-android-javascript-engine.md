@@ -4,10 +4,11 @@ prd_contract: v1
 
 # PRD-068 — The Android JavaScript engine: price V8, JavaScriptCore and Hermes against QuickJS with device numbers
 
-**Status: OPEN, filed 2026-08-10. Nothing here is implemented.** This is PRD-066 Phase 2 written
-out: a spike whose deliverable is a decision backed by measurements on one named physical phone,
-not an engine port. **No engine is chosen by this document.** It defines what must be measured,
-what each answer would mean, and what would falsify the recommendation it does make.
+**Status: IN PROGRESS, filed 2026-08-10. Measurement plumbing is implemented and emulator-proved;
+physical acceptance remains open.** This is PRD-066 Phase 2 written out: a spike whose deliverable
+is a decision backed by measurements on one named physical phone, not an engine port. **No engine
+is chosen by this document.** It defines what must be measured, what each answer would mean, and
+what would falsify the recommendation it does make.
 
 **Updated 2026-08-10 with a second device measurement: the JS→C++ render-command boundary was
 instrumented and is roughly 2% of a CPU-bound frame.** The boundary is ruled out. That moves the
@@ -242,7 +243,7 @@ because debug info dominates the unstripped one and would swamp the comparison.
 |---|---|
 | **Expected per-mesh change** | ESTIMATE, 3–10× on occupant 1. **With occupant 1 now measured at ~98% of the frame, that estimate translates almost directly into frame time** — unlike when this PRD was first filed, there is no longer a large boundary term diluting it. Chrome on this same device runs the identical scene acceptably, which bounds the JS-execution ceiling from above. The recovery is still ESTIMATE until Phase 2B runs it. |
 | **arm64 `.so` delta** | ESTIMATE **+15 to +25 MB stripped** — i.e. the runtime roughly triples, since its entire current `.text` is 10.5 MB. A monolith V8 with `v8_enable_i18n_support=false` and an embedded snapshot is the configuration to price. |
-| **Build time / dependency cost** | **This is the branch's real risk, and it is not the C++.** `scripts/download-deps.mjs:130` maps V8 only to `kuoruan/libv8` releases for macOS, Linux-x64 and Windows-x64. **There is no arm64-Android V8 in this repository's dependency set and no obvious pinned-artifact source for one.** The alternatives are (a) find and pin a third-party arm64-Android `libv8_monolith.a`, provenance unknown, or (b) build V8 from source with `depot_tools` + `gn`/`ninja` — tens of GB of checkout, hours per build, and a Google Python toolchain that sits outside both pnpm and CMake. `download-deps.mjs` is the only supported dependency-reconstruction path here, and it is a pinned-URL-and-hash downloader, not a source builder. Option (b) does not fit that shape without a new mechanism. |
+| **Build time / dependency cost** | **The cheapest provenance gate survives narrowly.** `v8-android-jit-nointl@11.1000.4` is a direct npm tarball with SHA-256 `46870658adfe0f6eaa4819226af37a25663bd54599304dd7d7c91ed1089dae9e`. It contains headers, an arm64 `libv8android.so` (15,507,808 bytes), and an external snapshot. It is V8 10.0.139.9 from 2023, built with NDK r23c, not the repository's V8 13.1.201.22 pin. `download-deps.mjs` can extract the tarball but still needs explicit hash enforcement and AAR normalization. No maintained matching V8 13 Android artifact was found. Building current V8 from source remains a separate dependency mechanism. **Build time is UNMEASURED.** |
 | **Integration effort** | **Lowest of the three, conditional on a library existing.** `src/js/v8_engine.cpp` is 1,207 lines, already implements `mystral::js::Engine`, and already drives the desktop host. The Android work is: a CMake branch for the arm64 library alongside the existing one at `CMakeLists.txt:498`; flipping `MYSTRAL_USE_V8` in the `elseif(ANDROID)` block at `CMakeLists.txt:95–100`; the matching `-DMYSTRAL_USE_V8=OFF` in `android/app/build.gradle.kts:153`; an Android arm in `engine_factory.cpp:35`. One real code question: `v8_engine.cpp:47–48` calls `InitializeICUDefaultLocation("")` and `InitializeExternalStartupData("")`, which assume a monolith carrying its own snapshot — a build that externalizes the snapshot needs the blob staged as an APK asset and those two calls changed. **Days, not weeks, if the library exists.** |
 | **Compounding risk** | The 16 KB page-alignment row already open in PRD-066 §7 — `libSDL3.so` and `libmystral-runtime.so` both currently fail ELF and APK alignment checks on this device. Adding a large prebuilt third-party static library does not make that easier. |
 
@@ -250,9 +251,9 @@ because debug info dominates the unstripped one and would swamp the comparison.
 
 | | |
 |---|---|
-| **Expected per-mesh change** | **UNKNOWN, and gated on one fact nobody here has checked: whether the available `jsc-android` build has its arm64 JIT enabled.** If it does, expect the same order of recovery as V8 on occupant 1. If it does not, this branch is an interpreter-for-interpreter swap and buys approximately nothing. **Establishing that fact is the cheapest question in this PRD and must be answered before the branch is measured.** |
+| **Expected per-mesh change** | **UNMEASURED, but the cheapest disqualifier survives.** `jsc-android@294992.0.0` builds arm64 with baseline JIT enabled, C-loop disabled, and DFG/FTL disabled. It is not an interpreter-for-interpreter artifact, but baseline-JIT presence predicts no device result; runtime activation and the per-mesh figure still require the Pixel run. |
 | **arm64 `.so` delta** | ESTIMATE **+6 to +10 MB** for `libjsc.so`. Smaller than V8, larger than Hermes. |
-| **Build time / dependency cost** | **Lowest plumbing cost of the three.** JSC for Android is published as a Maven AAR. This repository already extracts native libraries out of an AAR — `android/app/build.gradle.kts` has an `extractSdl3JniLibs` task doing exactly that for `libSDL3.so` — so the mechanism exists and the pattern is proven here. A pinned AAR fits `download-deps.mjs` without inventing anything. |
+| **Build time / dependency cost** | **Lowest plumbing cost of the three.** The exact tarball is pinned at SHA-256 `2571ee361cd3700d86cc31686431b89cafac0540aa3fb320eb3015be1aa05dd2`; its AAR contains a 19,896,032-byte stripped arm64 `libjsc.so`. This repository already extracts native libraries out of an AAR for SDL3, so the mechanism exists. **Integration build time is UNMEASURED.** |
 | **Integration effort** | **Higher than V8 and for a subtle reason.** `src/js/jsc_engine.mm` is 661 lines of Objective-C++ compiled only under `APPLE`, against Apple's `JavaScriptCore.framework` headers. The JSC **C** API (`JSValueRef`, `JSObjectRef`, `JSContextRef`) is the same on `jsc-android`, so the logic ports — but the file is `.mm`. A second Android-only JSC engine file would be a fork of a shared class, and a fork diverges silently, which this repository does not permit. The honest cost is therefore **a refactor of `jsc_engine.mm` into a platform-neutral `.cpp` core plus a thin Apple-only shim** — more invasive than V8's flag flip, and it touches the file that currently carries the iOS target, whose only gate is a CI-hosted simulator lane. |
 | **Distinct upside not shared by V8** | It makes Android and iOS the **same engine**, so an engine-semantics difference between the two mobile targets becomes impossible by construction. That is a correctness argument. It is not a frame-rate argument. |
 
@@ -263,7 +264,7 @@ because debug info dominates the unstripped one and would swamp the comparison.
 | **Expected per-mesh change** | **Probably little to none on steady-state throughput, and the spike should expect to disprove this branch rather than adopt it.** Hermes is designed for startup time and memory on mobile, not for peak throughput on hot numeric loops, which is exactly what a Three.js scene traversal is. A Hermes JIT exists in upstream work but is not something to bet a port on without a measurement on this device. **Measure it anyway** — a cheap negative result is worth having written down, and if Hermes' register-based interpreter beats QuickJS's meaningfully, that is a real finding. |
 | **arm64 `.so` delta** | ESTIMATE **+2 to +3 MB** — by far the smallest. |
 | **Build time / dependency cost** | Available as a prebuilt `libhermes.so` in Maven artifacts, or buildable from source with plain CMake and no `depot_tools`. **The only branch that is buildable from source inside this repository's existing toolchain**, which matters if pinned-prebuilt provenance turns out to be unacceptable. |
-| **Integration effort** | **Highest.** Hermes' embedder API is `facebook::jsi`, not a C API — a different abstraction shape from `mystral::js::Engine`. This is a new adapter of roughly 600–1,000 lines with no existing code to start from, and it has to satisfy the full interface in `include/mystral/js/engine.h`, including the external-memory paths (`newArrayBufferExternal`, `createFloat32ArrayView`) that the bulk physics ABI depends on. **Whether JSI exposes a no-copy external ArrayBuffer path adequate for `readVisibleTransforms` is an open question and should be checked before any Hermes measurement is attempted** — if it does not, the branch is disqualified on correctness before performance is relevant. |
+| **Integration effort** | **Highest, but the external-memory correctness gate survives.** Hermes `v0.13.0` passes the exact `MutableBuffer::data()` pointer to an external ArrayBuffer, retains the buffer wrapper until finalization, and constructs `Float32Array` views over that backing store without copying. The adapter must still preserve the native allocation's lifetime, alignment and synchronization contract. It remains a new `facebook::jsi` adapter of roughly 600–1,000 lines with no existing code to start from. |
 | **Distinct upside** | AOT bytecode (`hbc`) is native to Hermes, which would also close the cold-start row that `NATIVE-PERF-BOTTLENECKS` ranks 🟢/⭐⭐⭐. And it is the **only** branch with any plausible iOS story — see §5. |
 
 #### 4.3a Static Hermes (AOT to native) — a separate question, and the only one that could touch iOS
@@ -358,6 +359,21 @@ it did.
 
 ## 6. Execution phases
 
+### Implementation progress — 2026-08-10
+
+The repository now has a default-off Android profiler, a fail-closed measurement runner, an
+uncapped-present path, and a configurable `native-smoke` subject. Development runs on
+`emulator-5554` proved the marker schema, stale-bundle protection, vsync switch, busy-loop timer
+control, and packaged-library size extraction. Every emulator report is written below
+`.runtime/`, carries `acceptanceEligible: false`, and is not a finding for this PRD.
+
+The native LOC review trigger is already exceeded repository-wide. This spike adds measurement
+code rather than a framework abstraction: no public API, package, dependency, or default native
+gate was added, and profiling compiles out unless explicitly enabled. The kill-switch review
+removed an attempted extra-draw control because a native draw would not truthfully prove an extra
+JavaScript crossing. The remaining instrumentation is the minimum needed to produce the required
+split and fail-closed artifact; candidate engine ports remain out of scope.
+
 ### Phase 2A — narrowed: confirm the ~98% is JavaScript, not native work outside the bindings
 
 **Most of this phase has already executed.** The boundary is instrumented and measured at ~2%
@@ -422,6 +438,11 @@ ABI": that path is closed by the 2% measurement, and PRD-069 is being revised ac
    `download-deps.mjs`? A "no" makes the front-runner conditional on a new dependency mechanism,
    which is a scope change the owner has to accept explicitly.
 4. Then measure whatever survives.
+
+**Cheapest-gate result, 2026-08-10:** none is eliminated. JSC's published arm64 artifact has
+baseline JIT enabled; Hermes has a genuine no-copy external ArrayBuffer path; and V8 has a
+pinnable but stale V8 10 shared-library artifact. These are dependency and API findings only.
+All three device-performance rows remain **UNMEASURED**.
 
 ### Phase 2C — the decision record
 
@@ -508,15 +529,15 @@ Each is checkable by someone re-running the commands in §12, not by reading cod
        is recorded as UNMEASURED with the reason it could not be measured.
 6. [ ] Every priced branch carries a **stripped arm64 `.so` byte count**, a build-time figure,
        and its pinned dependency artifact — or the reason it has none.
-7. [ ] **Each branch states in one sentence what it does for iOS**, and no branch is described as
+7. [x] **Each branch states in one sentence what it does for iOS**, and no branch is described as
        improving mobile performance.
 8. [ ] A **single recommendation** exists with the §8 falsifiers listed and each marked fired or
        not fired.
 9. [ ] Every negative control in §11 was **observed**, with its exit code or observed value
        recorded. A control not observed is written UNVERIFIED, never assumed.
-10. [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes, and **no native
+10. [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes, and **no native
         toolchain becomes part of the default repository gate.**
-11. [ ] The two contradicted rows in `NATIVE-PERF-BOTTLENECKS.md` are corrected with measured
+11. [x] The two contradicted rows in `NATIVE-PERF-BOTTLENECKS.md` are corrected with measured
         values, and its remaining rows still say they are unmeasured.
 
 **Not claimed by this PRD at any phase:** an engine port, an iOS result, a device frame-rate
@@ -529,14 +550,14 @@ readiness.
 
 | Control | Change | Expected | Status |
 |---|---|---|---|
-| `vsync-still-capped` | run the uncapped ladder with the display clock re-engaged | the 0% rung returns to ~16.7 ms. Agreement between the two runs proves the uncapped path is not uncapped | not built |
-| `ffi-instrument-blind` | add a busy loop inside the no-op binding | the FFI share must rise proportionally; an unmoved number means the instrument measures nothing | not built |
-| `call-counter-blind` | issue one extra `draw` per frame | the counter rises by exactly the frame's extra calls | not built |
-| `engine-identity` | file a run whose artifact reports `Engine::getName() == "QuickJS"` as a candidate result | rejected. This is the failure mode the iOS lane already hit once by recording a Vision Pro as iOS evidence | not built |
-| `two-variables` | change the JS bundle and the engine in the same comparison | rejected. Candidate and control runs must share a bundle sha256 and differ in `.so` sha256 | not built |
-| `emulator-serial` | take any measurement on `emulator-5554` | blocked before measurement, never recorded as a device number | not built |
+| `vsync-still-capped` | run the uncapped ladder with the display clock re-engaged | the 0% rung returns to ~16.7 ms. Agreement between the two runs proves the uncapped path is not uncapped | emulator development observation: 11.01 ms uncapped → 16.68 ms FIFO; physical **UNVERIFIED** |
+| `ffi-instrument-blind` | add a busy loop inside the no-op binding | the FFI share must rise proportionally; an unmoved number means the instrument measures nothing | emulator development observation: 0.0104 → 0.1445 ms/frame; physical **UNVERIFIED** |
+| `call-counter-blind` | issue one extra `draw` per frame | the counter rises by exactly the frame's extra calls | emulator development observation: main-submit `drawIndexed` 2 → 3; shared-emulator reinstall interrupted the proof run; physical **UNVERIFIED** |
+| `engine-identity` | file a run whose artifact reports `Engine::getName() == "QuickJS"` as a candidate result | rejected. This is the failure mode the iOS lane already hit once by recording a Vision Pro as iOS evidence | validator test observed rejection; candidate-device run **UNVERIFIED** |
+| `two-variables` | change the JS bundle and the engine in the same comparison | rejected. Candidate and control runs must share a bundle sha256 and differ in `.so` sha256 | validator test observed rejection; candidate-device run **UNVERIFIED** |
+| `emulator-serial` | take any measurement on `emulator-5554` | blocked before measurement, never recorded as a device number | observed exit 2; explicit development override writes `acceptanceEligible: false` below `.runtime/` |
 | `estimate-as-finding` | recommend a branch whose row still reads ESTIMATE | rejected by the Phase 2C review | not built |
-| `wrong-denominator` | report a candidate's gain against the `-O0` build | rejected — it would manufacture the 5.5× that the `-O2` flag already shipped | not built |
+| `wrong-denominator` | report a candidate's gain against the `-O0` build, a stale Ninja file, or an incomplete priced run | rejected — both packaged runtime hashes must resolve to exact `-O2` CMake outputs, both reports need five cold starts, and the candidate needs a clean-build time | validator test observed rejection; candidate-device run **UNVERIFIED** |
 
 ---
 
@@ -545,11 +566,20 @@ readiness.
 | What | Command | Expected |
 |---|---|---|
 | Device present and is the right one | `adb devices -l \| grep 37251FDJH0037Z` | one entry, `model:Pixel_8`, not an emulator |
-| Optimization still reaching the compiler | `grep -c '\-O2' packages/runtime-native/android/app/.cxx/Debug/*/arm64-v8a/build.ninja` | non-zero |
+| Optimization matches the packaged runtime | `jq -e '.nativeBuild.optimization == "-O2" and .nativeBuild.artifactSha256 == .runtimeLibrary.packagedSha256' <measurement-report.json>` | true; the exact packaged `.so` hash resolves to its CMake output, never an unrelated stale Ninja file |
 | Stripped size baseline | `llvm-strip --strip-all -o /tmp/s.so <obj>/arm64-v8a/libmystral-runtime.so && stat -c%s /tmp/s.so` | 17,574,040 for the 2026-08-10 build; any candidate's figure is a delta on this |
 | Section breakdown | `llvm-size -A /tmp/s.so` | `.text` 10,515,456 on the baseline build |
 | Device smoke still green | `node packages/runtime-native/scripts/verify-android-first-proof.mjs --device 37251FDJH0037Z` | exit 0, 300 frames, non-blank screenshot |
 | Device physics parity still green | `node packages/runtime-native/scripts/verify-android-physics-parity.mjs --device 37251FDJH0037Z` | exit 0, zero-delta comparison |
+| JSC arm64 JIT gate | `curl -fsSL https://raw.githubusercontent.com/react-native-community/jsc-android-buildscripts/v294992.0.0/scripts/compile/jsc.sh \| grep -E 'ENABLE_(JIT|C_LOOP|DFG_JIT|FTL_JIT)='` | baseline JIT ON and C-loop/DFG/FTL OFF |
+| Hermes external-buffer gate | `curl -fsSL https://raw.githubusercontent.com/facebook/hermes/4b3bf912cc0f705b51b71ce1a5b8bd79b93a451b/API/hermes/hermes.cpp \| grep -A16 'createArrayBuffer('` | exact `MutableBuffer::data()` pointer reaches `setExternalDataBlock` |
+| V8 artifact provenance gate | `curl -fsSL https://registry.npmjs.org/v8-android-jit-nointl/-/v8-android-jit-nointl-11.1000.4.tgz \| sha256sum` | `46870658adfe0f6eaa4819226af37a25663bd54599304dd7d7c91ed1089dae9e` |
+| Measurement contracts | `pnpm exec vitest run --config packages/runtime-native/vitest.config.ts --dir packages/runtime-native packages/runtime-native/tests/android-js-engine-measurement.test.mjs packages/runtime-native/tests/android-js-engine-native-profiling.test.mjs` | exit 0; marker arithmetic, counters, sizing, RSS, controls and comparisons fail closed |
+| Emulator rejection | `node packages/runtime-native/scripts/measure-android-js-engine.mjs --device emulator-5554 --cold-start-runs 0` | exit 2, `TN_ANDROID_JS_EMULATOR_BLOCKED` |
+| QuickJS uncapped 0% rung | `node packages/runtime-native/scripts/measure-android-js-engine.mjs --device 37251FDJH0037Z --clean-build --meshes 2000 --materials shared --visibility 0 --report packages/runtime-native/artifacts/android/js-engine/quickjs-native-smoke-shared-0.json` | exit 0; QuickJS, five cold starts, clean-build time, `VmHWM`, per-library and total native footprint, exact bundle/APK/runtime hashes |
+| FFI timer control | `node packages/runtime-native/scripts/measure-android-js-engine.mjs --device 37251FDJH0037Z --busy-loop-control --meshes 2000 --materials shared --visibility 0 --report packages/runtime-native/artifacts/android/js-engine/control-busy-loop.json` | exit 0; timed binding share rises |
+| Draw-counter control | Run the preceding QuickJS command twice with `--meshes 0 --cold-start-runs 0`, adding `--extra-draw-control` and a distinct report path to the second run | `commandsPerFrame.drawIndexed` rises by exactly one |
+| Candidate comparison | Add `--clean-build --expected-engine V8 --control-report packages/runtime-native/artifacts/android/js-engine/quickjs-native-smoke-shared-0.json` to the V8 run | rejects the wrong engine, device, denominator, unchanged runtime, changed bundle, fewer than five cold starts, or missing build time |
 | Repository gates | `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` | exit 0 |
 
 Measurements are validated locally against the attached device, not by pushing to CI — CI

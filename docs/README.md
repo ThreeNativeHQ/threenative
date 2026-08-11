@@ -63,6 +63,8 @@ persistent unused-export evidence comes from `pnpm round:deletions`.
 - [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours
 - [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, the owned runtime, the native physics ABI
 - [architecture/AGENT-INTERFACE.md](architecture/AGENT-INTERFACE.md) — how an AI agent drives a ThreeNative project
+- [architecture/NATIVE-PERF-BOTTLENECKS.md](architecture/NATIVE-PERF-BOTTLENECKS.md) — hypothesis list, superseded in part by the measurements in `PRDs/native-performance-fixes/`
+- [architecture/NATIVE-RENDER-TRANSPORT.md](architecture/NATIVE-RENDER-TRANSPORT.md) — the proposed JS shim / command-stream / render-thread stack, layer by layer. **Declined as a roadmap**: it aims three layers of engineering at a boundary measured at 2% of frame
 The 2026-08-08 course correction is closed and its file deleted: the `@threenative/physics`
 node fork was removed, each public class is one file, and only the `PhysicsSimulation`
 backend swaps on the export condition. Write-once/run-anywhere is now owned as a gate by

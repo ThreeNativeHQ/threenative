@@ -26,7 +26,7 @@ tier split exists to stop.
 | Unlock | Reopens |
 |---|---|
 | A physical Android device on this machine | the Android half of PRD-056, PRD-057 and PRD-058 |
-| An Apple machine + signing identity + provisioning profile | every **physical** iOS row. PRD-045 criterion 7 no longer needs it — it closed on the hosted simulator, 2026-08-11 |
+| An Apple machine + signing identity + provisioning profile | every **physical** iOS row. PRD-045 criterion 7 does not need it — a hosted simulator suffices — but it is **not closed**: the 2026-08-11 close was reopened when the rerun failed, and it now needs two consecutive green hosted runs |
 | npm, GitHub and platform-signing release credentials | PRD-060 |
 | A hosted same-candidate native prerelease | PRD-059 |
 | A stranger plays a ThreeNative game for five minutes | the tier as a whole |
@@ -53,6 +53,7 @@ Parking changes no criterion. An unmet criterion is still unmet; rule 3 below is
 
 | PRD | Everything else | What is blocked |
 |---|---|---|
+| [PRD-045](PRD-045-playtest-on-device.md) — playtest on device | **The code is done.** Criteria 1–6 and 8 MET. The attach race that caused criterion 7's flake is fixed by `playtest({ holdUntilAttached: true })` in commit `0e4897a` — `packages/core/src/playtest.ts:93`, covered by `packages/core/__tests__/playtest.spec.ts:279`. Nothing waits on a design decision, a package change or a device | **Criterion 7 only, and only its execution.** It needs two consecutive green runs of the iOS-simulator lane, which runs solely on the hosted `macos-15` runner; this host has no Xcode, `xcrun`, simulator or iOS device, so it cannot be executed locally at any effort. **This is not the Tier 2 physical block** — a simulator is sufficient — and it is not a defect block. Unblocks on an owner decision to spend the CI minutes; both runs green on a `SimRuntime.iOS-*` runtime moves it to `done/`, either run red returns it to the active root |
 | [PRD-056](PRD-056-physical-mobile-qualification.md) — physical mobile production qualification | Planning complete; the qualification command, evidence envelope and fail-closed contract are specified in full | Every criterion. It needs a physical Android device, a physical iOS device, a production-signed Android artifact, an Apple signing identity and an Apple provisioning profile. None exists on this machine. An untracked byte-identical duplicate under `docs/PRDs/production-readiness/` was removed on 2026-08-09 |
 | [PRD-057](PRD-057-native-audio-parity.md) — native audio parity | The isolated lane is committed and its manager gate packet passed all 16 command-level negative controls | Review cap reached with five new implementation defects: physical/virtual identity, rendered-output truth, aggregate target enforcement, stale identity validation, and the standalone smoke negative control; physical audible rows also remain blocked |
 | [PRD-058](PRD-058-performance-reliability-observability.md) — performance, reliability, and privacy-safe observability | Isolated lane commit `5865937`; manager reran all 21 declared controls with exact observed-red evidence | Physical/current desktop evidence, physical Android/iOS soak and resource artifacts, physical OS crash/ANR artifacts, and the root marker-control collection remain unavailable; implementation is not squashed |

@@ -16,6 +16,7 @@ conventions, React/Tailwind for UI, vanilla `three` on every surface underneath.
 
 Mantra: *build a system that builds itself.* Every piece you build gets playtested against
 the real build before you move on. If it fails, fix it before continuing.
+Build systems that build themselves: continuously build harnesses to debug, inspect, and measure performance.
 
 ## How you work
 
@@ -28,6 +29,14 @@ the real build before you move on. If it fails, fix it before continuing.
    `pnpm test` green plus a playtest asserting the behaviour is a goal; "make it work" is not.
 5. **Never claim a gate you did not run.** Paste the failure. "Unverified" is an acceptable
    answer; "verified" without a run is not.
+6. **Name the layer before you fix the bug.** Every defect is either an **engine bug** — the
+   framework or the native runtime is wrong — or a **game bug**, the game misusing Three.js or
+   ThreeNative. Say which, and why, before you write the fix. The two have opposite homes: an
+   engine bug is fixed in `packages/`, a game bug in the example or template. Fixing an engine
+   bug inside game code buys a green screenshot and leaves every other game broken, and each
+   such workaround is a line the user has to write that the framework promised to ship. When a
+   game needs to annotate its own scene graph, branch on platform, or hand-tune a framework
+   pass to make native match web, that is an engine bug wearing a game-code costume.
 
 **Diagrams:** Whenever a diagram is needed, use Mermaid rather than ASCII art.
 

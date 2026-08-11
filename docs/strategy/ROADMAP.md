@@ -41,7 +41,7 @@ change does not land.
 ## Native reliability tiers — owner decision, 2026-08-10
 
 "Reliable" is split into what this machine can prove and what only physical hardware can.
-Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md); the blocked-PRD dependency
+Owned by [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md); the blocked-PRD dependency
 order lives in [`docs/PRDs/native/blocked/README.md`](../PRDs/native/blocked/README.md).
 
 | Tier | Bar | Licenses the sentence |
@@ -72,7 +72,7 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 | Monorepo, core, physics, scaffold, entity registry, loop, playtest bridge | `done/PRD-001`…`008` | ✅ shipped |
 | Templates, platformer kit, generated render layer, starter kit | `done/PRD-009`…`015` | ✅ shipped |
 | Measurement: genre sweep, paired arm, capture/judge/blind, honest LOC, visual baseline | `done/PRD-016`…`020`, `025`, `030` | ✅ shipped |
-| Improvement rounds 1–3 + `round:deletions` | [done/PRD-021](../PRDs/done/PRD-021-the-improvement-round.md) | ✅ ran — rounds 1–3 recorded; 167 unreached exports reported, **zero deleted** |
+| Improvement rounds 1–3 + `round:deletions` | [done/PRD-021](../PRDs/done/PRD-021-the-improvement-round.md) | ✅ ran — rounds 1–3 recorded; 167 unreached exports reported and all 167 disposed of by [PRD-063](../PRDs/done/PRD-063-unreached-export-deletion-sweep.md) — 5 deleted, 106 un-exported |
 | Authoring-cost and lifecycle work | `done/PRD-022`…`024`, `026`…`029`, `031` | ✅ shipped |
 | Playtest semantic depth · operator ergonomics | [done/PRD-033](../PRDs/done/PRD-033-playtest-semantic-depth.md), [PRD-042](../PRDs/done/PRD-042-playtest-operator-ergonomics.md) | ✅ done |
 | Hot reload with state preservation | [done/PRD-035](../PRDs/done/PRD-035-hot-reload-state-preservation.md) | ✅ done — consumer-scoped, **not** the paired proof row 3 needs |
@@ -91,12 +91,12 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 
 | Item | PRD | State |
 |---|---|---|
-| **Tier 1 native reliability** | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) | ⚠️ executed; **Tier 1 not reached** — [ledger](../verification/tier-1-2026-08-10.md) records Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android emulator `27/40/0/1`; all three Phase 4 controls are **UNVERIFIED** with exit `254`. The PRD makes no mobile-readiness claim. |
-| **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/PRD-061-round-4-paired-capability-proof.md) | ❌ not started — **the only PRD pointing at beta row 3**; needs no hardware. Round 3's `budget` stop condition must clear first |
+| **Tier 1 native reliability** | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) | ⚠️ executed; **Tier 1 not reached** — [ledger](../verification/tier-1-2026-08-10.md) records Browser `67/0/0/0`, Desktop Linux `65/1/1/1`, and Android emulator `27/40/0/1`; all three Phase 4 controls are **UNVERIFIED** with exit `254`. The PRD makes no mobile-readiness claim. |
+| **Round 4 — the Phase 2 paired proof** | [PRD-061](../PRDs/night-watch-26-08-10/PRD-061-round-4-paired-capability-proof.md) | ⚠️ **cleared to start 2026-08-10 — the owner granted one completed round 4.** The only PRD pointing at beta row 3; needs no hardware. Phase 0 must clear the `round:next` gate by writing `docs/verification/round-4-<date>.md` as its evidence arrives, **not** by editing round 3's ledger |
 | Asset discovery MCP | [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) | ⚠️ closed — live-agent gate lost to the no-MCP control; product owner retained the generated asset MCP, so the visual-improvement evidence stays unmet |
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/native/blocked/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; the rerun is green on Browser (`67/0/0`) and Android emulator (`67/0/0`), while Desktop Linux is `66/0/1` because the desktop registry explicitly blocks native multitouch — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
 | The HUD hole on native | [PRD-055](../PRDs/native/blocked/PRD-055-native-hud-reopened.md) | ⚠️ open; `25-camera-parented-overlay` passes on desktop and Android, Android multitouch passes, and only the explicit desktop native-multitouch exclusion remains in the matrix — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
-| Playtest on device | [PRD-045](../PRDs/PRD-045-playtest-on-device.md) | ⚠️ **REOPENED 2026-08-11, criterion 7 UNVERIFIED.** Criteria 1–6 and 8 MET. Closed on iOS-simulator run `31446340434` (`iPhone 17 Pro`, `SimRuntime.iOS-26-2`), reopened when `31447449669` failed the same lane on the same device class — one pass, one fail is not closed. **Needs no hardware; the defect was ours** (attach race, fixed by `playtest({ holdUntilAttached: true })` in `0e4897a`). Closes on consecutive green iOS-simulator runs |
+| Playtest on device | [PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) | ⚠️ **BLOCKED 2026-08-10 — moved to `native/blocked/`.** Criteria 1–6 and 8 MET; criterion 7 UNVERIFIED. Closed on iOS-simulator run `31446340434` (`iPhone 17 Pro`, `SimRuntime.iOS-26-2`), reopened when `31447449669` failed the same lane — one pass, one fail is not closed. **The defect was ours and is fixed** (attach race, `playtest({ holdUntilAttached: true })`, `0e4897a`). **Block reason: the only work left is two consecutive green runs of a lane that exists only on the hosted `macos-15` runner** — not runnable on this host, not a physical-hardware block |
 | iOS evidence lane | [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md) | ⚠️ open, filed 2026-08-10 — Phase 0 landed (the lane was selecting an **Apple Vision Pro**, so every prior "iOS" artifact was visionOS). Phases 1–3 repair the red consumer handoff, widen the trigger and make the report legible; Phase 4 is a time-boxed real-device spike permitted to end `BLOCKED`. Makes no mobile-readiness claim |
 | Physical mobile production qualification | [native/blocked/PRD-056](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md) | ❌ filed under `native/blocked/` — every criterion needs a physical device or an Apple signing identity; an untracked duplicate under `production-readiness/` was removed 2026-08-09 |
 | Production readiness: audio parity, profiling, SBOM, promoted distribution | [native/blocked/PRD-057…060](../PRDs/native/blocked/) | ❌ **Tier 2, parked.** Moved out of `production-readiness/` (now empty) on 2026-08-10. PRD-058 Phase 5 is the one device-free part and is executed by PRD-064; 059 needs a hosted prerelease, 060 needs release credentials |

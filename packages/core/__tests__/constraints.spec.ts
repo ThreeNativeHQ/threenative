@@ -12,7 +12,7 @@ describe("core constraints", () => {
   it("should keep visual concerns out of core source", () => {
     const source = readdirSync(sourceDirectory)
       .filter((file) => file.endsWith(".ts"))
-      .filter((file) => file !== "particles.ts")
+      .filter((file) => file !== "particles.ts" && file !== "collapse.ts")
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
 
@@ -22,6 +22,20 @@ describe("core constraints", () => {
     expect(particles).not.toMatch(
       /new\s+\w*Material|new\s+Color|light|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // `collapse.ts` is exempted on the same terms as `particles.ts` and for the same reason: it
+    // handles the game's material without ever authoring one. It merges meshes and re-parents a
+    // transform, so it must name materials — but it may only forward or clone what the game
+    // built. The moment it constructs one, it has started deciding how the game looks.
+    const collapse = readFileSync(path.join(sourceDirectory, "collapse.ts"), "utf8");
+    expect(collapse).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // It may name lights, and has to: the pass lifts the collapsed hierarchy out of the scene and
+    // would take the game's lights with it, leaving every lit surface black. Recognising one is
+    // not authoring one, and the line that matters — never constructing a light or a material —
+    // is still asserted above.
+    expect(collapse).toMatch(/isLight/u);
   });
 
   /**

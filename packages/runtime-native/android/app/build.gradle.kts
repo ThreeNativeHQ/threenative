@@ -1,4 +1,5 @@
 import java.util.zip.ZipFile
+import org.gradle.api.provider.Provider
 
 plugins {
     id("com.android.application")
@@ -25,6 +26,17 @@ val sdl3Aar = if (usePrebuiltRuntime) prebuiltRoot.file("SDL3-3.2.8.aar")
     else runtimeRoot.file("third_party/sdl3-android/SDL3-3.2.8.aar")
 val extractedSdl3JniLibs = layout.buildDirectory.dir("generated/sdl3-jniLibs")
 val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenative/assets")
+val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
+val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
+val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
+
+fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value ->
+    when (value.lowercase()) {
+        "true", "on", "1" -> "ON"
+        "false", "off", "0" -> "OFF"
+        else -> throw GradleException("-$propertyName must be true or false")
+    }
+}.get()
 
 tasks.register("extractSdl3JniLibs") {
     inputs.file(sdl3Aar)
@@ -49,6 +61,16 @@ tasks.register<Exec>("buildAndroidFirstProofBundle") {
     val playtestBridge = providers.environmentVariable("THREENATIVE_PLAYTEST_BRIDGE").orElse("enabled").get()
     val physicsProof = providers.environmentVariable("THREENATIVE_PHYSICS_PROOF").orElse("disabled").get()
     val physicsControl = providers.environmentVariable("THREENATIVE_PHYSICS_CONTROL").orElse("normal").get()
+    val jsProfileEnvironment = mapOf(
+        "THREENATIVE_JS_PROFILE_EXTRA_DRAW_CONTROL" to providers.environmentVariable("THREENATIVE_JS_PROFILE_EXTRA_DRAW_CONTROL").orElse("false").get(),
+        "THREENATIVE_JS_PROFILE_FRAME_WINDOW" to providers.environmentVariable("THREENATIVE_JS_PROFILE_FRAME_WINDOW").orElse("300").get(),
+        "THREENATIVE_JS_PROFILE_MATERIALS" to providers.environmentVariable("THREENATIVE_JS_PROFILE_MATERIALS").orElse("shared").get(),
+        "THREENATIVE_JS_PROFILE_MESHES" to providers.environmentVariable("THREENATIVE_JS_PROFILE_MESHES").orElse("0").get(),
+        "THREENATIVE_JS_PROFILE_PURE_JS_ITERATIONS" to providers.environmentVariable("THREENATIVE_JS_PROFILE_PURE_JS_ITERATIONS").orElse("0").get(),
+        "THREENATIVE_JS_PROFILE_PURE_JS_OBJECTS" to providers.environmentVariable("THREENATIVE_JS_PROFILE_PURE_JS_OBJECTS").orElse("2358").get(),
+        "THREENATIVE_JS_PROFILE_VISIBILITY" to providers.environmentVariable("THREENATIVE_JS_PROFILE_VISIBILITY").orElse("1").get(),
+        "THREENATIVE_JS_PROFILE_WARMUP_FRAMES" to providers.environmentVariable("THREENATIVE_JS_PROFILE_WARMUP_FRAMES").orElse("60").get(),
+    )
     workingDir = layout.projectDirectory.dir("../..").asFile
     commandLine(
         "node",
@@ -58,9 +80,11 @@ tasks.register<Exec>("buildAndroidFirstProofBundle") {
     environment("THREENATIVE_PLAYTEST_BRIDGE", playtestBridge)
     environment("THREENATIVE_PHYSICS_CONTROL", physicsControl)
     environment("THREENATIVE_PHYSICS_PROOF", physicsProof)
+    environment(jsProfileEnvironment)
     inputs.property("playtestBridge", playtestBridge)
     inputs.property("physicsControl", physicsControl)
     inputs.property("physicsProof", physicsProof)
+    inputs.properties(jsProfileEnvironment)
     inputs.file(layout.projectDirectory.file("../../scripts/build-android-first-proof.mjs"))
     inputs.file(layout.projectDirectory.file("../../scripts/build-android-physics-proof.mjs"))
     inputs.file(layout.projectDirectory.file("../../../../pnpm-workspace.yaml"))
@@ -156,7 +180,10 @@ android {
                     "-DTN_ENABLE_VIDEO=OFF",
                     "-DTN_ENABLE_WEBTRANSPORT=OFF",
                     "-DTN_ENABLE_DEBUG_SERVER=OFF",
-                    "-DTN_ENABLE_NATIVE_PHYSICS=ON"
+                    "-DTN_ENABLE_NATIVE_PHYSICS=ON",
+                    "-DTN_ANDROID_VSYNC=${nativeVsync.asCmakeBoolean("PthreenativeVsync")}",
+                    "-DTN_ANDROID_JS_PROFILE=${nativeJsProfile.asCmakeBoolean("PthreenativeJsProfile")}",
+                    "-DTN_ANDROID_JS_PROFILE_BUSY_LOOP=${nativeJsProfileBusyLoop.asCmakeBoolean("PthreenativeJsProfileBusyLoop")}",
                 )
                 System.getenv("THREENATIVE_WGPU_ROOT")?.takeIf { it.isNotBlank() }?.let {
                     nativeArguments.add("-DTHREENATIVE_WGPU_ROOT=$it")
