@@ -82,6 +82,7 @@ it changes, and reading its result requires opening a 4,400-line log.
 | 3 | **No video.** `grep -rn recordVideo` across `packages` and `scripts` → 0 hits | a still frame cannot show a hang, a flicker, or a one-frame-then-freeze |
 | 4 | **No legible verdict.** `grep -rn GITHUB_STEP_SUMMARY .github/workflows/` → 0 hits | reading a result means opening the raw log |
 | 5 | **No frame-timing diagnostic** | `300_FRAMES:300` proves the count, not that it took a plausible amount of time |
+| 6 | **The blank-detector can pass on a blank app.** `validateScreenshot` measures luminance across the *whole frame*, including simulator chrome. The Vision Pro capture is a brightly-lit living room with the app as a small floating window — `luminanceRange: 251` came overwhelmingly from the room. A fully black app window inside it would still pass | `simulator-report.json` screenshot block; the capture itself, 2732×2048 |
 
 Gap 2 is the one that costs the most: the lane's whole purpose is to catch a web-side change
 breaking native, and a change to `packages/core`, `packages/playtest`,
