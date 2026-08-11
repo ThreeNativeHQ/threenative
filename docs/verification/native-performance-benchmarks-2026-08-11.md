@@ -11,6 +11,11 @@ claim.
 
 ## 1. The headline
 
+**The one-line read: a clear win against the browser, unresolved against Godot.** The browser arm
+is the identical codebase with a different runtime beneath it, so it is the only row here that
+compares an engine rather than two games.
+
+
 | | ThreeNative native | The same game in Chrome | Godot 4.7.1 |
 |---|---|---|---|
 | Sustained frame rate | ~106 fps median, uncapped | 59.95–60.02 fps, vsync-locked | **53.7–59.5 fps, uncapped** |
