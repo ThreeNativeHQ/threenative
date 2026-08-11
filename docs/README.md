@@ -50,6 +50,7 @@ persistent unused-export evidence comes from `pnpm round:deletions`.
 
 ## Strategy
 
+- [strategy/VALUE-PROPOSITION.md](strategy/VALUE-PROPOSITION.md) — "would I use this instead of vanilla Three.js?" answered per axis, every claim marked earned or unearned against a verification file
 - [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse
 - [strategy/ROADMAP.md](strategy/ROADMAP.md) — the path to a production-ready beta, every item marked ✅/⚠️/❌; Gate 0 and Phase 1 closed, Phase 2 active, native lane state merged in
 - [strategy/BUSINESS-MODEL.md](strategy/BUSINESS-MODEL.md) — open core, pricing hypotheses, revenue order

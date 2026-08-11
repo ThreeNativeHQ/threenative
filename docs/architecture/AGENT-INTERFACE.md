@@ -1,7 +1,7 @@
 # Agent interface
 
-**Status:** proposal, 2026-08-02. **Charter authority:** `CHARTER.md` §2 (no bespoke CLI
-vocabulary), §10 (4 CLI commands), §11.4 (borrowed vocabulary).
+**Status:** proposal, 2026-08-02. The public CLI stays limited to four familiar commands,
+with no bespoke vocabulary.
 
 ## The workflow this replaces
 
@@ -60,7 +60,7 @@ models are bad at discovering novel APIs.
 
 The rule: an agent tool is a **stable, validated, auditable name for an operation the
 user could do by hand**. When the operation is "write a TypeScript file," the tool writes
-a TypeScript file. It does not introduce a scene format to mutate — `CHARTER.md` §2 killed
+a TypeScript file. It does not introduce a scene format to mutate — the charter rejected
 the IR, the compiler and the serialized scene format, and 25,898 LOC of compiler bought
 nothing a model cannot do with a `.ts` file.
 
@@ -113,7 +113,7 @@ Questions worth answering automatically, in rough order of value:
 
 ## The validator trap
 
-`CHARTER.md` §8 records why this harness needed a fix before it was lifted: 19 validators
+The harness history records why this harness needed a fix before it was lifted: 19 validators
 returned `undefined` on a wrong-typed value and 13 `.filter()` calls dropped them
 silently. A misspelled `equals` type meant the assertion vanished and the scenario
 **reported green while asserting nothing**.

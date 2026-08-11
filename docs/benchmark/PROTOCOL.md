@@ -25,14 +25,14 @@ round ledger to name what the extra lines bought.
 agent-written framework arm against `examples/abyss-vanilla`, which is frozen
 hand-written human source — the same mismatch this document's own rejected-options
 table names when it declines to score the vanilla arm that way. A ratio target over
-the *total* is additionally unreachable by construction: `CHARTER.md` §3 fixes the
+the *total* is additionally unreachable by construction: the charter fixes the
 addressable surface at the plumbing column, and the game column is the model's work in
 both arms, so halving the total would require negative plumbing. Any ratio target
 belongs on the plumbing column, and no ratio target is enforced here.
 
 The win condition is the paired arm: `pnpm sweep:pair <framework-archive>
 <vanilla-archive>`, agent against agent on the same sealed brief and proof set. The
-kill switch of `CHARTER.md` §3 still applies to this table row by row — if the vanilla
+the charter's kill switch still applies to this table row by row — if the vanilla
 column wins a row, that row leaves the framework.
 
 ## Fair paired score
@@ -60,7 +60,7 @@ tokens the framework arm pays and the vanilla arm does not, and the authoritativ
 usage events remain the token record. And it is not a free pass for the starter: template
 lines are lines the benchmark stops charging, so `pnpm budgets` caps each template in
 `packages/create-threenative/templates/` and CI fails when one grows past it. Moving
-gameplay into a template to win a sweep breaks that cap and `CHARTER.md` §11 rule 3.
+gameplay into a template to win a sweep breaks that cap and the rule that the framework never owns the look.
 
 A framework archive with no `starter-baseline/src/` fails measurement rather than falling
 back to the live template; re-measuring an old archive against a newer starter would move

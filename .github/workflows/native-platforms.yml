@@ -1,18 +1,14 @@
 name: Native platform evidence
 
+# When this lane runs is owned by ci.yml, not by a path filter here.
+#
+# The filter used to list only packages/runtime-native/**, so a change to core,
+# playtest, create-threenative or native-smoke — every package the native app
+# actually bundles — could break these targets with nothing reporting it. On
+# 2026-08-11 three separate reds on main turned out to be stale for exactly that
+# reason. Path filters also fired push and pull_request together, running the
+# whole 24-minute matrix twice per PR.
 on:
-  push:
-    paths:
-      - "packages/runtime-native/**"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/native-platforms.yml"
-  pull_request:
-    paths:
-      - "packages/runtime-native/**"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/native-platforms.yml"
   workflow_dispatch:
   workflow_call:
 
@@ -40,7 +36,18 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+          # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
+          # Gradle packages. Without these targets `:app:buildNativePhysics` fails with
+          # E0463 can't find crate for `core`, and every conformance row fails at phase
+          # "build" before the emulator is ever reached.
+          rustup target add aarch64-linux-android x86_64-linux-android
           node packages/runtime-native/scripts/download-deps.mjs --android
+          # --android fetches only sdl3 glue, wgpu-android, sdl3-android and quiche-android.
+          # src/webgpu/bindings.cpp includes stb_image.h unconditionally, so the NDK build
+          # fails with "'stb_image.h' file not found" without these. The iOS lane already
+          # fetches both explicitly (verify-ios-simulator.mjs); this mirrors it.
+          node packages/runtime-native/scripts/download-deps.mjs --only stb
+          node packages/runtime-native/scripts/download-deps.mjs --only cgltf
       - name: Capture browser references
         run: |
           set +e

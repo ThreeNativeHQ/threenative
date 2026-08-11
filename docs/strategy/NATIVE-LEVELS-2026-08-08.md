@@ -27,7 +27,7 @@ Measured, not argued. Every row has a file behind it.
 | Working tree | dirty; branch `docs/opportunity-areas-prds` is 1,591 files / +84k vs `main` | `git status`, `git diff --stat main...HEAD` |
 
 **The honest reading:** the framework is small, healthy and web-only. Native is a *charter
-promise* (`CHARTER.md` §3 criterion 3, §7), not a capability. The one spike that gates it
+promise* (one codebase reaching web, desktop and mobile), not a capability. The one spike that gates it
 failed for **environmental reasons** — a broken Android emulator (`VK_ERROR_INCOMPATIBLE_DRIVER`)
 and missing RN dependencies — so we still have **zero evidence** either way about whether
 `three/webgpu` runs outside a browser. That is the single largest unknown in the project,
@@ -35,7 +35,7 @@ and it has been unknown for six days.
 
 ### What the research changes and what it does not
 
-Already ours, restated: L1 is exactly `CHARTER.md` §7's diagram. RN-WebGPU over Dawn is the
+Already ours, restated: L1 is exactly the charter's cross-platform path. RN-WebGPU over Dawn is the
 committed path, and `packages/core/src/renderer.ts` was built as a *factory seam* for it.
 
 Genuinely new and useful:
@@ -51,8 +51,8 @@ Genuinely new and useful:
 4. **Zero-copy native texture interop** (`IOSurface`, `CVPixelBuffer`, `AHardwareBuffer`) —
    real capability the browser cannot match. Camera/video → GPU texture.
 
-Contradicted by our own record: the research recommends L2 as "your sweet spot." `CHARTER.md`
-§2 lists **"a second runtime (Bevy, native rendering)"** as a closed question, decided against
+Contradicted by our own record: the research recommends L2 as "your sweet spot." The charter
+lists **"a second runtime (Bevy, native rendering)"** as a closed question, decided against
 with evidence — *32% of v1's 1,707 commits went to a runtime no benchmark ever measured.*
 L3 is that item verbatim. L2 is a softer version of it (one renderer, two hosts), but it is
 still a second runtime to keep alive on every Three.js release.
@@ -95,13 +95,13 @@ else ships.
 
 **6–12 months to something a user ships a game with**, plus a permanent tax: Three releases
 roughly every six weeks, and each one can break a host shim (budget 1–3 d per version,
-forever). We have already paid this tax once — it is what §2 is a monument to.
+forever). We have already paid this tax once — it is what the charter is a monument to.
 
 ### Level 3 — native engine + Three-compatible scripting API (~95–100%)
 
 **12–24 months, team-scale, and never finished** — Three exports 700+ symbols and API
 compatibility is an infinite surface. Proxy objects, command buffers, native scene graph,
-culling, animation, batching. This is `CHARTER.md` §2's rejected item word for word, and the
+culling, animation, batching. This is the charter's rejected item word for word, and the
 shape that produced 790k lines in v1.
 
 **Recommendation: do not build.** The legitimate half of the idea — "don't cross JS↔native per
@@ -116,14 +116,14 @@ names one specific system.
 
 **1. The package cap is already violated by L1.** `pnpm budgets` counts `examples/*` as
 packages (`scripts/check-budgets.ts:50`), so we are at 7/8 with one slot. L1 needs *two* new
-packages — `native` (RN dep) and `physics-native` (JSI dep) — which lands at 9. Charter §9a's
+packages — `native` (RN dep) and `physics-native` (JSI dep) — which lands at 9. The charter's
 own eight-package list contains both, so the *list* and the *counter* disagree. Options:
 
 - **(a)** Amend the counter to count only `packages/*`, cap 8 shipped packages. Honest — an
   example is not a published artifact — but it is changing an instrument to fit a plan, and
-  must be recorded as a §10 amendment with that reasoning stated.
+  must be recorded as a budget amendment with that reasoning stated.
 - **(b)** Spend the last slot on `physics-native` and fold the RN adapter into `core` behind a
-  subpath export. Contradicts §9a's own rule: it carries a dep others must not inherit.
+  subpath export. Contradicts the charter's own package rule: it carries a dep others must not inherit.
 
 (a) is the defensible one, but it is your call, not mine to make silently.
 
@@ -161,7 +161,7 @@ The roadmap already scores that axis 2/20; the README should read the same way.
    and whether L2 is 4 weeks or 4 months.
 3. **Run 0a on a physical Android.** Record the result in `docs/spikes/0a-mobile-render.md`
    either way. A second FAIL for environmental reasons is not a result; get a real device.
-4. **Decide the package-cap question** (§3.1) *before* writing adapter code.
+4. **Decide the package-cap question** *before* writing adapter code.
 5. **0b: `physics-native`.** Bulk-transfer API from the first commit.
 
 L2 stays a live option, unlocked cheaply by step 2 — if the shim inventory comes back small

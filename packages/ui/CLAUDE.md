@@ -15,8 +15,8 @@ render something the camera sees, it belongs in a scene, not here.
 
 The native host has no DOM and no React Native layer — `document` is a Three.js
 compatibility stub whose `body.appendChild` is a no-op, so neither `react-dom` nor NativeWind
-applies. **A native build ships the game without this package.** `CHARTER.md` §6b keeps the
-native UI stack an open question; do not answer it in a feature.
+applies. **A native build ships the game without this package.** The native UI stack is a
+deliberately open question; do not answer it in a feature.
 
 That makes one mistake fatal: gameplay, state transitions, or scoring written inside a
 component are simply missing on native, with no gate reporting it. Components read state and

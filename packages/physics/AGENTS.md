@@ -40,8 +40,8 @@ crate.object            // THREE.Object3D
 ```
 
 WASM Rapier is not viable on the Android QuickJS host — that is why the native backend is
-compiled in rather than shipped as WASM. See `CHARTER.md` §7,
-`docs/architecture/NATIVE-RUNTIME.md`, and PRD-046.
+compiled in rather than shipped as WASM. See `docs/architecture/NATIVE-RUNTIME.md` and
+PRD-046.
 
 ## Contracts to keep
 

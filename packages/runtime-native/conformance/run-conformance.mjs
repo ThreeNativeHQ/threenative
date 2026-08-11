@@ -656,6 +656,29 @@ export function androidSystemDialog(windowDump) {
   return match?.[0]?.trim() || null;
 }
 
+/** The landscape size the Android lane pins so its captures compare against the web reference. */
+export const ANDROID_CAPTURE_SIZE = "1280x720";
+
+export function androidDisplaySize(sizeDump) {
+  const dump = String(sizeDump);
+  return /^Override size:\s*(\d+x\d+)$/mu.exec(dump)?.[1] ||
+    /^Physical size:\s*(\d+x\d+)$/mu.exec(dump)?.[1] ||
+    null;
+}
+
+async function waitForAndroidDisplaySize(common, expected) {
+  const deadline = Date.now() + Number(process.env.TN_ANDROID_ROTATION_TIMEOUT_MS || 15_000);
+  let observed = null;
+  while (Date.now() <= deadline) {
+    observed = androidDisplaySize(common("shell", "wm", "size").stdout);
+    if (observed === expected) return;
+    await wait(250);
+  }
+  throw new Error(
+    `TN_ANDROID_DISPLAY_ORIENTATION: display reported ${observed ?? "no size"} instead of ${expected} before capture.`,
+  );
+}
+
 function wait(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
@@ -787,7 +810,7 @@ async function runAndroid(
     common("shell", "settings", "put", "system", "user_rotation", "1");
     const originalSize = String(common("shell", "wm", "size").stdout || "");
     displayRestore = /^Override size:\s*(\d+x\d+)$/mu.exec(originalSize)?.[1] || "reset";
-    common("shell", "wm", "size", "1280x720");
+    common("shell", "wm", "size", ANDROID_CAPTURE_SIZE);
     common("shell", "am", "force-stop", APP_ID);
     common("logcat", "-c");
     const launch = common("shell", "am", "start", "-W", "-n", ACTIVITY);
@@ -865,6 +888,11 @@ async function runAndroid(
     if (beforeCaptureDialog) {
       throw new Error(`TN_ANDROID_SYSTEM_DIALOG: ${beforeCaptureDialog}`);
     }
+    // The activity requests its own orientation as it starts, so the display can still be
+    // rotating when the settle window ends. Capturing then yields a 720x1280 frame that is
+    // reported as a pixel mismatch against the 1280x720 reference — a red row that names the
+    // wrong cause. Wait for the override to read back, and name it if it never does.
+    await waitForAndroidDisplaySize(common, ANDROID_CAPTURE_SIZE);
     const png = runCommand(tools.adb, androidArgs(serial, "exec-out", "screencap", "-p"), {
       binary: true,
       timeout: 30_000,
@@ -873,6 +901,11 @@ async function runAndroid(
     // Observe the capture instead of asserting it. A hard-coded `uniform: false` reports a
     // blank device frame as a pass, which is the fail-open this lane exists to prevent.
     const capture = inspectCapture(png);
+    if (`${capture.width}x${capture.height}` !== ANDROID_CAPTURE_SIZE) {
+      throw new Error(
+        `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
+      );
+    }
     const afterCaptureDialog = androidSystemDialog(
       common("shell", "dumpsys", "window", "windows").stdout,
     );

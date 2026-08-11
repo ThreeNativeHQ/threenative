@@ -54,7 +54,7 @@ flowchart LR
 | 5 | [PRD-049](done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |
 | 6 | [PRD-050](done/PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **done** — Linux desktop + Android emulator executed; iOS packaging-only |
 | 7 | [PRD-051](done/PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **done** — candidate A failed; D binds, so no native HUD abstraction ships |
-| 8 | [PRD-052](done/PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 §255 opened and nobody owned | **done** — template steering passes browser + Android device playtests; navmesh stays browser-only |
+| 8 | [PRD-052](done/PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 opened and nobody owned | **done** — template steering passes browser + Android device playtests; navmesh stays browser-only |
 | — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
 
 **PRD-050 closed the fail-open artifact divergences.** Native builds now use a declared
@@ -68,13 +68,13 @@ Phases 2 and 5, not on physics. Its Phase 0 — deleting 1,159 lines of dead Mys
 tooling — is the cheapest item in this folder and frees native LOC headroom that PRD-046
 will need, so it is a reasonable thing to run first regardless of sequence.
 
-**PRD-047 §4 Phase 4 and PRD-046 describe the same native-physics work.** PRD-047 is the
+**PRD-047 Phase 4 and PRD-046 describe the same native-physics work.** PRD-047 is the
 summary and the authority; PRD-046 is the executable spec. If they disagree, PRD-047 wins.
 
 **Why physics is last, not first.** It is the most valuable artifact and the most dangerous
 to ship unproven: its failure mode is a subtly wrong simulation, invisible to a screenshot.
 PRD-045 builds the instrument before PRD-046 builds the thing that most needs measuring.
-PRD-044 §4 took a deliberate, time-boxed exception to the playtest rule because rendering
+PRD-044 took a deliberate, time-boxed exception to the playtest rule because rendering
 failures *are* visible, and PRD-047 Phase 2 inherits it; that exception does not extend to
 physics.
 

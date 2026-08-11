@@ -77,7 +77,7 @@ still an evidence gap, not the next move until a future owner-approved experimen
 The dated evidence record preserves the commands, screenshots, provider hashes, attribution
 and blind reviewer scores: [PRD-032 asset proof](../verification/PRD-032-asset-proof/README.md).
 
-It also attacks the "looks good" axis without violating §5b. Real assets are the biggest
+It also attacks the "looks good" axis without violating the rule that the framework never owns the look. Real assets are the biggest
 visual delta available, and shipping *discovery* is not shipping *the look* — the agent
 still writes its own materials and lighting around what it found.
 
@@ -95,7 +95,7 @@ runs. This is the framework's most defensible capability and it is *not* where t
 remaining effort has gone.
 
 **Ceiling: none.** Assertions observe; they do not constrain what the game may be.
-**The strategic catch:** `CHARTER.md` §3 gives the harness to the vanilla arm too, so it
+**The strategic catch:** the charter gives the harness to the vanilla arm too, so it
 wins no benchmark comparison even though it is enormously valuable to a real user. That is
 a scoring artifact, not a reason to underinvest — it just means the points show up in
 adoption rather than in the pair.
@@ -156,7 +156,7 @@ requested advance differs from actual updates, so wall-clock ticks cannot be hid
 scripted counter.
 
 **Ceiling risk is the real one here (18/25):** a save format is one refactor away from a
-serialized scene format, and that is a closed question in §2 with 25,898 LOC of evidence
+serialized scene format, and that is a closed framework question with 25,898 LOC of evidence
 behind it. Scope it to *game state the user declared*, never to the scene graph. If the
 design starts describing entities generically, stop.
 
@@ -186,11 +186,11 @@ fail-closed playtest scenario; the package cost remains 14.
 
 | Area | Score | Why |
 |---|---:|---|
-| Materials, shaders, TSL, lighting, camera, post | **8** | The measured negative. v1 owned these and scored *worse* than vanilla blind. §5b makes this permanent. |
+| Materials, shaders, TSL, lighting, camera, post | **8** | The measured negative. v1 owned these and scored *worse* than vanilla blind. The ownership boundary makes this permanent. |
 | GPU particles as package code | **30** | Reviewed and bounded by PRD-027: core owns dispatch, buffer lifetime and release; generated `src/render/particles.ts` owns material, TSL behavior and the look. Do not grow the node without a new measured caller. |
 | Multiplayer / netcode | **25** | Gap is genuinely 30/30, cost fit is ~0. Explicitly off the roadmap because it can absorb the entire company. |
 | Tweens, timers, event bus, math helpers | **5** | The 20-line rule. A model writes each of these correctly on the first try. |
-| Scene format · editor · ECS · presets · genre recipes · bespoke CLI | **0** | Closed questions in §2, each decided against *with evidence*. Reopening one needs new evidence, not a new argument. |
+| Scene format · editor · ECS · presets · genre recipes · bespoke CLI | **0** | Closed framework questions, each decided against *with evidence*. Reopening one needs new evidence, not a new argument. |
 
 ---
 

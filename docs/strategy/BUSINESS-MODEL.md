@@ -1,7 +1,7 @@
 # Business model
 
-**Status:** hypotheses, 2026-08-02. No price here has been tested. **Charter authority:**
-`CHARTER.md` §12 (this document is downstream of the benchmark resolving).
+**Status:** hypotheses, 2026-08-02. No price here has been tested. This document is
+downstream of the benchmark resolving.
 
 ## Open core, paid production services
 
@@ -54,8 +54,8 @@ inference as free.
    AI behaviours, multiplayer modules, mobile-optimized assets, shader packs, UI kits.
    **Curated** is the load-bearing word: every listing tested against supported engine
    versions, mobile performance budgets, licensing metadata, automated scenarios, and all
-   three platforms. An uncurated marketplace is a support liability, and `CHARTER.md` §2
-   rules it out of v1 entirely.
+   three platforms. An uncurated marketplace is a support liability, and the v1 framework
+rules it out entirely.
 6. **Enterprise and agencies.** Branded games, training simulations, product
    configurators needing native packaging, educational games, internal visualization.
    They buy private registries, reusable templates, white-label deployment, custom native
@@ -80,5 +80,6 @@ AI-first creators and small studios. Each gets one small game onto a real phone.
 test willingness to pay for Creator, Pro, and a managed Ship Pack — in that order,
 separately, with real invoices.
 
-**Precondition:** none of this is worth doing before `CHARTER.md` §12 criterion 3. Selling
+**Precondition:** none of this is worth doing before a stranger has played a ThreeNative game
+for five minutes. Selling
 a shipping pipeline that has never shipped is how a framework earns its first refund.

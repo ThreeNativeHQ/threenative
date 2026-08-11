@@ -1,6 +1,7 @@
 # Performance budgets
 
-**Status:** proposal, 2026-08-02. **Charter authority:** `CHARTER.md` §5b, §6, §10.
+**Status:** proposal, 2026-08-02. The public API stays small, visual choices stay in
+generated user source, and budgets remain bounded.
 
 ## The problem
 
@@ -19,8 +20,8 @@ export default defineGame({
 });
 ```
 
-Two reasons that is the wrong home. `CHARTER.md` §6 caps the public API at one page, and
-this adds a config tree to the surface every game must read. §5b's ceiling argument
+Two reasons that is the wrong home. The public API is intentionally capped at one page, and
+this adds a config tree to the surface every game must read. The ownership boundary's ceiling argument
 applies as well: options in the framework are reached only through the options, and
 everything unanticipated becomes unreachable.
 
@@ -91,7 +92,7 @@ which is the difference between an agent that iterates and an agent that drifts.
 1. Frame-time and draw-call sampling in the playtest bridge (small; the bridge already
    samples observations per frame).
 2. A `performance` assertion block that **throws on malformed input**, never skips —
-   `CHARTER.md` §8's silently-inert-assertion hole.
+   the silently-inert-assertion hole.
 3. Profiles as data in the scenario, calibrated later.
 4. Device-lab calibration. **Blocked on Phase 0a.**
 

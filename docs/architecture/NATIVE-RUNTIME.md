@@ -7,7 +7,8 @@ re-record status here; it drifts.
 
 **One-line status (2026-08-09):** desktop, Android emulator and iOS simulator execute;
 **no physical hardware and no published prebuilt distribution.**
-**Charter authority:** `CHARTER.md` §6b, §7; execution: PRD-047.
+**The native runtime is the host for cross-platform plumbing, while the game and its look
+stay in shared Three.js source; execution: PRD-047.**
 
 ## The path
 

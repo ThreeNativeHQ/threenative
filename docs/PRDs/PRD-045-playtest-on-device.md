@@ -1,7 +1,63 @@
 # PRD-045 — Playtest on device
 
-**Status: IN PROGRESS — Phases 0–3 closed on Android and Phase 5 closed; Phase 4 (executed
-iOS simulator evidence) is BLOCKED ON HARDWARE.**
+**Status: REOPENED — 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same day on run
+`31446340434`, then reopened when run `31447449669` failed the same lane on the same device
+class. Two runs on `iPhone 17 Pro`: one pass, one fail. **A criterion satisfied by a lane that
+fails on rerun is not closed**, so this moved out of `native/done/` to the active root rather
+than leave `done/` resting on a coin flip. It is *not* in `blocked/`: nothing here needs
+hardware, and the defect is ours.
+
+**The defect (PRD-065 gap 7).** Nothing synchronises "the simulation starts" with "the observer
+is attached". `examples/native-smoke/src/physics.ts` runs `scenario.steps` (180) fixed steps
+beginning at frame 0; the runner attaches asynchronously through install → launch → poll →
+`ready()`. At 60fps the proof completes in ~3s, so a slow attach observes a finished
+simulation:
+
+```text
+TN_PLAYTEST_ASSERTION_TRIVIAL
+  Assertion 'resource.GameState' at path 'parity.steps' was already satisfied
+  before the scenario ran (value 180).
+TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED
+  Entity 'dynamicBox' moved 0.000000, below required 0.5.
+```
+
+`before` was frame 0 / tick 211 and `after` frame 1 / tick 394 at an identical position — the
+app was running, the proof was already over. It passes on desktop and Android because attach
+is faster there, and it surfaced on iOS only once PRD-065 Phase 0 moved the lane off a Vision
+Pro onto an iPhone with different boot timing. **The race is platform-independent and
+pre-existing; only its odds changed.**
+
+**Where the fix belongs: `packages/playtest` + `packages/core/src/playtest.ts`, not the
+example.** Rejected alternatives and why:
+
+| Level | Verdict |
+|---|---|
+| Example only (`physics.ts`) | **Rejected.** Gating the observer's `update` does not work — `packages/physics/src/plugin.ts:137` steps the simulation every frame regardless, so the box falls before counting starts. That trades a loud flake for a quiet wrong answer. Attempted and reverted on 2026-08-11. |
+| Example, wrapping `game.start()` | **Rejected.** The bridge that serves `ready()` is installed *during* `start()`, so the app cannot wait on it. It would need to poll the mailbox directly, reimplementing harness protocol in user-space. |
+| **Harness contract** | **Chosen.** `ready()` in `packages/playtest/src/protocol.ts:111` is already the seam; it currently means "the scene is set up" and needs to also mean "you may begin, and nothing observable has advanced yet." Holding the frame loop before the first physics step is plumbing every testable game repeats — `packages/core`'s remit — and no user could write it in 20 lines, since it needs the runner, the bridge and the frame loop to cooperate. |
+
+**This is not an engine or a physics bug.** Rapier is deterministic and correct; the framework
+plugins do what they specify. The gap is in the harness contract.
+
+Criteria 1–6 and 8 remain MET. Criterion 7 needs the handshake above plus a lane that passes on
+consecutive runs, not one green.
+
+---
+
+**Superseded: the 2026-08-11 close.** All eight criteria were briefly MET. Phase 4's executed iOS simulator
+evidence is run
+[`31446340434`](https://github.com/jonit-dev/threenative/actions/runs/31446340434) on
+`iPhone 17 Pro` / `SimRuntime.iOS-26-2`; see `docs/verification/PRD-045.md`.
+
+**This is simulator evidence, not device evidence.** PRD-056 physical qualification is
+unaffected, and nothing here licenses an arm64, Metal-driver, thermal or battery claim.
+
+**Correction, 2026-08-10:** an Apple machine *is* available — the free hosted `macos-15`
+runner — and it has been executing this scenario and all its controls green since 2026-08-09.
+It selected an **Apple Vision Pro (visionOS)** simulator, so the evidence does not satisfy a
+criterion that says *iOS* simulator. The block is no longer "no Apple machine"; it is "the
+executed simulator was not an iOS one." PRD-065 Phase 0 fixed the selection; criterion 7 closes
+on the first post-fix report whose `simulator.runtime` names `SimRuntime.iOS-*`.
 
 **Operator hardware limitation (2026-08-08): no Apple machine is available.** No Xcode, no
 `xcrun`, no simulator, no physical iOS device. This blocks *execution evidence only* — iOS
@@ -22,7 +78,7 @@ exist, but **no simulator execution evidence exists on this Linux host.**
 **The emulator is fully sufficient for this PRD, unlike PRD-044.** Everything here is a
 JS-environment and host-tooling question: can the runner reach the bridge, does an
 assertion evaluate, does a broken assertion fail. None of it depends on the GPU driver, so
-the caveat PRD-044 §0 carries does not apply. `adb` behaves identically against an emulator
+the caveat PRD-044 carries does not apply. `adb` behaves identically against an emulator
 and a phone. **Say this explicitly in the result** rather than letting a reader assume the
 PRD-044 caveat leaked down the chain.
 
@@ -33,9 +89,8 @@ value is fail-closed correctness +2.) HIGH means an automated checkpoint after e
 **Depends on:** PRD-047 (the app must run on the absorbed runtime before it can be observed);
 PRD-033 (playtest semantic depth — the assertion surface this carries across).
 **Blocks:** PRD-046 (native physics must not ship without a device proof mechanism).
-**Charter authority:** `CHARTER.md` §3 (win criterion 3, "ships to iOS"), `AGENTS.md`
-"Verification honesty, and how you prove it" — **the fail-closed rule is the entire subject
-of this PRD**. No new package: this extends `packages/playtest`. No §10 amendment needed.
+**Verification honesty, and how you prove it, is the entire subject of this PRD.** No new
+package: this extends `packages/playtest`. No charter amendment is needed.
 **Area:** `OPPORTUNITY-AREAS.md` #2 "Agent self-verification", score **90** — the
 highest-scored area in the document, and the one the doc says *"is not where the remaining
 effort has gone."*
@@ -44,7 +99,7 @@ effort has gone."*
 
 ## 0. Why this comes before physics, not after
 
-The instinct is to build `physics-native` first — it is the crown jewel (`CHARTER.md` §7)
+The instinct is to build `physics-native` first — it is the crown jewel (the cross-platform runtime)
 and the only thing nobody else ships. **Build the observer first anyway.**
 
 `physics-native` is 4–8 weeks of numerical binding work across two platforms, where the
@@ -53,14 +108,14 @@ timestep, a transform buffer read one frame stale. Those are invisible to a scre
 invisible to a frame counter. Shipping it with manual-only proof reproduces exactly the
 failure `AGENTS.md` opens with — v1's harness reporting green while asserting nothing.
 
-PRD-044 §4 took a deliberate, time-boxed exception to the playtest rule because rendering
+PRD-044 took a deliberate, time-boxed exception to the playtest rule because rendering
 failures *are* visible to a screenshot; PRD-047 Phase 2 inherits that exception for its
 screenshot-gated render proof. Physics failures are not visible. **This PRD closes the
 exception before the exception becomes the norm.**
 
 | Roadmap axis | Expected movement | Why |
 |---|---|---|
-| Ships working | **0 on the pair** | §3 gives the harness to the vanilla arm too. It wins no comparison — a scoring artifact, not a reason to underinvest (`OPPORTUNITY-AREAS.md` #2) |
+| Ships working | **0 on the pair** | The charter gives the harness to the vanilla arm too. It wins no comparison — a scoring artifact, not a reason to underinvest (`OPPORTUNITY-AREAS.md` #2) |
 | Does what vanilla can't | **+small** | No vanilla Three.js project can assert what its game did on a phone |
 | Survives the platform | **+2–4** | Turns "it launched" into "it behaved" |
 
@@ -228,11 +283,10 @@ State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
 | 4 | Network assertions on a device target fail with an explicit unsupported error; no code path skips an assertion and reports pass | **MET** |
 | 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
 | 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
-| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **BLOCKED ON HARDWARE** — Phase 4; no Apple machine available to the operator as of 2026-08-08 |
+| 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **MET, 2026-08-11** — run `31446340434`, `iPhone 17 Pro` / `SimRuntime.iOS-26-2`, unchanged scenario plus four controls at their exact exit codes. An earlier green lane had run on visionOS; PRD-065 Phase 0 pinned the runtime and this is the first post-fix run |
 | 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **MET** — Phase 5 |
 
-Criterion 7 is the whole remaining scope. **This PRD does not move to `done/` until it is met
-or explicitly withdrawn**; PRD-046's Android gate reads criteria 1–4, which are met, so its
+Criterion 7 was the whole remaining scope and is now met on an executed iOS simulator; PRD-046's Android gate reads criteria 1–4, which are met, so its
 Android physics work is not blocked on iOS.
 
 ---

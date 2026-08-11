@@ -5,7 +5,78 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
+import { assertIosRuntime, selectIosSimulator } from '../scripts/select-ios-simulator.mjs';
+
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+/**
+ * Shape of `xcrun simctl list devices available --json` on a GitHub `macos-15` runner. The
+ * visionOS key sorts before the iOS key, which is how runs 31313092745 and 31434881982 both
+ * captured a 2732x2048 "Apple Vision Pro" screenshot and reported no runtime at all.
+ */
+const RUNNER_LISTING = {
+  devices: {
+    'com.apple.CoreSimulator.SimRuntime.xrOS-2-5': [
+      { isAvailable: true, name: 'Apple Vision Pro', state: 'Shutdown', udid: 'vision-udid' },
+    ],
+    'com.apple.CoreSimulator.SimRuntime.iOS-18-5': [
+      { isAvailable: true, name: 'iPad Pro 13-inch (M4)', state: 'Shutdown', udid: 'ipad-udid' },
+      { isAvailable: true, name: 'iPhone 16 Pro', state: 'Shutdown', udid: 'iphone-udid' },
+    ],
+    'com.apple.CoreSimulator.SimRuntime.watchOS-11-5': [
+      { isAvailable: true, name: 'Apple Watch Series 10', state: 'Shutdown', udid: 'watch-udid' },
+    ],
+  },
+};
+
+test('iOS simulator selection never substitutes a visionOS, watchOS, or tvOS device', () => {
+  const selected = selectIosSimulator(RUNNER_LISTING);
+  assert.equal(selected.udid, 'iphone-udid');
+  assert.equal(selected.name, 'iPhone 16 Pro');
+  assert.match(selected.runtime, /SimRuntime\.iOS-18-5$/u);
+
+  // The pre-fix selector was `Object.values(devices).flat()[0]`; assert that shape is gone.
+  const flattened = Object.values(RUNNER_LISTING.devices).flat()[0];
+  assert.equal(flattened.name, 'Apple Vision Pro');
+  assert.notEqual(selected.udid, flattened.udid);
+});
+
+test('iOS simulator selection prefers an already-booted iOS device', () => {
+  const booted = {
+    devices: {
+      'com.apple.CoreSimulator.SimRuntime.iOS-18-5': [
+        { isAvailable: true, name: 'iPhone 16 Pro', state: 'Shutdown', udid: 'iphone-udid' },
+        { isAvailable: true, name: 'iPad Pro 13-inch (M4)', state: 'Booted', udid: 'ipad-udid' },
+      ],
+    },
+  };
+  assert.equal(selectIosSimulator(booted).udid, 'ipad-udid');
+});
+
+test('iOS simulator selection fails closed when the host has no iOS runtime', () => {
+  const visionOnly = { devices: { ...RUNNER_LISTING.devices } };
+  delete visionOnly.devices['com.apple.CoreSimulator.SimRuntime.iOS-18-5'];
+  assert.throws(() => selectIosSimulator(visionOnly), /TN_IOS_SIMULATOR_ABSENT/u);
+  assert.throws(() => selectIosSimulator({}), /TN_IOS_SIMULATOR_ABSENT/u);
+});
+
+test('a non-iOS runtime cannot be recorded as iOS evidence', () => {
+  assert.equal(
+    assertIosRuntime('com.apple.CoreSimulator.SimRuntime.iOS-18-5'),
+    'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
+  );
+  assert.throws(
+    () => assertIosRuntime('com.apple.CoreSimulator.SimRuntime.xrOS-2-5'),
+    /TN_IOS_SIMULATOR_WRONG_RUNTIME/u,
+  );
+});
+
+test('the verifier selects through the pinned iOS selector, not a flattened device list', () => {
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+  assert.match(verifier, /selectIosSimulator\(parsed\)/u);
+  assert.match(verifier, /assertIosRuntime\(selected\.runtime\)/u);
+  assert.doesNotMatch(verifier, /Object\.values\(parsed\.devices/u);
+});
 
 test('iOS scaffold is root-linked to the exact shared core proof', () => {
   const cmake = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');

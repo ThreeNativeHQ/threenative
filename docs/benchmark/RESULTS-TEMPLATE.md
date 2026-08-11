@@ -43,4 +43,4 @@ Blind scores written before costs: `yes / no`
 ## Verdict
 
 **WIN / LOSS / VOID:** `<verdict>`
-Action required by `CHARTER.md` §12: `<action>`
+Action required by the success/failure criteria: `<action>`

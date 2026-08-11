@@ -16,8 +16,8 @@ a gap row earns one, and only through the ordinary 20-line rule.
 **Depends on:** PRD-019 (arms, sealed proof, pair), PRD-020 (capture, blind judge), PRD-021
 (round ledger, `pnpm round:next`, `pnpm round:deletions`). All three are shipped.
 
-**Charter authority:** `CHARTER.md` §3 (win criteria and the kill switch), §5b (the user owns
-the game column), §11 rule 1 and rule 3. `docs/benchmark/PROTOCOL.md` owns the instrument.
+**The framework's kill switch applies, gameplay is permanently the user's to write, and the
+20-line rule applies.** `docs/benchmark/PROTOCOL.md` owns the instrument.
 
 ## 1. Why this exists
 
@@ -35,7 +35,8 @@ framework arm lost visual and cost while tying functionally
 ## 2. Why round 3 lost, and what that says about genre choice
 
 Round 3 ran `open-world`. Read the brief: continuous terrain, streaming chunks, a readable
-third-person camera, landmarks. **Every one of those is user-space by §11 rule 3** — terrain,
+third-person camera, landmarks. **Every one of those is user-space because the framework never
+owns the look** — terrain,
 camera and look ship as generated source in `src/render/`, not as package code. The framework
 arm therefore had nothing 0→1 to spend on that brief, and the comparison collapsed into whose
 camera code framed the world better. Vanilla's did.
@@ -148,12 +149,12 @@ score table, not a reason to hold the gate open.
 - **Touches nothing native.** Round 4 is web-arm only; native parity is PRD-054's gate.
 - **Changes no existing genre, archive or published number.** Round 3's losing result stays on
   disk exactly as recorded.
-- **Reopens nothing closed by `CHARTER.md` §2.**
+- **Reopens no closed framework questions.**
 
 ## 9. Kill switch — the outcome this PRD must be willing to reach
 
 If the framework arm ties or loses on a genre built specifically around its only 0→1
 capability, that is the strongest evidence obtainable that Phase 2 cannot be won as currently
-scoped. The required response is to record it and reopen §3's win criteria — **not** to run a
+scoped. The required response is to record it and reopen the win criteria — **not** to run a
 fifth genre, and a sixth, until one wins. **Round 4 runs at most two genres.** Selecting genres
 until one produces a win is the failure mode this whole instrument exists to prevent.

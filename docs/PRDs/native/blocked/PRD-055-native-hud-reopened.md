@@ -27,7 +27,7 @@ evidence". Evidence: `docs/verification/probe-real-game-cross-platform-2026-08-0
 **What this owns:** whether "everything that works on web works on desktop and mobile" is
 allowed to exclude the user interface.
 
-**What this does not own:** how a HUD looks. `CHARTER.md` §11 rule 3 is not in question here
+**What this does not own:** how a HUD looks. The rule that the framework never owns the look is not in question here
 and nothing proposed below ships a component library, a layout engine or a style.
 
 ## 1. What PRD-051 decided, and what it did not have

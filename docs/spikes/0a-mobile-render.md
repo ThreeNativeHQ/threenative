@@ -1,7 +1,7 @@
 # Spike 0a — rendering on device
 
 **Status: CLOSED 2026-08-09 — the question is answered, and not by this plan.** This spike
-never observed a render (§6 below, 2026-08-02, environmental failure). The question it
+never observed a render (see the result below, 2026-08-02, environmental failure). The question it
 bought — *does `three@0.185.1`'s WebGPU path run outside a browser at all?* — was answered
 **yes** by PRD-047's owned C++ runtime, which replaced the React Native path this plan
 assumed: a 300-frame desktop run and an Android emulator bundle at the catalog Three
@@ -15,7 +15,6 @@ route it prescribes is deleted; `react-native-webgpu` is not a dependency of thi
 Physical-hardware and frame-rate debt stays open — see
 [`../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md`](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md).
 
-**Original charter authority:** `CHARTER.md` §7 "Phase 0", §3 criterion 3.
 **Background:** [`../architecture/NATIVE-RUNTIME.md`](../architecture/NATIVE-RUNTIME.md) —
 the path and the physics verdict. This document is only the executable plan for 0a.
 
@@ -32,8 +31,8 @@ Three.js assumes six host globals that React Native does not have: `document`,
 (`CHARTER.md:369-371`). `react-native-webgpu` supplies a GPU device; it does not supply
 these. The spike measures how much shimming stands between the two.
 
-**Why it gates everything:** if 0a fails, ThreeNative is a web framework, §7's mobile
-promise is deleted, and §3's third win criterion ("Ships to iOS") loses its only
+**Why it gates everything:** if 0a fails, ThreeNative is a web framework, the mobile
+promise is deleted, and the third win criterion ("Ships to iOS") loses its only
 mechanism. That is a charter amendment, and it is cheaper to learn it in a day than after
 the platformer slice hardens around it.
 
@@ -84,7 +83,7 @@ to our wrapper.
    to land.
 3. A measured frame rate is recorded. Any number is acceptable; **an unmeasured pass is a
    fail.**
-4. Every shim written to get there is listed in §5, with its line count.
+4. Every shim written to get there is listed in the shim inventory, with its line count.
 
 **Anything unobserved is a fail.** A pass claimed from a build that compiled, from logs
 without a rendered frame, or from the Metro bundler starting, is the exact failure mode
@@ -97,12 +96,12 @@ Write the result back here as a `## 6. Result` section, dated, containing:
 - The four criteria, each PASS or FAIL with what was observed.
 - **The shim inventory** — every global polyfilled, and its cost in lines. This is the
   number that decides whether the RN adapter is a factory (`renderer.ts:17`) or a fork.
-  A fork is a §11.5 packages-cap problem and a much larger decision.
+  A fork is a package-cap problem and a much larger decision.
 - Versions pinned: `three`, `react-native-webgpu`, RN, the emulator system image.
 - On failure: which of the six globals or four assumptions killed it, and whether it is
   fixable or structural.
 
-A structural failure triggers a `CHARTER.md` §7 amendment. Propose it in the same commit
+A structural failure triggers a charter amendment. Propose it in the same commit
 as the result — do not leave the charter claiming a promise the spike just deleted.
 
 ## 6. Result

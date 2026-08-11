@@ -68,7 +68,7 @@ since Phase 2 opened.
 | PRD-057 native audio parity, PRD-058 perf/observability, PRD-059 SBOM | implementation sits in unsquashed isolated lanes; remaining rows need physical hardware or a hosted release candidate |
 | PRD-060 promoted consumer distribution | needs npm, desktop, Android and Apple credentials |
 | Raising `LIMITS.nativeRuntimeLoc` | moving a budget is a `CHARTER.md` change, not a task. PRD-062 produces the evidence and stops |
-| Anything on `ROADMAP.md` "Not on the roadmap" | closed with evidence in `CHARTER.md` §2 |
+| Anything on `ROADMAP.md` "Not on the roadmap" | closed with evidence in the charter |
 
 **A separate observation, not in the batch:** PRD-057, 058 and 059 each record a lane commit
 (`f9e9e95`, `5865937`, `fb222c8`) that is committed but not squashed onto `main`. That is three

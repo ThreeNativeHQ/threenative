@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { assertIosRuntime, selectIosSimulator } from './select-ios-simulator.mjs';
 
 const runtimeRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = join(runtimeRoot, '..', '..');
@@ -102,9 +103,8 @@ function findApp(root) {
 
 function chooseSimulator() {
   const parsed = JSON.parse(run('xcrun', ['simctl', 'list', 'devices', 'available', '--json']));
-  const devices = Object.values(parsed.devices ?? {}).flat();
-  const selected = devices.find((device) => device.state === 'Booted') ?? devices[0];
-  if (!selected?.udid) throw new Error('No available iOS simulator is installed.');
+  const selected = selectIosSimulator(parsed);
+  assertIosRuntime(selected.runtime);
   if (selected.state !== 'Booted') run('xcrun', ['simctl', 'boot', selected.udid]);
   run('xcrun', ['simctl', 'bootstatus', selected.udid, '-b']);
   return selected;

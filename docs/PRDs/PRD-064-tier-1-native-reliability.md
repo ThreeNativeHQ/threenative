@@ -19,8 +19,8 @@ unrun emulator matrix, one same-hardware performance proof, one ledger.
 its 67-row registry), PRD-055 (generated HUD), PRD-058 (the authoritative performance budgets
 and its Phase 5 spec). All five exist; none is re-specified here.
 
-**Charter authority:** `CHARTER.md` §3 criterion 3, §7 (the device matrix), §12 criterion 3
-(the traction definition). `docs/product/PERFORMANCE-BUDGETS.md` owns the numbers.
+The device matrix and the five-minute stranger test define the readiness boundary;
+`docs/product/PERFORMANCE-BUDGETS.md` owns the numbers.
 
 ## 1. Why this exists
 
@@ -48,7 +48,7 @@ boundary.** That boundary is the exact thing one physical Android device buys, a
 Tier 2 exists rather than being wished away.
 
 **An emulator result is never a device result.** No phase below licenses a frame-rate,
-GPU-driver or arm64 claim, and the ledger must repeat that in the words `CHARTER.md` §7 uses.
+GPU-driver or arm64 claim, and the ledger must repeat the same device-versus-emulator distinction.
 
 ## 3. The two tiers, and what reopens Tier 2
 
@@ -61,7 +61,7 @@ and packages."* It licenses no other sentence.
 rows, PRD-058 device soak and mobile fps, PRD-060 promoted distribution, iOS device
 reliability.
 
-**Reopen trigger, borrowed verbatim from `CHARTER.md` §12 criterion 3:** Tier 2 restarts when
+**Reopen trigger:** Tier 2 restarts when
 a stranger has played a ThreeNative game for five minutes — concretely, the first external
 user who installs the framework and asks for a device build. A physical Android device
 arriving earlier reopens the Android half alone; it does not reopen iOS.
@@ -99,11 +99,11 @@ Phases 1, 2 and 3 are independent of each other and may run in any order or in p
 
 **Files (3, all pre-existing):** `docs/strategy/ROADMAP.md` — EDIT: Tier 1/Tier 2 rows and the
 reopen trigger; also repair the stale `production-readiness/` pointer for PRD-057…060.
-`docs/strategy/CONFLICTS.md` — EDIT: new row 9, the §7 device-matrix tension.
+`docs/strategy/CONFLICTS.md` — EDIT: new row 9, the device-matrix tension.
 `docs/PRDs/native/blocked/README.md` — EDIT: each blocked PRD carries its tier and unlock
 condition.
 
-**Why it is not a charter edit:** §3's mobile promise is *staged*, not deleted. `CONFLICTS.md`
+**Why it is not a charter edit:** the mobile promise is *staged*, not deleted. `CONFLICTS.md`
 is the file this repo already uses for a strategy/charter tension, so the tension is recorded
 rather than resolved by an unauthorised amendment.
 
@@ -195,7 +195,7 @@ Consumer-scoped: each is about a build someone could tell apart, not about code 
 6. `docs/verification/tier-1-<date>.md` exists, its schema test passes, and `ROADMAP.md` beta
    rows 4 and 5 cite it — **including a "not reached" outcome.**
 7. `ROADMAP.md`, `CONFLICTS.md` and `native/blocked/README.md` carry the tier split and the
-   §12 criterion 3 reopen trigger, and no document claims mobile readiness.
+   five-minute stranger reopen trigger, and no document claims mobile readiness.
 
 ## 7. What this deliberately does not do
 

@@ -58,6 +58,15 @@ default**; everything it binds for ordinary work is restated here. Open it only 
 change what the framework *is*: adding or removing a package, moving a budget, reopening a
 closed question. `docs/README.md` maps the rest and labels proposals versus commitments.
 
+**Never cite the charter by section in a doc you write.** No `**Charter authority:** §3, §7`
+headers, no "per `CHARTER.md` §5b", no "§12 criterion 3". Nobody has the section numbers
+memorised, so a reader hits a lookup instead of a fact, and most of those citations are
+decoration anyway. **State the rule itself in one plain clause** — "gameplay is permanently
+the user's to write", "no stranger has played a ThreeNative game for five minutes yet". Name
+`CHARTER.md` at most once per document, without a section number, and only when a reader who
+disagrees would genuinely need to go read it. The same applies to status boilerplate: a date
+and one line of what the file is beats a block of authority declarations.
+
 ## Web and native are one codebase
 
 **A feature that works on web only is an unfinished feature.** Before you add anything to a
@@ -84,9 +93,14 @@ package, work out what the native host does with it.
 - **`src/game.ts` is the portable entry; `src/main.ts` is the web entry.** Native builds
   read `threenative.nativeEntry` (default `src/game.ts`), import its default game export,
   and start it. Keep React mounts and other browser-only UI in `src/main.ts`.
-- **Never claim a platform you did not execute.** Desktop and the Android emulator are
-  green; iOS, physical hardware and performance parity are open. A result may say
-  desktop-ready or Android-emulator plumbing-ready — it must not say mobile-ready.
+- **Never claim a platform you did not execute.** Desktop and the **iOS simulator** are
+  green; the Android emulator is red on the hosted lane; physical hardware and performance
+  parity are open. A result may say desktop-ready, iOS-simulator-proved or
+  Android-emulator plumbing-ready — it must not say mobile-ready.
+- **The hosted `macos-15` runner is an Apple machine and it executes.** This repo's operator
+  machine has none, but simulator-class iOS evidence is producible in CI and PRD-045 closed
+  on it (2026-08-11). It proves nothing physical: arm64, real Metal, signing, touch hardware,
+  thermal and battery still need a phone.
 
 Native compilation is opt-in: the default repo gate must never require CMake, an NDK or
 Xcode. `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked.
@@ -129,7 +143,7 @@ consecutive rounds. Keep the round ledger as the evidence record.
 
 ## Rules that get a change rejected
 
-From `CHARTER.md` §11 and from the 790k-line v1 that died of ignoring them.
+Binding, and learned from the 790k-line v1 that died of ignoring them.
 
 1. **The 20-line rule.** If a competent developer could write it in under 20 lines, it does
    not go in the framework. Write it in the example or the template.
@@ -145,12 +159,12 @@ From `CHARTER.md` §11 and from the 790k-line v1 that died of ignoring them.
 5. **A package exists only when it carries a dependency the others must not inherit.** That
    rule governs package count; there is no number to argue with.
 
-`CHARTER.md` §2 also closes these with evidence: an IR, a scene format, an editor, a preset
-system, a code-first ECS, a bespoke CLI vocabulary. Do not reopen them in a feature.
+These are closed with evidence and do not get reopened in a feature: an IR, a scene format,
+an editor, a preset system, a code-first ECS, a bespoke CLI vocabulary.
 
 ## Budgets
 
-`pnpm budgets` (`CHARTER.md` §10b) reports two kinds of limit.
+`pnpm budgets` reports two kinds of limit.
 
 **Hard — fails CI:** a native runtime tree outside `packages/runtime-native/`, any tracked
 file under `packages/runtime-native/third_party/`, a vendored asset MCP, and any

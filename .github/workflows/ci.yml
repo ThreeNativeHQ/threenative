@@ -318,3 +318,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm budgets
       - run: pnpm sync:agents --check
+
+  # The native lane guards targets that any package change can break, so it is
+  # gated on the event rather than on paths — see native-platforms.yml. It costs
+  # ~24 minutes on free public-repo runners, so it runs where it is the merge
+  # gate (PRs into main, and main itself) and not on every feature-branch push.
+  # `needs: test` keeps it from burning that time behind a red unit suite.
+  native-platforms:
+    needs: test
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    uses: ./.github/workflows/native-platforms.yml

@@ -33,8 +33,8 @@ the signed installable artifacts this PRD consumes.
 PRD does not set, tune, waive, or enforce performance thresholds.
 
 **Authority:** `AGENTS.md` and `packages/runtime-native/AGENTS.md` forbid claims for platforms
-that did not execute; `docs/architecture/CHARTER.md` §§7, 10a, and 12 require real physical
-hardware before a mobile-ready claim.
+that did not execute; the project's device, performance and success rules require real
+physical hardware before a mobile-ready claim.
 
 ## 1. Context
 

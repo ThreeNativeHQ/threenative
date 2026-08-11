@@ -3,9 +3,9 @@
 **Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-09 — **still
 deferred, neither trigger fired.** Nothing in `packages/` or `scripts/` implements a
 build-time asset pipeline, and that is the intended state. Asset discovery is retained by
-product-owner decision after its 2026-08-09 live-agent gate failed. **Charter authority:**
-`CHARTER.md` §10 (15k LOC review trigger), §11.1, §11.5 (a package exists only when it
-carries a dependency the others must not inherit).
+product-owner decision after its 2026-08-09 live-agent gate failed. The package budget is a
+review trigger, anything a competent developer can write in under 20 lines stays out of the framework, and a package exists only when
+it carries a dependency the others must not inherit.
 
 
 ## Discovery is retained with an evidence gap; the pipeline did not ship
@@ -57,7 +57,7 @@ physical hardware to prove which optimizations actually matter.
 
 Both must be true:
 
-1. `CHARTER.md` §12 criterion **4** is met — a stranger has played a ThreeNative game for
+1. A stranger has played a ThreeNative game for
    five minutes, with a transcript.
 2. A reference game fails a device performance budget **for asset reasons**, measured, not
    assumed.
@@ -101,9 +101,9 @@ Collider       missing         !
 ## Where it must not live
 
 Not in `@threenative/core`. It is build-time, it carries heavy Node-only dependencies, and
-§11.5 makes that a separate release lane — the shape `asset-mcp` already has in
-`CHARTER.md` §8 (published, MIT, its own lane, 32 tools recorded). Reuse that lane. Package
-count is governed by §11.5's dependency-boundary rule and not by a number — six framework
+The package-boundary rule makes that a separate release lane — the shape already used by
+`asset-mcp`: published, MIT, its own lane, 32 tools recorded. Reuse that lane. Package
+count is governed by the dependency-boundary rule and not by a number — six framework
 packages today — so "there is room for one more" is never the argument.
 
 ## The longer-term reason to care

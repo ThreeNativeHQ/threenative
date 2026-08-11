@@ -37,8 +37,8 @@ when a row was not run. It owns no gameplay and no look.
 released-consumer distribution lane (PRD-048). Each is a specific parity failure with its own
 PRD; this one is the gate that would have caught them.
 
-**Charter authority:** `CHARTER.md` §3 (win criteria), §10 (budgets), §11 rule 3 (never own
-the look). `/AGENTS.md`: "a feature that works on web only is an unfinished feature."
+**The framework must run on every target, stay within its budgets, and never own the look.**
+`/AGENTS.md`: "a feature that works on web only is an unfinished feature."
 
 ## 1. Why the current gates cannot see the problem
 
