@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "studio": "threenative-studio",
     "build": "threenative build",
     "build:web": "threenative build --target web",
     "build:desktop": "threenative build --target desktop",
@@ -24,11 +25,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
-    "@vitejs/plugin-react": "6.0.5",
-    "@types/three": "0.185.3",
     "@threenative/playtest": "0.1.0",
+    "@threenative/studio": "0.1.0",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
+    "@types/three": "0.185.3",
+    "@vitejs/plugin-react": "6.0.5",
     "create-threenative": "0.1.0",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",

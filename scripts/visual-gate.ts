@@ -33,6 +33,7 @@ export const LOCAL_FRAMEWORK_PACKAGES = [
   ["@threenative/physics", "threenative-physics-"],
   ["@threenative/runtime-native", "threenative-runtime-native-"],
   ["@threenative/ui", "threenative-ui-"],
+  ["@threenative/studio", "threenative-studio-"],
   ["create-threenative", "create-threenative-"],
 ] as const;
 

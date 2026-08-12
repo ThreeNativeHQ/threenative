@@ -8,6 +8,7 @@ level, entities, and look.
 
 ```sh
 pnpm dev
+pnpm studio                   # chat, preview and proof in one page; needs claude or codex
 pnpm build                    # web build; identical to vite build
 pnpm build --target desktop   # native executable; Linux is the only verified host
 pnpm test
