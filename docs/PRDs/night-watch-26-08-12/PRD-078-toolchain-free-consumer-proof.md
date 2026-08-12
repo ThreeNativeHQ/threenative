@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-078 — Beta row 5: ten releases were built, published, and deleted again, and one line says why
 
-**Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 and §2 are a read of
+**Status: PARTIAL, 2026-08-12.** The Phase 0 workflow edit and its local controls are in
+place, but the software Vulkan path is unverified and no tag or workflow was triggered. The
+exact `v0.1.14` version skew is diagnosed as stale native version literals; Phase 1 remains
+unauthorised until Phase 0 executes green. See
+[`consumer-handoff-2026-08-12.md`](../../verification/consumer-handoff-2026-08-12.md).
+The original evidence below is a read of
 `.github/workflows/native-release.yml` at commit `8c5fc40`, of `gh run`/`gh api` output taken
 2026-08-11, and of the failure artifact downloaded from run
 [`31360511081`](https://github.com/jonit-dev/threenative/actions/runs/31360511081). No new run
@@ -250,7 +255,7 @@ failure prints its reason in the runner log.
 
 - `.github/workflows/native-release.yml` — EDIT: print the log on failure; install a software
   Vulkan ICD before launch
-- `docs/verification/consumer-handoff-2026-08-11.md` — NEW: the reproduction and the result
+- `docs/verification/consumer-handoff-2026-08-12.md` — NEW: the reproduction and the result
 
 **Implementation:**
 
@@ -282,6 +287,13 @@ breakage is the proof the fix is load-bearing.
 hypothesis with its evidence. **No later phase is authorised by this document without a green
 Phase 0.**
 
+**2026-08-12 local result:** the failure-log trap and clean-consumer-scoped Mesa provisioning
+are implemented and covered by an observed-red static control. A plain `ubuntu:24.04`
+container was not a faithful hosted-runner reproduction: the host binary first failed on a
+glibc mismatch, and the exact archived `v0.1.14` Linux runtime then segfaulted during window
+creation both before and after Mesa installation. The tagged job is therefore still required;
+the ICD outcome and 300-frame outcome are not claimed.
+
 ### Phase 1 — The version skew
 
 **Outcome:** a runtime whose reported version differs from the tag under test stops the
@@ -296,7 +308,7 @@ release.
 - `packages/runtime-native/src/runtime.cpp` — EDIT **only if** Phase 0's diagnosis implicates
   a stale version stamp
 - `packages/runtime-native/tests/install-prebuilt.test.mjs` — EDIT
-- `docs/verification/consumer-handoff-2026-08-11.md` — EDIT
+- `docs/verification/consumer-handoff-2026-08-12.md` — EDIT
 
 **The question Phase 1 answers first:** why did a `v0.1.14` release's consumer run a binary
 reporting `0.1.13`? Three candidates — a version constant not bumped with the package, a
@@ -317,7 +329,7 @@ scaffolded, with no file replaced.
   desktop leg; drop the `game.ts` overwrite there
 - `packages/create-threenative/templates/platformer/` — EDIT **only** if the template itself
   is what fails, and then it is a template bug fixed in the template
-- `docs/verification/consumer-handoff-2026-08-11.md` — EDIT
+- `docs/verification/consumer-handoff-2026-08-12.md` — EDIT
 
 **Proof subject:** the platformer template as generated — the largest template the framework
 ships and the subject of every performance claim in `VALUE-PROPOSITION.md`.
@@ -343,7 +355,7 @@ red.
   against the consumer build
 - `packages/runtime-native/scripts/profile-production.mjs` — EDIT only if the consumer project
   layout is not addressable today
-- `docs/verification/consumer-handoff-2026-08-11.md` — EDIT: the number
+- `docs/verification/consumer-handoff-2026-08-12.md` — EDIT: the number
 - `docs/verification/tier-1-<date>.md` — EDIT: PRD-064 Phase 4's positive row, filled
 
 **The three controls are re-run, not cited.** `slow-path`, `slow-native` and `slow-startup`
@@ -361,7 +373,7 @@ device number, not a fleet number, and not comparable to the Pixel 8 figures in
 
 **Files (max 5):**
 
-- `docs/verification/consumer-handoff-2026-08-11.md` — EDIT: the surviving release, its tag,
+- `docs/verification/consumer-handoff-2026-08-12.md` — EDIT: the surviving release, its tag,
   run id and asset hashes
 - `docs/strategy/ROADMAP.md` — EDIT: beta row 5
 - `docs/strategy/VALUE-PROPOSITION.md` — EDIT: axis 4 and the "not earned" table

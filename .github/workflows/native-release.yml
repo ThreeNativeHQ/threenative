@@ -278,6 +278,10 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - name: Install a software Vulkan ICD for the clean desktop launch
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers
       - run: pnpm install --frozen-lockfile
       - name: Pack the exact scaffold consumer packages
         run: |
@@ -346,6 +350,7 @@ jobs:
         run: |
           log="$RUNNER_TEMP/threenative-consumer.log"
           screenshot="$RUNNER_TEMP/threenative-consumer.png"
+          trap 'status=$?; trap - ERR; cat "$log"; exit "$status"' ERR
           xvfb-run -a -s '-screen 0 1600x900x24' \
             "$CONSUMER_TARGET/dist-native/threenative-consumer-proof" \
             --screenshot "$screenshot" --frames 300 > "$log" 2>&1
@@ -358,6 +363,7 @@ jobs:
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
+          trap - ERR
       - name: Enable KVM for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
