@@ -1,0 +1,20 @@
+{
+  "name": "abyss-framework-movement-axis",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "holdTicks": 1, "press": ["Enter"], "release": true },
+    { "holdTicks": 60, "press": ["KeyW"], "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": { "axis": "+y", "min": 30 }
+    }
+  }
+}

@@ -46,7 +46,6 @@ export class Player {
     }
     const move = ctx.input.vector("move");
     this.body.velocity.x = move.x * MOVE_SPEED;
-    // input.vector("move").y is +up; world-space forward is negative z.
     this.body.velocity.z = -move.y * MOVE_SPEED;
     this.body.moveAndSlide(dt);
   }

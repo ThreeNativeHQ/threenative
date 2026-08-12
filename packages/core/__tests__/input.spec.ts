@@ -28,6 +28,26 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("should return +y when the up binding is held", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    target.dispatchEvent(keyEvent("keydown", "KeyW"));
+
+    expect(input.vector("move").y).toBe(1);
+    input.dispose();
+  });
+
+  it("should return +y for a forward gamepad stick", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target, target, () => [{ axes: [0, -1], buttons: [] }]);
+
+    input.tick();
+
+    expect(input.vector("move").y).toBe(1);
+    input.dispose();
+  });
+
   it("should clear held keys on window blur", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);

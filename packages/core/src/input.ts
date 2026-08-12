@@ -107,6 +107,11 @@ export class InputMap {
     this.#listen(this.#target, "blur", () => this.clear());
   }
 
+  /**
+   * Returns a 2D action vector where +y is up. On a conventional XZ ground plane whose
+   * forward direction is -z, map `vector.y` to `-z`. This differs from Godot's
+   * `Input.get_vector`, where up is -y.
+   */
   vector(name: string): Vector2 {
     const binding = this.#bindings[name];
     if (binding === undefined) return new Vector2();

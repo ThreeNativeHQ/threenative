@@ -4,9 +4,10 @@ prd_contract: v1
 
 # PRD-082 — `input.vector()` inverts the Godot convention it borrowed, documents nothing, and every caller re-derives the fix by hand
 
-**Status: PROPOSED, 2026-08-12. Nothing here is executed.** §1 is a code read of the tree at
-commit `5a5604e` and of `grep` output taken 2026-08-12. No run has been performed. No
-mobile-readiness, device or iOS claim is made.
+**Status: COMPLETE, 2026-08-12.** Executed evidence is recorded in
+[`input-axis-2026-08-12.md`](../../verification/input-axis-2026-08-12.md). Web and unit
+behavior ran; no native host or device ran, so no desktop, mobile, Android, or iOS readiness
+claim is made.
 
 **The smallest item in the night batch and the one with the clearest user story.** A user
 binds `move`, presses W, and the character walks toward the camera. Nothing in the type, the
@@ -95,12 +96,12 @@ pinned by a test so it cannot drift.
 
 **Key decisions:**
 
-- [ ] No new export. No helper. No option. The 20-line rule.
-- [ ] The contract lives in JSDoc on `vector()` where an editor and a model both see it, not
+- [x] No new export. No helper. No option. The 20-line rule.
+- [x] The contract lives in JSDoc on `vector()` where an editor and a model both see it, not
       only in a template comment.
-- [ ] The templates' explanatory comments are **deleted** once the contract is documented —
+- [x] The templates' explanatory comments are **deleted** once the contract is documented —
       they are the duplication being retired, and leaving them is leaving the tax in place.
-- [ ] Option B is rejected in writing, in this file, with the reason, so it is not
+- [x] Option B is rejected in writing, in this file, with the reason, so it is not
       re-litigated.
 
 ## 3. Integration Ledger
@@ -117,6 +118,12 @@ pinned by a test so it cannot drift.
 
 **Outcome:** a number that says whether `abyss-framework`'s player walks forward or backward
 when `move.y` is positive.
+
+**Executed scope correction:** the cited `src/entities/Player.ts` has no live caller, and the
+default Abyss camera-forward axis is perpendicular to its XY movement plane. The scenario
+therefore measured the live registered player's absolute world `+y` displacement. It passed;
+the inverted `-y` oracle failed. Creating a new scene only to reach dead code was rejected as
+a manufactured caller.
 
 **Files (max 5):**
 
@@ -164,6 +171,9 @@ re-run. It must fail. A scenario that passes both ways is asserting nothing.
 **Conditional.** If Phase 0 says the example moves forward, this phase does not run and the
 ledger records that the missing negation is correct there because of the camera.
 
+**Not run:** the live Abyss scene correctly maps W to `+y`; the proposed `Player.ts` edit is
+unreachable and cannot affect the scenario.
+
 If it runs: one line at `examples/abyss-framework/src/entities/Player.ts:25`, and the Phase 0
 scenario flips from red to green on the same command. **`abyss-vanilla` is the frozen
 benchmark control and is not touched.**
@@ -186,20 +196,21 @@ grep -rn "\.vector(" packages/create-threenative/templates examples --include="*
 
 **Evidence required:**
 
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green
-- [ ] Phase 0's scenario recorded with its exit code, and its negative control observed red
-- [ ] If Phase 0 exits `2`, the ledger says **unmeasured** and Phase 2 does not run
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green
+- [x] Phase 0's scenario recorded with its exit code, and its negative control observed red
+- [x] The first malformed server command exited `2`, was recorded as **unmeasured**, and was
+      corrected before any product conclusion
 
 ## 6. Acceptance criteria
 
 Consumer-scoped.
 
-- [ ] **A user reading `vector()` in their editor learns the sign convention without opening
+- [x] **A user reading `vector()` in their editor learns the sign convention without opening
       the source**, including that it differs from Godot's.
-- [ ] **Flipping the sign in `input.ts` turns a core test red**, proved by running it.
-- [ ] **Neither template ships a comment explaining a framework convention.**
-- [ ] **Option B is recorded as rejected, with its reason**, in this file.
-- [ ] **No new export, no helper, no option was added.** `git diff` on
+- [x] **Flipping the sign in `input.ts` turns a core test red**, proved by running it.
+- [x] **Neither template ships a comment explaining a framework convention.**
+- [x] **Option B is recorded as rejected, with its reason**, in this file.
+- [x] **No new export, no helper, no option was added.** `git diff` on
       `packages/core/src/index.ts` is empty.
 
 **What this PRD may not claim:** that input is now correct on any device, or that the four
