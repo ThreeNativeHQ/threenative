@@ -9,7 +9,7 @@ made here.
 
 | # | Strategy wants | `CHARTER.md` says | Proposed resolution |
 |---|---|---|---|
-| 1 | ThreeNative Studio: a local dashboard with inspector, profiler, asset browser | No editor in v1: "An editor — not in v1. The Studio dogfood found Share and Export did literally nothing." | **Defer.** What ships today is `DebugOverlay` + `window.__THREENATIVE__.snapshot()`. Studio starts only after a stranger has played a game for five minutes. |
+| 1 | ThreeNative Studio: a local dashboard with inspector, profiler, asset browser | No editor in v1: "An editor — not in v1. The Studio dogfood found Share and Export did literally nothing." | **Amended by the owner, 2026-08-12.** Studio may proceed in parallel with the five-minute stranger test, but only as an agent editing plain TypeScript. A GUI that writes a scene stays closed. |
 | 2 | `threenative doctor` as the acquisition funnel | Only **4 CLI commands, ever** (`dev`, `build`, `test`, `ship`) | Ship it as `threenative test --doctor`, or as a mode of the existing `threenative-playtest` bin. A fifth top-level command is a cap breach. |
 | 3 | 10 packages (`runtime`, `renderer-three`, `platform-web`, `platform-native`, `assets`, `input`, `audio`, …) | The package plan is 8 packages, "modularity comes from subpath exports" | Keep 5. `input`, `assets`, `state` are already subpath exports of `@threenative/core`. |
 | 4 | `defineGame({ targets: { 'mobile-mid': { fps: 60, maxDrawCalls: 180 } } })` | Config options are a ceiling; the API fits on one page | Budgets live in playtest scenarios and CI, not in `defineGame`. See [../product/PERFORMANCE-BUDGETS.md](../product/PERFORMANCE-BUDGETS.md). |

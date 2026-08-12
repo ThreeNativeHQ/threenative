@@ -327,6 +327,34 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@20.19.43)(vite@8.2.0(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5))
 
+  packages/studio:
+    dependencies:
+      react:
+        specifier: 'catalog:'
+        version: 19.2.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.0(react@19.2.0)
+    devDependencies:
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.0
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.0(@types/react@19.2.0)
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/ui:
     devDependencies:
       '@threenative/core':

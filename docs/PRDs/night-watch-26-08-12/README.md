@@ -1,11 +1,13 @@
 # Night batch — 2026-08-12
 
 Five PRDs, ordered by **what a user of ThreeNative gets out of it**. Assembled against the
-tree at commit `5a5604e`. PRDs 081–083 completed on 2026-08-12; the remaining queue is unexecuted.
+tree at commit `5a5604e`. PRDs 081–084 completed on 2026-08-12; PRD-078's local half is
+complete and its hosted release proof remains explicitly unexecuted.
 
-**Four are executable defects. The fifth ([PRD-084](PRD-084-threenative-studio.md), ThreeNative
-Studio) is a decision document** — it adds a package and reopens a question the charter closed,
-so only its Phase 0 spike may run tonight and its later phases need an owner's signature.
+**Four are executable defects. The fifth ([PRD-084](../done/PRD-084-threenative-studio.md), ThreeNative
+Studio) adds a package and reopens a question the charter closed** — the owner approved both on
+2026-08-12, so it is executable too. It runs Phase 0 first because its later phases are designed
+against the spike's numbers, not because anything is waiting on a signature.
 
 Every item here is a defect a user meets, not a gate the project owes itself. Ledger
 reconciliation ([PRD-076](../PRD-076-tier-1-parity-reconciliation.md)), the Phase 2 exit-gate
@@ -21,7 +23,7 @@ considered and left out of the night for that reason.
 | 2 | [PRD-082 — `input.vector()` axis contract](../done/PRD-082-input-vector-axis-contract.md) | *"I pressed W and walked backwards."* | **Complete — 2026-08-12** | done |
 | 3 | [PRD-083 — the scaffold's default tax](../done/PRD-083-scaffold-default-tax.md) | *"My new project came with 1,073 lines I have to read before writing one."* | **Complete — 2026-08-12** | done |
 | 4 | [PRD-078 — toolchain-free consumer proof](PRD-078-toolchain-free-consumer-proof.md) | *"There is nothing for me to download."* | **Partly.** See the night scope below | 2 h of the local half |
-| 5 | [PRD-084 — ThreeNative Studio](PRD-084-threenative-studio.md) | *"I want to describe a change and watch the game change, without losing where I was standing."* | **Phase 0 spike only.** Phases 1–3 blocked | 2–3 h for the spike |
+| 5 | [PRD-084 — ThreeNative Studio](../done/PRD-084-threenative-studio.md) | *"I want to describe a change and watch the game change, without losing where I was standing."* | **Complete — 2026-08-12** | done |
 
 Start at 1. It is the largest user-visible defect in the batch: the framework's 0→1
 capability (physics) and its highest-scored capability (assertions) do not compose, and round
@@ -49,14 +51,16 @@ unverified until a runner executes it, and the PRD says so.
 
 ## Night scope for PRD-084 — read before touching it
 
-Run **Phase 0 only**: a throwaway spike in `docs/spikes/`, using a scaffolded project and the
+**Start with Phase 0**: a throwaway spike in `docs/spikes/`, using a scaffolded project and the
 agent binary already on this machine. It produces three numbers — did play state survive an
 agent's edit, how many seconds from sentence to visible change, how many lines of glue it took.
 
-**Do not create `packages/studio/`, add a dependency, or edit `pnpm-workspace.yaml` tonight.**
-The package needs an owner decision because it reopens the charter's closed "an editor"
-question, and the gate in [CONFLICTS.md](../../strategy/CONFLICTS.md) row 1 is that Studio
-starts only after a stranger has played a game for five minutes — which has not happened.
+**Do not create `packages/studio/`, add a dependency, or edit `pnpm-workspace.yaml` until those
+numbers exist.** The package is approved; the shape of it is not knowable until the spike says
+whether the loop holds. The [CONFLICTS.md](../../strategy/CONFLICTS.md) row 1 gate — Studio
+starts only after a stranger has played a game for five minutes — was amended by the owner on
+2026-08-12; Studio now proceeds in parallel with that test. **CONFLICTS.md row 1 itself still
+carries the old wording and needs updating.**
 
 `git status` after Phase 0 should show changes under `docs/spikes/` and nowhere else.
 **"Do not build this" is a valid Phase 0 conclusion** and costs one spike to reach.
