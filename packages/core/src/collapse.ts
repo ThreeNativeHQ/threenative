@@ -489,7 +489,7 @@ export class SceneCollapse {
   #update: (() => void) | undefined;
 
   constructor(scene: IObjectLike, options: ISceneCollapseOptions = {}) {
-    const observeFrames = options.observeFrames ?? 12;
+    const observeFrames = options.observeFrames ?? 8;
     const minMeshes = options.minMeshes ?? 200;
     const bakeBudgetMs = options.bakeBudgetMs ?? 100;
     if (!Number.isInteger(observeFrames) || observeFrames < 1)
