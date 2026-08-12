@@ -1,7 +1,11 @@
 # Night batch — 2026-08-12
 
-Four PRDs, ordered by **what a user of ThreeNative gets out of it**. Assembled against the
+Five PRDs, ordered by **what a user of ThreeNative gets out of it**. Assembled against the
 tree at commit `5a5604e`. Nothing in this folder has been executed.
+
+**Four are executable defects. The fifth ([PRD-084](PRD-084-threenative-studio.md), ThreeNative
+Studio) is a decision document** — it adds a package and reopens a question the charter closed,
+so only its Phase 0 spike may run tonight and its later phases need an owner's signature.
 
 Every item here is a defect a user meets, not a gate the project owes itself. Ledger
 reconciliation ([PRD-076](../PRD-076-tier-1-parity-reconciliation.md)), the Phase 2 exit-gate
@@ -17,6 +21,7 @@ considered and left out of the night for that reason.
 | 2 | [PRD-082 — `input.vector()` axis contract](PRD-082-input-vector-axis-contract.md) | *"I pressed W and walked backwards."* | **Yes, fully** (needs `xvfb-run` for Phase 0) | 1–2 h |
 | 3 | [PRD-083 — the scaffold's default tax](PRD-083-scaffold-default-tax.md) | *"My new project came with 1,073 lines I have to read before writing one."* | **Yes** — measurement is from tracked archives | 2–3 h |
 | 4 | [PRD-078 — toolchain-free consumer proof](PRD-078-toolchain-free-consumer-proof.md) | *"There is nothing for me to download."* | **Partly.** See the night scope below | 2 h of the local half |
+| 5 | [PRD-084 — ThreeNative Studio](PRD-084-threenative-studio.md) | *"I want to describe a change and watch the game change, without losing where I was standing."* | **Phase 0 spike only.** Phases 1–3 blocked | 2–3 h for the spike |
 
 Start at 1. It is the largest user-visible defect in the batch: the framework's 0→1
 capability (physics) and its highest-scored capability (assertions) do not compose, and round
@@ -41,6 +46,20 @@ Two of the three defects that PRD names are local, CI-free, and worth the night:
 
 The Vulkan ICD fix itself may be **written** tonight and must not be **claimed** — it is
 unverified until a runner executes it, and the PRD says so.
+
+## Night scope for PRD-084 — read before touching it
+
+Run **Phase 0 only**: a throwaway spike in `docs/spikes/`, using a scaffolded project and the
+agent binary already on this machine. It produces three numbers — did play state survive an
+agent's edit, how many seconds from sentence to visible change, how many lines of glue it took.
+
+**Do not create `packages/studio/`, add a dependency, or edit `pnpm-workspace.yaml` tonight.**
+The package needs an owner decision because it reopens the charter's closed "an editor"
+question, and the gate in [CONFLICTS.md](../../strategy/CONFLICTS.md) row 1 is that Studio
+starts only after a stranger has played a game for five minutes — which has not happened.
+
+`git status` after Phase 0 should show changes under `docs/spikes/` and nowhere else.
+**"Do not build this" is a valid Phase 0 conclusion** and costs one spike to reach.
 
 ## Stop rules
 

@@ -41,10 +41,11 @@ source. **A comment repeated in two templates explaining a framework sign conven
 framework failing to state its own contract** — a line the user has to write that the
 framework promised to ship.
 
-The fourth is the shape that
-[shipped as a real bug in a bare-sandbox build on 2026-08-03](../../../CLAUDE.md) and was
-caught only by a playtest. Whether it is also wrong in `abyss-framework` depends on that
-scene's camera, and **Phase 0 measures it rather than guessing.**
+The fourth is the shape that shipped as a real character-walks-backwards bug in a bare-sandbox
+build on 2026-08-03, caught only by a playtest. **That run left no tracked evidence** — the
+sandbox is wiped and recreated on every `pnpm sandbox` — so it is cited here as the motivation
+for the measurement, not as a result. Whether `abyss-framework:25` is also wrong depends on
+that scene's camera, and **Phase 0 measures it rather than guessing.**
 
 **Complexity: 3 → LOW mode.** No new API, no new package surface, no option. A documented
 contract, a test that pins it, and one measurement.
