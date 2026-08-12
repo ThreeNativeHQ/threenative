@@ -213,6 +213,19 @@ export interface IPlaytestPerformanceAssertion {
   maxTriangles?: number;
 }
 
+export interface IPlaytestFramebufferCoverageAssertion {
+  backdrop: [number, number, number];
+  grid?: {
+    columns: number;
+    rows: number;
+  };
+  tolerance: number;
+  window: {
+    endStep: string;
+    startStep: string;
+  };
+}
+
 export interface IPlaytestVisualAssertion {
   entityVisible?: { entity: string; minProjectedPixels: number; throughoutFrames?: boolean };
   frameDiff?: { baselineImage?: string; maxChangedPixelRatio?: number; minChangedPixelRatio?: number };
@@ -263,6 +276,7 @@ export interface IPlaytestScenarioAssertions {
   components?: IPlaytestComponentAssertion[];
   contacts?: IPlaytestContactAssertion[];
   diagnostics?: IPlaytestDiagnosticsAssertion;
+  framebufferCoverage?: IPlaytestFramebufferCoverageAssertion;
   hud?: IPlaytestPathAssertion[];
   movement?: IPlaytestMovementAssertion;
   occluded?: IPlaytestOccludedAssertion[];
@@ -799,6 +813,18 @@ function validateStepLabels(
     requireLabel(assertion.compareToStep, `assert.settled[${index}].compareToStep`);
   }
   requireLabel(assertions.movement?.reachesPositionWithin?.atStep, "assert.movement.reachesPositionWithin.atStep");
+  requireLabel(assertions.framebufferCoverage?.window.startStep, "assert.framebufferCoverage.window.startStep");
+  requireLabel(assertions.framebufferCoverage?.window.endStep, "assert.framebufferCoverage.window.endStep");
+  if (assertions.framebufferCoverage !== undefined) {
+    const startIndex = steps.findIndex(({ label }) => label === assertions.framebufferCoverage?.window.startStep);
+    const endIndex = steps.findIndex(({ label }) => label === assertions.framebufferCoverage?.window.endStep);
+    if (endIndex < startIndex) {
+      throw invalidScenario(
+        scenarioPath,
+        "Assertion 'assert.framebufferCoverage.window.endStep' must not precede startStep.",
+      );
+    }
+  }
 }
 
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
@@ -822,6 +848,13 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
   const performance = isRecord(value.performance)
     ? validatePerformanceAssertion(value.performance, scenarioPath, "assert.performance")
+    : undefined;
+  const framebufferCoverage = isRecord(value.framebufferCoverage)
+    ? validateFramebufferCoverageAssertion(
+        value.framebufferCoverage,
+        scenarioPath,
+        "assert.framebufferCoverage",
+      )
     : undefined;
   const world = isRecord(value.world) ? value.world : undefined;
   if (diagnostics?.noRuntimeDiagnostics === false
@@ -865,6 +898,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
         }),
     ...(Array.isArray(value.hud) ? { hud: value.hud.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
     ...(performance === undefined ? {} : { performance }),
+    ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
     ...(movement === undefined
       ? {}
       : {
@@ -1279,6 +1313,53 @@ function validatePerformanceAssertion(value: unknown, scenarioPath: string, obje
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
+  };
+}
+
+function validateFramebufferCoverageAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestFramebufferCoverageAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["backdrop", "grid", "tolerance", "window"], scenarioPath, objectPath);
+  const backdrop = requireArray(record, "backdrop", scenarioPath, objectPath);
+  if (backdrop.length !== 3
+    || backdrop.some((channel) => typeof channel !== "number" || !Number.isInteger(channel) || channel < 0 || channel > 255)) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}.backdrop' must be three integer RGB channels from 0 to 255.`,
+    );
+  }
+  const tolerance = optionalNonNegativeInteger(record, "tolerance", scenarioPath, objectPath);
+  if (tolerance === undefined || tolerance > 255) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.tolerance' must be an integer from 0 to 255.`);
+  }
+  const window = requireRecord(record.window, scenarioPath, `${objectPath}.window`);
+  rejectUnknownKeys(window, ["endStep", "startStep"], scenarioPath, `${objectPath}.window`);
+  const gridValue = record.grid;
+  let grid: IPlaytestFramebufferCoverageAssertion["grid"];
+  if (gridValue !== undefined) {
+    const gridRecord = requireRecord(gridValue, scenarioPath, `${objectPath}.grid`);
+    rejectUnknownKeys(gridRecord, ["columns", "rows"], scenarioPath, `${objectPath}.grid`);
+    const columns = optionalPositiveInteger(gridRecord, "columns", scenarioPath, `${objectPath}.grid`);
+    const rows = optionalPositiveInteger(gridRecord, "rows", scenarioPath, `${objectPath}.grid`);
+    if (columns === undefined || rows === undefined || columns > 256 || rows > 256) {
+      throw invalidScenario(
+        scenarioPath,
+        `'${objectPath}.grid' columns and rows must be positive integers no greater than 256.`,
+      );
+    }
+    grid = { columns, rows };
+  }
+  return {
+    backdrop: backdrop as [number, number, number],
+    ...(grid === undefined ? {} : { grid }),
+    tolerance,
+    window: {
+      endStep: requireString(window, "endStep", scenarioPath, `${objectPath}.window`),
+      startStep: requireString(window, "startStep", scenarioPath, `${objectPath}.window`),
+    },
   };
 }
 

@@ -10,7 +10,7 @@
       "kind": "input",
       "label": "near-patrol",
       "press": "ArrowRight",
-      "holdTicks": 16,
+      "holdTicks": 28,
       "release": true
     },
     {

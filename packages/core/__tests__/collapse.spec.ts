@@ -45,13 +45,10 @@ function run(
 }
 
 /**
- * Finds the transform buffer the merged overlay's shader indexes, by walking the material's node
- * graph for a Float32Array of mat4s. Bounded and visited-tracked: the graph is cyclic.
+ * Finds the transform buffer a merged shader indexes, by walking each material's node graph for
+ * a Float32Array of mat4s. Bounded and visited-tracked: the graph is cyclic.
  */
-function overlayTransforms(camera: PerspectiveCamera): Float32Array | undefined {
-  const merged = camera.children.find((child) => (child as Mesh).isMesh === true) as Mesh;
-  const root = (merged?.material as { positionNode?: unknown })?.positionNode;
-  if (root === undefined) return undefined;
+function nodeTransforms(root: unknown): Float32Array | undefined {
   const seen = new Set<unknown>();
   const queue: unknown[] = [root];
   while (queue.length > 0 && seen.size < 5_000) {
@@ -63,6 +60,16 @@ function overlayTransforms(camera: PerspectiveCamera): Float32Array | undefined 
       continue;
     }
     for (const value of Object.values(node as Record<string, unknown>)) queue.push(value);
+  }
+  return undefined;
+}
+
+function mergedTransforms(parent: Object3D): Float32Array | undefined {
+  for (const child of parent.children) {
+    const root = ((child as Mesh).material as { positionNode?: unknown } | undefined)?.positionNode;
+    if (root === undefined) continue;
+    const transforms = nodeTransforms(root);
+    if (transforms !== undefined) return transforms;
   }
   return undefined;
 }
@@ -151,6 +158,39 @@ describe("SceneCollapse", () => {
     expect(report?.collapsed).toBe(true);
     expect(report?.sourceMeshes).toBe(11);
     expect(report?.movingParts).toBe(1);
+  });
+
+  it("keeps a moving part's own visibility live after its source graph is detached", () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);
+    const arm = new Group();
+    arm.add(new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xf2952f })));
+    scene.add(arm);
+
+    let report: ISceneCollapseReport | undefined;
+    const collapse = new SceneCollapse(scene as never, {
+      observeFrames: 3,
+      minMeshes: 8,
+      onReport: (value) => {
+        report = value;
+      },
+    });
+    for (let index = 0; index < 4; index += 1) {
+      arm.rotation.z += 0.1;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+    }
+
+    expect(report?.movingParts).toBe(1);
+    const transforms = mergedTransforms(scene);
+    expect(transforms).toBeDefined();
+    arm.visible = false;
+    collapse.frame();
+    expect(transforms?.slice(12, 15)).toEqual(new Float32Array([1e9, 1e9, 1e9]));
+    arm.visible = true;
+    arm.position.x = 7;
+    collapse.frame();
+    expect(transforms?.[12]).toBe(7);
   });
 
   // A loading screen waits on this. If it never resolved, a game would hold the screen forever;
@@ -318,7 +358,7 @@ describe("SceneCollapse", () => {
     expect(report?.overlayDraws).toBe(1);
     // An all-zero matrix collapses every vertex to a point, so a buffer that is still zero here
     // is the flash. The camera sits away from the origin, so a correct transform cannot be zero.
-    const transforms = overlayTransforms(camera);
+    const transforms = mergedTransforms(camera);
     expect(transforms).toBeDefined();
     expect(transforms?.some((value) => value !== 0)).toBe(true);
   });

@@ -1,9 +1,14 @@
 import { type Camera, OrthographicCamera, PerspectiveCamera, Scene as ThreeScene } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { CanvasLayer } from "./canvas-layer.js";
 import { SceneCollapse } from "./collapse.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { type InputBindings, InputMap } from "./input.js";
-import { FixedStepLoop, type IRenderPerformanceSample } from "./loop.js";
+import {
+  FixedStepLoop,
+  type IRenderPerformanceMetrics,
+  type IRenderPerformanceSample,
+} from "./loop.js";
 import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
 import { type IRandom, createRandom } from "./random.js";
@@ -189,6 +194,20 @@ function rendererPerformanceMetrics(raw: unknown): {
   };
 }
 
+function addRenderPerformanceMetrics(
+  world: IRenderPerformanceMetrics,
+  overlay: IRenderPerformanceMetrics,
+): IRenderPerformanceMetrics {
+  return {
+    ...(world.drawCalls === undefined || overlay.drawCalls === undefined
+      ? {}
+      : { drawCalls: world.drawCalls + overlay.drawCalls }),
+    ...(world.triangles === undefined || overlay.triangles === undefined
+      ? {}
+      : { triangles: world.triangles + overlay.triangles }),
+  };
+}
+
 function createCamera(config: CameraConfig | undefined): Camera {
   if (config === undefined) return new PerspectiveCamera(60, 1, 0.1, 2_000);
   validateCameraConfig(config);
@@ -277,6 +296,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     for (const plugin of this.#config.plugins ?? []) {
       if (typeof plugin !== "function") plugin.sceneExit?.(ctx);
     }
+    // A settled collapse keeps a per-frame updater for the detached moving parts it baked.
+    // Restore before clearing so a scene change cannot keep walking the previous scene forever.
+    this.#collapse?.restore();
     clearScene(ctx.scene, this.#particles);
     const scene = new SceneType();
     this.#scene = scene;
@@ -354,6 +376,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const threeScene = new ThreeScene();
     const camera = createCamera(this.#config.camera);
     const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
+    const canvasLayer = new CanvasLayer(viewport);
     this.#viewport = viewport;
     const assets = createAssetLoader(this.#config.assets);
     const entities = new Registry();
@@ -387,6 +410,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       assets,
       after: (delay, callback) => scheduler.after(delay, callback),
       camera,
+      canvasLayer,
       entities,
       every: (callback) => scheduler.every(callback),
       get fps() {
@@ -441,9 +465,20 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // Runs on web as well as native, so the two stay one behaviour rather than diverging
         // into a fast path nobody tests. Scenes under its mesh floor are left alone entirely.
         this.#collapse?.frame();
-        renderer.render(threeScene, camera);
-        this.#scene?.render(ctx);
-        return rendererPerformanceMetrics(renderer.raw);
+        let worldMetrics: IRenderPerformanceMetrics | undefined;
+        if (!canvasLayer.opaque) {
+          renderer.render(threeScene, camera);
+          this.#scene?.render(ctx);
+          worldMetrics = rendererPerformanceMetrics(renderer.raw);
+        }
+        if (canvasLayer.scene.children.length > 0) {
+          renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+          const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
+          return worldMetrics === undefined
+            ? overlayMetrics
+            : addRenderPerformanceMetrics(worldMetrics, overlayMetrics);
+        }
+        return worldMetrics ?? {};
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
@@ -534,6 +569,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (ctx !== undefined) clearScene(ctx.scene, this.#particles);
     this.#input?.dispose();
     this.#state.stop();
+    ctx?.canvasLayer.dispose();
     this.#viewport?.dispose();
     const renderer = this.#renderer;
     renderer?.dispose();

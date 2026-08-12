@@ -7,6 +7,7 @@ import {
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   type IPlaytestDiagnostic,
+  type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestScenario,
@@ -33,6 +34,7 @@ import {
   type IDeviceMailbox,
 } from "./deviceTransport.js";
 import { buildReport, type IStandalonePlaytestReport } from "./runner.js";
+import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
 
 export interface IAndroidPlaytestDependencies {
   driver?: IAndroidDriver;
@@ -47,7 +49,9 @@ export interface IDevicePlaytestDriver {
   removeFile?(path: string): Promise<void>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
+  startScreenRecording?(): Promise<void>;
   stop(): Promise<void>;
+  stopScreenRecording?(path: string): Promise<void>;
   writeFile?(path: string, contents: string): Promise<void>;
 }
 
@@ -93,6 +97,18 @@ export async function runDevicePlaytest(
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
   if (
     target.name === "android"
+    && scenario.assert?.framebufferCoverage !== undefined
+    && (typeof target.driver.startScreenRecording !== "function"
+      || typeof target.driver.stopScreenRecording !== "function")
+  ) {
+    return failureReport(config, scenario, unsupportedDiagnostic(
+      "framebuffer coverage recording",
+      "Use the adb-backed Android driver; framebuffer coverage requires screenrecord and offline ffmpeg analysis.",
+      target.name,
+    ), target.name);
+  }
+  if (
+    target.name === "android"
     && scenario.steps.some((step) => step.pointers !== undefined)
     && typeof target.driver.setPointers !== "function"
   ) {
@@ -105,6 +121,9 @@ export async function runDevicePlaytest(
   const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
   const transport = target.transport ?? createDeviceTransport(target.driver, endpoint, target.mailboxPaths);
   let bridge: IPlaytestBridgeClient | undefined;
+  let coverageRecordingStarted = false;
+  let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
+  const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
   try {
     await transport.start();
     await target.driver.prepare(endpoint, config.mailboxRoot);
@@ -141,6 +160,22 @@ export async function runDevicePlaytest(
     const heldKeys = new Set<string>();
     let pointerButtons = 0;
     for (const step of scenario.steps) {
+      const framebufferAssertion = scenario.assert?.framebufferCoverage;
+      if (
+        target.name === "android"
+        && framebufferAssertion !== undefined
+        && step.label === framebufferAssertion.window.startStep
+      ) {
+        try {
+          await target.driver.startScreenRecording?.();
+          coverageRecordingStarted = true;
+          // Fixed-step calls can finish all eight scenario frames before Android's observed
+          // ~15 fps recorder emits one. The opt-in pixel probe deliberately paces those renders.
+          await delay(100);
+        } catch (error) {
+          framebufferCoverage = unreadableCoverageObservation(error);
+        }
+      }
       if (step.pointerPosition !== undefined) {
         pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
         await transport.call("input.pointer", {
@@ -171,7 +206,14 @@ export async function runDevicePlaytest(
         playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
         (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
       );
-      await bridge.advance(frames);
+      if (coverageRecordingStarted) {
+        for (let frame = 0; frame < frames; frame += 1) {
+          await bridge.advance(1);
+          await delay(100);
+        }
+      } else {
+        await bridge.advance(frames);
+      }
       appendPosition(pathPositions, await bridge.sample(sampleRequest), pathEntity);
       if (step.label !== undefined) {
         const snapshot = await bridge.sample(sampleRequest);
@@ -195,6 +237,26 @@ export async function runDevicePlaytest(
         if (step.pointers !== undefined) {
           await target.driver.setPointers?.([]);
           await bridge.advance(1);
+        }
+      }
+      if (
+        coverageRecordingStarted
+        && target.name === "android"
+        && framebufferAssertion !== undefined
+        && step.label === framebufferAssertion.window.endStep
+      ) {
+        try {
+          await target.driver.stopScreenRecording?.(coverageVideoPath);
+          coverageRecordingStarted = false;
+          framebufferCoverage = await analyzeFramebufferCoverageRecording(
+            coverageVideoPath,
+            config.artifactDirectory,
+            framebufferAssertion,
+            "scenario-steps",
+          );
+        } catch (error) {
+          coverageRecordingStarted = false;
+          framebufferCoverage = unreadableCoverageObservation(error);
         }
       }
     }
@@ -223,6 +285,7 @@ export async function runDevicePlaytest(
       true,
       undefined,
       labeledSamples,
+      framebufferCoverage,
     );
     return { ...report, runtime: "native", target: target.name, url: endpoint };
   } catch (error) {
@@ -294,6 +357,13 @@ function unsupportedAssertion(
     return unsupportedDiagnostic(
       "visual assertions",
       `${targetLabel(target)} screenshots are captured as artifacts, but visual metric evaluation is not supported yet.`,
+      target,
+    );
+  }
+  if (scenario.assert?.framebufferCoverage !== undefined && target === "ios") {
+    return unsupportedDiagnostic(
+      "framebuffer coverage recording",
+      "Run this assertion on --target browser or --target android; the iOS transport has no per-frame recorder observer.",
       target,
     );
   }
@@ -404,4 +474,18 @@ function accumulatedPathLength(positions: readonly PlaytestVec3[]): number | und
 
 function safePart(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
+}
+
+function unreadableCoverageObservation(error: unknown): IPlaytestFramebufferCoverageObservation {
+  return {
+    boundarySource: "scenario-steps",
+    frameCount: 0,
+    unreadableReason: error instanceof Error ? error.message : String(error),
+    windowCompleted: false,
+    windowStarted: false,
+  };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

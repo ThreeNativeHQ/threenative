@@ -1,5 +1,6 @@
 import type { Camera, Intersection, Object3D, Scene as ThreeScene } from "three";
 import type { IAssetLoader } from "./assets.js";
+import type { CanvasLayer } from "./canvas-layer.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
 import type { IRaycastOptions } from "./picking.js";
@@ -65,6 +66,7 @@ export interface ICtx<
   readonly viewport: Viewport;
   readonly scene: ThreeScene;
   readonly camera: Camera;
+  readonly canvasLayer: CanvasLayer;
   readonly entities: Registry;
   readonly add: (object: Object3D) => Object3D;
   readonly input: InputMap;

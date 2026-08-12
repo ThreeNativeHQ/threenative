@@ -1208,23 +1208,6 @@ export class SceneCollapse {
       detached.push(child);
       this.#scene.remove(child);
     }
-    // Each moving part's original ancestry, captured before the merge detaches it. Afterwards the
-    // part is no longer under the parent the game hides, so the chain has to be remembered.
-    const partAncestry = new Map<IObjectLike, IObjectLike[]>();
-    for (const part of movingParts) {
-      const chain: IObjectLike[] = [];
-      for (let node: IObjectLike | null = part.object; node !== null; node = node.parent) {
-        chain.push(node);
-      }
-      partAncestry.set(part.object, chain);
-    }
-    const drawnPart = (object: IObjectLike): boolean => {
-      const chain = partAncestry.get(object);
-      if (chain === undefined) return object.visible === true;
-      for (const node of chain) if (node.visible !== true) return false;
-      return true;
-    };
-
     const movingRoots: IObjectLike[] = [];
     for (const part of movingParts) {
       let root = part.object;
@@ -1238,14 +1221,8 @@ export class SceneCollapse {
       for (const part of movingParts) {
         transformData.set(part.object.matrixWorld.elements, part.index * 16);
         writeNormals(normalData, part, normalMatrix);
-        if (!drawnPart(part.object)) {
+        if (part.object.visible !== true) {
           // A hidden part has no draw of its own to skip, so it is pushed out of the frustum.
-          //
-          // Ancestors count. A game hides a subtree by hiding its root — which is exactly what a
-          // loading screen does — and the meshes inside it keep `visible === true`. Reading only
-          // the part's own flag let every one of those keep drawing after the merge lifted it out
-          // of the hidden parent: on a Pixel 8 an animated waterfall drew through the loading
-          // backdrop for the frames between the collapse landing and the screen coming down.
           transformData[part.index * 16 + 12] = 1e9;
           transformData[part.index * 16 + 13] = 1e9;
           transformData[part.index * 16 + 14] = 1e9;

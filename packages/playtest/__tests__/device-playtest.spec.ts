@@ -67,6 +67,20 @@ class FakeAndroidDriver implements IAndroidDriver {
   }
 }
 
+class FakeRecordingAndroidDriver extends FakeAndroidDriver {
+  recordingStarted = false;
+  recordingStopped = false;
+
+  async startScreenRecording() {
+    this.recordingStarted = true;
+  }
+
+  async stopScreenRecording(path: string) {
+    this.recordingStopped = true;
+    await writeFile(path, "not an mp4");
+  }
+}
+
 test("one device scenario reaches the same semantic evaluator and passes", async () => {
   const { bridge, setHeld } = movingBridge();
   const host = globalThis as typeof globalThis & INativeHost;
@@ -175,6 +189,54 @@ test("network assertions fail explicitly unsupported instead of being skipped", 
   expect(driver.prepared).toBe(false);
 });
 
+test("Android framebuffer coverage requires the recorder observer before launching", async () => {
+  const driver = new FakeAndroidDriver(movingBridge().bridge);
+  const result = await runDevice(
+    framebufferCoverageAssertion(),
+    driver,
+    1_000,
+    [{ label: "loading", waitFrames: 1 }],
+  );
+
+  expect(result.pass).toBe(false);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+    message: expect.stringContaining("framebuffer coverage recording"),
+  }));
+  expect(exitCodeForReport(result)).toBe(2);
+  expect(driver.prepared).toBe(false);
+});
+
+test("Android framebuffer coverage brackets its declared steps and fails closed on unreadable video", async () => {
+  const moving = movingBridge();
+  const driver = new FakeRecordingAndroidDriver(moving.bridge);
+  const result = await runDevice(
+    framebufferCoverageAssertion(),
+    driver,
+    1_000,
+    [{ label: "loading", waitFrames: 1 }],
+  );
+
+  expect(driver.recordingStarted).toBe(true);
+  expect(driver.recordingStopped).toBe(true);
+  expect(moving.tick()).toBe(1);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "framebufferCoverage",
+    pass: false,
+  }));
+  expect(result.observations?.framebufferCoverage).toMatchObject({
+    boundarySource: "scenario-steps",
+    frameCount: 0,
+    unreadableReason: expect.stringContaining("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_VIDEO_UNREADABLE"),
+    windowCompleted: false,
+    windowStarted: false,
+  });
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE",
+  }));
+  expect(exitCodeForReport(result)).toBe(1);
+});
+
 test("Android multi-pointer steps deliver complete held sets and release in finally", async () => {
   const moving = movingBridge();
   const driver = new FakeAndroidDriver(moving.bridge, [], (ids) => moving.setHeld(ids.length === 2));
@@ -232,7 +294,21 @@ async function runDevice(
   return runAndroidPlaytest(config, { driver, transport: new DeviceBridgeTransport(endpoint) });
 }
 
-function movingBridge(): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): void } {
+function framebufferCoverageAssertion() {
+  return {
+    framebufferCoverage: {
+      backdrop: [13, 27, 42],
+      tolerance: 0,
+      window: { endStep: "loading", startStep: "loading" },
+    },
+  };
+}
+
+function movingBridge(): {
+  bridge: IPlaytestBridgeV1;
+  setHeld(value: boolean): void;
+  tick(): number;
+} {
   let held = false;
   let tick = 0;
   let x = 0;
@@ -258,6 +334,7 @@ function movingBridge(): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): v
       }),
     },
     setHeld: (value) => { held = value; },
+    tick: () => tick,
   };
 }
 

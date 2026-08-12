@@ -21,6 +21,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     setupCamera(ctx.camera as PerspectiveCamera);
+    const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     const hud = ctx.entities.add(
       "hud",
@@ -48,11 +49,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     let elapsed = 0;
-    // Built last on purpose: it hides what is in the scene when it is created, so the scene has
-    // to be populated first. It reveals the world itself once startup settles and the collapsed
-    // scene's shaders are built, so nothing here has to sequence that.
-    const loading = createLoadingScreen(ctx);
-
     return (frameCtx, dt) => {
       loading.update();
       player.update(frameCtx, dt);

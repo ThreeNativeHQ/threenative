@@ -29,6 +29,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
     kind: "webgpu",
     raw: {},
     render: () => undefined,
+    renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
   };

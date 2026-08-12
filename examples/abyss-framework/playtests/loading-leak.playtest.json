@@ -1,0 +1,37 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "framebufferCoverage": {
+      "backdrop": [13, 27, 42],
+      "grid": {
+        "columns": 32,
+        "rows": 18
+      },
+      "tolerance": 14,
+      "window": {
+        "endStep": "collapse-window",
+        "startStep": "collapse-window"
+      }
+    }
+  },
+  "name": "loading-backdrop-covers-moving-collapsed-waterfall",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "collapse-window",
+      "release": true,
+      "waitFrames": 8
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 0
+}

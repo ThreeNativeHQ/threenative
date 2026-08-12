@@ -21,6 +21,8 @@ export interface IRendererLike {
   compileAsync(scene: Object3D, camera: Camera): Promise<void>;
   compute(node: unknown): void;
   render(scene: Object3D, camera: Camera): void;
+  /** Draws after the world without clearing or passing through the world's output pipeline. */
+  renderOverlay(scene: Object3D, camera: Camera): void;
   setOutputNode(node: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   dispose(): void;
@@ -44,6 +46,7 @@ export interface IRendererOptions {
 }
 
 type RendererInstance = {
+  autoClear?: boolean;
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera) => Promise<void>;
@@ -98,6 +101,17 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): IRendererLike 
     render: (scene, camera) => {
       if (outputPipeline === undefined) raw.render(scene, camera);
       else outputPipeline.render();
+    },
+    renderOverlay: (scene, camera) => {
+      const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
+      const autoClear = raw.autoClear;
+      raw.autoClear = false;
+      try {
+        raw.render(scene, camera);
+      } finally {
+        if (hadOwnAutoClear) raw.autoClear = autoClear;
+        else Reflect.deleteProperty(raw, "autoClear");
+      }
     },
     setOutputNode: (node) => {
       if (kind !== "webgpu")

@@ -1,22 +1,20 @@
-import { type Mesh, PerspectiveCamera, Scene } from "three";
-import { describe, expect, it } from "vitest";
+import { type Mesh, MeshBasicMaterial, OrthographicCamera, PerspectiveCamera, Scene } from "three";
+import { describe, expect, it, vi } from "vitest";
 import { createLoadingScreen } from "../templates/starter/src/render/loading.js";
 
 /**
  * The loading screen is generated user source, but every scaffolded project starts from this copy,
  * so a defect here ships to every game at once.
- *
- * The defect this guards: the fill quad's position was set at construction and its scale only
- * inside `update()`, so the first frame drew `PlaneGeometry(1, 1)` at its default scale. The layout
- * sizes for a 4:1 ratio, so on a portrait phone that one-unit square covers the viewport — a
- * physical Pixel 8 recording measured the frame before the backdrop at 96.33% progress-bar green.
  */
-function host(aspect = 1) {
-  const camera = new PerspectiveCamera(60, aspect, 0.1, 2_000);
+function host(width = 900, height = 900) {
+  const camera = new PerspectiveCamera(60, width / height, 0.1, 2_000);
   const scene = new Scene();
   scene.add(camera);
+  const canvasCamera = new OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 0, 2);
+  canvasCamera.position.z = 1;
   return {
     camera,
+    canvasLayer: { camera: canvasCamera, opaque: false, scene: new Scene() },
     scene,
     // Neither promise resolves: the screen must be correct while it is still up, which is the point.
     renderer: { compileAsync: () => new Promise<void>(() => undefined) },
@@ -25,24 +23,46 @@ function host(aspect = 1) {
 }
 
 /** The three quads, in the order the screen adds them: backdrop, track, fill. */
-function quads(camera: PerspectiveCamera): { backdrop: Mesh; track: Mesh; fill: Mesh } {
-  const meshes = camera.children.filter((child): child is Mesh => (child as Mesh).isMesh === true);
-  // Fail closed: indexing a short list would otherwise assert against `undefined` and pass.
+function quads(scene: Scene): { backdrop: Mesh; track: Mesh; fill: Mesh } {
+  const meshes = scene.children.filter((child): child is Mesh => (child as Mesh).isMesh === true);
   if (meshes.length !== 3) throw new Error(`expected 3 loading quads, found ${meshes.length}`);
   const [backdrop, track, fill] = meshes as [Mesh, Mesh, Mesh];
   return { backdrop, track, fill };
 }
 
+function resizeCanvas(camera: OrthographicCamera, width: number, height: number): void {
+  camera.left = -width / 2;
+  camera.right = width / 2;
+  camera.top = height / 2;
+  camera.bottom = -height / 2;
+  camera.updateProjectionMatrix();
+}
+
 describe("template loading screen", () => {
+  it("draws opaque quads only in the independent canvas layer", () => {
+    const source = host();
+    const worldChildren = [...source.scene.children];
+    createLoadingScreen(source);
+    const { backdrop, track, fill } = quads(source.canvasLayer.scene);
+
+    expect(source.canvasLayer.opaque).toBe(true);
+    expect(source.scene.children).toEqual(worldChildren);
+    expect(source.canvasLayer.camera.children).toEqual([]);
+    for (const quad of [backdrop, track, fill]) {
+      expect(quad.parent).toBe(source.canvasLayer.scene);
+      expect(quad.material).toBeInstanceOf(MeshBasicMaterial);
+      expect((quad.material as MeshBasicMaterial).transparent).toBe(false);
+      expect(quad.renderOrder).toBeLessThanOrEqual(1_000);
+    }
+  });
+
   it("sizes the progress fill before the first frame, not on the first update", () => {
     const source = host();
     createLoadingScreen(source);
-    const { track, fill } = quads(source.camera);
+    const { track, fill } = quads(source.canvasLayer.scene);
 
-    // The bug leaves the fill at PlaneGeometry(1, 1)'s default scale.
     expect(fill.scale.x).not.toBe(1);
     expect(fill.scale.y).not.toBe(1);
-    // At zero progress the fill is a sliver of the track, never taller and never wider.
     expect(fill.scale.y).toBeCloseTo(track.scale.y, 6);
     expect(fill.scale.x).toBeLessThan(track.scale.x);
   });
@@ -50,10 +70,8 @@ describe("template loading screen", () => {
   it("never lets the fill outgrow the track, whatever progress reports", () => {
     const source = host();
     const loading = createLoadingScreen(source);
-    const { track, fill } = quads(source.camera);
+    const { track, fill } = quads(source.canvasLayer.scene);
 
-    // NaN is in the list because `Math.max(0, Math.min(1, NaN))` is NaN: the obvious clamp does
-    // not clamp, and one NaN reaching the quad's scale stops the bar rendering at all.
     for (const progress of [0, 0.25, 0.5, 1, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       source.startup.progress = progress;
       loading.update();
@@ -64,22 +82,19 @@ describe("template loading screen", () => {
     }
   });
 
-  // A phone is portrait about half the time, and the bar was laid out for a fixed 4:1 ratio.
   it.each([
-    ["portrait", 1080 / 2400],
-    ["landscape", 2400 / 1080],
-    ["square", 1],
-  ])("keeps the bar inside the viewport in %s", (_name, aspect) => {
-    const source = host(aspect);
+    ["portrait", 1080, 2400],
+    ["landscape", 2400, 1080],
+    ["square", 1080, 1080],
+  ])("keeps the bar inside the pixel-sized viewport in %s", (_name, width, height) => {
+    const source = host(width, height);
     const loading = createLoadingScreen(source);
-    const { backdrop, track, fill } = quads(source.camera);
+    const { backdrop, track, fill } = quads(source.canvasLayer.scene);
 
-    const visibleWidth = 2 * Math.tan((60 * Math.PI) / 360) * aspect;
-    // The track must fit the screen it is drawn on, and the backdrop must still cover it.
-    expect(track.scale.x).toBeLessThanOrEqual(visibleWidth + 1e-9);
-    expect(backdrop.scale.x).toBeGreaterThanOrEqual(visibleWidth);
+    expect(track.scale.x).toBeLessThanOrEqual(width);
+    expect(backdrop.scale.x).toBe(width);
+    expect(backdrop.scale.y).toBe(height);
 
-    // At any progress the fill stays within the track's span, so it never starts off-screen.
     for (const progress of [0, 0.5, 1]) {
       source.startup.progress = progress;
       loading.update();
@@ -91,17 +106,75 @@ describe("template loading screen", () => {
   });
 
   it("relays out when the device rotates mid-load", () => {
-    const source = host(2400 / 1080);
+    const source = host(2400, 1080);
     const loading = createLoadingScreen(source);
-    const { track } = quads(source.camera);
+    const { backdrop, track } = quads(source.canvasLayer.scene);
     const landscapeTrack = track.scale.x;
 
-    source.camera.aspect = 1080 / 2400;
+    resizeCanvas(source.canvasLayer.camera, 1080, 2400);
     source.startup.progress = 0.5;
     loading.update();
 
     expect(track.scale.x).toBeLessThan(landscapeTrack);
-    const visiblePortrait = 2 * Math.tan((60 * Math.PI) / 360) * (1080 / 2400);
-    expect(track.scale.x).toBeLessThanOrEqual(visiblePortrait + 1e-9);
+    expect(backdrop.scale.x).toBe(1080);
+    expect(backdrop.scale.y).toBe(2400);
+  });
+
+  it("removes and disposes its quads before making the canvas layer transparent", () => {
+    const source = host();
+    const loading = createLoadingScreen(source);
+    const parts = Object.values(quads(source.canvasLayer.scene));
+    const disposals = parts.flatMap((mesh) => [
+      vi.spyOn(mesh.geometry, "dispose"),
+      vi.spyOn(mesh.material as MeshBasicMaterial, "dispose"),
+    ]);
+
+    loading.finish();
+
+    expect(source.canvasLayer.scene.children).toEqual([]);
+    expect(source.canvasLayer.opaque).toBe(false);
+    for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("compiles the collapsed world behind the opaque screen before reveal", async () => {
+    let ready: () => void = () => undefined;
+    let compiled: () => void = () => undefined;
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const compilePromise = new Promise<void>((resolve) => {
+      compiled = resolve;
+    });
+    const source = host();
+    source.startup.whenReady = () => readyPromise;
+    source.renderer.compileAsync = vi.fn(() => compilePromise);
+    createLoadingScreen(source);
+
+    ready();
+    await Promise.resolve();
+    expect(source.renderer.compileAsync).toHaveBeenCalledWith(source.scene, source.camera);
+    expect(source.canvasLayer.opaque).toBe(true);
+    expect(source.canvasLayer.scene.children).toHaveLength(3);
+
+    compiled();
+    await compilePromise;
+    await Promise.resolve();
+    expect(source.canvasLayer.scene.children).toEqual([]);
+    expect(source.canvasLayer.opaque).toBe(false);
+  });
+
+  it("does not leave a one-frame screen when startup and compilation are already settled", async () => {
+    const source = host();
+    source.startup.whenReady = () => Promise.resolve();
+    source.renderer.compileAsync = vi.fn(() => Promise.resolve());
+
+    createLoadingScreen(source);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
+    expect(source.canvasLayer.scene.children).toEqual([]);
+    expect(source.canvasLayer.opaque).toBe(false);
   });
 });

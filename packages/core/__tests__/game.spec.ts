@@ -1,5 +1,12 @@
-import { Mesh, OrthographicCamera, PerspectiveCamera, SphereGeometry } from "three";
-import { describe, expect, it } from "vitest";
+import {
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  OrthographicCamera,
+  PerspectiveCamera,
+  SphereGeometry,
+} from "three";
+import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
@@ -46,6 +53,98 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("draws only the CanvasLayer on every opaque frame and draws it last otherwise", async () => {
+    const canvas = testCanvas();
+    const draws: unknown[] = [];
+    const renderInfo = { drawCalls: 0, triangles: 0 };
+    let diagnostics:
+      | (() => readonly { drawCalls?: number; frameMs: number; triangles?: number }[])
+      | undefined;
+    let frame: ((time: number) => void) | undefined;
+    let renderHooks = 0;
+    class LayerScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.scene.add(new Mesh());
+        ctx.canvasLayer.scene.add(new Mesh());
+        ctx.canvasLayer.scene.name = "overlay";
+        ctx.canvasLayer.opaque = true;
+      }
+
+      override render(): void {
+        renderHooks += 1;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            diagnostics = runtime?.runtimeDiagnosticsSeries;
+            return undefined;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info: { render: renderInfo },
+          render: (scene: unknown) => {
+            draws.push(scene);
+            const overlay = (scene as { name?: string }).name === "overlay";
+            renderInfo.drawCalls = overlay ? 1 : 3;
+            renderInfo.triangles = overlay ? 2 : 30;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LayerScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
+
+      frame(16);
+      frame(32);
+      expect(draws).toEqual([ctx.canvasLayer.scene, ctx.canvasLayer.scene]);
+      expect(renderHooks).toBe(0);
+
+      draws.length = 0;
+      ctx.canvasLayer.opaque = false;
+      frame(48);
+      expect(draws).toEqual([ctx.scene, ctx.canvasLayer.scene]);
+      expect(renderHooks).toBe(1);
+
+      draws.length = 0;
+      ctx.canvasLayer.scene.clear();
+      frame(64);
+      expect(draws).toEqual([ctx.scene]);
+      expect(renderHooks).toBe(2);
+      expect(diagnostics?.()).toEqual([
+        { drawCalls: 1, frameMs: 16, triangles: 2 },
+        { drawCalls: 4, frameMs: 16, triangles: 32 },
+        { drawCalls: 3, frameMs: 16, triangles: 30 },
+      ]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("should read input from a custom target when inputTarget is provided", async () => {
     const customTarget = new EventTarget();
     const unrelatedTarget = new EventTarget();
@@ -477,6 +576,62 @@ describe("IGame", () => {
     advance(1);
     expect(scheduled).toBe(2);
     game.stop();
+  });
+
+  it("stops updating detached collapse parts when goto clears the previous scene", async () => {
+    let renderFrame: ((time: number) => void) | undefined;
+    const movingRoot = new Group();
+    const moving = new Mesh(new SphereGeometry(0.1, 3, 2), new MeshBasicMaterial());
+    movingRoot.matrixAutoUpdate = false;
+    movingRoot.add(moving);
+    const updateMatrixWorld = vi.spyOn(movingRoot, "updateMatrixWorld");
+
+    class Collapsed extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        const geometry = new SphereGeometry(0.1, 3, 2);
+        const material = new MeshBasicMaterial();
+        ctx.add(movingRoot);
+        for (let index = 1; index < 200; index += 1) {
+          ctx.add(new Mesh(geometry, material));
+        }
+      }
+    }
+
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        renderFrame = callback;
+        return 1;
+      },
+    });
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { next: EmptyScene, play: Collapsed },
+      start: "play",
+    });
+
+    try {
+      await game.start();
+      for (let index = 1; index <= 16 && game.ctx?.startup.phase !== "ready"; index += 1) {
+        if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+        movingRoot.matrix.elements[12] = index;
+        renderFrame(index * 17);
+      }
+      expect(game.ctx?.startup.phase).toBe("ready");
+
+      updateMatrixWorld.mockClear();
+      await game.goto("next");
+      if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+      renderFrame(17 * 17);
+      expect(updateMatrixWorld).not.toHaveBeenCalled();
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
   });
 
   it("does not run plugins against a destination during a frame navigation", async () => {

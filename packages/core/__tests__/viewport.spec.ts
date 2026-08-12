@@ -32,6 +32,7 @@ function renderer(canvas: HTMLCanvasElement) {
     kind: "webgl2" as const,
     raw: {},
     render: () => undefined,
+    renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
     dispose: () => undefined,

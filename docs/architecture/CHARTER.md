@@ -221,7 +221,7 @@ framework's vocabulary.
 
 | Framework may own | Framework must never own |
 |---|---|
-| Bootstrap, render loop, fixed timestep | Materials, shaders, TSL |
+| Bootstrap, render loop, fixed timestep, independent CanvasLayer surface | Materials, shaders, TSL |
 | Scene lifecycle, plugin wiring | Lighting, tonemapping, exposure |
 | Input mapping, asset loading | Post-processing composition |
 | Physics binding, platform adapters | Camera framing, composition |

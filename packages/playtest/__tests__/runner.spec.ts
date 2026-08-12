@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
 import type { JsonValue } from "../src/protocol.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
+import { exitCodeForReport } from "../src/runner/cli.js";
 import { buildReport, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 
@@ -65,6 +66,118 @@ test("runner carries a supplied HUD observation into the evaluated report", () =
     pass: true,
   });
   expect(result.pass).toBe(true);
+});
+
+test("standalone reports retain framebuffer coverage observations", () => {
+  expect(STANDALONE_PLAYTEST_OBSERVATION_FIELDS).toContain("framebufferCoverage");
+});
+
+test("framebuffer coverage passes only after observing readable matching frames in the complete window", () => {
+  const currentScenario = scenario({
+    framebufferCoverage: {
+      backdrop: [5, 7, 11],
+      tolerance: 8,
+      window: { endStep: "loading", startStep: "loading" },
+    },
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    undefined,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    {
+      boundarySource: "scenario-steps",
+      frameCount: 3,
+      windowCompleted: true,
+      windowStarted: true,
+    },
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "framebufferCoverage",
+    pass: true,
+  }));
+  expect(result.pass).toBe(true);
+});
+
+test.each([
+  [
+    "zero frames",
+    { boundarySource: "scenario-steps" as const, frameCount: 0, windowCompleted: true, windowStarted: true },
+    "TN_PLAYTEST_FRAMEBUFFER_FRAMES_MISSING",
+  ],
+  [
+    "unreadable pixels",
+    { boundarySource: "scenario-steps" as const, frameCount: 1, unreadableReason: "SecurityError", windowCompleted: true, windowStarted: true },
+    "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE",
+  ],
+  [
+    "a violating frame",
+    {
+      boundarySource: "scenario-steps" as const,
+      firstViolation: {
+        frameIndex: 0,
+        grid: { columns: 1, rows: 1, samples: [[255, 255, 255] as [number, number, number]] },
+        screenshotPath: "artifacts/framebuffer-coverage-frame-0.png",
+      },
+      frameCount: 1,
+      windowCompleted: true,
+      windowStarted: true,
+    },
+    "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_FAILED",
+  ],
+])("framebuffer coverage fails closed for %s", (_label, observation, diagnosticCode) => {
+  const currentScenario = scenario({
+    framebufferCoverage: {
+      backdrop: [5, 7, 11],
+      tolerance: 8,
+      window: { endStep: "loading", startStep: "loading" },
+    },
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    undefined,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    observation,
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "framebufferCoverage",
+    pass: false,
+  }));
+  expect(result.diagnostics.map(({ code }) => code)).toContain(diagnosticCode);
+  expect(result.pass).toBe(false);
+});
+
+test("a framebuffer window that was never reached maps to exit code 2", () => {
+  const currentScenario = scenario({
+    framebufferCoverage: {
+      backdrop: [5, 7, 11],
+      tolerance: 8,
+      window: { endStep: "loading", startStep: "loading" },
+    },
+  });
+  const result = buildReport(CONFIG, currentScenario, undefined, undefined, [], []);
+
+  expect(result.diagnostics.map(({ code }) => code)).toContain(
+    "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
+  );
+  expect(exitCodeForReport(result)).toBe(2);
 });
 
 test("visibility can prove a streamed entity is absent or present", () => {

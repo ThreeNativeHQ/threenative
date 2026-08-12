@@ -211,4 +211,40 @@ describe("createRenderer", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  it("draws an overlay without clearing or entering the world output pipeline", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    const calls: Array<{ autoClear: boolean | undefined; camera: unknown; scene: unknown }> = [];
+
+    try {
+      const raw = {
+        autoClear: true,
+        compute: () => undefined,
+        domElement: canvas,
+        init: async () => undefined,
+        render(scene: unknown, camera: unknown) {
+          calls.push({ autoClear: this.autoClear, camera, scene });
+        },
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      const scene = {} as never;
+      const camera = {} as never;
+      renderer.setOutputNode({});
+
+      renderer.renderOverlay(scene, camera);
+
+      expect(calls).toEqual([{ autoClear: false, camera, scene }]);
+      expect(raw.autoClear).toBe(true);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
 });

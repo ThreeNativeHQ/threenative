@@ -27,6 +27,30 @@ export interface IPlaytestAssertionSchemaEntry {
 
 export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
   {
+    description: "Samples the framebuffer on every render frame inside a labeled loading window and requires every coarse-grid RGB sample to match the declared backdrop.",
+    example: {
+      framebufferCoverage: {
+        backdrop: [5, 7, 11],
+        grid: { columns: 32, rows: 18 },
+        tolerance: 8,
+        window: { endStep: "loading-end", startStep: "loading-start" },
+      },
+    },
+    fields: [
+      { description: "Backdrop RGB byte channels every sampled pixel must match.", name: "backdrop", required: true, type: "[integer 0..255, integer 0..255, integer 0..255]" },
+      { description: "Coarse sample grid. Defaults to 32x18, which catches the loading leak while limiting synchronous readback work.", name: "grid", type: "{ columns: positive integer <= 256, rows: positive integer <= 256 }" },
+      { description: "Maximum absolute difference allowed for each RGB channel.", name: "tolerance", required: true, type: "integer 0..255" },
+      { description: "Inclusive labeled-step boundaries for the loading-covered interval.", name: "window", required: true, type: "{ startStep: string, endStep: string }" },
+    ],
+    cardinality: "object",
+    kind: "framebufferCoverage",
+    observationPath: "framebufferCoverage",
+    requiredCapabilities: ["browser.screenshot"],
+    resultIdPrefix: "framebufferCoverage",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+  },
+  {
     description: "Checks every consecutive platform against a measured static movement-envelope fit; it does not simulate traversal, walls, ceilings, run-up, or air control.",
     example: { reachability: { artifact: "artifacts/character-envelope/player.json", entities: ["platform.a", "platform.b"] } },
     fields: [
@@ -469,6 +493,7 @@ export interface IPlaytestObservations {
   effectLog?: unknown;
   effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   entityTransforms?: Record<string, { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }>;
+  framebufferCoverage?: IPlaytestFramebufferCoverageObservation;
   hud: Record<string, { after?: unknown; before?: unknown }>;
   overlayNodes?: Record<string, { after?: unknown; before?: unknown }>;
   network: Array<{ method: string; url: string }>;
@@ -491,6 +516,23 @@ export interface IPlaytestObservations {
   };
 }
 
+export interface IPlaytestFramebufferCoverageObservation {
+  boundarySource: "scenario-steps" | "video-backdrop-dominance";
+  firstViolation?: {
+    frameIndex: number;
+    grid: {
+      columns: number;
+      rows: number;
+      samples: Array<[number, number, number]>;
+    };
+    screenshotPath: string;
+  };
+  frameCount: number;
+  unreadableReason?: string;
+  windowCompleted: boolean;
+  windowStarted: boolean;
+}
+
 export function evaluateRichPlaytestAssertions(input: {
   report: IPlaytestReport;
   scenario: IPlaytestScenario;
@@ -498,6 +540,74 @@ export function evaluateRichPlaytestAssertions(input: {
   const assertions: IPlaytestAssertionResult[] = [];
   const diagnostics: IPlaytestDiagnostic[] = [];
   const scenarioAssertions = input.scenario.assert ?? {};
+  if (scenarioAssertions.framebufferCoverage !== undefined) {
+    const observation = input.report.observations?.framebufferCoverage;
+    const started = observation?.windowStarted === true;
+    const completed = observation?.windowCompleted === true;
+    const framesObserved = (observation?.frameCount ?? 0) > 0;
+    const readable = observation?.unreadableReason === undefined;
+    const violation = observation?.firstViolation;
+    const evidenceComplete = violation === undefined
+      || (violation.grid.samples.length
+        === violation.grid.columns * violation.grid.rows
+        && violation.screenshotPath.length > 0);
+    const pass = started
+      && completed
+      && framesObserved
+      && readable
+      && violation === undefined
+      && evidenceComplete;
+    assertions.push({
+      details: {
+        boundarySource: observation?.boundarySource ?? null,
+        evidenceComplete,
+        firstViolation: violation ?? null,
+        frameCount: observation?.frameCount ?? 0,
+        unreadableReason: observation?.unreadableReason ?? null,
+        windowCompleted: completed,
+        windowStarted: started,
+      },
+      id: "framebufferCoverage",
+      pass,
+    });
+    if (!readable) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE",
+        message: `Framebuffer pixels could not be read: ${observation?.unreadableReason}.`,
+        severity: "error",
+        suggestion: "On headless Linux, prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
+      });
+    } else if (!started || !completed) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
+        message: !started
+          ? "The run never reached the declared framebuffer coverage window."
+          : "The run entered but never completed the declared framebuffer coverage window.",
+        severity: "error",
+        suggestion: "Check the assertion's startStep/endStep labels and keep the run alive through the complete loading interval.",
+      });
+    } else if (!framesObserved) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_FRAMEBUFFER_FRAMES_MISSING",
+        message: "The framebuffer coverage window completed without observing any render frames.",
+        severity: "error",
+        suggestion: "Keep at least one requestAnimationFrame-driven frame inside the labeled loading window.",
+      });
+    } else if (violation !== undefined) {
+      diagnostics.push({
+        artifactPath: violation.screenshotPath,
+        code: evidenceComplete
+          ? "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_FAILED"
+          : "TN_PLAYTEST_FRAMEBUFFER_EVIDENCE_MISSING",
+        message: evidenceComplete
+          ? `Framebuffer coverage first diverged from the declared backdrop at frame ${violation.frameIndex}.`
+          : `Framebuffer coverage diverged at frame ${violation.frameIndex}, but its grid or screenshot evidence is incomplete.`,
+        observedRuntimePath: "observations.json/framebufferCoverage/firstViolation/grid",
+        severity: "error",
+        suggestion: "Inspect the violating-frame screenshot and RGB sample grid; fix the render pass that drew during the loading-covered window.",
+      });
+    }
+  }
   if (scenarioAssertions.reachability !== undefined) {
     const { entities, envelope } = scenarioAssertions.reachability;
     for (let index = 0; index < entities.length - 1; index += 1) {

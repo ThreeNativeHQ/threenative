@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -22,7 +22,9 @@ export interface IAndroidDriver {
   removeFile?(path: string): Promise<void>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
+  startScreenRecording?(): Promise<void>;
   stop(): Promise<void>;
+  stopScreenRecording?(path: string): Promise<void>;
   writeFile?(path: string, contents: string): Promise<void>;
 }
 
@@ -41,7 +43,10 @@ export interface IAndroidPointerInjection {
 }
 
 export class AdbAndroidDriver implements IAndroidDriver {
+  private static readonly COVERAGE_VIDEO_PATH = "/sdcard/tn-playtest-framebuffer-coverage.mp4";
   private readonly adbPath: string;
+  private screenrecord?: ChildProcess;
+  private screenrecordError?: Error;
   private readonly touchSlots = new Map<number, {
     slot: number;
     trackingId: number;
@@ -88,6 +93,60 @@ export class AdbAndroidDriver implements IAndroidDriver {
       "-p",
     ], { encoding: "buffer", maxBuffer: 32 * 1024 * 1024 });
     await writeFile(path, stdout);
+  }
+
+  async startScreenRecording(): Promise<void> {
+    if (this.screenrecord !== undefined) {
+      throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_ACTIVE");
+    }
+    if ((await this.adb(["shell", "pidof", "screenrecord"]).catch(() => "")).trim().length > 0) {
+      throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_OTHER_RECORDING_ACTIVE");
+    }
+    try {
+      await this.adb(["shell", "rm", "-f", AdbAndroidDriver.COVERAGE_VIDEO_PATH]);
+      this.screenrecordError = undefined;
+      this.screenrecord = spawn(this.adbPath, [
+        ...this.serialArgs(),
+        "shell",
+        "screenrecord",
+        "--time-limit",
+        "180",
+        "--bit-rate",
+        "20000000",
+        AdbAndroidDriver.COVERAGE_VIDEO_PATH,
+      ], { stdio: "ignore" });
+      this.screenrecord.once("error", (error) => {
+        this.screenrecordError = error;
+      });
+      await this.waitForScreenRecorder();
+    } catch (error) {
+      await this.abortScreenRecording();
+      throw error;
+    }
+  }
+
+  async stopScreenRecording(path: string): Promise<void> {
+    const recorder = this.screenrecord;
+    if (recorder === undefined) {
+      throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_NOT_ACTIVE");
+    }
+    this.screenrecord = undefined;
+    this.screenrecordError = undefined;
+    try {
+      const pids = (await this.adb(["shell", "pidof", "screenrecord"]).catch(() => ""))
+        .trim()
+        .split(/\s+/u)
+        .filter((pid) => /^\d+$/u.test(pid));
+      for (const pid of pids) await this.adb(["shell", "kill", "-2", pid]);
+      await waitForProcessExit(recorder, 5_000);
+      await this.adb(["pull", AdbAndroidDriver.COVERAGE_VIDEO_PATH, path]);
+      if ((await stat(path)).size === 0) {
+        throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_EMPTY");
+      }
+    } finally {
+      recorder.kill();
+      await this.adb(["shell", "rm", "-f", AdbAndroidDriver.COVERAGE_VIDEO_PATH]).catch(() => undefined);
+    }
   }
 
   async isAlive(): Promise<boolean> {
@@ -169,6 +228,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
   }
 
   async stop(): Promise<void> {
+    await this.abortScreenRecording();
     await this.setPointers([]).catch(() => undefined);
     await this.adb(["shell", "am", "force-stop", this.options.packageName]).catch(() => undefined);
     await this.adb(["reverse", "--remove-all"]).catch(() => undefined);
@@ -216,9 +276,59 @@ export class AdbAndroidDriver implements IAndroidDriver {
     }
   }
 
+  private async waitForScreenRecorder(): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (this.screenrecordError !== undefined) {
+        throw new Error(`TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_FAILED:${this.screenrecordError.message}`);
+      }
+      if (this.screenrecord?.exitCode !== null) {
+        throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_EXITED");
+      }
+      const pid = await this.adb(["shell", "pidof", "screenrecord"]).catch(() => "");
+      if (pid.trim().length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_NOT_READY");
+  }
+
+  private async abortScreenRecording(): Promise<void> {
+    const recorder = this.screenrecord;
+    this.screenrecord = undefined;
+    this.screenrecordError = undefined;
+    if (recorder !== undefined) {
+      const pids = (await this.adb(["shell", "pidof", "screenrecord"]).catch(() => ""))
+        .trim()
+        .split(/\s+/u)
+        .filter((pid) => /^\d+$/u.test(pid));
+      for (const pid of pids) await this.adb(["shell", "kill", "-2", pid]).catch(() => undefined);
+      await waitForProcessExit(recorder, 5_000).catch(() => recorder.kill());
+      await this.adb(["shell", "rm", "-f", AdbAndroidDriver.COVERAGE_VIDEO_PATH]).catch(() => undefined);
+    }
+  }
+
   private serialArgs(): string[] {
     return this.options.serial === undefined ? [] : ["-s", this.options.serial];
   }
+}
+
+async function waitForProcessExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+  if (child.exitCode !== null) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("TN_PLAYTEST_FRAMEBUFFER_COVERAGE_RECORDING_STOP_TIMEOUT"));
+    }, timeoutMs);
+    const onExit = () => {
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.off("exit", onExit);
+    };
+    child.once("exit", onExit);
+    if (child.exitCode !== null) onExit();
+  });
 }
 
 export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {

@@ -11,6 +11,7 @@ export {
 export type {
   IPlaytestAssertionResult,
   IPlaytestDiagnostic,
+  IPlaytestFramebufferCoverageObservation,
   IPlaytestObservations,
 } from "./assertions.js";
 export { playtestDiagnostic } from "./diagnostics.js";
@@ -51,6 +52,7 @@ export {
 } from "./scenario.js";
 export type {
   IPlaytestPathAssertion,
+  IPlaytestFramebufferCoverageAssertion,
   IPlaytestPerformanceAssertion,
   IPlaytestPointer,
   IPlaytestScenario,

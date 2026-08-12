@@ -10,6 +10,7 @@ import {
   playtestStepWaitTicks,
   type IPlaytestAssertionResult,
   type IPlaytestDiagnostic,
+  type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
   type IPlaytestPathAssertion,
@@ -24,6 +25,10 @@ import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import { reconcileBrowserPointers } from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import {
+  finishFramebufferCoverageProbe,
+  startFramebufferCoverageProbe,
+} from "./framebufferCoverage.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 export { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
@@ -138,7 +143,13 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         ? { path: join(config.artifactDirectory, "before.png") }
         : undefined)
       : undefined;
+    let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
     for (const [index, step] of scenario.steps.entries()) {
+      const framebufferAssertion = scenario.assert?.framebufferCoverage;
+      if (framebufferAssertion !== undefined
+        && step.label === framebufferAssertion.window.startStep) {
+        await startFramebufferCoverageProbe(page, framebufferAssertion);
+      }
       await runStep(
         page,
         bridge,
@@ -149,6 +160,9 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         inputState,
         index === scenario.steps.length - 1,
       );
+      if (step.label === scenario.assert?.framebufferCoverage?.window.endStep) {
+        framebufferCoverage = await finishFramebufferCoverageProbe(page, config.artifactDirectory);
+      }
       if (step.label !== undefined && bridge !== undefined) {
         const snapshot = await bridge.sample(sampleRequest);
         const signals = bridge.description.capabilities.includes("runtime.events")
@@ -187,6 +201,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       runtimeReady,
       visual,
       labeledSamples,
+      framebufferCoverage,
     );
     await context.close();
     return addPreflightDiagnostic(report, preflight);
@@ -211,13 +226,18 @@ export function preflightDisplay(
   const takesScreenshot = scenario.artifacts?.screenshots !== false
     || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
   const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
-  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual)) {
+  const evaluatesFramebuffer = scenario.assert?.framebufferCoverage !== undefined;
+  if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual && !evaluatesFramebuffer)) {
     return undefined;
   }
   return {
-    code: "TN_PLAYTEST_HEADLESS_WEBGPU",
-    message: "Headless Linux visual runs may render WebGPU blank without a display; use xvfb-run -a -s '-screen 0 1600x900x24'.",
-    severity: "warning",
+    code: evaluatesFramebuffer
+      ? "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE"
+      : "TN_PLAYTEST_HEADLESS_WEBGPU",
+    message: evaluatesFramebuffer
+      ? "Headless Linux cannot provide trusted per-frame WebGPU pixels without a display; use xvfb-run -a -s '-screen 0 1600x900x24'."
+      : "Headless Linux visual runs may render WebGPU blank without a display; use xvfb-run -a -s '-screen 0 1600x900x24'.",
+    severity: evaluatesFramebuffer ? "error" : "warning",
     suggestion: "Prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
   };
 }
@@ -241,6 +261,7 @@ export function buildReport(
   runtimeReady = true,
   visual: IPlaytestObservations["visual"] = undefined,
   labeledSamples: readonly ILabeledPlaytestSample[] = [],
+  framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined = undefined,
 ): IStandalonePlaytestReport {
   const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
   const beforePosition = entityPosition(beforeSnapshot, entity);
@@ -288,6 +309,7 @@ export function buildReport(
             signals: labeledSamples.flatMap(({ signals }) => signals),
           }),
       hud,
+      ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),

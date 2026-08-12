@@ -41,6 +41,7 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
+    const loading = createLoadingScreen(ctx);
     ctx.add(camera);
     const hud = ctx.entities.add("hud", createHud(camera, "HEARTS", "COINS"));
     const touchControls = ctx.entities.add("touch-controls", new TouchControls(camera));
@@ -130,11 +131,6 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("chaser.avoidance", avoidanceChaser);
     followCamera(spawn, 1);
     let elapsed = 0;
-    // Built last on purpose: it hides what is in the scene when it is created, so the scene has
-    // to be populated first. It reveals the world itself once startup settles and the collapsed
-    // scene's shaders are built, so nothing here has to sequence that.
-    const loading = createLoadingScreen(ctx);
-
     return (frameCtx, dt) => {
       loading.update();
       elapsed += dt;

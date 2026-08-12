@@ -174,6 +174,78 @@ test("scenario loading rejects an atSteps label that was never sampled", async (
   });
 });
 
+test("scenario loading preserves the framebuffer coverage contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-coverage-"));
+  const framebufferCoverage = {
+    backdrop: [5, 7, 11],
+    grid: { columns: 32, rows: 18 },
+    tolerance: 8,
+    window: { endStep: "loading-end", startStep: "loading-start" },
+  };
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { framebufferCoverage },
+    name: "framebuffer-coverage",
+    schemaVersion: 1,
+    steps: [
+      { label: "loading-start", release: true, waitFrames: 2 },
+      { label: "loading-end", release: true, waitFrames: 2 },
+    ],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.framebufferCoverage).toEqual(framebufferCoverage);
+});
+
+test.each([
+  ["wrong backdrop shape", { backdrop: [5, 7], tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["wrong backdrop channel type", { backdrop: [5, "7", 11], tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["out-of-range backdrop channel", { backdrop: [5, 7, 256], tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["wrong tolerance type", { backdrop: [5, 7, 11], tolerance: "8", window: { startStep: "loading", endStep: "loading" } }],
+  ["out-of-range tolerance", { backdrop: [5, 7, 11], tolerance: 256, window: { startStep: "loading", endStep: "loading" } }],
+  ["wrong grid type", { backdrop: [5, 7, 11], grid: [], tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["wrong grid dimension type", { backdrop: [5, 7, 11], grid: { columns: "32", rows: 18 }, tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["zero grid dimension", { backdrop: [5, 7, 11], grid: { columns: 32, rows: 0 }, tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["excessive grid dimension", { backdrop: [5, 7, 11], grid: { columns: 257, rows: 18 }, tolerance: 8, window: { startStep: "loading", endStep: "loading" } }],
+  ["wrong window type", { backdrop: [5, 7, 11], tolerance: 8, window: "loading" }],
+  ["wrong window label type", { backdrop: [5, 7, 11], tolerance: 8, window: { startStep: 1, endStep: "loading" } }],
+])("scenario loading rejects framebuffer coverage with %s", async (_label, framebufferCoverage) => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-invalid-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { framebufferCoverage },
+    name: "framebuffer-invalid",
+    schemaVersion: 1,
+    steps: [{ label: "loading", release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_SCENARIO_INVALID" },
+  });
+});
+
+test("scenario loading rejects a reversed framebuffer coverage window", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-reversed-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: {
+      framebufferCoverage: {
+        backdrop: [5, 7, 11],
+        tolerance: 8,
+        window: { endStep: "first", startStep: "second" },
+      },
+    },
+    name: "framebuffer-reversed",
+    schemaVersion: 1,
+    steps: [
+      { label: "first", release: true, waitFrames: 1 },
+      { label: "second", release: true, waitFrames: 1 },
+    ],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/must not precede/u) },
+  });
+});
+
 test("schema version 1 parser keeps stable diagnostics", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
   await writeFile(join(directory, "scenario.json"), JSON.stringify({

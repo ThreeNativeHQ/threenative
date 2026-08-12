@@ -24,8 +24,13 @@ export interface IRunnerDiagnostic {
   severity: "error";
 }
 
-export function exitCodeForReport(report: { assertionResults?: readonly unknown[]; pass: boolean }): 0 | 1 | 2 {
+export function exitCodeForReport(report: {
+  assertionResults?: readonly unknown[];
+  diagnostics?: ReadonlyArray<{ code?: string }>;
+  pass: boolean;
+}): 0 | 1 | 2 {
   if (report.pass) return 0;
+  if (report.diagnostics?.some(({ code }) => code === "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED")) return 2;
   return report.assertionResults === undefined ? 2 : 1;
 }
 

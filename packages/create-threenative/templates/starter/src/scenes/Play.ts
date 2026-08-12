@@ -60,6 +60,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     if (ctx.renderer.kind === "webgpu") ctx.add(createParticles());
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
@@ -143,11 +144,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     }
 
     let elapsed = 0;
-    // Built last on purpose: it hides what is in the scene when it is created, so the scene has
-    // to be populated first. It reveals the world itself once startup settles and the collapsed
-    // scene's shaders are built, so nothing here has to sequence that.
-    const loading = createLoadingScreen(ctx);
-
     return (frameCtx, dt) => {
       loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.

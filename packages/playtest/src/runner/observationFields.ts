@@ -2,6 +2,7 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "components",
   "componentSeries",
   "console",
+  "framebufferCoverage",
   "hud",
   "network",
   "physicsDebugSeries",
