@@ -32,6 +32,10 @@ describe("rapier plugin", () => {
     const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
     const runtime = {
       fixedStep: () => 0,
+      observations: {
+        contribute: () => () => undefined,
+        contributions: () => [],
+      },
       rapier: null,
       seed: 1,
       step: 1 / 60,

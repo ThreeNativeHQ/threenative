@@ -25,3 +25,7 @@ export function bridge(length: number, depth = 2.6): Object3D {
   }
   return group;
 }
+
+export function crate(): Object3D {
+  return rockBox(0.8, 0.8, 0.8, 23);
+}

@@ -3,6 +3,8 @@ import {
   type IPlaytestBridgeV1,
   type IPlaytestContactObservation,
   type IPlaytestGameplayObservation,
+  type IPlaytestObservationSnapshot,
+  type IPlaytestSampleRequest,
   type IPlaytestWorldObservation,
   type JsonValue,
   PLAYTEST_PROTOCOL_LIMITS,
@@ -12,7 +14,7 @@ import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenat
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
-import type { IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 import type { ICtx } from "./scene.js";
 
 const CORE_VERSION = "0.1.0";
@@ -53,7 +55,7 @@ export function playtest<
         resources: stateResources(ctx),
         scene: ctx.scene,
       });
-      installRuntimeChannels(installation.bridge);
+      installRuntimeChannels(installation.bridge, runtime);
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options);
       const cleanup = () => {
@@ -65,6 +67,8 @@ export function playtest<
       // IGame.start() awaits plugin setup and only calls gameLoop.start() afterwards, so
       // awaiting here holds the entire loop -- including the physics plugin's first
       // simulation step -- until the runner is on the line.
+      // A provider used with this option must be ordered before playtest(), because sequential
+      // plugin setup deliberately stops here until the runner attaches.
       if (attached !== undefined) {
         try {
           await attached;
@@ -131,19 +135,54 @@ export interface IPlaytestOptions {
   readonly attachTimeoutMs?: number;
 }
 
-function installRuntimeChannels(bridge: IPlaytestBridgeV1): void {
+function installRuntimeChannels(
+  bridge: IPlaytestBridgeV1,
+  runtime: IGamePluginRuntime | undefined,
+): void {
   const describe = bridge.describe;
   bridge.describe = () =>
-    Promise.resolve(describe()).then((description) => addRuntimeCapabilities(description));
+    Promise.resolve(describe()).then((description) =>
+      addRuntimeCapabilities(description, runtime?.observations.contributions() ?? []),
+    );
+  const sample = bridge.sample;
+  bridge.sample = (request) =>
+    Promise.resolve(sample(request)).then((snapshot) =>
+      addRuntimeObservations(snapshot, request, runtime?.observations.contributions() ?? []),
+    );
 }
 function addRuntimeCapabilities(
   description: IPlaytestBridgeDescription,
+  contributions: readonly IGameObservationContribution[],
 ): IPlaytestBridgeDescription {
   const capabilities = [...description.capabilities];
-  for (const capability of ["runtime.audio", "runtime.world"] as const) {
+  const contributed = contributions.flatMap(({ capabilities }) => capabilities);
+  for (const capability of ["runtime.audio", "runtime.world", ...contributed]) {
     if (!capabilities.includes(capability)) capabilities.push(capability);
   }
   return { ...description, capabilities };
+}
+function addRuntimeObservations(
+  snapshot: IPlaytestObservationSnapshot,
+  request: IPlaytestSampleRequest,
+  contributions: readonly IGameObservationContribution[],
+): IPlaytestObservationSnapshot {
+  const result: Record<string, unknown> = { ...snapshot };
+  for (const contribution of contributions) {
+    const slice = contribution.sample(request);
+    if (typeof slice !== "object" || slice === null || Array.isArray(slice)) {
+      throw new TypeError("A runtime observation contribution must return a top-level object.");
+    }
+    assertJsonSafe(slice, "$.runtimeContribution");
+    for (const [key, value] of Object.entries(slice)) {
+      if (Object.hasOwn(result, key)) {
+        throw new Error(
+          `TN_PLAYTEST_OBSERVATION_COLLISION: top-level key '${key}' already exists.`,
+        );
+      }
+      result[key] = value;
+    }
+  }
+  return result as unknown as IPlaytestObservationSnapshot;
 }
 function runtimeObservation(
   seed: number | null,

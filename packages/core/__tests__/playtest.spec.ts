@@ -1,7 +1,11 @@
-import { type IPlaytestBridgeV1, PLAYTEST_BRIDGE_GLOBAL } from "@threenative/playtest";
+import {
+  type IPlaytestBridgeV1,
+  type IPlaytestSampleRequest,
+  PLAYTEST_BRIDGE_GLOBAL,
+} from "@threenative/playtest";
 import { BoxGeometry, Mesh, MeshBasicMaterial, type Vector2 } from "three";
 import { describe, expect, it } from "vitest";
-import { defineGame } from "../src/game.js";
+import { type IGamePluginHooks, defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
@@ -23,6 +27,133 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("playtest plugin", () => {
+  it("should not advertise runtime.physics without a contributing plugin", async () => {
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      expect((await bridge().describe()).capabilities).toEqual([
+        "camera.observe",
+        "entity.bounds",
+        "entity.observe",
+        "entity.setup",
+        "runtime.fixedStep",
+        "runtime.resources",
+        "runtime.animation",
+        "runtime.state",
+        "runtime.performance",
+        "runtime.contacts",
+        "runtime.tags",
+        "runtime.audio",
+        "runtime.world",
+      ]);
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("merges and deduplicates contributed capabilities and observation slices", async () => {
+    let receivedLabel: string | undefined;
+    const provider: IGamePluginHooks = {
+      setup: (_ctx, runtime) =>
+        runtime?.observations.contribute({
+          capabilities: ["runtime.example", "runtime.example"],
+          sample: (request) => {
+            receivedLabel = request.label;
+            return { exampleSeries: [{ value: 3 }] };
+          },
+        }),
+    };
+    const game = defineGame({
+      initialState: {},
+      plugins: [provider, playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      expect((await bridge().describe()).capabilities).toEqual([
+        "camera.observe",
+        "entity.bounds",
+        "entity.observe",
+        "entity.setup",
+        "runtime.fixedStep",
+        "runtime.resources",
+        "runtime.animation",
+        "runtime.state",
+        "runtime.performance",
+        "runtime.contacts",
+        "runtime.tags",
+        "runtime.audio",
+        "runtime.world",
+        "runtime.example",
+      ]);
+      const request = { label: "after-step" } as IPlaytestSampleRequest & { label: string };
+      expect(await bridge().sample(request)).toMatchObject({
+        exampleSeries: [{ value: 3 }],
+      });
+      expect(receivedLabel).toBe("after-step");
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("fails closed when contributed observation keys collide", async () => {
+    const provider: IGamePluginHooks = {
+      setup: (_ctx, runtime) =>
+        runtime?.observations.contribute({
+          capabilities: [],
+          sample: () => ({ gameplay: {} }),
+        }),
+    };
+    const game = defineGame({
+      initialState: {},
+      plugins: [provider, playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      await expect(bridge().sample({})).rejects.toThrow(/TN_PLAYTEST_OBSERVATION_COLLISION/u);
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("fails closed when contributed observations are not JSON-safe", async () => {
+    const provider: IGamePluginHooks = {
+      setup: (_ctx, runtime) =>
+        runtime?.observations.contribute({
+          capabilities: [],
+          sample: () => ({ example: undefined }),
+        }),
+    };
+    const game = defineGame({
+      initialState: {},
+      plugins: [provider, playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      await expect(bridge().sample({})).rejects.toThrow(/must be JSON-safe/u);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("reports loop frame timing and active renderer counts", async () => {
     const canvas = testCanvas();
     const callbacks: Array<(time: number) => void> = [];

@@ -10,6 +10,8 @@ export type { IRandom } from "./random.js";
 export { defineGame } from "./game.js";
 export type {
   IGame,
+  IGameObservationContribution,
+  IGameObservationSampleRequest,
   IGamePluginHooks,
   IGamePluginRuntime,
   IGamePlatformSource,

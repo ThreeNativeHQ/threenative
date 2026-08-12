@@ -1,7 +1,7 @@
 # Night batch — 2026-08-12
 
 Five PRDs, ordered by **what a user of ThreeNative gets out of it**. Assembled against the
-tree at commit `5a5604e`. Nothing in this folder has been executed.
+tree at commit `5a5604e`. PRD-081 completed on 2026-08-12; the remaining queue is unexecuted.
 
 **Four are executable defects. The fifth ([PRD-084](PRD-084-threenative-studio.md), ThreeNative
 Studio) is a decision document** — it adds a package and reopens a question the charter closed,
@@ -17,7 +17,7 @@ considered and left out of the night for that reason.
 
 | # | PRD | The user's sentence | Runnable locally tonight? | Estimate |
 |---|---|---|---|---|
-| 1 | [PRD-081 — physics assertions a user can write](PRD-081-physics-assertions-a-user-can-write.md) | *"I built a physics game and my `settled` assertion errors."* | **Yes, fully** | 3–5 h |
+| 1 | [PRD-081 — physics assertions a user can write](../done/PRD-081-physics-assertions-a-user-can-write.md) | *"I built a physics game and my `settled` assertion errors."* | **Complete — 2026-08-12** | done |
 | 2 | [PRD-082 — `input.vector()` axis contract](PRD-082-input-vector-axis-contract.md) | *"I pressed W and walked backwards."* | **Yes, fully** (needs `xvfb-run` for Phase 0) | 1–2 h |
 | 3 | [PRD-083 — the scaffold's default tax](PRD-083-scaffold-default-tax.md) | *"My new project came with 1,073 lines I have to read before writing one."* | **Yes** — measurement is from tracked archives | 2–3 h |
 | 4 | [PRD-078 — toolchain-free consumer proof](PRD-078-toolchain-free-consumer-proof.md) | *"There is nothing for me to download."* | **Partly.** See the night scope below | 2 h of the local half |

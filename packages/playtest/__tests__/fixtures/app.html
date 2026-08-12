@@ -33,6 +33,7 @@
       const camera = { x: 0, y: 2, z: -6 };
       let held = false;
       let tick = 0;
+      const physicsDebugSeries = [];
 
       addEventListener("pointermove", (event) => {
         console.log(`playtest-pointer:${event.clientX},${event.clientY}`);
@@ -76,6 +77,10 @@
       }
 
       const bridge = {
+        advance: async (ticks) => {
+          for (let index = 0; index < ticks; index += 1) step();
+          return { clock: { mode: "fixed-step", tick }, ticks };
+        },
         applySetup: async (request) => {
           for (const entry of request.entities ?? []) {
             if (entry.entity !== "player") throw new Error(`Unknown entity '${entry.entity}'.`);
@@ -85,7 +90,13 @@
           }
         },
         describe: () => ({
-          capabilities: ["camera.observe", "entity.bounds", "entity.observe", "entity.setup"],
+          capabilities: [
+            "camera.observe",
+            "entity.bounds",
+            "entity.observe",
+            "entity.setup",
+            ...(mode === "physics" ? ["runtime.fixedStep", "runtime.physics"] : []),
+          ],
           limits: {
             maxEntitiesPerSample: 100,
             maxEventsPerDrain: 1000,
@@ -99,14 +110,29 @@
           mode === "not-ready"
             ? { ready: false, reason: "scene still loading" }
             : { ready: true },
-        sample: (request) => ({
-          clock: { mode: "render-frame", timeMs: tick * 16 },
+        sample: (request) => {
+          if (mode === "physics" && request.label) {
+            physicsDebugSeries.push({
+              label: request.label,
+              snapshot: {
+                artifact: {
+                  primitives: [{ category: "sleep", entity: "player", value: 1 }],
+                },
+              },
+              tick,
+            });
+          }
+          return {
+          clock: mode === "physics"
+            ? { mode: "fixed-step", tick }
+            : { mode: "render-frame", timeMs: tick * 16 },
           // `silent-drop` answers every sample with zero entities. The runner has
           // no observation to judge, and must fail rather than report a green run
           // it never actually measured.
           entities: mode === "silent-drop" ? [] : (request.entities ?? []).map(observe),
+          ...(mode === "physics" ? { physicsDebugSeries: [...physicsDebugSeries] } : {}),
           resources: {},
-        }),
+        }},
       };
 
       if (!mode.startsWith("no-bridge")) {

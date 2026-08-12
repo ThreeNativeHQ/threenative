@@ -12,7 +12,18 @@ import {
   CollisionShape3D as NativeCollisionShape3D,
   RigidBody3D as NativeRigidBody3D,
 } from "../src/native/index.js";
-import { createWebPhysicsSimulation } from "../src/simulation.js";
+import { PHYSICS_SLEEP_STATE_STRIDE, createWebPhysicsSimulation } from "../src/simulation.js";
+
+function bodyOptions(type: "dynamic" | "fixed" = "dynamic") {
+  return {
+    mass: type === "dynamic" ? 1 : 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { w: 1, x: 0, y: 0, z: 0 },
+    sensor: false,
+    shape: CollisionShape3D.sphere(0.5).descriptor,
+    type,
+  };
+}
 
 describe("native physics contract", () => {
   it("exports one shared class for every public node", () => {
@@ -136,5 +147,79 @@ describe("native physics contract", () => {
 
     expect(createBody).toHaveBeenCalledWith(expect.objectContaining({ sensor: true }));
     expect(configureCharacter).toHaveBeenCalledOnce();
+  });
+
+  it("reads native sleep state through one fixed-width bulk call and fails closed", () => {
+    let nextId = 0;
+    const readBodySleepStates = vi.fn((buffer: Float32Array) => {
+      buffer.set([0, 1, 1, 0]);
+      return 2;
+    });
+    const removeBody = vi.fn();
+    const dispose = vi.fn();
+    const native = createNativePhysicsSimulation(
+      {
+        createBody: () => nextId++,
+        dispose,
+        readBodySleepStates,
+        removeBody,
+      } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    native.createBody(bodyOptions());
+    native.createBody(bodyOptions());
+
+    expect(() => native.readBodySleepStates(new Float32Array(3))).toThrow(
+      /sleep state buffer is too small/i,
+    );
+    expect(readBodySleepStates).not.toHaveBeenCalled();
+
+    const states = new Float32Array(2 * PHYSICS_SLEEP_STATE_STRIDE);
+    expect(native.readBodySleepStates(states)).toBe(2);
+    expect([...states]).toEqual([0, 1, 1, 0]);
+    expect(readBodySleepStates).toHaveBeenCalledOnce();
+
+    native.removeBody(0);
+    readBodySleepStates.mockImplementationOnce((buffer) => {
+      buffer.set([1, 0]);
+      return 1;
+    });
+    const remaining = new Float32Array(PHYSICS_SLEEP_STATE_STRIDE);
+    expect(native.readBodySleepStates(remaining)).toBe(1);
+    expect([...remaining]).toEqual([1, 0]);
+    expect(removeBody).toHaveBeenCalledWith(0);
+
+    native.dispose();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(() => native.readBodySleepStates(new Float32Array(0))).toThrow(/disposed/i);
+    expect(readBodySleepStates).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports Rapier sleep state truthfully and excludes removed bodies", async () => {
+    await RAPIER.init();
+    const web = createWebPhysicsSimulation({
+      eventQueue: new RAPIER.EventQueue(true),
+      rapier: RAPIER,
+      version: RAPIER.version(),
+      world: new RAPIER.World({ x: 0, y: 0, z: 0 }),
+    });
+    const sleeping = web.createBody(bodyOptions());
+    web.createBody(bodyOptions());
+    (sleeping.body.raw as RAPIER.RigidBody).sleep();
+
+    expect(() => web.readBodySleepStates(new Float32Array(3))).toThrow(
+      /sleep state buffer is too small/i,
+    );
+    const states = new Float32Array(2 * PHYSICS_SLEEP_STATE_STRIDE);
+    expect(web.readBodySleepStates(states)).toBe(2);
+    expect([...states]).toEqual([0, 1, 1, 0]);
+
+    web.removeBody(0);
+    const remaining = new Float32Array(PHYSICS_SLEEP_STATE_STRIDE);
+    expect(web.readBodySleepStates(remaining)).toBe(1);
+    expect([...remaining]).toEqual([1, 0]);
+
+    web.dispose();
+    expect(() => web.readBodySleepStates(new Float32Array(0))).toThrow(/disposed/i);
   });
 });

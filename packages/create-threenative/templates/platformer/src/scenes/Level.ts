@@ -16,6 +16,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
+import { crate as crateMesh } from "../render/terrain.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -50,6 +51,16 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
     createPlatform(ctx, new Vector3(25, 0, 0), 8, { depth: 7, seed: 11 });
     createPlatform(ctx, new Vector3(0, 2.6, 0), 6, { depth: 5, oneWay: true, seed: 17 });
+    const crate = crateMesh();
+    crate.position.set(-3, 1, 0);
+    crate.castShadow = crate.receiveShadow = true;
+    ctx.add(crate);
+    const crateBody = new RigidBody3D({
+      object: crate,
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(0.8, 0.8, 0.8),
+    });
+    ctx.entities.add("crate", { body: crateBody, object: crate });
     const blocker = new Mesh(new BoxGeometry(0.6, 1.6, 5.2), createMaterials().shadow);
     blocker.position.set(3.4, 0.8, 0);
     blocker.castShadow = blocker.receiveShadow = true;

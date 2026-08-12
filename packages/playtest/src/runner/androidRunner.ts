@@ -147,7 +147,17 @@ export async function runDevicePlaytest(
 
     const sampleRequest = {
       entities: observedEntityIds(scenario),
-      include: ["components", "diagnostics", "entities", "resources"],
+      include: [
+        "components",
+        "diagnostics",
+        "entities",
+        "resources",
+        ...(scenario.assert?.aerodynamics === undefined &&
+        scenario.assert?.contacts === undefined &&
+        scenario.assert?.settled === undefined
+          ? []
+          : ["physicsDebugSeries"]),
+      ],
       resources: observedResourceIds(scenario),
     } as const;
     const before = await bridge.sample(sampleRequest);
@@ -216,7 +226,7 @@ export async function runDevicePlaytest(
       }
       appendPosition(pathPositions, await bridge.sample(sampleRequest), pathEntity);
       if (step.label !== undefined) {
-        const snapshot = await bridge.sample(sampleRequest);
+        const snapshot = await bridge.sample({ ...sampleRequest, label: step.label });
         const signals = bridge.description.capabilities.includes("runtime.events")
           ? await bridge.drainEvents()
           : [];

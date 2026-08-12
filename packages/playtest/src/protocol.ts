@@ -38,6 +38,8 @@ export interface IPlaytestSetupRequest {
 export interface IPlaytestSampleRequest {
   entities?: readonly string[];
   include?: readonly string[];
+  /** Scenario-step label for providers that retain labelled observation series. */
+  label?: string;
   resources?: readonly string[];
 }
 

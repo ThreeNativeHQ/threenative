@@ -66,6 +66,9 @@ bool tn_physics_step(TnPhysicsSimulation *simulation, float delta_time,
 int32_t tn_physics_read_visible_transforms(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);
+int32_t tn_physics_read_body_sleep_states(
+    const TnPhysicsSimulation *simulation, float *output,
+    size_t output_float_capacity);
 int32_t tn_physics_read_character_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);

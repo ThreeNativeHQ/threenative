@@ -128,6 +128,7 @@ const PLATFORMER_PATHS = [
   "playtests/chase.playtest.json",
   "playtests/avoidance.playtest.json",
   "playtests/performance.playtest.json",
+  "playtests/physics.playtest.json",
 ];
 
 describe("create-threenative", () => {

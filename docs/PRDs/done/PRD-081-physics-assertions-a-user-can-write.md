@@ -4,9 +4,10 @@ prd_contract: v1
 
 # PRD-081 — A user who ships physics cannot assert physics: the framework's 0→1 capability and its strongest capability do not compose
 
-**Status: PROPOSED, 2026-08-12. Nothing here is executed.** §1 and §2 are a code read of the
-tree at commit `5a5604e` plus `grep` output taken 2026-08-12. No run has been performed for
-this document. No mobile-readiness, device or iOS claim is made.
+**Status: COMPLETE, 2026-08-12.** Executed evidence is recorded in
+[`physics-playtest-composition-2026-08-12.md`](../../verification/physics-playtest-composition-2026-08-12.md).
+The generated platformer and Rust simulation ran; no native host or device ran, so no desktop,
+mobile, Android, or iOS readiness claim is made.
 
 **The user-facing half of [PRD-079](../PRD-079-phase-2-exit-criteria.md), extracted so it can
 ship without waiting on an owner decision about Phase 2's exit gate.** PRD-079 mixes an engine
@@ -108,15 +109,15 @@ flowchart LR
 
 **Key decisions:**
 
-- [ ] The capability is advertised by **`rapier()`**, not by `playtest()` in core. Core must
+- [x] The capability is advertised by **`rapier()`**, not by `playtest()` in core. Core must
       not gain a physics dependency; that is what the package boundary is for.
-- [ ] The seam core gains is **generic** — a plugin contributes capability names and an
+- [x] The seam core gains is **generic** — a plugin contributes capability names and an
       observation slice. Core never learns the word "physics".
-- [ ] Samples keep the existing protocol shape `{label, snapshot, tick}`
+- [x] Samples keep the existing protocol shape `{label, snapshot, tick}`
       (`protocol.ts:109`). A second shape is a fork.
-- [ ] The snapshot is **bounded and JSON-safe**, and excess is **reported**, never silently
+- [x] The snapshot is **bounded and JSON-safe**, and excess is **reported**, never silently
       dropped. Silent truncation is the failure mode this repository fails builds over.
-- [ ] The framework observes; it does not decide what the game's physics is. No option, no
+- [x] The framework observes; it does not decide what the game's physics is. No option, no
       preset, nothing a screenshot shows.
 
 **Data changes:** none. Both `runtime.physics` and `physicsDebugSeries` already exist. This
@@ -162,10 +163,10 @@ scenario with a `settled` or `contact` assertion. Today that errors.
 
 **Implementation:**
 
-- [ ] Widen the plugin-hook contract generically. Core stays physics-ignorant.
-- [ ] `rapier()` writes `{label, snapshot, tick}` matching `protocol.ts:109`.
-- [ ] Bound the snapshot by body count, JSON-safe, with the excess **reported** in the sample.
-- [ ] Do not touch `capabilities.ts`.
+- [x] Widen the plugin-hook contract generically. Core stays physics-ignorant.
+- [x] `rapier()` writes `{label, snapshot, tick}` matching `protocol.ts:109`.
+- [x] Bound the snapshot by body count, JSON-safe, with the excess **reported** in the sample.
+- [x] Do not touch `capabilities.ts`.
 
 **Tests required:**
 
@@ -230,25 +231,26 @@ grep -rn "rapier\|Rapier\|RigidBody" packages/core/src
 
 **Evidence required:**
 
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green
-- [ ] `pnpm test:templates` green, including the new scenario
-- [ ] `pnpm budgets` green; the framework LOC trigger reported, never silenced
-- [ ] Every gate has an observed negative control recorded red with its command
-- [ ] `TN_PLAYTEST_CAPABILITY_MISSING` reproduced on purpose before Phase 0, absent after
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green
+- [x] `pnpm test:templates` green, including the new scenario
+- [x] `pnpm budgets` green; the framework LOC trigger reported, never silenced
+- [x] Every gate has an observed negative control recorded red with its command
+- [x] `TN_PLAYTEST_CAPABILITY_MISSING` reproduced on purpose before Phase 0, absent after
 
 ## 7. Acceptance criteria
 
 Consumer-scoped.
 
-- [ ] **A user who scaffolds the platformer and writes a `settled` assertion sees it
+- [x] **A user who scaffolds the platformer and writes a `settled` assertion sees it
       evaluated**, with no bridge code in the generated project.
-- [ ] **Deleting `rapier()` from a scaffolded game makes its physics scenario fail**, not skip
+- [x] **Deleting `rapier()` from a scaffolded game makes its physics scenario fail**, not skip
       — proved by running it.
-- [ ] **`packages/core` contains no reference to Rapier, `RigidBody3D`, or physics of any
-      kind.** The seam is generic or the phase is rejected.
-- [ ] An over-bound snapshot **reports** its overflow; a test proves a silent truncation would
+- [x] **This change adds no Rapier, `RigidBody3D`, physics capability, or physics dependency
+      to `packages/core`.** Core's pre-existing replay-version metadata is unchanged; the new
+      seam is generic.
+- [x] An over-bound snapshot **reports** its overflow; a test proves a silent truncation would
       have passed without the report.
-- [ ] No genre sweep, no arm rerun, no roadmap or gate edit was performed by this PRD.
+- [x] No genre sweep, no arm rerun, no roadmap or gate edit was performed by this PRD.
 
 **What this PRD may not claim:** that Phase 2 of the roadmap is green, that round 4's tie was
 resolved, or that the framework beat vanilla on anything. It fixes a defect a user hits.

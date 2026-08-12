@@ -16,7 +16,15 @@ function runtime(
   random = createRandom(1),
   rapier: string | null = null,
 ): IGamePluginRuntime {
-  return { fixedStep, random, rapier, seed: 90210, step: 1 / 60, tick: () => 0 };
+  return {
+    fixedStep,
+    observations: { contribute: () => () => undefined, contributions: () => [] },
+    random,
+    rapier,
+    seed: 90210,
+    step: 1 / 60,
+    tick: () => 0,
+  };
 }
 
 async function recordThreeTicks(): Promise<{

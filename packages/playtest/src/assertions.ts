@@ -1284,6 +1284,7 @@ export function evaluateRichPlaytestAssertions(input: {
       ? input.report.observations?.physicsDebugSeries?.at(-1)?.snapshot ?? input.report.observations?.physicsDebug
       : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.atStep)?.snapshot;
     const bodies = physicsDebugSleepStates(snapshot, assertion.entity);
+    const omittedBodies = physicsDebugOmittedBodies(snapshot);
     const minimum = assertion.minBodies ?? 1;
     const sleeping = bodies.filter((body) => body.sleeping).length;
     const comparisonSnapshot = assertion.compareToStep === undefined
@@ -1294,16 +1295,21 @@ export function evaluateRichPlaytestAssertions(input: {
       : physicsDebugMeanPoseDistance(snapshot, comparisonSnapshot, assertion.entity);
     const posePass = assertion.minMeanPoseDistance === undefined
       || (poseDistance !== undefined && poseDistance.sharedBodies >= minimum && poseDistance.mean >= assertion.minMeanPoseDistance);
-    const pass = bodies.length >= minimum && sleeping === bodies.length && posePass;
+    const complete = omittedBodies === 0;
+    const pass = complete && bodies.length >= minimum && sleeping === bodies.length && posePass;
     assertions.push({
-      details: { atStep: assertion.atStep, bodies: bodies.length, compareToStep: assertion.compareToStep, entity: assertion.entity, minimum, poseDistance, sleeping },
+      details: { atStep: assertion.atStep, bodies: bodies.length, compareToStep: assertion.compareToStep, entity: assertion.entity, minimum, omittedBodies, poseDistance, sleeping },
       id: `settled.${assertion.entity}`,
       pass,
     });
     if (!pass) diagnostics.push({
       artifactPath: "observations.json",
-      code: !posePass ? "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT" : "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
-      message: !posePass
+      code: !complete
+        ? "TN_PLAYTEST_PHYSICS_EVIDENCE_TRUNCATED"
+        : !posePass ? "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT" : "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
+      message: !complete
+        ? `Physics evidence omitted ${omittedBodies} bod${omittedBodies === 1 ? "y" : "ies"}; settled cannot pass on a partial snapshot.`
+        : !posePass
         ? `Expected mean settled-pose distance for '${assertion.entity}' to reach ${assertion.minMeanPoseDistance}m from step '${assertion.compareToStep}'; observed ${poseDistance?.mean ?? "unavailable"}m across ${poseDistance?.sharedBodies ?? 0} bodies.`
         : `Expected at least ${minimum} physics bod${minimum === 1 ? "y" : "ies"} matching '${assertion.entity}' to be asleep; observed ${sleeping} of ${bodies.length}.`,
       observedRuntimePath: "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
@@ -1446,6 +1452,14 @@ function physicsDebugSleepStates(snapshot: unknown, entity: string): Array<{ ent
       || typeof primitive.value !== "number") return [];
     return [{ entity: primitive.entity, sleeping: primitive.value >= 1 }];
   });
+}
+
+function physicsDebugOmittedBodies(snapshot: unknown): number {
+  if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !isRecord(snapshot.artifact.overflow)) {
+    return 0;
+  }
+  const omitted = snapshot.artifact.overflow.omittedBodies;
+  return typeof omitted === "number" && Number.isInteger(omitted) && omitted >= 0 ? omitted : 1;
 }
 
 function physicsDebugMeanPoseDistance(

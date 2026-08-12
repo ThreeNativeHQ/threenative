@@ -10,6 +10,7 @@ import {
   requirePhysicsBodySensor,
   requirePhysicsEventBuffer,
   requirePhysicsRenderBuffer,
+  requirePhysicsSleepStateBuffer,
   requirePhysicsStepInput,
 } from "../simulation.js";
 
@@ -54,6 +55,7 @@ export interface INativeSimulation {
     position: { readonly x: number; readonly y: number; readonly z: number },
   ): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
+  readBodySleepStates(buffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
   readAreaIntersections(buffer: Uint32Array): number;
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
@@ -96,6 +98,8 @@ export function nativeSimulation(value: unknown): INativeSimulation {
     typeof value.removeBody !== "function" ||
     !("readVisibleTransforms" in value) ||
     typeof value.readVisibleTransforms !== "function" ||
+    !("readBodySleepStates" in value) ||
+    typeof value.readBodySleepStates !== "function" ||
     !("readCharacterStates" in value) ||
     typeof value.readCharacterStates !== "function" ||
     !("readAreaIntersections" in value) ||
@@ -144,6 +148,7 @@ export function createNativePhysicsSimulation(
   const areaIntersections = new Map<number, Set<number>>();
   let characterStateDirty = true;
   let areaIntersectionsDirty = true;
+  let disposed = false;
   const invalidateObservations = () => {
     characterStateDirty = true;
     areaIntersectionsDirty = true;
@@ -251,6 +256,11 @@ export function createNativePhysicsSimulation(
       requirePhysicsRenderBuffer(buffer, bodyIds.size);
       return raw.readVisibleTransforms(buffer);
     },
+    readBodySleepStates: (buffer) => {
+      if (disposed) throw new Error("Physics simulation is disposed.");
+      requirePhysicsSleepStateBuffer(buffer, bodyIds.size);
+      return raw.readBodySleepStates(buffer);
+    },
     readCharacterState: (id) => {
       refreshCharacterState();
       return characterState.get(id);
@@ -264,6 +274,8 @@ export function createNativePhysicsSimulation(
       return raw.drainCollisionEvents(buffer);
     },
     dispose: () => {
+      if (disposed) return;
+      disposed = true;
       raw.dispose();
       bodyIds.clear();
       areaIds.clear();

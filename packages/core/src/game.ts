@@ -20,8 +20,26 @@ import { type IViewportOptions, Viewport } from "./viewport.js";
 
 export type PluginCleanup = () => void;
 
+export interface IGameObservationSampleRequest {
+  readonly entities?: readonly string[];
+  readonly include?: readonly string[];
+  readonly label?: string;
+  readonly resources?: readonly string[];
+}
+
+export interface IGameObservationContribution {
+  readonly capabilities: readonly string[];
+  readonly sample: (request: IGameObservationSampleRequest) => Readonly<Record<string, unknown>>;
+}
+
+export interface IGameRuntimeObservations {
+  contribute(contribution: IGameObservationContribution): PluginCleanup;
+  contributions(): readonly IGameObservationContribution[];
+}
+
 export interface IGamePluginRuntime {
   readonly fixedStep: (ticks: number) => number;
+  readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
   readonly random?: Pick<IRandom, "state">;
@@ -498,6 +516,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#loop = gameLoop;
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      observations: createRuntimeObservations(),
       tick: gameLoop.tick,
       random,
       rapier: null,
@@ -593,6 +612,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if ((ctx?.scene.children.length ?? 0) > 0)
       throw new Error("IGame teardown leaked scene objects.");
   }
+}
+
+function createRuntimeObservations(): IGameRuntimeObservations {
+  const contributions = new Set<IGameObservationContribution>();
+  return {
+    contribute: (contribution) => {
+      contributions.add(contribution);
+      return () => contributions.delete(contribution);
+    },
+    contributions: () => [...contributions],
+  };
 }
 
 export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>(

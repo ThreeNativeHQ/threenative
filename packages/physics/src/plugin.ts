@@ -1,4 +1,4 @@
-import type { ICtx, IGamePluginHooks } from "@threenative/core";
+import type { ICtx, IGameObservationSampleRequest, IGamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
@@ -8,6 +8,7 @@ import {
   type IPhysicsInputSnapshot,
   type IPhysicsSimulation,
   PHYSICS_COLLISION_EVENT_STRIDE,
+  PHYSICS_SLEEP_STATE_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
   physicsSimulationBackend,
 } from "./simulation.js";
@@ -34,6 +35,15 @@ export interface IPhysicsContext {
 }
 
 export type PhysicsPlugin = IGamePluginHooks<Record<string, unknown>, IPhysicsContext>;
+
+const PHYSICS_DEBUG_BODY_LIMIT = 100;
+const PHYSICS_DEBUG_SAMPLE_LIMIT = 100;
+
+interface IPhysicsDebugSample {
+  readonly label: string;
+  readonly snapshot: Record<string, unknown>;
+  readonly tick: number;
+}
 
 function growFloat(
   buffer: Float32Array<ArrayBufferLike>,
@@ -80,7 +90,14 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   >();
   let kinematic: Float32Array<ArrayBufferLike> = new Float32Array(PHYSICS_TRANSFORM_STRIDE * 16);
   let visible: Float32Array<ArrayBufferLike> = new Float32Array(PHYSICS_TRANSFORM_STRIDE * 16);
+  let visibleCount = 0;
+  let sleepStates: Float32Array<ArrayBufferLike> = new Float32Array(
+    PHYSICS_SLEEP_STATE_STRIDE * 16,
+  );
   let events: Uint32Array<ArrayBufferLike> = new Uint32Array(64);
+  const activeContacts = new Map<string, readonly [number, number]>();
+  let debugSeries: IPhysicsDebugSample[] = [];
+  let unregisterObservations: (() => void) | undefined;
 
   return {
     setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
@@ -100,13 +117,21 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         remove: (body) => {
           bodies.delete(body);
           bodiesById.delete(body.body.id);
+          removeContactsFor(body.body.id);
         },
-        removeArea: (area) => areas.delete(area.body.id),
+        removeArea: (area) => {
+          areas.delete(area.body.id);
+          removeContactsFor(area.body.id);
+        },
         simulation: selected,
         world: physicsWorldHandle(selected.rawWorld, selected),
       };
       ctx.physics = context;
-      return undefined;
+      unregisterObservations = runtime?.observations?.contribute({
+        capabilities: ["runtime.physics"],
+        sample: (request) => physicsObservations(ctx, runtime, request),
+      });
+      return unregisterObservations;
     },
     update: (_ctx, dt) => {
       if (simulation === undefined) throw new Error("Physics plugin updated before setup.");
@@ -137,7 +162,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       simulation.step(dt, input);
 
       visible = growFloat(visible, bodies.size + areas.size);
-      const visibleCount = simulation.readVisibleTransforms(visible);
+      visibleCount = simulation.readVisibleTransforms(visible);
       for (let index = 0; index < visibleCount; index += 1) {
         const offset = index * PHYSICS_TRANSFORM_STRIDE;
         const id = visibleId(visible, offset);
@@ -177,6 +202,9 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         const rightArea = areas.get(right);
         const leftBody = bodiesById.get(left);
         const rightBody = bodiesById.get(right);
+        const contactKey = left < right ? `${left}:${right}` : `${right}:${left}`;
+        if (started) activeContacts.set(contactKey, left < right ? [left, right] : [right, left]);
+        else activeContacts.delete(contactKey);
         if (leftArea !== undefined && rightBody !== undefined)
           leftArea.handleCollision(rightBody, started);
         if (rightArea !== undefined && leftBody !== undefined)
@@ -198,8 +226,12 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
       kinematicMotions.clear();
+      activeContacts.clear();
+      debugSeries = [];
     },
     dispose: () => {
+      unregisterObservations?.();
+      unregisterObservations = undefined;
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
       simulation?.dispose();
@@ -209,6 +241,134 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       bodies.clear();
       bodiesById.clear();
       kinematicMotions.clear();
+      activeContacts.clear();
+      debugSeries = [];
     },
   };
+
+  function physicsObservations(
+    ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+    runtime: NonNullable<Parameters<NonNullable<PhysicsPlugin["setup"]>>[1]>,
+    request: IGameObservationSampleRequest,
+  ): Record<string, unknown> {
+    if (simulation === undefined) throw new Error("Physics observations sampled before setup.");
+    if (request.include?.includes("physicsDebugSeries") !== true) return {};
+    if (request.label !== undefined) {
+      if (debugSeries.some(({ label }) => label === request.label)) {
+        throw new Error(
+          `TN_PHYSICS_DEBUG_LABEL_DUPLICATE: '${request.label}' was already sampled.`,
+        );
+      }
+      if (debugSeries.length >= PHYSICS_DEBUG_SAMPLE_LIMIT) {
+        throw new Error(
+          `TN_PHYSICS_DEBUG_SAMPLE_LIMIT: at most ${PHYSICS_DEBUG_SAMPLE_LIMIT} labelled samples are retained.`,
+        );
+      }
+      debugSeries.push({
+        label: request.label,
+        snapshot: physicsDebugSnapshot(ctx),
+        tick: runtime.tick(),
+      });
+    }
+    return { physicsDebugSeries: debugSeries.map((sample) => ({ ...sample })) };
+  }
+
+  function physicsDebugSnapshot(
+    ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  ): Record<string, unknown> {
+    if (simulation === undefined) throw new Error("Physics observations sampled before setup.");
+    const ordered = [...bodies].sort((left, right) => left.body.id - right.body.id);
+    const retained = ordered.slice(0, PHYSICS_DEBUG_BODY_LIMIT);
+    const retainedIds = new Set(retained.map(({ body }) => body.id));
+    const entityById = new Map(
+      retained.map((body) => [body.body.id, physicsEntityId(ctx, body)] as const),
+    );
+    sleepStates = growSleepStates(sleepStates, bodies.size + areas.size);
+    const sleepCount = simulation.readBodySleepStates(sleepStates);
+    const sleepingById = new Map<number, boolean>();
+    for (let index = 0; index < sleepCount; index += 1) {
+      const offset = index * PHYSICS_SLEEP_STATE_STRIDE;
+      const id = sleepStates[offset];
+      const sleeping = sleepStates[offset + 1];
+      if (id === undefined || !Number.isInteger(id) || (sleeping !== 0 && sleeping !== 1)) {
+        throw new Error("IPhysicsSimulation returned a malformed sleep-state record.");
+      }
+      sleepingById.set(id, sleeping === 1);
+    }
+    const positionById = new Map<number, readonly [number, number, number]>();
+    for (let index = 0; index < visibleCount; index += 1) {
+      const offset = index * PHYSICS_TRANSFORM_STRIDE;
+      const id = visibleId(visible, offset);
+      const position = [visible[offset + 1], visible[offset + 2], visible[offset + 3]];
+      if (position.some((value) => value === undefined || !Number.isFinite(value))) {
+        throw new Error("IPhysicsSimulation returned a malformed debug position.");
+      }
+      positionById.set(id, position as [number, number, number]);
+    }
+    const primitives: Array<Record<string, unknown>> = [];
+    for (const body of retained) {
+      const entity = entityById.get(body.body.id);
+      if (entity === undefined) throw new Error("A retained physics body lost its entity id.");
+      const sleeping = sleepingById.get(body.body.id) ?? false;
+      primitives.push({
+        category: "sleep",
+        entity,
+        id: `sleep:${entity}`,
+        value: sleeping ? 1 : 0,
+      });
+      const position = positionById.get(body.body.id);
+      if (position !== undefined) {
+        primitives.push({ category: "center-of-mass", entity, position });
+      }
+    }
+    for (const [left, right] of activeContacts.values()) {
+      if (!retainedIds.has(left) || !retainedIds.has(right)) continue;
+      primitives.push({
+        category: "contact",
+        id: `${entityById.get(left)}:${entityById.get(right)}`,
+      });
+    }
+    return {
+      artifact: {
+        overflow: {
+          bodyLimit: PHYSICS_DEBUG_BODY_LIMIT,
+          omittedBodies: Math.max(0, ordered.length - retained.length),
+          totalBodies: ordered.length,
+        },
+        primitives,
+      },
+    };
+  }
+
+  function removeContactsFor(bodyId: number): void {
+    for (const [key, pair] of activeContacts) {
+      if (pair.includes(bodyId)) activeContacts.delete(key);
+    }
+  }
+}
+
+function growSleepStates(
+  buffer: Float32Array<ArrayBufferLike>,
+  bodyCount: number,
+): Float32Array<ArrayBufferLike> {
+  const required = bodyCount * PHYSICS_SLEEP_STATE_STRIDE;
+  if (buffer.length >= required) return buffer;
+  return new Float32Array(Math.max(required, buffer.length * 2));
+}
+
+function physicsEntityId(
+  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  body: PhysicsBody3D,
+): string {
+  for (const id of Object.keys(ctx.entities.snapshot())) {
+    const entity = ctx.entities.get(id);
+    if (entity === body || entity === body.object) return id;
+    if (
+      entity !== undefined &&
+      Object.values(entity).some((value) => value === body || value === body.object)
+    ) {
+      return id;
+    }
+  }
+  return `physics.body.${body.body.id}`;
 }

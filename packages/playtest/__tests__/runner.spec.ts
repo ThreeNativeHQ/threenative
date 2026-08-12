@@ -466,3 +466,32 @@ test("runner preserves physics debug series for contact and settled assertions",
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
   expect(result.pass).toBe(true);
 });
+
+test("settled fails closed when physics evidence reports omitted bodies", () => {
+  const currentScenario = scenario({
+    settled: [{ atStep: "settled", entity: "crate", minBodies: 1 }],
+  });
+  const afterSnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 1 },
+    physicsDebugSeries: [{
+      label: "settled",
+      snapshot: {
+        artifact: {
+          overflow: { bodyLimit: 100, omittedBodies: 1, totalBodies: 101 },
+          primitives: [{ category: "sleep", entity: "crate.0", value: 1 }],
+        },
+      },
+      tick: 1,
+    }],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, undefined, afterSnapshot, [], []);
+
+  expect(result.assertionResults).toContainEqual(
+    expect.objectContaining({ id: "settled.crate", pass: false }),
+  );
+  expect(result.diagnostics.map(({ code }) => code)).toContain(
+    "TN_PLAYTEST_PHYSICS_EVIDENCE_TRUNCATED",
+  );
+  expect(result.pass).toBe(false);
+});

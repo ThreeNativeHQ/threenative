@@ -14,6 +14,9 @@ export const PHYSICS_TRANSFORM_STRIDE = 8;
 
 export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
 
+/** One record is logical body id and a sleeping flag encoded as 0 or 1. */
+export const PHYSICS_SLEEP_STATE_STRIDE = 2;
+
 export type PhysicsShapeKind =
   | "box"
   | "sphere"
@@ -100,6 +103,7 @@ export interface IPhysicsSimulation {
   ): void;
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
+  readBodySleepStates(buffer: Float32Array): number;
   readBodyTransform?(id: number):
     | {
         readonly position: { readonly x: number; readonly y: number; readonly z: number };
@@ -201,6 +205,13 @@ export function requirePhysicsRenderBuffer(renderBuffer: Float32Array, bodyCount
     throw new Error("IPhysicsSimulation output must use a Float32Array.");
   if (renderBuffer.length < bodyCount * PHYSICS_TRANSFORM_STRIDE)
     throw new Error("IPhysicsSimulation output buffer is too small for visible transforms.");
+}
+
+export function requirePhysicsSleepStateBuffer(buffer: Float32Array, bodyCount: number): void {
+  if (!(buffer instanceof Float32Array))
+    throw new Error("IPhysicsSimulation sleep states must use a Float32Array.");
+  if (buffer.length < bodyCount * PHYSICS_SLEEP_STATE_STRIDE)
+    throw new Error("IPhysicsSimulation sleep state buffer is too small.");
 }
 
 export function requirePhysicsEventBuffer(buffer: Uint32Array): void {
@@ -477,6 +488,19 @@ export function createWebPhysicsSimulation(
         renderBuffer[offset + 5] = rotation.y;
         renderBuffer[offset + 6] = rotation.z;
         renderBuffer[offset + 7] = rotation.w;
+        index += 1;
+      }
+      return index;
+    },
+    readBodySleepStates: (buffer) => {
+      requireLive();
+      requirePhysicsSleepStateBuffer(buffer, bodies.size);
+      let index = 0;
+      for (const entry of bodies.values()) {
+        if (!entry.body.isValid()) continue;
+        const offset = index * PHYSICS_SLEEP_STATE_STRIDE;
+        buffer[offset] = entry.id;
+        buffer[offset + 1] = entry.body.isSleeping() ? 1 : 0;
         index += 1;
       }
       return index;

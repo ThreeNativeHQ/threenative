@@ -73,6 +73,30 @@ describe("starter playtest proof", () => {
     });
   });
 
+  it("should run a load-bearing platformer physics assertion", async () => {
+    const packageJson = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/platformer/package.json"),
+        "utf8",
+      ),
+    ) as { scripts: { "test:playtest": string } };
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/platformer/playtests/physics.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: { settled: Array<{ atStep: string; entity: string; minBodies: number }> };
+      steps: Array<{ label: string }>;
+    };
+
+    expect(packageJson.scripts["test:playtest"]).toContain("physics.playtest.json");
+    expect(scenario.steps).toContainEqual(expect.objectContaining({ label: "settled" }));
+    expect(scenario.assert.settled).toEqual([{ atStep: "settled", entity: "crate", minBodies: 1 }]);
+  });
+
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/game.ts"),

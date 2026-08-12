@@ -54,6 +54,9 @@ async function run(
   mode: string,
   assert: unknown,
   managedServer?: { command: string; cwd: string; timeoutMs: number },
+  steps: Array<Record<string, unknown>> = [
+    { holdFrames: 30, press: "KeyW", release: true },
+  ],
 ): Promise<IStandalonePlaytestReport> {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-"));
   await writeFile(
@@ -63,7 +66,7 @@ async function run(
       assert,
       name: `e2e-${mode}`,
       schemaVersion: 1,
-      steps: [{ holdFrames: 30, press: "KeyW", release: true }],
+      steps,
       subject: "player",
       target: "web",
       viewport: { height: 360, width: 640 },
@@ -81,6 +84,21 @@ async function run(
     ...(managedServer === undefined ? {} : { server: managedServer }),
   });
 }
+
+test("labelled physics samples reach settled assertion evaluation", async () => {
+  const report = await run(
+    "physics",
+    { settled: [{ atStep: "settled", entity: "player", minBodies: 1 }] },
+    undefined,
+    [{ label: "settled", release: true, waitTicks: 2 }],
+  );
+
+  expect(report.assertionResults).toContainEqual(
+    expect.objectContaining({ id: "settled.player", pass: true }),
+  );
+  expect(report.observations?.physicsDebugSeries?.map(({ label }) => label)).toEqual(["settled"]);
+  expect(report.pass).toBe(true);
+}, 60_000);
 
 const MOVES = { movement: { entity: "player", minDistance: 0.5 } };
 

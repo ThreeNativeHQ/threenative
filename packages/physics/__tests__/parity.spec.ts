@@ -161,6 +161,7 @@ function validationAdapters(): {
     dispose: vi.fn(),
     drainCollisionEvents: vi.fn(() => 0),
     readAreaIntersections: vi.fn(() => 0),
+    readBodySleepStates: vi.fn(() => 0),
     readCharacterStates: vi.fn(() => 0),
     readVisibleTransforms: vi.fn(() => 0),
     removeBody: vi.fn(),
@@ -484,6 +485,7 @@ describe("native adapter freshness", () => {
         buffer.set([1, 2]);
         return 1;
       }),
+      readBodySleepStates: vi.fn(() => 0),
       readCharacterStates: vi.fn((buffer) => {
         buffer.set([0, 1, 2]);
         return 1;

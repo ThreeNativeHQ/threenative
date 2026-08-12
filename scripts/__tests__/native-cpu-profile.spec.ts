@@ -74,7 +74,9 @@ describe("native CPU workload", () => {
     expect(() => validateWorkloadConfig({ ...baseConfig, visibility: "alternating" })).toThrow(
       /visibility/,
     );
-    expect(() => validateWorkloadConfig({ ...baseConfig, renderMode: "magic" })).toThrow(/renderMode/);
+    expect(() => validateWorkloadConfig({ ...baseConfig, renderMode: "magic" })).toThrow(
+      /renderMode/,
+    );
     expect(() => validateWorkloadConfig({ ...baseConfig, passes: 3 })).toThrow(/passes/);
   });
 

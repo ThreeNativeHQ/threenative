@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ptr;
 
 const TRANSFORM_WIDTH: usize = 8;
+const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
 
 #[repr(C)]
@@ -592,6 +593,39 @@ pub extern "C" fn tn_physics_read_visible_transforms(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_body_sleep_states(
+    simulation: *const Simulation,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    let required = simulation.entries.len() * SLEEP_STATE_WIDTH;
+    if required > output_float_capacity || (required > 0 && output.is_null()) {
+        return -1;
+    }
+    for (index, (id, entry)) in simulation.entries.iter().enumerate() {
+        let values = [
+            *id as f32,
+            if simulation.bodies[entry.body].is_sleeping() {
+                1.0
+            } else {
+                0.0
+            },
+        ];
+        unsafe {
+            ptr::copy_nonoverlapping(
+                values.as_ptr(),
+                output.add(index * SLEEP_STATE_WIDTH),
+                SLEEP_STATE_WIDTH,
+            )
+        };
+    }
+    simulation.entries.len() as i32
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_read_character_states(
     simulation: *const Simulation,
     output: *mut f32,
@@ -706,6 +740,60 @@ mod tests {
                 .x,
             2.0
         );
+    }
+
+    #[test]
+    fn sleep_states_are_bulk_read_and_removed_bodies_disappear() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let body = |id| TnPhysicsBodyOptions {
+            id,
+            body_type: 0,
+            shape_type: 1,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.0,
+            shape_z: 0.0,
+            mass: 1.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        };
+        assert!(simulation.add_body(body(11)));
+        assert!(simulation.add_body(body(29)));
+        simulation.bodies[simulation.entries[&11].body].sleep();
+
+        let mut too_small = [f32::NAN; 3];
+        assert_eq!(
+            tn_physics_read_body_sleep_states(&simulation, too_small.as_mut_ptr(), too_small.len(),),
+            -1
+        );
+        assert!(too_small.iter().all(|value| value.is_nan()));
+
+        let mut states = [f32::NAN; 4];
+        assert_eq!(
+            tn_physics_read_body_sleep_states(&simulation, states.as_mut_ptr(), states.len()),
+            2
+        );
+        assert_eq!(states, [11.0, 1.0, 29.0, 0.0]);
+
+        assert!(simulation.remove_body(11));
+        let mut remaining = [f32::NAN; 2];
+        assert_eq!(
+            tn_physics_read_body_sleep_states(&simulation, remaining.as_mut_ptr(), remaining.len(),),
+            1
+        );
+        assert_eq!(remaining, [29.0, 0.0]);
     }
 
     #[test]

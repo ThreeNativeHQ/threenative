@@ -405,6 +405,30 @@ js::JSValueHandle makeSimulationObject(
             return engine->newNumber(count);
           }));
   engine->setProperty(
+      simulation, "readBodySleepStates",
+      engine->newFunction(
+          "readBodySleepStates",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() ||
+                !isTypedArray(engine, args[0], "Float32Array")) {
+              return fail(engine,
+                          "readBodySleepStates requires a Float32Array");
+            }
+            size_t bytes = 0;
+            auto *data = static_cast<float *>(
+                engine->getArrayBufferData(args[0], &bytes));
+            if (bytes % sizeof(float) != 0)
+              return fail(engine, "sleep state buffer is malformed");
+            const int32_t count = tn_physics_read_body_sleep_states(
+                owner->simulation, data, bytes / sizeof(float));
+            if (count < 0)
+              return fail(engine, "sleep state buffer is too small");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
       simulation, "readAreaIntersections",
       engine->newFunction(
           "readAreaIntersections",
