@@ -38,6 +38,8 @@ interface IMaterialLike {
 interface IObjectLike {
   readonly children: IObjectLike[];
   isLight?: boolean;
+  isPoints?: boolean;
+  isSprite?: boolean;
   parent: IObjectLike | null;
   visible: boolean;
   matrix: { elements: ArrayLike<number> };
@@ -47,8 +49,10 @@ interface IObjectLike {
   geometry?: IGeometryLike;
   material?: IMaterialLike | IMaterialLike[];
   renderOrder?: number;
+  onBeforeRender?: unknown;
+  onAfterRender?: unknown;
   /** Render-layer mask. The camera pass parks consumed overlays on a layer nothing renders. */
-  layers?: { mask: number };
+  layers?: { mask: number; set?(channel: number): void };
   add(child: IObjectLike): void;
   remove(child: IObjectLike): void;
   traverse(callback: (object: IObjectLike) => void): void;
@@ -67,7 +71,41 @@ interface IGeometryLike {
   dispose(): void;
 }
 
+export type SceneCollapseStatus = "applied" | "deferred" | "rejected";
+
+export type SceneCollapseReasonCode =
+  | "applied"
+  | "belowMeshFloorStillWatching"
+  | "belowMeshFloorAfterCameraExclusion"
+  | "missingMaterial"
+  | "missingGeometry"
+  | "mergeGroupMissingPosition"
+  | "mergeRefused"
+  | "mergeLostNormals"
+  | "movingGroupLostOwnerId";
+
+export type SceneCollapseSkipReason =
+  | "belowMeshFloor"
+  | "cameraOverlay"
+  | "layers"
+  | "renderOrder"
+  | "renderHook"
+  | "transparency"
+  | "sprite"
+  | "points"
+  | "missingPosition"
+  | "missingGeometry"
+  | "missingMaterial";
+
+export interface ISceneCollapseSkippedCounts extends Record<SceneCollapseSkipReason, number> {}
+
 export interface ISceneCollapseReport {
+  /** Stable schema version for serialized diagnostics. */
+  readonly schemaVersion: 1;
+  /** Explicit outcome. `collapsed` remains for backward-compatible log parsers. */
+  readonly status: SceneCollapseStatus;
+  /** Stable machine-readable reason. `reason` remains for backward-compatible log parsers. */
+  readonly reasonCode: SceneCollapseReasonCode;
   /** True once the scene was replaced by merged geometry. */
   readonly collapsed: boolean;
   /** Why the pass declined, when it did. Absent on success. */
@@ -82,6 +120,34 @@ export interface ISceneCollapseReport {
   readonly overlayMeshes?: number;
   /** Draws those overlay meshes now resolve to, one per material instance still in use. */
   readonly overlayDraws?: number;
+  /** Bounded serializable diagnostics; contains counts and no scene object references. */
+  readonly diagnostics: {
+    readonly sourceRenderables: number;
+    readonly resultDrawCandidates: number;
+    readonly sourceMaterialIdentities: number;
+    readonly resultMaterialIdentities: number;
+    readonly groups: {
+      readonly staticWorld: number;
+      readonly movingOwners: number;
+      readonly cameraOverlays: number;
+    };
+    readonly skipped: ISceneCollapseSkippedCounts;
+    readonly timings: {
+      readonly bakeMs: number;
+      readonly observeMs: number;
+      readonly mergeMs: number;
+      readonly copyMs: number;
+      readonly transformMs: number;
+      readonly colorMs: number;
+      readonly sampleMs: number;
+      readonly transformRefresh: {
+        readonly count: number;
+        readonly lastMs: number;
+        readonly maxMs: number;
+        readonly meanMs: number;
+      };
+    };
+  };
   /**
    * Milliseconds actually spent baking, summed across the frames it was spread over — not the
    * wall clock from start to finish, which would mostly count frames that did nothing.
@@ -125,6 +191,12 @@ export interface ISceneCollapseOptions {
   readonly bakeBudgetMs?: number;
   /** Called once, when the pass collapses or declines. */
   readonly onReport?: (report: ISceneCollapseReport) => void;
+  /**
+   * Opt-in per-frame transform-refresh timing. Disabled by default so the production update path
+   * does not pay diagnostic clock reads; verification fixtures enable it when reporting refresh
+   * duration.
+   */
+  readonly measureTransformRefresh?: boolean;
 }
 
 interface IMovingPart {
@@ -156,6 +228,46 @@ const CANONICAL_ATTRIBUTES = ["position", "normal", "uv", "color", "tnOwnerId"];
  * upload per mesh per frame; under a dozen draws that is not a trade worth making.
  */
 const OVERLAY_FLOOR = 12;
+
+function emptySkippedCounts(): ISceneCollapseSkippedCounts {
+  return {
+    belowMeshFloor: 0,
+    cameraOverlay: 0,
+    layers: 0,
+    renderOrder: 0,
+    renderHook: 0,
+    transparency: 0,
+    sprite: 0,
+    points: 0,
+    missingPosition: 0,
+    missingGeometry: 0,
+    missingMaterial: 0,
+  };
+}
+
+interface ISceneCollapseScan {
+  readonly materialIdentities: Set<IMaterialLike>;
+  readonly meshes: IObjectLike[];
+  readonly preserved: Set<IObjectLike>;
+  readonly skipped: ISceneCollapseSkippedCounts;
+  readonly sourceRenderables: number;
+}
+
+function addSkipped(
+  skipped: ISceneCollapseSkippedCounts,
+  reason: SceneCollapseSkipReason,
+  count = 1,
+): void {
+  skipped[reason] += count;
+}
+
+function mergeSkippedCounts(
+  target: ISceneCollapseSkippedCounts,
+  source: ISceneCollapseSkippedCounts,
+): void {
+  for (const reason of Object.keys(target) as SceneCollapseSkipReason[])
+    target[reason] += source[reason];
+}
 
 /**
  * Bakes a world (or owner-local) transform into a geometry's own arrays.
@@ -478,8 +590,16 @@ export class SceneCollapse {
   #observeSpanMs = 0;
   #meshCount = -1;
   #reportedSmall = false;
+  #lastScan: ISceneCollapseScan | undefined;
+  #lastSourceRenderables = 0;
+  #lastSourceMaterialIdentities = 0;
+  #refreshCount = 0;
+  #refreshLastMs = 0;
+  #refreshMaxMs = 0;
+  #refreshTotalMs = 0;
   #report: ISceneCollapseReport | undefined;
   readonly #bakeBudgetMs: number;
+  readonly #measureTransformRefresh: boolean;
   #steps: Generator<number, void, void> | undefined;
   #bakeProgress = 0;
   #bakeSpentMs = 0;
@@ -502,6 +622,7 @@ export class SceneCollapse {
     this.#observeFrames = observeFrames;
     this.#minMeshes = minMeshes;
     this.#bakeBudgetMs = bakeBudgetMs;
+    this.#measureTransformRefresh = options.measureTransformRefresh === true;
     // A pass that silently declines is a pass nobody can debug: the frame rate simply stays bad
     // and the reason never leaves the process. It always says what it decided.
     this.#settled = new Promise((resolve) => {
@@ -564,12 +685,23 @@ export class SceneCollapse {
   }
 
   /**
+   * Latest bounded diagnostics snapshot. `report` is the immutable outcome recorded when the pass
+   * applied/rejected/deferred; this getter is for per-frame transform-refresh timing after an
+   * applied collapse continues updating moving parts.
+   */
+  get diagnostics(): ISceneCollapseReport["diagnostics"] | undefined {
+    const report = this.#report;
+    if (report === undefined) return undefined;
+    return { ...report.diagnostics, timings: this.#timings() };
+  }
+
+  /**
    * Call once per rendered frame. Samples local matrices until the observation window closes, then
    * collapses; afterwards it refreshes the moving parts' transforms.
    */
   frame(): void {
     if (this.#report !== undefined) {
-      this.#update?.();
+      this.#refreshTransforms();
       return;
     }
     // A scene is not ready to be judged while it is still being built: counting frames alone
@@ -582,13 +714,24 @@ export class SceneCollapse {
       if (this.#meshCount < this.#minMeshes) {
         if (!this.#reportedSmall) {
           this.#reportedSmall = true;
-          this.#onReport({
-            collapsed: false,
-            reason: `fewer than ${this.#minMeshes} meshes so far; still watching`,
-            sourceMeshes: this.#meshCount,
-            mergedMeshes: 0,
-            movingParts: 0,
-          });
+          this.#onReport(
+            this.#makeReport({
+              collapsed: false,
+              reason: `fewer than ${this.#minMeshes} meshes so far; still watching`,
+              reasonCode: "belowMeshFloorStillWatching",
+              resultDrawCandidates: 0,
+              resultMaterialIdentities: 0,
+              skipped: {
+                ...emptySkippedCounts(),
+                ...(this.#lastScan?.skipped ?? {}),
+                belowMeshFloor: this.#meshCount,
+              },
+              sourceMaterialIdentities: this.#lastSourceMaterialIdentities,
+              sourceMeshes: this.#meshCount,
+              sourceRenderables: this.#lastSourceRenderables || this.#meshCount,
+              status: "deferred",
+            }),
+          );
         }
         return;
       }
@@ -651,11 +794,61 @@ export class SceneCollapse {
   }
 
   #countMeshes(): number {
-    let count = 0;
+    const scan = this.#scanSceneRenderables();
+    this.#lastScan = scan;
+    this.#lastSourceRenderables = scan.sourceRenderables;
+    this.#lastSourceMaterialIdentities = scan.materialIdentities.size;
+    return scan.meshes.length;
+  }
+
+  #skipReason(object: IObjectLike): SceneCollapseSkipReason | undefined {
+    if (this.#excluded(object)) return "cameraOverlay";
+    if (object.layers !== undefined && object.layers.mask !== 1) return "layers";
+    if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
+    if (Object.hasOwn(object, "onBeforeRender") || Object.hasOwn(object, "onAfterRender"))
+      return "renderHook";
+    if (object.geometry === undefined) return "missingGeometry";
+    if (object.geometry.getAttribute("position") === undefined) return "missingPosition";
+    const material = materialOf(object);
+    if (material === undefined) return "missingMaterial";
+    if ((material as unknown as { transparent?: boolean }).transparent === true)
+      return "transparency";
+    return undefined;
+  }
+
+  #scanSceneRenderables(): ISceneCollapseScan {
+    const skipped = emptySkippedCounts();
+    const meshes: IObjectLike[] = [];
+    const preserved = new Set<IObjectLike>();
+    const materialIdentities = new Set<IMaterialLike>();
+    let sourceRenderables = 0;
     this.#scene.traverse((object) => {
-      if (object.isMesh === true) count += 1;
+      if (object.isCamera === true) return;
+      if (object.isSprite === true) {
+        sourceRenderables += 1;
+        preserved.add(object);
+        addSkipped(skipped, "sprite");
+        return;
+      }
+      if (object.isPoints === true) {
+        sourceRenderables += 1;
+        preserved.add(object);
+        addSkipped(skipped, "points");
+        return;
+      }
+      if (object.isMesh !== true) return;
+      sourceRenderables += 1;
+      const material = materialOf(object);
+      if (material !== undefined) materialIdentities.add(material);
+      const reason = this.#skipReason(object);
+      if (reason !== undefined) {
+        preserved.add(object);
+        addSkipped(skipped, reason);
+        return;
+      }
+      meshes.push(object);
     });
-    return count;
+    return { materialIdentities, meshes, preserved, skipped, sourceRenderables };
   }
 
   #sample(): void {
@@ -703,9 +896,16 @@ export class SceneCollapse {
    *   rather than detached, so Three.js still refreshes their world matrices and the game's own
    *   `visible` writes still mean what they say.
    */
-  #collapseCameras(): { overlayMeshes: number; overlayDraws: number } {
+  #collapseCameras(): {
+    overlayMeshes: number;
+    overlayDraws: number;
+    materialIdentities: Set<IMaterialLike>;
+    skipped: ISceneCollapseSkippedCounts;
+  } {
     let overlayMeshes = 0;
     let overlayDraws = 0;
+    const skipped = emptySkippedCounts();
+    const materialIdentities = new Set<IMaterialLike>();
     const cameras: IObjectLike[] = [];
     this.#scene.traverse((object) => {
       if (object.isCamera === true) cameras.push(object);
@@ -713,13 +913,33 @@ export class SceneCollapse {
     for (const camera of cameras) {
       const meshes: IObjectLike[] = [];
       camera.traverse((object) => {
-        if (object === camera || object.isMesh !== true) return;
-        if (object.geometry?.getAttribute("position") === undefined) return;
-        if (object.layers === undefined) return;
+        if (object === camera) return;
+        if (object.isSprite === true) {
+          addSkipped(skipped, "sprite");
+          return;
+        }
+        if (object.isPoints === true) {
+          addSkipped(skipped, "points");
+          return;
+        }
+        if (object.isMesh !== true) return;
+        if (object.geometry?.getAttribute("position") === undefined) {
+          addSkipped(skipped, "missingPosition");
+          return;
+        }
+        if (object.layers === undefined) {
+          addSkipped(skipped, "layers");
+          return;
+        }
+        const material = materialOf(object);
+        if (material !== undefined) materialIdentities.add(material);
         meshes.push(object);
       });
       // A handful of overlay meshes cost less to draw than a merge costs to maintain.
-      if (meshes.length < OVERLAY_FLOOR) continue;
+      if (meshes.length < OVERLAY_FLOOR) {
+        addSkipped(skipped, "cameraOverlay", meshes.length);
+        continue;
+      }
       camera.updateMatrixWorld(true);
       const cameraInverse = new Matrix4().copy(camera.matrixWorld).invert();
       const groups = new Map<
@@ -876,7 +1096,7 @@ export class SceneCollapse {
         previousRestore?.();
       };
     }
-    return { overlayMeshes, overlayDraws };
+    return { materialIdentities, overlayMeshes, overlayDraws, skipped };
   }
 
   /** True when the game currently wants this overlay mesh on screen, ancestors included. */
@@ -888,9 +1108,86 @@ export class SceneCollapse {
     return true;
   }
 
-  #decline(reason: string, sourceMeshes: number): void {
-    this.#report = { collapsed: false, reason, sourceMeshes, mergedMeshes: 0, movingParts: 0 };
+  #decline(reason: string, sourceMeshes: number, reasonCode: SceneCollapseReasonCode): void {
+    this.#report = this.#makeReport({
+      collapsed: false,
+      reason,
+      reasonCode,
+      resultDrawCandidates: 0,
+      resultMaterialIdentities: 0,
+      skipped: this.#lastScan?.skipped ?? emptySkippedCounts(),
+      sourceMaterialIdentities: this.#lastSourceMaterialIdentities,
+      sourceMeshes,
+      sourceRenderables: this.#lastSourceRenderables || sourceMeshes,
+      status: "rejected",
+    });
     this.#onReport(this.#report);
+  }
+
+  #makeReport(input: {
+    collapsed: boolean;
+    reason?: string;
+    reasonCode: SceneCollapseReasonCode;
+    resultDrawCandidates: number;
+    resultMaterialIdentities: number;
+    skipped: ISceneCollapseSkippedCounts;
+    sourceMaterialIdentities: number;
+    sourceMeshes: number;
+    sourceRenderables: number;
+    status: SceneCollapseStatus;
+  }): ISceneCollapseReport {
+    return {
+      schemaVersion: 1,
+      status: input.status,
+      reasonCode: input.reasonCode,
+      collapsed: input.collapsed,
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+      sourceMeshes: input.sourceMeshes,
+      mergedMeshes: input.resultDrawCandidates,
+      movingParts: 0,
+      diagnostics: {
+        sourceRenderables: input.sourceRenderables,
+        resultDrawCandidates: input.resultDrawCandidates,
+        sourceMaterialIdentities: input.sourceMaterialIdentities,
+        resultMaterialIdentities: input.resultMaterialIdentities,
+        groups: { staticWorld: 0, movingOwners: 0, cameraOverlays: 0 },
+        skipped: input.skipped,
+        timings: this.#timings(),
+      },
+    };
+  }
+
+  #timings(): ISceneCollapseReport["diagnostics"]["timings"] {
+    return {
+      bakeMs: this.#bakeSpentMs,
+      observeMs: this.#observeSpanMs,
+      mergeMs: this.#mergeSpentMs,
+      copyMs: this.#copySpentMs,
+      transformMs: this.#transformSpentMs,
+      colorMs: this.#colorSpentMs,
+      sampleMs: this.#sampleSpentMs,
+      transformRefresh: {
+        count: this.#refreshCount,
+        lastMs: this.#refreshLastMs,
+        maxMs: this.#refreshMaxMs,
+        meanMs: this.#refreshCount === 0 ? 0 : this.#refreshTotalMs / this.#refreshCount,
+      },
+    };
+  }
+
+  #refreshTransforms(): void {
+    if (this.#update === undefined) return;
+    if (!this.#measureTransformRefresh) {
+      this.#update();
+      return;
+    }
+    const startedAt = globalThis.performance?.now() ?? 0;
+    this.#update();
+    const elapsed = (globalThis.performance?.now() ?? 0) - startedAt;
+    this.#refreshCount += 1;
+    this.#refreshLastMs = elapsed;
+    this.#refreshTotalMs += elapsed;
+    this.#refreshMaxMs = Math.max(this.#refreshMaxMs, elapsed);
   }
 
   /**
@@ -934,13 +1231,11 @@ export class SceneCollapse {
    */
   *#collapseSteps(): Generator<number, void, void> {
     this.#scene.updateMatrixWorld(true);
-    const meshes: IObjectLike[] = [];
-    this.#scene.traverse((object) => {
-      if (object.isMesh !== true) return;
-      if (this.#excluded(object)) return;
-      if (object.geometry?.getAttribute("position") === undefined) return;
-      meshes.push(object);
-    });
+    const scan = this.#lastScan ?? this.#scanSceneRenderables();
+    this.#lastScan = undefined;
+    this.#lastSourceRenderables = scan.sourceRenderables;
+    this.#lastSourceMaterialIdentities = scan.materialIdentities.size;
+    const meshes: IObjectLike[] = [...scan.meshes];
     if (meshes.length < this.#minMeshes) {
       // The camera subtree is excluded here but not by the counter that opened the window, so a
       // scene can still fall under the floor at this point. Reopen the window rather than settle.
@@ -961,7 +1256,7 @@ export class SceneCollapse {
       yield meshIndex / meshes.length;
       const material = materialOf(mesh);
       if (material === undefined) {
-        this.#decline("a mesh has no material", meshes.length);
+        this.#decline("a mesh has no material", meshes.length, "missingMaterial");
         return;
       }
       const owner = this.#ownerOf(mesh);
@@ -984,7 +1279,11 @@ export class SceneCollapse {
           : inverse.copy(owner.matrixWorld).invert().multiply(mesh.matrixWorld);
       const source = mesh.geometry;
       if (source === undefined) {
-        this.#decline("a mesh lost its geometry between the scan and the merge", meshes.length);
+        this.#decline(
+          "a mesh lost its geometry between the scan and the merge",
+          meshes.length,
+          "missingGeometry",
+        );
         return;
       }
       const copyStartedAt = globalThis.performance?.now() ?? 0;
@@ -1128,7 +1427,11 @@ export class SceneCollapse {
     for (const group of groups.values()) {
       const shared = sharedAttributeNames(group.chunks);
       if (!shared.includes("position")) {
-        this.#decline("a merge group disagrees on its position attribute", meshes.length);
+        this.#decline(
+          "a merge group disagrees on its position attribute",
+          meshes.length,
+          "mergeGroupMissingPosition",
+        );
         return;
       }
       for (const chunk of group.chunks) {
@@ -1140,7 +1443,7 @@ export class SceneCollapse {
       const geometry = mergeGeometries(group.chunks as never[], false);
       this.#mergeSpentMs += (globalThis.performance?.now() ?? 0) - mergeStartedAt;
       if (geometry === null) {
-        this.#decline("three.js refused to merge a group", meshes.length);
+        this.#decline("three.js refused to merge a group", meshes.length, "mergeRefused");
         return;
       }
       // Static geometry keeps the game's own material instance untouched: same class, same maps,
@@ -1163,7 +1466,7 @@ export class SceneCollapse {
       if (geometry.getAttribute("normal") === undefined) {
         // Every chunk had normals going in, so losing them here means the merge disagreed about
         // shape. Lit materials would render black; decline instead of shipping a black level.
-        this.#decline("a merge group lost its normals", meshes.length);
+        this.#decline("a merge group lost its normals", meshes.length, "mergeLostNormals");
         return;
       }
       if (group.dynamic && geometry.getAttribute("tnOwnerId") === undefined) {
@@ -1172,6 +1475,7 @@ export class SceneCollapse {
         this.#decline(
           "a moving group lost its per-vertex transform id in the merge",
           meshes.length,
+          "movingGroupLostOwnerId",
         );
         return;
       }
@@ -1200,7 +1504,7 @@ export class SceneCollapse {
     for (const entry of bakedFrom) entry.parent.remove(entry.mesh);
     const detached: IObjectLike[] = [];
     for (const child of [...this.#scene.children]) {
-      if (child.isCamera === true || added.includes(child)) continue;
+      if (child.isCamera === true || added.includes(child) || scan.preserved.has(child)) continue;
       // Lights are not geometry and were never collapsed, but they live in the same tree. Sweeping
       // them out with it left every lit material shading from nothing: the level went black while
       // the unlit HUD and waterfalls looked perfect.
@@ -1239,13 +1543,35 @@ export class SceneCollapse {
       for (const child of detached) this.#scene.add(child);
     };
     const overlay = this.#collapseCameras();
+    const skipped = emptySkippedCounts();
+    mergeSkippedCounts(skipped, scan.skipped);
+    mergeSkippedCounts(skipped, overlay.skipped);
+    const resultMaterialIdentities = new Set<IMaterialLike>();
+    for (const group of groups.values()) resultMaterialIdentities.add(group.material);
+    for (const material of overlay.materialIdentities) resultMaterialIdentities.add(material);
     this.#report = {
+      schemaVersion: 1,
+      status: "applied",
+      reasonCode: "applied",
       collapsed: true,
       sourceMeshes: meshes.length,
       mergedMeshes,
       movingParts: movingParts.length,
       overlayMeshes: overlay.overlayMeshes,
       overlayDraws: overlay.overlayDraws,
+      diagnostics: {
+        sourceRenderables: scan.sourceRenderables,
+        resultDrawCandidates: mergedMeshes + overlay.overlayDraws,
+        sourceMaterialIdentities: scan.materialIdentities.size + overlay.materialIdentities.size,
+        resultMaterialIdentities: resultMaterialIdentities.size,
+        groups: {
+          staticWorld: [...groups.values()].filter((group) => !group.dynamic).length,
+          movingOwners: movingParts.length,
+          cameraOverlays: overlay.overlayDraws,
+        },
+        skipped,
+        timings: this.#timings(),
+      },
       bakeMs: this.#bakeSpentMs,
       observeMs: this.#observeSpanMs,
       mergeMs: this.#mergeSpentMs,

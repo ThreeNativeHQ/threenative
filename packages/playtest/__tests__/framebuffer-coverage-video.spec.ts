@@ -57,25 +57,24 @@ test("Android video analysis reports the first one-frame coverage leak with its 
   expect(result.firstViolation?.grid.samples).toHaveLength(8);
 });
 
-test("Android scenario brackets trim the revealed encoder tail but retain a one-frame leak", () => {
+test("Android scenario brackets fail closed on contaminated edge frames", () => {
+  const leadingLeak = letterboxedFrame([90, 180, 210]);
   const covered = letterboxedFrame(BACKDROP);
-  const leaking = letterboxedFrame(BACKDROP);
-  setContentPixel(leaking, 3, 1, [90, 180, 210]);
-  const revealed = letterboxedFrame([20, 120, 180]);
-  const frames = [covered, leaking, revealed];
+  const trailingLeak = letterboxedFrame([180, 90, 40]);
+  const frames = [leadingLeak, covered, trailingLeak];
   const box = findVideoContentBox(frames);
   if (box === undefined) throw new Error("expected app content box");
 
   const result = analyzeScenarioBracketedCoverageFrames(
     frames.map((frame) => sampleFramebufferCoverageVideoFrame(frame, box, { columns: 4, rows: 2 })),
-    ["covered.png", "leak.png", "revealed.png"],
+    ["leading-leak.png", "covered.png", "trailing-leak.png"],
     { backdrop: BACKDROP, grid: { columns: 4, rows: 2 }, tolerance: 0 },
   );
 
   expect(result).toMatchObject({
     boundarySource: "scenario-steps",
-    frameCount: 2,
-    firstViolation: { frameIndex: 1, screenshotPath: "leak.png" },
+    frameCount: 3,
+    firstViolation: { frameIndex: 0, screenshotPath: "leading-leak.png" },
     windowCompleted: true,
     windowStarted: true,
   });

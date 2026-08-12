@@ -1,4 +1,4 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector2, type WebGLRenderer } from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
 import { expect, test } from "vitest";
 
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
@@ -53,17 +53,17 @@ test("bridge exposes WebGPU render.drawCalls and finite triangles", async () => 
   installation.dispose();
 });
 
-test("bridge falls back to WebGL render.calls when render.drawCalls is unavailable", async () => {
+test("bridge does not treat WebGL render.calls as a drawCalls counter", async () => {
   const installation = installThreePlaytestBridge({
     camera: new PerspectiveCamera(),
     renderer: {
       ...renderer,
       info: { render: { calls: 17, triangles: 42 } },
-    } as WebGLRenderer,
+    } as unknown as WebGLRenderer,
     scene: new Scene(),
   });
 
-  expect((await installation.bridge.sample({})).performance).toEqual({ drawCalls: 17, triangles: 42 });
+  expect((await installation.bridge.sample({})).performance).toEqual({ triangles: 42 });
   installation.dispose();
 });
 

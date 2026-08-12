@@ -39,8 +39,11 @@ pnpm install --frozen-lockfile
 pnpm dev
 pnpm test
 pnpm test:browser
+pnpm profile:native-cpu:fox # headed Xvfb + pixel-verified WebGPU visual evidence
 pnpm tsx scripts/arm-census.ts
 ```
+
+`profile:native-cpu` can still run timing-only headless diagnostics when explicitly invoked, but counters do not prove WebGPU presentation. Visual evidence for the fox baseline must use headed Chromium under Xvfb with presentation verification (`pnpm profile:native-cpu:fox`), which captures before/after canvas screenshots and rejects blank or near-uniform frames.
 
 The census command writes dated, four-class arm evidence to
 `docs/verification/arm-census-<date>.md` and reconciles every class with the normalized LOC

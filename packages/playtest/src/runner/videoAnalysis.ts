@@ -108,29 +108,60 @@ export async function analyzeFramebufferCoverageRecording(
 }
 
 /**
- * Scenario steps bracket the recording. Backdrop dominance trims only the encoder's queued
- * revealed tail; every frame in the covered run is still checked sample-by-sample.
+ * Scenario steps already bracket the Android recording, so do not infer a dominant backdrop
+ * sub-window. Every decoded app frame in that bracket is evidence and must be checked.
  */
 export function analyzeScenarioBracketedCoverageFrames(
   grids: readonly IFramebufferCoverageSampleGrid[],
   framePaths: readonly string[],
   assertion: FramebufferCoverageVideoAssertion,
 ): IPlaytestFramebufferCoverageObservation {
-  const inferred = analyzeSampledCoverageFrames(grids, framePaths, assertion);
-  if (inferred.frameCount === 0) {
+  const base = {
+    boundarySource: "scenario-steps" as const,
+    windowCompleted: true,
+    windowStarted: true,
+  };
+  if (grids.length === 0) {
     return {
-      boundarySource: "scenario-steps",
+      ...base,
       frameCount: 0,
-      unreadableReason: "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_VIDEO_NO_BACKDROP_FRAMES",
-      windowCompleted: true,
-      windowStarted: true,
+      unreadableReason: "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_VIDEO_NO_FRAMES",
+    };
+  }
+  if (framePaths.length !== grids.length) {
+    return {
+      ...base,
+      frameCount: 0,
+      unreadableReason: "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_VIDEO_PATH_COUNT",
+    };
+  }
+
+  const firstViolationOffset = grids.findIndex((grid) =>
+    grid.samples.some((sample) => !sampleMatches(sample, assertion.backdrop, assertion.tolerance)),
+  );
+  if (firstViolationOffset === -1) {
+    return {
+      ...base,
+      frameCount: grids.length,
+    };
+  }
+  const violationGrid = grids[firstViolationOffset];
+  const violationFramePath = framePaths[firstViolationOffset];
+  if (violationGrid === undefined || violationFramePath === undefined) {
+    return {
+      ...base,
+      frameCount: 0,
+      unreadableReason: "TN_PLAYTEST_FRAMEBUFFER_COVERAGE_VIDEO_PATH_COUNT",
     };
   }
   return {
-    ...inferred,
-    boundarySource: "scenario-steps",
-    windowCompleted: true,
-    windowStarted: true,
+    ...base,
+    firstViolation: {
+      frameIndex: firstViolationOffset,
+      grid: violationGrid,
+      screenshotPath: violationFramePath,
+    },
+    frameCount: grids.length,
   };
 }
 

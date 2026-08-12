@@ -132,6 +132,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 6.0.5(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.3
@@ -141,6 +144,10 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+    optionalDependencies:
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
 
   examples/abyss-vanilla:
     dependencies:
@@ -154,6 +161,19 @@ importers:
       vite-plugin-singlefile:
         specifier: 2.3.3
         version: 2.3.3(rollup@4.62.4)(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
+
+  examples/native-cpu-load-test:
+    dependencies:
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1
+    devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
 
   examples/native-smoke:
     dependencies:

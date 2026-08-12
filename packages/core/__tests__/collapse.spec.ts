@@ -1,6 +1,8 @@
 import {
   Box3,
   BoxGeometry,
+  BufferGeometry,
+  Float32BufferAttribute,
   Group,
   Mesh,
   MeshToonMaterial,
@@ -91,6 +93,178 @@ describe("SceneCollapse", () => {
     expect(scene.children).toHaveLength(4);
   });
 
+  it("reports the applied diagnostics contract without retaining scene references", () => {
+    const scene = new Scene();
+    const green = new MeshToonMaterial({ color: 0x5cbb37 });
+    const orange = new MeshToonMaterial({ color: 0xf2952f });
+    fill(scene, green, 8);
+    fill(scene, orange, 8);
+
+    const { report, collapse } = run(scene, 4);
+
+    expect(report?.schemaVersion).toBe(1);
+    expect(report?.status).toBe("applied");
+    expect(report?.reasonCode).toBe("applied");
+    expect(report?.collapsed).toBe(true);
+    expect(report?.diagnostics.sourceRenderables).toBe(16);
+    expect(report?.diagnostics.resultDrawCandidates).toBe(1);
+    expect(report?.diagnostics.sourceMaterialIdentities).toBe(2);
+    expect(report?.diagnostics.resultMaterialIdentities).toBe(1);
+    expect(report?.diagnostics.groups.staticWorld).toBe(1);
+    expect(report?.diagnostics.groups.movingOwners).toBe(0);
+    expect(report?.diagnostics.groups.cameraOverlays).toBe(0);
+    expect(report?.diagnostics.skipped.cameraOverlay).toBe(0);
+    expect(report?.diagnostics.timings.bakeMs).toBeGreaterThanOrEqual(0);
+    expect(report?.diagnostics.timings.transformRefresh.lastMs).toBe(0);
+
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain(green.uuid);
+    expect(serialized).not.toContain(orange.uuid);
+    expect(serialized).not.toContain("matrixWorld");
+    expect(JSON.parse(serialized)).toEqual(report);
+    expect(collapse.report).toBe(report);
+    expect(collapse.diagnostics).toMatchObject({
+      sourceRenderables: report?.diagnostics.sourceRenderables,
+      resultDrawCandidates: report?.diagnostics.resultDrawCandidates,
+      sourceMaterialIdentities: report?.diagnostics.sourceMaterialIdentities,
+      resultMaterialIdentities: report?.diagnostics.resultMaterialIdentities,
+      groups: report?.diagnostics.groups,
+      skipped: report?.diagnostics.skipped,
+    });
+    expect(collapse.diagnostics?.timings.bakeMs).toBeGreaterThanOrEqual(
+      report?.diagnostics.timings.bakeMs ?? 0,
+    );
+  });
+
+  it("reports current transform-refresh diagnostics without mutating the applied report snapshot", () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);
+    const arm = new Group();
+    const armMesh = new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xf2952f }));
+    arm.add(armMesh);
+    scene.add(arm);
+
+    let report: ISceneCollapseReport | undefined;
+    const collapse = new SceneCollapse(scene as never, {
+      measureTransformRefresh: true,
+      observeFrames: 3,
+      minMeshes: 8,
+      onReport: (value) => {
+        report = value;
+      },
+    });
+    for (let index = 0; index < 4; index += 1) {
+      arm.rotation.z += 0.1;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+    }
+    expect(report?.status).toBe("applied");
+    expect(report?.diagnostics.timings.transformRefresh.count).toBe(0);
+    const beforeRefreshCount = collapse.diagnostics?.timings.transformRefresh.count ?? 0;
+
+    for (let index = 0; index < 3; index += 1) {
+      arm.rotation.z += 0.1;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+    }
+
+    expect(report?.diagnostics.timings.transformRefresh.count).toBe(0);
+    expect(collapse.diagnostics?.timings.transformRefresh.count).toBe(beforeRefreshCount + 3);
+    expect(collapse.diagnostics?.timings.transformRefresh.maxMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.parse(JSON.stringify(collapse.diagnostics))).toEqual(collapse.diagnostics);
+  });
+
+  it("reports a stable deferred status for the below-floor early report without changing settlement compatibility", async () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x00ff00 }), 4);
+    const { collapse, report } = run(scene, 1, { minMeshes: 8 });
+
+    expect(report?.status).toBe("deferred");
+    expect(report?.reasonCode).toBe("belowMeshFloorStillWatching");
+    expect(report?.diagnostics.sourceRenderables).toBe(4);
+    expect(report?.diagnostics.skipped.belowMeshFloor).toBe(4);
+    await expect(collapse.whenSettled()).resolves.toBeUndefined();
+    expect(collapse.report).toBeUndefined();
+  });
+
+  it("counts unsupported and unsafe semantics explicitly without rewriting them", () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);
+    const hiddenLayer = new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xff0000 }));
+    hiddenLayer.layers.set(2);
+    const ordered = new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xff0000 }));
+    ordered.renderOrder = 7;
+    const hooked = new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xff0000 }));
+    hooked.onBeforeRender = () => undefined;
+    const transparent = new Mesh(
+      GEOMETRY.clone(),
+      new MeshToonMaterial({ color: 0xff0000, opacity: 0.5, transparent: true }),
+    );
+    const spriteLike = new Group() as Group & { isSprite: true };
+    spriteLike.isSprite = true;
+    const pointsLike = new Group() as Group & { isPoints: true };
+    pointsLike.isPoints = true;
+    scene.add(hiddenLayer, ordered, hooked, transparent, spriteLike, pointsLike);
+
+    const { report } = run(scene, 4);
+
+    expect(report?.status).toBe("applied");
+    expect(report?.diagnostics.skipped.layers).toBe(1);
+    expect(report?.diagnostics.skipped.renderOrder).toBe(1);
+    expect(report?.diagnostics.skipped.renderHook).toBe(1);
+    expect(report?.diagnostics.skipped.transparency).toBe(1);
+    expect(report?.diagnostics.skipped.sprite).toBe(1);
+    expect(report?.diagnostics.skipped.points).toBe(1);
+    expect(hiddenLayer.parent).toBe(scene);
+    expect(hiddenLayer.layers.mask).toBe(4);
+    expect(ordered.parent).toBe(scene);
+    expect(ordered.renderOrder).toBe(7);
+    expect(hooked.parent).toBe(scene);
+    expect(transparent.parent).toBe(scene);
+    expect((transparent.material as MeshToonMaterial).transparent).toBe(true);
+    expect(spriteLike.parent).toBe(scene);
+    expect(pointsLike.parent).toBe(scene);
+  });
+
+  it("counts missing geometry, material and position explicitly without rewriting them", () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);
+    const missingGeometry = new Group() as Group & { isMesh: true; material: MeshToonMaterial };
+    missingGeometry.isMesh = true;
+    missingGeometry.material = new MeshToonMaterial({ color: 0xff0000 });
+    const missingMaterial = new Group() as Group & { geometry: BoxGeometry; isMesh: true };
+    missingMaterial.isMesh = true;
+    missingMaterial.geometry = GEOMETRY.clone();
+    const noPosition = new Mesh(new BufferGeometry(), new MeshToonMaterial({ color: 0xff0000 }));
+    noPosition.geometry.setAttribute("normal", new Float32BufferAttribute(new Float32Array(9), 3));
+    scene.add(missingGeometry, missingMaterial, noPosition);
+
+    const { report } = run(scene, 4);
+
+    expect(report?.status).toBe("applied");
+    expect(report?.diagnostics.skipped.missingGeometry).toBe(1);
+    expect(report?.diagnostics.skipped.missingMaterial).toBe(1);
+    expect(report?.diagnostics.skipped.missingPosition).toBe(1);
+    expect(missingGeometry.parent).toBe(scene);
+    expect(missingMaterial.parent).toBe(scene);
+    expect(noPosition.parent).toBe(scene);
+  });
+
+  it("does not add an extra full scene traversal for diagnostics", () => {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 12);
+    let traversals = 0;
+    const original = scene.traverse.bind(scene);
+    scene.traverse = ((callback: (object: Object3D) => void) => {
+      traversals += 1;
+      return original(callback);
+    }) as Scene["traverse"];
+
+    run(scene, 4);
+
+    expect(traversals).toBe(5);
+  });
+
   it("merges materials that differ only in colour into one draw, colour moved to the vertices", () => {
     const scene = new Scene();
     fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 6);
@@ -111,14 +285,15 @@ describe("SceneCollapse", () => {
     expect((colors as { itemSize: number }).itemSize).toBe(3);
   });
 
-  it("keeps materials apart when more than their colour differs", () => {
+  it("preserves transparent materials instead of merging their semantics away", () => {
     const scene = new Scene();
-    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 6);
+    fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 8);
     // Transparency is part of the look, not a colour: it must not be merged away.
     fill(scene, new MeshToonMaterial({ color: 0xa8927a, transparent: true, opacity: 0.5 }), 6);
     const { report } = run(scene, 4);
     expect(report?.collapsed).toBe(true);
-    expect(report?.mergedMeshes).toBe(2);
+    expect(report?.mergedMeshes).toBe(1);
+    expect(report?.diagnostics.skipped.transparency).toBe(6);
   });
 
   it("leaves a camera-parented subtree alone, because that is where the HUD lives", () => {
@@ -302,6 +477,7 @@ describe("SceneCollapse", () => {
     expect(report?.overlayMeshes).toBe(16);
     // Two material instances in, two draws out — never merged by look.
     expect(report?.overlayDraws).toBe(2);
+    expect(report?.diagnostics.groups.cameraOverlays).toBe(2);
     // The overlay stays in the graph so Three.js keeps refreshing it; it simply stops drawing.
     for (const mesh of overlay) {
       expect(mesh.parent).toBe(hud);

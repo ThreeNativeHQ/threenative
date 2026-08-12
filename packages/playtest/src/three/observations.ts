@@ -61,11 +61,7 @@ function rendererPerformance(
   renderer: IThreePlaytestRenderer,
 ): IPlaytestObservationSnapshot["performance"] {
   const render = renderer.info?.render;
-  const drawCalls = finiteNumber(render?.drawCalls)
-    ? render.drawCalls
-    : finiteNumber(render?.calls)
-      ? render.calls
-      : undefined;
+  const drawCalls = finiteNumber(render?.drawCalls) ? render.drawCalls : undefined;
   const triangles = finiteNumber(render?.triangles) ? render.triangles : undefined;
   if (drawCalls === undefined && triangles === undefined) return undefined;
   return {

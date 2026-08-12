@@ -34,7 +34,9 @@
     "round:next": "tsx scripts/round-next.ts",
     "round:deletions": "tsx scripts/round-deletions.ts",
     "profile:starter": "tsx scripts/profile-starter.ts",
-    "profile:production": "node packages/runtime-native/scripts/profile-production.mjs"
+    "profile:production": "node packages/runtime-native/scripts/profile-production.mjs",
+    "profile:native-cpu": "tsx scripts/profile-native-cpu.ts",
+    "profile:native-cpu:fox": "xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --visual-evidence fox-scale --allow-software"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 1,
+  "prd": "PRD-075-render-workload-advisor",
+  "evidenceDate": "2026-08-11",
+  "privacyPolicy": "checked-in summary excludes absolute local paths, raw pass tokens, object/material names, user content, and raw bulky artifacts; raw artifacts are local ignored files referenced by hash only",
+  "sources": [
+    {
+      "command": "xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --headed --verify-presentation --render-advisor --objects 4000 --render-mode independent,distinct-materials,instanced,merged,scene-collapse --passes 1 --hierarchy flat --dirty 10 --visibility all-visible --repeats 3 --samples 120 --warmup-frames 60 --warmup-ms 0 --output-dir artifacts/prd-075-render-advisor-fresh/matrix-1pass",
+      "evidence": "visual-verified",
+      "rawFile": "artifacts/prd-075-render-advisor-fresh/matrix-1pass/profile-1786517175608.json",
+      "rawFileSha256": "ae612993bde4f8fdca0ef1d62ba8cebda5ca24b1960f1af78d5990cc5e7a0e34",
+      "recordedAt": "2026-08-12T06:46:15.608Z",
+      "source": {
+        "branch": "experiment/native-cpu-profiling",
+        "dirty": true,
+        "sha": "e83a0fa1b680ca618db6389f3d3b96aa98280ed2"
+      }
+    },
+    {
+      "command": "xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --headed --verify-presentation --render-advisor --objects 4000 --render-mode independent --passes 2 --hierarchy flat --dirty 10 --visibility all-visible --repeats 3 --samples 120 --warmup-frames 60 --warmup-ms 0 --output-dir artifacts/prd-075-render-advisor-fresh/matrix-2pass",
+      "evidence": "visual-verified",
+      "rawFile": "artifacts/prd-075-render-advisor-fresh/matrix-2pass/profile-1786517201897.json",
+      "rawFileSha256": "68a6bde2c7137343306fcb969ce29b296b86769f8a97182dae0047c90e94311e",
+      "recordedAt": "2026-08-12T06:46:41.897Z",
+      "source": {
+        "branch": "experiment/native-cpu-profiling",
+        "dirty": true,
+        "sha": "e83a0fa1b680ca618db6389f3d3b96aa98280ed2"
+      }
+    },
+    {
+      "command": "xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --visual-evidence fox-scale --allow-software --render-advisor --render-mode scene-collapse --output-dir artifacts/prd-075-render-advisor-fresh/fox",
+      "evidence": "visual-verified",
+      "rawFile": "artifacts/prd-075-render-advisor-fresh/fox/profile-1786517229485.json",
+      "rawFileSha256": "d873a87dbd13f02a1180a88f34d48bb184717a76d3517449d4a70163f51fda07",
+      "recordedAt": "2026-08-12T06:47:09.485Z",
+      "source": {
+        "branch": "experiment/native-cpu-profiling",
+        "dirty": true,
+        "sha": "e83a0fa1b680ca618db6389f3d3b96aa98280ed2"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 1,
+        "renderMode": "independent",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/independent/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": ["TN_RENDER_ADVISE_INSTANCE_COMPATIBLE"],
+      "deterministicReportHashes": [
+        "eb65f2cdb05e5519b96a036c49d15fe9d0983e8bb26fe69ad7c8de119fdde1ed"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 9.9,
+        "p95": 11
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 4001,
+        "advisorDrawCallsMedian": 4001,
+        "rendererTrianglesMedian": 48001,
+        "advisorTrianglesMedian": 48001,
+        "renderMedianMs": 7.8,
+        "frameMedianMs": 8.6,
+        "snapshotRenderablesMedian": 4000
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 1,
+        "renderMode": "distinct-materials",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/distinct-materials/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [],
+      "deterministicReportHashes": [
+        "da8bbd3fcfd74a5d8c8ef8c0fd5849765037a67220fbde46927b6585bf85ab07"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 14.3,
+        "p95": 15
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 4001,
+        "advisorDrawCallsMedian": 4001,
+        "rendererTrianglesMedian": 48001,
+        "advisorTrianglesMedian": 48001,
+        "renderMedianMs": 11.9,
+        "frameMedianMs": 12.66,
+        "snapshotRenderablesMedian": 4000
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 1,
+        "renderMode": "instanced",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/instanced/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [],
+      "deterministicReportHashes": [
+        "11b44f8a477246aae5e1183ea56b47951996ae31d0dfa130ec5d08262e4bf9d6"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 1.1,
+        "p95": 1.2
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 2,
+        "advisorDrawCallsMedian": 2,
+        "rendererTrianglesMedian": 48001,
+        "advisorTrianglesMedian": 48001,
+        "renderMedianMs": 0.2,
+        "frameMedianMs": 0.42,
+        "snapshotRenderablesMedian": 1
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 1,
+        "renderMode": "merged",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/merged/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [],
+      "deterministicReportHashes": [
+        "05764e7765cdd969e4147afb09a2e695b40809447446ad3486171a93460d9963"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 1,
+        "p95": 1
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 2,
+        "advisorDrawCallsMedian": 2,
+        "rendererTrianglesMedian": 48001,
+        "advisorTrianglesMedian": 48001,
+        "renderMedianMs": 0.2,
+        "frameMedianMs": 0.42,
+        "snapshotRenderablesMedian": 1
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 1,
+        "renderMode": "scene-collapse",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/scene-collapse/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [],
+      "deterministicReportHashes": [
+        "f7c044f01dd594d069a5a50c86b9350fa17afcfceb2f77c5866f2c4cdd6d8d20"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 1,
+        "p95": 1
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 3,
+        "advisorDrawCallsMedian": 3,
+        "rendererTrianglesMedian": 48001,
+        "advisorTrianglesMedian": 48001,
+        "renderMedianMs": 0.1,
+        "frameMedianMs": 0.44,
+        "snapshotRenderablesMedian": 2
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 4000,
+        "passes": 2,
+        "renderMode": "independent",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "matrix/4000/independent/passes-2/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [
+        "TN_RENDER_ADVISE_INSTANCE_COMPATIBLE",
+        "TN_RENDER_ADVISE_REPEATED_PASS"
+      ],
+      "deterministicReportHashes": [
+        "6df0ea8f58e2d4bf1b6458ff62257a2e8533f81ae60a67889a1f85dc3242349c"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 9.1,
+        "p95": 9.7
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 8002,
+        "advisorDrawCallsMedian": 8002,
+        "rendererTrianglesMedian": 96002,
+        "advisorTrianglesMedian": 96002,
+        "renderMedianMs": 14.2,
+        "frameMedianMs": 15.16,
+        "snapshotRenderablesMedian": 4000
+      }
+    },
+    {
+      "scenario": {
+        "dirtyRatio": 0.1,
+        "hierarchy": "flat",
+        "objectCount": 1850,
+        "passes": 1,
+        "renderMode": "scene-collapse",
+        "rendererStages": false,
+        "renderAdvisor": true,
+        "samples": 120,
+        "scenario": "fox-scale",
+        "seed": 90210,
+        "visibility": "all-visible",
+        "warmupFrames": 60
+      },
+      "scenarioKey": "fox-scale/1850/scene-collapse/passes-1/flat/dirty-0.1/all-visible",
+      "repeats": 3,
+      "adapterClasses": ["hardware"],
+      "evidence": ["visual-verified"],
+      "presentationVerdict": "pass",
+      "browserErrorVerdict": "zero-browser-errors",
+      "recommendationCodes": [],
+      "deterministicReportHashes": [
+        "2bce046ae2a345efec2b1a7ebebf534a929259d8e7bc6dd99a9af0ea01c7f468"
+      ],
+      "deterministicReportHashStable": true,
+      "elapsedMs": {
+        "median": 1,
+        "p95": 1
+      },
+      "counters": {
+        "rendererDrawCallsMedian": 5,
+        "advisorDrawCallsMedian": 5,
+        "rendererTrianglesMedian": 36101,
+        "advisorTrianglesMedian": 36101,
+        "renderMedianMs": 0.1,
+        "frameMedianMs": 0.290909,
+        "snapshotRenderablesMedian": 4
+      }
+    }
+  ],
+  "scorecard": {
+    "intentionallyExpensiveRecallPct": 100,
+    "falsePositiveFreeSuppressionPct": 100,
+    "optimizedIncompatibleSuppressionPct": 100,
+    "rendererCounterAgreementPct": 100,
+    "deterministicReportHashPct": 100,
+    "presentationPassPct": 100,
+    "zeroBrowserErrorsPct": 100,
+    "mutationPrivacyUnitGatesPct": 100,
+    "disabledAdvisorCalls": 0,
+    "snapshotElapsedMsMedian": 1.1,
+    "snapshotElapsedMsP95": 14.3
+  }
+}
