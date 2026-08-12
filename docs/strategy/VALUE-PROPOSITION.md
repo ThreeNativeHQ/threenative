@@ -1,6 +1,6 @@
 # Value proposition — "would I use this instead of vanilla Three.js?"
 
-*Last measured 2026-08-11.*
+*Last measured 2026-08-12.*
 
 This is the only place that answers the title question. It owns the score — the five axes,
 what measures each one, the number it last returned, and whether the claim is earned yet.
@@ -52,7 +52,7 @@ useless value ledger. **Standing total: 67/100**, on a scale that is not compara
 
 | # | Axis | The claim a user would care about | Instrument | Measured | Score |
 |---|---|---|---|---|---|
-| 1 | **Start a project** | "There is something to run in a minute" | CI `scaffold-smoke`, `pnpm test:templates` | Three templates — `minimal`, `platformer`, `starter` — each scaffolded and playtested on every CI run. All pin real versions; CI asserts no `catalog:` survives scaffolding | **16/20** — gated and green, but the starter is a net *cost* below ~500 LOC (+442 on the endless-runner arm) |
+| 1 | **Start a project** | "There is something to run in a minute" | CI `scaffold-smoke`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md) | Three templates — `minimal`, `platformer`, `starter` — each scaffolded and playtested on every CI run. The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default and the CLI names every choice | **16/20** — gated and green; 42.89% of original starter lines survived, so the richer default still carries rewrite cost |
 | 2 | **Author the content** | "An agent can find and make my assets" | the two pinned MCP servers, `asset-mcp-tools.json` | `threenative-asset-mcp@0.4.0` (32 tools) and `threenative-sculpt-mcp@0.1.0` (5 tools + 31 resources) install and launch in all three templates via `.mcp.json`. Surface recorded by running the pinned server, never from its docs | **10/20** — ships and runs, **but the asset MCP's own visual-improvement gate lost to the no-MCP control**; the sculpt MCP has no preference or token telemetry at all |
 | 3 | **Know it works** | "My game is asserted, not eyeballed" | `@threenative/playtest`, exit codes | Fails closed: malformed assertion throws, missing bridge exits `2`, a pre-satisfied assertion reports `TN_PLAYTEST_ASSERTION_TRIVIAL`. Same scenario runs on device with `--target android` or `--target ios` | **18/20** — the strongest thing here; docked only because a plain Three.js project can install the same bridge |
 | 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone | **15/20** — one phone, one thermal state, **no iOS hardware**, no store release |

@@ -13,6 +13,10 @@ const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ALL_TEMPLATES = ["starter", "minimal", "platformer"] as const;
+const CLI_SOURCE = path.resolve("packages/create-threenative/src/index.ts");
+const TSX_CLI = path.resolve("node_modules/tsx/dist/cli.mjs");
+const TEMPLATE_CHOICE_LINE =
+  "Templates: minimal (smallest), starter (default), platformer. Choose with --template <name>.";
 
 /** Edits a template in place, runs the body, and always puts the file back. The scaffolder
  * resolves its own template root, so a negative control cannot be staged anywhere else. */
@@ -132,6 +136,57 @@ const PLATFORMER_PATHS = [
 ];
 
 describe("create-threenative", () => {
+  it("should scaffold the documented default with no --template", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-default-"));
+    const target = path.join(root, "my-game");
+    try {
+      const { stdout } = await run(
+        process.execPath,
+        [TSX_CLI, CLI_SOURCE, target, "--no-install"],
+        { cwd: process.cwd() },
+      );
+      const lines = stdout.split("\n");
+      expect(lines[0]).toBe(`Created starter project at ${target}`);
+      expect(lines[1]).toBe(TEMPLATE_CHOICE_LINE);
+      await expect(readFile(path.join(target, "src/ui/App.tsx"), "utf8")).resolves.toBeTruthy();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should honour --template over the default for each of the three templates", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-explicit-template-"));
+    try {
+      for (const template of ["minimal", "starter", "platformer"] as const) {
+        const target = path.join(root, template);
+        const { stdout } = await run(
+          process.execPath,
+          [TSX_CLI, CLI_SOURCE, target, "--template", template, "--no-install"],
+          { cwd: process.cwd() },
+        );
+        expect(stdout.split("\n")[0]).toBe(`Created ${template} project at ${target}`);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should keep the existing created-project stdout line unchanged", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-stdout-"));
+    const target = path.join(root, "my-game");
+    try {
+      const { stdout } = await run(
+        process.execPath,
+        [TSX_CLI, CLI_SOURCE, target, "--template", "minimal", "--no-install"],
+        { cwd: process.cwd() },
+      );
+      expect(stdout.split("\n")[0]).toBe(`Created minimal project at ${target}`);
+      expect(stdout.split("\n")[1]).toBe(TEMPLATE_CHOICE_LINE);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("should generate the starter tree without catalog protocols", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-scaffold-"));
     try {

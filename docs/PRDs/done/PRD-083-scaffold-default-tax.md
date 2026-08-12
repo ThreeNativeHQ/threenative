@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-083 — The default scaffold is the expensive one: `pnpm create threenative` hands a small game 1,073 lines when 483 would do
 
-**Status: PROPOSED, 2026-08-12. Nothing here is executed.** §1 is a code read of the tree at
-commit `5a5604e` and `wc -l` output taken 2026-08-12, plus a quotation from
-[VALUE-PROPOSITION.md](../../strategy/VALUE-PROPOSITION.md). No scaffold has been run for this
-document and **no template source is edited in Phase 0**. No mobile-readiness, device or iOS
-claim is made.
+**Status: COMPLETE, 2026-08-12.** Resolution B kept `starter` as the default and added one
+line that names all template choices. Executed evidence is recorded in
+[`scaffold-default-2026-08-12.md`](../../verification/scaffold-default-2026-08-12.md). Browser
+template playtests ran; no native host or device ran, so no desktop, mobile, Android, or iOS
+readiness claim is made.
 
 **The first command a user runs picks a template for them, and picks the one the project's own
 value ledger says is a net loss at small sizes.**
@@ -87,8 +87,8 @@ This is a framework defect, not a template defect. The fix belongs in
 no-flag scaffold produces.** A default is a silent input to every caller that omits it, so the
 census comes before the change, not after.
 
-**Census taken 2026-08-12 at `5a5604e`, and it is good news** — every existing caller is
-explicit, so none of them moves:
+The planning census at `5a5604e` claimed every existing caller was explicit. The execution
+rerun found an existing implicit test caller and one omitted explicit production caller:
 
 | Caller | Passes `template`? |
 |---|---|
@@ -100,26 +100,31 @@ explicit, so none of them moves:
 | `.github/workflows/native-platforms.yml:177`, `:238` | yes, `starter` / `minimal` |
 | `.github/workflows/native-release.yml:302`, `:446` | yes, `--template minimal` |
 | `packages/runtime-native/tests/starter-desktop.test.mjs:44` | asserts the workflow text contains `--template starter` |
+| `packages/create-threenative/__tests__/scaffold.spec.ts` | no; existing test-only call |
+| `packages/runtime-native/scripts/profile-production.mjs` | yes, `platformer` |
+
+The implicit test caller activated the specified safe fallback to Resolution B. Production
+callers remain explicit, and `scripts/make-sandbox.ts` retains its separate default.
 
 **Phase 1 re-runs this census before editing `index.ts:185` and stops if a single caller has
 become implicit.** An implicit caller is a behaviour change hiding behind a one-line diff.
 
 Also binding, and each is an acceptance criterion:
 
-- [ ] `scripts/make-sandbox.ts`'s own `"starter"` default is **not** changed. It is a separate
+- [x] `scripts/make-sandbox.ts`'s own `"starter"` default is **not** changed. It is a separate
       knob for a separate job.
-- [ ] The existing stdout line `Created ${template} project at ${target}` keeps its exact
+- [x] The existing stdout line `Created ${template} project at ${target}` keeps its exact
       shape. Resolution B **appends** a line; it does not reword or reorder an existing one.
-- [ ] `--template` continues to outrank the default for all three names, proved by a test per
+- [x] `--template` continues to outrank the default for all three names, proved by a test per
       template, not by one test on the new default.
-- [ ] `--no-install`, `--core-package` and every other flag parse identically. `parseArgs`
+- [x] `--no-install`, `--core-package` and every other flag parse identically. `parseArgs`
       keeps its current shape and its existing test at
       `packages/create-threenative/__tests__/scaffold.spec.ts:278` passes unedited.
-- [ ] `ScaffoldTemplate` keeps all three names and `TEMPLATE_NAMES` keeps its order. No
+- [x] `ScaffoldTemplate` keeps all three names and `TEMPLATE_NAMES` keeps its order. No
       template is removed, renamed, deprecated or hidden.
-- [ ] `pnpm test:templates` covers all three templates after the change, not only the new
+- [x] `pnpm test:templates` covers all three templates after the change, not only the new
       default, and CI's `scaffold-smoke` still scaffolds every template it scaffolds today.
-- [ ] The unknown-template error messages at `index.ts:187` and `:232` keep naming all three.
+- [x] The unknown-template error messages at `index.ts:187` and `:232` keep naming all three.
 
 **If any of the above cannot hold, resolution B (print the choice, keep the default) ships
 instead of A.** The user's benefit here is worth one line of code, not one behaviour change
@@ -136,19 +141,19 @@ records which and why.
 | User cost | a user wanting more types one flag | one extra line of output | none |
 | Risk | a first-run experience with less to look at | the line is ignored, nothing changes | axis 1 stays at 16/20 |
 
-**Recommendation, pending Phase 0: A plus the printed line from B.** Default to the cheap
-template, and name the richer ones in one line of scaffold output so the choice is visible at
-the moment it is free.
+**Executed resolution: B.** The file-level measurement retained 15/18 starter paths, and the
+implicit test caller independently triggered the safe fallback. `starter` remains the
+default; one appended line makes every choice visible.
 
 **Key decisions:**
 
-- [ ] **No interactive prompt, no wizard, no new CLI vocabulary.** A bespoke CLI is a closed
+- [x] **No interactive prompt, no wizard, no new CLI vocabulary.** A bespoke CLI is a closed
       question and this PRD does not reopen it. One printed line and a flag that already
       exists.
-- [ ] **No template source is edited.** Not trimmed, not merged, not refactored.
-- [ ] The number in Phase 0 decides between A, B and C. **If it says C, this PRD is closed as
+- [x] **No template source is edited.** Not trimmed, not merged, not refactored.
+- [x] The number in Phase 0 decides between A, B and C. **If it says C, this PRD is closed as
       rejected and that is a successful outcome**, recorded with its evidence.
-- [ ] Whatever ships, the default is stated in `README.md` where a user reads it, once.
+- [x] Whatever ships, the default is stated in `README.md` where a user reads it, once.
 
 ## 4. Integration Ledger
 
@@ -252,29 +257,29 @@ grep -rn "template" .github/workflows/*.yml | head
 
 **Evidence required:**
 
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green
-- [ ] `pnpm test:templates` green — all three templates, not only the new default
-- [ ] `pnpm budgets` green; template LOC reported, never capped
-- [ ] Phase 0's number recorded with the commands that produced it
-- [ ] Both Phase 1 negative controls observed red with their commands
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green
+- [x] `pnpm test:templates` green — all three templates, not only the new default
+- [x] `pnpm budgets` green; template LOC reported, never capped
+- [x] Phase 0's number recorded with the commands that produced it
+- [x] Both Phase 1 negative controls observed red with their commands
 
 ## 7. Acceptance criteria
 
 Consumer-scoped.
 
-- [ ] **A user who runs `pnpm create threenative my-game` with no flags gets the template the
+- [x] **A user who runs `pnpm create threenative my-game` with no flags gets the template the
       evidence supports**, and the choice is named in the output.
-- [ ] **Reverting the default turns a test red**, proved by running it.
-- [ ] **`git diff --stat packages/create-threenative/templates` is empty.** No template source
+- [x] **Reverting the default turns a test red**, proved by running it.
+- [x] **`git diff --stat packages/create-threenative/templates` is empty.** No template source
       was edited by this PRD.
-- [ ] **No functionality regression.** Every box in §2's no-regression constraint is checked,
-      the caller census was re-run before the edit and matched, and `pnpm test`,
+- [x] **No functionality regression.** Every box in §2's no-regression constraint is checked,
+      the caller census was re-run before the edit, its mismatch selected Resolution B, and
+      `pnpm test`,
       `pnpm test:templates` and CI's `scaffold-smoke` cover the same three templates they cover
       today. Any single failure here downgrades the change to resolution B.
-- [ ] **Phase 0's number is in a dated verification file**, and axis 1 in
+- [x] **Phase 0's number is in a dated verification file**, and axis 1 in
       `VALUE-PROPOSITION.md` cites it rather than the inherited sweep figure.
-- [ ] If Phase 0 said resolution C, **this PRD is closed as rejected with the number attached**
-      and no code changed.
+- [x] Resolution C was not selected; its no-code closure condition was not applicable.
 
 **What this PRD may not claim:** that any template is better, that axis 1 is now 20/20, or
 that scaffold time improved. It changes which files a user starts with, and says how many.

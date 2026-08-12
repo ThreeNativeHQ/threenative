@@ -254,6 +254,9 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
 async function main(): Promise<void> {
   const result = await createProject(parseArgs(process.argv.slice(2)));
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
+  process.stdout.write(
+    "Templates: minimal (smallest), starter (default), platformer. Choose with --template <name>.\n",
+  );
   if (!result.installed)
     process.stdout.write("Skipped install (--no-install). Run pnpm install, then pnpm dev.\n");
   else process.stdout.write("Next: cd into the project and run pnpm dev.\n");
