@@ -222,5 +222,8 @@ Captured 2026-08-12. All four items are now shipped in the browser Studio.
 - [x] **Agent progress narration.** Reuse the validated `/api/events` lifecycle stream to show
   what the AI is doing at each game-dev step, including work started outside the current tab, with
   clear current, completed, and blocked states in the Studio flow.
+- [x] **Transcript follow control.** The chat follows newly observed steps while the reader is at
+  the latest entry, pauses when they scroll up, and offers a visible way to jump back to the latest
+  activity.
 - [x] **Console duplicate grouping.** Repeated identical console lines collapse into one row with
   a visible count, while distinct warnings and errors remain separate.
