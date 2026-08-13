@@ -74,7 +74,7 @@ backend swaps on the export condition. Write-once/run-anywhere is now owned as a
 ## Product
 
 - [product/PERFORMANCE-BUDGETS.md](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
-- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — build-time pipeline **still deferred**, neither trigger fired as of 2026-08-09; asset *discovery* is separate and is retained by product-owner decision after its live gate failed in [done/PRD-032-asset-discovery-mcp.md](PRDs/done/PRD-032-asset-discovery-mcp.md)
+- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — build-time pipeline **still deferred**, neither trigger fired as of 2026-08-09; asset *discovery* is separate and is retained by product-owner decision after its live gate failed in [done/PRD-032-asset-discovery-mcp.md](PRDs/done/PRD-032-asset-discovery-mcp.md). The shape the pipeline would take if the trigger fires is proposed, unstarted, in [PRDs/asset-pipeline/](PRDs/asset-pipeline/README.md) — proposals only, and none of them may begin before both triggers fire
 - [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
 
 ## Spikes
