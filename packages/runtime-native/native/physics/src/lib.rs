@@ -50,6 +50,62 @@ pub struct TnPhysicsCharacterOptions {
     pub one_way_layers: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TnPhysicsRayQuery {
+    pub from_x: f32,
+    pub from_y: f32,
+    pub from_z: f32,
+    pub to_x: f32,
+    pub to_y: f32,
+    pub to_z: f32,
+    pub collision_mask: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TnPhysicsRayHit {
+    pub body_id: u32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub normal_x: f32,
+    pub normal_y: f32,
+    pub normal_z: f32,
+    pub distance: f32,
+}
+
+#[repr(C)]
+pub struct TnPhysicsShapeQueryOptions {
+    pub shape_type: u32,
+    pub shape_x: f32,
+    pub shape_y: f32,
+    pub shape_z: f32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
+    pub rotation_w: f32,
+    pub collision_mask: u32,
+    pub max_results: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TnPhysicsQueryHit {
+    pub body_id: u32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RayQueryError {
+    InvalidArithmetic,
+}
+
 #[derive(Clone, Copy)]
 struct BodyEntry {
     body: RigidBodyHandle,
@@ -82,6 +138,7 @@ pub struct Simulation {
     characters: BTreeMap<u32, CharacterEntry>,
     colliding: BTreeSet<(u32, u32)>,
     events: VecDeque<[u32; EVENT_WIDTH]>,
+    query_dirty: bool,
 }
 
 impl Simulation {
@@ -108,6 +165,7 @@ impl Simulation {
             characters: BTreeMap::new(),
             colliding: BTreeSet::new(),
             events: VecDeque::new(),
+            query_dirty: true,
         })
     }
 
@@ -199,6 +257,7 @@ impl Simulation {
                 sensor: options.sensor,
             },
         );
+        self.query_dirty = true;
         true
     }
 
@@ -264,6 +323,7 @@ impl Simulation {
         self.colliding
             .retain(|(left, right)| *left != id && *right != id);
         self.characters.remove(&id);
+        self.query_dirty = true;
         true
     }
 
@@ -277,6 +337,9 @@ impl Simulation {
         let body = &mut self.bodies[entry.body];
         body.set_translation(vector![x, y, z], true);
         body.set_next_kinematic_translation(vector![x, y, z]);
+        self.bodies
+            .propagate_modified_body_positions_to_colliders(&mut self.colliders);
+        self.query_dirty = true;
         true
     }
 
@@ -418,7 +481,25 @@ impl Simulation {
             self.events.push_back([pair.0, pair.1, 0, 1]);
         }
         self.colliding = current;
+        self.query_dirty = false;
         true
+    }
+
+    fn refresh_query_pipeline(&mut self) {
+        if !self.query_dirty {
+            return;
+        }
+        let modified: Vec<_> = self.entries.values().map(|entry| entry.collider).collect();
+        let mut events = Vec::new();
+        self.broad_phase.update(
+            &self.integration,
+            &self.colliders,
+            &self.bodies,
+            &modified,
+            &[],
+            &mut events,
+        );
+        self.query_dirty = false;
     }
 
     fn write_character_states(&self, output: &mut [f32]) -> Option<usize> {
@@ -470,6 +551,258 @@ impl Simulation {
             }
         }
         pairs
+    }
+
+    fn intersect_ray(
+        &mut self,
+        query: TnPhysicsRayQuery,
+    ) -> Result<Option<TnPhysicsRayHit>, RayQueryError> {
+        self.refresh_query_pipeline();
+        let direction = vector![
+            query.to_x - query.from_x,
+            query.to_y - query.from_y,
+            query.to_z - query.from_z
+        ];
+        let scale = direction
+            .x
+            .abs()
+            .max(direction.y.abs())
+            .max(direction.z.abs());
+        if !scale.is_finite() || scale == 0.0 {
+            return Err(RayQueryError::InvalidArithmetic);
+        }
+        let scaled_direction = direction / scale;
+        let scaled_distance = scaled_direction.norm();
+        if !scaled_distance.is_finite() || scaled_distance == 0.0 {
+            return Err(RayQueryError::InvalidArithmetic);
+        }
+        let distance = scale * scaled_distance;
+        if !distance.is_finite() || distance == 0.0 {
+            return Err(RayQueryError::InvalidArithmetic);
+        }
+        let ray = Ray::new(
+            point![query.from_x, query.from_y, query.from_z],
+            scaled_direction / scaled_distance,
+        );
+        let predicate = |handle: ColliderHandle, collider: &Collider| {
+            self.entries.values().any(|entry| entry.collider == handle)
+                && !collider.is_sensor()
+                && (collider.collision_groups().memberships.bits() & query.collision_mask) != 0
+        };
+        let filter = QueryFilter {
+            flags: QueryFilterFlags::EXCLUDE_SENSORS,
+            predicate: Some(&predicate),
+            ..QueryFilter::default()
+        };
+        let pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            filter,
+        );
+        let Some((collider, intersection)) =
+            pipeline.cast_ray_and_get_normal(&ray, distance, true)
+        else {
+            return Ok(None);
+        };
+        let Some(body_id) = self
+            .entries
+            .iter()
+            .find_map(|(id, entry)| (entry.collider == collider).then_some(*id))
+        else {
+            return Ok(None);
+        };
+        let position = ray.point_at(intersection.time_of_impact);
+        let hit = TnPhysicsRayHit {
+            body_id,
+            position_x: position.x,
+            position_y: position.y,
+            position_z: position.z,
+            normal_x: intersection.normal.x,
+            normal_y: intersection.normal.y,
+            normal_z: intersection.normal.z,
+            distance: intersection.time_of_impact,
+        };
+        if [
+            hit.position_x,
+            hit.position_y,
+            hit.position_z,
+            hit.normal_x,
+            hit.normal_y,
+            hit.normal_z,
+            hit.distance,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+        {
+            Ok(Some(hit))
+        } else {
+            Err(RayQueryError::InvalidArithmetic)
+        }
+    }
+
+    fn query_shape(options: &TnPhysicsShapeQueryOptions) -> Option<SharedShape> {
+        let dimensions = [options.shape_x, options.shape_y, options.shape_z];
+        if !dimensions.into_iter().all(f32::is_finite) {
+            return None;
+        }
+        match options.shape_type {
+            0 if options.shape_x > 0.0
+                && options.shape_y > 0.0
+                && options.shape_z > 0.0 =>
+            {
+                Some(SharedShape::cuboid(
+                    options.shape_x,
+                    options.shape_y,
+                    options.shape_z,
+                ))
+            }
+            1 if options.shape_x > 0.0 => Some(SharedShape::ball(options.shape_x)),
+            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
+                Some(SharedShape::capsule_y(options.shape_x, options.shape_y))
+            }
+            _ => None,
+        }
+    }
+
+    fn query_pose(options: &TnPhysicsShapeQueryOptions) -> Option<Isometry<Real>> {
+        let values = [
+            options.position_x,
+            options.position_y,
+            options.position_z,
+            options.rotation_x,
+            options.rotation_y,
+            options.rotation_z,
+            options.rotation_w,
+        ];
+        if !values.into_iter().all(f32::is_finite) {
+            return None;
+        }
+        let norm = options.rotation_x * options.rotation_x
+            + options.rotation_y * options.rotation_y
+            + options.rotation_z * options.rotation_z
+            + options.rotation_w * options.rotation_w;
+        if norm <= f32::EPSILON {
+            return None;
+        }
+        Some(Isometry::from_parts(
+            Translation::new(
+                options.position_x,
+                options.position_y,
+                options.position_z,
+            ),
+            UnitQuaternion::new_normalize(Quaternion::new(
+                options.rotation_w,
+                options.rotation_x,
+                options.rotation_y,
+                options.rotation_z,
+            )),
+        ))
+    }
+
+    fn intersect_shape(
+        &mut self,
+        options: TnPhysicsShapeQueryOptions,
+    ) -> Option<Vec<TnPhysicsQueryHit>> {
+        self.refresh_query_pipeline();
+        if options.max_results == 0 {
+            return None;
+        }
+        let shape = Self::query_shape(&options)?;
+        let pose = Self::query_pose(&options)?;
+        let predicate = |handle: ColliderHandle, collider: &Collider| {
+            self.entries.values().any(|entry| entry.collider == handle)
+                && !collider.is_sensor()
+                && (collider.collision_groups().memberships.bits() & options.collision_mask) != 0
+        };
+        let filter = QueryFilter {
+            flags: QueryFilterFlags::EXCLUDE_SENSORS,
+            predicate: Some(&predicate),
+            ..QueryFilter::default()
+        };
+        let pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            filter,
+        );
+        let mut hits = Vec::with_capacity(options.max_results as usize);
+        for (collider, _) in pipeline.intersect_shape(pose, shape.as_ref()) {
+            let Some((body_id, entry)) = self
+                .entries
+                .iter()
+                .find(|(_, entry)| entry.collider == collider)
+            else {
+                continue;
+            };
+            let position = self.bodies[entry.body].translation();
+            hits.push(TnPhysicsQueryHit {
+                body_id: *body_id,
+                position_x: position.x,
+                position_y: position.y,
+                position_z: position.z,
+            });
+            if hits.len() == options.max_results as usize {
+                break;
+            }
+        }
+        Some(hits)
+    }
+
+    fn intersect_point(
+        &mut self,
+        position_x: f32,
+        position_y: f32,
+        position_z: f32,
+        collision_mask: u32,
+        max_results: u32,
+    ) -> Option<Vec<TnPhysicsQueryHit>> {
+        self.refresh_query_pipeline();
+        if max_results == 0
+            || ![position_x, position_y, position_z]
+                .into_iter()
+                .all(f32::is_finite)
+        {
+            return None;
+        }
+        let point = point![position_x, position_y, position_z];
+        let predicate = |handle: ColliderHandle, collider: &Collider| {
+            self.entries.values().any(|entry| entry.collider == handle)
+                && !collider.is_sensor()
+                && (collider.collision_groups().memberships.bits() & collision_mask) != 0
+        };
+        let filter = QueryFilter {
+            flags: QueryFilterFlags::EXCLUDE_SENSORS,
+            predicate: Some(&predicate),
+            ..QueryFilter::default()
+        };
+        let pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            filter,
+        );
+        let mut hits = Vec::with_capacity(max_results as usize);
+        for (collider, _) in pipeline.intersect_point(point) {
+            let Some((body_id, entry)) = self
+                .entries
+                .iter()
+                .find(|(_, entry)| entry.collider == collider)
+            else {
+                continue;
+            };
+            let position = self.bodies[entry.body].translation();
+            hits.push(TnPhysicsQueryHit {
+                body_id: *body_id,
+                position_x: position.x,
+                position_y: position.y,
+                position_z: position.z,
+            });
+            if hits.len() == max_results as usize {
+                break;
+            }
+        }
+        Some(hits)
     }
 }
 
@@ -669,6 +1002,88 @@ pub extern "C" fn tn_physics_read_area_intersections(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_intersect_ray(
+    simulation: *mut Simulation,
+    query: *const TnPhysicsRayQuery,
+    output: *mut TnPhysicsRayHit,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, query.is_null()) else {
+        return -1;
+    };
+    let hit = match simulation.intersect_ray(unsafe { ptr::read(query) }) {
+        Err(RayQueryError::InvalidArithmetic) => return -1,
+        Ok(None) => return 0,
+        Ok(Some(hit)) => hit,
+    };
+    if output.is_null() {
+        return -1;
+    }
+    unsafe { ptr::write(output, hit) };
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_intersect_shape(
+    simulation: *mut Simulation,
+    query: *const TnPhysicsShapeQueryOptions,
+    output: *mut TnPhysicsQueryHit,
+    output_capacity: usize,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, query.is_null()) else {
+        return -1;
+    };
+    let query = unsafe { ptr::read(query) };
+    if query.max_results == 0 || output_capacity < query.max_results as usize {
+        return -1;
+    }
+    let Some(hits) = simulation.intersect_shape(query) else {
+        return -1;
+    };
+    if hits.len() > output_capacity || (hits.len() > 0 && output.is_null()) {
+        return -1;
+    }
+    for (index, hit) in hits.iter().enumerate() {
+        unsafe { ptr::write(output.add(index), *hit) };
+    }
+    hits.len() as i32
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_intersect_point(
+    simulation: *mut Simulation,
+    position_x: f32,
+    position_y: f32,
+    position_z: f32,
+    collision_mask: u32,
+    max_results: u32,
+    output: *mut TnPhysicsQueryHit,
+    output_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_mut() }) else {
+        return -1;
+    };
+    if max_results == 0 || output_capacity < max_results as usize {
+        return -1;
+    }
+    let Some(hits) = simulation.intersect_point(
+        position_x,
+        position_y,
+        position_z,
+        collision_mask,
+        max_results,
+    ) else {
+        return -1;
+    };
+    if hits.len() > output_capacity || (hits.len() > 0 && output.is_null()) {
+        return -1;
+    }
+    for (index, hit) in hits.iter().enumerate() {
+        unsafe { ptr::write(output.add(index), *hit) };
+    }
+    hits.len() as i32
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_drain_collision_events(
     simulation: *mut Simulation,
     output: *mut u32,
@@ -705,6 +1120,269 @@ pub extern "C" fn tn_physics_destroy(simulation: *mut Simulation) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixed_box(id: u32, x: f32, y: f32, layer: u32) -> TnPhysicsBodyOptions {
+        TnPhysicsBodyOptions {
+            id,
+            body_type: 1,
+            shape_type: 0,
+            position_x: x,
+            position_y: y,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 0.0,
+            collision_layer: layer,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        }
+    }
+
+    #[test]
+    fn spatial_queries_report_numeric_hits_and_apply_masks_and_bounds() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 4.0, 0.0, 1)));
+        assert!(simulation.add_body(fixed_box(1, 6.0, 0.0, 2)));
+        for id in 0..20 {
+            assert!(simulation.add_body(fixed_box(id + 2, id as f32, 10.0, 1)));
+        }
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        let hit = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 0.0,
+                from_z: 0.0,
+                to_x: 10.0,
+                to_y: 0.0,
+                to_z: 0.0,
+                collision_mask: 1,
+            })
+            .expect("valid ray arithmetic")
+            .expect("ray should hit the first box");
+        assert_eq!(hit.body_id, 0);
+        assert!((hit.distance - 3.5).abs() < 1.0e-6);
+        assert!((hit.position_x - 3.5).abs() < 1.0e-6);
+        assert_eq!(hit.normal_x, -1.0);
+        assert_eq!(hit.normal_y, 0.0);
+        assert_eq!(hit.normal_z, 0.0);
+        assert!(simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 5.5,
+                from_y: 0.0,
+                from_z: 0.0,
+                to_x: 7.0,
+                to_y: 0.0,
+                to_z: 0.0,
+                collision_mask: 1,
+            })
+            .expect("clear ray arithmetic")
+            .is_none());
+        assert!(simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 20.0,
+                from_z: 0.0,
+                to_x: 10.0,
+                to_y: 20.0,
+                to_z: 0.0,
+                collision_mask: 1,
+            })
+            .expect("masked ray arithmetic")
+            .is_none());
+
+        let hits = simulation
+            .intersect_shape(TnPhysicsShapeQueryOptions {
+                shape_type: 1,
+                shape_x: 50.0,
+                shape_y: 0.0,
+                shape_z: 0.0,
+                position_x: 0.0,
+                position_y: 0.0,
+                position_z: 0.0,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                collision_mask: 1,
+                max_results: 16,
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 16);
+        let point_hits = simulation
+            .intersect_point(4.0, 0.0, 0.0, 1, 16)
+            .unwrap();
+        assert_eq!(point_hits.len(), 1);
+        assert_eq!(point_hits[0].body_id, 0);
+    }
+
+    #[test]
+    fn native_shape_and_point_queries_report_misses_and_apply_masks() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 0.0, 0.0, 1)));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        let query = |position_x, position_y, position_z, collision_mask| {
+            TnPhysicsShapeQueryOptions {
+                shape_type: 1,
+                shape_x: 0.5,
+                shape_y: 0.0,
+                shape_z: 0.0,
+                position_x,
+                position_y,
+                position_z,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                collision_mask,
+                max_results: 16,
+            }
+        };
+        assert!(simulation
+            .intersect_shape(query(100.0, 100.0, 100.0, 1))
+            .unwrap()
+            .is_empty());
+        assert!(simulation
+            .intersect_shape(query(0.0, 0.0, 0.0, 2))
+            .unwrap()
+            .is_empty());
+        assert!(simulation
+            .intersect_point(100.0, 100.0, 100.0, 1, 16)
+            .unwrap()
+            .is_empty());
+        assert!(simulation
+            .intersect_point(0.0, 0.0, 0.0, 2, 16)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn spatial_queries_see_attached_collider_after_immediate_teleport() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, -4.0, 0.0, 1)));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        assert_eq!(
+            simulation
+                .intersect_point(-4.0, 0.0, 0.0, 1, 16)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(simulation.set_body_transform(0, 4.0, 0.0, 0.0));
+
+        assert!(simulation
+            .intersect_point(-4.0, 0.0, 0.0, 1, 16)
+            .unwrap()
+            .is_empty());
+        let hits = simulation.intersect_point(4.0, 0.0, 0.0, 1, 16).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].body_id, 0);
+    }
+
+    #[test]
+    fn accepts_nonzero_ray_with_underflowing_norm_and_rejects_exact_zero() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 0.0, 0.0, 1)));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        let short_length = 1.0e-30_f32;
+        let short_hit = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 0.0,
+                from_z: 0.0,
+                to_x: short_length,
+                to_y: 0.0,
+                to_z: 0.0,
+                collision_mask: 1,
+            })
+            .expect("a nonzero short ray must have valid arithmetic")
+            .expect("a nonzero short ray must reach the native query pipeline");
+        assert_eq!(short_hit.body_id, 0);
+        assert!(short_length > 0.0);
+        assert!(
+            simulation
+                .intersect_ray(TnPhysicsRayQuery {
+                    from_x: 0.0,
+                    from_y: 0.0,
+                    from_z: 0.0,
+                    to_x: 0.0,
+                    to_y: 0.0,
+                    to_z: 0.0,
+                    collision_mask: 1,
+                })
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_finite_ray_endpoints_when_subtraction_is_unrepresentable() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let query = TnPhysicsRayQuery {
+            from_x: -f32::MAX,
+            from_y: 0.0,
+            from_z: 0.0,
+            to_x: f32::MAX,
+            to_y: 0.0,
+            to_z: 0.0,
+            collision_mask: 1,
+        };
+        assert!(matches!(
+            simulation.intersect_ray(query),
+            Err(RayQueryError::InvalidArithmetic)
+        ));
+
+        let mut output = TnPhysicsRayHit {
+            body_id: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            normal_x: 0.0,
+            normal_y: 0.0,
+            normal_z: 0.0,
+            distance: 0.0,
+        };
+        assert_eq!(
+            tn_physics_intersect_ray(
+                &mut simulation,
+                &query,
+                &mut output,
+            ),
+            -1
+        );
+    }
 
     #[test]
     fn arbitrary_body_ids_and_kinematic_bulk_input_are_supported() {

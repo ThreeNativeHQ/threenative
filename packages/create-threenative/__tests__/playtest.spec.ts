@@ -37,7 +37,7 @@ describe("starter playtest proof", () => {
         path.resolve("packages/create-threenative/templates/platformer/package.json"),
         "utf8",
       ),
-    ) as { scripts: { "test:playtest": string } };
+    ) as { scripts: { "test:playtest": string; "test:terminal-loop": string } };
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -65,6 +65,8 @@ describe("starter playtest proof", () => {
     ) as { warmupFrames: number };
 
     expect(packageJson.scripts["test:playtest"]).toContain("chase.playtest.json");
+    expect(packageJson.scripts["test:terminal-loop"]).toContain("terminal-loop-win.playtest.json");
+    expect(packageJson.scripts["test:terminal-loop"]).toContain("terminal-loop-fail.playtest.json");
     expect([scenario.warmupFrames, avoidance.warmupFrames]).toEqual([0, 0]);
     expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
     expect(scenario.assert.movement).toMatchObject({
@@ -95,6 +97,36 @@ describe("starter playtest proof", () => {
     expect(packageJson.scripts["test:playtest"]).toContain("physics.playtest.json");
     expect(scenario.steps).toContainEqual(expect.objectContaining({ label: "settled" }));
     expect(scenario.assert.settled).toEqual([{ atStep: "settled", entity: "crate", minBodies: 1 }]);
+  });
+
+  it("should ship numeric and signal assertions for both terminal outcomes", async () => {
+    const root = path.resolve("packages/create-threenative/templates/platformer");
+    const win = JSON.parse(
+      await readFile(path.join(root, "playtests/terminal-loop-win.playtest.json"), "utf8"),
+    ) as { assert: { resources: unknown[]; signals: unknown[] } };
+    const fail = JSON.parse(
+      await readFile(path.join(root, "playtests/terminal-loop-fail.playtest.json"), "utf8"),
+    ) as { assert: { resources: unknown[]; signals: unknown[] } };
+
+    expect(win.assert.resources).toContainEqual({
+      changed: true,
+      equals: 1,
+      id: "GameState",
+      path: "terminal",
+    });
+    expect(win.assert.resources).toContainEqual({
+      atSteps: [{ equals: true, label: "reach-goal" }],
+      id: "GameState",
+      path: "grounded",
+    });
+    expect(win.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "won" });
+    expect(fail.assert.resources).toContainEqual({
+      changed: true,
+      equals: 2,
+      id: "GameState",
+      path: "terminal",
+    });
+    expect(fail.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "lost" });
   });
 
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {

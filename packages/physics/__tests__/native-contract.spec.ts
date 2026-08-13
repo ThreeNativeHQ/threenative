@@ -4,15 +4,23 @@ import { describe, expect, it, vi } from "vitest";
 import { Area3D } from "../src/Area3D.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
+import { PhysicsDirectSpaceState3D } from "../src/PhysicsDirectSpaceState3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
+import * as webEntry from "../src/index.js";
 import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
 import {
   Area3D as NativeArea3D,
   CharacterBody3D as NativeCharacterBody3D,
   CollisionShape3D as NativeCollisionShape3D,
+  PhysicsDirectSpaceState3D as NativePhysicsDirectSpaceState3D,
   RigidBody3D as NativeRigidBody3D,
 } from "../src/native/index.js";
-import { PHYSICS_SLEEP_STATE_STRIDE, createWebPhysicsSimulation } from "../src/simulation.js";
+import * as nativeEntry from "../src/native/index.js";
+import {
+  MAX_PHYSICS_QUERY_RESULTS,
+  PHYSICS_SLEEP_STATE_STRIDE,
+  createWebPhysicsSimulation,
+} from "../src/simulation.js";
 
 function bodyOptions(type: "dynamic" | "fixed" = "dynamic") {
   return {
@@ -26,11 +34,16 @@ function bodyOptions(type: "dynamic" | "fixed" = "dynamic") {
 }
 
 describe("native physics contract", () => {
+  it("keeps web and native runtime entry-point exports in parity", () => {
+    expect(Object.keys(nativeEntry).sort()).toEqual(Object.keys(webEntry).sort());
+  });
+
   it("exports one shared class for every public node", () => {
     expect(NativeArea3D).toBe(Area3D);
     expect(NativeCharacterBody3D).toBe(CharacterBody3D);
     expect(NativeCollisionShape3D).toBe(CollisionShape3D);
     expect(NativeRigidBody3D).toBe(RigidBody3D);
+    expect(NativePhysicsDirectSpaceState3D).toBe(PhysicsDirectSpaceState3D);
   });
 
   it("rejects native shapes outside the ABI before calling the host", () => {
@@ -221,5 +234,107 @@ describe("native physics contract", () => {
 
     web.dispose();
     expect(() => web.readBodySleepStates(new Float32Array(0))).toThrow(/disposed/i);
+  });
+
+  it("rejects oversized maxResults before reaching native allocations", () => {
+    const intersectShape = vi.fn(() => []);
+    const intersectPoint = vi.fn(() => []);
+    const native = createNativePhysicsSimulation(
+      { intersectPoint, intersectShape } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const shape = CollisionShape3D.sphere(1).descriptor;
+    const oversized = 2 ** 32;
+
+    expect(
+      native.intersectShape({
+        collisionMask: 1,
+        maxResults: MAX_PHYSICS_QUERY_RESULTS,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        shape,
+      }),
+    ).toEqual([]);
+    expect(
+      native.intersectPoint({
+        collisionMask: 1,
+        maxResults: MAX_PHYSICS_QUERY_RESULTS,
+        position: { x: 0, y: 0, z: 0 },
+      }),
+    ).toEqual([]);
+    expect(() =>
+      native.intersectShape({
+        collisionMask: 1,
+        maxResults: oversized,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        shape,
+      }),
+    ).toThrow(/maxResults/);
+    expect(() =>
+      native.intersectPoint({
+        collisionMask: 1,
+        maxResults: oversized,
+        position: { x: 0, y: 0, z: 0 },
+      }),
+    ).toThrow(/maxResults/);
+    expect(intersectShape).toHaveBeenCalledTimes(1);
+    expect(intersectPoint).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps native query records through the shared simulation boundary", () => {
+    const raw = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectPoint: vi.fn().mockReturnValue([{ bodyId: 0, position: { x: 1, y: 2, z: 3 } }]),
+      intersectRay: vi.fn().mockReturnValue({
+        bodyId: 0,
+        distance: 3.5,
+        normal: { x: -1, y: 0, z: 0 },
+        position: { x: 3.5, y: 0, z: 0 },
+      }),
+      intersectShape: vi.fn().mockReturnValue([{ bodyId: 0, position: { x: 1, y: 2, z: 3 } }]),
+    };
+    const native = createNativePhysicsSimulation(raw as unknown as INativeSimulation, "0.30.0");
+    const shape = CollisionShape3D.sphere(1);
+    const registration = native.createBody({
+      entity: "player",
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: shape.descriptor,
+      type: "fixed",
+    });
+
+    expect(
+      native.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 10, y: 0, z: 0 },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({ entity: "player", id: registration.body.id }),
+        distance: 3.5,
+        normal: { x: -1, y: 0, z: 0 },
+        position: { x: 3.5, y: 0, z: 0 },
+      }),
+    );
+    expect(
+      native.intersectShape({
+        collisionMask: 1,
+        maxResults: 16,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        shape: shape.descriptor,
+      })[0]?.entity,
+    ).toBe("player");
+    expect(
+      native.intersectPoint({
+        collisionMask: 1,
+        maxResults: 16,
+        position: { x: 0, y: 0, z: 0 },
+      })[0]?.body.id,
+    ).toBe(0);
   });
 });

@@ -1,0 +1,99 @@
+{
+  "name": "action-rpg-progress-restore-through-game",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "equip-before-save",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move-to-checkpoint",
+      "press": "KeyD",
+      "holdTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "damage-before-save",
+      "press": "KeyH",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "input", "label": "checkpoint", "press": "KeyC", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "saved", "waitTicks": 5, "release": true },
+    { "kind": "input", "label": "reload-game", "press": "KeyR", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "restored", "waitTicks": 12, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "saveCount",
+        "atSteps": [{ "label": "checkpoint", "equals": 2 }, { "label": "restored", "equals": 2 }]
+      },
+      {
+        "id": "GameState",
+        "path": "health",
+        "atSteps": [
+          { "label": "damage-before-save", "equals": 77 },
+          { "label": "restored", "equals": 77 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "equippedItem",
+        "atSteps": [{ "label": "restored", "equals": "ember-blade" }]
+      },
+      {
+        "id": "GameState",
+        "path": "damage",
+        "atSteps": [{ "label": "checkpoint", "equals": 18 }, { "label": "restored", "equals": 18 }]
+      },
+      {
+        "id": "GameState",
+        "path": "playerX",
+        "atSteps": [
+          { "label": "checkpoint", "equals": -5.44 },
+          { "label": "restored", "equals": -5.44 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "playerY",
+        "atSteps": [
+          { "label": "checkpoint", "equals": 0.78 },
+          { "label": "restored", "equals": 0.78 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "playerZ",
+        "atSteps": [{ "label": "checkpoint", "equals": 0 }, { "label": "restored", "equals": 0 }]
+      }
+    ],
+    "components": [
+      { "entity": "player", "component": "health", "equals": 77, "changed": true },
+      { "entity": "player", "component": "equippedItem", "equals": "ember-blade", "changed": true },
+      { "entity": "player", "component": "position", "changed": true }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5,
+      "reachesPositionWithin": {
+        "atStep": "restored",
+        "position": [-5.44, 0.78, 0],
+        "maxDistance": 0.01
+      }
+    },
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

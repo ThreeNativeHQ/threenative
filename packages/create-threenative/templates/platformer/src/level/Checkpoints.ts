@@ -42,7 +42,7 @@ export class Checkpoints {
   }
 
   hurt(target: RespawnTarget, fromX: number): boolean {
-    if (this.#invulnerable > 0) return false;
+    if (this.#invulnerable > 0 || this.hearts <= 0) return false;
     this.hearts -= 1;
     this.#invulnerable = this.#feel.invulnerabilityTime;
     const away = Math.sign(target.mesh.position.x - fromX) || -1;
@@ -51,14 +51,11 @@ export class Checkpoints {
       this.#feel.hurtVerticalSpeed,
       0,
     );
-    if (this.hearts <= 0) {
-      this.hearts = this.maxHearts;
-      this.respawn(target);
-    }
     return true;
   }
 
   respawn(target: RespawnTarget): void {
+    if (this.hearts <= 0) return;
     const point = this.points[this.currentIndex];
     if (point === undefined) throw new Error(`Missing checkpoint ${this.currentIndex}.`);
     target.body.velocity.set(0, 0, 0);

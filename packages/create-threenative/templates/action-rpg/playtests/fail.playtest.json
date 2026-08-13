@@ -1,0 +1,25 @@
+{
+  "name": "action-rpg-fail-condition",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "forced-death", "press": "KeyX", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "failed", "waitTicks": 8, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "runtimeDiagnosticsOptOutReason": "The fail-condition scenario is authoritative; gameplay assertions remain required.",
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "gameOver", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "phase", "equals": "lost", "changed": true },
+      { "id": "GameState", "path": "health", "equals": 0, "changed": true }
+    ],
+    "signals": [{ "name": "died", "entity": "player", "minCount": 1, "atStep": "forced-death" }]
+  }
+}

@@ -12,6 +12,20 @@ import {
 import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 
 type VectorTuple = readonly [number, number, number];
+interface ISpatialQueryObservation {
+  readonly clearHitCount: number;
+  readonly maskedHitCount: number;
+  readonly pointCount: number;
+  readonly pointMaskedHitCount: number;
+  readonly pointMissCount: number;
+  readonly rayDistance: number;
+  readonly rayNormal: VectorTuple;
+  readonly rayPosition: VectorTuple;
+  readonly shapeCount: number;
+  readonly shapeMaskedHitCount: number;
+  readonly shapeMissCount: number;
+}
+
 interface IScenarioBody {
   readonly id: number;
   readonly name: string;
@@ -71,6 +85,7 @@ interface IParityObservation extends Record<string, unknown> {
     oneWayPassedUpward: boolean;
     platformGroundedObserved: boolean;
   };
+  spatialQuery: ISpatialQueryObservation;
   steps: number;
 }
 interface IPhysicsState extends Record<string, unknown> {
@@ -96,10 +111,13 @@ let area: Area3D | undefined;
 let character: CharacterBody3D | undefined;
 let dynamicBox: RigidBody3D | undefined;
 let initialCharacterPosition: VectorTuple = [0, 0, 0];
+let initialDynamicBoxPosition: VectorTuple = [0, 0, 0];
 let completedSteps = 0;
 let rapierVersion = "pending";
 let characterMaxY = Number.NEGATIVE_INFINITY;
 let platformGroundedObserved = false;
+let spatialQueryLogged = false;
+let invalidRayChecked = false;
 let markSceneReady: (() => void) | undefined;
 const sceneReady = new Promise<void>((resolve) => {
   markSceneReady = resolve;
@@ -124,6 +142,92 @@ function logicalPair(left: number, right: number, started: number): string {
 
 function position(body: PhysicsBody3D): VectorTuple {
   return [body.object.position.x, body.object.position.y, body.object.position.z];
+}
+
+const spatialQueryShape = CollisionShape3D.sphere(0.1);
+
+function verifyNativeInvalidRay(space: IPhysicsContext["directSpaceState"]): void {
+  if (__TN_RUNTIME__ !== "native" || invalidRayChecked) return;
+  const f32Max = 3.4028234663852886e38;
+  try {
+    space.intersectRay({
+      collisionMask: 1,
+      from: { x: -f32Max, y: 0, z: 0 },
+      to: { x: f32Max, y: 0, z: 0 },
+    });
+  } catch {
+    invalidRayChecked = true;
+    console.info("TN_NATIVE_PHYSICS_INVALID_RAY_THROW");
+    return;
+  }
+  throw new Error("TN_NATIVE_PHYSICS_INVALID_RAY_DID_NOT_THROW");
+}
+
+function spatialQuery(space: IPhysicsContext["directSpaceState"]): ISpatialQueryObservation {
+  const ray = space.intersectRay({
+    collisionMask: 1,
+    from: { x: 0, y: 2, z: 1 },
+    to: { x: 0, y: -2, z: 1 },
+  });
+  if (ray === undefined) throw new Error("TN_PHYSICS_SPATIAL_QUERY_RAY_MISSING");
+  const clear = space.intersectRay({
+    collisionMask: 1,
+    from: { x: 0, y: 2, z: 1 },
+    to: { x: 0, y: 2, z: -5 },
+  });
+  const masked = space.intersectRay({
+    collisionMask: 2,
+    from: { x: 0, y: 2, z: 1 },
+    to: { x: 0, y: -2, z: 1 },
+  });
+  const shape = space.intersectShape({
+    collisionMask: 1,
+    maxResults: 16,
+    position: { x: 0, y: -0.2, z: 1 },
+    shape: spatialQueryShape,
+  });
+  const point = space.intersectPoint({
+    collisionMask: 1,
+    maxResults: 16,
+    position: { x: 0, y: -0.2, z: 1 },
+  });
+  const shapeMiss = space.intersectShape({
+    collisionMask: 1,
+    maxResults: 16,
+    position: { x: 100, y: 100, z: 100 },
+    shape: spatialQueryShape,
+  });
+  const shapeMasked = space.intersectShape({
+    collisionMask: 2,
+    maxResults: 16,
+    position: { x: 0, y: -0.2, z: 1 },
+    shape: spatialQueryShape,
+  });
+  const pointMiss = space.intersectPoint({
+    collisionMask: 1,
+    maxResults: 16,
+    position: { x: 100, y: 100, z: 100 },
+  });
+  const pointMasked = space.intersectPoint({
+    collisionMask: 2,
+    maxResults: 16,
+    position: { x: 0, y: -0.2, z: 1 },
+  });
+  verifyNativeInvalidRay(space);
+  const round = (value: number) => Number(value.toFixed(6));
+  return {
+    clearHitCount: clear === undefined ? 0 : 1,
+    maskedHitCount: masked === undefined ? 0 : 1,
+    pointCount: point.length,
+    pointMaskedHitCount: pointMasked.length,
+    pointMissCount: pointMiss.length,
+    rayDistance: round(ray.distance),
+    rayNormal: [round(ray.normal.x), round(ray.normal.y), round(ray.normal.z)],
+    rayPosition: [round(ray.position.x), round(ray.position.y), round(ray.position.z)],
+    shapeCount: shape.length,
+    shapeMaskedHitCount: shapeMasked.length,
+    shapeMissCount: shapeMiss.length,
+  };
 }
 
 function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
@@ -166,6 +270,7 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
       if (scenario.checkpoints.includes(step)) areaSnapshots.push(members.join(","));
       const state = simulation.readCharacterState?.(currentCharacter.body.id);
       const characterPosition = position(currentCharacter);
+      const query = spatialQuery(ctx.physics.directSpaceState);
       characterMaxY = Math.max(characterMaxY, characterPosition[1]);
       if (
         state?.grounded === true &&
@@ -173,35 +278,46 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
         logicalName(state.groundCollider) === "movingPlatform"
       )
         platformGroundedObserved = true;
-      ctx.state.set({
-        parity: {
-          areaMembership: members,
-          areaMembershipSnapshots: [...areaSnapshots],
-          characterDisplacement: [
-            characterPosition[0] - initialCharacterPosition[0],
-            characterPosition[1] - initialCharacterPosition[1],
-            characterPosition[2] - initialCharacterPosition[2],
-          ],
-          collisionEventSet: [...collisionEvents].sort(),
-          control: __TN_PHYSICS_CONTROL__,
-          groundCollider:
-            state?.groundCollider === undefined ? null : logicalName(state.groundCollider),
-          grounded: state?.grounded ?? false,
-          rapierVersion,
-          restingPosition: position(currentBox),
-          runtime: __TN_RUNTIME__,
-          scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
-          scenarioCoverage: {
-            areaExcludedCharacter: !members.includes("character"),
-            oneWayPassedUpward: characterMaxY > 1.23,
-            platformGroundedObserved,
-          },
-          steps: completedSteps,
+      const parity: IParityObservation = {
+        areaMembership: members,
+        areaMembershipSnapshots: [...areaSnapshots],
+        characterDisplacement: [
+          characterPosition[0] - initialCharacterPosition[0],
+          characterPosition[1] - initialCharacterPosition[1],
+          characterPosition[2] - initialCharacterPosition[2],
+        ],
+        collisionEventSet: [...collisionEvents].sort(),
+        control: __TN_PHYSICS_CONTROL__,
+        groundCollider:
+          state?.groundCollider === undefined ? null : logicalName(state.groundCollider),
+        grounded: state?.grounded ?? false,
+        rapierVersion,
+        restingPosition: position(currentBox),
+        runtime: __TN_RUNTIME__,
+        scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
+        scenarioCoverage: {
+          areaExcludedCharacter: !members.includes("character"),
+          oneWayPassedUpward: characterMaxY > 1.23,
+          platformGroundedObserved,
         },
-      });
+        spatialQuery: query,
+        steps: completedSteps,
+      };
+      ctx.state.set({ parity });
+      if (!spatialQueryLogged) {
+        spatialQueryLogged = true;
+        console.info(`TN_NATIVE_PHYSICS_QUERY:${JSON.stringify(query)}`);
+      }
       if (completedSteps === scenario.steps)
         console.info(
           `TN_NATIVE_PHYSICS_PARITY:${__TN_RUNTIME__}:${__TN_PHYSICS_SCENARIO_SHA256__}`,
+        );
+      if (completedSteps === scenario.steps)
+        console.info(
+          `TN_NATIVE_PHYSICS_PLAYTEST:${JSON.stringify({
+            movement: { after: position(currentBox), before: initialDynamicBoxPosition },
+            parity,
+          })}`,
         );
     },
   };
@@ -250,6 +366,19 @@ const initialParity: IParityObservation = {
     areaExcludedCharacter: false,
     oneWayPassedUpward: false,
     platformGroundedObserved: false,
+  },
+  spatialQuery: {
+    clearHitCount: 0,
+    maskedHitCount: 0,
+    pointCount: 0,
+    pointMaskedHitCount: 0,
+    pointMissCount: 0,
+    rayDistance: 0,
+    rayNormal: [0, 0, 0],
+    rayPosition: [0, 0, 0],
+    shapeCount: 0,
+    shapeMaskedHitCount: 0,
+    shapeMissCount: 0,
   },
   steps: 0,
 };
@@ -318,7 +447,9 @@ class NativePhysicsParity extends Scene<IPhysicsState, IPhysicsContext> {
     }
     if (area?.body.id !== scenario.bodies.find((body) => body.sensor)?.id)
       throw new Error("TN_PHYSICS_PARITY_AREA_ID");
+    if (dynamicBox === undefined) throw new Error("TN_PHYSICS_PARITY_DYNAMIC_BODY_MISSING");
     initialCharacterPosition = position(character as CharacterBody3D);
+    initialDynamicBoxPosition = position(dynamicBox);
     characterMaxY = initialCharacterPosition[1];
     markSceneReady?.();
 

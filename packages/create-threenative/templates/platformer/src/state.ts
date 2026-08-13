@@ -1,3 +1,11 @@
+export const TERMINAL = {
+  playing: 0,
+  won: 1,
+  lost: 2,
+} as const;
+
+export type TerminalState = (typeof TERMINAL)[keyof typeof TERMINAL];
+
 export type GameState = {
   checkpoint: number;
   coins: number;
@@ -8,6 +16,8 @@ export type GameState = {
   jumps: number;
   peakRise: number;
   playerX: number;
+  grounded: boolean;
   respawns: number;
+  terminal: TerminalState;
   topSpeed: number;
 };

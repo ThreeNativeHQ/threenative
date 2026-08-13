@@ -73,6 +73,21 @@ bool readGroup(js::Engine *engine, js::JSValueHandle object, const char *name,
   return true;
 }
 
+bool readMaxResults(js::Engine *engine, js::JSValueHandle object,
+                    uint32_t &output) {
+  const auto value = engine->getProperty(object, "maxResults");
+  if (!engine->isNumber(value))
+    return false;
+  const double number = engine->toNumber(value);
+  if (!std::isfinite(number) || number < 1 ||
+      number > std::numeric_limits<uint32_t>::max() ||
+      std::floor(number) != number) {
+    return false;
+  }
+  output = static_cast<uint32_t>(number);
+  return true;
+}
+
 bool readVector(js::Engine *engine, js::JSValueHandle parent,
                 const char *name, float &x, float &y, float &z) {
   const auto value = engine->getProperty(parent, name);
@@ -229,6 +244,95 @@ bool parseCharacterOptions(js::Engine *engine, js::JSValueHandle value,
     options.snap_to_ground = static_cast<float>(engine->toNumber(snap));
   }
   return true;
+}
+
+bool parseRayQuery(js::Engine *engine, js::JSValueHandle value,
+                   TnPhysicsRayQuery &query) {
+  if (!engine->isObject(value))
+    return false;
+  query = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0xffff};
+  if (!readVector(engine, value, "from", query.from_x, query.from_y,
+                  query.from_z) ||
+      !readVector(engine, value, "to", query.to_x, query.to_y, query.to_z) ||
+      !readGroup(engine, value, "collisionMask", query.collision_mask))
+    return false;
+  return query.from_x != query.to_x || query.from_y != query.to_y ||
+         query.from_z != query.to_z;
+}
+
+bool parseShapeQuery(js::Engine *engine, js::JSValueHandle value,
+                     TnPhysicsShapeQueryOptions &query) {
+  if (!engine->isObject(value))
+    return false;
+  query = {0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+           1.0f, 0xffff, 16};
+  const auto shape = engine->getProperty(value, "shape");
+  if (!engine->isObject(shape))
+    return false;
+  const auto kind = engine->getProperty(shape, "kind");
+  if (!engine->isString(kind))
+    return false;
+  const std::string shapeName = engine->toString(kind);
+  if (shapeName == "box")
+    query.shape_type = 0;
+  else if (shapeName == "sphere")
+    query.shape_type = 1;
+  else if (shapeName == "capsule")
+    query.shape_type = 2;
+  else
+    return false;
+  return readFiniteNumber(engine, shape, "x", query.shape_x) &&
+         readFiniteNumber(engine, shape, "y", query.shape_y) &&
+         readFiniteNumber(engine, shape, "z", query.shape_z) &&
+         readVector(engine, value, "position", query.position_x,
+                    query.position_y, query.position_z) &&
+         readQuaternion(engine, value, "rotation", query.rotation_x,
+                        query.rotation_y, query.rotation_z,
+                        query.rotation_w) &&
+         readGroup(engine, value, "collisionMask", query.collision_mask) &&
+         readMaxResults(engine, value, query.max_results);
+}
+
+bool parsePointQuery(js::Engine *engine, js::JSValueHandle value,
+                     float &x, float &y, float &z, uint32_t &mask,
+                     uint32_t &maxResults) {
+  if (!engine->isObject(value))
+    return false;
+  mask = 0xffff;
+  return readVector(engine, value, "position", x, y, z) &&
+         readGroup(engine, value, "collisionMask", mask) &&
+         readMaxResults(engine, value, maxResults);
+}
+
+js::JSValueHandle makeVector(js::Engine *engine, float x, float y, float z) {
+  auto vector = engine->newObject();
+  engine->setProperty(vector, "x", engine->newNumber(x));
+  engine->setProperty(vector, "y", engine->newNumber(y));
+  engine->setProperty(vector, "z", engine->newNumber(z));
+  return vector;
+}
+
+js::JSValueHandle makeQueryHit(js::Engine *engine,
+                               const TnPhysicsQueryHit &hit) {
+  auto result = engine->newObject();
+  engine->setProperty(result, "bodyId", engine->newNumber(hit.body_id));
+  engine->setProperty(
+      result, "position",
+      makeVector(engine, hit.position_x, hit.position_y, hit.position_z));
+  return result;
+}
+
+js::JSValueHandle makeRayHit(js::Engine *engine, const TnPhysicsRayHit &hit) {
+  auto result = engine->newObject();
+  engine->setProperty(result, "bodyId", engine->newNumber(hit.body_id));
+  engine->setProperty(
+      result, "position",
+      makeVector(engine, hit.position_x, hit.position_y, hit.position_z));
+  engine->setProperty(
+      result, "normal",
+      makeVector(engine, hit.normal_x, hit.normal_y, hit.normal_z));
+  engine->setProperty(result, "distance", engine->newNumber(hit.distance));
+  return result;
 }
 
 js::JSValueHandle makeSimulationObject(
@@ -451,6 +555,99 @@ js::JSValueHandle makeSimulationObject(
             if (count < 0)
               return fail(engine, "area intersection buffer is too small");
             return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "intersectRay",
+      engine->newFunction(
+          "intersectRay",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.size() < 2)
+              return fail(engine, "intersectRay requires query options and output");
+            if (!isTypedArray(engine, args[1], "Float32Array"))
+              return fail(engine, "intersectRay requires a Float32Array output");
+            size_t bytes = 0;
+            auto *data = static_cast<float *>(
+                engine->getArrayBufferData(args[1], &bytes));
+            if (bytes < 8 * sizeof(float))
+              return fail(engine, "intersectRay output buffer is too small");
+            TnPhysicsRayQuery query{};
+            if (!parseRayQuery(engine, args[0], query))
+              return fail(engine, "intersectRay query options are invalid");
+            TnPhysicsRayHit hit{};
+            const int32_t status =
+                tn_physics_intersect_ray(owner->simulation, &query, &hit);
+            if (status < 0)
+              return fail(engine,
+                          "intersectRay query arithmetic is invalid or unrepresentable");
+            if (status == 0)
+              return engine->newNumber(0);
+            if (status != 1)
+              return fail(engine, "intersectRay returned an invalid status");
+            data[0] = static_cast<float>(hit.body_id);
+            data[1] = hit.position_x;
+            data[2] = hit.position_y;
+            data[3] = hit.position_z;
+            data[4] = hit.normal_x;
+            data[5] = hit.normal_y;
+            data[6] = hit.normal_z;
+            data[7] = hit.distance;
+            return engine->newNumber(1);
+          }));
+  engine->setProperty(
+      simulation, "intersectShape",
+      engine->newFunction(
+          "intersectShape",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty())
+              return fail(engine, "intersectShape requires query options");
+            TnPhysicsShapeQueryOptions query{};
+            if (!parseShapeQuery(engine, args[0], query))
+              return fail(engine, "intersectShape query options are invalid");
+            std::vector<TnPhysicsQueryHit> hits(query.max_results);
+            const int32_t count = tn_physics_intersect_shape(
+                owner->simulation, &query, hits.data(), hits.size());
+            if (count < 0)
+              return fail(engine, "intersectShape query was rejected");
+            auto result = engine->newArray(static_cast<size_t>(count));
+            for (int32_t index = 0; index < count; index += 1)
+              engine->setPropertyIndex(result, static_cast<uint32_t>(index),
+                                       makeQueryHit(engine, hits[index]));
+            return result;
+          }));
+  engine->setProperty(
+      simulation, "intersectPoint",
+      engine->newFunction(
+          "intersectPoint",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty())
+              return fail(engine, "intersectPoint requires query options");
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            uint32_t mask = 0xffff;
+            uint32_t maxResults = 16;
+            if (!parsePointQuery(engine, args[0], x, y, z, mask, maxResults))
+              return fail(engine, "intersectPoint query options are invalid");
+            std::vector<TnPhysicsQueryHit> hits(maxResults);
+            const int32_t count = tn_physics_intersect_point(
+                owner->simulation, x, y, z, mask, maxResults, hits.data(),
+                hits.size());
+            if (count < 0)
+              return fail(engine, "intersectPoint query was rejected");
+            auto result = engine->newArray(static_cast<size_t>(count));
+            for (int32_t index = 0; index < count; index += 1)
+              engine->setPropertyIndex(result, static_cast<uint32_t>(index),
+                                       makeQueryHit(engine, hits[index]));
+            return result;
           }));
   engine->setProperty(
       simulation, "drainCollisionEvents",

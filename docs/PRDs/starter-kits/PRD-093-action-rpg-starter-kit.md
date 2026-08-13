@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-093 — An `action-rpg` starter kit: the home for the two abstractions PRD-087 rejected, and the only kit that exercises `@threenative/ui`
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
+**Status: IMPLEMENTED; generated browser evidence recorded 2026-08-12.** Desktop execution is
+covered by the batch record; no mobile readiness is claimed.
 **Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
 **Depends on:** [PRD-088](./PRD-088-physics-spatial-queries.md),
 [PRD-091](./PRD-091-genre-kit-delivery-rail.md).

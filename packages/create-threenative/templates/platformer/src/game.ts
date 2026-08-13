@@ -1,11 +1,13 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
+import type { IPhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
 import { drainPlaytestEvents as events } from "./playtest-events.js";
 import { Boot } from "./scenes/Boot.js";
 import { Level } from "./scenes/Level.js";
-export default defineGame({
+import type { GameState } from "./state.js";
+export default defineGame<GameState, IPhysicsContext>({
   input: {
     dash: { buttons: [7], down: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], down: ["Space"] },

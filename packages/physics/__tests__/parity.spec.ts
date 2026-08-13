@@ -167,6 +167,9 @@ function validationAdapters(): {
     removeBody: vi.fn(),
     setBodyTransform: vi.fn(),
     step: vi.fn(),
+    intersectRay: vi.fn(() => 0),
+    intersectShape: vi.fn(() => []),
+    intersectPoint: vi.fn(() => []),
   };
   const web = createSimulation();
   const native = createNativePhysicsSimulation(raw, "0.30.0");
@@ -494,6 +497,9 @@ describe("native adapter freshness", () => {
       removeBody: vi.fn(),
       setBodyTransform: vi.fn(),
       step: vi.fn(),
+      intersectRay: vi.fn(() => 0),
+      intersectShape: vi.fn(() => []),
+      intersectPoint: vi.fn(() => []),
     };
     const simulation = createNativePhysicsSimulation(raw, "0.30.0");
     const createBody = (type: "character" | "dynamic" | "kinematic", sensor = false) =>

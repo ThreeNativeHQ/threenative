@@ -1,0 +1,52 @@
+{
+  "name": "platformer-terminal-loop-win",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 16, "release": true },
+    {
+      "kind": "input",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    { "kind": "wait", "waitTicks": 16, "release": true },
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdTicks": 170,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jump-final",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reach-goal",
+      "press": "ArrowRight",
+      "holdTicks": 80,
+      "release": true
+    },
+    { "kind": "wait", "label": "win-settled", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "terminal", "equals": 1, "changed": true },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "atSteps": [{ "label": "reach-goal", "equals": true }]
+      },
+      { "id": "GameState", "path": "playerX", "gte": 21.5, "changed": true }
+    ],
+    "signals": [{ "entity": "game", "name": "won", "minCount": 1 }]
+  }
+}

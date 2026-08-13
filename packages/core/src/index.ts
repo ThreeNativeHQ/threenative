@@ -17,6 +17,12 @@ export type {
   IGamePlatformSource,
 } from "./game.js";
 export { GPUParticles3D } from "./particles.js";
+export { PathFollow3D } from "./path-follow.js";
+export type {
+  IPathFollow3DOptions,
+  IPathFollow3DProjection,
+  IPathFollow3DSample,
+} from "./path-follow.js";
 export { ScenePicker } from "./picking.js";
 export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
 export { createReplayDriver, replay } from "./replay.js";

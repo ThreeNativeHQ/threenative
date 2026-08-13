@@ -18,10 +18,11 @@ import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
 import { crate as crateMesh } from "../render/terrain.js";
 import { TouchControls } from "../render/touch-controls.js";
-import type { GameState } from "../state.js";
+import { type GameState, TERMINAL, type TerminalState } from "../state.js";
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 const SPAWN = new Vector3(0, 0.75, 0);
 const KILL_PLANE = -8;
+const GOAL_X = 21.5;
 export class Level extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState = {
     checkpoint: 0,
@@ -33,7 +34,9 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     jumps: 0,
     peakRise: 0,
     playerX: SPAWN.x,
+    grounded: false,
     respawns: 0,
+    terminal: TERMINAL.playing,
     topSpeed: 0,
   };
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -134,16 +137,21 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     );
     patrols.push({ id: "patrol", value: patrol });
     ctx.entities.add("patrol", patrol);
-    const chaser = new Chaser(ctx, character, new Vector3(7.5, 0.66, 0));
-    const avoidanceChaser = new Chaser(ctx, character, new Vector3(8.2, 0.66, 0.7));
+    const chaser = new Chaser(ctx, new Vector3(7.5, 0.66, 0));
+    const avoidanceChaser = new Chaser(ctx, new Vector3(8.2, 0.66, 0.7));
     chaser.mesh.userData.peer = avoidanceChaser.mesh;
     avoidanceChaser.mesh.userData.peer = chaser.mesh;
     ctx.entities.add("chaser", chaser);
     ctx.entities.add("chaser.avoidance", avoidanceChaser);
     followCamera(spawn, 1);
     let elapsed = 0;
-    return (frameCtx, dt) => {
-      loading.update();
+    let terminal: TerminalState = TERMINAL.playing;
+    const finish = (next: TerminalState): void => {
+      if (terminal !== TERMINAL.playing) return;
+      terminal = next;
+      emitPlaytestEvent({ entity: "game", name: next === TERMINAL.won ? "won" : "lost" });
+    };
+    const updatePlaying = (frameCtx: GameCtx, dt: number): void => {
       elapsed += dt;
       character.update(
         frameCtx,
@@ -160,10 +168,24 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       if (character.mesh.position.y < KILL_PLANE) checkpoints.respawn(character);
       removeCollected();
       removeDefeated();
+    };
+    return (frameCtx, dt) => {
+      loading.update();
+      if (terminal === TERMINAL.playing) {
+        updatePlaying(frameCtx, dt);
+        if (checkpoints.hearts <= 0) finish(TERMINAL.lost);
+        else if (character.mesh.position.x >= GOAL_X && character.body.grounded)
+          finish(TERMINAL.won);
+      }
       const rise = Math.max(0, character.mesh.position.y - SPAWN.y);
       const speed = Math.hypot(character.body.velocity.x, character.body.velocity.z);
       const previous = frameCtx.state.getState();
-      hud.update({ counter: coins, primary: checkpoints.hearts, seconds: elapsed });
+      hud.update({
+        counter: coins,
+        primary: checkpoints.hearts,
+        seconds: elapsed,
+        terminal,
+      });
       frameCtx.state.set({
         checkpoint: checkpoints.currentIndex,
         coins,
@@ -174,7 +196,9 @@ export class Level extends Scene<GameState, IPhysicsContext> {
         jumps: character.jumps,
         peakRise: Math.max(previous.peakRise, rise),
         playerX: character.mesh.position.x,
+        grounded: character.body.grounded,
         respawns: checkpoints.respawns,
+        terminal,
         topSpeed: Math.max(previous.topSpeed, speed),
       } as Partial<GameState>);
       followCamera(character.mesh.position, dt);

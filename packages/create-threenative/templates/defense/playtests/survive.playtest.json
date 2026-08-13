@@ -1,0 +1,26 @@
+{
+  "name": "defense-survive-ten-waves",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "tower.0",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "input", "label": "tower-one", "press": "KeyB", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "tower-two", "press": "KeyB", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "tower-three", "press": "KeyB", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "ten-waves", "waitTicks": 1200, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "status", "equals": "WON", "changed": true },
+      { "id": "GameState", "path": "wave", "equals": 10, "changed": true },
+      { "id": "GameState", "path": "leaks", "equals": 0, "allowTrivial": true },
+      { "id": "GameState", "path": "defeated", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "spent", "equals": 120, "changed": true },
+      { "id": "GameState", "path": "shots", "gte": 1, "changed": true }
+    ]
+  }
+}

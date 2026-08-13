@@ -26,6 +26,12 @@ export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
             {state.checkpoint}
           </b>
         </span>
+        <span>
+          term{" "}
+          <b id="terminal" className="text-lume">
+            {state.terminal}
+          </b>
+        </span>
       </div>
       <div className="mt-2 text-dim">
         jumps {state.jumps} · dashes {state.dashes} · defeated {state.defeated}

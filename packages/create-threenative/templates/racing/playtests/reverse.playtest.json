@@ -1,0 +1,37 @@
+{
+  "name": "racing-reverse-finish-rejected",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "reach-mid-course",
+      "press": "ArrowUp",
+      "holdTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reverse-through-finish",
+      "press": "ArrowDown",
+      "holdTicks": 150,
+      "release": true
+    },
+    { "kind": "wait", "label": "observe-rejection", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "completedLaps",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      { "id": "GameState", "path": "reverseRejects", "gte": 1, "changed": true }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ export interface IPhysicsHandle {
 
 export interface IPhysicsBodyHandle extends IPhysicsHandle {
   readonly id: number;
+  readonly entity?: string;
 }
 
 export interface IPhysicsColliderHandle extends IPhysicsHandle {
@@ -29,8 +30,8 @@ export function physicsWorldHandle(raw: unknown, simulation: unknown): IPhysicsW
   return { raw, simulation };
 }
 
-export function physicsBodyHandle(id: number, raw: unknown): IPhysicsBodyHandle {
-  return { id, raw };
+export function physicsBodyHandle(id: number, raw: unknown, entity?: string): IPhysicsBodyHandle {
+  return { entity, id, raw };
 }
 
 export function physicsColliderHandle(id: number, raw: unknown): IPhysicsColliderHandle {

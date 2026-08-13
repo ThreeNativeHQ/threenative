@@ -16,6 +16,8 @@ export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
 
 /** One record is logical body id and a sleeping flag encoded as 0 or 1. */
 export const PHYSICS_SLEEP_STATE_STRIDE = 2;
+/** Caps native query buffers while remaining exactly representable by the native ABI. */
+export const MAX_PHYSICS_QUERY_RESULTS = 1024;
 
 export type PhysicsShapeKind =
   | "box"
@@ -48,6 +50,7 @@ export type PhysicsBodyType = "character" | "dynamic" | "fixed" | "kinematic";
 export interface IPhysicsBodyCreateOptions {
   readonly type: PhysicsBodyType;
   readonly shape: IPhysicsShapeDescriptor;
+  readonly entity?: string;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
   readonly rotation: {
     readonly x: number;
@@ -58,6 +61,50 @@ export interface IPhysicsBodyCreateOptions {
   readonly mass: number;
   /** Must match `shape.sensor`; conflicting values are rejected during body creation. */
   readonly sensor: boolean;
+}
+
+export interface IPhysicsVector3 {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+export interface IPhysicsRotation {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly w: number;
+}
+
+export interface IPhysicsRayQuery {
+  readonly from: IPhysicsVector3;
+  readonly to: IPhysicsVector3;
+  readonly collisionMask: number;
+}
+
+export interface IPhysicsShapeQuery {
+  readonly shape: IPhysicsShapeDescriptor;
+  readonly position: IPhysicsVector3;
+  readonly rotation: IPhysicsRotation;
+  readonly collisionMask: number;
+  readonly maxResults: number;
+}
+
+export interface IPhysicsPointQuery {
+  readonly position: IPhysicsVector3;
+  readonly collisionMask: number;
+  readonly maxResults: number;
+}
+
+export interface IPhysicsQueryHit {
+  readonly body: IPhysicsBodyHandle;
+  readonly entity?: string;
+  readonly position: IPhysicsVector3;
+}
+
+export interface IPhysicsRayHit extends IPhysicsQueryHit {
+  readonly normal: IPhysicsVector3;
+  readonly distance: number;
 }
 
 export interface IPhysicsBodyRegistration {
@@ -104,6 +151,9 @@ export interface IPhysicsSimulation {
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readBodySleepStates(buffer: Float32Array): number;
+  intersectRay(query: IPhysicsRayQuery): IPhysicsRayHit | undefined;
+  intersectShape(query: IPhysicsShapeQuery): readonly IPhysicsQueryHit[];
+  intersectPoint(query: IPhysicsPointQuery): readonly IPhysicsQueryHit[];
   readBodyTransform?(id: number):
     | {
         readonly position: { readonly x: number; readonly y: number; readonly z: number };
@@ -155,6 +205,7 @@ interface ISimulationBody {
   readonly id: number;
   readonly body: rapier.RigidBody;
   readonly collider: rapier.Collider;
+  readonly entity?: string;
   readonly type: PhysicsBodyType;
   controller?: rapier.KinematicCharacterController;
   controllerHandle?: IPhysicsHandle;
@@ -227,6 +278,139 @@ export function requirePhysicsBodySensor(
       `TN_PHYSICS_SENSOR_CONFLICT: options.sensor (${options.sensor}) must match shape.sensor (${options.shape.sensor}).`,
     );
   return options.sensor;
+}
+
+const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
+  "box",
+  "sphere",
+  "capsule",
+  "trimesh",
+  "convexHull",
+  "heightfield",
+]);
+
+function queryObject(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null)
+    throw new Error(`IPhysicsSimulation ${label} must be an object.`);
+  return value as Record<string, unknown>;
+}
+
+function queryVector(value: unknown, label: string): IPhysicsVector3 {
+  const object = queryObject(value, `${label} vector`);
+  const x = object.x;
+  const y = object.y;
+  const z = object.z;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof z !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(z)
+  )
+    throw new Error(`IPhysicsSimulation ${label} vector must contain finite x, y, and z values.`);
+  return { x, y, z };
+}
+
+function queryRotation(value: unknown): IPhysicsRotation {
+  const object = queryObject(value, "shape rotation");
+  const x = object.x;
+  const y = object.y;
+  const z = object.z;
+  const w = object.w;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof z !== "number" ||
+    typeof w !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(z) ||
+    !Number.isFinite(w)
+  )
+    throw new Error("IPhysicsSimulation shape rotation must contain finite x, y, z, and w values.");
+  const lengthSquared = x * x + y * y + z * z + w * w;
+  if (lengthSquared <= Number.EPSILON)
+    throw new Error("IPhysicsSimulation shape rotation must not have zero length.");
+  return { w, x, y, z };
+}
+
+export function requirePhysicsCollisionMask(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 0xffff)
+    throw new Error("IPhysicsSimulation collisionMask must be an integer from 0 through 65535.");
+  return value;
+}
+
+export function requirePhysicsMaxResults(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > MAX_PHYSICS_QUERY_RESULTS
+  )
+    throw new Error(
+      `IPhysicsSimulation maxResults must be an integer from 1 through ${MAX_PHYSICS_QUERY_RESULTS}.`,
+    );
+  return value;
+}
+
+function queryShape(value: unknown): IPhysicsShapeDescriptor {
+  const shape = queryObject(value, "query shape");
+  const kind = shape.kind;
+  if (typeof kind !== "string" || !QUERY_SHAPE_KINDS.has(kind as PhysicsShapeKind))
+    throw new Error("IPhysicsSimulation query shape has an unknown kind.");
+  const x = shape.x;
+  const y = shape.y;
+  const z = shape.z;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof z !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(z)
+  )
+    throw new Error("IPhysicsSimulation query shape dimensions must be finite.");
+  if (kind === "box" && (x <= 0 || y <= 0 || z <= 0))
+    throw new Error("IPhysicsSimulation query box dimensions must be positive.");
+  if (kind === "sphere" && x <= 0)
+    throw new Error("IPhysicsSimulation query sphere radius must be positive.");
+  if (kind === "capsule" && (x < 0 || y <= 0))
+    throw new Error("IPhysicsSimulation query capsule dimensions are invalid.");
+  return shape as unknown as IPhysicsShapeDescriptor;
+}
+
+export function requirePhysicsRayQuery(value: unknown): IPhysicsRayQuery {
+  const query = queryObject(value, "ray query");
+  const from = queryVector(query.from, "ray from");
+  const to = queryVector(query.to, "ray to");
+  if (from.x === to.x && from.y === to.y && from.z === to.z)
+    throw new Error("IPhysicsSimulation ray must have non-zero length.");
+  return {
+    collisionMask: requirePhysicsCollisionMask(query.collisionMask),
+    from,
+    to,
+  };
+}
+
+export function requirePhysicsShapeQuery(value: unknown): IPhysicsShapeQuery {
+  const query = queryObject(value, "shape query");
+  return {
+    collisionMask: requirePhysicsCollisionMask(query.collisionMask),
+    maxResults: requirePhysicsMaxResults(query.maxResults),
+    position: queryVector(query.position, "shape position"),
+    rotation: queryRotation(query.rotation),
+    shape: queryShape(query.shape),
+  };
+}
+
+export function requirePhysicsPointQuery(value: unknown): IPhysicsPointQuery {
+  const query = queryObject(value, "point query");
+  return {
+    collisionMask: requirePhysicsCollisionMask(query.collisionMask),
+    maxResults: requirePhysicsMaxResults(query.maxResults),
+    position: queryVector(query.position, "point position"),
+  };
 }
 
 export function createWebPhysicsShape(
@@ -315,12 +499,43 @@ export function createWebPhysicsSimulation(
 ): IPhysicsRuntimeSimulation {
   const bodies = new Map<number, ISimulationBody>();
   const byCollider = new Map<number, ISimulationBody>();
+  const dirtyBodies = new Set<ISimulationBody>();
   const pendingCollisionEvents: number[][] = [];
   let nextId = 0;
   let disposed = false;
 
   const requireLive = () => {
     if (disposed) throw new Error("Physics simulation is disposed.");
+  };
+
+  const queryPredicate =
+    (collisionMask: number) =>
+    (collider: rapier.Collider): boolean => {
+      const body = byCollider.get(collider.handle);
+      return (
+        body !== undefined &&
+        !dirtyBodies.has(body) &&
+        !collider.isSensor() &&
+        ((collider.collisionGroups() >>> 16) & collisionMask) !== 0
+      );
+    };
+
+  const queryMatches = (collisionMask: number, collider: rapier.Collider): boolean => {
+    const body = byCollider.get(collider.handle);
+    return (
+      body !== undefined &&
+      !collider.isSensor() &&
+      ((collider.collisionGroups() >>> 16) & collisionMask) !== 0
+    );
+  };
+
+  const queryHit = (entry: ISimulationBody): IPhysicsQueryHit => {
+    const position = entry.body.translation();
+    return {
+      body: physicsBodyHandle(entry.id, entry.body, entry.entity),
+      entity: entry.entity,
+      position: { x: position.x, y: position.y, z: position.z },
+    };
   };
 
   const simulation: IPhysicsRuntimeSimulation = {
@@ -348,6 +563,7 @@ export function createWebPhysicsSimulation(
       const entry: ISimulationBody = {
         body: rawBody,
         collider: rawCollider,
+        entity: bodyOptions.entity,
         id,
         type: bodyOptions.type,
       };
@@ -357,8 +573,9 @@ export function createWebPhysicsSimulation(
       }
       bodies.set(id, entry);
       byCollider.set(rawCollider.handle, entry);
+      dirtyBodies.add(entry);
       return {
-        body: physicsBodyHandle(id, rawBody),
+        body: physicsBodyHandle(id, rawBody, bodyOptions.entity),
         collider: physicsColliderHandle(id, rawCollider),
         controller: entry.controllerHandle,
         rawShape,
@@ -393,6 +610,7 @@ export function createWebPhysicsSimulation(
       if (entry === undefined) return;
       bodies.delete(id);
       byCollider.delete(entry.collider.handle);
+      dirtyBodies.delete(entry);
       if (entry.controller !== undefined) options.world.removeCharacterController(entry.controller);
       if (entry.body.isValid()) options.world.removeRigidBody(entry.body);
     },
@@ -402,6 +620,8 @@ export function createWebPhysicsSimulation(
       if (entry === undefined)
         throw new Error("Physics body transform references an unknown body.");
       entry.body.setTranslation(position, true);
+      options.world.propagateModifiedBodyPositionsToColliders();
+      dirtyBodies.add(entry);
     },
     step: (deltaTime, inputSnapshot) => {
       requireLive();
@@ -470,6 +690,7 @@ export function createWebPhysicsSimulation(
       }
       options.world.timestep = deltaTime;
       options.world.step(options.eventQueue);
+      dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {
       requireLive();
@@ -504,6 +725,115 @@ export function createWebPhysicsSimulation(
         index += 1;
       }
       return index;
+    },
+    intersectRay: (value) => {
+      requireLive();
+      const query = requirePhysicsRayQuery(value);
+      const dx = query.to.x - query.from.x;
+      const dy = query.to.y - query.from.y;
+      const dz = query.to.z - query.from.z;
+      const distance = Math.hypot(dx, dy, dz);
+      const ray = new options.rapier.Ray(query.from, {
+        x: dx / distance,
+        y: dy / distance,
+        z: dz / distance,
+      });
+      const hit = options.world.castRayAndGetNormal(
+        ray,
+        distance,
+        true,
+        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        undefined,
+        queryPredicate(query.collisionMask),
+      );
+      let closestCollider = hit?.collider;
+      let closestTime = hit?.timeOfImpact;
+      let closestNormal = hit?.normal;
+      for (const dirtyBody of dirtyBodies) {
+        if (!queryMatches(query.collisionMask, dirtyBody.collider)) continue;
+        const dirtyHit = dirtyBody.collider.castRayAndGetNormal(ray, distance, true);
+        if (
+          dirtyHit === null ||
+          (closestTime !== undefined && dirtyHit.timeOfImpact >= closestTime)
+        )
+          continue;
+        closestCollider = dirtyBody.collider;
+        closestTime = dirtyHit.timeOfImpact;
+        closestNormal = dirtyHit.normal;
+      }
+      if (closestCollider === undefined || closestTime === undefined || closestNormal === undefined)
+        return undefined;
+      const entry = byCollider.get(closestCollider.handle);
+      if (entry === undefined)
+        throw new Error("IPhysicsSimulation query returned an unknown body.");
+      const position = ray.pointAt(closestTime);
+      return {
+        ...queryHit(entry),
+        distance: closestTime,
+        normal: { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
+        position: { x: position.x, y: position.y, z: position.z },
+      };
+    },
+    intersectShape: (value) => {
+      requireLive();
+      const query = requirePhysicsShapeQuery(value);
+      const rawShape = createWebPhysicsShape(options.rapier, query.shape, false).shape;
+      const hits: IPhysicsQueryHit[] = [];
+      options.world.intersectionsWithShape(
+        query.position,
+        query.rotation,
+        rawShape,
+        (collider) => {
+          const entry = byCollider.get(collider.handle);
+          if (entry !== undefined && queryPredicate(query.collisionMask)(collider))
+            hits.push(queryHit(entry));
+          return hits.length < query.maxResults;
+        },
+        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        undefined,
+        queryPredicate(query.collisionMask),
+      );
+      for (const dirtyBody of dirtyBodies) {
+        if (
+          hits.length < query.maxResults &&
+          queryMatches(query.collisionMask, dirtyBody.collider) &&
+          dirtyBody.collider.intersectsShape(rawShape, query.position, query.rotation)
+        )
+          hits.push(queryHit(dirtyBody));
+      }
+      return hits;
+    },
+    intersectPoint: (value) => {
+      requireLive();
+      const query = requirePhysicsPointQuery(value);
+      const hits: IPhysicsQueryHit[] = [];
+      options.world.intersectionsWithPoint(
+        query.position,
+        (collider) => {
+          const entry = byCollider.get(collider.handle);
+          if (entry !== undefined && queryPredicate(query.collisionMask)(collider))
+            hits.push(queryHit(entry));
+          return hits.length < query.maxResults;
+        },
+        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        undefined,
+        queryPredicate(query.collisionMask),
+      );
+      for (const dirtyBody of dirtyBodies) {
+        if (
+          hits.length < query.maxResults &&
+          queryMatches(query.collisionMask, dirtyBody.collider) &&
+          dirtyBody.collider.containsPoint(query.position)
+        )
+          hits.push(queryHit(dirtyBody));
+      }
+      return hits;
     },
     readBodyTransform: (id) => {
       requireLive();
@@ -573,6 +903,7 @@ export function createWebPhysicsSimulation(
       }
       bodies.clear();
       byCollider.clear();
+      dirtyBodies.clear();
       pendingCollisionEvents.length = 0;
       options.eventQueue.free();
       options.world.free();

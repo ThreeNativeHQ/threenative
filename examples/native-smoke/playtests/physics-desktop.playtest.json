@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "name": "native-physics-rest-collision-desktop",
+  "target": "desktop",
+  "subject": "dynamicBox",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 180, "label": "settled" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "movement": {
+      "entity": "dynamicBox",
+      "minDistance": 0.5,
+      "reachesPositionWithin": {
+        "position": [0.7, 0.4, 0],
+        "maxDistance": 0.05,
+        "atStep": "settled"
+      }
+    },
+    "resources": [
+      { "id": "GameState", "path": "parity.steps", "equals": 180, "changed": true },
+      {
+        "id": "GameState",
+        "path": "parity.grounded",
+        "equals": true,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayDistance",
+        "equals": 2,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayNormal",
+        "equals": [0, 1, 0],
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayPosition",
+        "equals": [0, 0, 1],
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeCount",
+        "equals": 1,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointCount",
+        "equals": 1,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointMissCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointMaskedHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeMissCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeMaskedHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.clearHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.maskedHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      }
+    ]
+  }
+}

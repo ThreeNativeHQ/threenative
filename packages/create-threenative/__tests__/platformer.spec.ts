@@ -51,6 +51,16 @@ describe("platformer checkpoints", () => {
     expect(state.hearts).toBe(1);
   });
 
+  it("leaves hearts exhausted without respawning", () => {
+    const state = new Checkpoints(checkpoints([point(0)]), 1, feel);
+    const player = target();
+
+    expect(state.hurt(player, 0)).toBe(true);
+    expect(state.hearts).toBe(0);
+    expect(player.body.teleport).not.toHaveBeenCalled();
+    expect(state.hurt(player, 0)).toBe(false);
+  });
+
   it("advances through ordered checkpoints only", () => {
     const state = new Checkpoints(checkpoints([point(0), point(14), point(25)]), 3, feel);
 

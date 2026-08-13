@@ -1,0 +1,29 @@
+{
+  "name": "platformer-terminal-loop-fail",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 45, "release": true },
+    { "kind": "wait", "waitTicks": 80, "release": true },
+    { "kind": "input", "press": "ArrowLeft", "holdTicks": 50, "release": true },
+    { "kind": "wait", "waitTicks": 80, "release": true },
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 80, "release": true },
+    { "kind": "wait", "waitTicks": 80, "release": true },
+    { "kind": "input", "press": "ArrowLeft", "holdTicks": 80, "release": true },
+    { "kind": "wait", "waitTicks": 80, "release": true },
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 80, "release": true },
+    { "kind": "wait", "label": "fail-settled", "waitTicks": 80, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "terminal", "equals": 2, "changed": true },
+      { "id": "GameState", "path": "hearts", "equals": 0, "changed": true },
+      { "id": "GameState", "path": "respawns", "equals": 0, "allowTrivial": true }
+    ],
+    "signals": [{ "entity": "game", "name": "lost", "minCount": 1 }]
+  }
+}

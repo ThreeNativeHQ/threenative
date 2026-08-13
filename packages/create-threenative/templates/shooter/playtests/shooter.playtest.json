@@ -1,0 +1,89 @@
+{
+  "name": "shooter-contract-and-loop",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "geometry-and-layer-filter",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "wall-layer-filter",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "input", "label": "radius-set", "press": "KeyE", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "scan-window", "waitTicks": 300, "release": true },
+    { "kind": "input", "label": "damage", "press": "KeyH", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "death", "press": "KeyX", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "respawn", "waitTicks": 35, "release": true },
+    { "kind": "input", "label": "pickup", "press": "KeyA", "holdTicks": 8, "release": true },
+    { "kind": "input", "label": "pickup-return", "press": "KeyD", "holdTicks": 8, "release": true },
+    { "kind": "input", "label": "wave-1-shot", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "wave-2-ready", "waitTicks": 45, "release": true },
+    { "kind": "input", "label": "wave-2-shot", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "wave-3-ready", "waitTicks": 45, "release": true },
+    { "kind": "input", "label": "wave-3-shot", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "wave-4-ready", "waitTicks": 45, "release": true },
+    { "kind": "input", "label": "wave-4-shot", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "wave-5-ready", "waitTicks": 45, "release": true },
+    { "kind": "input", "label": "wave-5-shot", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "win-settled", "waitTicks": 45, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU buffer diagnostic; gameplay and visibility assertions remain authoritative.",
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "hitDistanceTenths", "equals": 78, "changed": true },
+      { "id": "GameState", "path": "hitNormalXPercent", "equals": 0, "changed": true },
+      { "id": "GameState", "path": "hitNormalYPercent", "equals": 0, "changed": true },
+      { "id": "GameState", "path": "hitNormalZPercent", "equals": 100, "changed": true },
+      { "id": "GameState", "path": "friendlyPassed", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "wallBlocked", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "radiusInsideDeaths", "equals": 2, "changed": true },
+      { "id": "GameState", "path": "radiusNearAlive", "equals": 0, "changed": true },
+      { "id": "GameState", "path": "radiusMidAlive", "equals": 0, "changed": true },
+      { "id": "GameState", "path": "radiusOutsideAlive", "equals": 1 },
+      { "id": "GameState", "path": "scanCount", "gte": 100, "changed": true },
+      { "id": "GameState", "path": "health", "atSteps": [{ "label": "damage", "equals": 65 }] },
+      { "id": "GameState", "path": "deaths", "atSteps": [{ "label": "death", "equals": 1 }] },
+      { "id": "GameState", "path": "respawns", "atSteps": [{ "label": "respawn", "equals": 1 }] },
+      { "id": "GameState", "path": "pickups", "atSteps": [{ "label": "pickup", "equals": 1 }] },
+      { "id": "GameState", "path": "wavesCleared", "equals": 5, "changed": true },
+      { "id": "GameState", "path": "gameWon", "equals": 1, "changed": true }
+    ],
+    "components": [
+      {
+        "entity": "scan-target",
+        "component": "selected",
+        "atSteps": [{ "label": "scan-window", "equals": 1 }]
+      }
+    ],
+    "signals": [
+      { "name": "hit", "entity": "player", "minCount": 1, "atStep": "geometry-and-layer-filter" },
+      { "name": "wall-blocked", "entity": "player", "minCount": 1, "atStep": "wall-layer-filter" },
+      { "name": "radius-damage", "entity": "player", "minCount": 1, "atStep": "radius-set" },
+      { "name": "damaged", "entity": "player", "minCount": 1, "atStep": "damage" },
+      { "name": "died", "entity": "player", "minCount": 1, "atStep": "death" },
+      { "name": "respawned", "entity": "player", "minCount": 1, "atStep": "respawn" },
+      { "name": "collected", "entity": "player", "minCount": 1, "atStep": "pickup" },
+      { "name": "cleared", "entity": "wave", "minCount": 5 }
+    ],
+    "visibility": [
+      { "entity": "player", "minProjectedPixels": 20 },
+      { "entity": "demo-target", "present": false }
+    ]
+  }
+}

@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+:root {
+  --shooter-void: #090d13;
+  --shooter-panel: #101923;
+  --shooter-line: #263746;
+  --shooter-amber: #f6c85f;
+  --shooter-cyan: #64d8cb;
+  --shooter-red: #ff6b7a;
+  --shooter-text: #d6e0e5;
+  --shooter-dim: #718493;
+  --shooter-font: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--shooter-void);
+  color: var(--shooter-text);
+  font-family: var(--shooter-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.shooter-app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.shooter-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.shooter-hud {
+  pointer-events: none;
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  width: 16rem;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.shooter-hud__eyebrow {
+  color: var(--shooter-dim);
+}
+
+.shooter-hud__wave {
+  margin-top: 0.5rem;
+  color: var(--shooter-amber);
+  font-size: 1.875rem;
+  line-height: 1;
+}
+
+.shooter-hud__rules {
+  margin-top: 0.25rem;
+  color: var(--shooter-cyan);
+  font-size: 0.625rem;
+  letter-spacing: 0.2em;
+}
+
+.shooter-meter {
+  width: 14rem;
+  margin-top: 0.5rem;
+}
+
+.shooter-meter__label,
+.shooter-hud__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--shooter-dim);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.shooter-meter__value {
+  color: var(--shooter-text);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.shooter-meter__track {
+  height: 0.25rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  border: 1px solid var(--shooter-line);
+  background: var(--shooter-panel);
+}
+
+.shooter-meter__fill {
+  display: block;
+  height: 100%;
+}
+
+.shooter-meter__fill--amber {
+  background: var(--shooter-amber);
+}
+
+.shooter-meter__fill--cyan {
+  background: var(--shooter-cyan);
+}
+
+.shooter-hud__summary {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--shooter-line);
+}
+
+.shooter-phase {
+  margin-top: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid currentColor;
+  text-align: center;
+  font-size: 0.875rem;
+  letter-spacing: 0.28em;
+}
+
+.shooter-phase--danger {
+  color: var(--shooter-red);
+}
+
+.shooter-phase--success {
+  color: var(--shooter-amber);
+}
+
+.shooter-menu {
+  pointer-events: none;
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  left: 1.5rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--shooter-dim);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.shooter-menu__help {
+  max-width: 42rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--shooter-line);
+  background: rgb(16 25 35 / 80%);
+}
+
+.shooter-menu__help-primary {
+  color: var(--shooter-text);
+}
+
+.shooter-menu__help-secondary {
+  margin-top: 0.25rem;
+}
+
+.shooter-menu__actions {
+  pointer-events: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.shooter-menu__button {
+  border: 1px solid var(--shooter-line);
+  padding: 0.5rem 0.75rem;
+  background: var(--shooter-panel);
+  color: var(--shooter-text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.shooter-menu__button:hover,
+.shooter-menu__button:focus-visible {
+  border-color: var(--shooter-amber);
+}
+
+.shooter-menu__button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+@media (max-width: 720px) {
+  .shooter-hud {
+    top: 1rem;
+    left: 1rem;
+    width: min(16rem, calc(100% - 2rem));
+  }
+
+  .shooter-menu {
+    right: 1rem;
+    bottom: 1rem;
+    left: 1rem;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shooter-menu__actions {
+    align-self: flex-end;
+  }
+}

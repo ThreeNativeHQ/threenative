@@ -1,0 +1,44 @@
+{
+  "name": "racing-shortcut-rejected",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "drive-directly-at-finish",
+      "press": "ArrowUp",
+      "holdTicks": 100,
+      "release": true
+    },
+    { "kind": "wait", "label": "observe-rejection", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minDistance": 3 },
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.01 } },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.9
+        }
+      }
+    ],
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "completedLaps",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      { "id": "GameState", "path": "shortcutRejects", "gte": 1, "changed": true }
+    ]
+  }
+}

@@ -17,8 +17,8 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
   camera.add(root);
   return {
     glyphs: 0,
-    update(values: { counter: number; primary: number; seconds: number }): void {
-      const text = `${primaryLabel} ${Math.max(0, Math.round(values.primary))}\n${counterLabel} ${Math.max(0, Math.round(values.counter))}\nTIME ${String(Math.floor(values.seconds / 60)).padStart(2, "0")}:${String(Math.floor(values.seconds % 60)).padStart(2, "0")}`;
+    update(values: { counter: number; primary: number; seconds: number; terminal?: number }): void {
+      const text = `${primaryLabel} ${Math.max(0, Math.round(values.primary))}\n${counterLabel} ${Math.max(0, Math.round(values.counter))}\nTIME ${String(Math.floor(values.seconds / 60)).padStart(2, "0")}:${String(Math.floor(values.seconds % 60)).padStart(2, "0")}\nTERM ${Math.max(0, Math.round(values.terminal ?? 0))}`;
       let instance = 0;
       for (const [y, line] of text.split("\n").entries()) {
         for (let x = 0; x < line.length; x += 1) {

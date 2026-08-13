@@ -2,14 +2,22 @@ import { physicsBodyHandle, physicsColliderHandle, physicsHandle } from "../hand
 import type {
   IPhysicsBodyCreateOptions,
   IPhysicsInputSnapshot,
+  IPhysicsPointQuery,
+  IPhysicsQueryHit,
+  IPhysicsRayHit,
+  IPhysicsRayQuery,
   IPhysicsRuntimeSimulation,
   IPhysicsShapeDescriptor,
+  IPhysicsShapeQuery,
   IPhysicsSimulation,
 } from "../simulation.js";
 import {
   requirePhysicsBodySensor,
   requirePhysicsEventBuffer,
+  requirePhysicsPointQuery,
+  requirePhysicsRayQuery,
   requirePhysicsRenderBuffer,
+  requirePhysicsShapeQuery,
   requirePhysicsSleepStateBuffer,
   requirePhysicsStepInput,
 } from "../simulation.js";
@@ -27,6 +35,7 @@ export interface INativeShapeDescriptor {
 export interface INativeBodyOptions {
   readonly collisionLayer: number;
   readonly collisionMask: number;
+  readonly entity?: string;
   readonly mass: number;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
   readonly rotation: {
@@ -38,6 +47,43 @@ export interface INativeBodyOptions {
   readonly sensor: boolean;
   readonly shape: INativeShapeDescriptor;
   readonly type: "character" | "dynamic" | "fixed" | "kinematic";
+}
+
+export interface INativeRayHit {
+  readonly bodyId: number;
+  readonly distance: number;
+  readonly normal: { readonly x: number; readonly y: number; readonly z: number };
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+export interface INativeRayQuery {
+  readonly from: { readonly x: number; readonly y: number; readonly z: number };
+  readonly to: { readonly x: number; readonly y: number; readonly z: number };
+  readonly collisionMask: number;
+}
+
+export interface INativeShapeQuery {
+  readonly shape: INativeShapeDescriptor;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+  readonly rotation: {
+    readonly w: number;
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+  };
+  readonly collisionMask: number;
+  readonly maxResults: number;
+}
+
+export interface INativePointQuery {
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+  readonly collisionMask: number;
+  readonly maxResults: number;
+}
+
+export interface INativeQueryHit {
+  readonly bodyId: number;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
 }
 
 /** Raw object installed by the C++ runtime. It is wrapped before shared nodes see it. */
@@ -58,6 +104,12 @@ export interface INativeSimulation {
   readBodySleepStates(buffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
   readAreaIntersections(buffer: Uint32Array): number;
+  intersectRay(
+    query: INativeRayQuery,
+    output?: Float32Array,
+  ): INativeRayHit | number | null | undefined;
+  intersectShape(query: INativeShapeQuery): readonly INativeQueryHit[];
+  intersectPoint(query: INativePointQuery): readonly INativeQueryHit[];
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
 }
 
@@ -104,6 +156,12 @@ export function nativeSimulation(value: unknown): INativeSimulation {
     typeof value.readCharacterStates !== "function" ||
     !("readAreaIntersections" in value) ||
     typeof value.readAreaIntersections !== "function" ||
+    !("intersectRay" in value) ||
+    typeof value.intersectRay !== "function" ||
+    !("intersectShape" in value) ||
+    typeof value.intersectShape !== "function" ||
+    !("intersectPoint" in value) ||
+    typeof value.intersectPoint !== "function" ||
     !("step" in value) ||
     typeof value.step !== "function"
   ) {
@@ -137,6 +195,7 @@ export function createNativePhysicsSimulation(
   version: string,
 ): IPhysicsRuntimeSimulation {
   const bodyIds = new Set<number>();
+  const bodyHandles = new Map<number, ReturnType<typeof physicsBodyHandle>>();
   const areaIds = new Set<number>();
   const characterIds = new Set<number>();
   const characterState = new Map<
@@ -144,6 +203,7 @@ export function createNativePhysicsSimulation(
     { readonly grounded: boolean; readonly groundCollider?: number }
   >();
   let characterStates = new Float32Array(48);
+  const rayOutput = new Float32Array(8);
   let areaPairs: Uint32Array<ArrayBufferLike> = new Uint32Array(32);
   const areaIntersections = new Map<number, Set<number>>();
   let characterStateDirty = true;
@@ -152,6 +212,30 @@ export function createNativePhysicsSimulation(
   const invalidateObservations = () => {
     characterStateDirty = true;
     areaIntersectionsDirty = true;
+  };
+  const bodyHandle = (id: number) => {
+    const handle = bodyHandles.get(id);
+    if (handle === undefined)
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: query returned an unknown body");
+    return handle;
+  };
+  const finiteQueryVector = (
+    value: { readonly x: number; readonly y: number; readonly z: number },
+    label: string,
+  ) => {
+    if (!Number.isFinite(value.x) || !Number.isFinite(value.y) || !Number.isFinite(value.z))
+      throw new Error(`TN_NATIVE_PHYSICS_INVALID: ${label} contains a non-finite vector`);
+    return { x: value.x, y: value.y, z: value.z };
+  };
+  const nativeHit = (hit: INativeQueryHit): IPhysicsQueryHit => {
+    if (!Number.isSafeInteger(hit.bodyId) || hit.bodyId < 0)
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: query returned an invalid body id");
+    const body = bodyHandle(hit.bodyId);
+    return {
+      body,
+      entity: body.entity,
+      position: finiteQueryVector(hit.position, "query hit position"),
+    };
   };
   const refreshCharacterState = () => {
     if (!characterStateDirty) return;
@@ -219,12 +303,14 @@ export function createNativePhysicsSimulation(
       if (!Number.isInteger(id) || id < 0)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid body id");
       const rawHandle = { backend: "native", id };
+      const bodyHandleValue = physicsBodyHandle(id, rawHandle, options.entity);
       bodyIds.add(id);
+      bodyHandles.set(id, bodyHandleValue);
       if (sensor) areaIds.add(id);
       if (options.type === "character") characterIds.add(id);
       invalidateObservations();
       return {
-        body: physicsBodyHandle(id, rawHandle),
+        body: bodyHandleValue,
         collider: physicsColliderHandle(id, rawHandle),
         controller: options.type === "character" ? physicsHandle(rawHandle) : undefined,
         rawShape: opaqueNativeShape(shape),
@@ -237,6 +323,7 @@ export function createNativePhysicsSimulation(
     removeBody: (id) => {
       raw.removeBody(id);
       bodyIds.delete(id);
+      bodyHandles.delete(id);
       areaIds.delete(id);
       characterIds.delete(id);
       characterState.delete(id);
@@ -261,6 +348,67 @@ export function createNativePhysicsSimulation(
       requirePhysicsSleepStateBuffer(buffer, bodyIds.size);
       return raw.readBodySleepStates(buffer);
     },
+    intersectRay: (value) => {
+      const query = requirePhysicsRayQuery(value);
+      const hit = raw.intersectRay(query, rayOutput);
+      if (typeof hit === "number") {
+        if (hit === 0) return undefined;
+        if (hit !== 1)
+          throw new Error("TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status");
+        const bodyId = rayOutput[0];
+        const position = {
+          x: rayOutput[1] as number,
+          y: rayOutput[2] as number,
+          z: rayOutput[3] as number,
+        };
+        const normal = {
+          x: rayOutput[4] as number,
+          y: rayOutput[5] as number,
+          z: rayOutput[6] as number,
+        };
+        const distance = rayOutput[7] as number;
+        if (
+          bodyId === undefined ||
+          !Number.isSafeInteger(bodyId) ||
+          bodyId < 0 ||
+          distance === undefined
+        )
+          throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output is malformed");
+        const base = nativeHit({ bodyId, position });
+        if (!Number.isFinite(distance) || distance < 0)
+          throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid");
+        return { ...base, distance, normal: finiteQueryVector(normal, "ray output normal") };
+      }
+      if (hit === undefined || hit === null) return undefined;
+      if (!Number.isFinite(hit.distance) || hit.distance < 0)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid distance");
+      const base = nativeHit({ bodyId: hit.bodyId, position: hit.position });
+      return {
+        ...base,
+        distance: hit.distance,
+        normal: finiteQueryVector(hit.normal, "ray hit normal"),
+      };
+    },
+    intersectShape: (value) => {
+      const query = requirePhysicsShapeQuery(value);
+      const hits = raw.intersectShape({
+        collisionMask: query.collisionMask,
+        maxResults: query.maxResults,
+        position: query.position,
+        rotation: query.rotation,
+        shape: primitiveShape(query.shape),
+      });
+      if (!Array.isArray(hits) || hits.length > query.maxResults)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed shape query result");
+      return hits.map(nativeHit);
+    },
+    intersectPoint: (value) => {
+      const query = requirePhysicsPointQuery(value);
+      const hits = raw.intersectPoint(query);
+      if (!Array.isArray(hits) || hits.length > query.maxResults)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed point query result");
+      return hits.map(nativeHit);
+    },
     readCharacterState: (id) => {
       refreshCharacterState();
       return characterState.get(id);
@@ -278,6 +426,7 @@ export function createNativePhysicsSimulation(
       disposed = true;
       raw.dispose();
       bodyIds.clear();
+      bodyHandles.clear();
       areaIds.clear();
       characterIds.clear();
       characterState.clear();

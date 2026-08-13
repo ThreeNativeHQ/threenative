@@ -1,0 +1,78 @@
+{
+  "name": "racing-finish-behind-rival-is-dnf",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "first-straight",
+      "press": "ArrowUp",
+      "holdTicks": 90,
+      "release": true
+    },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
+    {
+      "kind": "input",
+      "label": "first-finish",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
+    {
+      "kind": "input",
+      "label": "second-finish",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
+    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
+    {
+      "kind": "input",
+      "label": "third-finish",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    { "kind": "wait", "label": "observe-dnf", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "completedLaps", "gte": 3, "changed": true },
+      { "id": "GameState", "path": "place", "gte": 2, "allowTrivial": true },
+      { "id": "GameState", "path": "rescues", "equals": 0, "allowTrivial": true },
+      {
+        "id": "GameState",
+        "path": "raceStatus",
+        "equals": "DNF",
+        "changed": true,
+        "atSteps": [{ "label": "observe-dnf", "equals": "DNF" }]
+      }
+    ]
+  }
+}

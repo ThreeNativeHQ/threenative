@@ -1,0 +1,7 @@
+{
+  "name": "defense",
+  "title": "Tower defense",
+  "blurb": "Place towers, hold the route, and balance income against the next wave.",
+  "genre": "strategy",
+  "kit": true
+}

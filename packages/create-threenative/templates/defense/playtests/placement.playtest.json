@@ -1,0 +1,40 @@
+{
+  "name": "defense-placement",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "tower.0",
+  "steps": [
+    { "kind": "input", "label": "built", "press": "KeyB", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "income-after-build", "waitTicks": 30, "release": true },
+    { "kind": "input", "label": "route-attempt", "press": "KeyX", "holdTicks": 1, "release": true },
+    {
+      "kind": "input",
+      "label": "overlap-attempt",
+      "press": "KeyO",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "wait", "label": "rejections-settled", "waitTicks": 30, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "spent",
+        "equals": 40,
+        "atSteps": [
+          { "label": "built", "equals": 40 },
+          { "label": "route-attempt", "equals": 40 },
+          { "label": "overlap-attempt", "equals": 40 }
+        ]
+      },
+      { "id": "GameState", "path": "routeRejects", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "overlapRejects", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "placementRejects", "gte": 2, "changed": true },
+      { "id": "GameState", "path": "scanCount", "gte": 1, "changed": true }
+    ]
+  }
+}

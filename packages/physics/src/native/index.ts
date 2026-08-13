@@ -6,6 +6,16 @@ export { CharacterBody3D } from "../CharacterBody3D.js";
 export type { ICharacterBody3DOptions } from "../CharacterBody3D.js";
 export { CollisionShape3D } from "../CollisionShape3D.js";
 export type { CollisionShapeKind } from "../CollisionShape3D.js";
+export { PhysicsDirectSpaceState3D } from "../PhysicsDirectSpaceState3D.js";
+export type {
+  IIntersectPointOptions,
+  IIntersectRayOptions,
+  IIntersectShapeOptions,
+  IPointHit,
+  IRayHit,
+  IShapeHit,
+  PhysicsQueryVector3,
+} from "../PhysicsDirectSpaceState3D.js";
 export type {
   IPhysicsBodyHandle,
   IPhysicsColliderHandle,
@@ -18,6 +28,7 @@ export type { IRigidBody3DOptions, RigidBodyType } from "../RigidBody3D.js";
 export { rapier } from "../plugin.js";
 export type { PhysicsBody3D, IPhysicsContext, IPhysicsOptions, PhysicsPlugin } from "../plugin.js";
 export {
+  MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
 } from "../simulation.js";
@@ -29,4 +40,11 @@ export type {
   IPhysicsShapeDescriptor,
   PhysicsShapeKind,
   IPhysicsSimulation,
+  IPhysicsPointQuery,
+  IPhysicsQueryHit,
+  IPhysicsRayHit,
+  IPhysicsRayQuery,
+  IPhysicsRotation,
+  IPhysicsShapeQuery,
+  IPhysicsVector3,
 } from "../simulation.js";

@@ -335,6 +335,9 @@ importers:
 
   packages/studio:
     dependencies:
+      create-threenative:
+        specifier: workspace:*
+        version: link:../create-threenative
       monaco-editor:
         specifier: 'catalog:'
         version: 0.56.0

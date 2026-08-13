@@ -1,0 +1,61 @@
+{
+  "name": "action-rpg-combat-and-line-of-sight",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "line-of-sight", "waitTicks": 8, "release": true },
+    { "kind": "input", "label": "attack", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "surge", "press": "KeyE", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "surge-active", "waitTicks": 5, "release": true },
+    { "kind": "wait", "label": "surge-expired", "waitTicks": 90, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "lineOfSightBlocked",
+        "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
+      },
+      {
+        "id": "GameState",
+        "path": "wallEnemyAggro",
+        "atSteps": [{ "label": "line-of-sight", "equals": 0 }]
+      },
+      {
+        "id": "GameState",
+        "path": "visibleEnemyAggro",
+        "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
+      },
+      {
+        "id": "GameState",
+        "path": "damage",
+        "atSteps": [
+          { "label": "surge-active", "equals": 18 },
+          { "label": "surge-expired", "equals": 12 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "modifierActive",
+        "atSteps": [
+          { "label": "surge-active", "equals": 1 },
+          { "label": "surge-expired", "equals": 0 }
+        ]
+      }
+    ],
+    "signals": [
+      { "name": "attack", "entity": "player", "minCount": 1 },
+      { "name": "ability", "entity": "player", "minCount": 1 },
+      { "name": "ability-expired", "entity": "player", "minCount": 1, "atStep": "surge-expired" }
+    ],
+    "components": [{ "entity": "player", "component": "health", "equals": 90, "changed": true }],
+    "visibility": [
+      { "entity": "player", "minProjectedPixels": 20 },
+      { "entity": "enemy.visible", "minProjectedPixels": 1 }
+    ]
+  }
+}

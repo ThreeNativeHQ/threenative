@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-091 — Adding a genre starter kit means editing six hardcoded lists, and the one that gates quality fails open
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
+**Status: IMPLEMENTED; Studio and fail-closed gate evidence recorded 2026-08-12.** No mobile
+readiness is claimed.
 **Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
 **Blocks:** [PRD-089](./PRD-089-shooter-starter-kit.md), [PRD-090](./PRD-090-racing-starter-kit.md),
 [PRD-092](./PRD-092-strategy-starter-kit.md), [PRD-093](./PRD-093-action-rpg-starter-kit.md).

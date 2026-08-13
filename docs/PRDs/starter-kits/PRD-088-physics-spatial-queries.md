@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-088 — The physics world cannot be asked a question, so no ThreeNative game can fire a shot, check the ground, or find a target
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
+**Status: BLOCKED — the Phase 0 ABI-selection criterion is unmet, 2026-08-12.** The web and
+Linux desktop implementation is present, but the required pre-implementation ray measurement
+was not recorded. Android and iOS execution were not performed on this operator machine.
 **Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md), which scored this **91/100** — the
 only surveyed candidate above the Tier-1 bar.
 **Blocks:** [PRD-089](./PRD-089-shooter-starter-kit.md) (hitscan, radius damage, target
@@ -141,9 +143,23 @@ it is per-decision, and a shooter fires a handful per frame, not one per entity.
 measurement decides whether the synchronous call goes straight through or is backed by a
 per-frame coalescing buffer underneath.** Designing either one before measuring is guessing.
 
-**Gate:** the number is recorded in `docs/verification/`. If 256 calls/frame costs more than
-1 ms on desktop, Phase 2 ships the coalescing buffer; otherwise it ships the direct call.
-Either way the user-facing signature in §2 does not change.
+**Recorded execution:** the pre-query ABI had no ray method, so the Phase 0 command measured
+its existing narrow-query-shaped `readAreaIntersections` path as a boundary proxy. The proxy
+measured `0.001709`, `0.021973`, and `0.367920 ms` at 1, 16, and 256 calls. It did not measure
+a ray payload and did not select the shipping ray ABI. The first actual ray query-and-hit
+round trip, measured after native query implementation had begun but before the shipping ABI
+was finalized, took `1.466064 ms` at 256 calls with an object-returning prototype; that led to
+the reusable eight-float record. The final compact-record ray measurement was `0.851807 ms` at
+256 calls, below the 1 ms threshold, so the shipping decision was the direct synchronous ABI.
+
+**Phase 0 gate result: BLOCKED.** The pre-query proxy is not authoritative ray evidence and
+there is no committed pre-implementation ray query-and-hit measurement. The later ray
+measurements support the implemented design, but they cannot satisfy a criterion that requires
+the recorded pre-implementation number to select the ABI.
+
+**Gate:** the required pre-implementation ray number is not recorded, so this gate remains
+blocked. The later compact-record number is recorded in `docs/verification/` and supports the
+direct synchronous implementation, but it does not retroactively close Phase 0.
 
 ### Phase 1 — Web backend, tests, and the `Chaser` deletion
 
@@ -157,7 +173,8 @@ still green with the rewritten `Chaser` — the chaser must still reach the play
 
 ### Phase 2 — Native backend
 
-**Outcome:** the three queries implemented in `runtime-native`, in the shape Phase 0 chose.
+**Outcome:** the three queries implemented in `runtime-native`, with the direct synchronous
+shape selected by the actual ray-payload measurement.
 
 **Gate:** `pnpm native:verify:desktop` green, plus a playtest asserting the *same* hit
 position on web and desktop for a fixed ray. A query that returns a different answer on the
@@ -169,6 +186,22 @@ two platforms is the fork this repo exists to prevent.
 
 **Gate:** executed, or explicitly recorded as not executed. Desktop-green is a desktop claim
 and nothing more.
+
+### Narrowed review repair — 2026-08-12
+
+This fresh lane fixes two native defects found in the exhausted starter-kit-088-r3 review.
+The Phase 0 ABI-selection criterion remains unmet and **BLOCKED**; these repairs do not
+invent a pre-implementation ray measurement or change the platform scope.
+
+- Finite endpoints whose `f32` subtraction is unrepresentable now return a distinct native
+  invalid status, which the C++ binding throws instead of translating to a clean miss.
+  Valid nonzero rays whose length is as small as `1e-30` remain accepted.
+- The native scene proof now asserts both a geometric miss and a collision-mask exclusion for
+  `intersectShape` and `intersectPoint`. Native Rust mutation checks made each mask predicate
+  test fail before the predicate was restored.
+
+The executed repair evidence is recorded in
+[`docs/verification/PRD-088-physics-spatial-queries.md`](../../verification/PRD-088-physics-spatial-queries.md).
 
 ## 5. Verification strategy
 
@@ -188,15 +221,27 @@ hit at `to` passes a naive "did we get a result" test forever.
 
 ## 6. Acceptance criteria
 
-- [ ] `intersectRay`, `intersectShape` and `intersectPoint` are public on
+- [x] `intersectRay`, `intersectShape` and `intersectPoint` are public on
       `@threenative/physics`, named as Godot names them, with no fourth method.
-- [ ] Both backends implement all three; no `threenative-native` condition swaps anything
+- [x] Both backends implement all three; no `threenative-native` condition swaps anything
       above the `PhysicsSimulation` boundary.
-- [ ] Phase 0's measurement is recorded in `docs/verification/` **before** the native
-      implementation is written, and the recorded number is what selected the design.
-- [ ] `templates/platformer/src/entities/Chaser.ts` no longer holds a direct reference to the
+- [ ] A pre-implementation ray query-and-hit measurement recorded in `docs/verification/`
+      selected the ABI. **UNMET:** the pre-query record is an area-intersection proxy, and the
+      actual ray measurements were collected after native query implementation had begun.
+- [x] `templates/platformer/src/entities/Chaser.ts` no longer holds a direct reference to the
       player object, and the platformer playtest is still green.
-- [ ] Every malformed input throws; no query path returns `undefined` for a *bad* query.
-- [ ] Web and desktop return the same hit for the same ray, asserted in a playtest.
-- [ ] `pnpm budgets` reports the framework LOC delta; if a review trigger is crossed, the
+- [x] Every malformed input throws; no query path returns `undefined` for a *bad* query.
+- [x] Web and desktop return the same hit for the same ray, asserted in a playtest.
+- [x] `pnpm budgets` reports the framework LOC delta; if a review trigger is crossed, the
       justification is written in this file rather than silenced.
+
+## 7. Budget trigger justification
+
+`pnpm budgets` reports 69,485 native-runtime lines against the 50,000 review trigger
+(+19,485). PRD-088 adds 846 native lines across the ABI declarations, Rust implementation,
+JS host binding, desktop verifier, and test wiring. The earlier repair added 39 focused Rust
+lines; this narrowed repair adds only native status propagation, native negative-control
+assertions, and their desktop gate wiring. The kill-switch pass retained them because
+each added block is reached by a shared query method, native ABI call, or executed desktop
+proof; no temporary stub, diagnostic-only path, duplicate class, or dead source-surgery
+workaround remains. The trigger is recorded rather than routed around.

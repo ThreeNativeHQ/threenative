@@ -1,9 +1,14 @@
+import { cp, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { studioKits } from "../../packages/studio/src/server.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   RENDER_LAYER_FILES,
   TEMPLATE_NAMES,
   VISUAL_SCORE_FLOOR,
+  captureAllTemplates,
   inspectAllTemplates,
   validateVisualScores,
   visualServerProcessGroup,
@@ -29,21 +34,103 @@ describe("visual gate", () => {
     }
   });
 
+  it("discovers an unregistered broken template and reports its missing render file", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-discovery-"));
+    const broken = path.join(root, "unregistered-broken");
+    try {
+      await cp(path.resolve("packages/create-threenative/templates/platformer"), broken, {
+        recursive: true,
+      });
+      const manifest = JSON.parse(await readFile(path.join(broken, "kit.json"), "utf8")) as {
+        name: string;
+      };
+      await writeFile(
+        path.join(broken, "kit.json"),
+        `${JSON.stringify({ ...manifest, name: "unregistered-broken" })}\n`,
+      );
+      await unlink(path.join(broken, "src/render/postprocessing.ts"));
+
+      const result = inspectAllTemplates(root).find(
+        ({ template }) => template === "unregistered-broken",
+      );
+      expect(result?.errors).toContain("unregistered-broken: missing src/render/postprocessing.ts");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("synchronizes captures through the production orchestration into both output roots", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-studio-sync-"));
+    const visualRoot = path.join(root, "visuals");
+    const assetRoot = path.join(root, "studio-assets");
+    try {
+      const captures = await captureAllTemplates(
+        path.join(root, "capture-root"),
+        {},
+        {
+          captureTemplate: async (template) => ({
+            content: Buffer.from(`${template} visual-gate capture`),
+            stats: {
+              brightPixelRatio: 1,
+              distinctColors: 8,
+              height: 1,
+              luminanceStdDev: 1,
+              width: 1,
+            },
+          }),
+          studioAssetRoot: assetRoot,
+          visualRoot,
+        },
+      );
+
+      expect(captures.map(({ template }) => template)).toEqual([...TEMPLATE_NAMES]);
+      const kits = studioKits({
+        assetRoot,
+        templateRoot: path.resolve("packages/create-threenative/templates"),
+      });
+      for (const template of TEMPLATE_NAMES) {
+        const capture = Buffer.from(`${template} visual-gate capture`);
+        expect(await readFile(path.join(visualRoot, `${template}.png`))).toEqual(capture);
+        expect(await readFile(path.join(assetRoot, `${template}.png`))).toEqual(capture);
+      }
+      expect(kits).toContainEqual(
+        expect.objectContaining({
+          name: "platformer",
+          previewImage: "/api/kits/platformer/preview",
+        }),
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("rejects missing or below-floor human scores", () => {
     expect(() => validateVisualScores({})).toThrow("TN_VISUAL_SCORE_INVALID");
+    const scores = Object.fromEntries(TEMPLATE_NAMES.map((template) => [template, 4]));
     expect(() =>
       validateVisualScores({
-        templates: { minimal: 4, starter: 4, platformer: 3 },
+        templates: { ...scores, platformer: 3 },
         parity: { framework: 4, vanilla: 4 },
       }),
     ).toThrow(`TN_VISUAL_SCORE_FLOOR: platformer scored 3; floor is ${VISUAL_SCORE_FLOOR}.`);
   });
 
+  it("rejects stale template score entries", () => {
+    const templates = Object.fromEntries(TEMPLATE_NAMES.map((template) => [template, 4]));
+    expect(() =>
+      validateVisualScores({
+        templates: { ...templates, retired: 4 },
+        parity: { framework: 4, vanilla: 4 },
+      }),
+    ).toThrow("TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing none; stale retired.");
+  });
+
   it("accepts a complete score file only at or above the floor", () => {
+    const templates = Object.fromEntries(TEMPLATE_NAMES.map((template) => [template, 4]));
     const scores = validateVisualScores({
-      templates: { minimal: 4, starter: 5, platformer: 4 },
+      templates,
       parity: { framework: 4, vanilla: 4 },
     });
-    expect(scores.templates).toEqual({ minimal: 4, starter: 5, platformer: 4 });
+    expect(scores.templates).toEqual(templates);
   });
 });

@@ -1,0 +1,7 @@
+{
+  "name": "action-rpg",
+  "title": "Action RPG",
+  "blurb": "A three-room dungeon with melee, loot, equipment, persistence, and a real character sheet.",
+  "genre": "action-rpg",
+  "kit": true
+}

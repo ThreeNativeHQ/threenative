@@ -1,0 +1,111 @@
+{
+  "name": "action-rpg-loot-inventory-equipment",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "equip", "press": "KeyQ", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "equipped", "waitTicks": 4, "release": true },
+    { "kind": "input", "label": "unequip", "press": "KeyU", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "unequipped", "waitTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "label": "equip-before-fill",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "wait", "label": "re-equipped", "waitTicks": 2, "release": true },
+    { "kind": "input", "label": "fill", "press": "KeyP", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "full-refusal", "press": "KeyL", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "swap-retrieve", "press": "KeyL", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "seeded-drops", "press": "KeyT", "holdTicks": 1, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "damage",
+        "atSteps": [
+          { "label": "equipped", "equals": 18 },
+          { "label": "unequipped", "equals": 12 },
+          { "label": "re-equipped", "equals": 18 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "equippedItem",
+        "atSteps": [
+          { "label": "equipped", "equals": "ember-blade" },
+          { "label": "unequipped", "equals": "" },
+          { "label": "re-equipped", "equals": "ember-blade" },
+          { "label": "swap-retrieve", "equals": "ember-blade" }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "inventoryFullRefused",
+        "atSteps": [
+          { "label": "full-refusal", "equals": 1 },
+          { "label": "swap-retrieve", "equals": 1 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "pendingLootItem",
+        "atSteps": [
+          { "label": "full-refusal", "equals": "ember-blade" },
+          { "label": "swap-retrieve", "equals": "rusted-blade" }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "pendingLootQuantity",
+        "atSteps": [
+          { "label": "full-refusal", "equals": 1 },
+          { "label": "swap-retrieve", "equals": 1 }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "inventorySlots",
+        "atSteps": [
+          {
+            "label": "swap-retrieve",
+            "equals": [
+              { "itemId": "ember-blade", "quantity": 1 },
+              { "itemId": "potion", "quantity": 3 },
+              { "itemId": "potion", "quantity": 3 },
+              { "itemId": "potion", "quantity": 3 },
+              { "itemId": "potion", "quantity": 3 },
+              { "itemId": "potion", "quantity": 1 }
+            ]
+          }
+        ]
+      },
+      { "id": "GameState", "path": "dropProof", "equals": 1, "changed": true },
+      {
+        "id": "GameState",
+        "path": "enemiesDefeated",
+        "atSteps": [{ "label": "seeded-drops", "equals": 1 }]
+      },
+      {
+        "id": "GameState",
+        "path": "lastDrop",
+        "atSteps": [{ "label": "seeded-drops", "equals": "potion x1, potion x1" }]
+      }
+    ],
+    "signals": [
+      { "name": "equipped", "entity": "player", "minCount": 1 },
+      { "name": "unequipped", "entity": "player", "minCount": 1 },
+      { "name": "loot-refused", "entity": "player", "minCount": 1 },
+      { "name": "loot-collected", "entity": "loot", "minCount": 1 },
+      { "name": "defeated", "entity": "enemy", "minCount": 1, "atStep": "seeded-drops" },
+      { "name": "seeded", "entity": "loot", "minCount": 1 }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

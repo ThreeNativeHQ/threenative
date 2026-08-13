@@ -23,7 +23,72 @@
         "id": "GameState",
         "path": "parity.grounded",
         "equals": true,
-        "changed": true,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayDistance",
+        "equals": 2,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayNormal",
+        "equals": [0, 1, 0],
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.rayPosition",
+        "equals": [0, 0, 1],
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeCount",
+        "equals": 1,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointCount",
+        "equals": 1,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointMissCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.pointMaskedHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeMissCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.shapeMaskedHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.clearHitCount",
+        "equals": 0,
+        "allowTrivial": true
+      },
+      {
+        "id": "GameState",
+        "path": "parity.spatialQuery.maskedHitCount",
+        "equals": 0,
         "allowTrivial": true
       }
     ]

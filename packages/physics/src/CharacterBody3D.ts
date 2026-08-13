@@ -16,6 +16,7 @@ import {
 
 export interface ICharacterBody3DOptions {
   readonly object: Object3D;
+  readonly entity?: string;
   readonly physics?: IPhysicsContext;
   /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
   readonly world?: IPhysicsWorldHandle | unknown;
@@ -81,6 +82,7 @@ export class CharacterBody3D {
       options.shape.setCollisionGroups(interactionGroups(layer, mask));
     }
     const registration = this.#simulation.createBody({
+      entity: options.entity,
       mass: 0,
       position: this.object.position,
       rotation: this.object.quaternion,

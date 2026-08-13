@@ -1,0 +1,7 @@
+{
+  "name": "shooter",
+  "title": "Arena shooter",
+  "blurb": "Hitscan and projectile weapons, targets that hunt you, pickups on a timer.",
+  "genre": "shooter",
+  "kit": true
+}

@@ -1,6 +1,7 @@
 import type { ICtx, IGameObservationSampleRequest, IGamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
+import { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
 import { physicsHandle, physicsWorldHandle } from "./handles.js";
 import type { INavigationContext } from "./navigation/index.js";
@@ -23,6 +24,7 @@ export interface IPhysicsContext {
   readonly world: ReturnType<typeof physicsWorldHandle>;
   readonly eventQueue: ReturnType<typeof physicsHandle>;
   readonly simulation: IPhysicsSimulation;
+  readonly directSpaceState: PhysicsDirectSpaceState3D;
   navigation?: INavigationContext;
   add(body: PhysicsBody3D): void;
   numBodies(): number;
@@ -123,6 +125,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
           areas.delete(area.body.id);
           removeContactsFor(area.body.id);
         },
+        directSpaceState: new PhysicsDirectSpaceState3D(selected),
         simulation: selected,
         world: physicsWorldHandle(selected.rawWorld, selected),
       };

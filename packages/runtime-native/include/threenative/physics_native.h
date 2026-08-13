@@ -49,6 +49,50 @@ typedef struct TnPhysicsCharacterOptions {
   uint32_t one_way_layers;
 } TnPhysicsCharacterOptions;
 
+typedef struct TnPhysicsRayQuery {
+  float from_x;
+  float from_y;
+  float from_z;
+  float to_x;
+  float to_y;
+  float to_z;
+  uint32_t collision_mask;
+} TnPhysicsRayQuery;
+
+typedef struct TnPhysicsRayHit {
+  uint32_t body_id;
+  float position_x;
+  float position_y;
+  float position_z;
+  float normal_x;
+  float normal_y;
+  float normal_z;
+  float distance;
+} TnPhysicsRayHit;
+
+typedef struct TnPhysicsShapeQueryOptions {
+  uint32_t shape_type;
+  float shape_x;
+  float shape_y;
+  float shape_z;
+  float position_x;
+  float position_y;
+  float position_z;
+  float rotation_x;
+  float rotation_y;
+  float rotation_z;
+  float rotation_w;
+  uint32_t collision_mask;
+  uint32_t max_results;
+} TnPhysicsShapeQueryOptions;
+
+typedef struct TnPhysicsQueryHit {
+  uint32_t body_id;
+  float position_x;
+  float position_y;
+  float position_z;
+} TnPhysicsQueryHit;
+
 const char *tn_physics_version(void);
 TnPhysicsSimulation *
 tn_physics_create(const TnPhysicsWorldOptions *options);
@@ -75,6 +119,18 @@ int32_t tn_physics_read_character_states(
 int32_t tn_physics_read_area_intersections(
     const TnPhysicsSimulation *simulation, uint32_t *output,
     size_t output_u32_capacity);
+/* Returns -1 for invalid/unrepresentable arithmetic, 0 for a miss, 1 for a hit. */
+int32_t tn_physics_intersect_ray(TnPhysicsSimulation *simulation,
+                                 const TnPhysicsRayQuery *query,
+                                 TnPhysicsRayHit *output);
+int32_t tn_physics_intersect_shape(
+    TnPhysicsSimulation *simulation,
+    const TnPhysicsShapeQueryOptions *query, TnPhysicsQueryHit *output,
+    size_t output_capacity);
+int32_t tn_physics_intersect_point(
+    TnPhysicsSimulation *simulation, float position_x, float position_y,
+    float position_z, uint32_t collision_mask, uint32_t max_results,
+    TnPhysicsQueryHit *output, size_t output_capacity);
 int32_t tn_physics_drain_collision_events(TnPhysicsSimulation *simulation,
                                           uint32_t *output,
                                           size_t output_u32_capacity);

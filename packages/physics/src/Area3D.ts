@@ -67,6 +67,7 @@ export class Area3D {
     }
     const registration = this.#simulation.createBody({
       mass: 0,
+      entity: this.entity,
       position: this.#position,
       rotation: { w: 1, x: 0, y: 0, z: 0 },
       sensor: true,

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "threenative-assets": {
+      "command": "node",
+      "args": ["./node_modules/threenative-asset-mcp/dist/index.js"],
+      "env": {
+        "ASSET_DOWNLOAD_DIR": "./public/assets",
+        "AUDIO_DOWNLOAD_DIR": "./public/audio"
+      }
+    },
+    "threenative-sculpt": {
+      "command": "node",
+      "args": ["./node_modules/threenative-sculpt-mcp/dist/server.js"]
+    }
+  }
+}

@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type ScaffoldTemplate = "minimal" | "platformer" | "starter";
+export type ScaffoldTemplate = string;
+
+export interface IKitManifest {
+  readonly blurb: string;
+  readonly genre: string;
+  readonly kit: boolean;
+  readonly name: ScaffoldTemplate;
+  readonly title: string;
+}
 
 export interface IScaffoldOptions {
   install?: boolean;
@@ -30,11 +39,101 @@ export interface IScaffoldResult {
   template: ScaffoldTemplate;
 }
 
-const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = ["minimal", "starter", "platformer"];
 const TEXT_FILE_EXTENSIONS = new Set([".css", ".html", ".json", ".md", ".svg", ".ts", ".tsx"]);
+const TEMPLATE_NAME = /^[a-z][a-z0-9-]*$/u;
 
-function templateRoot(): string {
+export function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
+}
+
+function invalidManifest(file: string, reason: string): never {
+  throw new Error(`TN_KIT_MANIFEST_INVALID: ${file}: ${reason}`);
+}
+
+function nonEmptyString(value: unknown, field: string, file: string): string {
+  if (typeof value !== "string" || value.trim().length === 0)
+    return invalidManifest(file, `${field} must be a non-empty string`);
+  return value;
+}
+
+function loadManifest(directory: string): IKitManifest {
+  const file = path.join(directory, "kit.json");
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new Error(`TN_KIT_MANIFEST_MISSING: ${file}`);
+    throw error;
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(raw) as unknown;
+  } catch (error) {
+    return invalidManifest(file, `JSON could not be parsed: ${String(error)}`);
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return invalidManifest(file, "the root must be an object");
+  const record = value as Record<string, unknown>;
+  const directoryName = path.basename(directory);
+  const name = nonEmptyString(record.name, "name", file);
+  if (!TEMPLATE_NAME.test(name))
+    return invalidManifest(file, "name must match /^[a-z][a-z0-9-]*$/");
+  if (name !== directoryName)
+    return invalidManifest(file, `name '${name}' must match directory '${directoryName}'`);
+  const kit = record.kit;
+  if (typeof kit !== "boolean") return invalidManifest(file, "kit must be a boolean");
+  return {
+    blurb: nonEmptyString(record.blurb, "blurb", file),
+    genre: nonEmptyString(record.genre, "genre", file),
+    kit,
+    name,
+    title: nonEmptyString(record.title, "title", file),
+  };
+}
+
+/** Reads every template directory on each call so a new kit is live without a TypeScript edit. */
+export function discoverKitManifests(root = templateRoot()): readonly IKitManifest[] {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => loadManifest(path.join(root, entry.name)))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function discoverTemplateNames(root = templateRoot()): readonly ScaffoldTemplate[] {
+  return discoverKitManifests(root).map(({ name }) => name);
+}
+
+export function kitManifest(template: ScaffoldTemplate, root = templateRoot()): IKitManifest {
+  const manifest = discoverKitManifests(root).find(({ name }) => name === template);
+  if (manifest === undefined)
+    throw new Error(
+      `Unknown template '${template}'. Available templates: ${discoverTemplateNames(root).join(", ")}.`,
+    );
+  return manifest;
+}
+
+function templateHelp(manifests: readonly IKitManifest[]): string {
+  const width = Math.max(...manifests.map(({ name }) => name.length), 0);
+  return manifests
+    .map(({ blurb, name, title }) => `  ${name.padEnd(width)}  ${title}: ${blurb}`)
+    .join("\n");
+}
+
+export function cliHelp(): string {
+  const manifests = discoverKitManifests();
+  return `${[
+    "Usage: npx create-threenative <directory> [options]",
+    "",
+    "Options:",
+    "  --template <name>  Choose a template.",
+    "  --no-install       Copy the project without running pnpm install.",
+    "  --help             Show this help.",
+    "",
+    "Templates:",
+    templateHelp(manifests),
+  ].join("\n")}\n`;
 }
 
 function packageName(target: string): string {
@@ -84,6 +183,7 @@ async function applyPackageSources(
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     optionalDependencies?: Record<string, string>;
+    pnpm?: { overrides?: Record<string, string> };
   };
   for (const [name, source] of Object.entries(packageSources)) {
     if (source === undefined) continue;
@@ -101,6 +201,11 @@ async function applyPackageSources(
     } else {
       packageJson.dependencies ??= {};
       packageJson.dependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
+    }
+    if (name === "create-threenative") {
+      packageJson.pnpm ??= {};
+      packageJson.pnpm.overrides ??= {};
+      packageJson.pnpm.overrides[name] = source.startsWith("file:") ? source : `file:${source}`;
     }
   }
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
@@ -187,10 +292,9 @@ export async function createProject(
   options: IScaffoldOptions,
   cwd = process.cwd(),
 ): Promise<IScaffoldResult> {
+  const manifests = discoverKitManifests();
   const template = options.template ?? "starter";
-  if (!TEMPLATE_NAMES.includes(template)) {
-    throw new Error(`Unknown template '${template}'. Choose minimal, starter, or platformer.`);
-  }
+  if (!manifests.some(({ name }) => name === template)) kitManifest(template);
   const target = path.resolve(cwd, options.target);
   const targetExists = await isEmpty(target).catch(() => false);
   if (!targetExists) {
@@ -233,9 +337,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   if (target === undefined)
     throw new Error("Missing target directory. Usage: pnpm create threenative my-game");
   const template = readFlag(argv, "--template") as ScaffoldTemplate | undefined;
-  if (template !== undefined && !TEMPLATE_NAMES.includes(template)) {
-    throw new Error(`Unknown template '${template}'. Choose minimal, starter, or platformer.`);
-  }
+  if (template !== undefined) kitManifest(template);
   const packageSources: Record<string, string> = {};
   for (const [name, flag] of [
     ["@threenative/core", "--core-package"],
@@ -258,7 +360,12 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
 }
 
 async function main(): Promise<void> {
-  const result = await createProject(parseArgs(process.argv.slice(2)));
+  const argv = process.argv.slice(2);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    process.stdout.write(cliHelp());
+    return;
+  }
+  const result = await createProject(parseArgs(argv));
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
   process.stdout.write(
     "Templates: minimal (smallest), starter (default), platformer. Choose with --template <name>.\n",

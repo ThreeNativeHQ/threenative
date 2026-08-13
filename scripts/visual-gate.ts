@@ -5,7 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
-import { type ScaffoldTemplate, createProject } from "../packages/create-threenative/src/index.js";
+import {
+  type ScaffoldTemplate,
+  createProject,
+  discoverTemplateNames,
+} from "../packages/create-threenative/src/index.js";
+import { WEBGPU_BROWSER_ARGS } from "../packages/playtest/src/runner/browser.js";
 import { type CaptureFrameStats, assertFrameShowsSomething } from "./capture-guard.js";
 import {
   type ImageScoringArtifact,
@@ -13,11 +18,11 @@ import {
   hashPromptFile,
 } from "./score-blind.js";
 
-export const TEMPLATE_NAMES = [
-  "minimal",
-  "starter",
-  "platformer",
-] as const satisfies readonly ScaffoldTemplate[];
+const TEMPLATE_ROOT = path.join(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
+  "packages/create-threenative/templates",
+);
+export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = discoverTemplateNames(TEMPLATE_ROOT);
 export const RENDER_LAYER_FILES = [
   "palette.ts",
   "camera.ts",
@@ -69,10 +74,40 @@ export interface VisualCaptureResult {
   readonly template: ScaffoldTemplate;
 }
 
+export type CaptureTemplate = (
+  template: ScaffoldTemplate,
+  root: string,
+  packageSources: Record<string, string>,
+  port: number,
+) => Promise<{ content: Buffer; stats: CaptureFrameStats }>;
+
+export interface IVisualCaptureOptions {
+  readonly captureTemplate?: CaptureTemplate;
+  readonly studioAssetRoot?: string;
+  readonly visualRoot?: string;
+}
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const TEMPLATE_ROOT = path.join(REPO_ROOT, "packages/create-threenative/templates");
 const VISUAL_ROOT = path.join(REPO_ROOT, "docs/verification/visuals");
+export const STUDIO_ASSET_ROOT = path.join(REPO_ROOT, "packages/studio/assets");
 const BASELINE = path.join(REPO_ROOT, "docs/product/VISUAL-BASELINE.md");
+
+/** The gate owns both the verification capture and the package-safe Studio copy. */
+export async function persistTemplateCapture(
+  template: ScaffoldTemplate,
+  content: Buffer,
+  visualRoot = VISUAL_ROOT,
+  studioAssetRoot = STUDIO_ASSET_ROOT,
+): Promise<void> {
+  await Promise.all([
+    mkdir(visualRoot, { recursive: true }),
+    mkdir(studioAssetRoot, { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(visualRoot, `${template}.png`), content),
+    writeFile(path.join(studioAssetRoot, `${template}.png`), content),
+  ]);
+}
 
 function sourceFiles(directory: string): string[] {
   const entries = readdirSync(directory, { withFileTypes: true });
@@ -158,7 +193,9 @@ export function inspectTemplate(
 }
 
 export function inspectAllTemplates(root = TEMPLATE_ROOT): readonly TemplateStructureResult[] {
-  return TEMPLATE_NAMES.map((template) => inspectTemplate(template, root));
+  const names = discoverTemplateNames(root);
+  if (names.length === 0) throw new Error(`TN_TEMPLATE_DISCOVERY_EMPTY: ${root}`);
+  return names.map((template) => inspectTemplate(template, root));
 }
 
 function score(value: unknown, label: string): number {
@@ -181,11 +218,19 @@ export function validateVisualScores(value: unknown): VisualScoreFile {
     throw new Error("TN_VISUAL_SCORE_INVALID: templates scores are required.");
   if (typeof parity !== "object" || parity === null || Array.isArray(parity))
     throw new Error("TN_VISUAL_SCORE_INVALID: parity scores are required.");
+  const templateScores = templateRecord as Record<string, unknown>;
+  const missingTemplates = TEMPLATE_NAMES.filter(
+    (template) => !Object.hasOwn(templateScores, template),
+  );
+  const staleTemplates = Object.keys(templateScores).filter(
+    (template) => !TEMPLATE_NAMES.includes(template as ScaffoldTemplate),
+  );
+  if (missingTemplates.length > 0 || staleTemplates.length > 0)
+    throw new Error(
+      `TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing ${missingTemplates.join(", ") || "none"}; stale ${staleTemplates.join(", ") || "none"}.`,
+    );
   const templates = Object.fromEntries(
-    TEMPLATE_NAMES.map((template) => [
-      template,
-      score((templateRecord as Record<string, unknown>)[template], template),
-    ]),
+    TEMPLATE_NAMES.map((template) => [template, score(templateScores[template], template)]),
   ) as Record<ScaffoldTemplate, number>;
   const parityRecord = parity as Record<string, unknown>;
   const result: VisualScoreFile = {
@@ -270,12 +315,12 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   return Object.fromEntries(archives);
 }
 
-async function captureTemplate(
+const captureTemplate: CaptureTemplate = async (
   template: ScaffoldTemplate,
   root: string,
   packageSources: Record<string, string>,
   port: number,
-): Promise<{ content: Buffer; stats: CaptureFrameStats }> {
+): Promise<{ content: Buffer; stats: CaptureFrameStats }> => {
   const result = await createProject(
     {
       install: true,
@@ -301,12 +346,7 @@ async function captureTemplate(
   try {
     await waitForServer(`http://127.0.0.1:${port}/`, server);
     const browser = await chromium.launch({
-      args: [
-        "--ozone-platform=x11",
-        "--enable-unsafe-webgpu",
-        "--disable-gpu-sandbox",
-        "--ignore-gpu-blocklist",
-      ],
+      args: [...WEBGPU_BROWSER_ARGS],
       headless: false,
       timeout: 30_000,
     });
@@ -331,12 +371,14 @@ async function captureTemplate(
   } finally {
     stopVisualServer(server);
   }
-}
+};
 
-async function captureAllTemplates(
+export async function captureAllTemplates(
   root: string,
   packages: Record<string, string>,
+  options: IVisualCaptureOptions = {},
 ): Promise<readonly VisualCaptureResult[]> {
+  const capture = options.captureTemplate ?? captureTemplate;
   const results: VisualCaptureResult[] = [];
   for (const [index, template] of TEMPLATE_NAMES.entries()) {
     const packageSources = Object.fromEntries(
@@ -344,10 +386,14 @@ async function captureAllTemplates(
         ([name]) => name !== "@threenative/ui" || template !== "minimal",
       ),
     );
-    const capture = await captureTemplate(template, root, packageSources, 5300 + index);
-    await mkdir(VISUAL_ROOT, { recursive: true });
-    await writeFile(path.join(VISUAL_ROOT, `${template}.png`), capture.content);
-    results.push({ stats: capture.stats, template });
+    const result = await capture(template, root, packageSources, 5300 + index);
+    await persistTemplateCapture(
+      template,
+      result.content,
+      options.visualRoot,
+      options.studioAssetRoot,
+    );
+    results.push({ stats: result.stats, template });
   }
   return results;
 }

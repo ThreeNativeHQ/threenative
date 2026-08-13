@@ -141,11 +141,26 @@ test('clean desktop consumer provisions software Vulkan and prints its log on fa
 
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
+  const desktop = smokeScenario('physics-desktop.playtest.json');
   const wrongHeight = smokeScenario('physics-wrong-height.playtest.json');
   const masked = smokeScenario('physics-mask.playtest.json');
+  expect(normal.target).toBe('web');
+  expect(desktop.target).toBe('desktop');
+  expect(desktop.assert).toEqual(normal.assert);
   expect(normal.assert.resources.map(({ path }) => path)).toEqual([
     'parity.steps',
     'parity.grounded',
+    'parity.spatialQuery.rayDistance',
+    'parity.spatialQuery.rayNormal',
+    'parity.spatialQuery.rayPosition',
+    'parity.spatialQuery.shapeCount',
+    'parity.spatialQuery.pointCount',
+    'parity.spatialQuery.pointMissCount',
+    'parity.spatialQuery.pointMaskedHitCount',
+    'parity.spatialQuery.shapeMissCount',
+    'parity.spatialQuery.shapeMaskedHitCount',
+    'parity.spatialQuery.clearHitCount',
+    'parity.spatialQuery.maskedHitCount',
   ]);
   expect(normal.assert.movement.entity).toBe('dynamicBox');
   expect(normal.assert.movement.minDistance).toBe(0.5);
