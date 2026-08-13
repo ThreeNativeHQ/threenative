@@ -509,6 +509,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         else scene?.update(ctx, dt);
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
+        this.#entities?.sweep();
       },
       step: this.#config.step,
     });

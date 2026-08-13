@@ -273,6 +273,53 @@ describe("IGame", () => {
     }
   });
 
+  it("sweeps queued entities after a frame", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let disposed = 0;
+    let queued = false;
+    class QueueScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.entities.add("coin", {
+          dispose: () => {
+            disposed += 1;
+          },
+        });
+      }
+
+      override update(ctx: ICtx): void {
+        if (queued) return;
+        queued = true;
+        ctx.entities.queueFree("coin");
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: QueueScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      expect(game.ctx?.entities.get("coin")).toBeDefined();
+      if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+      advance(1);
+      expect(disposed).toBe(1);
+      expect(game.ctx?.entities.get("coin")).toBeUndefined();
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should dispose plugins exactly once when stopped during setup", async () => {
     let releaseSetup!: () => void;
     let disposed = 0;

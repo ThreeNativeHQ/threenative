@@ -53,6 +53,7 @@ export class Patrol {
         this.mesh.visible = false;
         player.bounce();
         onStomp();
+        ctx.entities.queueFree(this);
       } else onTouch(this.mesh.position.x);
     });
   }

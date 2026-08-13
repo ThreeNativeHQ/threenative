@@ -11,6 +11,7 @@ if (scripts.length !== 1 || scripts[0] !== "native-smoke.js") {
 const bundle = readFileSync(resolve(dist, scripts[0]), "utf8");
 for (const marker of [
   "globalThis.canvas",
+  "queueFree",
   "TN_NATIVE_SMOKE_READY",
   "TN_NATIVE_SMOKE_FIRST_FRAME",
   "TN_NATIVE_SMOKE_300_FRAMES:300",

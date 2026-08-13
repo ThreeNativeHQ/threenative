@@ -13,6 +13,7 @@ export class Pickup {
   #base: Vector3;
   #time = 0;
   #unsubscribe: () => void;
+  #updateHandle!: ReturnType<GameCtx["every"]>;
 
   constructor(ctx: GameCtx, at: Vector3, onCollect: () => void) {
     this.#base = at.clone();
@@ -38,7 +39,9 @@ export class Pickup {
       this.collected = true;
       this.mesh.visible = false;
       onCollect();
+      ctx.entities.queueFree(this);
     });
+    this.#updateHandle = ctx.every((dt) => this.update(dt));
   }
 
   update(dt: number): void {
@@ -53,6 +56,7 @@ export class Pickup {
   }
 
   dispose(): void {
+    this.#updateHandle.cancel();
     this.#unsubscribe();
     this.area.dispose();
     this.mesh.removeFromParent();

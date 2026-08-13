@@ -117,6 +117,8 @@ class NativeSmoke extends Scene<ISmokeState> {
     );
     player.position.set(-1, 0, 0);
     ctx.entities.add("multitouch-player", player);
+    const queued = ctx.entities.add("queue-free-smoke", { dispose: () => undefined });
+    ctx.entities.queueFree(queued);
     const sharedGeometry = new BoxGeometry(0.08, 0.08, 0.08);
     const sharedMaterial = new MeshBasicMaterial({ color: 0x88cc66 });
     const visibleMeshes = Math.floor(profile.meshes * profile.visibility);

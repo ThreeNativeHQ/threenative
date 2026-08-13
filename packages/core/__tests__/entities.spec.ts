@@ -86,6 +86,46 @@ describe("Registry", () => {
     expect(cleared).toBe(1);
   });
 
+  it("should dispose a queued entity when the frame sweeps", () => {
+    const registry = new Registry();
+    let disposed = 0;
+    const coin = {
+      dispose: () => {
+        disposed += 1;
+      },
+    };
+    registry.add("coin.3", coin);
+
+    registry.queueFree(coin);
+    registry.sweep();
+
+    expect(disposed).toBe(1);
+    expect(registry.get("coin.3")).toBeUndefined();
+  });
+
+  it("should keep the entity live until the sweep runs", () => {
+    const registry = new Registry();
+    const coin = {};
+    registry.add("coin.3", coin);
+
+    registry.queueFree("coin.3");
+
+    expect(registry.get("coin.3")).toBe(coin);
+  });
+
+  it("should throw when remove is called during iteration", () => {
+    const registry = new Registry();
+    registry.add("observer", {
+      debug: () => {
+        registry.remove("other");
+        return {};
+      },
+    });
+    registry.add("other", {});
+
+    expect(() => registry.snapshot()).toThrow(TypeError);
+  });
+
   it("empties the registry when a scene exits", async () => {
     let sceneRegistry: Registry | undefined;
     class RegisteredScene extends Scene<Record<string, unknown>> {

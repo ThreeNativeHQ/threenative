@@ -82,37 +82,18 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("player", character);
     const p = (x: number) => new Vector3(x, 0.75, 0);
     const checkpoints = new Checkpoints([SPAWN, p(14), p(25)], 3, PLATFORMER_FEEL);
-    const pickups: Array<{ id: string; value: Pickup }> = [];
-    const patrols: Array<{ id: string; value: Patrol }> = [];
     let coins = 0;
     let defeated = 0;
+    let nextCoin = 0;
     const cameraAnchor = new Vector3();
     const addPickup = (at: Vector3): void => {
-      const id = `coin.${pickups.length}`;
+      const id = `coin.${nextCoin}`;
+      nextCoin += 1;
       const pickup = new Pickup(ctx, at, () => {
         coins += 1;
         emitPlaytestEvent({ entity: "player", name: "collected" });
       });
-      pickups.push({ id, value: pickup });
       ctx.entities.add(id, pickup);
-    };
-    const removeCollected = (): void => {
-      for (let index = pickups.length - 1; index >= 0; index -= 1) {
-        const entry = pickups[index];
-        if (entry?.value.collected) {
-          ctx.entities.remove(entry.id);
-          pickups.splice(index, 1);
-        }
-      }
-    };
-    const removeDefeated = (): void => {
-      for (let index = patrols.length - 1; index >= 0; index -= 1) {
-        const entry = patrols[index];
-        if (entry?.value.defeated) {
-          ctx.entities.remove(entry.id);
-          patrols.splice(index, 1);
-        }
-      }
     };
     const followCamera = (target: Vector3, dt: number): void => {
       const desired = cameraAnchor.set(target.x, target.y + 4.4, target.z + 8.5);
@@ -135,7 +116,6 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       (fromX) => checkpoints.hurt(character, fromX),
       PLATFORMER_FEEL,
     );
-    patrols.push({ id: "patrol", value: patrol });
     ctx.entities.add("patrol", patrol);
     const chaser = new Chaser(ctx, new Vector3(7.5, 0.66, 0));
     const avoidanceChaser = new Chaser(ctx, new Vector3(8.2, 0.66, 0.7));
@@ -160,14 +140,11 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       );
       chaser.update(dt);
       avoidanceChaser.update(dt);
-      for (const entry of patrols) entry.value.update(dt);
-      for (const entry of pickups) entry.value.update(dt);
+      patrol.update(dt);
       checkpoints.pass(character.mesh.position);
       checkpoints.update(dt, character);
       character.health = checkpoints.hearts;
       if (character.mesh.position.y < KILL_PLANE) checkpoints.respawn(character);
-      removeCollected();
-      removeDefeated();
     };
     return (frameCtx, dt) => {
       loading.update();
