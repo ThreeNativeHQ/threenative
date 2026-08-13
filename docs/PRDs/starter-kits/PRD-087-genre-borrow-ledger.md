@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-087 — Genre borrow ledger: what seven shipped open-source games converge on, and which one of it belongs in the framework
 
-**Status: IMPLEMENTATION BATCH EXECUTED, 2026-08-12; closure boundaries remain explicit.**
+**Status: IMPLEMENTATION BATCH EXECUTED, 2026-08-12; platformer qualification repair and closure boundaries remain explicit.**
 The external-repository claims remain a file listing or source file fetched from GitHub on
 2026-08-12 and cited by path. The platformer Phase 2 deliverable below was executed in
 `/home/joao/projects/threejs-webgpu/.worktrees/starter-kit-087-r5-20260812` on branch
