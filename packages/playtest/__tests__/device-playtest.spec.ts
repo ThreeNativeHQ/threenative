@@ -33,6 +33,7 @@ class FakeAndroidDriver implements IAndroidDriver {
   installation?: IDeviceBridgeInstallation;
   pointerSets: number[][] = [];
   prepared = false;
+  preparedMailboxRoot?: string;
 
   constructor(
     private readonly bridge?: IPlaytestBridgeV1,
@@ -44,8 +45,9 @@ class FakeAndroidDriver implements IAndroidDriver {
     return this.consoleEntries;
   }
 
-  async prepare(endpoint: string) {
+  async prepare(endpoint: string, mailboxRoot?: string) {
     this.prepared = true;
+    this.preparedMailboxRoot = mailboxRoot;
     if (this.bridge !== undefined) this.installation = connectDevicePlaytestBridge(this.bridge, endpoint);
   }
 
@@ -153,12 +155,14 @@ test("an Android runtime error reaches the diagnostics assertion with exit code 
 });
 
 test("a missing device bridge fails closed with exit code 2", async () => {
+  const driver = new FakeAndroidDriver();
   const result = await runDevice(
     { movement: { entity: "player", minDistance: 1 } },
-    new FakeAndroidDriver(),
+    driver,
     30,
   );
 
+  expect(driver.preparedMailboxRoot).toBe("/sdcard/Android/data/com.mystral.engine/files");
   expect(result.pass).toBe(false);
   expect(result.assertionResults).toBeUndefined();
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_BRIDGE_MISSING");

@@ -21,8 +21,10 @@ import {
   isSuccessfulStartupSample,
   nativeFrameInstrumentation,
   parseProductionArgs,
+  profileConfigPath,
   postWarmupFrameSamples,
   runProductionProfile,
+  setNativeProfileEntry,
   webFrameInstrumentation,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
@@ -41,6 +43,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
   let rendered = false;
   let sampledBeforeRender = false;
   const samples = [];
+  const sampleLines = [];
   const record = (payload) => {
     if (payload?.kind === 'samples' && Array.isArray(payload.samples)) samples.push(...payload.samples);
   };
@@ -56,6 +59,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
       log: (line) => {
         const prefix = 'TN_PROD_FRAME_SAMPLES:';
         if (typeof line === 'string' && line.startsWith(prefix)) {
+          sampleLines.push(line);
           record({ kind: 'samples', samples: JSON.parse(line.slice(prefix.length)) });
         }
       },
@@ -80,7 +84,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
     now = frame * frameMs;
     scheduledCallback(now);
   }
-  return { sampledBeforeRender, samples };
+  return { sampledBeforeRender, sampleLines, samples };
 }
 
 function completeEvidence(overrides = {}) {
@@ -212,6 +216,36 @@ test('accepted profile controls are parsed and execution receives every value', 
   );
 });
 
+test('native profile entry replaces a config entry without creating a package conflict', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'tn-profile-entry-'));
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), JSON.stringify({
+    name: 'fixture',
+    threenative: { nativeEntry: 'src/game.ts' },
+  }));
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default {\n  nativeEntry: "src/game.ts",\n};\n');
+
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
+
+  assert.match(
+    readFileSync(join(project, 'threenative.config.ts'), 'utf8'),
+    /nativeEntry: "src\/profile-native-entry\.ts"/u,
+  );
+  assert.equal(JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')).threenative, undefined);
+});
+
+test('native profile reads the generated app identity when no config override is supplied', () => {
+  assert.equal(
+    profileConfigPath('/tmp/platformer'),
+    '/tmp/platformer/.threenative/build/config.json',
+  );
+  assert.equal(
+    profileConfigPath('/tmp/platformer', '/tmp/custom-config.json'),
+    '/tmp/custom-config.json',
+  );
+});
+
 test('startup aggregation rejects failed reports and blank first frames', () => {
   const blank = new PNG({ height: 2, width: 2 });
   blank.data.fill(255);
@@ -289,6 +323,22 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(report.diagnostics.some(({ code }) => code === 'TN_PLAYTEST_SCENARIO_INVALID'), false);
   assert.equal(report.pass, true);
 
+  const androidPaths = await writeRunScenarios(project, {
+    duration: 2,
+    renderSize: { height: 1080, width: 1920 },
+    target: 'android',
+    warmup: 1,
+  });
+  const androidWorkload = JSON.parse(readFileSync(androidPaths.nativeWorkloadPath, 'utf8'));
+  assert.equal(androidWorkload.steps.length, 61);
+  assert.deepEqual(androidWorkload.steps[0], {
+    holdFrames: 60,
+    kind: 'input',
+    press: 'ArrowRight',
+    release: true,
+  });
+  assert.deepEqual(androidWorkload.steps.at(-1), { kind: 'wait', release: true, waitFrames: 1 });
+
   const rendererPerformance = { drawCalls: 180, triangles: 100_000 };
   const nativeSamples = injectedFrameSamples(
     nativeFrameInstrumentation(undefined, 0),
@@ -302,6 +352,7 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(webSamples.sampledBeforeRender, false);
   assert.equal(nativeSamples.samples.length, 30);
   assert.equal(webSamples.samples.length, 30);
+  assert.ok(nativeSamples.sampleLines.every((line) => line.length < 1_000));
   assert.deepEqual(nativeSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
   assert.deepEqual(webSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
   const missingSamples = injectedFrameSamples(

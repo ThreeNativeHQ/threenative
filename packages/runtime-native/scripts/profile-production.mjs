@@ -48,6 +48,8 @@ const SLOW_FRAME_DELAY_MS = 50;
 const SLOW_FRAME_COUNT = 60;
 const SLOW_STARTUP_DELAY_MS = 5_100;
 const FRAME_SAMPLE_BATCH_SIZE = 30;
+// Android logcat truncates long lines, so native samples use a smaller JSON batch.
+const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
 
 function installedPackageFile(packageName, file) {
@@ -246,6 +248,7 @@ async function scaffoldPlatformer(project, tools) {
     localSources.push(await packageSource('@threenative/playtest', join(repositoryRoot, 'packages/playtest')));
     localSources.push(await packageSource('@threenative/runtime-native', join(repositoryRoot, 'packages/runtime-native')));
     localSources.push(await packageSource('@threenative/ui', join(repositoryRoot, 'packages/ui')));
+    localSources.push(await packageSource('@threenative/studio', join(repositoryRoot, 'packages/studio')));
     localSources.push(await packageSource('create-threenative', join(repositoryRoot, 'packages/create-threenative')));
   }
   const args = [
@@ -280,6 +283,8 @@ function packageSourceFlag(name) {
           ? '--runtime-native-package'
           : name === '@threenative/ui'
             ? '--ui-package'
+            : name === '@threenative/studio'
+              ? '--studio-package'
             : '--cli-package';
 }
 
@@ -306,6 +311,17 @@ export async function writeRunScenarios(project, options) {
     viewport: options.renderSize,
     warmupFrames,
   };
+  const nativeTarget = options.target === 'desktop' || options.target === 'desktop-pair' ? 'desktop' : 'device';
+  const nativeWorkloadSteps = nativeTarget === 'device'
+    ? [
+        { holdFrames: Math.min(60, workloadFrames), kind: 'input', press: 'ArrowRight', release: true },
+        ...Array.from({ length: Math.max(0, workloadFrames - Math.min(60, workloadFrames)) }, () => ({
+          kind: 'wait',
+          release: true,
+          waitFrames: 1,
+        })),
+      ]
+    : workload.steps;
   const startup = {
     ...scenarioSource,
     assert: { diagnostics: { noConsoleErrors: true, runtimeReady: true } },
@@ -314,8 +330,11 @@ export async function writeRunScenarios(project, options) {
     viewport: options.renderSize,
     warmupFrames: 0,
   };
-  const nativeTarget = options.target === 'desktop' || options.target === 'desktop-pair' ? 'desktop' : 'device';
-  const nativeWorkload = { ...workload, artifacts: { screenshots: nativeTarget === 'desktop' ? 'after' : false } };
+  const nativeWorkload = {
+    ...workload,
+    artifacts: { screenshots: nativeTarget === 'desktop' ? 'after' : false },
+    steps: nativeWorkloadSteps,
+  };
   const nativeStartup = { ...startup, artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
@@ -403,7 +422,16 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   const target = options.target === 'desktop-pair' || options.target === 'desktop' ? 'desktop' : options.target.startsWith('ios') ? 'ios' : 'android';
   await installNativeProfileEntry(project, target, options);
   const build = await runCommand('pnpm', ['run', `build:${target}`], project);
-  if (build.status !== 0) throw new ProductionEvidenceError(`TN_PROD_${target.toUpperCase()}_BUILD_FAILED`, `The scaffolded platformer ${target} build failed.`);
+  if (build.status !== 0) {
+    const details = [build.stdout, build.stderr]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0)
+      .join('\n')
+      .trim();
+    throw new ProductionEvidenceError(
+      `TN_PROD_${target.toUpperCase()}_BUILD_FAILED`,
+      `The scaffolded platformer ${target} build failed.${details.length === 0 ? '' : `\n${details.slice(-4_000)}`}`,
+    );
+  }
   const artifactPath = await nativeArtifactPath(project, target);
   const artifactSha = await hashPath(artifactPath);
   const runs = [];
@@ -445,7 +473,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   if (target === 'android') await installAndroidArtifact(artifactPath, options.device);
   // The game declares its identity in `threenative.config.ts` and packaging resolves it; profiling
   // launches whatever packaging shipped, so it reads the id from there instead of restating one.
-  const appId = readAndroidConfig(options.config).app.id;
+  const appId = readAndroidConfig(profileConfigPath(project, options.config)).app.id;
   const config = {
     android: { activity: 'com.threenative.runtime.MystralActivity', packageName: appId },
     artifactDirectory,
@@ -546,6 +574,10 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   }
 }
 
+export function profileConfigPath(project, configPath = undefined) {
+  return configPath ?? join(project, '.threenative', 'build', 'config.json');
+}
+
 function createDesktopDriver(artifactPath, project, options, screenshotRequestPath) {
   let child;
   let output = '';
@@ -613,9 +645,31 @@ async function installNativeProfileEntry(project, target, options) {
   const screenshotRequestPath = target === 'desktop' ? join(mailboxRoot, 'tn-production-screenshot-request.json') : undefined;
   const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), screenshotRequestPath)}\n${mailbox}export default game;\n`;
   await writeFile(entryPath, source);
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
+}
+
+export async function setNativeProfileEntry(project, entry) {
+  const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
+  const config = await readFile(configPath, 'utf8').catch(() => undefined);
+  if (config !== undefined) {
+    const rendered = config.replace(
+      /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
+      `$1"${entry}"$2`,
+    );
+    if (rendered !== config) {
+      await writeFile(configPath, rendered);
+      const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
+      if (packageJson.threenative?.nativeEntry !== undefined) {
+        delete packageJson.threenative.nativeEntry;
+        if (Object.keys(packageJson.threenative).length === 0) delete packageJson.threenative;
+        await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+      }
+      return;
+    }
+  }
   const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
-  packageJson.threenative = { ...packageJson.threenative, nativeEntry: 'src/profile-native-entry.ts' };
+  packageJson.threenative = { ...packageJson.threenative, nativeEntry: entry };
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
@@ -676,7 +730,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
   }
   if (!inWarmup && frameMs !== undefined) {
     tnProductionSamples.push({ ...tnProductionReadPerformance(), frameIndex, frameMs });
-    if (tnProductionSamples.length >= ${FRAME_SAMPLE_BATCH_SIZE}) {
+    if (tnProductionSamples.length >= ${NATIVE_FRAME_SAMPLE_BATCH_SIZE}) {
       console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
     }

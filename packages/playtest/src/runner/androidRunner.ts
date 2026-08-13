@@ -78,7 +78,7 @@ export async function runAndroidPlaytest(
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
   const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;
-  return runDevicePlaytest(config, {
+  return runDevicePlaytest({ ...config, mailboxRoot }, {
     driver,
     mailboxPaths: androidMailboxPaths(android.packageName, mailboxRoot),
     name: "android",
