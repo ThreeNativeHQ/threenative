@@ -8,10 +8,28 @@ import {
 
 let initialized: Promise<void> | undefined;
 const simulations = new WeakMap<object, IPhysicsSimulation>();
+const RAPIER_INIT_WARNING =
+  "using deprecated parameters for the initialization function; pass a single object instead";
+
+function initializeRapier(): Promise<void> {
+  const previousWarn = console.warn;
+  console.warn = (...args) => {
+    if (args[0] === RAPIER_INIT_WARNING) return;
+    previousWarn(...args);
+  };
+  try {
+    return rapier.init().finally(() => {
+      console.warn = previousWarn;
+    });
+  } catch (error) {
+    console.warn = previousWarn;
+    throw error;
+  }
+}
 
 installPhysicsSimulationBackend({
   initialize: () => {
-    initialized ??= rapier.init();
+    initialized ??= initializeRapier();
     return initialized;
   },
   createSimulation: (options = {}) => {
