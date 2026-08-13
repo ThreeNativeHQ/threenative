@@ -16,6 +16,8 @@ catalog:
   tailwindcss: 4.3.3
   '@tailwindcss/vite': 4.3.3
   '@vitejs/plugin-react': 6.0.5
+  monaco-editor: 0.56.0
+  zod: 4.4.3
   typescript: 5.9.3
   vite: 8.2.0
   vitest: 4.1.10
