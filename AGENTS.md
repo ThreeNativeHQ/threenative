@@ -153,6 +153,13 @@ computes the single next action, `pnpm round:deletions` reports exports unreache
 consecutive rounds. Keep the round ledger as the evidence record.
 
 **When a PRD is finished, `git mv` it to `docs/PRDs/done/` in the same commit that finishes it.**
+For grouped batches such as `docs/PRDs/starter-kits/`,
+`docs/PRDs/native-performance-fixes/`, and `docs/PRDs/night-watch-26-08-10/`, archive the
+whole folder with `git mv docs/PRDs/<batch>/ docs/PRDs/done/<batch>/` in the commit that closes
+the last PRD. Do not archive a batch while any PRD is `OPEN`, `SCOPING`, `NOT STARTED`,
+`BLOCKED`, or otherwise partial; a blocked criterion is not completion. If one PRD finishes
+before its siblings, archive that PRD individually and leave the batch folder active until all
+of its PRDs are complete.
 
 ## Rules that get a change rejected
 
