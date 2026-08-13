@@ -216,10 +216,11 @@ Captured 2026-08-12. All four items are now shipped in the browser Studio.
   content fail closed, and unsaved changes prompt before replacement.
 - [x] **Code inspections tab.** A dedicated tab lists the files opened from the project tree.
 - [x] **Live activity event system.** A shared `/api/events` stream publishes structured agent,
-  proof, git-checkpoint, and idle lifecycle events; the panel shows the latest 18 received events,
-  reflects work started outside the current tab, and polling remains the recovery path.
+  step, proof, git-checkpoint, and idle lifecycle events; active step history is replayed to late
+  connections, the panel shows the latest 18 received events, and polling remains the recovery
+  path.
 - [x] **Agent progress narration.** Reuse the validated `/api/events` lifecycle stream to show
-  what the AI is doing at each game-dev step, with clear current, completed, and blocked states in
-  the Studio flow.
+  what the AI is doing at each game-dev step, including work started outside the current tab, with
+  clear current, completed, and blocked states in the Studio flow.
 - [x] **Console duplicate grouping.** Repeated identical console lines collapse into one row with
   a visible count, while distinct warnings and errors remain separate.
