@@ -16,7 +16,10 @@ catalog:
   tailwindcss: 4.3.3
   '@tailwindcss/vite': 4.3.3
   '@vitejs/plugin-react': 6.0.5
+  argon2: 0.45.1
   monaco-editor: 0.56.0
+  pg: 8.23.0
+  '@types/pg': 8.15.5
   zod: 4.4.3
   typescript: 5.9.3
   vite: 8.2.0

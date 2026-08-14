@@ -9,3 +9,9 @@ test-results/
 .DS_Store
 artifacts
 .playwright-mcp
+hosting/.data/
+
+# Secrets. Never committed, never copied into an image.
+.env
+.env.*
+!.env.example

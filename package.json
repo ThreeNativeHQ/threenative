@@ -18,6 +18,9 @@
     "studio:probe": "tsx scripts/studio-probe.ts",
     "studio:inspect": "tsx scripts/studio-inspect.ts",
     "studio:loop": "tsx scripts/studio-loop.ts",
+    "hosting:build": "docker build -f hosting/sandbox/Dockerfile .",
+    "hosting:up": "docker compose -f hosting/compose.yaml up --build",
+    "hosting:migrate": "tsx hosting/control-plane/db/migrate.ts",
     "visuals": "xvfb-run -a -s '-screen 0 1600x900x24' tsx scripts/visual-gate.ts",
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
@@ -45,10 +48,18 @@
     "@biomejs/biome": "1.9.4",
     "@playwright/test": "1.62.1",
     "@types/node": "20.19.43",
+    "@types/pg": "catalog:",
     "@types/pngjs": "6.0.5",
     "pngjs": "7.0.0",
     "tsx": "4.23.5",
     "typescript": "catalog:",
     "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "argon2": "catalog:",
+    "pg": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["argon2"]
   }
 }

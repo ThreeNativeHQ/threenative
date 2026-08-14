@@ -48,6 +48,9 @@ The self-improvement loop resumes from the newest round ledger — currently
 [round 1](verification/round-1-2026-08-06.md) behind it. Resume with `pnpm round:next`;
 persistent unused-export evidence comes from `pnpm round:deletions`.
 
+The [Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
+and production path for running the browser Studio against durable game repositories.
+
 ## Strategy
 
 - [strategy/VALUE-PROPOSITION.md](strategy/VALUE-PROPOSITION.md) — "would I use this instead of vanilla Three.js?" answered per axis, every claim marked earned or unearned against a verification file

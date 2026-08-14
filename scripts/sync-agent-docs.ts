@@ -20,6 +20,10 @@ const SKIP_DIRECTORIES = new Set([
   "third_party",
 ]);
 
+// Hosting is an application root, not a workspace package, but its service rules still need a
+// generated CLAUDE.md mirror. Keep this explicit as the hosting tree grows its own subdirectories.
+const MIRRORED_APPLICATION_ROOTS = new Set(["hosting"]);
+
 export const BANNER = "<!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->\n";
 
 export async function agentsFiles(root: string): Promise<string[]> {
@@ -29,7 +33,7 @@ export async function agentsFiles(root: string): Promise<string[]> {
   for (const entry of entries) {
     const absolute = path.join(root, entry.name);
     if (entry.isDirectory()) {
-      if (SKIP_DIRECTORIES.has(entry.name)) continue;
+      if (SKIP_DIRECTORIES.has(entry.name) && !MIRRORED_APPLICATION_ROOTS.has(entry.name)) continue;
       found.push(...(await agentsFiles(absolute)));
     } else if (entry.name === "AGENTS.md") {
       found.push(absolute);
