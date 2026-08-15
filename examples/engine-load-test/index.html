@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreeNative Engine Load Test</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; background: #0b0f14; color: #d7f3ff; font: 13px/1.4 ui-monospace, monospace; overflow: hidden; }
+      canvas { display: block; }
+      #status { position: fixed; top: 8px; left: 8px; padding: 6px 10px; border: 1px solid #30566a; border-radius: 6px; background: #0b0f14dd; white-space: pre; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" width="1280" height="720"></canvas>
+    <div id="status">initializing</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

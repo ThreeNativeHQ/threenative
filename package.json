@@ -39,6 +39,8 @@
     "sweep:pair": "tsx scripts/sweep-pair.ts",
     "round:next": "tsx scripts/round-next.ts",
     "round:deletions": "tsx scripts/round-deletions.ts",
+    "bench:engines": "tsx scripts/engine-load-test/cli.ts",
+    "bench:engines:report": "tsx scripts/engine-load-test/cli.ts --compare",
     "profile:starter": "tsx scripts/profile-starter.ts",
     "profile:production": "node packages/runtime-native/scripts/profile-production.mjs",
     "profile:native-cpu": "tsx scripts/profile-native-cpu.ts",

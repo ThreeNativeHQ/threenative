@@ -173,3 +173,9 @@ reached its assertions exits `2` and is recorded as **unmeasured** — never a p
   remain unstated.
 - **It does not delete the nine game-specific scenarios.** They are the user's source.
 - **It does not add a package export.** If a phase starts wanting one, it was mis-scoped.
+## Lane: lane-111
+- state: PARTIAL
+- commit: 40d6d9c
+- reason: review-requested-final-repair
+- evidence: .linchpin/lane-111-gates.md
+

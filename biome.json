@@ -3,6 +3,7 @@
   "files": {
     "ignore": [
       "**/dist/**",
+      "artifacts/**",
       ".worktrees/**",
       "packages/runtime-native/**",
       "test-results/**",

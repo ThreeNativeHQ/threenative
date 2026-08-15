@@ -1,0 +1,22 @@
+; PRD-117 Godot control arm. Defaults are deliberately left alone except for the pinned
+; viewport and the disabled frame cap — §4.4 forbids hand-tuning either side.
+config_version=5
+
+[application]
+
+config/name="Engine Load Test"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/resizable=false
+window/vsync/vsync_mode=0
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=0

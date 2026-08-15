@@ -132,3 +132,9 @@ same failure shape as a green check that asserts nothing."
 This PRD adds native lines and is therefore the natural place to discharge it: run the kill-switch
 pass over the absorbed runtime, record the justification, and state the honest outcome — which may
 well be that the lines are earned and the trigger was set before the runtime was absorbed.
+## Lane: lane-116
+- state: PARTIAL
+- commit: 9898c36
+- reason: worker-committed-manager-gate-and-review-pending
+- evidence: .linchpin/lane-116.log
+

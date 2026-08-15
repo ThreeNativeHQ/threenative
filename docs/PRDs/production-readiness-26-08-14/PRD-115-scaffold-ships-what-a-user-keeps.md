@@ -104,3 +104,9 @@ not done what it says.
   glowing goal pad and nobody has rendered the starter at 0.7 against a lower value. If a third
   independent build turns the same knob down, treat it as decided.
 - It does not fix the dead `test` script. That is PRD-111, and the two should land together.
+## Lane: lane-115
+- state: PARTIAL
+- commit: e982191
+- reason: worker-committed-manager-gate-and-review-pending
+- evidence: .linchpin/lane-115.log
+
