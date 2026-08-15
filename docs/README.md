@@ -5,6 +5,11 @@
 `fd92899`, with its evidence in
 [verification/unblocked-2026-08-09-android-touch.md](verification/unblocked-2026-08-09-android-touch.md).
 
+The first external performance control this repository has had is
+[verification/engine-load-test-summary-2026-08-15.md](verification/engine-load-test-summary-2026-08-15.md)
+— ThreeNative against Godot 4.7.1 on web, desktop and one Android device, with the caveats that
+bound each number.
+
 [`CHARTER.md`](architecture/CHARTER.md) is the **only binding document**. Everything
 under `docs/` either implements it (PRDs, verification) or explores what comes after it
 (strategy, architecture, product). When a doc here disagrees, `CHARTER.md` wins until it is

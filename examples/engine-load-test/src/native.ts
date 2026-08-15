@@ -8,9 +8,12 @@ declare global {
   var canvas: HTMLCanvasElement | undefined;
 }
 
+declare const __TN_PLATFORM__: string;
+
 declare const __TN_BENCH_CONFIG__: Readonly<{
   animate: boolean;
   frames: number;
+  refreshHz: number;
   ladder: number[];
   modes: RenderMode[];
   repeats: number;
@@ -105,11 +108,10 @@ async function main(): Promise<void> {
     }
   }
 
-  // Read from the running platform, never hardcoded: a desktop label on a phone run would be
-  // published as desktop evidence. The native host exposes no `navigator`, so the build stamps the
-  // target in and the runtime confirms it.
-  const scope = globalThis as unknown as { __TN_PLATFORM__?: string; process?: unknown };
-  const onAndroid = scope.__TN_PLATFORM__ === "android";
+  // Declared, not read off `globalThis`: vite's `define` substitutes the bare identifier, so a
+  // property access like `scope.__TN_PLATFORM__` is never replaced and silently reads undefined —
+  // which filed every phone run as `tn-desktop`.
+  const onAndroid = __TN_PLATFORM__ === "android";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
     build: {
@@ -117,8 +119,18 @@ async function main(): Promise<void> {
         "owned C++ runtime, three/webgpu render path; defineGame loop not in the measured path",
       type: "release",
     },
-    device: { battery: null, label: "desktop-native-linux" },
-    display: { height: VIEWPORT_HEIGHT, refreshHz: 60, vsync: false, width: VIEWPORT_WIDTH },
+    // Labelled from the target the binary was built for, not hardcoded. A phone run that files
+    // itself as `desktop-native-linux @ 60 Hz` is mislabelled evidence, and `refreshHz` is not
+    // cosmetic — the scorer refuses to compare two arms whose displays disagree.
+    device: { battery: null, label: onAndroid ? "android-native" : "desktop-native-linux" },
+    display: {
+      height: VIEWPORT_HEIGHT,
+      refreshHz: __TN_BENCH_CONFIG__.refreshHz,
+      // The native host presents FIFO on both targets, so this reports what happens rather than
+      // what was asked for.
+      vsync: true,
+      width: VIEWPORT_WIDTH,
+    },
     driver: {
       adapter: harness.adapterLabel,
       renderer: "three/webgpu WebGPURenderer (native host)",

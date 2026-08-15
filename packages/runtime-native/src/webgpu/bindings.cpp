@@ -2192,6 +2192,20 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
                     g_engine->setProperty(device, "queue", queue);
 
+                    // device.destroy() - part of the GPUDevice interface, and three.js calls it from
+                    // `WebGPURenderer.dispose()`. Without it every clean teardown on a native host
+                    // throws `this.device.destroy is not a function`, which reads as a crash at the
+                    // end of an otherwise successful run. Releasing the wgpu device here would pull
+                    // the surface out from under a host that may still be presenting, so this
+                    // reports the call and lets the host own the lifetime.
+                    g_engine->setProperty(device, "destroy",
+                        g_engine->newFunction("destroy", [](void*, const std::vector<js::JSValueHandle>&) {
+                            std::cout << "[WebGPU] device.destroy(): teardown is owned by the host"
+                                      << std::endl;
+                            return g_engine->newUndefined();
+                        })
+                    );
+
                     // device.limits - expose device limits
                     auto deviceLimits = g_engine->newObject();
                     g_engine->setProperty(deviceLimits, "maxTextureDimension2D", g_engine->newNumber(8192));

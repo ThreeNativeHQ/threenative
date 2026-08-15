@@ -112,6 +112,9 @@ export async function createLoadTestHarness(
 
   const setRung = (rung: ILoadTestRung): void => {
     clearRung();
+    // Cleared per rung, not per collapse: a stale report made an L2 rung inherit the previous L3
+    // rung's `movingParts`, which is the one number the frozen-scene guard reads.
+    collapseReport = undefined;
     const placements = createPlacements(rung.objectCount);
     const cubes: Mesh[] = [];
     let instanced: InstancedMesh | undefined;

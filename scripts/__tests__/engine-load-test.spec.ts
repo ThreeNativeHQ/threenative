@@ -9,9 +9,15 @@ import {
   checkEquivalence,
   compare,
   knee,
+  looksVsyncPinned,
   parseRunReport,
   summarize,
 } from "../engine-load-test/report.js";
+import { runCapturing } from "../engine-load-test/run-desktop.js";
+import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
+
+const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
+const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
 
 function series(valueMs: number, length = 8): number[] {
   return Array.from({ length }, () => valueMs);
@@ -217,4 +223,56 @@ describe("engine load test equivalence gate", () => {
     expect(comparison.rightKnee.L1).toBe(4096);
     expect(checkEquivalence(ladderReport(24), ladderReport(30, "godot-web"))).toEqual([]);
   });
+});
+
+describe("engine load test frozen-scene detection", () => {
+  it("should refuse a device run below the battery floor unless it is asked for", async () => {
+    // A phone under ~50% throttles, and the resulting number describes the battery. The escape hatch
+    // exists because two arms at the same low charge still compare, but it has to be requested.
+    const drained = { batteryPercent: 21, serial: "37251FDJH0037Z" };
+    const charged = { batteryPercent: 74, serial: "37251FDJH0037Z" };
+    const gate = (state: { batteryPercent: number }, allow: boolean): boolean =>
+      state.batteryPercent >= MINIMUM_BATTERY_PERCENT || allow;
+    expect(gate(drained, false)).toBe(false);
+    expect(gate(drained, true)).toBe(true);
+    expect(gate(charged, false)).toBe(true);
+    expect(MINIMUM_BATTERY_PERCENT).toBe(50);
+  });
+
+  it("should read a frame interval that ignores load as the display, not the engine", () => {
+    // Both a 120 Hz phone and a vsync-locked desktop host produce this shape, and it is the reason
+    // an 8.2 ms mobile frame is reported as "fits inside one frame" rather than as a measured cost.
+    const pinned = ladderReport(24, "godot-web");
+    pinned.rungs = pinned.rungs.map((entry) => ({ ...entry, frameMs: series(8.3) }));
+    expect(looksVsyncPinned(summarize(pinned), "L1")).toBe(true);
+    expect(looksVsyncPinned(summarize(ladderReport(24)), "L1")).toBe(false);
+  });
+});
+
+describe("engine load test desktop capture", () => {
+  // The native desktop host prints its report, finishes its main loop, reaches `_exit` — and then
+  // spins in userspace instead of terminating. A capture that waited for process exit therefore
+  // hung forever with the finished report already sitting in its buffer, which read as "the
+  // benchmark is slow" rather than "the benchmark is done". The report ends at the END marker, so
+  // that is the completion signal; the process is killed after it.
+  it("should return once the report marker lands, even if the host never exits", async () => {
+    const report = { hello: "world" };
+    const script = [
+      `echo ${BEGIN_MARKER}`,
+      `echo TNJSON:'${JSON.stringify(report)}'`,
+      `echo ${END_MARKER}`,
+      "sleep 300",
+    ].join("; ");
+    const started = Date.now();
+    const parsed = await runCapturing("sh", ["-c", script], { cwd: process.cwd() });
+    expect(parsed).toEqual(report);
+    // The fixture sleeps for five minutes; anything near that means exit was waited on.
+    expect(Date.now() - started).toBeLessThan(30_000);
+  }, 60_000);
+
+  it("should still fail closed when a host exits without ever emitting a report", async () => {
+    await expect(runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() })).rejects.toThrow(
+      /TN_BENCH_NO_REPORT/,
+    );
+  }, 30_000);
 });

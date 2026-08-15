@@ -55,6 +55,9 @@ export default defineConfig({
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
     __TN_BENCH_CONFIG__: JSON.stringify({
       animate: process.env.TN_BENCH_ANIMATE !== "off",
+      // Stated by the operator, because the host does not expose it. The Pixel 8 used for PRD-117
+      // runs at 120 Hz; a desktop under xvfb is 60.
+      refreshHz: integer("TN_BENCH_REFRESH_HZ", 60),
       frames: integer("TN_BENCH_FRAMES", 600),
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),

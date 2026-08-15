@@ -23,22 +23,54 @@ function x11Environment(): NodeJS.ProcessEnv {
   return { ...rest, SDL_VIDEODRIVER: "x11" };
 }
 
-async function runCapturing(
+/** Exported for the regression test that pins "returns on the marker, not on process exit". */
+export async function runCapturing(
   command: string,
   args: readonly string[],
   options: { cwd: string; env?: NodeJS.ProcessEnv },
 ): Promise<unknown> {
   const output: string[] = [];
   const code = await new Promise<number>((resolve, reject) => {
+    // Its own process group: the desktop arms run behind `xvfb-run`, so signalling the child only
+    // reaches the wrapper and leaves the host it spawned running. The group reaches both.
     const child = spawn(command, [...args], {
       cwd: options.cwd,
+      detached: true,
       env: options.env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout?.on("data", (chunk) => output.push(String(chunk)));
-    child.stderr?.on("data", (chunk) => output.push(String(chunk)));
+    const stop = (): void => {
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
+    // The report is complete at the END marker, so that is what this waits for — not process exit.
+    // The native desktop host currently spins instead of exiting once its script finishes (it
+    // reaches `_exit` and never leaves userspace), and waiting on `close` turned a finished
+    // benchmark into a silent hang with the answer already sitting in the buffer. The Android
+    // runner has always read its marker and then stopped the app; this now matches it.
+    let settled = false;
+    const finish = (value: number): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const collect = (chunk: unknown): void => {
+      output.push(String(chunk));
+      if (!settled && output.join("").includes(END)) {
+        // Let the host print whatever trails the marker, then take the process down.
+        setTimeout(() => {
+          stop();
+          finish(0);
+        }, 1_000);
+      }
+    };
+    child.stdout?.on("data", collect);
+    child.stderr?.on("data", collect);
     child.once("error", reject);
-    child.once("close", (value) => resolve(value ?? 1));
+    child.once("close", (value) => finish(value ?? 1));
   });
   const text = output.join("");
   const start = text.indexOf(BEGIN);

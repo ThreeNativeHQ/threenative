@@ -394,7 +394,17 @@ knee.
 
 ---
 
-### Phase 4 — The phone (device-gated)
+### Phase 4 — The phone (device-gated) — **RUN 2026-08-15, provisional**
+
+`scripts/engine-load-test/run-android.ts` exists and `pnpm bench:engines --arm tn-android` drives
+the installed APK and collects its report from logcat. The battery precondition is enforced in code,
+not by discipline: below 50% the run refuses and names the override. Both arms have been measured on
+a Pixel 8 — see `docs/verification/engine-load-test-summary-2026-08-15.md`. The result is
+**provisional**: the device sat at 21–25%, so the criterion below is not yet formally satisfied.
+
+The ThreeNative arm now runs V8 rather than QuickJS (PRD-118), which is what made it competitive.
+
+
 
 **Outcome:** the same table for `tn-android` vs `godot-android` on one named physical device.
 

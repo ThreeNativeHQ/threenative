@@ -11,6 +11,7 @@ import {
   renderArmMarkdown,
   renderComparisonMarkdown,
 } from "./report.js";
+import { runAndroidArm } from "./run-android.js";
 import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
@@ -114,11 +115,25 @@ async function main(): Promise<void> {
     else if (arm === "tn-desktop") report = parseRunReport(await runTnDesktop(repoRoot, options));
     else if (arm === "godot-desktop")
       report = parseRunReport(await runGodotDesktop(repoRoot, options));
-    else if (arm === "tn-android" || arm === "godot-android")
-      throw new Error(
-        `TN_BENCH_DEVICE_REQUIRED: ${arm} needs a physical Android device and an \`adb\` on PATH (PRD-117 Phase 4).`,
+    else if (arm === "tn-android" || arm === "godot-android") {
+      // The APK is built and installed separately; this drives the one already on the device and
+      // collects its report. `--allow-low-battery` marks the run provisional rather than refusing it.
+      report = parseRunReport(
+        await runAndroidArm(repoRoot, arm, {
+          ...options,
+          allowLowBattery: process.argv.includes("--allow-low-battery"),
+          timeoutMs: timeoutFor(options),
+        }),
       );
-    else throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
+    } else throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
+    // The report has to agree with the arm that was asked for. A build-time platform stamp that
+    // failed to substitute filed phone runs as `tn-desktop` and nothing noticed, so the mismatch is
+    // an error rather than a note: an artifact that misnames its own arm is worse than none.
+    if (report.arm !== arm) {
+      throw new Error(
+        `TN_BENCH_ARM_MISMATCH: asked for ${arm}, the run reported ${report.arm}. Check the build's platform stamp.`,
+      );
+    }
     // `--out` names the artifact so a diagnostic run (a floor control, an extended ladder) cannot
     // silently overwrite the ladder the published comparison is built from.
     const file = path.join(artifactRoot, `${flag("out") ?? arm}.json`);
@@ -140,7 +155,7 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web> [--out name] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
   );
 }
 
