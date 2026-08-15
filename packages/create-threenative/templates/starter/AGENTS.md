@@ -115,7 +115,9 @@ table below is the complete list.
 Physics uses Godot's names: `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`.
 Every node has `dispose()`. Register disposable entities with `ctx.entities`; the framework
 clears registered entities, scene objects, and physics nodes when a scene exits. Dispose a
-node explicitly only when removing it during play.
+node explicitly only when removing it during play. **The id is the name a scenario resolves.** A playtest `subject`, and every `movement` or
+`visibility` assertion, looks the entity up by that string — an unregistered player fails
+`TN_PLAYTEST_VISIBILITY_FAILED` however visible it is on screen.
 
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the player movement code.

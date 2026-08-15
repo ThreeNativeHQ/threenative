@@ -17,8 +17,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["core", "physics", "ui", "playtest"] as const;
+const PACKAGES = ["core", "physics", "ui", "playtest", "studio"] as const;
+const CLI_PACKAGE = "create-threenative";
 const ARMS = ["framework", "vanilla"] as const;
+
+type PackageTarball = (typeof PACKAGES)[number] | typeof CLI_PACKAGE;
 
 export type SandboxArm = (typeof ARMS)[number];
 
@@ -50,7 +53,7 @@ export interface SandboxOptions {
   readonly bare?: boolean;
   readonly genre: string;
   readonly out?: string;
-  readonly packageTarballs?: Partial<Record<(typeof PACKAGES)[number], string>>;
+  readonly packageTarballs?: Partial<Record<PackageTarball, string>>;
   readonly prepare?: boolean;
   readonly repo?: string;
   readonly install?: boolean;
@@ -248,6 +251,54 @@ function frameworkVersion(repo: string): string {
   return packageJson.version;
 }
 
+/** Maps a dependency a template declares onto the tarball key that would replace it. */
+function tarballKey(dependency: string): PackageTarball | undefined {
+  if (dependency === CLI_PACKAGE) return CLI_PACKAGE;
+  const scoped = dependency.startsWith("@threenative/")
+    ? dependency.slice("@threenative/".length)
+    : undefined;
+  return ([...PACKAGES] as string[]).includes(scoped ?? "")
+    ? (scoped as (typeof PACKAGES)[number])
+    : undefined;
+}
+
+/**
+ * A workspace package the template depends on but the sandbox never packed falls through to the
+ * registry at install time. Two of them did, and both 404 there, so `./scaffold.sh` died before
+ * the run started. Fail here — with the names — rather than in someone else's `pnpm install`.
+ */
+export function assertTemplateSourcesCovered(
+  repo: string,
+  template: string,
+  tarballs: Partial<Record<PackageTarball, string>>,
+): void {
+  const manifestPath = path.join(
+    repo,
+    "packages/create-threenative/templates",
+    template,
+    "package.json",
+  );
+  if (!fs.existsSync(manifestPath)) throw new Error(`Unknown template '${template}'.`);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  // optionalDependencies are excluded on purpose: the native runtime is allowed to be absent,
+  // and pnpm drops it rather than failing the install.
+  const declared = [
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ];
+  const uncovered = declared.filter((dependency) => {
+    const key = tarballKey(dependency);
+    return key !== undefined && tarballs[key] === undefined;
+  });
+  if (uncovered.length > 0)
+    throw new Error(
+      `Template '${template}' depends on workspace packages the sandbox did not pack: ${uncovered.join(", ")}. They are not on the registry, so the scaffold would fail at install.`,
+    );
+}
+
 function vanillaPackageJson(projectName: string, playtestTarball: string): string {
   return `${JSON.stringify(
     {
@@ -365,11 +416,12 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   for (const dir of [out, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(staging, { recursive: true });
 
-  const tarballs: Record<string, string> = {};
-  const requiredPackages = arm === "vanilla" ? (["playtest"] as const) : PACKAGES;
+  const tarballs: Partial<Record<PackageTarball, string>> = {};
+  const requiredPackages: readonly PackageTarball[] =
+    arm === "vanilla" ? (["playtest"] as const) : [...PACKAGES, CLI_PACKAGE];
   if (options.prepare ?? true) {
     run("pnpm", ["--filter", "./packages/**", "build"], repo);
-    for (const name of [...PACKAGES, "create-threenative"]) {
+    for (const name of [...PACKAGES, CLI_PACKAGE]) {
       run(
         "pnpm",
         ["--filter", `./packages/${name}`, "exec", "pnpm", "pack", "--pack-destination", staging],
@@ -379,6 +431,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     for (const file of fs.readdirSync(staging)) {
       const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
       if (owner !== undefined) tarballs[owner] = path.join(staging, file);
+      else if (file.startsWith(`${CLI_PACKAGE}-`)) tarballs[CLI_PACKAGE] = path.join(staging, file);
     }
   } else {
     for (const name of requiredPackages) {
@@ -389,6 +442,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   const missing = requiredPackages.filter((name) => tarballs[name] === undefined);
   if (missing.length > 0)
     throw new Error(`pnpm pack produced no tarball for: ${missing.join(", ")}`);
+  if (arm !== "vanilla") assertTemplateSourcesCovered(repo, template, tarballs);
 
   const scaffold = [
     "node",
@@ -397,6 +451,8 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     "--template",
     template,
     ...PACKAGES.flatMap((name) => [`--${name}-package`, tarballs[name] as string]),
+    "--cli-package",
+    tarballs[CLI_PACKAGE] as string,
   ];
 
   // --bare leaves the scaffolding to the agent, so the run starts the way a user's does.

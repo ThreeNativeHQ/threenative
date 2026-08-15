@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertTemplateSourcesCovered,
   isArchived,
   makeSandbox,
   readManifest,
@@ -51,6 +52,51 @@ describe("genre sandbox", () => {
       await readFile("docs/benchmark/genres/platformer/reference.png"),
     );
   }, 30_000);
+
+  it("gives the scaffold a local source for every workspace package the template declares", async () => {
+    const root = await temporaryRoot("threenative-sandbox-sources-");
+    const result = makeSandbox({
+      bare: true,
+      genre: "endless-runner",
+      out: path.join(root, "sandbox"),
+      prepare: false,
+      repo: process.cwd(),
+      template: "starter",
+    });
+    const scaffold = await readFile(path.join(result.out, "scaffold.sh"), "utf8");
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(process.cwd(), "packages/create-threenative/templates/starter/package.json"),
+        "utf8",
+      ),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    const declared = [
+      ...Object.keys(manifest.dependencies ?? {}),
+      ...Object.keys(manifest.devDependencies ?? {}),
+    ].filter((name) => name === "create-threenative" || name.startsWith("@threenative/"));
+    // Every one of these 404s on the registry today; an unpassed source is a dead scaffold.
+    expect(declared).toContain("@threenative/studio");
+    expect(declared).toContain("create-threenative");
+    for (const dependency of declared) {
+      const flag =
+        dependency === "create-threenative"
+          ? "--cli-package"
+          : `--${dependency.replace("@threenative/", "")}-package`;
+      expect(scaffold, dependency).toContain(flag);
+    }
+  }, 30_000);
+
+  it("refuses a sandbox whose template needs a package the sweep never packed", () => {
+    expect(() =>
+      assertTemplateSourcesCovered(process.cwd(), "starter", {
+        core: "core.tgz",
+        physics: "physics.tgz",
+        playtest: "playtest.tgz",
+        ui: "ui.tgz",
+        "create-threenative": "cli.tgz",
+      }),
+    ).toThrow(/@threenative\/studio/);
+  });
 
   it("throws before creating a sandbox when the genre brief is missing", async () => {
     const root = await temporaryRoot("threenative-genre-");

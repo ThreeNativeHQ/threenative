@@ -59,8 +59,10 @@ and update the player beside the entity that owns the loaded model.
 Use Godot names for physics nodes: `CharacterBody3D`, `Area3D`, `RigidBody3D`, and
 `CollisionShape3D`. Register persistent entities with `ctx.entities`; the framework clears
 registered entities, scene objects, and physics nodes when a scene exits. Dispose a node
-explicitly only when removing it during play. Feel belongs in the character, not in
-`defineGame` options.
+explicitly only when removing it during play. **The id is the name a scenario resolves.** A
+playtest `subject`, and every `movement` or `visibility` assertion, looks the entity up by that
+string — an unregistered player fails `TN_PLAYTEST_VISIBILITY_FAILED` however visible it is on
+screen. Feel belongs in the character, not in `defineGame` options.
 
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the character movement code.
