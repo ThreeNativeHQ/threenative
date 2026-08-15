@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { reconcileBrowserPointers } from "../src/runner/browser.js";
+import { reconcileBrowserPointers, WEBGPU_BROWSER_ARGS } from "../src/runner/browser.js";
 
 test("multi-pointer browser input reconciles a complete held set without reinserting moves", () => {
   const previous = new Map([
@@ -34,4 +34,11 @@ test("multi-pointer browser input releases missing pointers before adding new ar
       type: "pointerdown",
     },
   ]);
+});
+
+test("the webgpu recipe asks for Vulkan so the run does not land on SwiftShader", () => {
+  // Chromium answers `requestAdapter` either way, so a missing flag produces no error at all —
+  // it produces a software renderer's results. Measured under Xvfb on an RTX 2080:
+  // `swiftshader / google` without this flag, `turing / nvidia` with it.
+  expect(WEBGPU_BROWSER_ARGS).toContain("--enable-features=Vulkan");
 });

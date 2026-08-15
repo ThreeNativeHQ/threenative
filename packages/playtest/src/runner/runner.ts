@@ -107,6 +107,14 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   let browser: Browser | undefined;
   let page: Page | undefined;
   let teardownPromise: Promise<void> | undefined;
+  const pageLifecycle: IPageLifecycle = {
+    closed: false,
+    crashed: false,
+    frameNavigations: [],
+    navigations: [],
+    settled: false,
+    tail: [],
+  };
   const teardown = async (): Promise<void> => {
     if (teardownPromise !== undefined) return teardownPromise;
     teardownPromise = (async () => {
@@ -163,12 +171,30 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         text: unhandledRejection ? text.slice(UNHANDLED_REJECTION_PREFIX.length) : text,
         type: entry.type(),
       });
+      pageLifecycle.tail.push(`${entry.type()}: ${text}`);
+      if (pageLifecycle.tail.length > 8) pageLifecycle.tail.shift();
     });
     page.on("pageerror", (error) => consoleEntries.push({ source: "page-error", text: error.stack || error.message, type: "pageerror" }));
     page.on("requestfailed", (request) => networkEntries.push({ method: request.method(), url: request.url() }));
+    // A renderer crash and a page navigation both surface as "Execution context was destroyed"
+    // on the next evaluate, and the two need opposite fixes. Record which actually happened so
+    // the report names it instead of emitting the unexplained-error catch-all.
+    const observedPage = page;
+    page.on("crash", () => {
+      pageLifecycle.crashed = true;
+    });
+    page.on("framenavigated", (frame) => {
+      if (frame !== observedPage.mainFrame()) return;
+      pageLifecycle.frameNavigations.push(frame.url());
+      if (pageLifecycle.settled) pageLifecycle.navigations.push(frame.url());
+    });
+    page.on("close", () => {
+      pageLifecycle.closed = true;
+    });
     const activePage = page;
-    await page.goto(config.url, { timeout: config.timeoutMs, waitUntil: "domcontentloaded" });
-    const bridge = await connectPlaytestBridge(page, scenario);
+    const bridge = await openPageAndConnectBridge(page, config, scenario);
+    // From here on the page is expected to stay put; anything that moves it is evidence.
+    pageLifecycle.settled = true;
     if (bridge !== undefined && scenario.setup !== undefined) {
       await bridge.applySetup(setupRequest(scenario));
     }
@@ -375,6 +401,10 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   } catch (error) {
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
       return addPreflightDiagnostic(failureReport(config, scenario, error.diagnostic), preflight);
+    }
+    const lifecycleDiagnostic = pageLifecycleDiagnostic(error, pageLifecycle, config.url);
+    if (lifecycleDiagnostic !== undefined) {
+      return addPreflightDiagnostic(failureReport(config, scenario, lifecycleDiagnostic), preflight);
     }
     throw error;
   } finally {
@@ -1261,6 +1291,100 @@ function startManagedServer(config: IStandalonePlaytestConfig): ChildProcess {
     stdio: ["ignore", "pipe", "pipe"],
   });
   return server;
+}
+
+/**
+ * A dev server can reload the page out from under the handshake — Vite issues a full reload
+ * when it discovers a dependency it has not pre-bundled, which is common on the first load
+ * after a server was killed mid-write. Playwright reports that as "Execution context was
+ * destroyed", and it used to escape as the runner's unexplained-error catch-all.
+ */
+const PAGE_NAVIGATED_PATTERN =
+  /Execution context was destroyed|frame (?:was )?detached|Target (?:page|closed)/iu;
+
+function isPageNavigatedRace(error: unknown): boolean {
+  return error instanceof Error && PAGE_NAVIGATED_PATTERN.test(error.message);
+}
+
+interface IPageLifecycle {
+  closed: boolean;
+  crashed: boolean;
+  /** Every main-frame navigation, including the run's own initial one. */
+  frameNavigations: string[];
+  /** Main-frame navigations after the handshake settled — the ones that break a run. */
+  navigations: string[];
+  settled: boolean;
+  /** The last console lines before the failure, which is where a device loss announces itself. */
+  tail: string[];
+}
+
+/**
+ * Playwright reports a crashed renderer and a navigated document with the same
+ * "Execution context was destroyed" message, and the two have opposite fixes: a crash is an
+ * environment or content problem, a navigation is the page moving under the run. The listeners
+ * on the page record which one happened, so the report names it rather than falling through to
+ * the unexplained-error catch-all. Returns undefined when the error is neither, leaving it to
+ * propagate untouched.
+ */
+export function pageLifecycleDiagnostic(
+  error: unknown,
+  lifecycle: IPageLifecycle,
+  url: string,
+): IPlaytestProtocolDiagnostic | undefined {
+  if (!lifecycle.crashed && !isPageNavigatedRace(error)) return undefined;
+  const detail = error instanceof Error ? error.message : String(error);
+  if (lifecycle.crashed) {
+    return playtestDiagnostic(
+      "TN_PLAYTEST_PAGE_CRASHED",
+      `The browser page crashed while the scenario was running at '${url}'; runner error: ${detail}.`,
+      "The renderer process died mid-run, so no assertion after that point was observed. Re-run with a smaller scene or a hardware GPU; under a virtual display the software WebGPU path is the usual cause.",
+    );
+  }
+  const where = lifecycle.navigations.length === 0
+    ? "an unrecorded location"
+    : `'${lifecycle.navigations.join("', '")}'`;
+  const observed = [
+    `page closed: ${lifecycle.closed}`,
+    `main-frame navigations: ${lifecycle.frameNavigations.length}`,
+    ...(lifecycle.tail.length === 0 ? [] : [`last console: ${lifecycle.tail.join(" | ")}`]),
+  ].join("; ");
+  return playtestDiagnostic(
+    "TN_PLAYTEST_PAGE_NAVIGATED",
+    `The page navigated to ${where} while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,
+    "Something moved the document after the run started, so the observations after that point are from a different page. Remove the navigation from the game, or point --url at a server that does not reload itself mid-run.",
+  );
+}
+
+/**
+ * Navigate and complete the bridge handshake, re-navigating when the page reloads itself
+ * before the handshake finishes. This never retries past the handshake: no observation has
+ * been taken and no assertion has been evaluated yet, so a reattempt cannot hide a failure.
+ * A bridge that is genuinely missing or incompatible still fails on its own diagnostic, and
+ * an exhausted retry budget fails closed on TN_PLAYTEST_PAGE_NAVIGATED rather than passing.
+ */
+export async function openPageAndConnectBridge(
+  page: Page,
+  config: IStandalonePlaytestConfig,
+  scenario: IPlaytestScenario,
+): Promise<IPlaytestBridgeClient | undefined> {
+  const attempts = 3;
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(config.url, { timeout: config.timeoutMs, waitUntil: "domcontentloaded" });
+      await page.waitForLoadState("load", { timeout: config.timeoutMs }).catch(() => undefined);
+      return await connectPlaytestBridge(page, scenario);
+    } catch (error) {
+      if (error instanceof PlaytestBridgeError || !isPageNavigatedRace(error)) throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw new PlaytestBridgeError(playtestDiagnostic(
+    "TN_PLAYTEST_PAGE_NAVIGATED",
+    `The page navigated during the bridge handshake on all ${attempts} attempts at '${config.url}'; last runner error: ${lastError?.message ?? "unknown"}.`,
+    "The served page is reloading itself while the run starts. With a Vite dev server this is usually dependency pre-bundling: run the project's build or dev command once before the scenario so the dependency cache is warm, or point --url at a preview server instead.",
+    { nextCommand: config.server?.command },
+  ));
 }
 
 async function assertManagedUrlAvailable(url: string): Promise<void> {

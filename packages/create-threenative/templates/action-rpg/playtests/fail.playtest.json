@@ -10,11 +10,7 @@
     { "kind": "wait", "label": "failed", "waitTicks": 8, "release": true }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": false,
-      "runtimeDiagnosticsOptOutReason": "The fail-condition scenario is authoritative; gameplay assertions remain required.",
-      "runtimeReady": true
-    },
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "GameState", "path": "gameOver", "equals": 1, "changed": true },
       { "id": "GameState", "path": "phase", "equals": "lost", "changed": true },

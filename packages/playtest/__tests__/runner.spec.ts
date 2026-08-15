@@ -11,6 +11,8 @@ import { exitCodeForReport } from "../src/runner/cli.js";
 import {
   buildReport,
   captureVisualSurface,
+  openPageAndConnectBridge,
+  pageLifecycleDiagnostic,
   playtestStepDrivesMovement,
   runStandalonePlaytest,
   STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
@@ -1089,4 +1091,88 @@ test("settled fails closed when physics evidence reports omitted bodies", () => 
     "TN_PLAYTEST_PHYSICS_EVIDENCE_TRUNCATED",
   );
   expect(result.pass).toBe(false);
+});
+
+test("the bridge handshake survives a dev server reloading the page underneath it", async () => {
+  const goto = vi.fn(async () => {
+    if (goto.mock.calls.length <= 2) {
+      throw new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+    }
+    throw new Error("TN_TEST_REACHED_THIRD_ATTEMPT");
+  });
+  const page = {
+    goto,
+    waitForLoadState: vi.fn(async () => undefined),
+  } as unknown as Page;
+
+  // The third attempt throws a non-navigation error, which must propagate untouched — that is
+  // how this test observes that the first two navigation races were retried rather than raised.
+  await expect(openPageAndConnectBridge(page, CONFIG, scenario(undefined))).rejects.toThrow(
+    "TN_TEST_REACHED_THIRD_ATTEMPT",
+  );
+  expect(goto).toHaveBeenCalledTimes(3);
+});
+
+test("a page that never stops reloading fails closed instead of running the scenario", async () => {
+  const goto = vi.fn(async () => {
+    throw new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+  });
+  const page = {
+    goto,
+    waitForLoadState: vi.fn(async () => undefined),
+  } as unknown as Page;
+
+  await expect(openPageAndConnectBridge(page, CONFIG, scenario(undefined))).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_PAGE_NAVIGATED" },
+  });
+  expect(goto).toHaveBeenCalledTimes(3);
+});
+
+test("an ordinary navigation failure is not retried and is not relabelled", async () => {
+  const goto = vi.fn(async () => {
+    throw new Error("net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173");
+  });
+  const page = {
+    goto,
+    waitForLoadState: vi.fn(async () => undefined),
+  } as unknown as Page;
+
+  await expect(openPageAndConnectBridge(page, CONFIG, scenario(undefined))).rejects.toThrow(
+    "ERR_CONNECTION_REFUSED",
+  );
+  expect(goto).toHaveBeenCalledTimes(1);
+});
+
+test("a renderer crash is reported as a crash, not as an unexplained runner error", () => {
+  const destroyed = new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+
+  const diagnostic = pageLifecycleDiagnostic(
+    destroyed,
+    { closed: false, crashed: true, frameNavigations: [], navigations: [], settled: true, tail: [] },
+    "http://127.0.0.1:4173",
+  );
+
+  expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_CRASHED");
+  expect(diagnostic?.message).toContain("crashed");
+});
+
+test("a mid-run navigation is reported with the location the page moved to", () => {
+  const destroyed = new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+
+  const diagnostic = pageLifecycleDiagnostic(
+    destroyed,
+    { closed: false, crashed: false, frameNavigations: ["http://127.0.0.1:4173/game-over"], navigations: ["http://127.0.0.1:4173/game-over"], settled: true, tail: [] },
+    "http://127.0.0.1:4173",
+  );
+
+  expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_NAVIGATED");
+  expect(diagnostic?.message).toContain("http://127.0.0.1:4173/game-over");
+});
+
+test("an error that is neither a crash nor a navigation keeps propagating", () => {
+  const unrelated = new Error("TypeError: entity registry is not iterable");
+
+  expect(
+    pageLifecycleDiagnostic(unrelated, { closed: false, crashed: false, frameNavigations: [], navigations: [], settled: true, tail: [] }, "http://127.0.0.1:4173"),
+  ).toBeUndefined();
 });

@@ -75,6 +75,8 @@ test("the WebGPU browser recipe expands to the sealed Chromium flags", () => {
     "--enable-unsafe-webgpu",
     "--disable-gpu-sandbox",
     "--ignore-gpu-blocklist",
+    // Dropping this returns every WebGPU run to SwiftShader without any error to notice.
+    "--enable-features=Vulkan",
   ]);
   expect(() =>
     parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "unknown"], "/project"),
