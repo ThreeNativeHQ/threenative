@@ -9,6 +9,7 @@ import type { JsonValue } from "../src/protocol.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import {
+  boundedTeardownStep,
   buildReport,
   captureVisualSurface,
   openPageAndConnectBridge,
@@ -1175,4 +1176,23 @@ test("an error that is neither a crash nor a navigation keeps propagating", () =
   expect(
     pageLifecycleDiagnostic(unrelated, { closed: false, crashed: false, frameNavigations: [], navigations: [], settled: true, tail: [] }, "http://127.0.0.1:4173"),
   ).toBeUndefined();
+});
+
+test("a teardown step that finishes is reported as finished", async () => {
+  await expect(boundedTeardownStep(Promise.resolve(), 1_000)).resolves.toBe(true);
+  await expect(boundedTeardownStep(undefined, 1_000)).resolves.toBe(true);
+  await expect(boundedTeardownStep(Promise.reject(new Error("closed badly")), 1_000)).resolves.toBe(
+    true,
+  );
+});
+
+test("a browser that never closes does not hold the process open", async () => {
+  // Chromium under a virtual display can sit in close() forever. The run's report is already
+  // written by then, so teardown has to give up and let the caller SIGKILL it — otherwise the
+  // next scenario in a template's `&&` chain never starts.
+  const started = Date.now();
+
+  await expect(boundedTeardownStep(new Promise(() => undefined), 50)).resolves.toBe(false);
+
+  expect(Date.now() - started).toBeLessThan(1_000);
 });

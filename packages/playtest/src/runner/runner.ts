@@ -118,8 +118,11 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
   const teardown = async (): Promise<void> => {
     if (teardownPromise !== undefined) return teardownPromise;
     teardownPromise = (async () => {
-      await page?.context().close().catch(() => undefined);
-      await browser?.close().catch(() => undefined);
+      await boundedTeardownStep(page?.context().close(), 5_000);
+      // Chromium does not always exit when asked — under a virtual display with a live GPU
+      // process it can sit in close() forever. The report is already written by this point, so
+      // teardown gives up rather than holding the run open; the CLI then exits explicitly.
+      await boundedTeardownStep(browser?.close(), 10_000);
       await stopManagedServer(server);
     })();
     return teardownPromise;
@@ -1301,6 +1304,30 @@ function startManagedServer(config: IStandalonePlaytestConfig): ChildProcess {
  */
 const PAGE_NAVIGATED_PATTERN =
   /Execution context was destroyed|frame (?:was )?detached|Target (?:page|closed)/iu;
+
+const TEARDOWN_TIMED_OUT = Symbol("teardown-timed-out");
+
+/**
+ * Await one teardown step, but never longer than `timeoutMs`. Returns true when the step
+ * finished (or there was nothing to do) and false when it ran out of time, so the caller can
+ * escalate. Teardown runs after the report is written, so a step that hangs costs the process
+ * its exit rather than costing the run its result.
+ */
+export async function boundedTeardownStep(
+  step: Promise<unknown> | undefined,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (step === undefined) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TEARDOWN_TIMED_OUT>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout(TEARDOWN_TIMED_OUT), timeoutMs);
+  });
+  try {
+    return (await Promise.race([step.catch(() => undefined), timeout])) !== TEARDOWN_TIMED_OUT;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 function isPageNavigatedRace(error: unknown): boolean {
   return error instanceof Error && PAGE_NAVIGATED_PATTERN.test(error.message);

@@ -183,5 +183,10 @@ if (
   && existsSync(entryPath)
   && realpathSync(resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))
 ) {
-  await main();
+  const code = await main();
+  // Exit explicitly rather than waiting for the event loop to drain. A browser that refused to
+  // close leaves handles open, and the report is already written by this point, so waiting only
+  // costs the caller its exit: every template chains its scenarios with `&&`, and one run that
+  // never returns stalls the whole sequence with no error to read.
+  process.exit(code);
 }
