@@ -98,6 +98,61 @@ Local versions equal published versions for all four live packages. Publishing t
 requires a bump, nothing computes one, and nothing fails when a package is edited without one. The
 `0.1.0` on the registry and the `0.1.0` on disk are different software with the same name.
 
+**Measured, 2026-08-15.** The published `@threenative/core@0.1.0` declares two dependencies; the
+local one declares three:
+
+```
+$ npm view @threenative/core dependencies
+{ "three": "0.185.1", "zustand": "5.x" }
+$ grep -A3 '"dependencies"' packages/core/package.json
+  "three": "catalog:", "three-mesh-bvh": "catalog:", "zustand": "catalog:"
+```
+
+Two useful facts fall out of that comparison. `three-mesh-bvh` is missing from the published
+package, so this is different software under the same version string — not merely an older build.
+And the published manifest carries **resolved** versions rather than `catalog:` specifiers, which
+proves the 2026-08-09 publish went through `pnpm publish`. The specifier rewriting works; a raw
+`npm publish` would leak `catalog:` into the manifest and break every install. Phase 2 uses
+`pnpm publish`.
+
+### Overwriting is not available, and the account is not the obstacle
+
+Checked 2026-08-15 with the repository-local `.npmrc` (byte-identical to
+`~/projects/threejs-to-bevy/.npmrc`; never printed, always passed as `--userconfig`):
+
+| Question | Answer | Command |
+|---|---|---|
+| Does the token authenticate? | yes, as `jonit-dev` | `npm --userconfig .npmrc whoami` |
+| Who owns the four live packages? | `jonit-dev`, all four | `npm --userconfig .npmrc owner ls @threenative/core` |
+| Are the three missing names taken? | no — never registered | `npm view create-threenative` → 404 |
+
+**So the blocker is not permission, and it is not name availability. It is that npm does not permit
+republishing a version that exists.** Unpublishing is allowed only within 72 hours of the original
+publish; `0.1.0` went up 2026-08-09, so that window closed 2026-08-12. There is no overwrite path,
+only a bump.
+
+`@threenative/ui` is the exception that proves the lane works: 13 published versions up to
+`0.1.12`, the most recent on 2026-08-09. The other three have never moved off `0.1.0`.
+
+### Owner decision, 2026-08-15 — all seven publish as `0.2.0`
+
+Recorded here because Phase 2 cannot run without it.
+
+**Decision: every package publishes as `0.2.0` to the `latest` dist-tag.** One number across all
+seven, including the jump for `ui` from `0.1.12`. It marks the line between the hand-published
+`0.1.0` and the alpha, and it keeps `npm create threenative my-game` working with no extra flags.
+
+**A prerelease tag was considered and rejected for one concrete reason:** publishing only as
+`0.2.0-alpha.0` under an `alpha` tag does not set `latest`, so `npm create threenative` would still
+fail and a stranger would have to know to type `npm create threenative@alpha`. That leaves alpha
+row A1 red by construction, which defeats the PRD.
+
+**Consequence for Phase 2:** the seven template manifests in
+`packages/create-threenative/templates/*/package.json` pin exact versions — `"@threenative/core":
+"0.1.0"`, `"create-threenative": "0.1.0"`, `"@threenative/runtime-native": "0.1.14"` — and every
+one moves to `0.2.0` in the same commit. A template left pinned at `0.1.0` scaffolds a project that
+installs the old packages, which is the current defect wearing a new number.
+
 ---
 
 ## 2. What alpha needs, and what it does not
@@ -183,12 +238,14 @@ red against a fixture with the condition removed.
 
 ### Phase 2 — publish all seven, from CI, once
 
-**Files:** `.github/workflows/npm-release.yml` NEW · `packages/*/package.json` EDIT (versions) ·
-`README.md` EDIT (the install command becomes true).
+**Files:** `.github/workflows/npm-release.yml` NEW · `packages/*/package.json` EDIT (all seven to
+`0.2.0`) · `packages/create-threenative/templates/*/package.json` EDIT (every pinned version to
+`0.2.0`) · `README.md` EDIT (the install command becomes true).
 
 The workflow runs `pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test`,
-then `pnpm publish:check`, then publishes with the repository-local `.npmrc` passed explicitly
-(`npm --userconfig .npmrc publish`), never printing it.
+then `pnpm publish:check`, then publishes with **`pnpm publish`** — never raw `npm publish`, which
+would leak `catalog:` and `workspace:*` specifiers into the manifests — with the credentials passed
+explicitly and never printed.
 
 **This is the one irreversible step in the batch.** A published version cannot be recalled, only
 deprecated. Phase 2 does not run until Phase 1 is green and an owner has approved the version
