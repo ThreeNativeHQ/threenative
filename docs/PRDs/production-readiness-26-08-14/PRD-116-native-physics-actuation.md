@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-114 — A native build can move a dynamic body
+# PRD-116 — A native build can move a dynamic body
 
 **Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 6, and the explicit follow-up PRD-108 §5 left open.
