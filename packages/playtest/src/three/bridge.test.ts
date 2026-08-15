@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector2, type WebGLRenderer } from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
 
 import { installThreePlaytestBridge } from "./bridge.js";
 import { ThreePlaytestEntityRegistry } from "./entities.js";

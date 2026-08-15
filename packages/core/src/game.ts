@@ -118,6 +118,10 @@ export interface IGameConfig<
   readonly input?: InputBindings;
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
+  /**
+   * Maximum simulation steps per rendered frame. Default 5. Caps the catch-up burst after a
+   * stall so a slow frame cannot cascade into a spiral of longer frames.
+   */
   readonly maxSteps?: number;
   readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
@@ -125,6 +129,15 @@ export interface IGameConfig<
   readonly renderer?: IRendererOptions;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
+  /**
+   * Fixed simulation step in seconds, e.g. `1 / 60`. **This is the fixed-step knob a game
+   * wants**; every `update(ctx, dt)` receives exactly this `dt`, never a variable frame time,
+   * so gameplay and physics advance together and never see a stall.
+   *
+   * Do not write your own accumulator on top of this. Doing so runs the scene's update several
+   * times per already-fixed step and decouples gameplay from the simulation — a real build lost
+   * its largest wrong turn to exactly that, because this field carried no documentation.
+   */
   readonly step?: number;
   readonly start: string;
   readonly stateFlushMs?: number;

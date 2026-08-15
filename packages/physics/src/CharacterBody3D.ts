@@ -37,6 +37,12 @@ export interface ICharacterBody3DOptions {
   readonly collisionMask?: number;
   /** Collider layer bits to ignore while moving upward. */
   readonly oneWayLayers?: number;
+  /**
+   * Shove dynamic bodies the character walks into, instead of sliding past them. Default false,
+   * matching Rapier. Without it a character collides with a crate and the crate never moves,
+   * which reads as a physics bug rather than a default.
+   */
+  readonly pushesDynamicBodies?: boolean;
 }
 
 type TransformRecord = [number, number, number, number, number, number, number, number];
@@ -110,6 +116,7 @@ export class CharacterBody3D {
       maxSlopeClimbAngle: options.maxSlopeClimbAngle ?? Math.PI / 4,
       offset: options.offset ?? 0.01,
       oneWayLayers: this.oneWayLayers,
+      pushesDynamicBodies: options.pushesDynamicBodies ?? false,
       snapToGround: options.snapToGround,
     };
     try {

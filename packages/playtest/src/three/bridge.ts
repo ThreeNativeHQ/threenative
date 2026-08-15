@@ -14,6 +14,7 @@ import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
 import { sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
+import { ThreePlaytestPhysicsRecorder, type IThreePlaytestPhysics } from "./physics.js";
 import {
   connectDevicePlaytestBridge,
   type IDeviceBridgeInstallation,
@@ -35,6 +36,8 @@ export interface IThreePlaytestBridgeOptions {
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   events?: () => JsonValue[];
+  /** Physics bodies to retain per labelled step. Requires the authoritative tick provider. */
+  physics?: IThreePlaytestPhysics;
   renderer: IThreePlaytestRenderer;
   resources?: IThreePlaytestResources;
   scene: Scene;
@@ -51,6 +54,12 @@ export interface IThreePlaytestBridgeInstallation {
 export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions): IThreePlaytestBridgeInstallation {
   if ((options.fixedStep === undefined) !== (options.tick === undefined))
     throw new Error("fixedStep and its authoritative tick provider must be installed together.");
+  // A settle or aerodynamics assertion compares snapshots taken at different scenario steps.
+  // Without an authoritative tick the runner is racing the render loop rather than driving it,
+  // so the comparison would be timing noise wearing an assertion's name.
+  if (options.physics !== undefined && options.tick === undefined)
+    throw new Error("A physics provider requires the authoritative tick provider, and therefore fixedStep.");
+  const recorder = options.physics === undefined ? undefined : new ThreePlaytestPhysicsRecorder(options.physics);
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
@@ -66,6 +75,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(Object.keys(options.components?.() ?? {}).length === 0 ? [] : ["runtime.components"]),
     ...(options.events === undefined ? [] : ["runtime.events"]),
     ...(options.gameplay === undefined ? [] : ["runtime.animation", "runtime.state"]),
+    ...(options.physics === undefined ? [] : ["runtime.physics"]),
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
@@ -118,9 +128,12 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         tick: options.tick?.(),
       }, request);
       const components = options.components?.();
-      const result = components === undefined || Object.keys(components).length === 0
+      const withComponents = components === undefined || Object.keys(components).length === 0
         ? snapshot
         : { ...snapshot, components };
+      const result = recorder === undefined || request.include?.includes("physicsDebugSeries") !== true
+        ? withComponents
+        : { ...withComponents, physicsDebugSeries: recorder.sample(request, options.tick!()) };
       assertJsonSafe(result);
       return result;
     },

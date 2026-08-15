@@ -125,6 +125,8 @@ export interface IPhysicsCharacterOptions {
   };
   readonly snapToGround?: number;
   readonly oneWayLayers: number;
+  /** Let the character shove dynamic bodies it collides with, instead of sliding past them. */
+  readonly pushesDynamicBodies?: boolean;
 }
 
 export interface IPhysicsCharacterState {
@@ -148,6 +150,14 @@ export interface IPhysicsSimulation {
     id: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
   ): void;
+  /**
+   * Dynamic-body actuation. Without these a game cannot move a dynamic body at all: a transform
+   * write is overwritten by the next step, so `setBodyTransform` is genuinely cold-path only.
+   */
+  applyBodyImpulse(id: number, impulse: IPhysicsVector3): void;
+  applyBodyForce(id: number, force: IPhysicsVector3): void;
+  setBodyLinearVelocity(id: number, velocity: IPhysicsVector3): void;
+  readBodyLinearVelocity(id: number): IPhysicsVector3;
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readBodySleepStates(buffer: Float32Array): number;
@@ -171,6 +181,22 @@ export interface IPhysicsSimulation {
   areaIntersections?(id: number): ReadonlySet<number>;
   drainCollisionEvents(buffer: Uint32Array): number;
   dispose(): void;
+}
+
+/**
+ * A NaN reaching Rapier corrupts the body's state for the rest of the run rather than throwing,
+ * and the symptom surfaces frames later as a body that vanished. Reject it at the seam.
+ */
+export function requireFiniteVector(vector: IPhysicsVector3, label: string): void {
+  if (
+    typeof vector?.x !== "number" ||
+    typeof vector.y !== "number" ||
+    typeof vector.z !== "number" ||
+    !Number.isFinite(vector.x) ||
+    !Number.isFinite(vector.y) ||
+    !Number.isFinite(vector.z)
+  )
+    throw new Error(`TN_PHYSICS_NON_FINITE: ${label} must be a finite { x, y, z }.`);
 }
 
 /** Runtime metadata needed to expose backend-specific escape hatches without leaking them. */
@@ -508,6 +534,22 @@ export function createWebPhysicsSimulation(
     if (disposed) throw new Error("Physics simulation is disposed.");
   };
 
+  // Actuation on a fixed, kinematic or character body is not a weaker push, it is no push at
+  // all -- Rapier discards it. Failing here beats a silently motionless body.
+  const requireDynamic = (
+    entry: ISimulationBody | undefined,
+    id: number,
+    operation: string,
+  ): ISimulationBody => {
+    if (entry === undefined)
+      throw new Error(`TN_PHYSICS_UNKNOWN_BODY: ${operation} references an unknown body ${id}.`);
+    if (entry.type !== "dynamic")
+      throw new Error(
+        `TN_PHYSICS_NOT_DYNAMIC: ${operation} needs a dynamic body; body ${id} is '${entry.type}'.`,
+      );
+    return entry;
+  };
+
   const queryPredicate =
     (collisionMask: number) =>
     (collider: rapier.Collider): boolean => {
@@ -603,6 +645,10 @@ export function createWebPhysicsSimulation(
       }
       if (characterOptions.snapToGround !== undefined)
         entry.controller.enableSnapToGround(characterOptions.snapToGround);
+      // Off by default in Rapier, so a character collides with crates without ever moving them.
+      entry.controller.setApplyImpulsesToDynamicBodies(
+        characterOptions.pushesDynamicBodies === true,
+      );
     },
     removeBody: (id) => {
       requireLive();
@@ -622,6 +668,28 @@ export function createWebPhysicsSimulation(
       entry.body.setTranslation(position, true);
       options.world.propagateModifiedBodyPositionsToColliders();
       dirtyBodies.add(entry);
+    },
+    applyBodyImpulse: (id, impulse) => {
+      requireLive();
+      requireFiniteVector(impulse, "impulse");
+      // wakeUp: an impulse applied to a sleeping body is otherwise silently discarded, which is
+      // the same class of no-op as a discarded transform write.
+      requireDynamic(bodies.get(id), id, "applyImpulse").body.applyImpulse(impulse, true);
+    },
+    applyBodyForce: (id, force) => {
+      requireLive();
+      requireFiniteVector(force, "force");
+      requireDynamic(bodies.get(id), id, "applyForce").body.addForce(force, true);
+    },
+    setBodyLinearVelocity: (id, velocity) => {
+      requireLive();
+      requireFiniteVector(velocity, "velocity");
+      requireDynamic(bodies.get(id), id, "linearVelocity").body.setLinvel(velocity, true);
+    },
+    readBodyLinearVelocity: (id) => {
+      requireLive();
+      const { x, y, z } = requireDynamic(bodies.get(id), id, "linearVelocity").body.linvel();
+      return { x, y, z };
     },
     step: (deltaTime, inputSnapshot) => {
       requireLive();

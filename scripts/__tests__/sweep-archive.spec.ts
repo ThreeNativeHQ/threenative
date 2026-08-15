@@ -52,7 +52,14 @@ async function writeSandbox(root: string, name = "sandbox"): Promise<string> {
     path.join(sandbox, "node_modules", "@threenative", "core", "dist", "index.d.ts"),
     "export declare const FixtureExport: number;\n",
   );
-  await writeFile(path.join(sandbox, "dist.js"), "build output\n");
+  // Build output is a directory here because that is what vite emits; the archiver now
+  // carries every root file, so the exclusion has to name the real artifact.
+  await mkdir(path.join(sandbox, "dist"), { recursive: true });
+  await writeFile(path.join(sandbox, "dist", "bundle.js"), "build output\n");
+  await writeFile(
+    path.join(sandbox, "threenative.config.ts"),
+    "export default { renderer: {} };\n",
+  );
   return sandbox;
 }
 
@@ -81,7 +88,40 @@ describe("sweep archive", () => {
       readFile(path.join(archive, "framework-types/@threenative/core/index.d.ts"), "utf8"),
     ).resolves.toContain("FixtureExport");
     await expect(access(path.join(archive, "node_modules"))).rejects.toThrow();
-    await expect(access(path.join(archive, "dist.js"))).rejects.toThrow();
+    await expect(access(path.join(archive, "dist"))).rejects.toThrow();
+  });
+
+  // The archiver allowlisted index.html and vite.config.* only, so threenative.config.ts --
+  // which the starter's own src/game.ts imports as "../threenative.config.js" -- never
+  // travelled. Every framework archive 500'd on that import, and three consecutive rounds
+  // recorded 0/1 for both arms against builds that had never booted.
+  it("carries the root config files a scaffolded project needs to boot", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "src", "game.ts"),
+      'import config from "../threenative.config.js";\nexport default config;\n',
+    );
+
+    const archive = archiveSandbox(sandbox, root);
+
+    await expect(readFile(path.join(archive, "threenative.config.ts"), "utf8")).resolves.toContain(
+      "renderer",
+    );
+  });
+
+  it("refuses to archive a project whose src imports a root file the archive would drop", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "src", "game.ts"),
+      'import missing from "../not-copied.js";\nexport default missing;\n',
+    );
+
+    expect(() => archiveSandbox(sandbox, root)).toThrow(/unbootable project/u);
+    await expect(
+      access(path.join(root, "docs", "benchmark", "sweeps", "fixture-2099-01-02")),
+    ).rejects.toThrow();
   });
 
   it("bundles local file dependencies and rewrites them relative to the archive", async () => {

@@ -194,11 +194,11 @@ describe("genre sandbox", () => {
     expect(() => readManifest(file)).toThrow(/sourceLines must be a non-negative integer/);
   });
 
-  it("refuses to wipe a sandbox whose manifest is not archived", async () => {
+  it("refuses to wipe a built sandbox whose manifest is not archived", async () => {
     const root = await temporaryRoot("threenative-guard-");
     const sandbox = path.join(root, "sandbox");
     const brief = await readFile("docs/benchmark/genres/platformer/brief.md");
-    await mkdir(sandbox, { recursive: true });
+    await mkdir(path.join(sandbox, "src"), { recursive: true });
     await writeFile(path.join(sandbox, "sentinel.txt"), "keep me\n");
     await writeFile(
       path.join(sandbox, "sweep.json"),
@@ -223,6 +223,78 @@ describe("genre sandbox", () => {
     ).toThrow(/pnpm sweep:archive/);
     await expect(readFile(path.join(sandbox, "sentinel.txt"), "utf8")).resolves.toBe("keep me\n");
   });
+
+  // A sandbox holds one game per folder, so the build is at <sandbox>/<game>/src. An earlier
+  // version of the unbuilt-sandbox escape hatch looked only at <sandbox>/src, which called every
+  // real build "not built" and would have wiped unarchived game data.
+  it("refuses to wipe an unarchived build in a game folder", async () => {
+    const root = await temporaryRoot("threenative-nested-guard-");
+    const sandbox = path.join(root, "sandbox");
+    const brief = await readFile("docs/benchmark/genres/platformer/brief.md");
+    await mkdir(path.join(sandbox, "my-game", "src"), { recursive: true });
+    await writeFile(path.join(sandbox, "my-game", "src", "game.ts"), "export default {};\n");
+    await writeFile(
+      path.join(sandbox, "sweep.json"),
+      JSON.stringify({
+        genre: "platformer",
+        briefHash: createHash("sha256").update(brief).digest("hex"),
+        proofHash: sealedProofHash(process.cwd(), "platformer"),
+        arm: "framework",
+        template: "platformer",
+        date: "2099-01-01T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
+    );
+
+    expect(() =>
+      makeSandbox({
+        genre: "platformer",
+        out: sandbox,
+        repo: process.cwd(),
+        template: "platformer",
+      }),
+    ).toThrow(/pnpm sweep:archive/);
+    await expect(
+      readFile(path.join(sandbox, "my-game", "src", "game.ts"), "utf8"),
+    ).resolves.toContain("export default");
+  });
+
+  // A sandbox created and never scaffolded used to strand the loop: this guard demanded an
+  // archive, and archiveSandbox refused the same directory for having no src/. Neither command
+  // could clear it, so no further sweep could start until someone deleted it by hand.
+  it("wipes an unarchived sandbox that was never scaffolded", async () => {
+    const root = await temporaryRoot("threenative-unbuilt-");
+    const sandbox = path.join(root, "sandbox");
+    const brief = await readFile("docs/benchmark/genres/platformer/brief.md");
+    await mkdir(sandbox, { recursive: true });
+    await writeFile(path.join(sandbox, "stale.txt"), "no build here\n");
+    await writeFile(
+      path.join(sandbox, "sweep.json"),
+      JSON.stringify({
+        genre: "platformer",
+        briefHash: createHash("sha256").update(brief).digest("hex"),
+        proofHash: sealedProofHash(process.cwd(), "platformer"),
+        arm: "framework",
+        template: "platformer",
+        date: "2099-01-01T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 0,
+      }),
+    );
+
+    const result = makeSandbox({
+      bare: true,
+      genre: "platformer",
+      out: sandbox,
+      prepare: false,
+      repo: process.cwd(),
+      template: "platformer",
+    });
+
+    expect(readManifest(path.join(result.out, "sweep.json")).genre).toBe("platformer");
+    await expect(readFile(path.join(sandbox, "stale.txt"), "utf8")).rejects.toThrow();
+  }, 30_000);
 
   it("does not treat another arm or proof as the archived run", async () => {
     const root = await temporaryRoot("threenative-archive-identity-");

@@ -71,15 +71,70 @@ function copyStarterBaseline(archive: string, manifest: SweepManifest, repo: str
   );
 }
 
+/** Root entries the archiver writes itself, or that no archive should carry. */
+const SHELL_EXCLUDED = new Set(["node_modules", "dist", "artifacts", "package.json", "sweep.json"]);
+/** Root directories a project needs in order to boot. */
+const SHELL_DIRECTORIES = ["public", "assets"] as const;
+
+// This used to allowlist index.html and vite.config.* only, which silently dropped
+// threenative.config.ts -- a file the starter template's own src/game.ts imports as
+// "../threenative.config.js". Every framework archive was therefore unbootable, its dev
+// server 500'd on that import, and sweep:proof reported TN_PLAYTEST_BRIDGE_MISSING for a
+// bridge the game never got far enough to install. Rounds 3, 4 and 5 all recorded 0/1 for
+// both arms because of it. An allowlist of root files rots the moment a template gains one,
+// so copy every root file instead and name only what must not travel.
 function copyAppShell(sandbox: string, archive: string): void {
-  for (const name of fs.readdirSync(sandbox)) {
-    if (name === "index.html" || /^vite\.config\.[cm]?[jt]s$/.test(name)) {
-      fs.copyFileSync(path.join(sandbox, name), path.join(archive, name));
-    }
+  for (const entry of fs.readdirSync(sandbox, { withFileTypes: true })) {
+    if (SHELL_EXCLUDED.has(entry.name) || entry.name.startsWith(".")) continue;
+    if (entry.isFile())
+      fs.copyFileSync(path.join(sandbox, entry.name), path.join(archive, entry.name));
   }
-  const publicDirectory = path.join(sandbox, "public");
-  if (isDirectory(publicDirectory))
-    fs.cpSync(publicDirectory, path.join(archive, "public"), { recursive: true });
+  for (const name of SHELL_DIRECTORIES) {
+    const directory = path.join(sandbox, name);
+    if (isDirectory(directory)) fs.cpSync(directory, path.join(archive, name), { recursive: true });
+  }
+}
+
+/**
+ * Fails the archive when `src/` imports a sibling the archive does not carry.
+ *
+ * The allowlist bug above was invisible for three rounds because nothing checked that the
+ * thing we archived could still resolve its own imports. An archive that cannot boot is not
+ * a weaker archive, it is a fabricated measurement: every proof run against it reports a
+ * failure the game never earned.
+ */
+function assertArchiveResolves(archive: string): void {
+  const missing = new Set<string>();
+  const walk = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.[cm]?[jt]sx?$/.test(entry.name)) continue;
+      const source = fs.readFileSync(full, "utf8");
+      for (const match of source.matchAll(/from\s+"(\.\.\/[^"]+)"/gu)) {
+        const specifier = match[1];
+        if (specifier === undefined) continue;
+        const resolved = path.resolve(path.dirname(full), specifier);
+        if (path.relative(archive, resolved).startsWith("..")) continue;
+        // The project is TypeScript; its ESM imports name the emitted .js.
+        const candidates = [
+          resolved,
+          resolved.replace(/\.js$/, ".ts"),
+          resolved.replace(/\.js$/, ".tsx"),
+        ];
+        if (!candidates.some((candidate) => fs.existsSync(candidate)))
+          missing.add(`${path.relative(archive, full)} -> ${specifier}`);
+      }
+    }
+  };
+  walk(path.join(archive, "src"));
+  if (missing.size > 0)
+    throw new Error(
+      `Refusing to archive an unbootable project; src/ imports files the archive does not carry:\n  ${[...missing].join("\n  ")}`,
+    );
 }
 
 function packageNamePart(name: string): string {
@@ -167,6 +222,7 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
     fs.copyFileSync(manifestFile, path.join(destination, "sweep.json"));
     copyFrameworkTypes(source, destination);
     copyStarterBaseline(destination, manifest, repo);
+    assertArchiveResolves(destination);
   } catch (error) {
     fs.rmSync(destination, { recursive: true, force: true });
     throw error;

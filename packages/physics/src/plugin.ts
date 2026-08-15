@@ -7,6 +7,7 @@ import { physicsHandle, physicsWorldHandle } from "./handles.js";
 import type { INavigationContext } from "./navigation/index.js";
 import {
   type IPhysicsInputSnapshot,
+  type IPhysicsRuntimeSimulation,
   type IPhysicsSimulation,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_SLEEP_STATE_STRIDE,
@@ -16,6 +17,23 @@ import {
 
 export interface IPhysicsOptions {
   readonly gravity?: { readonly x: number; readonly y: number; readonly z: number };
+  /**
+   * Give each scene a pristine simulation, so restarting a scene reproduces its predecessor
+   * exactly. Default false.
+   *
+   * Disposing the bodies is not enough on its own: the solver, island manager and broad phase
+   * carry state from everything that has already happened, so an identical authored layout
+   * settles differently in a reused world. A sandbox build measured settle hashes `a2f87bad`
+   * versus `658eb6f8` at 240 versus 266 ticks, diverging during the initial drop before any
+   * input, and had no way to fix it from game code.
+   *
+   * Opt-in because it frees the backend world at scene exit. Anything still holding a
+   * `body.raw`, `collider.raw` or `world.raw` from the previous scene is reading freed memory
+   * afterwards. Those references are already documented as non-portable, and a scene that has
+   * exited has disposed its bodies, but the failure mode is a hard backend fault rather than a
+   * quiet `false` — so a game asks for this rather than inheriting it.
+   */
+  readonly deterministicRestart?: boolean;
 }
 
 export type PhysicsBody3D = RigidBody3D | CharacterBody3D;
@@ -101,34 +119,38 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   let debugSeries: IPhysicsDebugSample[] = [];
   let unregisterObservations: (() => void) | undefined;
 
+  function buildContext(selected: IPhysicsRuntimeSimulation): IPhysicsContext {
+    return {
+      add: (body) => {
+        bodies.add(body);
+        bodiesById.set(body.body.id, body);
+      },
+      addArea: (area) => areas.set(area.body.id, area),
+      eventQueue: physicsHandle(selected.rawEventQueue),
+      kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
+      numBodies: () => bodies.size,
+      remove: (body) => {
+        bodies.delete(body);
+        bodiesById.delete(body.body.id);
+        removeContactsFor(body.body.id);
+      },
+      removeArea: (area) => {
+        areas.delete(area.body.id);
+        removeContactsFor(area.body.id);
+      },
+      directSpaceState: new PhysicsDirectSpaceState3D(selected),
+      simulation: selected,
+      world: physicsWorldHandle(selected.rawWorld, selected),
+    };
+  }
+
   return {
     setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
       await backend.initialize();
       const selected = backend.createSimulation(options);
       simulation = selected;
       if (runtime !== undefined) runtime.rapier = selected.version;
-      context = {
-        add: (body) => {
-          bodies.add(body);
-          bodiesById.set(body.body.id, body);
-        },
-        addArea: (area) => areas.set(area.body.id, area),
-        eventQueue: physicsHandle(selected.rawEventQueue),
-        kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
-        numBodies: () => bodies.size,
-        remove: (body) => {
-          bodies.delete(body);
-          bodiesById.delete(body.body.id);
-          removeContactsFor(body.body.id);
-        },
-        removeArea: (area) => {
-          areas.delete(area.body.id);
-          removeContactsFor(area.body.id);
-        },
-        directSpaceState: new PhysicsDirectSpaceState3D(selected),
-        simulation: selected,
-        world: physicsWorldHandle(selected.rawWorld, selected),
-      };
+      context = buildContext(selected);
       ctx.physics = context;
       unregisterObservations = runtime?.observations?.contribute({
         capabilities: ["runtime.physics"],
@@ -225,12 +247,27 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       }
       kinematicMotions.clear();
     },
-    sceneExit: () => {
+    // Disposing the bodies is not enough to make a restarted scene reproducible. The solver,
+    // island manager and broad phase carry state from everything that has already happened, so
+    // replaying an identical authored layout in a reused world settles differently -- measured
+    // in a sandbox build as settle hashes a2f87bad vs 658eb6f8 at 240 vs 266 ticks, diverging
+    // before any input. A scene therefore gets a pristine simulation, which makes restart
+    // deterministic without a game having to discover an API for it.
+    sceneExit: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
       kinematicMotions.clear();
       activeContacts.clear();
       debugSeries = [];
+      if (options.deterministicRestart !== true) return;
+      areas.clear();
+      bodies.clear();
+      bodiesById.clear();
+      simulation?.dispose();
+      const replacement = backend.createSimulation(options);
+      simulation = replacement;
+      context = buildContext(replacement);
+      ctx.physics = context;
     },
     dispose: () => {
       unregisterObservations?.();

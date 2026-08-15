@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BoxGeometry, Mesh, MeshBasicMaterial, Scene as ThreeScene, Vector2 } from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, type Scene as ThreeScene, type Vector2 } from "three";
 import { expect, test } from "vitest";
 
 import {

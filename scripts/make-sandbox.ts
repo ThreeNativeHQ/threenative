@@ -223,11 +223,27 @@ export function isArchived(manifest: SweepManifest, repo = REPO): boolean {
   return false;
 }
 
+/** Mirrors `resolveSandbox` in sweep-archive.ts: the sandbox root, or one game per folder. */
+function containsBuiltProject(out: string): boolean {
+  if (isDirectory(path.join(out, "src"))) return true;
+  return fs
+    .readdirSync(out, { withFileTypes: true })
+    .some((entry) => entry.isDirectory() && isDirectory(path.join(out, entry.name, "src")));
+}
+
 function assertCanWipe(out: string, repo: string): void {
   if (!fs.existsSync(out)) return;
   if (!isDirectory(out)) throw new Error(`Sandbox target '${out}' is not a directory.`);
   const manifestFile = path.join(out, "sweep.json");
   if (!isFile(manifestFile)) return;
+  // archiveSandbox refuses a sandbox with no src/ as "not built", so demanding an archive here
+  // would strand a sandbox that was created and never scaffolded: neither command could clear
+  // it and the next sweep could not start. There is no build to preserve, so nothing is lost.
+  //
+  // "Built" must be decided the same way archiveSandbox decides it. A sandbox holds one game per
+  // folder, so the source is at <sandbox>/<game>/src, not <sandbox>/src. Checking only the root
+  // would call every real build "not built" and wipe unarchived game data.
+  if (!containsBuiltProject(out)) return;
   let manifest: SweepManifest;
   try {
     manifest = readManifest(manifestFile);

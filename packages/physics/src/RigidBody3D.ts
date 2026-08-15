@@ -103,6 +103,39 @@ export class RigidBody3D {
     // The plugin collects this object's transform into the reusable bulk input buffer.
   }
 
+  /**
+   * Godot's `apply_impulse`. The one-shot shove: a thrown crate, a jump pad, a hit reaction.
+   *
+   * These four members exist because there is otherwise no portable way to move a dynamic body
+   * at all. `body.raw` is a Rapier object on web and opaque on native, so reaching through it
+   * forks the game by platform, and a transform write is discarded by the next step.
+   */
+  applyImpulse(impulse: { readonly x: number; readonly y: number; readonly z: number }): void {
+    this.#requireLive("applyImpulse");
+    this.#simulation.applyBodyImpulse(this.body.id, impulse);
+  }
+
+  /** Godot's `apply_force`. Continuous push; cleared by the backend each step. */
+  applyForce(force: { readonly x: number; readonly y: number; readonly z: number }): void {
+    this.#requireLive("applyForce");
+    this.#simulation.applyBodyForce(this.body.id, force);
+  }
+
+  /** Godot's `linear_velocity`. */
+  get linearVelocity(): { readonly x: number; readonly y: number; readonly z: number } {
+    this.#requireLive("linearVelocity");
+    return this.#simulation.readBodyLinearVelocity(this.body.id);
+  }
+
+  set linearVelocity(velocity: { readonly x: number; readonly y: number; readonly z: number }) {
+    this.#requireLive("linearVelocity");
+    this.#simulation.setBodyLinearVelocity(this.body.id, velocity);
+  }
+
+  #requireLive(operation: string): void {
+    if (this.#disposed) throw new Error(`RigidBody3D.${operation} cannot be used after dispose.`);
+  }
+
   syncFromPhysics(): void {
     const transform = this.#simulation.readBodyTransform?.(this.body.id);
     if (transform === undefined) return;
