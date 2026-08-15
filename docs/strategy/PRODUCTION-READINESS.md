@@ -287,6 +287,11 @@ Do not claim ThreeNative is clearly better for production games until all are tr
 
 ## Slicing this into PRDs
 
+**Items 1–5 are sliced as of 2026-08-14: `docs/PRDs/production-readiness-26-08-14/`.** Nothing in
+that batch has been executed. It orders PRD-113 (the naming contract) before PRD-114 (the paired
+round), which contradicts the execution order at the bottom of this file and follows point 3
+below instead.
+
 Five things a slate cut from this document needs to know, and one thing it must not do.
 
 **1. Framework LOC headroom is 259 lines.** `pnpm budgets` reports 14741/15000. Any PRD that adds
@@ -295,8 +300,25 @@ justification in the owning PRD plus a kill-switch pass over what was added. Nev
 of the work below deliberately lands in templates or scripts, which do not spend it — check the
 column before assuming a PRD is cheap.
 
-The native runtime is already **69910/50000**, well past its review trigger. Any PRD touching
-`packages/runtime-native/` inherits that justification obligation, which matters for item 6.
+**The native runtime is at 69910/50000 and has been over since `edcd349` absorbed the Mystral
+runtime host. That is an undischarged obligation, and it should be one of the first PRDs cut.**
+The charter is explicit that exceeding a review trigger is not a signal to raise it, but a signal
+to run the kill switch over what was added and find out whether it earned its lines — "crossing one
+is a conversation, not an outage." That conversation has not happened; the warning simply prints on
+every run.
+
+Do not resolve this by raising the trigger or deleting it. Both are what the charter calls routing
+around a cap, which "looks like discipline while teaching that gates are negotiable, which is the
+same failure shape as a green check that asserts nothing" — and these budgets exist because v1
+added ~250k lines in its final nine days while CI went 0-for-100. The PRD is the kill-switch pass
+over the +19910 lines, with the justification recorded, and its honest outcome may be that the
+lines are earned and the trigger was set before the runtime was absorbed.
+
+The second-order cost is why this matters now: a warning that has printed unanswered for months
+trains everyone to skim the budgets output, and the three hard invariants above it — no native
+runtime tree outside `packages/runtime-native/`, no tracked `native/third_party/`, no vendored
+asset MCP — are one line away in the same block. Any PRD touching `packages/runtime-native/`
+inherits this obligation, which matters for item 6.
 
 **2. Where each item lands decides which rules bind it.**
 

@@ -1,0 +1,225 @@
+---
+prd_contract: v1
+---
+
+# PRD-114 — One paired round, with the vanilla arm actually executed
+
+**Status: OPEN — BLOCKED ON PRD-113, written 2026-08-14.** Sliced from
+`docs/strategy/PRODUCTION-READINESS.md` item 5.
+
+**Complexity: 4 → MEDIUM mode.** It is a run, not a feature — but it has a broken instrument in
+front of it and it produces a deletion verdict behind it.
+
+**LOC:** none in `packages/`. `scripts/round-ledger.ts` may need a small fix; scripts do not spend
+framework headroom.
+
+---
+
+## 1. Context
+
+**No round has ever produced a functional-column comparison.** For rounds 3, 4 and 5 the loop
+reported `0/1` for **both** arms, and it was not the games: `scripts/sweep-archive.ts` allowlisted
+`index.html` and `vite.config.*` at the project root and silently dropped `threenative.config.ts`,
+which the starter's own `src/game.ts` imports. Every archived build 500'd in its dev server and
+never booted, so `sweep:proof` reported a missing bridge for an application that had never
+started. Fixed under PRD-107, with `assertArchiveResolves` failing the archive when `src/` imports
+a sibling the archive does not carry.
+
+**Every functional-column number before 2026-08-14 is void**, including the kill switch round 4
+fired on it.
+
+**Every score so far carries an *estimated* vanilla counterfactual.** Round 6 scored the framework
+arm 63/100 against a **58/100 estimate**. That estimate is the weakest number in the record, and
+`pnpm sandbox --arm vanilla` already exists (`scripts/make-sandbox.ts:22, 437, 478`) — the vanilla
+arm has simply never been run for a scored round.
+
+**The loop's own next-action instrument is broken today.** Verified 2026-08-14:
+
+```console
+$ pnpm round:next
+Error: Round ledger table is missing column 'What vanilla did better'.
+    at column (scripts/round-ledger.ts:103:24)
+    at parseGaps (scripts/round-ledger.ts:175:16)
+```
+
+`docs/verification/round-5-2026-08-14.md` does not carry the gaps table `parseGaps` requires, and
+**there is no `round-6-*.md` ledger file at all** — round 6 has a score doc
+(`docs/verification/score-physics-puzzle-round-6-2026-08-14.md`) and no ledger row. The
+self-improvement loop cannot compute its next action, which is exactly the class of broken
+instrument this round exists to stop trusting.
+
+**Files analysed.**
+
+- `scripts/round-ledger.ts:103, 175, 219-222, 275-277` — the parser and its column contract
+- `docs/verification/round-5-2026-08-14.md` — the ledger missing the gaps table
+- `scripts/make-sandbox.ts:22, 437, 461, 478` — the vanilla arm and its bridge-only package set
+- `scripts/sweep-pair.ts` — pairing, `sealedProofHash`, the framework-reference firewall
+- `packages/physics/src/RigidBody3D.ts:113, 119` — `applyImpulse`, `applyForce`
+
+## 2. Approach
+
+Repair the ledger so the loop can speak, run both arms of one genre from clean sandboxes on the
+repaired instrument and the settled naming contract, and publish the result including the losses.
+
+```mermaid
+flowchart TD
+    P0[Phase 0: repair round ledger<br/>pnpm round:next exits 0] --> P1
+    P113[PRD-113 §3 decision recorded] --> P1
+    P1[Phase 1: framework arm<br/>pnpm sandbox --arm framework] --> P3
+    P2[Phase 2: vanilla arm<br/>pnpm sandbox --arm vanilla] --> P3
+    P1 -.same brief, same proof, same day.- P2
+    P3[Phase 3: archive, capture, proof, judge, pair] --> P4
+    P4[Phase 4: ledger row + deletion verdict]
+```
+
+**Key decisions.**
+
+- **Both arms, same genre, same sealed inputs, same host.** A paired round with an estimated arm
+  is the thing this PRD exists to stop producing.
+- **Genre: `physics-puzzle`**, because PRD-113 will have settled its contract and rounds 5 and 6
+  give two prior framework-arm builds to read against.
+- **The arm firewall holds.** The builder does not read the proof. `sweep-pair.ts`'s
+  `FORBIDDEN_FRAMEWORK_REFERENCE` keeps the vanilla arm free of `@threenative/core|physics|ui`;
+  only the observation bridge is installed.
+- **Publish the losses.** A round that reports only where the framework won is an advertisement.
+
+## 3. Integration Ledger
+
+| # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `docs/verification/round-6-*.md` (backfill) + round-5 gaps table | `scripts/round-ledger.ts:175` via `pnpm round:next` | — | n/a | delete the gaps table again → `round:next` throws as it does today |
+| 2 | `docs/verification/round-7-*.md` — the paired round, both arms | `pnpm round:next`, `pnpm round:deletions` | the estimated counterfactual in round 6's score doc | the estimate is marked superseded, not deleted | a ledger row with one arm missing fails `parseColumns` |
+| 3 | vanilla-arm archive under `docs/benchmark/sweeps/` | `scripts/sweep-pair.ts` | — | n/a, first executed vanilla arm | `assertArchiveResolves` fails an archive missing an imported sibling |
+| 4 | deletion verdict on `applyImpulse` / `applyForce` | a **new PRD file**, filed in Phase 4 | — | the members go, or the verdict says why not | `pnpm round:deletions` reports them across consecutive rounds |
+
+**Reachability.** Entry points are `pnpm sandbox`, `pnpm sweep:*`, `pnpm round:next` — all
+existing. Nothing new is wired into the product.
+
+## 4. Phases
+
+### Phase 0 — Make `pnpm round:next` exit 0 (blocking, and cheap)
+
+**Files:**
+
+- `docs/verification/round-5-2026-08-14.md` — EDIT: add the gaps table `parseGaps` requires
+- `docs/verification/round-6-2026-08-14.md` — NEW: backfill round 6's ledger from its score doc
+- `scripts/round-ledger.ts` — EDIT **only if** the parser's contract is wrong rather than the
+  documents
+
+**Name the layer before the fix.** Either the ledger documents are missing a required column — a
+documentation bug, fixed in `docs/verification/` — or `round-ledger.ts` requires a column the
+format no longer has, an instrument bug fixed in `scripts/`. Decide which, in writing, before
+editing either. Do not make the parser lenient to get green; a parser that shrugs at a missing
+column is how three rounds of `0/1` went unexplained.
+
+- [ ] `pnpm round:next` exits 0 and prints an action
+- [ ] `pnpm round:deletions` runs
+
+**Negative control:** remove the gaps table again → `round:next` throws with the same message it
+throws today.
+
+### Phase 1 — Framework arm
+
+```sh
+pnpm sandbox --arm framework --genre physics-puzzle
+```
+
+Blind build against `brief.md` + `reference.png`, firewall intact, builder does not read the proof.
+Record the friction log — and **treat it as a builder's experience, not a measurement.** Round 5's
+log asserted that scene-created bodies leak and that no fixed-step option exists; round 6 measured
+both and disproved them. Every friction claim that becomes a PRD gets verified against source or
+an instrument first.
+
+### Phase 2 — Vanilla arm
+
+```sh
+pnpm sandbox --arm vanilla --genre physics-puzzle
+```
+
+Same brief, same reference, same proof, same host. The arm may install any npm package including a
+physics engine; only `@threenative/playtest` is available from this repo, and it must be installed
+after the scene, camera, renderer and entities exist.
+
+**This is the first executed vanilla arm for a scored round.** If it fails to produce a bootable
+archive, that is the result and it gets reported as one — not replaced with an estimate.
+
+### Phase 3 — Measure both, on the repaired instrument
+
+```sh
+pnpm sweep:archive && \
+xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:capture && \
+pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair
+```
+
+- [ ] `assertArchiveResolves` passes for **both** archives — the PRD-107 guard is what makes the
+      functional column mean anything
+- [ ] Both archives boot; a 500 is a red, never a `0/1` of unknown cause
+- [ ] Blind visual scoring (`scripts/score-blind.ts`) for both arms
+- [ ] Sealed proof hash recorded for both, and it is the **post-PRD-113** hash
+
+**Negative control for the instrument itself:** delete `threenative.config.ts` from one archive
+and re-run `sweep:archive`. It must fail with the resolve guard, not produce a `0/1`. This is the
+one control that proves the repaired instrument is measuring anything at all.
+
+### Phase 4 — The ledger row, and the deletion verdict
+
+**Files:**
+
+- `docs/verification/round-7-*.md` — NEW: both arms, every column, gaps table included
+- `docs/verification/score-physics-puzzle-round-7-*.md` — NEW: the scored comparison
+- a **new PRD file** if the deletion verdict fires
+
+**The deletion verdict.** Round 6 reached for `pushesDynamicBodies` and `RigidBody3D.linearVelocity`
+but **not** `applyImpulse` or `applyForce`. The kill switch deletes an abstraction no fresh
+uninformed build reaches for; one unreached round is thin evidence, two is not.
+
+- **If this round also does not reach them:** file the deletion as its own PRD in the same session.
+  It does not become a footnote here, and this PRD is not done until that file exists.
+- **If it reaches them:** record that, and the members stay. Say so explicitly — a kill switch that
+  only ever fires one way is not a switch.
+
+Update round 6's score doc to mark its 58/100 vanilla estimate **superseded by measurement**.
+
+## 5. Criteria
+
+| # | Criterion | Met? |
+| --- | --- | --- |
+| 1 | `pnpm round:next` exits 0 and prints an action | — |
+| 2 | Both arms produce archives that **boot**, verified by `assertArchiveResolves` plus a real capture | — |
+| 3 | The functional column carries a measured number for both arms — no estimate anywhere in the row | — |
+| 4 | Deleting an imported sibling from an archive fails the archive step — the instrument's own control, observed red | — |
+| 5 | The round used the post-PRD-113 proof hash, recorded in the ledger | — |
+| 6 | The published result names where vanilla won, not only where the framework did | — |
+| 7 | The `applyImpulse`/`applyForce` verdict is recorded, and if unreached, its deletion PRD exists as a file | — |
+| 8 | Every friction-log claim promoted to a PRD was verified against source or an instrument first | — |
+
+Criterion 2 is consumer-scoped deliberately. *"The sweep ran"* is what rounds 3, 4 and 5 could all
+have claimed.
+
+## 6. Evidence
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Loop instrument | `pnpm round:next` | — |
+| Framework arm | `pnpm sandbox --arm framework --genre physics-puzzle` | — |
+| Vanilla arm | `pnpm sandbox --arm vanilla --genre physics-puzzle` | — |
+| Archive guard | `pnpm sweep:archive` (both arms) | — |
+| Archive guard, negative control | delete `threenative.config.ts` → `pnpm sweep:archive` | — |
+| Capture | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:capture` | — |
+| Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | — |
+| Deletions | `pnpm round:deletions` | — |
+
+A run that never reached its assertions exits `2` and is recorded as **unmeasured** — never a pass,
+never a red.
+
+## 7. What this does not do
+
+- **It does not run before PRD-113 §3 is filled in.** A round run under the current sealed contract
+  measures naming luck in its functional column and burns the round. The strategy document's
+  execution order lists this before the naming contract; its slicing section says the opposite and
+  is right.
+- **It does not claim a native or mobile result.** One genre, web, one host.
+- **It does not settle the thesis.** One paired round on one genre at ~900 authored lines is the
+  worst case for a framework — the scaffold's fixed cost is paid in full and its scale benefits
+  never arrive. The staged crossover benchmark is a separate, later piece of work.
+- **It does not touch `examples/abyss-vanilla/`.** Frozen benchmark control.

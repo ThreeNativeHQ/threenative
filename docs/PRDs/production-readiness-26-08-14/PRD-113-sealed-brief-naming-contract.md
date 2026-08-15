@@ -1,0 +1,182 @@
+---
+prd_contract: v1
+---
+
+# PRD-113 — The sealed proof stops testing whether the builder guessed the names
+
+**Status: OPEN — BLOCKED ON AN OWNER DECISION, written 2026-08-14.** Sliced from
+`docs/strategy/PRODUCTION-READINESS.md` item 4.
+
+**Complexity: 3 → LOW mode as code. HIGH as consequence.** A small edit to a sealed input voids
+comparison with every earlier round, which is why Phase 0 is a decision and not a task.
+
+**LOC:** lands in `docs/benchmark/genres/`. Spends no framework headroom.
+
+---
+
+## 1. Context
+
+**Problem.** The sealed proof asserts names the brief never states. From
+`docs/benchmark/genres/physics-puzzle/proof/physics-puzzle.playtest.json`:
+
+| Assertion | Pinned value | Stated in `brief.md`? |
+| --- | --- | --- |
+| `subject` | `"player"` | no |
+| `contacts[0]` | `entity: "player"`, `with: "solid-body"` | no |
+| `contacts[1]` | `entity: "mission"`, `with: "goal"` | no |
+| `settled[0]` | `entity: "crate"` | no |
+| `states[0]` | `entity: "mission"`, `equals: "won"` | no |
+| `resources[0]` | `id: "state"`, `path: "replayMatches"` | no |
+| `world.seed` | `6132` | no |
+| `steps` | `press: "ArrowRight"` | no |
+
+The arm firewall forbids the builder from reading the proof. **These assertions are therefore
+unpassable by any blind builder**, except by luck. Round 5 scored 2/10 and round 6 scored 0/10,
+and the only difference was that round 5 happened to bind `ArrowRight` and name an entity
+`player`.
+
+A gate that measures naming luck is worse than no gate: it reports a number with the same
+confidence as a real one. That is the same failure mode as the archive bug that voided three
+rounds of functional-column results.
+
+**Why this blocks the thing that matters.** Item 5 — one paired round on the repaired instrument —
+is the point of the whole slate. Running it before this is settled spends a full paired round
+measuring luck in its functional column. The strategy document's own execution order lists the
+paired round *before* the naming contract; **its slicing section contradicts that and is right.**
+This PRD runs first. That contradiction is flagged in the batch README.
+
+**Files analysed.**
+
+- `docs/benchmark/genres/physics-puzzle/brief.md` — 21 lines, no id, no seed, no key
+- `docs/benchmark/genres/physics-puzzle/proof/physics-puzzle.playtest.json` — the table above
+- `docs/benchmark/genres/{platformer,topdown-action,endless-runner,exploration,open-world}/` —
+  five more genres with the same structure, unaudited for this defect
+- `scripts/sweep-pair.ts`, `scripts/make-sandbox.ts` — `sealedProofHash`, `sealedProofFiles`:
+  changing a proof changes its hash, which is recorded per round
+
+## 2. The decision (Phase 0, blocking)
+
+Two honest options. **Both void comparison of the functional column with every earlier round**,
+because both change a sealed input. Neither is a formality and neither is mine to pick.
+
+### Option A — State the contract in `brief.md`
+
+Publish the entity ids, the resource path, the input key and `world.seed` in the brief.
+
+- **Cost:** the brief now dictates naming, so the sweep no longer measures whether a builder
+  *reaches for* a natural vocabulary. Some of the abstraction-fit signal is lost.
+- **Benefit:** smallest edit; the proof is untouched; earlier rounds remain readable as
+  *"scored under the old, unpassable contract"*.
+- **Risk:** the brief becomes a checklist a builder can satisfy without the behaviour existing.
+  Mitigate by stating names only, never structure.
+
+### Option B — Assert observable behaviour instead of names
+
+Rewrite the proof to assert what happened, not what things are called: the subject moves under
+input; some body class is contacted by the subject and blocks it; another is passed through;
+some pair of bodies reaches a terminal `won`-equivalent state through simulated contact; ≥30
+bodies settle; a replay of the same inputs matches.
+
+- **Cost:** larger rewrite, and it needs harness support that may not exist — assertions keyed on
+  *any entity satisfying a predicate* rather than a named one. That support, if missing, is a
+  `packages/playtest/` change and this PRD's size estimate is wrong.
+- **Benefit:** measures the game, which is what the sweep is for. Survives every genre.
+- **Risk:** a looser assertion is a weaker assertion. Each rewritten row needs a negative control
+  proving it still fails against a build that does not do the thing.
+
+### Option C — Both, scoped
+
+Names in the brief for the ids a proof genuinely cannot infer (`world.seed`, the input key), and
+behavioural rewriting for the rest.
+
+**Record the decision, its reasoning and its date in §3 of this file before any other phase
+starts.** No decision, no phase.
+
+## 3. Decision record
+
+> *(empty — the owner fills this in. Chosen option, why, date, and what it costs in comparability.)*
+
+## 4. Integration Ledger
+
+| # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
+| --- | --- | --- | --- | --- | --- |
+| 1 | revised `brief.md` and/or proof | `scripts/make-sandbox.ts` (`sealedProofFiles`), `scripts/sweep-proof.ts` | the current sealed pair | replaced in Phase 1 — no second copy | a build that names nothing correctly but behaves correctly now passes; a build that does nothing still fails |
+| 2 | recorded proof hash for the new contract | the round ledger row for the next round | the round-5/6 hash | old hash stays in old rounds, marked superseded | two rounds with different hashes are never compared in one column |
+| 3 | the same audit applied to the other five genres | `docs/benchmark/genres/*/` | — | n/a | each genre's proof re-checked against its own brief |
+
+## 5. Phases
+
+### Phase 1 — Apply the decision to `physics-puzzle`, and prove it both ways
+
+**Files:**
+
+- `docs/benchmark/genres/physics-puzzle/brief.md` — EDIT (Option A or C)
+- `docs/benchmark/genres/physics-puzzle/proof/physics-puzzle.playtest.json` — EDIT (Option B or C)
+- `docs/verification/sealed-contract-2026-08-…md` — NEW: the before/after and the two runs below
+
+**The two runs that make this honest**, and neither is optional:
+
+1. **Positive.** Replay round 6's archived build against the revised proof. It behaved correctly
+   and scored 0/10 on naming. **It must now score meaningfully above 0.** If it does not, the
+   revision did not fix what this PRD claims.
+2. **Negative.** Replay a build that does *not* satisfy the brief — round 5's archive, or a
+   deliberately gutted copy of round 6's. **It must still fail.** A contract that passes anything
+   is the vacuous pass the whole verification package exists to prevent.
+
+Both archives exist under `docs/benchmark/sweeps/`. Both runs need
+`xvfb-run -a -s '-screen 0 1600x900x24'`; a run that never reaches its assertions exits `2` and is
+recorded as **unmeasured**, never a pass and never a red.
+
+### Phase 2 — Audit the other five genres
+
+`platformer`, `topdown-action`, `endless-runner`, `exploration`, `open-world`. For each: list every
+value the proof pins and whether the brief states it, and apply the same decision.
+
+**Fail-closed requirement:** the audit is a script, not a reading.
+`scripts/__tests__/sealed-contract.spec.ts` walks every genre and fails when a proof pins an
+identifier, a seed or a key that its brief does not state. A genre added later inherits the gate.
+
+**Negative control:** re-add one pinned-but-unstated id → the test goes red naming the genre and
+the field.
+
+### Phase 3 — Record the discontinuity
+
+- `docs/verification/round-*.md` and the score docs gain one line: functional-column numbers
+  before this contract are **not comparable** to numbers after it.
+- The superseded proof hash is recorded so no future reader silently compares across it.
+
+This is the same correction the archive bug already forced once. Making it explicit is cheaper
+than discovering it again.
+
+## 6. Criteria
+
+| # | Criterion | Met? |
+| --- | --- | --- |
+| 1 | §3 contains a written, dated decision with its reasoning | — |
+| 2 | Round 6's archive, replayed against the revised contract, scores meaningfully above 0/10 | — |
+| 3 | A build that does not satisfy the brief still fails the revised contract — run and pasted | — |
+| 4 | No value the proof pins is absent from its brief, for every one of the six genres | — |
+| 5 | `scripts/__tests__/sealed-contract.spec.ts` fails when a pinned-but-unstated value is re-added | — |
+| 6 | The comparability discontinuity is written into the round ledger and the score docs | — |
+| 7 | `pnpm typecheck && pnpm lint && pnpm test` green | — |
+
+Criterion 3 is the one that keeps criterion 2 from being bought with a weaker gate.
+
+## 7. Evidence
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Positive replay | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof …` (round 6 archive) | — |
+| Negative replay | same, against the gutted/round-5 archive | — |
+| Genre audit | `pnpm exec vitest run scripts/__tests__/sealed-contract.spec.ts` | — |
+| Audit negative control | re-add one pinned id → same command | — |
+| Typecheck / lint / test | `pnpm typecheck && pnpm lint && pnpm test` | — |
+
+## 8. What this does not do
+
+- **It does not run a round.** That is PRD-114, and it is blocked on §3.
+- **It does not change the scoring rubric or the axis weights.** Only what the sealed proof asks
+  for.
+- **It does not touch `examples/abyss-vanilla/`.** Frozen benchmark control.
+- **It does not make the proof easier to pass by lowering a threshold.** Thirty settled bodies
+  stays thirty. The contract changes what is *knowable*, not what is *required*.
