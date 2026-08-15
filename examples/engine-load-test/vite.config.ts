@@ -39,7 +39,9 @@ export default defineConfig({
     ? {
         lib: {
           entry: resolve(import.meta.dirname, "src/native.ts"),
-          fileName: () => "engine-load-test.js",
+          // Per-target filename: the desktop and Android arms build from the same source, and a
+          // shared name means one arm's rebuild silently replaces the bundle the other is running.
+          fileName: () => `engine-load-test-${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
           formats: ["es"],
         },
         minify: false,
@@ -52,6 +54,7 @@ export default defineConfig({
     // collector never sets it: the arm a report claims comes from the binary that ran.
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
     __TN_BENCH_CONFIG__: JSON.stringify({
+      animate: process.env.TN_BENCH_ANIMATE !== "off",
       frames: integer("TN_BENCH_FRAMES", 600),
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),

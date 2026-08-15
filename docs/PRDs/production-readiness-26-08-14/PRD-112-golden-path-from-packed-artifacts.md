@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-112 — The golden path runs from packed artifacts, or it is not a path
 
 **Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from

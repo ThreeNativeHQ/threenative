@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-113 — The sealed proof stops testing whether the builder guessed the names
 
 **Status: OPEN — OPTION C CHOSEN, implementation pending, written 2026-08-14.** Sliced from

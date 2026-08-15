@@ -29,6 +29,10 @@ val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenativ
 val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
 val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
 val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
+// QuickJS stays the default. It is the only JIT-less engine ThreeNative ships on any platform, and
+// the phone is where that costs the most (PRD-118), so the alternative has to be reachable without
+// editing this file. `-PthreenativeJsEngine=v8` needs third_party/v8-android present.
+val nativeJsEngine = providers.gradleProperty("threenativeJsEngine").orElse("quickjs")
 
 fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value ->
     when (value.lowercase()) {
@@ -37,6 +41,28 @@ fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value 
         else -> throw GradleException("-$propertyName must be true or false")
     }
 }.get()
+
+// V8 on Android keeps its startup snapshot outside the library, so the APK has to carry it and the
+// runtime reads it back at launch. QuickJS builds have no snapshot and skip this entirely.
+tasks.register("copyV8Snapshot") {
+    val engine = nativeJsEngine.get().lowercase()
+    val source = runtimeRoot.file("third_party/v8-android/snapshot_blob/arm64-v8a/snapshot_blob.bin")
+    val target = generatedThreeNativeAssets.map { it.file("v8/snapshot_blob.bin") }
+    outputs.file(target)
+    doLast {
+        val out = target.get().asFile
+        out.parentFile.mkdirs()
+        if (engine == "v8") {
+            val input = source.asFile
+            if (!input.isFile) {
+                throw GradleException("V8 startup snapshot is missing: ${'$'}{input.absolutePath}")
+            }
+            input.copyTo(out, overwrite = true)
+        } else if (out.exists()) {
+            out.delete()
+        }
+    }
+}
 
 tasks.register("extractSdl3JniLibs") {
     inputs.file(sdl3Aar)
@@ -139,6 +165,7 @@ val buildNativePhysics by tasks.registering(Exec::class) {
 }
 
 tasks.named("preBuild") {
+    dependsOn("copyV8Snapshot")
     if (conformanceBundle.isPresent) dependsOn("buildAndroidConformanceBundle")
     else dependsOn("buildAndroidFirstProofBundle")
     if (!usePrebuiltRuntime) dependsOn("extractSdl3JniLibs", buildNativePhysics)
@@ -170,11 +197,19 @@ android {
         if (!usePrebuiltRuntime) externalNativeBuild {
             cmake {
                 // CMake arguments for the Mystral native build
+                val engine = nativeJsEngine.get().lowercase()
+                if (engine != "quickjs" && engine != "v8") {
+                    throw GradleException("-PthreenativeJsEngine must be quickjs or v8, got '$engine'")
+                }
                 val nativeArguments = mutableListOf(
                     "-DANDROID=ON",
-                    "-DMYSTRAL_USE_QUICKJS=ON",
+                    // V8's Android build links the shared libc++, so the whole runtime has to use
+                    // it too and the APK has to carry it. With the static STL the app dies at
+                    // launch: `dlopen failed: library "libc++_shared.so" not found`.
+                    "-DANDROID_STL=${if (engine == "v8") "c++_shared" else "c++_static"}",
+                    "-DMYSTRAL_USE_QUICKJS=${if (engine == "quickjs") "ON" else "OFF"}",
                     "-DMYSTRAL_USE_WGPU=ON",
-                    "-DMYSTRAL_USE_V8=OFF",
+                    "-DMYSTRAL_USE_V8=${if (engine == "v8") "ON" else "OFF"}",
                     "-DMYSTRAL_USE_DAWN=OFF",
                     "-DTN_ENABLE_CANVAS2D=OFF",
                     "-DTN_ENABLE_VIDEO=OFF",

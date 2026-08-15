@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-111 — The scaffold's proof survives changing the game
 
 **Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
@@ -178,4 +174,3 @@ reached its assertions exits `2` and is recorded as **unmeasured** — never a p
 - commit: 40d6d9c
 - reason: review-requested-final-repair
 - evidence: .linchpin/lane-111-gates.md
-

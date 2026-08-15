@@ -86,7 +86,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   });
 
   const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
-  const bundle = path.join(example, "dist/engine-load-test.js");
+  const bundle = path.join(example, "dist/engine-load-test-desktop.js");
   return runCapturing(
     "xvfb-run",
     [

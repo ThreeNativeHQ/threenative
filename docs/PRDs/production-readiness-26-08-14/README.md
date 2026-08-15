@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # Batch — production readiness, 2026-08-14
 
 **Status: ASSEMBLED, 2026-08-14. Nothing here has been executed.** Sliced from

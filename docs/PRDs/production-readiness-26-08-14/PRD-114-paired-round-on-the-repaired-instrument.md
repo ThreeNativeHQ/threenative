@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-114 — One paired round, with the vanilla arm actually executed
 
 **Status: OPEN — BLOCKED ON PRD-113, written 2026-08-14.** Sliced from

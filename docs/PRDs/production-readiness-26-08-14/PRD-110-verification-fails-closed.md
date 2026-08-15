@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-110 — A playtest that saw errors cannot report pass
 
 **Status: OPEN — PHASE 0 RE-SCOPED AFTER MIXED-FIXTURE NON-REPRODUCTION, written 2026-08-14.** Sliced from

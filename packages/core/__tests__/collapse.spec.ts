@@ -552,3 +552,110 @@ describe("SceneCollapse", () => {
     for (const mesh of overlay) expect(mesh.layers.mask).toBe(1);
   });
 });
+
+describe("scene collapse normal buffer", () => {
+  /**
+   * Every distinct mat4 buffer the merged material graph reaches. Identity of a single walk is not
+   * enough: the normal node and the position node share ancestors, so a first-match walk finds the
+   * transform buffer either way and the test passes whatever the code does.
+   */
+  function mat4Buffers(root: unknown): Set<Float32Array> {
+    const found = new Set<Float32Array>();
+    const seen = new Set<unknown>();
+    const queue: unknown[] = [root];
+    while (queue.length > 0 && seen.size < 20_000) {
+      const node = queue.shift();
+      if (node === null || typeof node !== "object" || seen.has(node)) continue;
+      seen.add(node);
+      if (node instanceof Float32Array) {
+        if (node.length > 0 && node.length % 16 === 0) found.add(node);
+        continue;
+      }
+      for (const value of Object.values(node as Record<string, unknown>)) queue.push(value);
+    }
+    return found;
+  }
+
+  function mergedBuffers(parent: Object3D): Set<Float32Array> {
+    const all = new Set<Float32Array>();
+    for (const child of parent.children) {
+      const material = (child as Mesh).material as
+        | { normalNode?: unknown; positionNode?: unknown }
+        | undefined;
+      if (material?.positionNode === undefined) continue;
+      for (const buffer of mat4Buffers(material.positionNode)) all.add(buffer);
+      for (const buffer of mat4Buffers(material.normalNode)) all.add(buffer);
+    }
+    return all;
+  }
+
+  function collapseWithMovingArm(squash: boolean) {
+    const scene = new Scene();
+    fill(scene, new MeshToonMaterial(), 10);
+    const arm = new Group();
+    // The squash goes on the moving owner, not its child: a child's scale is baked into the merged
+    // vertices, so scaling it there would never reach `hasUniformScale(owner.matrixWorld)`.
+    if (squash) arm.scale.set(1, 1, 0.92);
+    arm.add(new Mesh(GEOMETRY.clone(), new MeshToonMaterial({ color: 0xf2952f })));
+    scene.add(arm);
+
+    let report: ISceneCollapseReport | undefined;
+    const collapse = new SceneCollapse(scene as never, {
+      observeFrames: 3,
+      minMeshes: 8,
+      onReport: (value) => {
+        report = value;
+      },
+    });
+    for (let index = 0; index < 6; index += 1) {
+      arm.rotation.z += 0.1;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+    }
+    return { report, scene };
+  }
+
+  it("should reuse the transform buffer for normals when every moving part scales uniformly", () => {
+    // A uniform-scale part's normal matrix is its transform's own upper 3x3: the shader multiplies
+    // by vec4(normal, 0) so translation cannot reach the result, and normalize() cancels the scale.
+    // A second buffer costs a per-part copy and a whole-buffer upload every frame, and on a phone
+    // that copy is interpreted JavaScript in the hot loop.
+    const { report, scene } = collapseWithMovingArm(false);
+    expect(report?.status).toBe("applied");
+    expect(mergedBuffers(scene).size).toBe(1);
+  });
+
+  it("should keep a separate normal buffer when a moving part is squashed", () => {
+    // One non-uniform scale is enough: the shortcut is wrong for it, so the pass must not take it.
+    const { report, scene } = collapseWithMovingArm(true);
+    expect(report?.status).toBe("applied");
+    expect(mergedBuffers(scene).size).toBe(2);
+  });
+});
+
+describe("scene collapse motion detection", () => {
+  it("should see motion authored before any render has recomputed matrices", () => {
+    // `defineGame` calls `collapse.frame()` before `renderer.render()`, so `object.matrix` is stale
+    // — or never written at all. Sampling it classified 4,095 of 4,096 animated cubes as static and
+    // baked a moving scene into a frozen one, at full speed, with nothing reporting a fault.
+    const scene = new Scene();
+    const movers = fill(scene, new MeshToonMaterial(), 12);
+
+    let report: ISceneCollapseReport | undefined;
+    const collapse = new SceneCollapse(scene as never, {
+      observeFrames: 3,
+      minMeshes: 8,
+      onReport: (value) => {
+        report = value;
+      },
+    });
+    // Deliberately never updates matrices: only `position` moves, exactly as a game's update does.
+    for (let frame = 0; frame < 8; frame += 1) {
+      for (const mesh of movers) mesh.position.y = frame * 0.25;
+      collapse.frame();
+    }
+
+    expect(report?.status).toBe("applied");
+    expect(report?.movingParts).toBe(movers.length);
+  });
+});

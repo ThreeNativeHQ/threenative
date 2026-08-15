@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-116 — A native build can move a dynamic body
 
 **Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
@@ -137,4 +133,3 @@ well be that the lines are earned and the trigger was set before the runtime was
 - commit: 9898c36
 - reason: worker-committed-manager-gate-and-review-pending
 - evidence: .linchpin/lane-116.log
-

@@ -31,6 +31,10 @@ var _mode: String = "L1"
 var _object_count: int = 0
 var _repeat: int = 0
 var _samples: PackedFloat64Array = PackedFloat64Array()
+# Godot's Android export stays vsync-paced whatever the project asks for, so the frame interval
+# reports the display rather than the engine. TIME_PROCESS is the main-loop CPU time with the swap
+# wait excluded, which is what compares against the other arm's script cost.
+var _cpu_samples: PackedFloat64Array = PackedFloat64Array()
 var _draw_calls: int = 0
 var _triangles: int = 0
 var _visible_objects: int = 0
@@ -216,6 +220,7 @@ func _begin_rung() -> void:
 	_placements = _create_placements(_object_count)
 	_frame_index = 0
 	_samples = PackedFloat64Array()
+	_cpu_samples = PackedFloat64Array()
 	_draw_calls = 0
 	_triangles = 0
 	_visible_objects = 0
@@ -288,6 +293,9 @@ func _process(_delta: float) -> void:
 
 	if _frame_index > 0 and _frame_index > _warmup:
 		_samples.append(snappedf(interval_ms, 0.001))
+		_cpu_samples.append(
+			snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.001)
+		)
 		# `_process` reports the frame that just ended, so the sample lands one call later than
 		# the TypeScript arm's mid-run index in order to describe the same frame.
 		if _frame_index == (_frames + _warmup) / 2 + 1:
@@ -319,6 +327,7 @@ func _finish_rung() -> void:
 		{
 			"drawCalls": _draw_calls,
 			"frameMs": Array(_samples),
+			"cpuMs": Array(_cpu_samples),
 			"mode": _mode,
 			"objectCount": _object_count,
 			"positionHash": _position_hash(_placements),

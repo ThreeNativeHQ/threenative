@@ -1,7 +1,3 @@
----
-prd_contract: v1
----
-
 # PRD-115 — The scaffold ships one HUD, one state bus, and what a user keeps
 
 **Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
@@ -109,4 +105,3 @@ not done what it says.
 - commit: e982191
 - reason: worker-committed-manager-gate-and-review-pending
 - evidence: .linchpin/lane-115.log
-

@@ -9,6 +9,7 @@ declare global {
 }
 
 declare const __TN_BENCH_CONFIG__: Readonly<{
+  animate: boolean;
   frames: number;
   ladder: number[];
   modes: RenderMode[];
@@ -25,24 +26,43 @@ function nextFrame(): Promise<void> {
 async function main(): Promise<void> {
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface");
+  const harness = await createLoadTestHarness(surface, "native host surface", config.animate);
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {
     for (const mode of config.modes) {
       for (let repeat = 0; repeat < config.repeats; repeat += 1) {
+        console.log(`begin ${mode}@${objectCount}`);
         harness.setRung({ mode, objectCount });
         if (mode === "L3") {
           harness.beginCollapse();
           for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle++) {
+            // See the web entry: drawing one settle frame in eight keeps the host's frame pump
+            // alive without paying the un-collapsed scene every iteration.
             harness.step(settle);
-            await harness.render();
+            if (settle % 8 === 0) await harness.render();
+            // A settle that never finishes is otherwise indistinguishable from a slow one: the run
+            // just never reports. Say where it is often enough to tell those apart.
+            if (settle % 200 === 0) {
+              console.log(
+                `settle ${settle} status=${harness.collapseStatus()} moving=${harness.collapseMovingParts()}`,
+              );
+            }
             await nextFrame();
           }
           if (harness.collapseStatus() !== "applied")
             throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+          // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
+          // dangerous outcome here, not the good one.
+          const moving = harness.collapseMovingParts();
+          if (moving !== objectCount)
+            throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
         }
         const frameMs: number[] = [];
+        // Split the frame in two: `stepMs` is the game-side transform loop, the remainder is the
+        // renderer. Without the split a mobile regression cannot be attributed to either.
+        const stepMs: number[] = [];
+        const collapseMs: number[] = [];
         let drawCalls = 0;
         let triangles = 0;
         let visibleObjects = 0;
@@ -61,11 +81,16 @@ async function main(): Promise<void> {
           const now = performance.now();
           const interval = now - previous;
           previous = now;
-          if (frameIndex >= config.warmup) frameMs.push(Math.round(interval * 1000) / 1000);
+          if (frameIndex >= config.warmup) {
+            frameMs.push(Math.round(interval * 1000) / 1000);
+            stepMs.push(Math.round(harness.stepMs * 1000) / 1000);
+            collapseMs.push(Math.round(harness.collapseMs * 1000) / 1000);
+          }
         }
         rungs.push({
           drawCalls,
           frameMs,
+          stepMs,
           mode,
           objectCount,
           positionHash: harness.positionHash,
@@ -74,7 +99,7 @@ async function main(): Promise<void> {
           visibleObjects,
         });
         console.log(
-          `rung ${mode}@${objectCount} repeat ${repeat} p95 ${percentile(frameMs, 0.95).toFixed(2)} ms`,
+          `rung ${mode}@${objectCount} frame p50 ${percentile(frameMs, 0.5).toFixed(2)} | step p50 ${percentile(stepMs, 0.5).toFixed(2)} | collapse p50 ${percentile(collapseMs, 0.5).toFixed(2)} | game p50 ${(percentile(stepMs, 0.5) - percentile(collapseMs, 0.5)).toFixed(2)} ms | movingParts ${harness.collapseMovingParts()}`,
         );
       }
     }

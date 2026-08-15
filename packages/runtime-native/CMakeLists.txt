@@ -104,10 +104,16 @@ elseif(WIN32)
     set(MYSTRAL_PLATFORM "windows")
 elseif(ANDROID)
     set(MYSTRAL_PLATFORM "android")
-    # Android uses QuickJS by default (simplest to integrate, no special runtime deps)
-    set(MYSTRAL_USE_V8 OFF)
-    set(MYSTRAL_USE_JSC OFF)
-    set(MYSTRAL_USE_QUICKJS ON)
+    # Android defaults to QuickJS (simplest to integrate, no special runtime deps), but the choice
+    # is a default and not a law: forcing it here meant an explicit -DMYSTRAL_USE_V8=ON was accepted
+    # on the command line, silently ignored, and reported back as QuickJS. QuickJS is the only
+    # JIT-less engine ThreeNative ships on any platform and the phone is where it costs the most
+    # (PRD-118), so the swap has to be testable without editing this file.
+    if(NOT MYSTRAL_USE_V8 AND NOT MYSTRAL_USE_JSC)
+        set(MYSTRAL_USE_QUICKJS ON)
+    else()
+        set(MYSTRAL_USE_QUICKJS OFF)
+    endif()
     # wgpu-native has Android support
     set(MYSTRAL_USE_DAWN OFF)
     set(MYSTRAL_USE_WGPU ON)
@@ -507,7 +513,39 @@ endif()
 # See docs/V8_PREBUILTS.md for fork/update information
 if(MYSTRAL_USE_V8)
     set(V8_DIR ${THIRD_PARTY_DIR}/v8)
-    if(EXISTS ${V8_DIR})
+    # Android ships a shared `libv8android.so` rather than the desktop monolith archive, and it
+    # lives beside the desktop one so a host build and a device build can coexist in one checkout.
+    # Without this the arm64 link pulls in the x86_64 archive and fails object by object.
+    if(ANDROID AND EXISTS ${THIRD_PARTY_DIR}/v8-android)
+        set(V8_DIR ${THIRD_PARTY_DIR}/v8-android)
+        # Per-ABI: gradle builds arm64-v8a and x86_64 in the same invocation, so a single library
+        # path would hand one of them the other's architecture and fail object by object.
+        if(CMAKE_ANDROID_ARCH_ABI)
+            set(V8_ANDROID_ABI ${CMAKE_ANDROID_ARCH_ABI})
+        else()
+            set(V8_ANDROID_ABI ${ANDROID_ABI})
+        endif()
+        set(V8_LIBRARY ${V8_DIR}/lib/${V8_ANDROID_ABI}/libv8android.so)
+        set(V8_INCLUDE_DIR ${V8_DIR}/include)
+        add_library(v8::v8 SHARED IMPORTED)
+        set_target_properties(v8::v8 PROPERTIES
+            IMPORTED_LOCATION ${V8_LIBRARY}
+            INTERFACE_INCLUDE_DIRECTORIES ${V8_INCLUDE_DIR}
+        )
+        # The Android V8 is built with pointer compression, and V8 aborts at `Initialize` when the
+        # embedder disagrees: "Embedder-vs-V8 build configuration mismatch. On embedder side pointer
+        # compression is DISABLED while on V8 side it's ENABLED." These have to match the library,
+        # not the host's preference. `V8_COMPRESS_POINTERS_IN_SHARED_CAGE` is the default cage layout
+        # for the arm64 build.
+        add_compile_definitions(V8_COMPRESS_POINTERS V8_COMPRESS_POINTERS_IN_SHARED_CAGE)
+        # The guard the engine sources are compiled behind. It lives in the desktop branch below,
+        # which this one bypasses: without it `v8_engine.cpp` compiles to an empty object, the
+        # factory finds no engine, and the runtime reports "Failed to create JavaScript engine"
+        # while the APK still contains a perfectly good libv8android.so.
+        add_compile_definitions(MYSTRAL_JS_V8)
+        set(V8_FOUND TRUE)
+        message(STATUS "V8 (Android ${V8_ANDROID_ABI}): ${V8_LIBRARY}")
+    elseif(EXISTS ${V8_DIR})
         # kuoruan/libv8 structure: v8/include/, v8/lib/
         # Library is libv8_monolith.a (macOS/Linux) or v8_monolith.lib (Windows)
         if(WIN32)
@@ -552,6 +590,10 @@ if(MYSTRAL_USE_V8)
             if(APPLE)
                 # V8 on macOS needs these frameworks
                 find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
+            elseif(ANDROID)
+                # Same bionic story as the runtime's own link line: pthread and dl live in libc,
+                # and Android matches `UNIX`, so it has to be answered first.
+                set(V8_SYSTEM_LIBS "")
             elseif(UNIX)
                 # V8 on Linux needs pthread and dl
                 set(V8_SYSTEM_LIBS pthread dl)
@@ -1474,6 +1516,10 @@ if(TARGET quiche::quiche)
     elseif(WIN32)
         # Sockets (WebTransport UDP) + system libs required by BoringSSL on Windows.
         target_link_libraries(mystral-runtime PUBLIC ws2_32 advapi32 crypt32 bcrypt userenv ntdll)
+    elseif(ANDROID)
+        # bionic folds pthread and dl into libc, so there is no `-lpthread` for the linker to find.
+        # Android matches `UNIX` in CMake, so it has to be answered before that branch.
+        target_link_libraries(mystral-runtime PUBLIC m)
     elseif(UNIX)
         target_link_libraries(mystral-runtime PUBLIC pthread dl m)
     endif()

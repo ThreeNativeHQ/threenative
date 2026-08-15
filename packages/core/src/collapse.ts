@@ -44,6 +44,13 @@ interface IObjectLike {
   visible: boolean;
   matrix: { elements: ArrayLike<number> };
   matrixWorld: Matrix4;
+  /**
+   * The authored transform. `matrix` is derived from these and is only recomputed when something
+   * renders, so motion has to be read from here or a moving object reads as still.
+   */
+  position?: { x: number; y: number; z: number };
+  quaternion?: { w: number; x: number; y: number; z: number };
+  scale?: { x: number; y: number; z: number };
   isCamera?: boolean;
   isMesh?: boolean;
   geometry?: IGeometryLike;
@@ -53,6 +60,7 @@ interface IObjectLike {
   onAfterRender?: unknown;
   /** Render-layer mask. The camera pass parks consumed overlays on a layer nothing renders. */
   layers?: { mask: number; set?(channel: number): void };
+  updateMatrix?(): void;
   add(child: IObjectLike): void;
   remove(child: IObjectLike): void;
   traverse(callback: (object: IObjectLike) => void): void;
@@ -202,6 +210,12 @@ export interface ISceneCollapseOptions {
 interface IMovingPart {
   readonly index: number;
   readonly object: IObjectLike;
+  /**
+   * A part with no parent and no children: its world matrix *is* its local matrix. Walking it
+   * through `updateMatrixWorld` composes the matrix and then copies all sixteen floats into
+   * `matrixWorld` so the refresh can copy them a second time. On a flat scene that is every part.
+   */
+  detachedLeaf: boolean;
   /**
    * True when the part's scale is uniform. The normal matrix is then proportional to the rotation
    * already sitting in the transform, and since the shader normalises what it reads, the upper
@@ -535,8 +549,11 @@ function hasUniformScale(matrix: Matrix4): boolean {
 
 function writeNormals(target: Float32Array, part: IMovingPart, scratch: Matrix3): void {
   const offset = part.index * 16;
+  // A detached leaf never has its `matrixWorld` written, so both paths read the same source it
+  // composed for itself. Reading `matrixWorld` here would shade from a matrix nothing updated.
+  const source = part.detachedLeaf ? part.object.matrix : part.object.matrixWorld;
   if (part.uniformScale) {
-    const e = part.object.matrixWorld.elements;
+    const e = source.elements;
     target[offset] = e[0] ?? 0;
     target[offset + 1] = e[1] ?? 0;
     target[offset + 2] = e[2] ?? 0;
@@ -549,12 +566,35 @@ function writeNormals(target: Float32Array, part: IMovingPart, scratch: Matrix3)
     target[offset + 15] = 1;
     return;
   }
-  writeNormalMatrix(target, offset, scratch.getNormalMatrix(part.object.matrixWorld));
+  writeNormalMatrix(target, offset, scratch.getNormalMatrix(source as Matrix4));
 }
 
 function sameMatrix(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
-  for (let index = 0; index < 16; index += 1) if (a[index] !== b[index]) return false;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
   return true;
+}
+
+/**
+ * Ten numbers describing where an object is right now: position, rotation and scale as the game
+ * set them. Falls back to the composed matrix for objects that expose no authored transform.
+ */
+function transformSample(object: IObjectLike): Float64Array {
+  const { position, quaternion, scale } = object;
+  if (position === undefined || quaternion === undefined || scale === undefined) {
+    return Float64Array.from(object.matrix.elements);
+  }
+  return Float64Array.of(
+    position.x,
+    position.y,
+    position.z,
+    quaternion.x,
+    quaternion.y,
+    quaternion.z,
+    quaternion.w,
+    scale.x,
+    scale.y,
+    scale.z,
+  );
 }
 
 /**
@@ -854,15 +894,20 @@ export class SceneCollapse {
   #sample(): void {
     this.#scene.traverse((object) => {
       if (object.isCamera === true) return;
+      // Sampled from the authored transform, never from `matrix`. `matrix` is recomputed inside
+      // the renderer, and this pass runs before the renderer does, so a matrix read here is one
+      // frame stale at best and never written at worst. Reading it classified 4,095 of 4,096
+      // animated cubes as static, which bakes a moving scene into a frozen one.
+      const current = transformSample(object);
       const previous = this.#samples.get(object);
       if (previous === undefined) {
         // Float64, not Float32: rounding each double to a float on the way in made every object
         // compare unequal to itself on the next frame, and a whole static level read as animated.
-        this.#samples.set(object, Float64Array.from(object.matrix.elements));
+        this.#samples.set(object, current);
         return;
       }
-      if (sameMatrix(previous, object.matrix.elements)) return;
-      previous.set(object.matrix.elements);
+      if (sameMatrix(previous, current)) return;
+      previous.set(current);
       // One change is not motion. A mesh added mid-window is composed from its position and
       // quaternion on the first render after it appears, which reads exactly like a move and
       // classified an entire static level as animated. Motion is change that keeps happening.
@@ -1209,16 +1254,18 @@ export class SceneCollapse {
    * geometry for good — the fox's limbs glitching mid-stride. Uploading the parent's world matrix
    * carries the whole chain every frame and assumes nothing.
    */
+  /**
+   * The nearest node at or above `object` that actually moves, which is the one whose transform the
+   * baked draw has to follow. Returning `object.parent` instead looks equivalent on a rig — a mesh
+   * hanging off an animated bone has that bone as its parent either way — but on a flat scene every
+   * independently-moving sibling shares one parent, so they all resolved to it and were baked into a
+   * single rigid group. Four thousand cubes moving on their own became one that did not.
+   */
   #ownerOf(object: IObjectLike): IObjectLike | undefined {
-    let animated = false;
     for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
-      if (this.#moving.has(current)) {
-        animated = true;
-        break;
-      }
+      if (this.#moving.has(current)) return current;
     }
-    if (!animated) return undefined;
-    return object.parent ?? object;
+    return undefined;
   }
 
   /**
@@ -1267,6 +1314,9 @@ export class SceneCollapse {
           ownerId = movingParts.length;
           movingIndex.set(owner, ownerId);
           movingParts.push({
+            // Decided later, in `#update`'s setup: parts are still parented to the live scene at
+            // this point and only leave it once the bake detaches them.
+            detachedLeaf: false,
             index: ownerId,
             object: owner,
             uniformScale: hasUniformScale(owner.matrixWorld),
@@ -1408,16 +1458,24 @@ export class SceneCollapse {
 
     const slots = Math.max(1, movingParts.length);
     const transformData = new Float32Array(slots * 16);
-    const normalData = new Float32Array(slots * 16);
+    // When every moving part scales uniformly, its normal matrix *is* the transform's upper 3x3:
+    // the shader multiplies by `vec4(normal, 0)`, so the translation column cannot reach the
+    // result, and `normalize()` cancels the uniform scale. Keeping a second buffer for that is a
+    // per-part copy and a whole-buffer upload every frame of numbers the shader already has. On a
+    // phone that copy is interpreted JavaScript, which is where the frame actually goes.
+    const uniformNormals = movingParts.every((part) => part.uniformScale);
+    const normalData = uniformNormals ? transformData : new Float32Array(slots * 16);
     const normalMatrix = new Matrix3();
     for (const part of movingParts) {
       transformData.set(part.object.matrixWorld.elements, part.index * 16);
-      writeNormals(normalData, part, normalMatrix);
+      if (!uniformNormals) writeNormals(normalData, part, normalMatrix);
     }
     const transformAttribute = new StorageBufferAttribute(transformData, 16);
-    const normalAttribute = new StorageBufferAttribute(normalData, 16);
+    const normalAttribute = uniformNormals
+      ? transformAttribute
+      : new StorageBufferAttribute(normalData, 16);
     const transformNode = storage(transformAttribute, "mat4", slots);
-    const normalNodes = storage(normalAttribute, "mat4", slots);
+    const normalNodes = uniformNormals ? transformNode : storage(normalAttribute, "mat4", slots);
     const ownerIdNode = attribute("tnOwnerId", "uint") as never;
     const ownerMatrix = transformNode.element(ownerIdNode);
     const ownerNormalMatrix = normalNodes.element(ownerIdNode);
@@ -1519,22 +1577,56 @@ export class SceneCollapse {
       if (!movingRoots.includes(root)) movingRoots.push(root);
     }
 
+    // Decided here, after the bake has detached what it consumed: a part that ended up parentless
+    // and childless composes its own world matrix, so walking it through `updateMatrixWorld` only
+    // copies the same sixteen floats into `matrixWorld` for the refresh to copy again.
+    for (const part of movingParts) {
+      part.detachedLeaf =
+        part.object.parent === null &&
+        part.object.children.length === 0 &&
+        typeof part.object.updateMatrix === "function";
+    }
+    // Set, not a nested scan: `movingParts.some(...)` inside a filter is quadratic, and at sixteen
+    // thousand parts the bake would spend longer here than the collapse saves in a minute of play.
+    const detachedLeaves = new Set(
+      movingParts.filter((part) => part.detachedLeaf).map((part) => part.object),
+    );
+    const walkedRoots = movingRoots.filter((root) => !detachedLeaves.has(root));
+    // Partitioned once here rather than branched per part per frame. The test is a property read
+    // and two comparisons, which is nothing on its own and thousands of times a frame at scale.
+    const leafParts = movingParts.filter((part) => part.detachedLeaf);
+    const nestedParts = movingParts.filter((part) => !part.detachedLeaf);
+    const hide = (offset: number): void => {
+      // A hidden part has no draw of its own to skip, so it is pushed out of the frustum.
+      transformData[offset + 12] = 1e9;
+      transformData[offset + 13] = 1e9;
+      transformData[offset + 14] = 1e9;
+    };
     this.#update = () => {
       // Only the subtrees that actually move are walked now, instead of the whole level.
-      for (const root of movingRoots) root.updateMatrixWorld(true);
-      for (const part of movingParts) {
-        transformData.set(part.object.matrixWorld.elements, part.index * 16);
-        writeNormals(normalData, part, normalMatrix);
-        if (part.object.visible !== true) {
-          // A hidden part has no draw of its own to skip, so it is pushed out of the frustum.
-          transformData[part.index * 16 + 12] = 1e9;
-          transformData[part.index * 16 + 13] = 1e9;
-          transformData[part.index * 16 + 14] = 1e9;
-        }
+      for (const root of walkedRoots) root.updateMatrixWorld(true);
+      // A detached leaf composes its own matrix and is read straight from it; the world copy it
+      // would otherwise make is the same sixteen floats twice.
+      for (const part of leafParts) {
+        const object = part.object;
+        object.updateMatrix?.();
+        const offset = part.index * 16;
+        transformData.set(object.matrix.elements, offset);
+        if (!uniformNormals) writeNormals(normalData, part, normalMatrix);
+        if (object.visible !== true) hide(offset);
+      }
+      for (const part of nestedParts) {
+        const object = part.object;
+        const offset = part.index * 16;
+        transformData.set(object.matrixWorld.elements, offset);
+        if (!uniformNormals) writeNormals(normalData, part, normalMatrix);
+        if (object.visible !== true) hide(offset);
       }
       if (movingParts.length > 0) {
         transformAttribute.needsUpdate = true;
-        normalAttribute.needsUpdate = true;
+        // Aliased onto the transform when scales are uniform — flagging it twice would upload the
+        // same buffer twice.
+        if (!uniformNormals) normalAttribute.needsUpdate = true;
       }
     };
     this.#restore = () => {

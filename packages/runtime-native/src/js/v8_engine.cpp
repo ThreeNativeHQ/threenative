@@ -11,6 +11,9 @@
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
 #include <iostream>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <unordered_map>
 #include <unordered_set>
 #include <chrono>
@@ -36,6 +39,27 @@ static std::unordered_set<void*> g_protectedHandles;
 /**
  * Initialize V8 (call once at startup)
  */
+namespace {
+/**
+ * The startup snapshot, when the platform's V8 keeps it outside the library.
+ *
+ * The desktop build links a monolith with the snapshot embedded, so an empty
+ * `InitializeExternalStartupData("")` is all it needs. Android's prebuilt V8 ships
+ * `snapshot_blob.bin` beside the library instead, and without it `Isolate::New` fails and the
+ * runtime reports "Failed to create JavaScript engine" with nothing else to go on. The bytes have
+ * to outlive V8, so they are held here rather than by the caller.
+ */
+std::string g_snapshotBytes;
+v8::StartupData g_snapshot{nullptr, 0};
+}  // namespace
+
+void mystralSetV8SnapshotBlob(const char* data, size_t size) {
+    if (data == nullptr || size == 0) return;
+    g_snapshotBytes.assign(data, size);
+    g_snapshot.data = g_snapshotBytes.data();
+    g_snapshot.raw_size = static_cast<int>(g_snapshotBytes.size());
+}
+
 static bool initializeV8() {
     if (g_initialized) {
         return true;
@@ -45,7 +69,13 @@ static bool initializeV8() {
 
     // Initialize V8
     v8::V8::InitializeICUDefaultLocation("");
-    v8::V8::InitializeExternalStartupData("");
+    if (g_snapshot.data != nullptr) {
+        std::cout << "[V8] Using external startup snapshot (" << g_snapshot.raw_size << " bytes)"
+                  << std::endl;
+        v8::V8::SetSnapshotDataBlob(&g_snapshot);
+    } else {
+        v8::V8::InitializeExternalStartupData("");
+    }
 
     g_platform = v8::platform::NewDefaultPlatform();
     v8::V8::InitializePlatform(g_platform.get());
@@ -144,6 +174,11 @@ public:
 
         // Use module mode to support import.meta
         v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+            // `ScriptOrigin` took the isolate until V8 12 and dropped it after. The Android
+            // prebuilt is 11.0 and the desktop archive is 13.1, so both spellings have to build.
+            isolate_,
+#endif
             v8::String::NewFromUtf8(isolate_, filename).ToLocalChecked(),
             0,                      // line offset
             0,                      // column offset
@@ -196,6 +231,11 @@ public:
 
         // Use module mode to support import.meta
         v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+            // `ScriptOrigin` took the isolate until V8 12 and dropped it after. The Android
+            // prebuilt is 11.0 and the desktop archive is 13.1, so both spellings have to build.
+            isolate_,
+#endif
             v8::String::NewFromUtf8(isolate_, filename).ToLocalChecked(),
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, true);
 
@@ -240,6 +280,11 @@ public:
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
 
         v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+            // `ScriptOrigin` took the isolate until V8 12 and dropped it after. The Android
+            // prebuilt is 11.0 and the desktop archive is 13.1, so both spellings have to build.
+            isolate_,
+#endif
             v8::String::NewFromUtf8(isolate_, filename).ToLocalChecked(),
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, false);
 
@@ -269,6 +314,11 @@ public:
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
 
         v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+            // `ScriptOrigin` took the isolate until V8 12 and dropped it after. The Android
+            // prebuilt is 11.0 and the desktop archive is 13.1, so both spellings have to build.
+            isolate_,
+#endif
             v8::String::NewFromUtf8(isolate_, filename).ToLocalChecked(),
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, false);
 
@@ -982,6 +1032,10 @@ private:
         }
 
         v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+            // See the note above: V8 11 takes the isolate here, 12+ does not.
+            context->GetIsolate(),
+#endif
             v8::String::NewFromUtf8(context->GetIsolate(), filename.c_str()).ToLocalChecked(),
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, true);
 
@@ -1029,13 +1083,20 @@ private:
                 v8::Local<v8::String> prefixStr = info.Data().As<v8::String>();
                 v8::String::Utf8Value prefixUtf8(isolate, prefixStr);
 
-                std::cout << "[" << *prefixUtf8 << "] ";
+                // Built once so it can go to both sinks. On Android `std::cout` is discarded, so a
+                // console that only wrote there left every `console.log` invisible — a benchmark
+                // could run to completion and look like a hang. QuickJS's console already does this.
+                std::string line;
                 for (int i = 0; i < info.Length(); i++) {
                     v8::String::Utf8Value str(isolate, info[i]);
-                    std::cout << (*str ? *str : "");
-                    if (i < info.Length() - 1) std::cout << " ";
+                    line += (*str ? *str : "");
+                    if (i < info.Length() - 1) line += " ";
                 }
-                std::cout << std::endl;
+                std::cout << "[" << *prefixUtf8 << "] " << line << std::endl;
+#if defined(__ANDROID__)
+                __android_log_print(ANDROID_LOG_INFO, "MystralJS", "[%s] %s", *prefixUtf8,
+                                    line.c_str());
+#endif
             }, v8::String::NewFromUtf8(isolate_, prefix).ToLocalChecked())->GetFunction(context).ToLocalChecked();
         };
 

@@ -26,6 +26,14 @@
  * Read a script file from Android assets using SDL3's IOStream.
  * Asset paths are relative to the assets directory.
  */
+#if defined(MYSTRAL_JS_V8)
+namespace mystral {
+namespace js {
+void mystralSetV8SnapshotBlob(const char* data, size_t size);
+}  // namespace js
+}  // namespace mystral
+#endif
+
 static std::string readAsset(const std::string& assetPath) {
     LOGI("Loading asset: %s", assetPath.c_str());
 
@@ -82,6 +90,20 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
 
     LOGI("Script path: %s", scriptPath.c_str());
+
+#if defined(MYSTRAL_JS_V8)
+    // V8 on Android keeps its startup snapshot outside the library, so it has to be handed over
+    // before the engine is created. Missing, the runtime fails with "Failed to create JavaScript
+    // engine" and no further detail.
+    {
+        const std::string snapshot = readAsset("v8/snapshot_blob.bin");
+        if (snapshot.empty()) {
+            LOGE("V8 startup snapshot asset is missing; the engine cannot start.");
+            return 1;
+        }
+        mystral::js::mystralSetV8SnapshotBlob(snapshot.data(), snapshot.size());
+    }
+#endif
 
     // Read script content
     std::string scriptContent;

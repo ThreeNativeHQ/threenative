@@ -43,6 +43,8 @@ export interface ILoadTestFrameStats {
 export interface ILoadTestHarness {
   adapterLabel: string;
   beginCollapse(): void;
+  collapseMovingParts(): number;
+  collapseMs: number;
   collapseStatus(): string;
   dispose(): void;
   positionHash: string;
@@ -65,6 +67,7 @@ interface IRungState {
 export async function createLoadTestHarness(
   canvas: HTMLCanvasElement,
   adapterLabel = "unknown",
+  animateObjects = true,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -150,9 +153,17 @@ export async function createLoadTestHarness(
   const collapseStatus = (): string =>
     collapseReport === undefined ? "pending" : collapseReport.status;
 
+  // Integrity check, not a statistic: a collapse that baked every cube as static would render a
+  // frozen scene while the animation loop still burned its whole cost, and the rung would publish a
+  // fast number for a picture that is not the one L1 drew.
+  const collapseMovingParts = (): number => collapseReport?.movingParts ?? -1;
+
   // The game-side half of a frame, timed separately from the renderer's half: without the split
-  // an L1 regression cannot be told apart from a scene-graph one.
+  // an L1 regression cannot be told apart from a scene-graph one. `collapseMs` splits it once more,
+  // into the game's own animation and the framework's refresh — only the second is the framework's
+  // to fix, and guessing which dominates is how the wrong thing gets optimised.
   let stepMs = 0;
+  let collapseMs = 0;
 
   const step = (frameIndex: number): void => {
     if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
@@ -162,16 +173,23 @@ export async function createLoadTestHarness(
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
     // 100% dirty transforms every frame — the honest worst case a game with moving actors pays.
     if (state.rung.mode === "L1" || state.rung.mode === "L3") {
-      for (let index = 0; index < state.cubes.length; index += 1) {
-        const cube = state.cubes[index] as Mesh;
-        const placement = state.placements[index] as ICubePlacement;
-        cube.position.y = cubeBobY(index, frameIndex, placement.y);
-        cube.rotation.x = cubeRotationX(index, frameIndex);
-        cube.rotation.y = cubeRotationY(index, frameIndex);
+      // Diagnostic only: with the animation off, `stepMs` is the framework's refresh alone, which
+      // is what separates "the engine is slow" from "the game's own gameplay loop is slow". A
+      // framework fix can only ever address the first.
+      if (animateObjects) {
+        for (let index = 0; index < state.cubes.length; index += 1) {
+          const cube = state.cubes[index] as Mesh;
+          const placement = state.placements[index] as ICubePlacement;
+          cube.position.y = cubeBobY(index, frameIndex, placement.y);
+          cube.rotation.x = cubeRotationX(index, frameIndex);
+          cube.rotation.y = cubeRotationY(index, frameIndex);
+        }
       }
       // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
       // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
+      const collapseStartedAt = performance.now();
       state.collapse?.frame();
+      collapseMs = performance.now() - collapseStartedAt;
       stepMs = performance.now() - startedAt;
       return;
     }
@@ -211,6 +229,10 @@ export async function createLoadTestHarness(
     collapseStatus,
     renderer,
     setRung,
+    collapseMovingParts,
+    get collapseMs() {
+      return collapseMs;
+    },
     get stepMs() {
       return stepMs;
     },

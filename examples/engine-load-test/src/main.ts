@@ -90,12 +90,22 @@ async function measureRung(
   if (rung.mode === "L3") {
     harness.beginCollapse();
     for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle += 1) {
+      // Draw occasionally while the pass bakes. Every frame pays the un-collapsed scene's cost and
+      // timed the desktop arm out at 16 384; never drawing is worse, because the native host drives
+      // `requestAnimationFrame` from its present loop, so a settle that never renders never gets
+      // another callback and hangs at full CPU. One frame in eight keeps the pump alive cheaply.
       harness.step(settle);
-      await harness.render();
+      if (settle % 8 === 0) await harness.render();
       await nextFrame();
     }
     if (harness.collapseStatus() !== "applied")
       throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+    // Fail closed on the frozen scene. A collapse that classified moving objects as static renders
+    // a still picture at a very fast frame time, which is indistinguishable from a win unless the
+    // rung refuses to report. Every cube in this workload moves, so anything less is a fault.
+    const moving = harness.collapseMovingParts();
+    if (moving !== rung.objectCount)
+      throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${rung.objectCount}`);
   }
   const frameMs: number[] = [];
   const stepMs: number[] = [];
