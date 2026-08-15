@@ -54,9 +54,21 @@ pnpm sandbox --bare --arm framework --genre <genre>   # then the build-on-sandbo
 pnpm sandbox --bare --arm vanilla   --genre <genre>   # then the build-on-sandbox skill
 ```
 
-Each build is a fresh `gauntlet-builder` subagent following `.claude/skills/build-on-sandbox/`.
+Each build is a fresh `gauntlet-builder` subagent following `build-on-sandbox`.
 Archive each with `pnpm sweep:archive` before starting the next — the sandbox directory is
 wiped, and an unarchived build is evidence you destroyed.
+
+**Run the arms one at a time, never concurrently.** Two builders on one machine share a
+process table, and `ps`/`pgrep` output does not respect the firewall: on 2026-08-15 a routine
+`pgrep -af vite` printed the other arm's full command line, including a scenario body it had
+written with a heredoc. They also share one GPU, which starved a gate running alongside them
+until it hung. Sequential arms cost wall-clock and remove both problems.
+
+**`build-on-sandbox` is not reachable from inside a sandbox** — it lives in this repository,
+which the builder is forbidden to read, so a prompt that says "follow the skill" hands the
+builder an instruction it cannot obey. Read it yourself and inline its method and its rules
+into the builder's prompt. On 2026-08-15 both arms reported the skill missing and proceeded on
+the prompt alone; the firewall held only because the prompt restated it.
 
 **3. Prove both arms.** `pnpm sweep:proof <archive>` runs the *sealed* scenarios from
 `docs/benchmark/genres/<genre>/proof/`. The builder never wrote them and cannot edit them.
@@ -92,6 +104,8 @@ round — say so and rebuild, never publish a contaminated pair.
 
 - **The vanilla builder must not see the framework arm**, its source, its screenshots, or
   its ledger. And the reverse. Two builds, two agents, two directories, no shared context.
+  Forbid `ps`, `pgrep`, `top` and anything else that enumerates the machine — a build does not
+  need them, and they are the one channel a separate directory does not close.
 - **Neither builder sees the sealed proof scenarios** before building. They build to the
   brief and the reference, the same as a user does.
 - **No builder judges.** Not its own arm, not the other one. The judge is fresh, read-only,

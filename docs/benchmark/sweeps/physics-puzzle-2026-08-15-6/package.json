@@ -1,0 +1,25 @@
+{
+  "name": "threenative-r8-vanilla",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "harness:serve": "vite --host 127.0.0.1 --port 5411 --strictPort",
+    "harness:capture": "node tools/capture.mjs",
+    "harness:bridge": "node tools/bridge-check.mjs",
+    "harness:keys": "node tools/keys-check.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.20.0",
+    "@threenative/playtest": "file:./vendor/threenative-playtest/threenative-playtest-0.1.0.tgz",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "playwright": "1.62.1",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  }
+}

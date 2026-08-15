@@ -74,9 +74,19 @@ preference; it is the difference between the two outcomes.
   on grey boxes on a black screen. Only your eyes on a screenshot close the loop.
 - **Headless Chromium cannot render WebGPU** — the canvas comes back blank or black and it
   looks exactly like a bug in the scene. Use browser automation against the user's real
-  Chrome. Failing that, headed Chromium under `xvfb-run -a -s "-screen 0 1600x900x24"` with
-  `--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist`. If a screenshot is
-  black, suspect the capture before rewriting materials.
+  Chrome. Failing that, headed Chromium under a virtual display with
+  `--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist --enable-features=Vulkan`.
+  If a screenshot is black, suspect the capture before rewriting materials.
+- **Without `--enable-features=Vulkan` you are measuring SwiftShader.** Chromium does not
+  reach the Linux Vulkan driver without it and silently serves WebGPU from its CPU
+  rasteriser — no error, healthy-looking limits, and a software renderer's frame rate and
+  stability. Measured on an RTX 2080: `adapter.info` reads `swiftshader / google` without the
+  flag and `turing / nvidia` with it. Check `adapter.info` before trusting any visual or
+  timing result.
+- **`xvfb-run` is not safe to gate on.** On xorg-server-xvfb 21.1.24 it re-enables errexit
+  before its cleanup `kill`, so a command that succeeded still exits 1
+  (`xvfb-run -a -s '-screen 0 1600x900x24' true` → exit 1). Use `sh scripts/xvfb.sh <cmd>`
+  from the repo, which exits with the command's own status.
 - **Spend the budget on pixels.** In the run that worked, 58% of tool calls wrote game code.
   In the runs that did not, 23–27% did. If you are more than a few calls deep without having
   written any, stop and start building.
