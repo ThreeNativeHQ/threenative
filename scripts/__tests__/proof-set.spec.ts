@@ -4,7 +4,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { hashProofFiles, resolveGenre, sealedProofFiles, sealedProofHash } from "../make-sandbox";
 
-const GENRES = ["platformer", "topdown-action", "endless-runner", "exploration"] as const;
+const GENRES = [
+  "physics-puzzle",
+  "platformer",
+  "topdown-action",
+  "endless-runner",
+  "exploration",
+  "open-world",
+] as const;
 const FORBIDDEN = [
   "@threenative",
   "packages/",
@@ -92,21 +99,7 @@ describe("sealed genre proof set", () => {
         ),
         "utf8",
       ),
-    ) as {
-      assert?: {
-        animation?: Array<{
-          advancedFrames?: number;
-          clip?: string;
-          entity?: string;
-          entered?: boolean;
-        }>;
-        movement?: { minDistance?: number; rotationChanged?: boolean };
-        resources?: Array<{ path?: string }>;
-      };
-    };
-    expect(topdown.assert?.movement?.minDistance).toBe(2);
-    expect(topdown.assert?.movement?.rotationChanged).toBeUndefined();
-    expect(topdown.assert?.animation).toBeUndefined();
+    ) as { assert?: { resources?: Array<{ path?: string }> } };
     expect(topdown.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
       expect.arrayContaining(["score", "enemiesRemaining", "objective"]),
     );
@@ -120,11 +113,7 @@ describe("sealed genre proof set", () => {
         "utf8",
       ),
     ) as {
-      assert?: {
-        animation?: unknown;
-        movement?: { rotationChanged?: boolean };
-        resources?: Array<{ path?: string }>;
-      };
+      assert?: { resources?: Array<{ path?: string }> };
       steps?: Array<Record<string, unknown>>;
     };
     expect(pointer.steps).toHaveLength(1);
@@ -132,43 +121,70 @@ describe("sealed genre proof set", () => {
       pointerPosition: { x: 0.7, y: 0.5 },
       press: "Space",
     });
-    expect(pointer.assert?.movement?.rotationChanged).toBe(true);
-    expect(pointer.assert?.animation).toEqual(
-      expect.arrayContaining([
-        { advancedFrames: 1, clip: "attack", entity: "player", entered: true },
-      ]),
-    );
     expect(pointer.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
       expect.arrayContaining(["shots", "reload"]),
     );
   });
 
-  it("requires the physics replay result to change at the supplied replay step", async () => {
+  it("keeps the physics proof behavior-first and separate from the replay proof", async () => {
     const root = path.join(process.cwd(), "docs/benchmark/genres/physics-puzzle");
-    const source = JSON.parse(
+    const behavior = JSON.parse(
       await readFile(path.join(root, "proof/physics-puzzle.playtest.json"), "utf8"),
     ) as {
       assert?: {
-        resources?: Array<{
-          atSteps?: Array<{ equals?: unknown; label: string }>;
-          changed?: boolean;
-          equals?: unknown;
-          id: string;
-          path?: string;
+        contacts?: Array<{
+          atStep?: string;
+          entity?: string;
+          kind?: string;
+          maxCount?: number;
+          minCount?: number;
+          with?: string;
         }>;
+        movement?: { entity?: string; minDistance?: number };
+        resources?: Array<{ path?: string }>;
+        settled?: Array<{
+          atStep?: string;
+          compareToStep?: string;
+          entity?: string;
+          minBodies?: number;
+          minMeanPoseDistance?: number;
+        }>;
+        states?: Array<{ entity?: string; equals?: string }>;
       };
-      steps?: Array<{ kind?: string; label?: string }>;
+      subject?: string;
     };
-    const replayStep = source.steps?.find(({ label }) => label === "replay-sequence");
-    const replayAssertion = source.assert?.resources?.find(
-      ({ id, path: resourcePath }) => id === "state" && resourcePath === "replayMatches",
-    );
+    const replay = JSON.parse(
+      await readFile(path.join(root, "proof/physics-puzzle-replay.playtest.json"), "utf8"),
+    ) as {
+      assert?: { resources?: Array<{ path?: string }> };
+      steps?: Array<{ kind?: string; label?: string; press?: string }>;
+    };
 
-    expect(replayStep?.kind).toBe("input");
-    expect(replayAssertion).toMatchObject({ changed: true, equals: true });
-    expect(replayAssertion?.atSteps).toEqual([
-      { label: "settled", equals: false },
-      { label: "replay-sequence", equals: true },
+    expect(behavior.subject).toBeUndefined();
+    expect(behavior.assert?.resources).toBeUndefined();
+    expect(behavior.assert?.contacts).toEqual([
+      { atStep: "push-to-goal", kind: "contact", minCount: 1 },
+      { atStep: "cross-pass-through", kind: "trigger", minCount: 1 },
+      { atStep: "goal-contact", kind: "trigger", minCount: 1 },
     ]);
+    expect(behavior.assert?.movement).toMatchObject({ minDistance: 1.5 });
+    expect(behavior.assert?.movement?.entity).toBeUndefined();
+    expect(behavior.assert?.settled).toEqual([
+      {
+        atStep: "settled",
+        compareToStep: "drop",
+        minBodies: 30,
+        minMeanPoseDistance: 0.05,
+      },
+    ]);
+    expect(behavior.assert?.states).toEqual([{ equals: "won" }]);
+    expect(replay.steps?.[0]).toMatchObject({
+      kind: "input",
+      label: "start-replay",
+      press: "KeyV",
+    });
+    expect(replay.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
+      expect.arrayContaining(["replayPhase", "replayMatch"]),
+    );
   });
 });

@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-113 repair — The sealed physics proof must observe behavior, not publish its guesses
 
-**Status: PLANNED, 2026-08-15.** Fresh repair for the review-2 blocker on capped lane
+**Status: BLOCKED, 2026-08-15.** The behavior-neutral evaluator changes are integrated, but the
+consumer proof remains unmet: the committed replay record has only 1/6 positive direct rows, and
+the paired round is explicitly void. Keep this PRD active until a fresh positive replay passes all
+six behavior dimensions and the negative archive reaches assertions and fails behavior rows.
+
+Fresh repair for the review-2 blocker on capped lane
 `linchpin/prd-113-sealed-brief-naming-contract-r2` at `93c76b7`. The recorded owner decision remains
 Option C: publish only irreducible harness inputs and make the rest behavior-based.
 
@@ -45,7 +50,7 @@ zero-contact row. That is not positive evidence for the revised contract.
 - `93c76b7:scripts/__tests__/proof-set.spec.ts`
 - `93c76b7:scripts/__tests__/sealed-contract.spec.ts`
 - `93c76b7:docs/verification/sealed-contract-2026-08-14.md`
-- `93c76b7:docs/verification/round-6-2026-08-14.md`
+- `93c76b7:docs/verification/contract-replay-2026-08-15.md`
 - `packages/playtest/src/scenario.ts`, `assertions.ts`, and `runner/runner.ts`
 
 ## 2. Solution
@@ -221,7 +226,7 @@ them; neither result is manufactured from seed or diagnostics rows.
 
 - `docs/verification/sealed-contract-2026-08-14.md` — EDIT: replace the `1/7` positive claim with
   exact row-level evidence, hashes, commands, and honest scenario verdicts.
-- `docs/verification/round-6-2026-08-14.md` — EDIT: retain committed archive pointers, record the
+- `docs/verification/contract-replay-2026-08-15.md` — EDIT: retain committed archive pointers, record the
   new proof hash and discontinuity, and correct positive/negative row counts.
 
 **Implementation.**
@@ -294,9 +299,17 @@ the following behavior without learning private gameplay names; proof-file prese
 
 Contract conformance: prd_contract: v1
 
-This is a planned PRD. Execution must paste exact row details, archive/proof/brief hashes, scenario
-and process exit codes, observed-red outputs, caller lines, and final test counts. Committed archive
-pointers remain mandatory; a `/tmp` archive or a `1/7` result is UNVERIFIED.
+Observed replay evidence:
+
+- `docs/verification/contract-replay-2026-08-15.md` records the positive committed archive at
+  `1/6` direct behavior rows and the negative archive at `2/6`; these are failure observations,
+  not positive evidence.
+- `docs/verification/round-7-2026-08-15.md` records both arms as `0/2` sealed scenarios with a
+  void comparative verdict; it explicitly keeps `PRD-117` open and does not authorize deletion.
+- The six-genre resource-id/path audit and its negative controls remain retained, but they do not
+  substitute for a positive behavior replay.
+- The acceptance checkboxes remain unchecked. No scratch replay directory or diagnostic-only row
+  is being promoted to a durable positive archive.
 
 ## Checkpoint Protocol
 

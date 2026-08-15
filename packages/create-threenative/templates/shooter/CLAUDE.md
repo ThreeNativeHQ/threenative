@@ -53,6 +53,10 @@ Edit `src/weapons/` first when changing how the game already plays. Edit `src/re
 changing what the screenshot shows. Keep `playtests/` honest: every scenario must observe a
 quantity or transition produced by the game.
 
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
+shooter gameplay; `shooter.playtest.json` and `fail.playtest.json` are examples for this arena's
+combat and terminal behavior.
+
 The asset MCP loop is:
 
 1. `asset_search_sources`

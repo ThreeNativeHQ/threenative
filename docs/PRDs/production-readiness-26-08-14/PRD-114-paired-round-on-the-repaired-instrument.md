@@ -1,6 +1,14 @@
 # PRD-114 — One paired round, with the vanilla arm actually executed
 
-**Status: OPEN — BLOCKED ON PRD-113, written 2026-08-14.** Sliced from
+**Status: BLOCKED — 2026-08-15. The instrument is repaired; the round it exists to produce is
+not.** The `r2` lane stopped at `a042641`, and the repair lane closed that blocker at `39c2d14` on
+an APPROVE with no findings
+(`docs/PRDs/done/PRD-114-repair-diagnostics-side-effect-archive.md`). Both commits are integrated:
+the archiver now carries the root config a scaffolded project imports, so an archived arm boots
+instead of 500-ing on it, and the published diagnostics rows are derived from committed
+`proof.json` rather than transcribed. **Round 7 remains VOID** — the repair deliberately did not
+rerun builders or promote a comparison, so no paired round has been executed on the repaired
+instrument. That run is the remaining work, and PRD-117 is blocked behind it. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 5.
 
 **Complexity: 4 → MEDIUM mode.** It is a run, not a feature — but it has a broken instrument in

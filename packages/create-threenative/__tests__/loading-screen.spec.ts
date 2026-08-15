@@ -1,10 +1,10 @@
 import { type Mesh, MeshBasicMaterial, OrthographicCamera, PerspectiveCamera, Scene } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { createLoadingScreen } from "../templates/starter/src/render/loading.js";
+import { createLoadingScreen } from "../templates/minimal/src/render/loading.js";
 
 /**
  * The loading screen is generated user source, but every scaffolded project starts from this copy,
- * so a defect here ships to every game at once.
+ * so a defect here ships to every game that keeps the default loading screen.
  */
 function host(width = 900, height = 900) {
   const camera = new PerspectiveCamera(60, width / height, 0.1, 2_000);

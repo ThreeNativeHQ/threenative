@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { budgetErrors, budgetTriggers, collectBudgets } from "../check-budgets";
+import { budgetErrors, budgetTriggers, collectBudgets, enforceBudgets } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -19,6 +19,32 @@ async function fixtureRoot(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-budget-"));
   temporaryRoots.push(root);
   return root;
+}
+
+async function nativeFixture(root: string): Promise<void> {
+  const directory = path.join(root, "packages", "runtime-native");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, "runtime.cpp"), "owned");
+  await writeFile(path.join(directory, "CMakeLists.txt"), "owned");
+}
+
+async function writeNativeCensus(
+  root: string,
+  rows: readonly (readonly [string, number])[],
+  total: number,
+): Promise<void> {
+  const recordPath = path.join(root, "docs", "verification", "PRD-116-native-physics-actuation.md");
+  await mkdir(path.dirname(recordPath), { recursive: true });
+  const tableRows = rows.map(([area, lines]) => `| ${area} | ${lines} | owner |`).join("\n");
+  await writeFile(
+    recordPath,
+    [
+      "| Counted area | Lines | Owner |",
+      "| --- | ---: | --- |",
+      tableRows,
+      `| **Total** | **${total}** | |`,
+    ].join("\n"),
+  );
 }
 
 describe("budget gate", () => {
@@ -209,6 +235,61 @@ describe("budget gate", () => {
     const report = await collectBudgets(root);
     expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
     expect(budgetTriggers(report)).toEqual([]);
+    await expect(enforceBudgets(root)).resolves.toMatchObject({
+      nativeRuntimeLoc: report.nativeRuntimeLoc,
+    });
+  });
+
+  it("should reject an incomplete native census when enforcing budgets", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(root, [["src/", 1]], 2);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census sum no longer equals measured native runtime LOC",
+    );
+
+    await writeNativeCensus(
+      root,
+      [
+        ["src/", 1],
+        ["tests/", 1],
+      ],
+      2,
+    );
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
+  });
+
+  it("should reject a stale native census total when enforcing budgets", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    const rows = [
+      ["src/", 1],
+      ["tests/", 1],
+    ] as const;
+    await writeNativeCensus(root, rows, 1);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "recorded native census total disagrees with measured native runtime LOC",
+    );
+
+    await writeNativeCensus(root, rows, 2);
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
+  });
+
+  it("should pass the restored native census", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(
+      root,
+      [
+        ["src/", 1],
+        ["tests/", 1],
+      ],
+      2,
+    );
+
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
   });
 
   it("should exclude only the ignored generated Android bundle artifacts from native LOC", async () => {

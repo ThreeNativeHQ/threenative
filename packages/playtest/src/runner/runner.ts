@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { PNG } from "pngjs";
 import {
@@ -8,7 +8,10 @@ import {
   playtestDiagnostic,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
+  resolveDiagnosticsPolicy,
   type IPlaytestAssertionResult,
+  type IPlaytestCaptureProvenance,
+  type IPlaytestDiagnosticsPolicy,
   type IPlaytestDiagnostic,
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
@@ -16,14 +19,16 @@ import {
   type IPlaytestPathAssertion,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestReport,
+  type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
+import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
-import { reconcileBrowserPointers } from "./browser.js";
+import { reconcileBrowserPointers, resolveBrowserArguments } from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   finishFramebufferCoverageProbe,
@@ -48,10 +53,51 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   url: string;
 }
 
+export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): IPlaytestAssertionResult {
+  return {
+    details: {
+      consoleErrors: 0,
+      networkErrors: 0,
+      policy,
+      reason: "not-evaluated",
+      runtimeDiagnostics: 0,
+    },
+    id: "diagnostics",
+    pass: false,
+  };
+}
+
+export async function writeCaptureProvenance(
+  artifactDirectory: string,
+  provenance: IPlaytestCaptureProvenance,
+): Promise<void> {
+  await writeFile(join(artifactDirectory, "capture.json"), `${JSON.stringify(provenance, null, 2)}\n`);
+}
+
 interface ILabeledPlaytestSample {
   label: string;
   signals: unknown[];
   snapshot: IPlaytestObservationSnapshot;
+}
+
+type RunnerConsoleEntry = {
+  source?: "browser-console" | "page-error" | "unhandled-rejection";
+  text: string;
+  type: string;
+};
+
+const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
+
+interface IMovementSampleInterval {
+  after: IPlaytestObservationSnapshot;
+  before: IPlaytestObservationSnapshot;
+  inputDriven: boolean;
+}
+
+interface IRunStepSamples {
+  afterInput?: IPlaytestObservationSnapshot;
+  afterStep?: IPlaytestObservationSnapshot;
+  inputDriven: boolean;
 }
 
 export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): Promise<IStandalonePlaytestReport> {
@@ -88,7 +134,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       server = startManagedServer(config);
     }
     browser = await chromium.launch({
-      ...(config.browserArgs === undefined ? {} : { args: [...config.browserArgs] }),
+      ...(config.browserArgs === undefined ? {} : { args: resolveBrowserArguments(config.browserArgs) }),
       headless: config.headless,
     });
     if (server !== undefined) {
@@ -99,11 +145,28 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
     page = await context.newPage();
-    const consoleEntries: Array<{ text: string; type: string }> = [];
+    await page.addInitScript(() => {
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason instanceof Error
+          ? event.reason.stack || event.reason.message
+          : String(event.reason);
+        console.error(`__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:${reason}`);
+      });
+    });
+    const consoleEntries: RunnerConsoleEntry[] = [];
     const networkEntries: Array<{ method: string; url: string }> = [];
-    page.on("console", (entry) => consoleEntries.push({ text: entry.text(), type: entry.type() }));
-    page.on("pageerror", (error) => consoleEntries.push({ text: error.stack || error.message, type: "pageerror" }));
+    page.on("console", (entry) => {
+      const text = entry.text();
+      const unhandledRejection = text.startsWith(UNHANDLED_REJECTION_PREFIX);
+      consoleEntries.push({
+        source: unhandledRejection ? "unhandled-rejection" : "browser-console",
+        text: unhandledRejection ? text.slice(UNHANDLED_REJECTION_PREFIX.length) : text,
+        type: entry.type(),
+      });
+    });
+    page.on("pageerror", (error) => consoleEntries.push({ source: "page-error", text: error.stack || error.message, type: "pageerror" }));
     page.on("requestfailed", (request) => networkEntries.push({ method: request.method(), url: request.url() }));
+    const activePage = page;
     await page.goto(config.url, { timeout: config.timeoutMs, waitUntil: "domcontentloaded" });
     const bridge = await connectPlaytestBridge(page, scenario);
     if (bridge !== undefined && scenario.setup !== undefined) {
@@ -116,7 +179,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
     const sampleRequest = {
-      entities: entityIds,
+      ...(entityIds === undefined ? {} : { entities: entityIds }),
       include: [
         "components",
         "diagnostics",
@@ -132,8 +195,71 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       resources: resourceIds,
     } as const;
     const labeledSamples: ILabeledPlaytestSample[] = [];
+    const capturesAnonymousMovement = isAnonymousMovementScenario(scenario);
+    const movementSamples: IMovementSampleInterval[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+    const needsCapture = scenario.artifacts?.screenshots !== false
+      || scenario.steps.some((step) => step.screenshot !== undefined)
+      || wantsVisual;
+    const captureProvenance = needsCapture
+      ? await readCaptureProvenance(page, config, scenario)
+      : undefined;
+    if (captureProvenance !== undefined) {
+      await writeCaptureProvenance(config.artifactDirectory, captureProvenance);
+    }
+    let captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined;
+    const capturePage = async (
+      label: string,
+      options: Parameters<Page["screenshot"]>[0],
+    ): Promise<Buffer | undefined> => {
+      let png: Buffer;
+      try {
+        png = await activePage.screenshot(options);
+      } catch (error) {
+        try {
+          const fallback = await captureVisualSurface(
+            activePage,
+            typeof options?.path === "string" ? options.path : undefined,
+          );
+          if (fallback === undefined) throw error;
+          png = fallback;
+        } catch {
+          throw error;
+        }
+      }
+      try {
+        assertCaptureNotBlank(png, label);
+        return png;
+      } catch (error) {
+        if (!(error instanceof CaptureGuardError)) throw error;
+        captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
+        return undefined;
+      }
+    };
+    const captureVisualPage = async (
+      label: string,
+      artifactPath: string | undefined,
+    ): Promise<Buffer | undefined> => {
+      try {
+        const png = await captureVisualSurface(activePage, artifactPath);
+        if (png === undefined) {
+          captureFailure ??= {
+            code: "TN_CAPTURE_BLANK",
+            label,
+            reason: "no canvas was available for the visual capture",
+          };
+          return undefined;
+        }
+        assertCaptureNotBlank(png, label);
+        return png;
+      } catch (error) {
+        if (!(error instanceof CaptureGuardError)) throw error;
+        captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
+        return undefined;
+      }
+    };
     const beforeSnapshot = await bridge?.sample(sampleRequest);
+    let movementCursor = beforeSnapshot;
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
@@ -144,9 +270,16 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
     const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
-      ? await page.screenshot(scenario.artifacts?.screenshots === "before-after"
-        ? { path: join(config.artifactDirectory, "before.png") }
-        : undefined)
+      ? wantsVisual
+        ? await captureVisualPage(
+            "before.png",
+            scenario.artifacts?.screenshots === "before-after"
+              ? join(config.artifactDirectory, "before.png")
+              : undefined,
+          )
+        : await capturePage("before.png", scenario.artifacts?.screenshots === "before-after"
+          ? { path: join(config.artifactDirectory, "before.png") }
+          : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
     for (const [index, step] of scenario.steps.entries()) {
@@ -155,7 +288,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         && step.label === framebufferAssertion.window.startStep) {
         await startFramebufferCoverageProbe(page, framebufferAssertion);
       }
-      await runStep(
+      const stepSamples = await runStep(
         page,
         bridge,
         step,
@@ -163,8 +296,27 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         pathEntity,
         pathPositions,
         inputState,
+        capturesAnonymousMovement ? sampleRequest : undefined,
         index === scenario.steps.length - 1,
       );
+      if (capturesAnonymousMovement && movementCursor !== undefined && stepSamples.afterInput !== undefined) {
+        movementSamples.push({
+          after: stepSamples.afterInput,
+          before: movementCursor,
+          inputDriven: stepSamples.inputDriven,
+        });
+      }
+      if (
+        capturesAnonymousMovement
+        && stepSamples.afterInput !== undefined
+        && stepSamples.afterStep !== undefined
+        && stepSamples.afterStep !== stepSamples.afterInput
+      ) {
+        movementSamples.push({ after: stepSamples.afterStep, before: stepSamples.afterInput, inputDriven: false });
+      }
+      if (capturesAnonymousMovement && stepSamples.afterStep !== undefined) {
+        movementCursor = stepSamples.afterStep;
+      }
       if (step.label === scenario.assert?.framebufferCoverage?.window.endStep) {
         framebufferCoverage = await finishFramebufferCoverageProbe(page, config.artifactDirectory);
       }
@@ -176,7 +328,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
       if (step.screenshot !== undefined) {
-        await page.screenshot({ path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
+        await capturePage(`${safePart(step.screenshot)}.png`, { path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
     const afterSnapshot = await bridge?.sample(sampleRequest);
@@ -186,11 +338,18 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     }
     const afterHud = await sampleHud(page, hudAssertions);
     const afterScreenshot = scenario.artifacts?.screenshots !== false || wantsVisual
-      ? await page.screenshot(scenario.artifacts?.screenshots === false
-        ? undefined
-        : { path: join(config.artifactDirectory, "after.png") })
+      ? wantsVisual
+        ? await captureVisualPage(
+            "after.png",
+            scenario.artifacts?.screenshots === false
+              ? undefined
+              : join(config.artifactDirectory, "after.png"),
+          )
+        : await capturePage("after.png", scenario.artifacts?.screenshots === false
+          ? {}
+          : { path: join(config.artifactDirectory, "after.png") })
       : undefined;
-    const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario);
+    const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario, captureFailure);
     if (config.trace) {
       await context.tracing.stop({ path: join(config.artifactDirectory, "trace.zip") });
     }
@@ -207,6 +366,9 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       visual,
       labeledSamples,
       framebufferCoverage,
+      captureProvenance,
+      captureFailure,
+      movementSamples,
     );
     await context.close();
     return addPreflightDiagnostic(report, preflight);
@@ -259,7 +421,7 @@ export function buildReport(
   scenario: IPlaytestScenario,
   beforeSnapshot: IPlaytestObservationSnapshot | undefined,
   afterSnapshot: IPlaytestObservationSnapshot | undefined,
-  consoleEntries: Array<{ text: string; type: string }>,
+  consoleEntries: RunnerConsoleEntry[],
   networkEntries: Array<{ method: string; url: string }>,
   pathLength: number | undefined = undefined,
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
@@ -267,12 +429,23 @@ export function buildReport(
   visual: IPlaytestObservations["visual"] = undefined,
   labeledSamples: readonly ILabeledPlaytestSample[] = [],
   framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined = undefined,
+  capture: IPlaytestCaptureProvenance | undefined = undefined,
+  captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
+  movementSamples: readonly IMovementSampleInterval[] = [],
 ): IStandalonePlaytestReport {
-  const entity = scenario.assert?.movement?.entity ?? scenario.subject ?? "";
-  const beforePosition = entityPosition(beforeSnapshot, entity);
-  const afterPosition = entityPosition(afterSnapshot, entity);
-  const beforeRotation = entityRotation(beforeSnapshot, entity);
-  const afterRotation = entityRotation(afterSnapshot, entity);
+  const movementSample = isAnonymousMovementScenario(scenario)
+    ? observedMovementSample(movementSamples)
+    : undefined;
+  const entity = scenario.assert?.movement?.entity
+    ?? scenario.subject
+    ?? movementSample?.entity
+    ?? "";
+  const movementBeforeSnapshot = movementSample?.before ?? (isAnonymousMovementScenario(scenario) ? undefined : beforeSnapshot);
+  const movementAfterSnapshot = movementSample?.after ?? (isAnonymousMovementScenario(scenario) ? undefined : afterSnapshot);
+  const beforePosition = entityPosition(movementBeforeSnapshot, entity);
+  const afterPosition = entityPosition(movementAfterSnapshot, entity);
+  const beforeRotation = entityRotation(movementBeforeSnapshot, entity);
+  const afterRotation = entityRotation(movementAfterSnapshot, entity);
   const components = componentObservations(beforeSnapshot, afterSnapshot);
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
@@ -294,6 +467,7 @@ export function buildReport(
     ...(afterPosition === undefined ? {} : { after: { frame: scenario.steps.length, position: afterPosition, ...(afterRotation === undefined ? {} : { rotation: afterRotation }), tick: afterSnapshot?.clock.tick ?? 0 } }),
     ...(beforePosition === undefined ? {} : { before: { frame: 0, position: beforePosition, ...(beforeRotation === undefined ? {} : { rotation: beforeRotation }), tick: beforeSnapshot?.clock.tick ?? 0 } }),
     diagnostics,
+    diagnosticsPolicy: resolveDiagnosticsPolicy(scenario.assert?.diagnostics),
     distance,
     entity,
     expectMoved: scenario.assert?.movement?.minDistance !== undefined,
@@ -318,9 +492,20 @@ export function buildReport(
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
-      ...(afterSnapshot?.gameplay === undefined
+      ...(afterSnapshot?.gameplay === undefined && labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)
         ? {}
-        : { runtimeObservations: { gameplay: afterSnapshot.gameplay } }),
+        : {
+            runtimeObservations: {
+              ...(afterSnapshot?.gameplay === undefined ? {} : { gameplay: afterSnapshot.gameplay }),
+              ...(labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)
+                ? {}
+                : {
+                    gameplaySeries: labeledSamples.flatMap(({ label, snapshot }) => snapshot.gameplay === undefined
+                      ? []
+                      : [{ gameplay: snapshot.gameplay, label, tick: snapshot.clock.tick ?? 0 }]),
+                  }),
+            },
+          }),
       ...(afterSnapshot?.physicsDebugSeries === undefined
         ? {}
         : { physicsDebugSeries: afterSnapshot.physicsDebugSeries }),
@@ -335,6 +520,14 @@ export function buildReport(
   const cameraResult = evaluateCamera(scenario, afterSnapshot);
   const assertionResults = [...evaluated.assertions, ...(cameraResult === undefined ? [] : [cameraResult])];
   const allDiagnostics = [...diagnostics, ...evaluated.diagnostics];
+  if (captureFailure !== undefined) {
+    allDiagnostics.push({
+      code: captureFailure.code,
+      message: `Visual capture '${captureFailure.label}' was blank: ${captureFailure.reason}.`,
+      severity: "error",
+      suggestion: "Inspect the browser display and GPU adapter before treating this run as render evidence.",
+    });
+  }
   if (cameraResult?.pass === false) {
     allDiagnostics.push({
       code: "TN_PLAYTEST_CAMERA_ASSERTION_FAILED",
@@ -346,6 +539,7 @@ export function buildReport(
   return {
     ...base,
     artifactDirectory: config.artifactDirectory,
+    ...(capture === undefined ? {} : { capture }),
     assertionResults,
     diagnostics: allDiagnostics,
     pass: assertionResults.every(({ pass }) => pass) && allDiagnostics.every(({ severity }) => severity !== "error"),
@@ -354,6 +548,30 @@ export function buildReport(
     target: scenario.target,
     url: config.url,
   };
+}
+
+/** Capture the largest rendered canvas without composited DOM overlays. */
+export async function captureVisualSurface(
+  page: Page,
+  artifactPath?: string,
+): Promise<Buffer | undefined> {
+  const canvases = page.locator("canvas");
+  const sourceIndex = await canvases.evaluateAll((elements) => {
+    let largestArea = 0;
+    let largestIndex = -1;
+    for (const [index, canvas] of (elements as HTMLCanvasElement[]).entries()) {
+      const area = canvas.width * canvas.height;
+      if (area > largestArea) {
+        largestArea = area;
+        largestIndex = index;
+      }
+    }
+    return largestIndex;
+  });
+  if (sourceIndex < 0) return undefined;
+  const content = await canvases.nth(sourceIndex).screenshot();
+  if (artifactPath !== undefined) await writeFile(artifactPath, content);
+  return content;
 }
 
 function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
@@ -386,8 +604,9 @@ function screenshotObservations(
   before: Buffer | undefined,
   after: Buffer | undefined,
   scenario: IPlaytestScenario,
+  captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
 ): IPlaytestObservations["visual"] | undefined {
-  if (after === undefined) return undefined;
+  if (after === undefined) return captureFailure === undefined ? undefined : { captureFailure };
   const afterPng = PNG.sync.read(after);
   const beforePng = before === undefined ? undefined : PNG.sync.read(before);
   const sameSize = beforePng !== undefined && beforePng.width === afterPng.width && beforePng.height === afterPng.height;
@@ -412,6 +631,7 @@ function screenshotObservations(
     ...(changedPixelRatio === undefined ? {} : { changedPixelRatio }),
     ...(sameSize ? { comparisonSource: "before-after" } : {}),
     ...(regions.length === 0 ? {} : { nonblankRegions: regions }),
+    ...(captureFailure === undefined ? {} : { captureFailure }),
   };
 }
 
@@ -440,10 +660,13 @@ function regionMetrics(
 }
 
 function failureReport(config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, diagnostic: IPlaytestProtocolDiagnostic): IStandalonePlaytestReport {
+  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
   return {
     artifactDirectory: config.artifactDirectory,
+    assertionResults: [failedDiagnosticsAssertion(diagnosticsPolicy)],
     debugColliders: false,
     diagnostics: [{ ...diagnostic, suggestion: diagnostic.fix.instruction }],
+    diagnosticsPolicy,
     distance: 0,
     entity: scenario.subject ?? "",
     expectMoved: false,
@@ -496,8 +719,9 @@ async function runStep(
   pathEntity: string | undefined,
   pathPositions: PlaytestVec3[],
   inputState: StepInputState,
+  movementSampleRequest: IPlaytestSampleRequest | undefined,
   finalStep: boolean,
-): Promise<void> {
+): Promise<IRunStepSamples> {
   if (step.pointerPosition !== undefined) {
     await page.mouse.move(
       step.pointerPosition.x * viewport.width,
@@ -528,6 +752,7 @@ async function runStep(
       }
     }
   }
+  const inputDriven = playtestStepDrivesMovement(step, inputActive(inputState));
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
   if (ticks > 0 && bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
@@ -543,6 +768,10 @@ async function runStep(
     await waitFrames(page, Math.max(frames, ticks, 1));
     await samplePathPosition(bridge, pathEntity, pathPositions);
   }
+  const afterInput = bridge === undefined || movementSampleRequest === undefined
+    ? undefined
+    : await bridge.sample(movementSampleRequest);
+  let afterStep = afterInput;
   if (press !== undefined && step.release) {
     const released = typeof press === "string" ? [press] : [...inputState.heldKeys];
     for (const key of released) {
@@ -558,6 +787,9 @@ async function runStep(
       } else {
         await waitFrames(page, 1);
       }
+      if (bridge !== undefined && movementSampleRequest !== undefined) {
+        afterStep = await bridge.sample(movementSampleRequest);
+      }
     }
   }
   if (step.pointerPosition?.buttons !== undefined && step.release) {
@@ -570,7 +802,11 @@ async function runStep(
     } else {
       await waitFrames(page, 1);
     }
+    if (bridge !== undefined && movementSampleRequest !== undefined) {
+      afterStep = await bridge.sample(movementSampleRequest);
+    }
   }
+  return { afterInput, afterStep, inputDriven };
 }
 
 type StepInputState = {
@@ -579,6 +815,22 @@ type StepInputState = {
   pointers: Map<number, { buttons: number; id: number; x: number; y: number }>;
   touchSession?: CDPSession;
 };
+
+export function playtestStepDrivesMovement(
+  step: IPlaytestScenario["steps"][number],
+  hasHeldInput: boolean,
+): boolean {
+  const hasNewInput = typeof step.press === "string"
+    ? step.press.length > 0
+    : (step.press?.length ?? 0) > 0
+      || step.pointerPosition !== undefined
+      || (step.pointers?.length ?? 0) > 0;
+  return hasNewInput || (step.press === undefined && step.pointers === undefined && step.pointerPosition === undefined && hasHeldInput);
+}
+
+function inputActive(inputState: StepInputState): boolean {
+  return inputState.heldKeys.size > 0 || inputState.pointerButtons !== 0 || inputState.pointers.size > 0;
+}
 
 async function setBrowserPointers(
   page: Page,
@@ -686,14 +938,20 @@ async function waitFrames(page: Page, frames: number): Promise<void> {
   }), frames);
 }
 
-function observedEntityIds(scenario: IPlaytestScenario): string[] {
-  return [...new Set([
+function observedEntityIds(scenario: IPlaytestScenario): string[] | undefined {
+  if (isAnonymousMovementScenario(scenario)) return undefined;
+  const ids = [...new Set([
     scenario.subject,
     scenario.assert?.movement?.entity,
     scenario.assert?.camera?.entity,
     scenario.assert?.camera?.follows,
     ...(scenario.assert?.visibility ?? []).map(({ entity }) => entity),
   ].filter((value): value is string => value !== undefined))];
+  return ids.length > 0
+    ? ids
+    : scenario.assert?.movement === undefined
+      ? []
+      : undefined;
 }
 
 function observedResourceIds(scenario: IPlaytestScenario): string[] {
@@ -739,6 +997,77 @@ function entityPosition(snapshot: IPlaytestObservationSnapshot | undefined, id: 
   return snapshot?.entities?.find((entity) => entity.id === id)?.transform?.position;
 }
 
+function isAnonymousMovementScenario(scenario: IPlaytestScenario): boolean {
+  return scenario.assert?.movement !== undefined
+    && scenario.assert.movement.entity === undefined
+    && scenario.subject === undefined;
+}
+
+function observedMovementSample(
+  samples: readonly IMovementSampleInterval[],
+): { after: IPlaytestObservationSnapshot; before: IPlaytestObservationSnapshot; entity: string } | undefined {
+  const inputOff = samples.filter(({ inputDriven }) => !inputDriven);
+  if (inputOff.length === 0) return undefined;
+  return samples
+    .filter(({ inputDriven }) => inputDriven)
+    .flatMap((sample) => observedMovementEntities(sample.before, sample.after).flatMap(({ id, distance }) => {
+      const inputOffBaseline = inputOff.every((offSample) => {
+        const offEntity = observedMovementEntities(offSample.before, offSample.after).find(({ id: offId }) => offId === id);
+        return offEntity !== undefined && offEntity.distance === 0 && movementRate(offSample, id) !== undefined;
+      });
+      const inputOnRate = movementRate(sample, id);
+      return !inputOffBaseline || inputOnRate === undefined || inputOnRate <= 0
+        ? []
+        : [{ ...sample, distance, entity: id, contrast: inputOnRate }];
+    }))
+    .sort((left, right) => right.distance - left.distance || right.contrast - left.contrast || left.entity.localeCompare(right.entity))[0];
+}
+
+function observedMovementEntities(
+  before: IPlaytestObservationSnapshot,
+  after: IPlaytestObservationSnapshot,
+): Array<{ distance: number; id: string }> {
+  const beforeEntities = new Map(
+    (before.entities ?? [])
+      .filter(({ transform }) => transform?.position !== undefined)
+      .map(({ id, transform }) => [id, transform!.position!] as const),
+  );
+  return (after.entities ?? []).flatMap((entity) => {
+    const beforePosition = beforeEntities.get(entity.id);
+    const afterPosition = entity.transform?.position;
+    return beforePosition === undefined || afterPosition === undefined || entity.visible === false
+      ? []
+      : [{ distance: length(subtract(afterPosition, beforePosition)), id: entity.id }];
+  });
+}
+
+function movementRate(sample: IMovementSampleInterval, entity: string): number | undefined {
+  const beforePosition = entityPosition(sample.before, entity);
+  const afterPosition = entityPosition(sample.after, entity);
+  if (beforePosition === undefined || afterPosition === undefined) return undefined;
+  const duration = movementDuration(sample);
+  return duration === undefined ? undefined : length(subtract(afterPosition, beforePosition)) / duration;
+}
+
+function movementDuration(sample: IMovementSampleInterval): number | undefined {
+  if (sample.before.clock.mode !== sample.after.clock.mode) return undefined;
+  const duration = sample.before.clock.mode === "fixed-step"
+    ? positiveFiniteDelta(sample.before.clock.tick, sample.after.clock.tick)
+    : positiveFiniteDelta(sample.before.clock.timeMs, sample.after.clock.timeMs);
+  return duration;
+}
+
+function positiveFiniteDelta(before: number | undefined, after: number | undefined): number | undefined {
+  if (
+    typeof before !== "number"
+    || typeof after !== "number"
+    || !Number.isFinite(before)
+    || !Number.isFinite(after)
+  ) return undefined;
+  const delta = after - before;
+  return Number.isFinite(delta) && delta > 0 ? delta : undefined;
+}
+
 function entityRotation(snapshot: IPlaytestObservationSnapshot | undefined, id: string): [number, number, number, number] | undefined {
   return snapshot?.entities?.find((entity) => entity.id === id)?.transform?.rotation;
 }
@@ -751,12 +1080,12 @@ function resourceObservations(before: IPlaytestObservationSnapshot | undefined, 
 function normalizedRuntimeDiagnostics(
   snapshot: IPlaytestObservationSnapshot | undefined,
   scenario: IPlaytestScenario,
-  consoleEntries: Array<{ text: string; type: string }>,
+  consoleEntries: RunnerConsoleEntry[],
 ): unknown {
   return {
     recentRuntimeErrors: [
       ...(snapshot?.diagnostics ?? []),
-      ...consoleEntries.filter(({ type }) => ["assert", "error", "pageerror"].includes(type)),
+      ...consoleEntries.filter(({ source, type }) => source !== "browser-console" && ["assert", "error", "pageerror"].includes(type)),
     ],
     scene: {
       renderedEntities: (snapshot?.entities ?? []).map((entity) => ({
@@ -765,6 +1094,110 @@ function normalizedRuntimeDiagnostics(
         visible: entity.visible,
       })),
     },
+  };
+}
+
+async function readCaptureProvenance(
+  page: Page,
+  config: IStandalonePlaytestConfig,
+  scenario: IPlaytestScenario,
+): Promise<IPlaytestCaptureProvenance> {
+  const observed = await page.evaluate(async () => {
+    type Adapter = {
+      features?: Iterable<string>;
+      info?: Record<string, unknown>;
+      limits?: Record<string, number | undefined>;
+      requestAdapterInfo?: () => Promise<Record<string, unknown>>;
+    };
+    const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<Adapter | null> } }).gpu;
+    const adapter = gpu === undefined ? null : await gpu.requestAdapter().catch(() => null);
+    const infoCandidate = adapter?.info;
+    const legacyInfo = await adapter?.requestAdapterInfo?.().catch(() => undefined);
+    const info = infoCandidate === undefined || Object.keys(infoCandidate).length === 0
+      ? legacyInfo ?? infoCandidate
+      : infoCandidate;
+    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"];
+    const adapterIdentityEntries: Array<[string, string]> = info === undefined
+      ? []
+      : adapterIdentityKeys.flatMap((key) => {
+          const value = info[key];
+          const text = String(value ?? "");
+          return text.length === 0 ? [] : [[key, text]];
+        });
+    const webgpuAdapterEntries = [...adapterIdentityEntries];
+    if (adapterIdentityEntries.length > 0 && adapter?.features !== undefined) {
+      const features = [...adapter.features].map(String).sort();
+      if (features.length > 0) webgpuAdapterEntries.push(["features", features.join(",")]);
+    }
+    if (adapterIdentityEntries.length > 0) {
+      for (const key of ["maxBindGroups", "maxTextureDimension2D", "maxStorageBufferBindingSize"]) {
+        const value = adapter?.limits?.[key];
+        if (typeof value === "number" && Number.isFinite(value)) webgpuAdapterEntries.push([`limit.${key}`, String(value)]);
+      }
+    }
+    const webgpuAdapterInfo = adapterIdentityEntries.length === 0
+      ? undefined
+      : Object.fromEntries(webgpuAdapterEntries);
+    const canvas = document.querySelector("canvas");
+    const engine = canvas?.getAttribute("data-engine")?.toLowerCase() ?? "";
+    let rendererKind: "webgl" | "webgpu" | undefined;
+    if (engine.includes("webgpu")) rendererKind = "webgpu";
+    else if (engine.includes("webgl")) rendererKind = "webgl";
+    else if (adapter !== null && canvas !== null) {
+      try {
+        if (canvas.getContext("webgpu") !== null) rendererKind = "webgpu";
+      } catch {
+        // A canvas can reject a second context request; the adapter and engine marker remain authoritative.
+      }
+    }
+    let webglAdapterInfo: Record<string, string> | undefined;
+    if (rendererKind === undefined || rendererKind === "webgl") {
+      try {
+        const context = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl");
+        if (context !== null && context !== undefined) {
+          rendererKind = "webgl";
+          const debugInfo = context.getExtension("WEBGL_debug_renderer_info") as {
+            UNMASKED_RENDERER_WEBGL: number;
+            UNMASKED_VENDOR_WEBGL: number;
+          } | null;
+          const vendor = String(context.getParameter(debugInfo?.UNMASKED_VENDOR_WEBGL ?? context.VENDOR) ?? "");
+          const renderer = String(context.getParameter(debugInfo?.UNMASKED_RENDERER_WEBGL ?? context.RENDERER) ?? "");
+          const webglEntries: Array<[string, string]> = [
+            ["renderer", renderer],
+            ["vendor", vendor],
+          ];
+          webglAdapterInfo = Object.fromEntries(webglEntries.filter(([, value]) => value.length > 0));
+        }
+      } catch {
+        // Report the missing renderer or adapter below instead of guessing.
+      }
+    }
+    return {
+      adapter: rendererKind === "webgl" ? webglAdapterInfo : webgpuAdapterInfo,
+      rendererKind,
+    };
+  });
+  if (observed.adapter === undefined || Object.keys(observed.adapter).length === 0) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING",
+      `Visual capture could not read a renderer adapter description (kind=${observed.rendererKind ?? "unknown"}).`,
+      "Run the visual playtest with a working GPU/WebGPU adapter or WebGL renderer; the runner will not write unknown adapter provenance.",
+    ));
+  }
+  if (observed.rendererKind === undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING",
+      "Visual capture could not identify the page renderer kind.",
+      "Expose a WebGPU/WebGL canvas before capturing the visual artifact, then rerun the playtest.",
+    ));
+  }
+  return {
+    adapter: observed.adapter,
+    browserArgs: resolveBrowserArguments(config.browserArgs),
+    captureMethod: "page.screenshot",
+    rendererKind: observed.rendererKind,
+    target: scenario.target,
+    viewport: { ...scenario.viewport },
   };
 }
 

@@ -328,9 +328,60 @@ export function budgetErrors(report: BudgetReport): string[] {
 
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const report = await collectBudgets(root);
-  const errors = budgetErrors(report);
+  const errors = [
+    ...budgetErrors(report),
+    ...(await nativeCensusErrors(root, report.nativeRuntimeLoc)),
+  ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return report;
+}
+
+async function nativeCensusErrors(
+  root: string,
+  measuredNativeRuntimeLoc: number,
+): Promise<string[]> {
+  const recordPath = path.join(root, "docs", "verification", "PRD-116-native-physics-actuation.md");
+  if (!existsSync(recordPath)) return [];
+
+  const record = await readFile(recordPath, "utf8");
+  const censusStart = record.indexOf("| Counted area | Lines | Owner |");
+  if (censusStart < 0) {
+    return ["native census record is missing its counted-area table"];
+  }
+
+  const totalStart = record.indexOf("| **Total** |", censusStart);
+  if (totalStart <= censusStart) {
+    return ["native census record is missing its total row"];
+  }
+
+  const rows = [...record.slice(censusStart, totalStart).matchAll(/^\| ([^|]+) \| ([\d,]+) \|/gmu)];
+  if (rows.length === 0) {
+    return ["native census record contains no counted-area rows"];
+  }
+
+  const areaSum = rows.reduce((sum, match) => {
+    const lines = match[2];
+    if (lines === undefined) throw new Error("native census record contains a malformed row");
+    return sum + Number(lines.replaceAll(",", ""));
+  }, 0);
+  const totalMatch = record.slice(totalStart).match(/^\| \*\*Total\*\* \| \*\*([\d,]+)\*\*/mu);
+  if (!totalMatch || totalMatch[1] === undefined) {
+    return ["native census record contains a malformed total row"];
+  }
+
+  const recordedTotal = Number(totalMatch[1].replaceAll(",", ""));
+  const errors: string[] = [];
+  if (areaSum !== measuredNativeRuntimeLoc) {
+    errors.push(
+      `native census sum no longer equals measured native runtime LOC: counted areas ${areaSum}, measured ${measuredNativeRuntimeLoc}`,
+    );
+  }
+  if (recordedTotal !== measuredNativeRuntimeLoc) {
+    errors.push(
+      `recorded native census total disagrees with measured native runtime LOC: recorded ${recordedTotal}, measured ${measuredNativeRuntimeLoc}`,
+    );
+  }
+  return errors;
 }
 
 if (

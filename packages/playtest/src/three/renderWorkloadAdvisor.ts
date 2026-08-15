@@ -145,8 +145,8 @@ const SAFE_SCENE_COLLAPSE_REASONS = new Set([
 ]);
 const SAFE_SCENE_COLLAPSE_STATUS = new Set(["applied", "deferred", "rejected"]);
 const VERIFIED_EXAMPLE_PATHS: IRenderAdvisorExamplePaths = {
-  gpuParticles: "packages/create-threenative/templates/starter/src/render/particles.ts",
-  hudInstancing: "packages/create-threenative/templates/starter/src/render/hud.ts",
+  gpuParticles: "examples/abyss-framework/src/scenes/Abyss.ts",
+  hudInstancing: "packages/create-threenative/templates/minimal/src/render/hud.ts",
   materialSharing: "packages/create-threenative/templates/starter/src/render/materials.ts",
   staticMerge: "examples/native-cpu-load-test/src/main.ts",
 };

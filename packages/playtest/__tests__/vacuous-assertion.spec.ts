@@ -74,6 +74,18 @@ test("an empty entity id is rejected instead of silently matching nothing", asyn
   expect(error.diagnostic.message).toMatch(/assert\.movement\.entity/u);
 });
 
+test("a console opt-out without a reason is rejected at load", async () => {
+  const error = await loadError({ diagnostics: { noConsoleErrors: false } });
+
+  expect(error.diagnostic.message).toMatch(/noConsoleErrors.*consoleErrorsOptOutReason/u);
+});
+
+test("a network opt-out without a reason is rejected at load", async () => {
+  const error = await loadError({ diagnostics: { noNetworkErrors: false } });
+
+  expect(error.diagnostic.message).toMatch(/noNetworkErrors.*networkErrorsOptOutReason/u);
+});
+
 test("a wrong-typed field inside an array assertion names its index", async () => {
   const error = await loadError({ visibility: [{ entity: "player" }, { entity: "enemy", minProjectedPixels: "40" }] });
 

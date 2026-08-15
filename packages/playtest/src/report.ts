@@ -18,11 +18,37 @@ export interface IPlaytestFollowReport {
   within: number;
 }
 
+export interface IPlaytestDiagnosticsPolicy {
+  consoleErrorsOptOutReason?: string;
+  networkErrorsOptOutReason?: string;
+  noConsoleErrors: boolean;
+  noNetworkErrors: boolean;
+  noRuntimeDiagnostics: boolean;
+  runtimeReady?: boolean;
+  runtimeDiagnosticsOptOutReason?: string;
+}
+
+export interface IPlaytestCaptureProvenance {
+  adapter: Record<string, string>;
+  browserArgs: readonly string[];
+  captureMethod: "page.screenshot";
+  rendererKind: "webgl" | "webgpu";
+  target: string;
+  viewport: IPlaytestViewport;
+}
+
+interface IPlaytestViewport {
+  height: number;
+  width: number;
+}
+
 export interface IPlaytestReport {
   after?: IPlaytestTransformSample;
   assertionResults?: IPlaytestAssertionResult[];
   before?: IPlaytestTransformSample;
+  capture?: IPlaytestCaptureProvenance;
   diagnostics: IPlaytestDiagnostic[];
+  diagnosticsPolicy?: IPlaytestDiagnosticsPolicy;
   distance: number;
   effectLog?: unknown;
   entity: string;

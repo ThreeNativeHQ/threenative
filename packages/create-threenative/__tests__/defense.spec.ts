@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { rapier } from "@threenative/physics";
-import { InstancedMesh, Matrix4, PerspectiveCamera, Vector3 } from "three";
+import { InstancedMesh, Matrix4, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { createRandom } from "../../core/src/random.js";
 import {
@@ -10,6 +10,7 @@ import {
   STARTING_BALANCE,
   TOWER_COST,
 } from "../templates/defense/src/economy.js";
+import { Player } from "../templates/defense/src/entities/Player.js";
 import { Buildable } from "../templates/defense/src/placement/Buildable.js";
 import { createHud } from "../templates/defense/src/render/hud.js";
 import { toon } from "../templates/defense/src/render/palette.js";
@@ -68,6 +69,20 @@ describe("defense starter kit", () => {
     expect(economy.spent).toBe(0);
     expect(economy.income).toBe(INCOME_RATE);
     expect(economy.balance).toBe(STARTING_BALANCE + INCOME_RATE);
+  });
+
+  it("moves the registered command beacon from the move vector", () => {
+    const ctx = {
+      add: (object: object) => object,
+      input: { vector: () => new Vector2(0, 1) },
+    } as unknown as ConstructorParameters<typeof Player>[0];
+    const player = new Player(ctx);
+    const startZ = player.mesh.position.z;
+
+    player.update(ctx, 0.5);
+
+    expect(player.mesh.position.z).toBeCloseTo(startZ - 2);
+    player.dispose();
   });
 
   it("scans inside the jitter window instead of once per frame", () => {

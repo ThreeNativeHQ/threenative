@@ -4,7 +4,15 @@ prd_contract: v1
 
 # PRD-112 repair — The packed golden path must describe and execute the path it proves
 
-**Status: PLANNED, 2026-08-15.** Fresh repair for the review-2 blocker on capped lane
+**Status: BLOCKED, 2026-08-15.** The implementation is integrated in `0a689f1` and
+`4fa847d`, but the exact packed seven-template gate remains red in the action-rpg test layer.
+The first failure was a 30-second `page.screenshot` timeout; the runner now falls back to the
+canvas surface, which lets the first four action-rpg scenarios pass, but the next scenario still
+fails with `TN_PLAYTEST_RUNNER_FAILED: page.evaluate: Execution context was destroyed, most likely
+because of a navigation`. The remaining doubtful assumption is that the headed WebGPU page can be
+reused safely across the packed scenarios. Keep this PRD active until the exact gate is green.
+
+Fresh repair for the review-2 blocker on capped lane
 `linchpin/prd-112-golden-path-from-packed-artifacts-r2` at `c005d91`. The source PRD remains
 unchanged.
 
@@ -222,9 +230,18 @@ advertised journey and recovery commands; helper or test existence alone is not 
 
 Contract conformance: prd_contract: v1
 
-This is planned work. Replace expected-red descriptions with exact observed failures, tarball
-SHA-256 identities, generated project paths, seven-template step results, test counts, LOC delta,
-and final gate output. A workspace-linked or repository-template negative run is UNVERIFIED.
+Observed implementation and gate evidence:
+
+- `pnpm typecheck` passes after the runner repair.
+- `pnpm exec vitest run packages/playtest/__tests__/runner.spec.ts packages/playtest/__tests__/e2e-runner.spec.ts`
+  passes: 2 files, 52 tests.
+- The first exact `pnpm verify:golden-path` attempt reached the packed `action-rpg` scenario and
+  failed at `page.screenshot: Timeout 30000ms exceeded`.
+- `4fa847d` adds a guarded canvas fallback in `packages/playtest/src/runner/runner.ts`; a rerun
+  passed the `survives`, `combat`, `inventory`, and `progress` action-rpg scenarios, then failed in
+  the next action-rpg scenario with the navigation/context-destroyed error recorded above.
+- Therefore the seven-template packed journey, tarball identities, and final gate output remain
+  incomplete. This PRD is blocked at the consumer gate; no completion archive is permitted.
 
 ## Checkpoint Protocol
 

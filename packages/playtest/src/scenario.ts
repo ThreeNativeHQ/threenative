@@ -154,7 +154,7 @@ export interface IPlaytestSignalAssertion {
 export interface IPlaytestSettledAssertion {
   atStep?: string;
   compareToStep?: string;
-  entity: string;
+  entity?: string;
   minBodies?: number;
   minMeanPoseDistance?: number;
   requiredOn?: PlaytestTarget[];
@@ -188,7 +188,7 @@ export interface IPlaytestTagCountAssertion {
 }
 
 export interface IPlaytestStateAssertion {
-  entity: string;
+  entity?: string;
   equals: string;
 }
 
@@ -203,6 +203,8 @@ export interface IPlaytestDiagnosticsAssertion {
   noConsoleErrors?: boolean;
   noNetworkErrors?: boolean;
   noRuntimeDiagnostics?: boolean;
+  consoleErrorsOptOutReason?: string;
+  networkErrorsOptOutReason?: string;
   runtimeDiagnosticsOptOutReason?: string;
   runtimeReady?: boolean;
 }
@@ -857,12 +859,19 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
       )
     : undefined;
   const world = isRecord(value.world) ? value.world : undefined;
-  if (diagnostics?.noRuntimeDiagnostics === false
-    && (typeof diagnostics.runtimeDiagnosticsOptOutReason !== "string" || diagnostics.runtimeDiagnosticsOptOutReason.trim() === "")) {
-    throw invalidScenario(
-      scenarioPath,
-      "Assertion 'assert.diagnostics.noRuntimeDiagnostics' may be false only when 'runtimeDiagnosticsOptOutReason' explains the bounded exception.",
-    );
+  const optOuts = [
+    ["noConsoleErrors", "consoleErrorsOptOutReason"],
+    ["noNetworkErrors", "networkErrorsOptOutReason"],
+    ["noRuntimeDiagnostics", "runtimeDiagnosticsOptOutReason"],
+  ] as const;
+  for (const [policyKey, reasonKey] of optOuts) {
+    if (diagnostics?.[policyKey] === false
+      && (typeof diagnostics[reasonKey] !== "string" || diagnostics[reasonKey].trim() === "")) {
+      throw invalidScenario(
+        scenarioPath,
+        `Assertion 'assert.diagnostics.${policyKey}' may be false only when '${reasonKey}' explains the bounded exception.`,
+      );
+    }
   }
   return {
     ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map(validateAerodynamicsAssertion).filter((item): item is IPlaytestAerodynamicsAssertion => item !== undefined) } : {}),
@@ -892,6 +901,8 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
             ...(typeof diagnostics.noConsoleErrors === "boolean" ? { noConsoleErrors: diagnostics.noConsoleErrors } : {}),
             ...(typeof diagnostics.noNetworkErrors === "boolean" ? { noNetworkErrors: diagnostics.noNetworkErrors } : {}),
             ...(typeof diagnostics.noRuntimeDiagnostics === "boolean" ? { noRuntimeDiagnostics: diagnostics.noRuntimeDiagnostics } : {}),
+            ...(typeof diagnostics.consoleErrorsOptOutReason === "string" ? { consoleErrorsOptOutReason: diagnostics.consoleErrorsOptOutReason } : {}),
+            ...(typeof diagnostics.networkErrorsOptOutReason === "string" ? { networkErrorsOptOutReason: diagnostics.networkErrorsOptOutReason } : {}),
             ...(typeof diagnostics.runtimeDiagnosticsOptOutReason === "string" ? { runtimeDiagnosticsOptOutReason: diagnostics.runtimeDiagnosticsOptOutReason } : {}),
             ...(typeof diagnostics.runtimeReady === "boolean" ? { runtimeReady: diagnostics.runtimeReady } : {}),
           },
@@ -1031,7 +1042,7 @@ function validateSettledAssertion(value: unknown, scenarioPath: string, objectPa
   return {
     ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
     ...present("compareToStep", optionalString(record, "compareToStep", scenarioPath, objectPath)),
-    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     ...present("minBodies", optionalPositiveInteger(record, "minBodies", scenarioPath, objectPath)),
     ...present("minMeanPoseDistance", optionalPositiveNumber(record, "minMeanPoseDistance", scenarioPath, objectPath)),
     ...present("requiredOn", optionalTargetArray(record, "requiredOn", scenarioPath, objectPath)),
@@ -1367,7 +1378,7 @@ function validateStateAssertion(value: unknown, scenarioPath: string, objectPath
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["entity", "equals"], scenarioPath, objectPath);
   return {
-    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     equals: requireString(record, "equals", scenarioPath, objectPath),
   };
 }

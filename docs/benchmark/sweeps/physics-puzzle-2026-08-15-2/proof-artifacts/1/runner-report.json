@@ -1,0 +1,1828 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+      "message": "Runtime world seed 90210 did not equal 6132.",
+      "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+      "severity": "error",
+      "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+    }
+  ],
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 1152,
+  "observations": {
+    "components": {
+      "ghost": {
+        "isObject3D": {
+          "before": true,
+          "after": true
+        },
+        "uuid": {
+          "before": "a195494f-1fba-4695-89bf-91198026e773",
+          "after": "a195494f-1fba-4695-89bf-91198026e773"
+        },
+        "name": {
+          "before": "",
+          "after": ""
+        },
+        "type": {
+          "before": "Mesh",
+          "after": "Mesh"
+        },
+        "up": {
+          "before": [
+            0,
+            1,
+            0
+          ],
+          "after": [
+            0,
+            1,
+            0
+          ]
+        },
+        "position": {
+          "before": [
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266
+          ],
+          "after": [
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266
+          ]
+        },
+        "rotation": {
+          "before": [
+            2.252341887691612e-7,
+            6.146561832458112e-9,
+            -4.420842783346534e-8,
+            "XYZ"
+          ],
+          "after": [
+            4.3745849655828774e-8,
+            6.146566480802345e-9,
+            -1.5099964080329367e-8,
+            "XYZ"
+          ]
+        },
+        "quaternion": {
+          "before": [
+            1.1261709431664713e-7,
+            3.0732834055413605e-9,
+            -2.2104213570628417e-8,
+            1
+          ],
+          "after": [
+            2.1872924804711147e-8,
+            3.0732834055413605e-9,
+            -7.549981972942987e-9,
+            1
+          ]
+        },
+        "scale": {
+          "before": [
+            1,
+            1,
+            1
+          ],
+          "after": [
+            1,
+            1,
+            1
+          ]
+        },
+        "matrix": {
+          "before": [
+            0.999999999999999,
+            -4.420842644904834e-8,
+            -6.14657178970733e-9,
+            0,
+            4.420842783346533e-8,
+            0.9999999999999737,
+            2.2523418849742921e-7,
+            0,
+            6.146561832458112e-9,
+            -2.252341887691593e-7,
+            0.9999999999999746,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ],
+          "after": [
+            0.9999999999999999,
+            -1.5099963811442583e-8,
+            -6.146567141363097e-9,
+            0,
+            1.5099964080329367e-8,
+            0.9999999999999989,
+            4.374584956301583e-8,
+            0,
+            6.146566480802345e-9,
+            -4.374584965582876e-8,
+            0.999999999999999,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ]
+        },
+        "matrixWorld": {
+          "before": [
+            0.999999999999999,
+            -4.420842644904834e-8,
+            -6.14657178970733e-9,
+            0,
+            4.420842783346533e-8,
+            0.9999999999999737,
+            2.2523418849742921e-7,
+            0,
+            6.146561832458112e-9,
+            -2.252341887691593e-7,
+            0.9999999999999746,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ],
+          "after": [
+            0.9999999999999999,
+            -1.5099963811442583e-8,
+            -6.146567141363097e-9,
+            0,
+            1.5099964080329367e-8,
+            0.9999999999999989,
+            4.374584956301583e-8,
+            0,
+            6.146566480802345e-9,
+            -4.374584965582876e-8,
+            0.999999999999999,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ]
+        },
+        "matrixAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldNeedsUpdate": {
+          "before": false,
+          "after": false
+        },
+        "visible": {
+          "before": true,
+          "after": true
+        },
+        "castShadow": {
+          "before": false,
+          "after": false
+        },
+        "receiveShadow": {
+          "before": false,
+          "after": false
+        },
+        "frustumCulled": {
+          "before": true,
+          "after": true
+        },
+        "renderOrder": {
+          "before": 5,
+          "after": 5
+        },
+        "static": {
+          "before": false,
+          "after": false
+        },
+        "isMesh": {
+          "before": true,
+          "after": true
+        },
+        "count": {
+          "before": 1,
+          "after": 1
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "drop",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              3.957470444471089e-8,
+              6.146566538740841e-9,
+              -1.376343229336709e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              1.9787352201205977e-8,
+              3.0732834055413605e-9,
+              -6.881716085871403e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.3763432050118524e-8,
+              -6.1465670834246006e-9,
+              0,
+              1.376343229336709e-8,
+              0.9999999999999991,
+              3.957470436011303e-8,
+              0,
+              6.146566538740841e-9,
+              -3.957470444471088e-8,
+              0.9999999999999992,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.3763432050118524e-8,
+              -6.1465670834246006e-9,
+              0,
+              1.376343229336709e-8,
+              0.9999999999999991,
+              3.957470436011303e-8,
+              0,
+              6.146566538740841e-9,
+              -3.957470444471088e-8,
+              0.9999999999999992,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 71
+      },
+      {
+        "label": "settled",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 161
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 522
+      },
+      {
+        "label": "cross-pass-through",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 643
+      },
+      {
+        "label": "line-up-with-goal",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 764
+      },
+      {
+        "label": "cross-ghost",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 895
+      },
+      {
+        "label": "move-back-north",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 1026
+      },
+      {
+        "label": "move-to-goal-lane",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 1067
+      },
+      {
+        "label": "descend-to-goal",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 1198
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "a195494f-1fba-4695-89bf-91198026e773",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              4.3745849655828774e-8,
+              6.146566480802345e-9,
+              -1.5099964080329367e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              2.1872924804711147e-8,
+              3.0732834055413605e-9,
+              -7.549981972942987e-9,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999999,
+              -1.5099963811442583e-8,
+              -6.146567141363097e-9,
+              0,
+              1.5099964080329367e-8,
+              0.9999999999999989,
+              4.374584956301583e-8,
+              0,
+              6.146566480802345e-9,
+              -4.374584965582876e-8,
+              0.999999999999999,
+              0,
+              2.6000006198883057,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 1222
+      }
+    ],
+    "console": [
+      {
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "type": "info"
+      },
+      {
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "text": "TN_ROOM_READY:bodies=33,worldBodies=39,seed=90210,scripted=false",
+        "type": "info"
+      },
+      {
+        "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":134,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":135,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":19,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":134,\"cameraOverlay\":0,\"layers\":0,\"renderOrder\":1,\"renderHook\":0,\"transparency\":0,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
+        "type": "info"
+      },
+      {
+        "text": "TN_GOAL_REACHED:player",
+        "type": "info"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "GameState": {
+        "before": {
+          "bodyCount": 33,
+          "settled": 22,
+          "pushed": 0,
+          "contacts": 0,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400000095367432,
+          "playerZ": -0.3000001311302185,
+          "distance": 6.921560492377505e-7,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 0,
+          "hovered": ""
+        },
+        "after": {
+          "bodyCount": 33,
+          "settled": 32,
+          "pushed": 7,
+          "contacts": 8,
+          "phaseThroughs": 2,
+          "goalReached": true,
+          "goalBy": "player",
+          "playerX": 6.009095668792725,
+          "playerZ": -2.331486701965332,
+          "distance": 45.44496526716235,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 1,
+          "hovered": ""
+        }
+      },
+      "state": {
+        "before": {
+          "bodyCount": 33,
+          "settled": 22,
+          "pushed": 0,
+          "contacts": 0,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400000095367432,
+          "playerZ": -0.3000001311302185,
+          "distance": 6.921560492377505e-7,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 0,
+          "hovered": ""
+        },
+        "after": {
+          "bodyCount": 33,
+          "settled": 32,
+          "pushed": 7,
+          "contacts": 8,
+          "phaseThroughs": 2,
+          "goalReached": true,
+          "goalBy": "player",
+          "playerX": 6.009095668792725,
+          "playerZ": -2.331486701965332,
+          "distance": 45.44496526716235,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 1,
+          "hovered": ""
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "drop",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 25,
+            "pushed": 0,
+            "contacts": 0,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400000095367432,
+            "playerZ": -0.3000001311302185,
+            "distance": 6.921560492377505e-7,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 25,
+            "pushed": 0,
+            "contacts": 0,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400000095367432,
+            "playerZ": -0.3000001311302185,
+            "distance": 6.921560492377505e-7,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 71
+      },
+      {
+        "label": "settled",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 31,
+            "pushed": 1,
+            "contacts": 1,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.4011149406433105,
+            "playerZ": -0.3028237223625183,
+            "distance": 0.003240905565717635,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 31,
+            "pushed": 1,
+            "contacts": 1,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.4011149406433105,
+            "playerZ": -0.3028237223625183,
+            "distance": 0.003240905565717635,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 161
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 3,
+            "contacts": 2,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -2.285435676574707,
+            "playerZ": -0.5675289034843445,
+            "distance": 5.616327030208342,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 3,
+            "contacts": 2,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -2.285435676574707,
+            "playerZ": -0.5675289034843445,
+            "distance": 5.616327030208342,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 522
+      },
+      {
+        "label": "cross-pass-through",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 4,
+            "contacts": 3,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -2.9615252017974854,
+            "playerZ": 5.589794158935547,
+            "distance": 11.871050955330674,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 4,
+            "contacts": 3,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -2.9615252017974854,
+            "playerZ": 5.589794158935547,
+            "distance": 11.871050955330674,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 643
+      },
+      {
+        "label": "line-up-with-goal",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 4,
+            "contacts": 3,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 2.936030387878418,
+            "playerZ": 5.585358142852783,
+            "distance": 17.768791382443396,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 4,
+            "contacts": 3,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 2.936030387878418,
+            "playerZ": 5.585358142852783,
+            "distance": 17.768791382443396,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 764
+      },
+      {
+        "label": "cross-ghost",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 5,
+            "contacts": 5,
+            "phaseThroughs": 1,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 3.4664523601531982,
+            "playerZ": -2.648357629776001,
+            "distance": 26.154682768025072,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 5,
+            "contacts": 5,
+            "phaseThroughs": 1,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 3.4664523601531982,
+            "playerZ": -2.648357629776001,
+            "distance": 26.154682768025072,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 895
+      },
+      {
+        "label": "move-back-north",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 6,
+            "contacts": 7,
+            "phaseThroughs": 2,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 3.1495816707611084,
+            "playerZ": 5.590169429779053,
+            "distance": 34.477069342557236,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 6,
+            "contacts": 7,
+            "phaseThroughs": 2,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 3.1495816707611084,
+            "playerZ": 5.590169429779053,
+            "distance": 34.477069342557236,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 1026
+      },
+      {
+        "label": "move-to-goal-lane",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 6,
+            "contacts": 7,
+            "phaseThroughs": 2,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 5.947872638702393,
+            "playerZ": 5.589208126068115,
+            "distance": 37.27536304024874,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 6,
+            "contacts": 7,
+            "phaseThroughs": 2,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": 5.947872638702393,
+            "playerZ": 5.589208126068115,
+            "distance": 37.27536304024874,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 1067
+      },
+      {
+        "label": "descend-to-goal",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 7,
+            "contacts": 8,
+            "phaseThroughs": 2,
+            "goalReached": true,
+            "goalBy": "player",
+            "playerX": 6.009095668792725,
+            "playerZ": -2.331486940383911,
+            "distance": 45.444957945756,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 1,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 7,
+            "contacts": 8,
+            "phaseThroughs": 2,
+            "goalReached": true,
+            "goalBy": "player",
+            "playerX": 6.009095668792725,
+            "playerZ": -2.331486940383911,
+            "distance": 45.444957945756,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 1,
+            "hovered": ""
+          }
+        },
+        "tick": 1198
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 7,
+            "contacts": 8,
+            "phaseThroughs": 2,
+            "goalReached": true,
+            "goalBy": "player",
+            "playerX": 6.009095668792725,
+            "playerZ": -2.331486701965332,
+            "distance": 45.44496526716235,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 1,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 7,
+            "contacts": 8,
+            "phaseThroughs": 2,
+            "goalReached": true,
+            "goalBy": "player",
+            "playerX": 6.009095668792725,
+            "playerZ": -2.331486701965332,
+            "distance": 45.44496526716235,
+            "seed": 90210,
+            "replayPhase": "idle",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 1,
+            "hovered": ""
+          }
+        },
+        "tick": 1222
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "audio": {
+          "queued": 0,
+          "voices": 0
+        },
+        "world": {
+          "seed": 90210,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.1.0",
+            "randomState": 90210,
+            "rapier": "0.19.3",
+            "step": 0.016666666666666666
+          }
+        }
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "drop",
+        "signals": [],
+        "tick": 71
+      },
+      {
+        "label": "settled",
+        "signals": [],
+        "tick": 161
+      },
+      {
+        "label": "push-to-goal",
+        "signals": [],
+        "tick": 522
+      },
+      {
+        "label": "cross-pass-through",
+        "signals": [],
+        "tick": 643
+      },
+      {
+        "label": "line-up-with-goal",
+        "signals": [],
+        "tick": 764
+      },
+      {
+        "label": "cross-ghost",
+        "signals": [],
+        "tick": 895
+      },
+      {
+        "label": "move-back-north",
+        "signals": [],
+        "tick": 1026
+      },
+      {
+        "label": "move-to-goal-lane",
+        "signals": [],
+        "tick": 1067
+      },
+      {
+        "label": "descend-to-goal",
+        "signals": [],
+        "tick": 1198
+      },
+      {
+        "label": "goal-contact",
+        "signals": [],
+        "tick": 1222
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.62916015625,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threejs-webgpu/.worktrees/prd-114-paired-round-on-the-repaired-instrument-r2/docs/benchmark/sweeps/physics-puzzle-2026-08-15-2/proof-artifacts/1",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 32,
+        "before": 22,
+        "expected": {
+          "gte": 30,
+          "changed": true
+        },
+        "id": "state",
+        "path": "settled",
+        "trivial": false
+      },
+      "id": "resource.state.settled",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 8,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "contacts",
+        "trivial": false
+      },
+      "id": "resource.state.contacts",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 2,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "phaseThroughs",
+        "trivial": false
+      },
+      "id": "resource.state.phaseThroughs",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 45.44496526716235,
+        "before": 6.921560492377505e-7,
+        "expected": {
+          "gte": 1.5,
+          "changed": true
+        },
+        "id": "state",
+        "path": "distance",
+        "trivial": false
+      },
+      "id": "resource.state.distance",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": true,
+        "before": false,
+        "expected": {
+          "equals": true,
+          "changed": true
+        },
+        "id": "state",
+        "path": "goalReached",
+        "trivial": false
+      },
+      "id": "resource.state.goalReached",
+      "pass": true
+    },
+    {
+      "details": {
+        "expected": 6132,
+        "expectedRuntime": null,
+        "observed": 90210,
+        "observedRuntime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+          "core": "0.1.0",
+          "randomState": 90210,
+          "rapier": "0.19.3",
+          "step": 0.016666666666666666
+        }
+      },
+      "id": "world.seed",
+      "pass": false
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "physics-puzzle-observable-behaviour-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5191"
+}

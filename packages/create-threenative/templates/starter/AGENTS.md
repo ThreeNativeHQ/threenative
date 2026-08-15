@@ -34,10 +34,10 @@ clean-machine distribution proof; macOS, Windows, iOS, and physical hardware rem
 `pnpm build --target desktop` runs this same source on a native host with **no browser**.
 Four things break there, and none of them fail on the web build:
 
-1. **The native host has no DOM and does not run React.** A desktop or mobile build ships
-   `src/scenes/` and `src/render/hud.ts` without `src/ui/`. Gameplay, scoring and state
-   transitions live in the scene; React remains a web convenience, while the generated
-   camera-parented geometry HUD carries the score, counter and clock on every target.
+1. **The native host has no DOM and does not run React.** The starter's single HUD is the
+   web-only `src/ui/Hud.tsx`; native builds ship `src/scenes/` and `src/render/` without
+   `src/ui/`. Gameplay, scoring and state transitions live in the scene; add a native HUD in
+   your game-owned render code only if your game needs one.
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
@@ -56,11 +56,10 @@ flowchart TD
     main["main.ts<br/>defineGame(...) + React mount"]
     play["scenes/Play.ts<br/>gameplay: load, enter, update, exit"]
     entities["entities/<br/>Player.ts, Crate.ts — plain classes, not an ECS"]
-    render["render/<br/>palette, camera, sky, lighting, HUD geometry,<br/>materials, post — YOURS"]
+    render["render/<br/>palette, camera, sky, lighting,<br/>materials, post — YOURS"]
     ui["ui/<br/>App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4"]
     state["state.ts<br/>state shape the HUD subscribes to"]
     scenarios["playtests/*.playtest.json<br/>committed browser scenarios, run by pnpm test"]
-    boot["playtest/boot-to-play.json<br/>Boot-to-Play jump proof"]
     config["threenative.config.ts<br/>app identity, icon, display, desktop window, renderer"]
 
     project --> src
@@ -71,7 +70,6 @@ flowchart TD
     src --> ui
     src --> state
     project --> scenarios
-    project --> boot
     project --> config
 ```
 
@@ -80,9 +78,8 @@ icon, mobile orientation and display flags, desktop window, renderer preference,
 entry there. `package.json` may retain only `threenative.nativeEntry` as a compatibility
 fallback for older projects.
 
-`src/render/hud.ts` is generated user-owned Three.js source, not a package widget. It uses
-instanced plane geometry rather than `CanvasTexture`; rewrite its glyphs, labels, colours or
-layout freely. `src/ui/` can add richer React presentation on web without becoming gameplay.
+`src/ui/Hud.tsx` is the starter's single HUD. It reads `game.state` through `useGameState`; keep
+gameplay and state transitions in the portable scene rather than in the React component.
 Touch controls are not generated yet: add the small pointer-action mapping after the core
 multitouch surface from PRD-053 lands.
 
@@ -145,7 +142,7 @@ pointer position and the whole scene, returns the nearest `THREE.Intersection`, 
 under a millisecond on meshes large enough that a plain `Raycaster` visibly stutters — it
 keeps an acceleration structure per geometry and rebuilds it when that geometry's positions
 change. Pass `{ targets }` to narrow it, `{ screen }` to test a point that is not the
-pointer. `src/pick.ts` is a worked example. Skinned, instanced and morphed meshes fall back
+pointer. Skinned, instanced and morphed meshes fall back
 to the stock Three.js path automatically, so the result always matches
 `Raycaster.intersectObject`.
 
@@ -308,7 +305,7 @@ its creator, license, and source URL to `CREDITS.md` before the turn ends.
 
 Edit everything in `src/render/` directly. The six baseline files are `palette.ts`,
 `camera.ts`, `sky.ts`, `lighting.ts`, `materials.ts`, and `postprocessing.ts`; `shapes.ts`
-and `particles.ts` are additional helpers. They are ordinary Three.js source in this project,
+is an additional helper. These are ordinary Three.js source in this project,
 not a framework look or a config option. Keep the palette to six named colours with one
 `accent`; import it from materials and sky. Set tonemapping and exposure deliberately, use a
 rim light with soft shadows and `normalBias`, derive fog from the sky, and route bloom through
@@ -375,8 +372,11 @@ guessing from pixels.
 
 ## Playtests
 
-`playtests/play.playtest.json` drives a real browser through the game. Steps count frames, not
-milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
+starter gameplay: it checks boot, diagnostics, a nonblank frame, and player movement without
+depending on pickups, score, coyote time, or respawns. `playtests/play.playtest.json` and the
+other scenarios are starter-game examples that you may delete or rewrite. Steps count frames,
+not milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
 instead of racing it.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no

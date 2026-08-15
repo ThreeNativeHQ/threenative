@@ -39,7 +39,9 @@ Godot-named nodes keeps that correct without thinking about it.
   concerns include palette, camera, sky, lighting, materials, postprocessing, and the
   camera-parented geometry HUD in `hud.ts`.
 - `src/scenes/Level.ts` is the live caller that wires the pieces together.
-- `playtests/` proves movement, collection, stomping, respawn, and one-way platforms.
+- `playtests/survives.playtest.json` is the durable smoke proof: keep it when replacing the
+  platformer gameplay. The other `playtests/` scenarios prove movement, collection, stomping,
+  respawn, and one-way platforms in this example game.
 
 `src/render/hud.ts` is generated user-owned source, not a framework widget. It renders hearts,
 coins and a clock as instanced planes without `CanvasTexture`, so it follows the portable game

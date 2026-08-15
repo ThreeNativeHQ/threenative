@@ -78,6 +78,9 @@ describe("sweep archive", () => {
     await expect(readFile(path.join(archive, "vite.config.ts"), "utf8")).resolves.toBe(
       "export default {};\n",
     );
+    await expect(readFile(path.join(archive, "threenative.config.ts"), "utf8")).resolves.toBe(
+      "export default { renderer: {} };\n",
+    );
     await expect(readFile(path.join(archive, "public/favicon.svg"), "utf8")).resolves.toBe(
       "<svg />\n",
     );
@@ -182,6 +185,50 @@ describe("sweep archive", () => {
     await mkdir(sandbox, { recursive: true });
     await expect(Promise.resolve().then(() => archiveSandbox(sandbox, root))).rejects.toThrow(
       /missing src\//,
+    );
+  });
+
+  it("rejects a project whose imported threenative config is missing from the archive", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await rm(path.join(sandbox, "threenative.config.ts"));
+    await writeFile(
+      path.join(sandbox, "src", "main.ts"),
+      'import config from "../threenative.config.js";\nexport const ready = config;\n',
+    );
+
+    expect(() => archiveSandbox(sandbox, root)).toThrow(
+      /Refusing to archive an unbootable project[\s\S]*src\/main\.ts -> \.\.\/threenative\.config\.js/,
+    );
+    await expect(readdir(path.join(root, "docs/benchmark/sweeps"))).resolves.toHaveLength(0);
+  });
+
+  it("rejects a missing side-effect import and removes the partial archive", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await rm(path.join(sandbox, "threenative.config.ts"));
+    await writeFile(
+      path.join(sandbox, "src", "main.ts"),
+      'import "../threenative.config.js";\nexport const ready = true;\n',
+    );
+
+    expect(() => archiveSandbox(sandbox, root)).toThrow(
+      /Refusing to archive an unbootable project[\s\S]*src\/main\.ts -> \.\.\/threenative\.config\.js/,
+    );
+    await expect(readdir(path.join(root, "docs/benchmark/sweeps"))).resolves.toHaveLength(0);
+  });
+
+  it("archives a present single-quoted side-effect import", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "src", "main.ts"),
+      "import '../threenative.config.js';\nexport const ready = true;\n",
+    );
+
+    const archive = archiveSandbox(sandbox, root);
+    await expect(readFile(path.join(archive, "threenative.config.ts"), "utf8")).resolves.toBe(
+      "export default { renderer: {} };\n",
     );
   });
 

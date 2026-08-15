@@ -33,7 +33,7 @@ export interface IThreePlaytestBridgeOptions {
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
-  gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags")[];
+  gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.world")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   events?: () => JsonValue[];
   /** Physics bodies to retain per labelled step. Requires the authoritative tick provider. */
@@ -79,6 +79,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
+    ...(options.gameplayChannels?.().includes("runtime.world") === true ? ["runtime.world"] : []),
   ];
   const bridge: IPlaytestBridgeV1 = {
     ...(options.fixedStep === undefined

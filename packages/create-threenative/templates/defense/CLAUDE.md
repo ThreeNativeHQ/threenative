@@ -33,6 +33,12 @@ entities with `ctx.entities` so playtests can observe them and the framework can
 `B` places a tower in the next safe build slot for deterministic playtesting; real games place
 with the primary pointer on the board. `X` attempts the route test slot and `O` repeats the last
 safe slot, making the two placement negative controls reproducible.
+Arrow keys or WASD move the registered command beacon, which is the `player` subject used by the
+durable movement proof.
+
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
+defense gameplay; the other `playtests/` scenarios are examples for placement, scanning,
+survival, and leaks.
 
 The normal physics API selects the native backend on desktop and Android. Keep source portable:
 do not import React from `src/game.ts`, do not use dynamic `import()`, and do not read a raw

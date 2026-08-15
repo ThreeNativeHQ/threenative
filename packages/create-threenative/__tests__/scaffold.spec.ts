@@ -51,18 +51,13 @@ const STARTER_PATHS = [
   "src/style.css",
   "src/game.ts",
   "src/main.ts",
-  "src/scenes/Boot.ts",
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
-  "src/render/loading.ts",
-  "src/render/hud.ts",
   "src/render/postprocessing.ts",
-  "src/render/particles.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
-  "src/pick.ts",
   "src/render/sky.ts",
   "src/entities/Crate.ts",
   "src/entities/Player.ts",
@@ -70,7 +65,7 @@ const STARTER_PATHS = [
   "src/ui/Menu.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  "playtest/boot-to-play.json",
+  "playtests/survives.playtest.json",
   "playtests/play.playtest.json",
   "playtests/forward.playtest.json",
   "playtests/coyote.playtest.json",
@@ -79,7 +74,6 @@ const STARTER_PATHS = [
   "playtests/pause.playtest.json",
   "playtests/respawn.playtest.json",
   "playtests/seed.playtest.json",
-  "playtests/pick.playtest.json",
   "public/native-proof.glb",
   "public/native-proof.png",
   "public/icon.png",
@@ -175,6 +169,7 @@ describe("create-threenative", () => {
       expect(result.template).toBe("starter");
       const packageJson = await readFile(path.join(result.target, "package.json"), "utf8");
       expect(packageJson).not.toContain("catalog:");
+      expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {
         await expect(
           readFile(path.join(result.target, relativePath), "utf8"),

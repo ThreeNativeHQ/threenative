@@ -6,6 +6,7 @@ export {
 export {
   PLAYTEST_ASSERTION_REGISTRY,
   evaluateRichPlaytestAssertions,
+  resolveDiagnosticsPolicy,
   requiredPlaytestCapabilities,
 } from "./assertions.js";
 export type {
@@ -41,7 +42,12 @@ export type {
 } from "./protocol.js";
 export { parseReplayRecording } from "./replay.js";
 export type { IReplayRecording, IReplayRecordingSample, ReplayPointer } from "./replay.js";
-export type { IPlaytestReport, PlaytestVec3 } from "./report.js";
+export type {
+  IPlaytestCaptureProvenance,
+  IPlaytestDiagnosticsPolicy,
+  IPlaytestReport,
+  PlaytestVec3,
+} from "./report.js";
 export {
   PlaytestScenarioError,
   invalidScenario,

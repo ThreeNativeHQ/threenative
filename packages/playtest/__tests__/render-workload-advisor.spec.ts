@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -28,8 +28,8 @@ import {
 } from "../src/three/renderWorkloadAdvisor.js";
 
 const EXAMPLES = {
-  gpuParticles: "packages/create-threenative/templates/starter/src/render/particles.ts",
-  hudInstancing: "packages/create-threenative/templates/starter/src/render/hud.ts",
+  gpuParticles: "examples/abyss-framework/src/scenes/Abyss.ts",
+  hudInstancing: "packages/create-threenative/templates/minimal/src/render/hud.ts",
   materialSharing: "packages/create-threenative/templates/starter/src/render/materials.ts",
   staticMerge: "examples/native-cpu-load-test/src/main.ts",
 } as const;
@@ -101,6 +101,18 @@ describe("render workload advisor", () => {
     for (const value of Object.values(EXAMPLES)) {
       expect(path.isAbsolute(value)).toBe(false);
       expect(existsSync(path.join(REPO_ROOT, value))).toBe(true);
+    }
+  });
+
+  test("advisor consumers use surviving examples after starter cleanup", () => {
+    const consumers = [
+      "packages/playtest/src/three/renderWorkloadAdvisor.ts",
+      "examples/native-cpu-load-test/src/main.ts",
+    ];
+    for (const relativePath of consumers) {
+      const source = readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
+      expect(source).toContain(EXAMPLES.gpuParticles);
+      expect(source).toContain(EXAMPLES.hudInstancing);
     }
   });
 

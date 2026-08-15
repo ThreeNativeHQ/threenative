@@ -6,6 +6,7 @@ import {
   playtestDiagnostic,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
+  resolveDiagnosticsPolicy,
   type IPlaytestDiagnostic,
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
@@ -33,7 +34,7 @@ import {
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
-import { buildReport, type IStandalonePlaytestReport } from "./runner.js";
+import { buildReport, failedDiagnosticsAssertion, playtestStepDrivesMovement, type IStandalonePlaytestReport } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
 
 export interface IAndroidPlaytestDependencies {
@@ -145,8 +146,9 @@ export async function runDevicePlaytest(
     if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
 
+    const entityIds = observedEntityIds(scenario);
     const sampleRequest = {
-      entities: observedEntityIds(scenario),
+      ...(entityIds === undefined ? {} : { entities: entityIds }),
       include: [
         "components",
         "diagnostics",
@@ -166,10 +168,16 @@ export async function runDevicePlaytest(
       : scenario.assert.movement.entity ?? scenario.subject;
     const pathPositions: PlaytestVec3[] = [];
     appendPosition(pathPositions, before, pathEntity);
+    const capturesAnonymousMovement = scenario.assert?.movement !== undefined
+      && scenario.assert.movement.entity === undefined
+      && scenario.subject === undefined;
+    const movementSamples: Array<{ after: IPlaytestObservationSnapshot; before: IPlaytestObservationSnapshot; inputDriven: boolean }> = [];
+    let movementCursor = before;
     const labeledSamples: Array<{ label: string; signals: unknown[]; snapshot: IPlaytestObservationSnapshot }> = [];
     const heldKeys = new Set<string>();
     let pointerButtons = 0;
-    for (const step of scenario.steps) {
+    let pointerCount = 0;
+    for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (
         target.name === "android"
@@ -197,20 +205,33 @@ export async function runDevicePlaytest(
       }
       if (step.pointers !== undefined) {
         await target.driver.setPointers?.(step.pointers);
+        pointerCount = step.pointers.length;
       }
-      const pressed = typeof step.press === "string" ? [step.press] : step.press ?? [];
-      for (const key of [...heldKeys]) {
-        if (!pressed.includes(key)) {
-          await transport.call("input.keyUp", { key });
-          heldKeys.delete(key);
+      const pressed = step.press;
+      if (typeof pressed === "string") {
+        if (!heldKeys.has(pressed)) {
+          await transport.call("input.keyDown", { key: pressed });
+          heldKeys.add(pressed);
+        }
+      } else if (pressed !== undefined) {
+        for (const key of [...heldKeys]) {
+          if (!pressed.includes(key)) {
+            await transport.call("input.keyUp", { key });
+            heldKeys.delete(key);
+          }
+        }
+        for (const key of pressed) {
+          if (!heldKeys.has(key)) {
+            await transport.call("input.keyDown", { key });
+            heldKeys.add(key);
+          }
         }
       }
-      for (const key of pressed) {
-        if (!heldKeys.has(key)) {
-          await transport.call("input.keyDown", { key });
-          heldKeys.add(key);
-        }
-      }
+      const inputDriven = playtestStepDrivesMovement(
+        step,
+        heldKeys.size > 0 || pointerButtons !== 0 || pointerCount > 0,
+      );
+      const movementBefore = capturesAnonymousMovement ? movementCursor : undefined;
       const frames = Math.max(
         1,
         playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
@@ -224,7 +245,12 @@ export async function runDevicePlaytest(
       } else {
         await bridge.advance(frames);
       }
-      appendPosition(pathPositions, await bridge.sample(sampleRequest), pathEntity);
+      const afterInput = await bridge.sample(sampleRequest);
+      appendPosition(pathPositions, afterInput, pathEntity);
+      if (movementBefore !== undefined) {
+        movementSamples.push({ after: afterInput, before: movementBefore, inputDriven });
+      }
+      let afterStep = afterInput;
       if (step.label !== undefined) {
         const snapshot = await bridge.sample({ ...sampleRequest, label: step.label });
         const signals = bridge.description.capabilities.includes("runtime.events")
@@ -235,20 +261,35 @@ export async function runDevicePlaytest(
       if (step.screenshot !== undefined) {
         await target.driver.screenshot(join(config.artifactDirectory, `${safePart(step.screenshot)}.png`));
       }
-      if (step.release) {
-        for (const key of pressed) {
+      if (step.release && pressed !== undefined) {
+        const released = typeof pressed === "string" ? [pressed] : [...pressed];
+        for (const key of released) {
           await transport.call("input.keyUp", { key });
           heldKeys.delete(key);
         }
-        if (pointerButtons !== 0) {
-          pointerButtons = 0;
-          await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
-        }
-        if (step.pointers !== undefined) {
-          await target.driver.setPointers?.([]);
+        if (index !== scenario.steps.length - 1) {
           await bridge.advance(1);
+          if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
         }
       }
+      if (step.pointerPosition?.buttons !== undefined && step.release) {
+        pointerButtons = 0;
+        await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
+      }
+      if (step.pointers !== undefined && step.release) {
+        await target.driver.setPointers?.([]);
+        pointerCount = 0;
+        await bridge.advance(1);
+        if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
+      }
+      if (
+        movementBefore !== undefined
+        && afterInput !== undefined
+        && afterStep !== afterInput
+      ) {
+        movementSamples.push({ after: afterStep, before: afterInput, inputDriven: false });
+      }
+      if (capturesAnonymousMovement) movementCursor = afterStep;
       if (
         coverageRecordingStarted
         && target.name === "android"
@@ -296,6 +337,9 @@ export async function runDevicePlaytest(
       undefined,
       labeledSamples,
       framebufferCoverage,
+      undefined,
+      undefined,
+      movementSamples,
     );
     return { ...report, runtime: "native", target: target.name, url: endpoint };
   } catch (error) {
@@ -399,9 +443,12 @@ function failureReport(
   target: "android" | "ios",
 ): IStandalonePlaytestReport {
   const item: IPlaytestDiagnostic = { ...diagnostic, suggestion: diagnostic.fix.instruction };
+  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
   return {
     artifactDirectory: config.artifactDirectory,
+    assertionResults: [failedDiagnosticsAssertion(diagnosticsPolicy)],
     diagnostics: [item],
+    diagnosticsPolicy,
     distance: 0,
     entity: scenario.subject ?? "",
     expectMoved: false,
@@ -444,14 +491,24 @@ function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {
   };
 }
 
-function observedEntityIds(scenario: IPlaytestScenario): string[] {
-  return [...new Set([
+function observedEntityIds(scenario: IPlaytestScenario): string[] | undefined {
+  if (
+    scenario.assert?.movement !== undefined
+    && scenario.assert.movement.entity === undefined
+    && scenario.subject === undefined
+  ) return undefined;
+  const ids = [...new Set([
     scenario.subject,
     scenario.assert?.movement?.entity,
     scenario.assert?.camera?.entity,
     scenario.assert?.camera?.follows,
     ...(scenario.assert?.visibility ?? []).map(({ entity }) => entity),
   ].filter((value): value is string => value !== undefined))];
+  return ids.length > 0
+    ? ids
+    : scenario.assert?.movement === undefined
+      ? []
+      : undefined;
 }
 
 function observedResourceIds(scenario: IPlaytestScenario): string[] {

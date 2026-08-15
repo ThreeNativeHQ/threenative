@@ -48,6 +48,7 @@ pub struct TnPhysicsCharacterOptions {
     pub snap_to_ground_enabled: bool,
     pub snap_to_ground: f32,
     pub one_way_layers: u32,
+    pub pushes_dynamic_bodies: bool,
 }
 
 #[repr(C)]
@@ -101,25 +102,44 @@ pub struct TnPhysicsQueryHit {
     pub position_z: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct TnPhysicsVector3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum RayQueryError {
     InvalidArithmetic,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct BodyEntry {
     body: RigidBodyHandle,
     collider: ColliderHandle,
     character: bool,
     sensor: bool,
+    shape: SharedShape,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct CharacterEntry {
     controller: KinematicCharacterController,
+    shape: SharedShape,
     grounded: bool,
     ground_collider: Option<u32>,
     one_way_layers: u32,
+    pushes_dynamic_bodies: bool,
+}
+
+#[repr(i32)]
+enum ActuationStatus {
+    Ok = 1,
+    UnknownBody = 0,
+    NotDynamic = -1,
+    NonFinite = -2,
 }
 
 pub struct Simulation {
@@ -245,6 +265,7 @@ impl Simulation {
         .collision_groups(InteractionGroups::new(layer, mask))
         .sensor(options.sensor);
         collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
+        let shape = collider.shape.clone();
         let collider = self
             .colliders
             .insert_with_parent(collider, body, &mut self.bodies);
@@ -255,6 +276,7 @@ impl Simulation {
                 collider,
                 character: options.body_type == 3,
                 sensor: options.sensor,
+                shape,
             },
         );
         self.query_dirty = true;
@@ -283,6 +305,7 @@ impl Simulation {
         {
             return false;
         }
+        let character_shape = self.entries[&options.id].shape.clone();
         let mut controller = KinematicCharacterController {
             offset: CharacterLength::Absolute(options.offset),
             max_slope_climb_angle: options.max_slope_climb_angle,
@@ -300,9 +323,11 @@ impl Simulation {
             options.id,
             CharacterEntry {
                 controller,
+                shape: character_shape,
                 grounded: false,
                 ground_collider: None,
                 one_way_layers: options.one_way_layers,
+                pushes_dynamic_bodies: options.pushes_dynamic_bodies,
             },
         );
         true
@@ -343,6 +368,66 @@ impl Simulation {
         true
     }
 
+    fn apply_body_impulse(&mut self, id: u32, x: f32, y: f32, z: f32) -> ActuationStatus {
+        if ![x, y, z].into_iter().all(f32::is_finite) {
+            return ActuationStatus::NonFinite;
+        }
+        let Some(entry) = self.entries.get(&id).cloned() else {
+            return ActuationStatus::UnknownBody;
+        };
+        let body = &mut self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return ActuationStatus::NotDynamic;
+        }
+        body.apply_impulse(vector![x, y, z], true);
+        ActuationStatus::Ok
+    }
+
+    fn apply_body_force(&mut self, id: u32, x: f32, y: f32, z: f32) -> ActuationStatus {
+        if ![x, y, z].into_iter().all(f32::is_finite) {
+            return ActuationStatus::NonFinite;
+        }
+        let Some(entry) = self.entries.get(&id).cloned() else {
+            return ActuationStatus::UnknownBody;
+        };
+        let body = &mut self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return ActuationStatus::NotDynamic;
+        }
+        body.add_force(vector![x, y, z], true);
+        ActuationStatus::Ok
+    }
+
+    fn set_body_linear_velocity(&mut self, id: u32, x: f32, y: f32, z: f32) -> ActuationStatus {
+        if ![x, y, z].into_iter().all(f32::is_finite) {
+            return ActuationStatus::NonFinite;
+        }
+        let Some(entry) = self.entries.get(&id).cloned() else {
+            return ActuationStatus::UnknownBody;
+        };
+        let body = &mut self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return ActuationStatus::NotDynamic;
+        }
+        body.set_linvel(vector![x, y, z], true);
+        ActuationStatus::Ok
+    }
+
+    fn read_body_linear_velocity(&self, id: u32, output: &mut TnPhysicsVector3) -> ActuationStatus {
+        let Some(entry) = self.entries.get(&id) else {
+            return ActuationStatus::UnknownBody;
+        };
+        let body = &self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return ActuationStatus::NotDynamic;
+        }
+        let velocity = body.linvel();
+        output.x = velocity.x;
+        output.y = velocity.y;
+        output.z = velocity.z;
+        ActuationStatus::Ok
+    }
+
     fn apply_kinematic(&mut self, values: &[f32], delta_time: f32) -> bool {
         if values.len() % TRANSFORM_WIDTH != 0 || !values.iter().all(|value| value.is_finite()) {
             return false;
@@ -353,7 +438,7 @@ impl Simulation {
                 return false;
             }
             let id = id_value as u32;
-            let Some(entry) = self.entries.get(&id).copied() else {
+            let Some(entry) = self.entries.get(&id).cloned() else {
                 return false;
             };
             let rotation_norm = record[4] * record[4]
@@ -368,13 +453,14 @@ impl Simulation {
                 record[7], record[4], record[5], record[6],
             ));
             if entry.character {
-                let Some(character) = self.characters.get(&id).copied() else {
+                let Some(character) = self.characters.get(&id).cloned() else {
                     return false;
                 };
                 let body = &self.bodies[entry.body];
                 let desired = target - body.translation();
                 let upward = desired.y > 0.0;
                 let one_way_layers = character.one_way_layers;
+                let groups = self.colliders[entry.collider].collision_groups();
                 let predicate = |_: ColliderHandle, collider: &Collider| {
                     !collider.is_sensor()
                         && (!upward
@@ -383,6 +469,7 @@ impl Simulation {
                 };
                 let filter = QueryFilter {
                     flags: QueryFilterFlags::EXCLUDE_SENSORS,
+                    groups: Some(groups),
                     exclude_rigid_body: Some(entry.body),
                     predicate: Some(&predicate),
                     ..QueryFilter::default()
@@ -399,18 +486,38 @@ impl Simulation {
                     .map(|(body_id, body_entry)| (body_entry.collider, *body_id))
                     .collect();
                 let mut ground_collider = None;
+                let mut collisions = Vec::new();
                 let movement = character.controller.move_shape(
                     delta_time,
                     &query,
-                    self.colliders[entry.collider].shape(),
+                    character.shape.as_ref(),
                     body.position(),
                     desired,
                     |collision| {
                         if collision.hit.normal1.y >= 0.5 {
                             ground_collider = collider_ids.get(&collision.handle).copied();
                         }
+                        if character.pushes_dynamic_bodies {
+                            collisions.push(collision);
+                        }
                     },
                 );
+                if character.pushes_dynamic_bodies && !collisions.is_empty() {
+                    let mut query = self.broad_phase.as_query_pipeline_mut(
+                        self.narrow_phase.query_dispatcher(),
+                        &mut self.bodies,
+                        &mut self.colliders,
+                        filter,
+                    );
+                    let character_mass = query.bodies[entry.body].mass();
+                    character.controller.solve_character_collision_impulses(
+                        delta_time,
+                        &mut query,
+                        character.shape.as_ref(),
+                        character_mass,
+                        collisions.iter(),
+                    );
+                }
                 let body = &mut self.bodies[entry.body];
                 let current = *body.translation();
                 body.set_next_kinematic_translation(current + movement.translation);
@@ -456,7 +563,7 @@ impl Simulation {
         let entries: Vec<_> = self
             .entries
             .iter()
-            .map(|(id, entry)| (*id, *entry))
+            .map(|(id, entry)| (*id, entry.clone()))
             .collect();
         let mut current = BTreeSet::new();
         for (index, (left_id, left)) in entries.iter().enumerate() {
@@ -859,6 +966,58 @@ pub extern "C" fn tn_physics_set_body_transform(
 ) -> bool {
     unsafe { simulation.as_mut() }
         .is_some_and(|simulation| simulation.set_body_transform(id, x, y, z))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_apply_body_impulse(
+    simulation: *mut Simulation,
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> i32 {
+    unsafe { simulation.as_mut() }.map_or(ActuationStatus::UnknownBody as i32, |simulation| {
+        simulation.apply_body_impulse(id, x, y, z) as i32
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_apply_body_force(
+    simulation: *mut Simulation,
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> i32 {
+    unsafe { simulation.as_mut() }.map_or(ActuationStatus::UnknownBody as i32, |simulation| {
+        simulation.apply_body_force(id, x, y, z) as i32
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_body_linear_velocity(
+    simulation: *mut Simulation,
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> i32 {
+    unsafe { simulation.as_mut() }.map_or(ActuationStatus::UnknownBody as i32, |simulation| {
+        simulation.set_body_linear_velocity(id, x, y, z) as i32
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_body_linear_velocity(
+    simulation: *const Simulation,
+    id: u32,
+    output: *mut TnPhysicsVector3,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_ref() }, output.is_null()) else {
+        return ActuationStatus::UnknownBody as i32;
+    };
+    let output = unsafe { &mut *output };
+    simulation.read_body_linear_velocity(id, output) as i32
 }
 
 #[unsafe(no_mangle)]
@@ -1514,6 +1673,7 @@ mod tests {
             snap_to_ground_enabled: true,
             snap_to_ground: 0.1,
             one_way_layers: 2,
+            pushes_dynamic_bodies: false,
         }));
         for _ in 0..30 {
             let y = simulation.bodies[simulation.entries[&2].body]
@@ -1525,7 +1685,7 @@ mod tests {
             .translation()
             .y;
         assert!(simulation.step(1.0 / 60.0, &[2.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, 1.0],));
-        let character = simulation.characters[&2];
+        let character = simulation.characters[&2].clone();
         assert!(character.grounded);
         assert_eq!(character.ground_collider, Some(1));
     }

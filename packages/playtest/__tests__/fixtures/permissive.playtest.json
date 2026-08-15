@@ -1,0 +1,26 @@
+{
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.1
+    }
+  },
+  "artifacts": {
+    "screenshots": false
+  },
+  "name": "permissive-console-only-reproduction",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "release": true,
+      "waitFrames": 10
+    }
+  ],
+  "subject": "player",
+  "target": "web",
+  "viewport": {
+    "height": 360,
+    "width": 640
+  },
+  "warmupFrames": 2
+}

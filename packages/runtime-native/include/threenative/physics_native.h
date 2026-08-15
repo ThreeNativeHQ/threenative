@@ -47,6 +47,7 @@ typedef struct TnPhysicsCharacterOptions {
   bool snap_to_ground_enabled;
   float snap_to_ground;
   uint32_t one_way_layers;
+  bool pushes_dynamic_bodies;
 } TnPhysicsCharacterOptions;
 
 typedef struct TnPhysicsRayQuery {
@@ -93,6 +94,21 @@ typedef struct TnPhysicsQueryHit {
   float position_z;
 } TnPhysicsQueryHit;
 
+typedef struct TnPhysicsVector3 {
+  float x;
+  float y;
+  float z;
+} TnPhysicsVector3;
+
+/* Actuation returns 1 on success, 0 for an unknown body, -1 for a non-dynamic body,
+ * and -2 for a non-finite vector. */
+enum {
+  TN_PHYSICS_ACTUATION_OK = 1,
+  TN_PHYSICS_ACTUATION_UNKNOWN_BODY = 0,
+  TN_PHYSICS_ACTUATION_NOT_DYNAMIC = -1,
+  TN_PHYSICS_ACTUATION_NON_FINITE = -2,
+};
+
 const char *tn_physics_version(void);
 TnPhysicsSimulation *
 tn_physics_create(const TnPhysicsWorldOptions *options);
@@ -104,6 +120,14 @@ bool tn_physics_configure_character(
 bool tn_physics_remove_body(TnPhysicsSimulation *simulation, uint32_t id);
 bool tn_physics_set_body_transform(TnPhysicsSimulation *simulation, uint32_t id,
                                    float x, float y, float z);
+int32_t tn_physics_apply_body_impulse(TnPhysicsSimulation *simulation,
+                                      uint32_t id, float x, float y, float z);
+int32_t tn_physics_apply_body_force(TnPhysicsSimulation *simulation,
+                                    uint32_t id, float x, float y, float z);
+int32_t tn_physics_set_body_linear_velocity(
+    TnPhysicsSimulation *simulation, uint32_t id, float x, float y, float z);
+int32_t tn_physics_read_body_linear_velocity(
+    const TnPhysicsSimulation *simulation, uint32_t id, TnPhysicsVector3 *output);
 bool tn_physics_step(TnPhysicsSimulation *simulation, float delta_time,
                      const float *kinematic_transforms,
                      size_t kinematic_record_count);

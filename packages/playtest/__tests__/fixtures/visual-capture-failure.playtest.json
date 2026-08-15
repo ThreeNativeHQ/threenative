@@ -1,0 +1,20 @@
+{
+  "assert": {
+    "visual": [{
+      "region": {
+        "height": 100,
+        "minNonblankPixelRatio": 0.2,
+        "width": 100,
+        "x": 0,
+        "y": 0
+      }
+    }]
+  },
+  "artifacts": { "screenshots": "before-after" },
+  "name": "negative-visual-capture",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitFrames": 2 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 2
+}

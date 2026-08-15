@@ -35,6 +35,7 @@ test("reachability loads the measured artifact and evaluates every consecutive h
   expect(report.assertions.map(({ id, pass }) => ({ id, pass }))).toEqual([
     { id: "reachability.0.a.b", pass: true },
     { id: "reachability.1.b.c", pass: false },
+    { id: "diagnostics", pass: true },
   ]);
   expect(report.diagnostics[0]?.code).toBe("TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED");
   expect(report.diagnostics[0]?.path).toBe("/assert/reachability/entities/2");
@@ -61,5 +62,6 @@ test("reachability is explicit static envelope-fit and rejects falls beyond the 
   expect(report.assertions.map(({ details, pass }) => ({ constraint: details?.constraint, pass }))).toEqual([
     { constraint: "static-movement-envelope-fit", pass: true },
     { constraint: "static-movement-envelope-fit", pass: false },
+    { constraint: undefined, pass: true },
   ]);
 });

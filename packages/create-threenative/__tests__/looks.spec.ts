@@ -36,14 +36,6 @@ describe("starter visual floor", () => {
     expect(play).toContain("setupPost(ctx.renderer, ctx.scene, ctx.camera)");
   });
 
-  it("should ship an editable particle caller in the starter", async () => {
-    const particles = await readFile(path.join(starter, "src/render/particles.ts"), "utf8");
-    const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
-    expect(particles).toContain("GPUParticles3D");
-    expect(particles).toContain("SpriteNodeMaterial");
-    expect(play).toContain("createParticles");
-  });
-
   it("should remove debug materials and wire live shadows", async () => {
     const files = await Promise.all([
       readFile(path.join(starter, "src/entities/Player.ts"), "utf8"),
@@ -78,12 +70,10 @@ describe("starter visual floor", () => {
       roots.flatMap((root) =>
         readdir(path.join(root, "src/render")).then((names) =>
           Promise.all(
-            names
-              .filter((name) => name !== "particles.ts")
-              .map(
-                async (name) =>
-                  [name, await readFile(path.join(root, "src/render", name), "utf8")] as const,
-              ),
+            names.map(
+              async (name) =>
+                [name, await readFile(path.join(root, "src/render", name), "utf8")] as const,
+            ),
           ),
         ),
       ),
@@ -110,7 +100,7 @@ describe("starter visual floor", () => {
     expect(shapes).not.toContain("Math.random(");
   });
 
-  it("should keep the pick sculpture inside a real-time geometry budget", async () => {
+  it("should keep the starter sculpture inside a real-time geometry budget", async () => {
     const shapes = await readFile(path.join(starter, "src/render/shapes.ts"), "utf8");
     const segments = shapes.match(/new TorusKnotGeometry\([^)]*?,\s*(\d+),\s*(\d+)\)/u);
     expect(segments).not.toBeNull();

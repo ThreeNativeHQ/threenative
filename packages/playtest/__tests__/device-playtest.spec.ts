@@ -1,13 +1,15 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
+  type IPlaytestSampleRequest,
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
 import { androidTouchBatches } from "../src/runner/android.js";
@@ -24,7 +26,7 @@ interface INativeHost {
   __THREENATIVE_NATIVE__?: {
     playtestInput: {
       keyboard(type: string, key: string, code: string): void;
-      pointer(): void;
+      pointer(type: string, x: number, y: number, buttons: number): void;
     };
   };
 }
@@ -83,6 +85,54 @@ class FakeRecordingAndroidDriver extends FakeAndroidDriver {
   }
 }
 
+test("the existing device-smoke scenario reaches its visibility assertion on Android", async () => {
+  const driver = new FakeAndroidDriver(movingBridge().bridge);
+  const result = await runDeviceScenario("device-smoke.playtest.json", driver);
+
+  expect(driver.prepared).toBe(true);
+  expect(result.pass).toBe(true);
+  expect(result.runtime).toBe("native");
+  expect(result.target).toBe("android");
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.cube", pass: true }));
+  expect(exitCodeForReport(result)).toBe(0);
+});
+
+test("buttonless native pointer movement drives anonymous evidence", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const pointerEvents: string[] = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type) => {
+        pointerEvents.push(type);
+        moving.setHeld(type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { movement: { minDistance: 2 } },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { waitFrames: 1, release: true },
+        { holdFrames: 3, pointerPosition: { x: 0.5, y: 0.5 }, release: true },
+        { waitFrames: 1, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.entity).toBe("player");
+    expect(pointerEvents).toEqual(["pointermove"]);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
 test("one device scenario reaches the same semantic evaluator and passes", async () => {
   const { bridge, setHeld } = movingBridge();
   const host = globalThis as typeof globalThis & INativeHost;
@@ -95,12 +145,80 @@ test("one device scenario reaches the same semantic evaluator and passes", async
   };
   try {
     const result = await runDevice({ movement: { entity: "player", minDistance: 2 } }, new FakeAndroidDriver(bridge));
-
     expect(result.pass).toBe(true);
     expect(result.runtime).toBe("native");
     expect(result.target).toBe("android");
     expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: true }));
     expect(exitCodeForReport(result)).toBe(0);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("anonymous device movement omits the entity selector from bridge samples", async () => {
+  const moving = movingBridge();
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: (type) => moving.setHeld(type === "keydown"),
+      pointer: () => undefined,
+    },
+  };
+  try {
+    const result = await runDevice(
+      { movement: { minDistance: 2 } },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { waitFrames: 1, release: true },
+        { holdFrames: 3, press: "KeyW", release: true },
+        { waitFrames: 1, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(moving.sampleRequests.length).toBeGreaterThan(0);
+    expect(moving.sampleRequests.every(({ entities }) => entities === undefined)).toBe(true);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("device wait preserves held input classification", async () => {
+  const moving = movingBridge();
+  const keyEvents: string[] = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: (type, _key, code) => {
+        keyEvents.push(`${type}:${code}`);
+        moving.setHeld(type === "keydown");
+      },
+      pointer: () => undefined,
+    },
+  };
+  try {
+    const result = await runDevice(
+      { movement: { minDistance: 2 } },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { holdFrames: 1, press: "KeyW", release: false },
+        { waitFrames: 2, release: true },
+        { holdFrames: 1, press: "KeyW", release: true },
+        { waitFrames: 1, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: true }));
+    expect(keyEvents).toEqual(["keydown:KeyW", "keyup:KeyW"]);
   } finally {
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
     else host.__THREENATIVE_NATIVE__ = previous;
@@ -118,7 +236,10 @@ test("a deliberately wrong value fails on the device path with exit code 1", asy
     },
   };
   try {
-    const result = await runDevice({ movement: { entity: "player", minDistance: 4 } }, new FakeAndroidDriver(bridge));
+    const result = await runDevice({
+      diagnostics: deviceDiagnosticsOptOut,
+      movement: { entity: "player", minDistance: 4 },
+    }, new FakeAndroidDriver(bridge));
 
     expect(result.pass).toBe(false);
     expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: false }));
@@ -137,12 +258,31 @@ test("an Android runtime error reaches the diagnostics assertion with exit code 
   };
   try {
     const result = await runDevice(
-      { diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true } },
+      {
+        diagnostics: {
+          noConsoleErrors: false,
+          consoleErrorsOptOutReason: "This device test isolates runtime diagnostics from the console policy.",
+          noNetworkErrors: false,
+          networkErrorsOptOutReason: "The Android transport has no network observer in this runtime test.",
+          noRuntimeDiagnostics: true,
+        },
+      },
       new FakeAndroidDriver(movingBridge().bridge, [{ text: "android boom", type: "error" }]),
     );
 
     expect(result.assertionResults).toContainEqual({
-      details: { consoleErrors: 1, networkErrors: 0, runtimeDiagnostics: 1 },
+      details: {
+        consoleErrors: 1,
+        networkErrors: 0,
+        policy: {
+          consoleErrorsOptOutReason: "This device test isolates runtime diagnostics from the console policy.",
+          networkErrorsOptOutReason: "The Android transport has no network observer in this runtime test.",
+          noConsoleErrors: false,
+          noNetworkErrors: false,
+          noRuntimeDiagnostics: true,
+        },
+        runtimeDiagnostics: 1,
+      },
       id: "diagnostics",
       pass: false,
     });
@@ -157,14 +297,14 @@ test("an Android runtime error reaches the diagnostics assertion with exit code 
 test("a missing device bridge fails closed with exit code 2", async () => {
   const driver = new FakeAndroidDriver();
   const result = await runDevice(
-    { movement: { entity: "player", minDistance: 1 } },
+    { diagnostics: deviceDiagnosticsOptOut, movement: { entity: "player", minDistance: 1 } },
     driver,
     30,
   );
 
   expect(driver.preparedMailboxRoot).toBe("/sdcard/Android/data/com.mystral.engine/files");
   expect(result.pass).toBe(false);
-  expect(result.assertionResults).toBeUndefined();
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: false }));
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_BRIDGE_MISSING");
   expect(exitCodeForReport(result)).toBe(2);
 });
@@ -181,10 +321,10 @@ test("a misspelled assertion is rejected before the Android app launches", async
 
 test("network assertions fail explicitly unsupported instead of being skipped", async () => {
   const driver = new FakeAndroidDriver();
-  const result = await runDevice({ diagnostics: { noNetworkErrors: true } }, driver);
+  const result = await runDeviceScenario("device-smoke-network.playtest.json", driver);
 
   expect(result.pass).toBe(false);
-  expect(result.assertionResults).toBeUndefined();
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: false }));
   expect(result.diagnostics).toContainEqual(expect.objectContaining({
     code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
     message: expect.stringContaining("network assertions"),
@@ -245,7 +385,7 @@ test("Android multi-pointer steps deliver complete held sets and release in fina
   const moving = movingBridge();
   const driver = new FakeAndroidDriver(moving.bridge, [], (ids) => moving.setHeld(ids.length === 2));
   const result = await runDevice(
-    { movement: { entity: "player", minDistance: 2 } },
+    { diagnostics: deviceDiagnosticsOptOut, movement: { entity: "player", minDistance: 2 } },
     driver,
     1_000,
     [
@@ -268,6 +408,7 @@ async function runDevice(
   driver: FakeAndroidDriver,
   timeoutMs = 1_000,
   steps: unknown[] = [{ holdFrames: 3, press: "KeyW", release: true }],
+  subject: string | null = "player",
 ) {
   const projectPath = await mkdtemp(join(tmpdir(), "playtest-device-"));
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
@@ -276,7 +417,7 @@ async function runDevice(
     name: "same-cross-target-scenario",
     schemaVersion: 1,
     steps,
-    subject: "player",
+    ...(subject === null ? {} : { subject }),
     target: "web",
     viewport: { height: 360, width: 640 },
     warmupFrames: 0,
@@ -298,8 +439,37 @@ async function runDevice(
   return runAndroidPlaytest(config, { driver, transport: new DeviceBridgeTransport(endpoint) });
 }
 
+async function runDeviceScenario(
+  scenarioFile: string,
+  driver: FakeAndroidDriver,
+  timeoutMs = 1_000,
+) {
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-device-fixture-"));
+  const fixturePath = join(dirname(fileURLToPath(import.meta.url)), "../../../examples/native-smoke/playtests", scenarioFile);
+  await writeFile(join(projectPath, "scenario.json"), await readFile(fixturePath));
+  const port = await availablePort();
+  const endpoint = `http://127.0.0.1:${port}/playtest`;
+  const config: IStandalonePlaytestConfig = {
+    android: { activity: ".MystralActivity", packageName: "com.mystral.engine" },
+    artifactDirectory: join(projectPath, "artifacts"),
+    endpoint,
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "android",
+    timeoutMs,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  };
+  return runAndroidPlaytest(config, { driver, transport: new DeviceBridgeTransport(endpoint) });
+}
+
 function framebufferCoverageAssertion() {
   return {
+    diagnostics: {
+      noNetworkErrors: false,
+      networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
+    },
     framebufferCoverage: {
       backdrop: [13, 27, 42],
       tolerance: 0,
@@ -308,35 +478,50 @@ function framebufferCoverageAssertion() {
   };
 }
 
-function movingBridge(): {
+const deviceDiagnosticsOptOut = {
+  noNetworkErrors: false,
+  networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
+};
+
+function movingBridge(options: { clearHeldAfterAdvance?: boolean } = {}): {
   bridge: IPlaytestBridgeV1;
+  sampleRequests: IPlaytestSampleRequest[];
   setHeld(value: boolean): void;
   tick(): number;
 } {
   let held = false;
   let tick = 0;
   let x = 0;
+  const sampleRequests: IPlaytestSampleRequest[] = [];
   return {
     bridge: {
       advance: async (ticks) => {
         tick += ticks;
         if (held) x += ticks;
+        if (options.clearHeldAfterAdvance === true) held = false;
         return { clock: { mode: "fixed-step", tick }, ticks };
       },
       describe: () => ({
-        capabilities: ["entity.observe", "runtime.fixedStep", "runtime.diagnostics"],
+        capabilities: ["entity.bounds", "entity.observe", "runtime.fixedStep", "runtime.diagnostics"],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "device-test",
         protocolVersion: PLAYTEST_PROTOCOL_VERSION,
       }),
       ready: () => ({ ready: true }),
-      sample: () => ({
-        clock: { mode: "fixed-step", tick },
-        diagnostics: [],
-        entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
-        resources: {},
-      }),
+      sample: (request) => {
+        sampleRequests.push(request);
+        return {
+          clock: { mode: "fixed-step", tick },
+          diagnostics: [],
+          entities: [
+            { id: "player", transform: { position: [x, 0, 0] }, visible: true },
+            { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
+          ],
+          resources: {},
+        };
+      },
     },
+    sampleRequests,
     setHeld: (value) => { held = value; },
     tick: () => tick,
   };

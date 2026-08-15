@@ -245,6 +245,23 @@ test("gameplay channels stay absent when no provider supplies them", async () =>
   installation.dispose();
 });
 
+test("gameplay channels advertise the world observation supplied by the game", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    gameplay: () => ({
+      animation: {},
+      states: {},
+      world: { seed: 6132 },
+    }),
+    gameplayChannels: () => ["runtime.world"],
+    renderer,
+    scene: new Scene(),
+  });
+
+  expect((await installation.bridge.describe()).capabilities).toContain("runtime.world");
+  installation.dispose();
+});
+
 // The observation half of the adapter decides `visible`, which camera and
 // visibility assertions rest on. An entity behind the camera that still reported
 // visible:true would turn every visibility assertion into a vacuous pass.

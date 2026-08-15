@@ -34,6 +34,22 @@ js::JSValueHandle fail(js::Engine *engine, const char *message) {
   return engine->newUndefined();
 }
 
+js::JSValueHandle failActuation(js::Engine *engine, int32_t status) {
+  switch (status) {
+  case TN_PHYSICS_ACTUATION_UNKNOWN_BODY:
+    return fail(engine,
+                "TN_PHYSICS_UNKNOWN_BODY: actuation references an unknown body.");
+  case TN_PHYSICS_ACTUATION_NOT_DYNAMIC:
+    return fail(engine,
+                "TN_PHYSICS_NOT_DYNAMIC: actuation needs a dynamic body.");
+  case TN_PHYSICS_ACTUATION_NON_FINITE:
+    return fail(engine,
+                "TN_PHYSICS_NON_FINITE: actuation vector must be finite.");
+  default:
+    return fail(engine, "TN_NATIVE_PHYSICS_INVALID: actuation was rejected.");
+  }
+}
+
 bool readFiniteNumber(js::Engine *engine, js::JSValueHandle object,
                       const char *name, float &output) {
   const auto value = engine->getProperty(object, name);
@@ -210,7 +226,7 @@ bool parseCharacterOptions(js::Engine *engine, js::JSValueHandle value,
   if (!engine->isObject(value))
     return false;
   options = {id, 0.01f, 0.78539816339f, false, 0.0f,
-             0.0f, false, false, 0.0f, 0};
+             0.0f, false, false, 0.0f, 0, false};
   if (!readFiniteNumber(engine, value, "offset", options.offset) ||
       !readFiniteNumber(engine, value, "maxSlopeClimbAngle",
                         options.max_slope_climb_angle) ||
@@ -242,6 +258,12 @@ bool parseCharacterOptions(js::Engine *engine, js::JSValueHandle value,
     }
     options.snap_to_ground_enabled = true;
     options.snap_to_ground = static_cast<float>(engine->toNumber(snap));
+  }
+  const auto pushes = engine->getProperty(value, "pushesDynamicBodies");
+  if (!engine->isUndefined(pushes)) {
+    if (!engine->isBoolean(pushes))
+      return false;
+    options.pushes_dynamic_bodies = engine->toBoolean(pushes);
   }
   return true;
 }
@@ -335,6 +357,36 @@ js::JSValueHandle makeRayHit(js::Engine *engine, const TnPhysicsRayHit &hit) {
   return result;
 }
 
+bool parseActuationArguments(js::Engine *engine,
+                             const std::vector<js::JSValueHandle> &args,
+                             uint32_t &id, float &x, float &y, float &z) {
+  if (args.size() < 2 || !engine->isNumber(args[0]))
+    return false;
+  const double idValue = engine->toNumber(args[0]);
+  if (!std::isfinite(idValue) || idValue < 0 || idValue > kMaxExactFloatId ||
+      std::floor(idValue) != idValue || !engine->isObject(args[1]))
+    return false;
+  if (!readFiniteNumber(engine, args[1], "x", x) ||
+      !readFiniteNumber(engine, args[1], "y", y) ||
+      !readFiniteNumber(engine, args[1], "z", z))
+    return false;
+  id = static_cast<uint32_t>(idValue);
+  return true;
+}
+
+bool parseBodyIdArgument(js::Engine *engine,
+                         const std::vector<js::JSValueHandle> &args,
+                         uint32_t &id) {
+  if (args.empty() || !engine->isNumber(args[0]))
+    return false;
+  const double idValue = engine->toNumber(args[0]);
+  if (!std::isfinite(idValue) || idValue < 0 || idValue > kMaxExactFloatId ||
+      std::floor(idValue) != idValue)
+    return false;
+  id = static_cast<uint32_t>(idValue);
+  return true;
+}
+
 js::JSValueHandle makeSimulationObject(
     js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner) {
   auto simulation = engine->newObject();
@@ -418,6 +470,83 @@ js::JSValueHandle makeSimulationObject(
                                                static_cast<uint32_t>(id), x, y, z))
               return fail(engine, "setBodyTransform received an unknown id");
             return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "applyBodyImpulse",
+      engine->newFunction(
+          "applyBodyImpulse",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            if (!parseActuationArguments(engine, args, id, x, y, z))
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: impulse must be a finite { x, y, z }.");
+            const int32_t status =
+                tn_physics_apply_body_impulse(owner->simulation, id, x, y, z);
+            if (status != TN_PHYSICS_ACTUATION_OK)
+              return failActuation(engine, status);
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "applyBodyForce",
+      engine->newFunction(
+          "applyBodyForce",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            if (!parseActuationArguments(engine, args, id, x, y, z))
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: force must be a finite { x, y, z }.");
+            const int32_t status =
+                tn_physics_apply_body_force(owner->simulation, id, x, y, z);
+            if (status != TN_PHYSICS_ACTUATION_OK)
+              return failActuation(engine, status);
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "setBodyLinearVelocity",
+      engine->newFunction(
+          "setBodyLinearVelocity",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            if (!parseActuationArguments(engine, args, id, x, y, z))
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: velocity must be a finite { x, y, z }.");
+            const int32_t status = tn_physics_set_body_linear_velocity(
+                owner->simulation, id, x, y, z);
+            if (status != TN_PHYSICS_ACTUATION_OK)
+              return failActuation(engine, status);
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "readBodyLinearVelocity",
+      engine->newFunction(
+          "readBodyLinearVelocity",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            if (!parseBodyIdArgument(engine, args, id))
+              return fail(engine, "readBodyLinearVelocity received an invalid id");
+            TnPhysicsVector3 velocity{};
+            const int32_t status = tn_physics_read_body_linear_velocity(
+                owner->simulation, id, &velocity);
+            if (status != TN_PHYSICS_ACTUATION_OK)
+              return failActuation(engine, status);
+            return makeVector(engine, velocity.x, velocity.y, velocity.z);
           }));
   engine->setProperty(
       simulation, "step",

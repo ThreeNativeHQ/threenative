@@ -1,0 +1,20 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "Console observation is not part of the network-only fixture.",
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Runtime observation is not part of the network-only fixture."
+    },
+    "movement": { "entity": "player", "minDistance": 0.1 }
+  },
+  "artifacts": { "screenshots": false },
+  "name": "negative-network-failure",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitFrames": 10 }],
+  "subject": "player",
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 2
+}

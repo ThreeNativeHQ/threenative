@@ -20,7 +20,6 @@ export default {
     resizable: true,
   },
   loading: {
-    // Read by src/render/loading.ts, which is your file. Delete that file to drop the screen.
     backdropColor: "#0d1b2a",
     trackColor: "#274060",
     progressColor: "#8fd694",

@@ -1,0 +1,220 @@
+{
+  "arm": "vanilla",
+  "genre": "physics-puzzle",
+  "passed": 0,
+  "proofHash": "d8e90936be7bec4046af766b108fdd7b1dcb92aad3d1e87e4c72b2de40d592f3",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": {
+              "equals": "done",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayPhase",
+            "trivial": false
+          },
+          "id": "resource.state.replayPhase",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "equals": "match",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayMatch",
+            "trivial": false
+          },
+          "id": "resource.state.replayMatch",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": null
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 1,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 1
+          },
+          "id": "diagnostics",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'replayPhase'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'replayMatch'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_CONSOLE_ERROR",
+          "message": "1 browser console error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+        },
+        {
+          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+          "message": "1 runtime diagnostic error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+        }
+      ],
+      "name": "physics-puzzle-deterministic-replay-proof",
+      "verdict": "fail"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": {
+              "gte": 30,
+              "changed": true
+            },
+            "id": "state",
+            "path": "settled",
+            "trivial": false
+          },
+          "id": "resource.state.settled",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "contacts",
+            "trivial": false
+          },
+          "id": "resource.state.contacts",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "phaseThroughs",
+            "trivial": false
+          },
+          "id": "resource.state.phaseThroughs",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "gte": 1.5,
+              "changed": true
+            },
+            "id": "state",
+            "path": "distance",
+            "trivial": false
+          },
+          "id": "resource.state.distance",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "goalReached",
+            "trivial": false
+          },
+          "id": "resource.state.goalReached",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": null
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 1,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 1
+          },
+          "id": "diagnostics",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'settled'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'contacts'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'phaseThroughs'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'distance'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'goalReached'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_CONSOLE_ERROR",
+          "message": "1 browser console error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+        },
+        {
+          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+          "message": "1 runtime diagnostic error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+        }
+      ],
+      "name": "physics-puzzle-observable-behaviour-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

@@ -5,7 +5,7 @@
     <title>playtest fixture</title>
   </head>
   <body>
-    <canvas id="view" width="640" height="360"></canvas>
+    <canvas id="view" width="640" height="360" data-engine="webgl"></canvas>
     <script>
       // A deliberately tiny stand-in for a real game. It implements the v1 bridge
       // protocol by hand so the end-to-end test exercises the runner, the bridge
@@ -17,10 +17,71 @@
       // not a fixture bug.
       const params = new URLSearchParams(location.search);
       const mode = params.get("mode") ?? "good";
+      const canvas = document.getElementById("view");
+
+      if (mode === "generic-adapter") {
+        const genericAdapter = {
+          features: ["timestamp-query"],
+          info: {},
+          limits: { maxBindGroups: 4, maxTextureDimension2D: 4096 },
+        };
+        try {
+          Object.defineProperty(navigator, "gpu", {
+            configurable: true,
+            value: { requestAdapter: async () => genericAdapter },
+          });
+        } catch {
+          // The provenance negative control still exercises the real browser adapter below.
+        }
+        canvas.dataset.engine = "webgpu";
+      }
+
+      if (mode !== "generic-adapter") {
+        const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+        if (gl !== null) {
+          gl.enable(gl.SCISSOR_TEST);
+          if (mode === "rendered") {
+            const colors = [
+              [0.9, 0.1, 0.1, 1], [0.1, 0.8, 0.2, 1], [0.1, 0.3, 0.9, 1], [0.9, 0.8, 0.1, 1],
+              [0.8, 0.1, 0.7, 1], [0.1, 0.8, 0.8, 1], [0.9, 0.5, 0.1, 1], [0.5, 0.2, 0.9, 1],
+            ];
+            const tileWidth = canvas.width / 4;
+            const tileHeight = canvas.height / 2;
+            colors.forEach((color, index) => {
+              gl.scissor((index % 4) * tileWidth, Math.floor(index / 4) * tileHeight, tileWidth, tileHeight);
+              gl.clearColor(...color);
+              gl.clear(gl.COLOR_BUFFER_BIT);
+            });
+          } else {
+            gl.scissor(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+          }
+          gl.disable(gl.SCISSOR_TEST);
+        }
+      }
 
       if (mode === "no-bridge-error") {
         setTimeout(() => {
           throw new Error("transport-only-boom");
+        }, 0);
+      }
+
+      if (mode === "console-only") {
+        console.error("phase0-console-error");
+      }
+
+      if (mode === "network-only") {
+        fetch("http://127.0.0.1:1/missing-asset.js").catch(() => undefined);
+      }
+
+      if (mode === "unhandled-rejection") {
+        Promise.reject("phase2-unhandled-rejection");
+      }
+
+      if (mode === "page-error") {
+        setTimeout(() => {
+          throw new Error("phase2-page-error");
         }, 0);
       }
 
@@ -34,6 +95,81 @@
       let held = false;
       let tick = 0;
       const physicsDebugSeries = [];
+      const worldBodies = ["player", "ground"];
+      const expectedWorldBodies = worldBodies.length;
+      let staleSchedulerCallbacks = 0;
+      let sceneExited = false;
+      const scheduledCallbacks = [];
+      const replayHashes = [];
+
+      function restartScene() {
+        sceneExited = true;
+        if (mode === "restart-leak") {
+          // The fixture models a scene teardown that forgets to release its bodies.
+          worldBodies.push("player", "ground");
+        } else {
+          worldBodies.splice(0, worldBodies.length, "player", "ground");
+        }
+        sceneExited = false;
+      }
+
+      function scheduleSceneCallback() {
+        if (mode === "scheduler-leak") {
+          scheduledCallbacks.push(() => {
+            if (sceneExited) staleSchedulerCallbacks += 1;
+          });
+          sceneExited = true;
+          for (const callback of scheduledCallbacks.splice(0)) callback();
+        }
+      }
+
+      function physicsHash(seed, run) {
+        let state = seed;
+        for (let index = 0; index < 4; index += 1) {
+          state = (state * 1664525 + 1013904223 + (mode === "physics-mismatch" && run === 1 ? 7 : 0)) >>> 0;
+        }
+        return state.toString(16);
+      }
+
+      if (mode === "restart-leak" || mode === "restart-leak-control") {
+        restartScene();
+      }
+      if (mode === "scheduler-leak") {
+        scheduleSceneCallback();
+      }
+      if (mode === "physics-mismatch") {
+        replayHashes.push(physicsHash(90210, 0), physicsHash(90210, 1));
+      }
+
+      function runtimeDiagnostics() {
+        const diagnostics = [];
+        if (worldBodies.length > expectedWorldBodies) {
+          diagnostics.push({
+            code: "TN_PLAYTEST_WORLD_BODIES_LEAK",
+            expectedWorldBodies,
+            worldBodies: worldBodies.length,
+          });
+        }
+        if (sceneExited && staleSchedulerCallbacks > 0) {
+          diagnostics.push({
+            callback: "stale-timer",
+            code: "TN_PLAYTEST_SCHEDULER_AFTER_SCENE_EXIT",
+            callbacks: staleSchedulerCallbacks,
+          });
+        }
+        if (replayHashes.length === 2 && replayHashes[0] !== replayHashes[1]) {
+          diagnostics.push({
+            code: "TN_PLAYTEST_PHYSICS_HASH_MISMATCH",
+            expectedHash: replayHashes[0],
+            observedHash: replayHashes[1],
+            seed: 90210,
+          });
+        }
+        if (mode === "runtime-diagnostic") {
+          diagnostics.push({ code: "runtime-seeded-error", message: "seeded runtime diagnostic" });
+        }
+        return diagnostics;
+      }
 
       addEventListener("pointermove", (event) => {
         console.log(`playtest-pointer:${event.clientX},${event.clientY}`);
@@ -50,7 +186,7 @@
         // `broken` is the regression under test: input arrives and is ignored, so
         // the player never moves. `drift` moves without input, which must not be
         // mistaken for a working control scheme.
-        if (mode === "drift" || (held && mode !== "broken")) {
+        if (mode === "drift" || mode === "console-only" || mode === "network-only" || mode === "unhandled-rejection" || mode === "page-error" || (held && mode !== "broken")) {
           player.z += 0.05;
         }
         camera.z = player.z - 6;
@@ -122,6 +258,7 @@
               tick,
             });
           }
+          const diagnostics = runtimeDiagnostics();
           return {
           clock: mode === "physics"
             ? { mode: "fixed-step", tick }
@@ -130,6 +267,7 @@
           // no observation to judge, and must fail rather than report a green run
           // it never actually measured.
           entities: mode === "silent-drop" ? [] : (request.entities ?? []).map(observe),
+          ...(diagnostics.length === 0 ? {} : { diagnostics }),
           ...(mode === "physics" ? { physicsDebugSeries: [...physicsDebugSeries] } : {}),
           resources: {},
         }},

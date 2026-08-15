@@ -102,6 +102,7 @@ export interface INativeSimulation {
     id: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
   ): void;
+  /** Optional so old runtimes fail loudly through the adapter instead of silently diverging. */
   applyBodyImpulse?(id: number, impulse: IPhysicsVector3): void;
   applyBodyForce?(id: number, force: IPhysicsVector3): void;
   setBodyLinearVelocity?(id: number, velocity: IPhysicsVector3): void;
@@ -215,6 +216,9 @@ export function createNativePhysicsSimulation(
   let characterStateDirty = true;
   let areaIntersectionsDirty = true;
   let disposed = false;
+  const requireLive = () => {
+    if (disposed) throw new Error("Physics simulation is disposed.");
+  };
   const invalidateObservations = () => {
     characterStateDirty = true;
     areaIntersectionsDirty = true;
@@ -340,30 +344,36 @@ export function createNativePhysicsSimulation(
         throw new Error("TN_NATIVE_PHYSICS_SET_TRANSFORM_MISSING: runtime ABI is too old");
       raw.setBodyTransform(id, position);
     },
-    // An ABI too old to actuate throws rather than accepting the call and dropping it, which
-    // would make the same game code push crates on web and do nothing on a phone.
+    // Keep the optional raw members: an older runtime must throw rather than accept a call and
+    // drop the actuation, which would make the same game diverge by platform.
     applyBodyImpulse: (id, impulse) => {
+      requireLive();
       requireFiniteVector(impulse, "impulse");
       if (raw.applyBodyImpulse === undefined)
         throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
       raw.applyBodyImpulse(id, impulse);
     },
     applyBodyForce: (id, force) => {
+      requireLive();
       requireFiniteVector(force, "force");
       if (raw.applyBodyForce === undefined)
         throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
       raw.applyBodyForce(id, force);
     },
     setBodyLinearVelocity: (id, velocity) => {
-      requireFiniteVector(velocity, "velocity");
+      requireLive();
+      requireFiniteVector(velocity, "linearVelocity");
       if (raw.setBodyLinearVelocity === undefined)
         throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
       raw.setBodyLinearVelocity(id, velocity);
     },
     readBodyLinearVelocity: (id) => {
+      requireLive();
       if (raw.readBodyLinearVelocity === undefined)
         throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
-      return raw.readBodyLinearVelocity(id);
+      const velocity = raw.readBodyLinearVelocity(id);
+      requireFiniteVector(velocity, "native linear velocity");
+      return velocity;
     },
     step: (deltaTime, inputSnapshot) => {
       requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodyIds.has(id));

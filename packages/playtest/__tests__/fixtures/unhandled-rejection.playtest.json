@@ -1,0 +1,18 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The unhandled rejection is isolated from the console policy.",
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Network observation is not part of the unhandled-rejection fixture.",
+      "noRuntimeDiagnostics": true
+    }
+  },
+  "artifacts": { "screenshots": false },
+  "name": "negative-unhandled-rejection",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitFrames": 4 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 2
+}

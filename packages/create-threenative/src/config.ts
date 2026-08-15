@@ -1,7 +1,7 @@
 import { access, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { IThreeNativeConfig, ThreeNativeOrientation } from "@threenative/core";
 
 export type { IThreeNativeConfig, ThreeNativeOrientation } from "@threenative/core";
@@ -39,7 +39,10 @@ export interface IResolvedThreeNativeConfig {
 }
 
 interface IPackageManifest {
+  readonly dependencies?: unknown;
+  readonly devDependencies?: unknown;
   readonly name?: unknown;
+  readonly optionalDependencies?: unknown;
   readonly version?: unknown;
   readonly threenative?: unknown;
 }
@@ -51,11 +54,39 @@ type Esbuild = {
   ): { code: string };
 };
 
+type ConfigLayer = "package manifest" | "config loading" | "config validation";
+
+interface IConfigContext {
+  readonly cwd: string;
+  readonly fix: string;
+  readonly layer: ConfigLayer;
+  readonly searched: readonly string[];
+  readonly sources: readonly string[];
+}
+
 const ORIENTATIONS: readonly ThreeNativeOrientation[] = ["landscape", "portrait", "sensor"];
 const CONFIG_FILE = "threenative.config.ts";
 
+class ConfigFailure extends Error {
+  readonly code: string;
+  readonly context: IConfigContext | undefined;
+  readonly detail: string;
+
+  constructor(code: string, detail: string, context?: IConfigContext) {
+    super(`${code}: ${context === undefined ? detail : formatContext(context, detail)}`);
+    this.name = "ConfigFailure";
+    this.code = code;
+    this.context = context;
+    this.detail = detail;
+  }
+}
+
+function formatContext(context: IConfigContext, detail: string): string {
+  return `${context.layer} layer failed for ${context.sources.map((source) => `'${source}'`).join(", ")} from '${context.cwd}'. Searched: ${context.searched.join(", ")}. ${detail} Fix: ${context.fix}`;
+}
+
 function fail(code: string, message: string): never {
-  throw new Error(`${code}: ${message}`);
+  throw new ConfigFailure(code, message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -161,7 +192,96 @@ function projectRequire(cwd: string): NodeJS.Require {
   return createRequire(path.join(cwd, "package.json"));
 }
 
-function resolveEsbuild(cwd: string): string {
+function resolveModule(cwd: string, name: string): string | undefined {
+  try {
+    return projectRequire(cwd).resolve(name);
+  } catch {
+    return undefined;
+  }
+}
+
+function configLoaderSearch(cwd: string): readonly string[] {
+  return [
+    path.join(cwd, "node_modules", "vite"),
+    path.join(cwd, "node_modules", "esbuild"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "node_modules", "esbuild"),
+  ];
+}
+
+const CONFIG_BUILD_COMMAND = "pnpm exec threenative build --target web";
+
+function configContext(
+  cwd: string,
+  layer: ConfigLayer,
+  sources: readonly string[],
+  searched: readonly string[],
+  fix: string,
+): IConfigContext {
+  return { cwd, fix, layer, searched, sources };
+}
+
+function packageContext(cwd: string): IConfigContext {
+  const packagePath = path.join(cwd, "package.json");
+  return configContext(
+    cwd,
+    "package manifest",
+    [packagePath],
+    [packagePath],
+    `repair '${packagePath}' and rerun ${CONFIG_BUILD_COMMAND}`,
+  );
+}
+
+function loadingContext(cwd: string, sourcePath: string, fix?: string): IConfigContext {
+  return configContext(
+    cwd,
+    "config loading",
+    [sourcePath],
+    configLoaderSearch(cwd),
+    fix ?? `fix '${sourcePath}' and rerun ${CONFIG_BUILD_COMMAND}`,
+  );
+}
+
+function validationContext(cwd: string, sources: readonly string[]): IConfigContext {
+  return configContext(
+    cwd,
+    "config validation",
+    sources,
+    [path.join(cwd, "package.json"), path.join(cwd, CONFIG_FILE)],
+    `fix '${path.join(cwd, CONFIG_FILE)}' and rerun ${CONFIG_BUILD_COMMAND}`,
+  );
+}
+
+function configFailure(code: string, context: IConfigContext, detail: string): never {
+  throw new ConfigFailure(code, detail, context);
+}
+
+function contextualize(
+  error: unknown,
+  context: IConfigContext,
+  fallbackCode: string,
+): ConfigFailure {
+  if (error instanceof ConfigFailure && error.context !== undefined) return error;
+  if (error instanceof ConfigFailure) return new ConfigFailure(error.code, error.detail, context);
+  return new ConfigFailure(
+    fallbackCode,
+    error instanceof Error ? error.message : String(error),
+    context,
+  );
+}
+
+async function withConfigContext<T>(
+  context: IConfigContext,
+  fallbackCode: string,
+  action: () => Promise<T> | T,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    throw contextualize(error, context, fallbackCode);
+  }
+}
+
+function resolveEsbuild(cwd: string): string | undefined {
   const require = projectRequire(cwd);
   try {
     return require.resolve("esbuild");
@@ -173,10 +293,7 @@ function resolveEsbuild(cwd: string): string {
       try {
         return createRequire(import.meta.url).resolve("esbuild");
       } catch {
-        fail(
-          "TN_CONFIG_TRANSPILER_MISSING",
-          "threenative.config.ts needs project-resolved esbuild; install Vite or esbuild.",
-        );
+        return undefined;
       }
     }
   }
@@ -190,15 +307,45 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
     return undefined;
   }
 
-  let esbuild: Esbuild;
-  try {
-    esbuild = projectRequire(cwd)(resolveEsbuild(cwd)) as Esbuild;
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("TN_CONFIG_")) throw error;
-    fail("TN_CONFIG_TRANSPILER_MISSING", error instanceof Error ? error.message : String(error));
+  const esbuildPath = resolveEsbuild(cwd);
+  if (esbuildPath === undefined) {
+    configFailure(
+      "TN_CONFIG_TRANSPILER_MISSING",
+      loadingContext(
+        cwd,
+        sourcePath,
+        `run pnpm add -D vite in '${cwd}' and rerun ${CONFIG_BUILD_COMMAND}`,
+      ),
+      "threenative.config.ts needs project-resolved esbuild; install Vite or esbuild.",
+    );
   }
 
-  const source = await readFile(sourcePath, "utf8");
+  let esbuild: Esbuild;
+  try {
+    esbuild = projectRequire(cwd)(esbuildPath) as Esbuild;
+  } catch (error) {
+    configFailure(
+      "TN_CONFIG_TRANSPILER_MISSING",
+      loadingContext(
+        cwd,
+        sourcePath,
+        `run pnpm install in '${cwd}' and rerun ${CONFIG_BUILD_COMMAND}`,
+      ),
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  const context = loadingContext(cwd, sourcePath);
+  let source: string;
+  try {
+    source = await readFile(sourcePath, "utf8");
+  } catch (error) {
+    configFailure(
+      "TN_CONFIG_LOAD_FAILED",
+      context,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   let code: string;
   try {
     code = esbuild.transformSync(source, {
@@ -208,11 +355,23 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
       target: "node20",
     }).code;
   } catch (error) {
-    fail("TN_CONFIG_TRANSPILE_FAILED", error instanceof Error ? error.message : String(error));
+    configFailure(
+      "TN_CONFIG_TRANSPILE_FAILED",
+      context,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
   const compiledPath = path.join(cwd, `.threenative.config.${process.pid}.${Date.now()}.mjs`);
-  await writeFile(compiledPath, code, "utf8");
+  try {
+    await writeFile(compiledPath, code, "utf8");
+  } catch (error) {
+    configFailure(
+      "TN_CONFIG_LOAD_FAILED",
+      context,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   try {
     let module: { default?: unknown };
     try {
@@ -220,10 +379,18 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
         default?: unknown;
       };
     } catch (error) {
-      fail("TN_CONFIG_LOAD_FAILED", error instanceof Error ? error.message : String(error));
+      configFailure(
+        "TN_CONFIG_LOAD_FAILED",
+        context,
+        error instanceof Error ? error.message : String(error),
+      );
     }
     if (!isRecord(module.default)) {
-      fail("TN_CONFIG_DEFAULT_MISSING", "the config must default-export an object.");
+      configFailure(
+        "TN_CONFIG_DEFAULT_MISSING",
+        context,
+        "the config did not default-export an object.",
+      );
     }
     return module.default;
   } finally {
@@ -306,7 +473,7 @@ async function validateApp(
     const info = await stat(iconPath);
     if (!info.isFile()) fail("TN_CONFIG_ICON_MISSING", `app.icon does not name a file: ${icon}`);
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("TN_CONFIG_")) throw error;
+    if (error instanceof ConfigFailure) throw error;
     fail("TN_CONFIG_ICON_MISSING", `app.icon does not exist: ${icon}`);
   }
   let contents: Buffer;
@@ -425,29 +592,61 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
   };
 }
 
+async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeConfig> {
+  const packagePath = path.join(root, "package.json");
+  const sourcePath = path.join(root, CONFIG_FILE);
+  const manifest = await withConfigContext(packageContext(root), "TN_CONFIG_PACKAGE_INVALID", () =>
+    readManifest(root),
+  );
+  const name = await withConfigContext(packageContext(root), "TN_CONFIG_PACKAGE_INVALID", () =>
+    packageDisplayName(manifest),
+  );
+  const packageEntry = await withConfigContext(
+    packageContext(root),
+    "TN_CONFIG_PACKAGE_INVALID",
+    () => packageNativeEntry(manifest),
+  );
+  const raw = await importConfig(root);
+  const sources = packageEntry === undefined ? [sourcePath] : [sourcePath, packagePath];
+  return withConfigContext(
+    validationContext(root, sources),
+    "TN_CONFIG_VALIDATION_FAILED",
+    async () => {
+      if (raw !== undefined) {
+        assertKeys(raw, "config", [
+          "app",
+          "display",
+          "loading",
+          "window",
+          "nativeEntry",
+          "renderer",
+        ]);
+      }
+      const configuredEntry = raw?.nativeEntry;
+      if (configuredEntry !== undefined && packageEntry !== undefined) {
+        fail(
+          "TN_CONFIG_CONFLICT",
+          "nativeEntry is declared in both threenative.config.ts and package.json.",
+        );
+      }
+      const app = await validateApp(raw?.app, name, root);
+      return {
+        app,
+        display: validateDisplay(raw?.display),
+        loading: validateLoading(raw?.loading),
+        window: validateWindow(raw?.window, app.name),
+        nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
+        renderer: validateRenderer(raw?.renderer),
+      };
+    },
+  );
+}
+
 export async function loadConfig(cwd: string): Promise<IResolvedThreeNativeConfig> {
   const root = path.resolve(cwd);
-  const manifest = await readManifest(root);
-  const name = packageDisplayName(manifest);
-  const packageEntry = packageNativeEntry(manifest);
-  const raw = await importConfig(root);
-  if (raw !== undefined) {
-    assertKeys(raw, "config", ["app", "display", "loading", "window", "nativeEntry", "renderer"]);
-  }
-  const configuredEntry = raw?.nativeEntry;
-  if (configuredEntry !== undefined && packageEntry !== undefined) {
-    fail(
-      "TN_CONFIG_CONFLICT",
-      "nativeEntry is declared in both threenative.config.ts and package.json.",
-    );
-  }
-  const app = await validateApp(raw?.app, name, root);
-  return {
-    app,
-    display: validateDisplay(raw?.display),
-    loading: validateLoading(raw?.loading),
-    window: validateWindow(raw?.window, app.name),
-    nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
-    renderer: validateRenderer(raw?.renderer),
-  };
+  return withConfigContext(
+    validationContext(root, [path.join(root, CONFIG_FILE), path.join(root, "package.json")]),
+    "TN_CONFIG_VALIDATION_FAILED",
+    () => loadConfigInternal(root),
+  );
 }

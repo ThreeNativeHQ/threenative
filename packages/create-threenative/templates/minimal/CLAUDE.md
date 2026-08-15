@@ -57,7 +57,7 @@ flowchart TD
     player["entities/Player.ts<br/>plain class, not an ECS"]
     render["render/<br/>palette, camera, lighting, HUD geometry,<br/>materials, post — YOURS"]
     state["state.ts<br/>state shape gameplay publishes"]
-    playtest["playtests/play.playtest.json<br/>one scenario, run by pnpm test"]
+    playtest["playtests/survives.playtest.json<br/>durable smoke proof, run by pnpm test"]
     config["threenative.config.ts<br/>app identity, icon, display, desktop window, renderer"]
 
     project --> src
@@ -336,9 +336,11 @@ assertions. That is how a scenario checks game state instead of guessing from pi
 
 ## Playtests
 
-`playtests/play.playtest.json` drives a real browser through the game. Steps count frames, not
-milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
-instead of racing it.
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
+minimal gameplay: it checks boot, diagnostics, a nonblank canvas, and player movement without
+depending on the pickup or score. `playtests/play.playtest.json` is the minimal-game example.
+Steps count frames, not milliseconds — `holdFrames`, `waitFrames` — because the harness drives
+the fixed-step clock instead of racing it.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. Add the assertion that would catch a feature's

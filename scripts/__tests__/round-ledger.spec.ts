@@ -72,6 +72,52 @@ function ledger(overrides: string[] = []): string {
   ].join("\n");
 }
 
+interface ProofAssertion {
+  readonly id: string;
+  readonly pass: boolean;
+}
+
+interface ProofScenario {
+  readonly assertions: readonly ProofAssertion[];
+}
+
+interface ProofRecord {
+  readonly scenarios: readonly ProofScenario[];
+}
+
+const ROUND_7 = path.resolve(process.cwd(), "docs/verification/round-7-2026-08-15.md");
+const SCORE_ROUND_7 = path.resolve(
+  process.cwd(),
+  "docs/verification/score-physics-puzzle-round-7-2026-08-15.md",
+);
+
+async function readProof(archive: string): Promise<ProofRecord> {
+  const proofPath = path.resolve(process.cwd(), `docs/benchmark/sweeps/${archive}/proof.json`);
+  return JSON.parse(await readFile(proofPath, "utf8")) as ProofRecord;
+}
+
+function consistentOutcome(proof: ProofRecord, id: string): boolean {
+  const outcomes = proof.scenarios.map((scenario, index) => {
+    const matches = scenario.assertions.filter((assertion) => assertion.id === id);
+    expect(matches, `${id} assertion count in scenario ${index + 1}`).toHaveLength(1);
+    const assertion = matches[0];
+    if (assertion === undefined)
+      throw new Error(`Missing ${id} assertion in scenario ${index + 1}.`);
+    return assertion.pass;
+  });
+  expect(new Set(outcomes), `${id} outcomes across scenarios`).toHaveLength(1);
+  const outcome = outcomes[0];
+  if (outcome === undefined) throw new Error(`Missing ${id} proof outcome.`);
+  return outcome;
+}
+
+async function publishedOutcomeSummary(arm: string, archive: string): Promise<string> {
+  const proof = await readProof(archive);
+  const seed = consistentOutcome(proof, "world.seed");
+  const diagnostics = consistentOutcome(proof, "diagnostics");
+  return `${arm} arm ${seed ? "passed" : "failed"} \`world.seed\` and ${diagnostics ? "passed" : "failed"} diagnostics`;
+}
+
 describe("round ledger schema", () => {
   it("accepts a complete, bounded ledger", () => {
     expect(validateRoundLedger(ledger()).round).toBe(1);
@@ -110,5 +156,23 @@ describe("round ledger schema", () => {
       "| Arms built in separate contexts | no |\n|",
     );
     expect(() => validateRoundLedger(invalid, "void.md")).toThrow(/void/u);
+  });
+
+  it("keeps round 7 published outcomes derived from proof rows and retains VOID", async () => {
+    const [round, score, frameworkSummary, vanillaSummary] = await Promise.all([
+      readFile(ROUND_7, "utf8"),
+      readFile(SCORE_ROUND_7, "utf8"),
+      publishedOutcomeSummary("framework", "physics-puzzle-2026-08-15-4"),
+      publishedOutcomeSummary("vanilla", "physics-puzzle-2026-08-15-3"),
+    ]);
+
+    for (const document of [round, score]) {
+      const normalized = document.replace(/\s+/gu, " ");
+      expect(normalized).toContain(frameworkSummary);
+      expect(normalized).toContain(vanillaSummary);
+    }
+    expect(round).toMatch(/^Stop condition met: void$/mu);
+    expect(round).toContain("| physics-puzzle | unmeasured | unmeasured | loss | void");
+    expect(score).toMatch(/^\*\*Verdict: VOID\b/mu);
   });
 });

@@ -376,6 +376,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         snap_to_ground_enabled: true,
         snap_to_ground: character.snap_to_ground,
         one_way_layers: character.one_way_layers,
+        pushes_dynamic_bodies: false,
     };
     assert!(tn_physics_configure_character(
         simulation,

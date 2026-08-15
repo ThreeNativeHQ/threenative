@@ -73,7 +73,8 @@ test("a recorded series satisfies the settled assertion the framework arm can al
     scenario: settledScenario({ atStep: "settled", compareToStep: "drop", entity: "crate", minBodies: 2, minMeanPoseDistance: 1 }),
   });
 
-  expect(assertions).toEqual([expect.objectContaining({ id: "settled.crate", pass: true })]);
+  const settled = assertions.find(({ id }) => id === "settled.crate");
+  expect(settled).toEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
   expect(diagnostics).toEqual([]);
   installation.dispose();
 });
@@ -87,7 +88,8 @@ test("an awake body fails settled rather than passing on a snapshot the assertio
     scenario: settledScenario({ atStep: "settled", entity: "crate", minBodies: 1 }),
   });
 
-  expect(assertions).toEqual([expect.objectContaining({ id: "settled.crate", pass: false })]);
+  const settled = assertions.find(({ id }) => id === "settled.crate");
+  expect(settled).toEqual(expect.objectContaining({ id: "settled.crate", pass: false }));
   installation.dispose();
 });
 
@@ -103,8 +105,9 @@ test("bodies past the retention limit are reported as omitted, not silently drop
   });
 
   // Every retained body is asleep, so only the omission keeps this from passing.
-  expect(assertions).toEqual([expect.objectContaining({ id: "settled.crate", pass: false })]);
-  expect(assertions[0]?.details).toMatchObject({ omittedBodies: 3 });
+  const settled = assertions.find(({ id }) => id === "settled.crate");
+  expect(settled).toEqual(expect.objectContaining({ id: "settled.crate", pass: false }));
+  expect(settled?.details).toMatchObject({ omittedBodies: 3 });
   installation.dispose();
 });
 

@@ -11,7 +11,7 @@
     "build:ios": "threenative build --target ios",
     "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs",
     "pretest": "playwright install chromium",
-    "test": "vite build && threenative-playtest --scenario playtests/shooter.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu && threenative-playtest --scenario playtests/fail.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu",
+    "test": "vite build && threenative-playtest --scenario playtests/survives.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/shooter.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu && threenative-playtest --scenario playtests/fail.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

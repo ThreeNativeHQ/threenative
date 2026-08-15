@@ -3,6 +3,7 @@ import { type PerspectiveCamera, Vector3 } from "three";
 import { Attacker } from "../attackers/Attacker.js";
 import { ROUTE_TEST_SLOT, RouteBoard, SAFE_BUILD_SLOTS } from "../board/Route.js";
 import { Economy, TOWER_COST } from "../economy.js";
+import { Player } from "../entities/Player.js";
 import { type DefensePhysics, directSpaceState } from "../physics.js";
 import { Buildable, type PlacementReason } from "../placement/Buildable.js";
 import { setupCamera } from "../render/camera.js";
@@ -31,6 +32,8 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     ctx.add(ctx.camera);
     const hud = ctx.entities.add("hud", createHud(ctx.camera as PerspectiveCamera));
     const board = new RouteBoard(ctx);
+    const player = new Player(ctx);
+    ctx.entities.add("player", player);
     const query = directSpaceState(ctx.physics);
     const buildable = new Buildable(query);
     const economy = new Economy();
@@ -111,6 +114,7 @@ export class Defense extends Scene<GameState, DefensePhysics> {
         return;
       }
       if (status === "PLAYING") {
+        player.update(frameCtx, dt);
         economy.update(dt);
         if (frameCtx.input.justPressed("build")) attemptPointerPlacement();
         if (frameCtx.input.justPressed("safeBuild")) {

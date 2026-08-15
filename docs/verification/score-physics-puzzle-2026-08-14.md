@@ -4,6 +4,7 @@ Scored from an executed build: `crate-vault`, built by a fresh subagent in a bar
 ThreeNative installed from tarballs, archived at `docs/benchmark/sweeps/physics-puzzle-2026-08-15`
 with its friction log. Round ledger: `round-5-2026-08-14.md`.
 
+Functional-column numbers recorded before the PRD-113 sealed proof contract are not comparable with numbers recorded after the revised proof hash. Superseded proof hash: `c241ea5e4120afd4a50325a5b9ee0606e81e1b9d8539896f2b6e9f6b8f85da0d`; revised proof hash: `d8e90936be7bec4046af766b108fdd7b1dcb92aad3d1e87e4c72b2de40d592f3`.
 **Framework: 68/100. Vanilla (estimate): 66/100.**
 
 > **Axis 3 of this score is stale as of the same day.** PRD-108 landed `RigidBody3D.applyImpulse`,

@@ -1,0 +1,54 @@
+{
+  "name": "physics-puzzle-deterministic-replay-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": "before-after",
+    "runtimeTrace": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-replay",
+      "press": "KeyV",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "replay-complete",
+      "waitTicks": 1800,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "replayPhase",
+        "equals": "done",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "replayMatch",
+        "equals": "match",
+        "changed": true
+      }
+    ],
+    "world": {
+      "seed": 6132
+    }
+  }
+}

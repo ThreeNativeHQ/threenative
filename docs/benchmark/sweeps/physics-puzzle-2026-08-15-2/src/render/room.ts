@@ -130,10 +130,10 @@ export function createRoom(materials: Materials): IRoom {
   const goalFill = box(materials, "goalDim", [size, 0.12, size], [gx, 0.055, gz]);
   goalFill.castShadow = false;
   const goalRing = box(materials, "goal", [size * 0.7, 0.14, size * 0.7], [gx, 0.075, gz]);
-  
+
   goalRing.castShadow = false;
   const inner = box(materials, "goalDim", [size * 0.52, 0.16, size * 0.52], [gx, 0.09, gz]);
-  
+
   inner.castShadow = false;
   const core = box(materials, "goal", [size * 0.3, 0.17, size * 0.3], [gx, 0.1, gz]);
   core.castShadow = false;

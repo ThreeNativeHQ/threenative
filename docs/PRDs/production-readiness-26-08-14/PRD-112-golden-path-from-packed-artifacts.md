@@ -1,6 +1,11 @@
 # PRD-112 — The golden path runs from packed artifacts, or it is not a path
 
-**Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
+**Status: BLOCKED — 2026-08-15.** The `r2` lane stopped at `c005d91`; the repair landed at
+`0a689f1` and `4fa847d` and is integrated, and the packed mutation control now proves a broken
+dependency fails the journey. **The exact packed seven-template gate is still red** — the
+action-rpg layer fails with `TN_PLAYTEST_RUNNER_FAILED: page.evaluate: Execution context was
+destroyed`, and the doubtful assumption is that one headed WebGPU page can be reused across the
+packed scenarios. See `repairs/PRD-112-repair-golden-path-contract.md`. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 3.
 
 **Complexity: 5 → MEDIUM mode.** One reproduction, one resolver fix, one CI matrix, one error-text

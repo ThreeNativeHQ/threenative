@@ -12,7 +12,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const DEFAULT_PORT = 5310;
 const SLOW_FRAME_MS = 1_000 / 60;
 
-export type StarterProfileVariant = "baseline" | "no-particles" | "no-sculpture";
+export type StarterProfileVariant = "baseline" | "no-sculpture";
 
 export interface FrameSummary {
   readonly frames: number;
@@ -77,10 +77,10 @@ function positiveNumber(value: string | undefined, fallback: number, label: stri
   return parsed;
 }
 
-function parseArgs(args: readonly string[]): ProfileArgs {
+export function parseArgs(args: readonly string[]): ProfileArgs {
   const variant = argumentValue(args, "--variant") ?? "baseline";
-  if (!(["baseline", "no-particles", "no-sculpture"] as const).includes(variant as never))
-    throw new Error("--variant must be baseline, no-particles, or no-sculpture.");
+  if (!(["baseline", "no-sculpture"] as const).includes(variant as never))
+    throw new Error("--variant must be baseline or no-sculpture.");
   const browser = argumentValue(args, "--browser") ?? process.env.THREENATIVE_PROFILE_BROWSER;
   if (browser !== undefined && !existsSync(browser))
     throw new Error(`Profile browser does not exist: ${browser}`);
@@ -142,10 +142,9 @@ export function summarizeFrames(deltas: readonly number[]): FrameSummary {
 
 export function applyVariant(source: string, variant: StarterProfileVariant): string {
   if (variant === "baseline") return source;
-  const marker =
-    variant === "no-particles"
-      ? '    if (ctx.renderer.kind === "webgpu") ctx.add(createParticles());'
-      : "    ctx.add(sculptureMesh);";
+  if (variant !== "no-sculpture")
+    throw new Error(`Unsupported starter profile variant: ${variant}`);
+  const marker = "    ctx.add(sculptureMesh);";
   if (!source.includes(marker)) throw new Error(`Starter profile marker is missing: ${marker}`);
   return source.replace(marker, `    // Profile variant ${variant}: omitted.`);
 }
@@ -300,7 +299,7 @@ export async function runStarterProfile(
 ): Promise<void> {
   if (cliArgs.includes("--help")) {
     process.stdout.write(
-      "pnpm profile:starter -- [--variant baseline|no-sculpture|no-particles] [--seconds 5] [--browser PATH --headed] [--browser-arg=FLAG] [--url URL] [--package-dir DIR] [--json] [--allow-software]\n",
+      "pnpm profile:starter -- [--variant baseline|no-sculpture] [--seconds 5] [--browser PATH --headed] [--browser-arg=FLAG] [--url URL] [--package-dir DIR] [--json] [--allow-software]\n",
     );
     return;
   }

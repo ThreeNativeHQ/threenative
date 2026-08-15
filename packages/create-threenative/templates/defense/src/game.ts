@@ -11,6 +11,12 @@ import type { GameState } from "./state.js";
 export default defineGame<GameState, DefensePhysics>({
   input: {
     build: { pointer: true },
+    move: {
+      down: ["ArrowDown", "KeyS"],
+      left: ["ArrowLeft", "KeyA"],
+      right: ["ArrowRight", "KeyD"],
+      up: ["ArrowUp", "KeyW"],
+    },
     overlapTest: { down: ["KeyO"] },
     restart: { down: ["KeyR"] },
     routeTest: { down: ["KeyX"] },

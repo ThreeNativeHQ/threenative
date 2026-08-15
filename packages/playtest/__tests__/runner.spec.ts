@@ -1,14 +1,22 @@
+import { createServer } from "node:http";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
 import type { JsonValue } from "../src/protocol.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
-import { buildReport, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/runner.js";
+import {
+  buildReport,
+  captureVisualSurface,
+  playtestStepDrivesMovement,
+  runStandalonePlaytest,
+  STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
+} from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
+import type { Page } from "playwright";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -20,6 +28,27 @@ const CONFIG: IStandalonePlaytestConfig = {
   url: "http://127.0.0.1:5173",
 };
 
+test("visual capture reads the largest canvas instead of composited page UI", async () => {
+  const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
+  const renderCanvas = { height: 2, width: 4 } as HTMLCanvasElement;
+  const screenshot = vi.fn(async () => Buffer.from("canvas"));
+  const nth = vi.fn(() => ({ screenshot }));
+  const evaluateAll = vi.fn(async (callback: (elements: HTMLCanvasElement[]) => unknown) =>
+    callback([smallCanvas, renderCanvas]),
+  );
+  const locator = { evaluateAll, nth };
+  const page = {
+    locator: vi.fn(() => locator),
+    screenshot: vi.fn(async () => Buffer.from("dom-overlay")),
+  } as unknown as Page;
+
+  await expect(captureVisualSurface(page)).resolves.toEqual(Buffer.from("canvas"));
+  expect(page.locator).toHaveBeenCalledWith("canvas");
+  expect(nth).toHaveBeenCalledWith(1);
+  expect(screenshot).toHaveBeenCalledWith();
+  expect(page.screenshot).not.toHaveBeenCalled();
+});
+
 function scenario(assert: IPlaytestScenario["assert"]): IPlaytestScenario {
   return {
     ...(assert === undefined ? {} : { assert }),
@@ -29,6 +58,16 @@ function scenario(assert: IPlaytestScenario["assert"]): IPlaytestScenario {
     target: "web",
     viewport: { height: 720, width: 1280 },
     warmupFrames: 0,
+  };
+}
+
+function labeledScenario(
+  assert: IPlaytestScenario["assert"],
+  labels: readonly string[],
+): IPlaytestScenario {
+  return {
+    ...scenario(assert),
+    steps: labels.map((label) => ({ label, release: true, waitFrames: 1 })),
   };
 }
 
@@ -252,6 +291,318 @@ test("rotationChanged falls back to before/after bridge quaternions", () => {
   expect(result.pass).toBe(true);
 });
 
+test("anonymous movement rejects concurrent autonomous motion", () => {
+  const currentScenario = {
+    ...scenario({ movement: { minDistance: 1 } }),
+    steps: [
+      { kind: "wait" as const, release: true, waitTicks: 1 },
+      { kind: "input" as const, press: "ArrowRight", release: true, holdTicks: 1 },
+      { kind: "wait" as const, release: true, waitTicks: 1 },
+    ],
+  };
+  const snapshot = (
+    tick: number,
+    autonomousHeight: number,
+    controlledX: number,
+  ): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    entities: [
+      { id: "autonomous", transform: { position: [0, autonomousHeight, 0] }, visible: true },
+      { id: "controlled", transform: { position: [controlledX, 0, 0] }, visible: true },
+    ],
+  });
+  const beforeSnapshot = snapshot(0, 0, 0);
+  const inputBefore = snapshot(1, 3, 0);
+  const inputAfter = snapshot(2, 7, 2);
+  const afterSnapshot = snapshot(3, 11, 2);
+
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    beforeSnapshot,
+    afterSnapshot,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [
+      { after: inputBefore, before: beforeSnapshot, inputDriven: false },
+      { after: inputAfter, before: inputBefore, inputDriven: true },
+      { after: afterSnapshot, before: inputAfter, inputDriven: false },
+    ],
+  );
+
+  expect(result.entity).toBe("controlled");
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    details: expect.objectContaining({ entity: "controlled", distance: 2 }),
+    id: "movement.distance",
+    pass: true,
+  }));
+  expect(result.pass).toBe(true);
+});
+
+test("anonymous movement rejects faster autonomous motion", () => {
+  const currentScenario = {
+    ...scenario({ movement: { minDistance: 1 } }),
+    steps: [
+      { kind: "wait" as const, release: true, waitTicks: 1 },
+      { kind: "input" as const, press: "ArrowRight", release: true, waitTicks: 1 },
+      { kind: "wait" as const, release: true, waitTicks: 1 },
+    ],
+  };
+  const snapshot = (tick: number, x: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    entities: [{ id: "autonomous", transform: { position: [x, 0, 0] }, visible: true }],
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    snapshot(0, 0),
+    snapshot(3, 4),
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [
+      { after: snapshot(1, 1), before: snapshot(0, 0), inputDriven: false },
+      { after: snapshot(2, 3), before: snapshot(1, 1), inputDriven: true },
+      { after: snapshot(3, 4), before: snapshot(2, 3), inputDriven: false },
+    ],
+  );
+
+  expect(result.entity).toBe("");
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: false }));
+  expect(result.pass).toBe(false);
+});
+
+test("buttonless pointer movement drives the browser step", () => {
+  expect(playtestStepDrivesMovement({
+    pointerPosition: { x: 0.5, y: 0.5 },
+    release: true,
+    waitFrames: 1,
+  }, false)).toBe(true);
+  expect(playtestStepDrivesMovement({ release: true, waitFrames: 1 }, false)).toBe(false);
+});
+
+test("buttonless pointer movement drives anonymous movement through the browser runner", async () => {
+  const fixtureHtml = `<!doctype html>
+    <html>
+      <body>
+        <canvas id="view" width="640" height="360"></canvas>
+        <script>
+          let pointerSeen = false;
+          let sampleCount = 0;
+          addEventListener("pointermove", () => {
+            if (!pointerSeen) console.log("pointermove-observed");
+            pointerSeen = true;
+          });
+          globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = {
+            describe: () => ({
+              capabilities: ["entity.observe"],
+              limits: {
+                maxEntitiesPerSample: 100,
+                maxEventsPerDrain: 1000,
+                maxPayloadBytes: 1000000,
+                operationTimeoutMs: 5000,
+              },
+              name: "runner-pointer-fixture",
+              protocolVersion: 1,
+            }),
+            ready: () => ({ ready: true }),
+            sample: () => {
+              sampleCount += 1;
+              // Samples 1 and 2 bracket the input-off baseline; sample 3 follows pointerPosition.
+              const pointerMovement = sampleCount >= 3 && pointerSeen;
+              return {
+                clock: { mode: "render-frame", timeMs: sampleCount * 16 },
+                entities: [{
+                  id: "pointer-driven",
+                  transform: { position: [pointerMovement ? 1 : 0, 0, 0] },
+                  visible: true,
+                }],
+                resources: {},
+              };
+            },
+          };
+        </script>
+      </body>
+    </html>`;
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Pointer fixture has no port.");
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-runner-pointer-"));
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { movement: { minDistance: 0.5 } },
+      name: "runner-pointer",
+      schemaVersion: 1,
+      steps: [
+        { kind: "wait", release: true, waitFrames: 1 },
+        { kind: "input", pointerPosition: { x: 0.5, y: 0.5 }, release: true, waitFrames: 1 },
+        { kind: "wait", release: true, waitFrames: 1 },
+      ],
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 0,
+    }),
+  );
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}`,
+    });
+
+    expect(report.pass).toBe(true);
+    expect(report.entity).toBe("pointer-driven");
+    expect(report.distance).toBe(1);
+    expect(report.observations?.console.map(({ text }) => text)).toContain("pointermove-observed");
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
+  }
+}, 60_000);
+
+test("anonymous movement rejects constant-speed autonomous render-frame motion", () => {
+  const currentScenario = {
+    ...scenario({ movement: { minDistance: 1 } }),
+    steps: [
+      { kind: "wait" as const, release: true, waitFrames: 1 },
+      { kind: "input" as const, press: "ArrowRight", release: true, holdFrames: 5 },
+      { kind: "wait" as const, release: true, waitFrames: 1 },
+    ],
+  };
+  const snapshot = (timeMs: number, autonomousX: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "render-frame", timeMs },
+    entities: [{ id: "autonomous", transform: { position: [autonomousX, 0, 0] }, visible: true }],
+  });
+  const beforeSnapshot = snapshot(0, 0);
+  const inputBefore = snapshot(16, 16);
+  const inputAfter = snapshot(96, 96);
+  const afterSnapshot = snapshot(112, 112);
+
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    beforeSnapshot,
+    afterSnapshot,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [
+      { after: inputBefore, before: beforeSnapshot, inputDriven: false },
+      { after: inputAfter, before: inputBefore, inputDriven: true },
+      { after: afterSnapshot, before: inputAfter, inputDriven: false },
+    ],
+  );
+
+  expect(result.entity).toBe("");
+  expect(result.distance).toBe(0);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "movement.distance",
+    pass: false,
+  }));
+  expect(result.pass).toBe(false);
+});
+
+test("anonymous movement passes an input-sensitive render-frame candidate and fails without contrast", () => {
+  const currentScenario = {
+    ...scenario({ movement: { minDistance: 1 } }),
+    steps: [
+      { kind: "wait" as const, release: true, waitFrames: 1 },
+      { kind: "input" as const, press: "ArrowRight", release: true, holdFrames: 5 },
+      { kind: "wait" as const, release: true, waitFrames: 1 },
+    ],
+  };
+  const snapshot = (timeMs: number, x: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "render-frame", timeMs },
+    entities: [{ id: "controlled", transform: { position: [x, 0, 0] }, visible: true }],
+  });
+  const beforeSnapshot = snapshot(0, 0);
+  const inputBefore = snapshot(16, 0);
+  const inputAfter = snapshot(96, 80);
+  const afterSnapshot = snapshot(112, 80);
+
+  const withContrast = buildReport(
+    CONFIG,
+    currentScenario,
+    beforeSnapshot,
+    afterSnapshot,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [
+      { after: inputBefore, before: beforeSnapshot, inputDriven: false },
+      { after: inputAfter, before: inputBefore, inputDriven: true },
+      { after: afterSnapshot, before: inputAfter, inputDriven: false },
+    ],
+  );
+
+  expect(withContrast.pass).toBe(true);
+  expect(withContrast.entity).toBe("controlled");
+
+  const withoutContrast = buildReport(
+    CONFIG,
+    currentScenario,
+    beforeSnapshot,
+    afterSnapshot,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [{ after: inputAfter, before: inputBefore, inputDriven: true }],
+  );
+
+  expect(withoutContrast.distance).toBe(0);
+  expect(withoutContrast.assertionResults).toContainEqual(expect.objectContaining({
+    id: "movement.distance",
+    pass: false,
+  }));
+  expect(withoutContrast.pass).toBe(false);
+});
+
 test("a missing HUD id fails changed:false instead of passing on absent values", () => {
   const result = report(scenario({ hud: [{ id: "missing", changed: false }] }));
 
@@ -294,7 +645,13 @@ test("a browser pageerror fails noConsoleErrors", () => {
 
 test("a browser pageerror is also a real runtime diagnostic", () => {
   const result = report(
-    scenario({ diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true } }),
+    scenario({
+      diagnostics: {
+        noConsoleErrors: false,
+        consoleErrorsOptOutReason: "This unit test isolates page errors from the console policy.",
+        noRuntimeDiagnostics: true,
+      },
+    }),
     {},
     { consoleEntries: [{ text: "boom", type: "pageerror" }] },
   );
@@ -464,6 +821,244 @@ test("runner preserves physics debug series for contact and settled assertions",
   expect(result.observations?.physicsDebugSeries).toEqual(physicsDebugSeries);
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.player", pass: true }));
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
+  expect(result.pass).toBe(true);
+});
+
+test("anonymous contact assertions require a retained candidate even for maxCount zero", () => {
+  const currentScenario = labeledScenario(
+    { contacts: [{ atStep: "contact", maxCount: 0 }] },
+    ["contact"],
+  );
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      clock: { mode: "fixed-step", tick: 1 },
+      physicsDebugSeries: [{ label: "contact", snapshot: { artifact: { primitives: [] } }, tick: 1 }],
+    },
+    [],
+    [],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.anonymous", pass: false }));
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE");
+  expect(result.pass).toBe(false);
+});
+
+test("anonymous settled assertions choose an observed body cohort", () => {
+  const currentScenario = labeledScenario(
+    { settled: [{ atStep: "settled", compareToStep: "drop", minBodies: 2, minMeanPoseDistance: 0.05 }] },
+    ["drop", "settled"],
+  );
+  const debugSnapshot = (offset: number): JsonValue => ({
+    artifact: {
+      primitives: [
+        { category: "sleep", entity: "crate.0", value: 1 },
+        { category: "sleep", entity: "crate.1", value: 1 },
+        { category: "center-of-mass", entity: "crate.0", position: [offset, 0, 0] },
+        { category: "center-of-mass", entity: "crate.1", position: [offset, 1, 0] },
+      ],
+    },
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      clock: { mode: "fixed-step", tick: 2 },
+      physicsDebugSeries: [
+        { label: "drop", snapshot: debugSnapshot(0), tick: 1 },
+        { label: "settled", snapshot: debugSnapshot(1), tick: 2 },
+      ],
+    },
+    [],
+    [],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.crate.", pass: true }));
+  expect(result.pass).toBe(true);
+});
+
+test("terminal anonymous state passes only after retained contact evidence", () => {
+  const currentScenario = labeledScenario(
+    {
+      contacts: [{ atStep: "goal-contact", minCount: 1 }],
+      states: [{ equals: "won" }],
+    },
+    ["before", "goal-contact", "after"],
+  );
+  const gameplay = (state: string): IPlaytestObservationSnapshot["gameplay"] => ({
+    animation: {},
+    states: { avatar: state },
+  });
+  const snapshot = (state: string, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    gameplay: gameplay(state),
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      ...snapshot("won", 3),
+      physicsDebugSeries: [{
+        label: "goal-contact",
+        snapshot: { artifact: { primitives: [{ category: "contact", id: "solid:destination" }] } },
+        tick: 2,
+      }],
+    },
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [
+      { label: "before", signals: [], snapshot: snapshot("idle", 1) },
+      { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
+      { label: "after", signals: [], snapshot: snapshot("won", 3) },
+    ],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.anonymous", pass: true }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: true }));
+  expect(result.pass).toBe(true);
+});
+
+test("terminal anonymous state rejects success that predates retained contact", () => {
+  const currentScenario = labeledScenario(
+    {
+      contacts: [{ atStep: "goal-contact", minCount: 1 }],
+      states: [{ equals: "won" }],
+    },
+    ["before", "goal-contact"],
+  );
+  const gameplay = (state: string): IPlaytestObservationSnapshot["gameplay"] => ({
+    animation: {},
+    states: { avatar: state },
+  });
+  const snapshot = (state: string, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    gameplay: gameplay(state),
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      ...snapshot("won", 2),
+      physicsDebugSeries: [{
+        label: "goal-contact",
+        snapshot: { artifact: { primitives: [{ category: "contact", id: "solid:destination" }] } },
+        tick: 2,
+      }],
+    },
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [
+      { label: "before", signals: [], snapshot: snapshot("won", 1) },
+      { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
+    ],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: false }));
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_STATE_ORDERING_FAILED");
+  expect(result.pass).toBe(false);
+});
+
+test("terminal anonymous state rejects contact-only and success without retained contact", () => {
+  const currentScenario = labeledScenario(
+    {
+      contacts: [{ atStep: "goal-contact", minCount: 1 }],
+      states: [{ equals: "won" }],
+    },
+    ["before", "goal-contact"],
+  );
+  const gameplay = (state: string): IPlaytestObservationSnapshot["gameplay"] => ({
+    animation: {},
+    states: { avatar: state },
+  });
+  const snapshot = (state: string, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    gameplay: gameplay(state),
+  });
+  const run = (state: string, includeContact: boolean) => buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      ...snapshot(state, 2),
+      physicsDebugSeries: [{
+        label: "goal-contact",
+        snapshot: { artifact: { primitives: includeContact ? [{ category: "contact", id: "solid:destination" }] : [] } },
+        tick: 2,
+      }],
+    },
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [
+      { label: "before", signals: [], snapshot: snapshot("idle", 1) },
+      { label: "goal-contact", signals: [], snapshot: snapshot(state, 2) },
+    ],
+  );
+
+  expect(run("idle", true).assertionResults?.find(({ id }) => id.startsWith("states."))).toMatchObject({ pass: false });
+  expect(run("won", false).assertionResults?.find(({ id }) => id.startsWith("states."))).toMatchObject({ pass: false });
+});
+
+test("named final-state assertions remain plain equality checks", () => {
+  const currentScenario = {
+    ...labeledScenario(
+      {
+        contacts: [{ atStep: "goal-contact", minCount: 1 }],
+        states: [{ entity: "avatar", equals: "won" }],
+      },
+      ["before", "goal-contact"],
+    ),
+    subject: "avatar",
+  };
+  const gameplay = (state: string): IPlaytestObservationSnapshot["gameplay"] => ({
+    animation: {},
+    states: { avatar: state },
+  });
+  const snapshot = (state: string, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    gameplay: gameplay(state),
+  });
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    undefined,
+    {
+      ...snapshot("won", 2),
+      physicsDebugSeries: [{
+        label: "goal-contact",
+        snapshot: { artifact: { primitives: [{ category: "contact", id: "avatar:destination" }] } },
+        tick: 2,
+      }],
+    },
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [
+      { label: "before", signals: [], snapshot: snapshot("won", 1) },
+      { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
+    ],
+  );
+
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: true }));
   expect(result.pass).toBe(true);
 });
 

@@ -22,6 +22,10 @@ The dungeon has three rooms. Defeat the room-three boss to win; reach zero healt
 Enemy acquisition uses intersectShape for range and intersectRay for line of sight. Do not
 replace those queries with a distance scan or @threenative/physics/navigation.
 
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
+action-RPG gameplay; the other `playtests/` scenarios are examples for combat, inventory,
+progress, win, and fail behavior.
+
 StatBlock.ts and Inventory.ts are deliberately game-owned source. Delete or reshape them
 when changing this game's design; they are not framework APIs. React reads the JSON-safe
 projection in state.ts and never imports entities.

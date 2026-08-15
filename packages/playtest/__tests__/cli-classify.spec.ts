@@ -36,6 +36,7 @@ test("an unrecognised error gets the unrecognised fix lead", () => {
 test.each([
   [{ pass: true, assertionResults: [] }, 0],
   [{ pass: false, assertionResults: [{ id: "assertion", pass: false }] }, 1],
+  [{ pass: false, assertionResults: [{ details: { reason: "not-evaluated" }, id: "diagnostics", pass: false }] }, 2],
   [{ pass: false }, 2],
 ] as const)("report %o produces exit code %i", (report, exitCode) => {
   expect(exitCodeForReport(report)).toBe(exitCode);

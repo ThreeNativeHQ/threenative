@@ -31,7 +31,15 @@ export function exitCodeForReport(report: {
 }): 0 | 1 | 2 {
   if (report.pass) return 0;
   if (report.diagnostics?.some(({ code }) => code === "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED")) return 2;
-  return report.assertionResults === undefined ? 2 : 1;
+  if (report.assertionResults === undefined || report.assertionResults.every(isUnobservedDiagnosticsAssertion)) return 2;
+  return 1;
+}
+
+function isUnobservedDiagnosticsAssertion(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const assertion = value as { details?: unknown; id?: unknown };
+  if (assertion.id !== "diagnostics" || typeof assertion.details !== "object" || assertion.details === null) return false;
+  return (assertion.details as { reason?: unknown }).reason === "not-evaluated";
 }
 
 export function classifyRunnerError(

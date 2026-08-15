@@ -1,6 +1,6 @@
-import type { IPlaytestReport } from "./report.js";
+import type { IPlaytestDiagnosticsPolicy, IPlaytestReport } from "./report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "./protocol.js";
-import type { IPlaytestComponentAssertion, IPlaytestPathAssertion, IPlaytestPerformanceAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
+import type { IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion, IPlaytestPerformanceAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -102,7 +102,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     description: "Proves the subject moved, reached a minimum velocity, or changed rotation during held input.",
     example: { movement: { entity: "player", minDistance: 0.5, minVelocity: 0.01, rotationChanged: true } },
     fields: [
-      { description: "Entity id to measure. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Optional entity id to measure; when omitted, choose an observed mover.", name: "entity", type: "string" },
       { description: "Require distance to a fixed world position to decrease by at least min.", name: "closesDistanceToPosition", type: "{ position: [number, number, number], min: number }" },
       { description: "Maximum yaw error from resolved movement direction.", name: "facesMovementWithinDegrees", type: "number" },
       { description: "Expected movement axis: x, y, or z.", name: "axis", type: "string" },
@@ -222,10 +222,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "not-applicable",
   },
   {
-    description: "Proves an entity's final runtime-owned state-machine state.",
-    example: { states: [{ entity: "guard", equals: "chase" }] },
+    description: "Proves an observed entity's final runtime-owned state-machine state.",
+    example: { states: [{ equals: "completed" }] },
     fields: [
-      { description: "Entity carrying the StateMachine component.", name: "entity", required: true, type: "string" },
+      { description: "Optional entity id; when omitted, choose an observed state candidate.", name: "entity", type: "string" },
       { description: "Expected current state name.", name: "equals", required: true, type: "string" },
     ],
     cardinality: "array",
@@ -282,6 +282,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Fail on captured console errors.", name: "noConsoleErrors", type: "boolean" },
       { description: "Fail on captured network errors.", name: "noNetworkErrors", type: "boolean" },
       { description: "Fail on runtime diagnostics.", name: "noRuntimeDiagnostics", type: "boolean" },
+      { description: "Required bounded justification when noConsoleErrors is false.", name: "consoleErrorsOptOutReason", type: "non-empty string" },
+      { description: "Required bounded justification when noNetworkErrors is false.", name: "networkErrorsOptOutReason", type: "non-empty string" },
       { description: "Required bounded justification when noRuntimeDiagnostics is false.", name: "runtimeDiagnosticsOptOutReason", type: "non-empty string" },
       { description: "Require runtime readiness.", name: "runtimeReady", type: "boolean" },
     ],
@@ -346,7 +348,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     example: { contacts: [{ entity: "player", with: "pickup", kind: "trigger", minCount: 1 }] },
     fields: [
       { description: "Retained step label to inspect instead of the full observation history.", name: "atStep", type: "string" },
-      { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
+      { description: "Optional entity id; when omitted, choose an observed contact candidate.", name: "entity", type: "string" },
       { description: "Other entity or tag token expected in the contact evidence.", name: "with", type: "string" },
       { description: "Contact kind token, such as contact or trigger.", name: "kind", type: "string" },
       { description: "Minimum number of matching observations.", name: "minCount", type: "number" },
@@ -362,10 +364,10 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "not-applicable",
   },
   {
-    description: "Proves matching physics bodies are asleep in a retained physics-debug sample.",
-    example: { settled: [{ atStep: "fall-and-settle", entity: "enemy.default/0/", minBodies: 15 }] },
+    description: "Proves an observed cohort of matching physics bodies is asleep in a retained physics-debug sample.",
+    example: { settled: [{ atStep: "fall-and-settle", minBodies: 15 }] },
     fields: [
-      { description: "Exact entity id or stable entity-id prefix.", name: "entity", required: true, type: "string" },
+      { description: "Optional exact entity id or stable entity-id prefix; when omitted, choose an observed cohort.", name: "entity", type: "string" },
       { description: "Optional labeled step whose physics-debug sample must be used.", name: "atStep", type: "string" },
       { description: "Minimum number of matching bodies required.", name: "minBodies", type: "positive integer" },
       { description: "Optional earlier labeled step whose matching body positions are compared.", name: "compareToStep", type: "string" },
@@ -487,7 +489,7 @@ export interface IPlaytestObservations {
   animation?: unknown;
   components?: Record<string, Record<string, { after?: unknown; before?: unknown }>>;
   componentSeries?: Array<{ label: string; snapshots: Record<string, Record<string, unknown>>; tick: number }>;
-  console: Array<{ text: string; type: string }>;
+  console: Array<{ source?: "browser-console" | "page-error" | "unhandled-rejection"; text: string; type: string }>;
   contacts?: unknown;
   debugColliderCount?: number;
   effectLog?: unknown;
@@ -508,11 +510,26 @@ export interface IPlaytestObservations {
   signalSeries?: Array<{ label: string; signals: unknown[]; tick: number }>;
   visibility?: Record<string, unknown>;
   visual?: {
+    captureFailure?: { code: "TN_CAPTURE_BLANK"; label: string; reason: string };
     changedPixelRatio?: number;
     comparisonSource?: string;
     nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
     /** Visual frame observations only; performance samples live in performanceSeries. */
     runtimeDiagnosticsSeries?: unknown[];
+  };
+}
+
+export function resolveDiagnosticsPolicy(
+  policy: IPlaytestDiagnosticsAssertion | undefined,
+): IPlaytestDiagnosticsPolicy {
+  return {
+    ...(policy?.consoleErrorsOptOutReason === undefined ? {} : { consoleErrorsOptOutReason: policy.consoleErrorsOptOutReason }),
+    ...(policy?.networkErrorsOptOutReason === undefined ? {} : { networkErrorsOptOutReason: policy.networkErrorsOptOutReason }),
+    noConsoleErrors: policy?.noConsoleErrors ?? true,
+    noNetworkErrors: policy?.noNetworkErrors ?? true,
+    noRuntimeDiagnostics: policy?.noRuntimeDiagnostics ?? true,
+    ...(policy?.runtimeReady === undefined ? {} : { runtimeReady: policy.runtimeReady }),
+    ...(policy?.runtimeDiagnosticsOptOutReason === undefined ? {} : { runtimeDiagnosticsOptOutReason: policy.runtimeDiagnosticsOptOutReason }),
   };
 }
 
@@ -667,8 +684,17 @@ export function evaluateRichPlaytestAssertions(input: {
       suggestion: "Inspect observations.json/overlayNodes and verify the overlay subscription, selector, attribute, and computed style.",
     });
   }
-  const hasVisualSamples = input.report.observations?.visual !== undefined;
-  if ((scenarioAssertions.visual?.length ?? 0) > 0 && !hasVisualSamples) {
+  const captureFailure = input.report.observations?.visual?.captureFailure;
+  const hasVisualSamples = input.report.observations?.visual !== undefined && captureFailure === undefined;
+  if ((scenarioAssertions.visual?.length ?? 0) > 0 && captureFailure !== undefined) {
+    for (const [index] of scenarioAssertions.visual!.entries()) {
+      assertions.push({
+        details: { captureFailure, reason: "not-evaluated" },
+        id: `visual.${index}`,
+        pass: true,
+      });
+    }
+  } else if ((scenarioAssertions.visual?.length ?? 0) > 0 && !hasVisualSamples) {
     for (const [index] of scenarioAssertions.visual!.entries()) {
       assertions.push({ id: `visual.${index}`, pass: false, details: { reason: "target-unsupported", target: input.scenario.target } });
       diagnostics.push(assertionNotEvaluatedDiagnostic(`visual.${index}`, `target '${input.scenario.target}' does not expose visual assertion samples`));
@@ -930,30 +956,26 @@ export function evaluateRichPlaytestAssertions(input: {
     }
   }
   for (const assertion of scenarioAssertions.states ?? []) {
-    const result = evaluateStateAssertion(assertion, input.report.observations?.runtimeObservations);
+    const result = evaluateStateAssertion(assertion, input.report.observations, input.scenario);
     assertions.push(result.assertion);
     if (result.diagnostic !== undefined) {
       diagnostics.push(result.diagnostic);
     }
   }
   {
-    const diagnosticsPolicy = {
-      ...scenarioAssertions.diagnostics,
-      noRuntimeDiagnostics: scenarioAssertions.diagnostics?.noRuntimeDiagnostics ?? true,
-    };
+    const diagnosticsPolicy = resolveDiagnosticsPolicy(scenarioAssertions.diagnostics);
     const policyDiagnostics = evaluateDiagnosticsPolicy(input.report, diagnosticsPolicy);
     diagnostics.push(...policyDiagnostics);
-    if (scenarioAssertions.diagnostics !== undefined || policyDiagnostics.length > 0) {
-      assertions.push({
-        details: {
-          consoleErrors: consoleErrors(input.report.observations?.console ?? []).length,
-          networkErrors: input.report.observations?.network.length ?? 0,
-          runtimeDiagnostics: runtimeDiagnostics(input.report.observations?.runtimeDiagnostics).length,
-        },
-        id: "diagnostics",
-        pass: policyDiagnostics.length === 0,
-      });
-    }
+    assertions.push({
+      details: {
+        consoleErrors: consoleErrors(input.report.observations?.console ?? []).length,
+        networkErrors: input.report.observations?.network.length ?? 0,
+        policy: diagnosticsPolicy,
+        runtimeDiagnostics: runtimeDiagnostics(input.report.observations?.runtimeDiagnostics).length,
+      },
+      id: "diagnostics",
+      pass: policyDiagnostics.length === 0,
+    });
   }
   if (scenarioAssertions.movement?.minVelocity !== undefined) {
     const velocity = input.report.frames <= 0 ? 0 : input.report.distance / input.report.frames;
@@ -971,7 +993,7 @@ export function evaluateRichPlaytestAssertions(input: {
   if (scenarioAssertions.movement?.minDistance !== undefined) {
     const pass = input.report.distance >= scenarioAssertions.movement.minDistance;
     assertions.push({
-      details: { distance: input.report.distance, minimum: scenarioAssertions.movement.minDistance },
+      details: { distance: input.report.distance, entity: input.report.entity, minimum: scenarioAssertions.movement.minDistance },
       id: "movement.distance",
       pass,
     });
@@ -1214,11 +1236,12 @@ export function evaluateRichPlaytestAssertions(input: {
     }
   }
   for (const assertion of scenarioAssertions.contacts ?? []) {
-    const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
+    const entity = assertion.entity ?? input.scenario.subject;
+    const anonymous = entity === undefined;
     if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
       assertions.push({
-        details: { entity, requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
-        id: `contact.${entity}`,
+        details: { entity: entity || "anonymous", requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
+        id: `contact.${entity || "anonymous"}`,
         pass: true,
       });
       continue;
@@ -1227,7 +1250,9 @@ export function evaluateRichPlaytestAssertions(input: {
     const selectedSample = assertion.atStep === undefined
       ? undefined
       : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.atStep);
-    const stepAvailable = assertion.atStep === undefined || selectedSample !== undefined;
+    const runtimeStepAvailable = assertion.atStep === undefined
+      || runtimeGameplayAtStep(input.report.observations?.runtimeObservations, assertion.atStep) !== undefined;
+    const stepAvailable = assertion.atStep === undefined || selectedSample !== undefined || runtimeStepAvailable;
     const effectEvidence = assertion.atStep === undefined
       ? mergeEffectLogs(input.report.effectLog, input.report.observations?.effectLogSeries)
       : [];
@@ -1235,13 +1260,23 @@ export function evaluateRichPlaytestAssertions(input: {
     const runtimeCount = assertion.atStep === undefined
       ? countRuntimeContacts(input.report.observations?.runtimeObservations, entity, assertion.with, assertion.kind)
       : 0;
-    const physicsDebugCount = assertion.kind === undefined || assertion.kind === "contact"
-      ? countPhysicsDebugContacts(input.report.observations, entity, assertion.with, selectedSample?.snapshot)
-      : 0;
-    const count = effectCount + physicsDebugCount + runtimeCount;
+    const physicsEvidence = assertion.kind === undefined || assertion.kind === "contact"
+      ? physicsDebugContactEvidence(input.report.observations, entity, assertion.with, selectedSample?.snapshot)
+      : { candidates: [], count: 0 };
+    const runtimeEvidence = runtimeContactEvidence(
+      input.report.observations?.runtimeObservations,
+      entity,
+      assertion.with,
+      assertion.kind,
+      assertion.atStep,
+    );
+    const candidates = [...new Set([...physicsEvidence.candidates, ...runtimeEvidence.candidates])];
+    const count = effectCount + physicsEvidence.count + (assertion.atStep === undefined ? runtimeCount : runtimeEvidence.count);
     const minCount = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
-    const pass = stepAvailable && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
-    assertions.push({ details: { atStep: assertion.atStep, count, entity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: `contact.${entity}`, pass });
+    const candidatesAvailable = !anonymous || candidates.length > 0;
+    const pass = stepAvailable && candidatesAvailable && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
+    const resultEntity = entity || "anonymous";
+    assertions.push({ details: { atStep: assertion.atStep, candidates, count, entity: resultEntity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: `contact.${resultEntity}`, pass });
     if (!pass) {
       const partial = summarizeMatchingEntries(effectEvidence, [entity, assertion.with].filter((item): item is string => item !== undefined));
       const hasPhysicsDebugEvidence = input.report.observations?.physicsDebug !== undefined
@@ -1250,16 +1285,20 @@ export function evaluateRichPlaytestAssertions(input: {
         artifactPath: partial !== undefined || !hasPhysicsDebugEvidence ? "effect-log.json" : "observations.json",
         code: !stepAvailable
           ? "TN_PLAYTEST_CONTACT_STEP_NOT_OBSERVED"
+          : !candidatesAvailable
+          ? "TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE"
           : assertion.maxCount !== undefined && count > assertion.maxCount
           ? "TN_PLAYTEST_CONTACT_COUNT_EXCEEDED"
           : "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
         message: !stepAvailable
           ? `Contact assertion step '${assertion.atStep}' was not retained.`
+          : !candidatesAvailable
+          ? "No observed contact candidate was retained for the anonymous contact assertion."
           : assertion.maxCount !== undefined && count > assertion.maxCount
-          ? `Contact/trigger for '${entity}' was observed ${count} time(s), above allowed ${assertion.maxCount}.`
-          : `Expected contact/trigger for '${entity}' was not observed ${minCount} time(s).`,
-        observedRuntimePath: `observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=${entity}] | effect-log.json/entries[kind=service|event,entity=${entity}]`,
-        path: `${input.scenario.sourcePath ?? "playtest"}/assert/contacts/${entity}`,
+          ? `Contact/trigger for '${resultEntity}' was observed ${count} time(s), above allowed ${assertion.maxCount}.`
+          : `Expected contact/trigger for '${resultEntity}' was not observed ${minCount} time(s).`,
+        observedRuntimePath: `observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=${resultEntity}] | effect-log.json/entries[kind=service|event,entity=${resultEntity}]`,
+        path: `${input.scenario.sourcePath ?? "playtest"}/assert/contacts/${resultEntity}`,
         severity: "error",
         ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
         ...(partial?.systemId === undefined ? {} : { systemId: partial.systemId, sourcePath: partial.sourcePath }),
@@ -1274,8 +1313,8 @@ export function evaluateRichPlaytestAssertions(input: {
   for (const assertion of scenarioAssertions.settled ?? []) {
     if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
       assertions.push({
-        details: { entity: assertion.entity, requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
-        id: `settled.${assertion.entity}`,
+        details: { entity: assertion.entity ?? "anonymous", requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
+        id: `settled.${assertion.entity ?? "anonymous"}`,
         pass: true,
       });
       continue;
@@ -1283,23 +1322,26 @@ export function evaluateRichPlaytestAssertions(input: {
     const snapshot = assertion.atStep === undefined
       ? input.report.observations?.physicsDebugSeries?.at(-1)?.snapshot ?? input.report.observations?.physicsDebug
       : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.atStep)?.snapshot;
-    const bodies = physicsDebugSleepStates(snapshot, assertion.entity);
-    const omittedBodies = physicsDebugOmittedBodies(snapshot);
     const minimum = assertion.minBodies ?? 1;
+    const candidate = settledCandidate(snapshot, assertion.entity);
+    const bodies = candidate?.bodies ?? [];
+    const omittedBodies = physicsDebugOmittedBodies(snapshot);
     const sleeping = bodies.filter((body) => body.sleeping).length;
     const comparisonSnapshot = assertion.compareToStep === undefined
       ? undefined
       : input.report.observations?.physicsDebugSeries?.find((sample) => sample.label === assertion.compareToStep)?.snapshot;
+    const selectedEntity = candidate?.selector ?? assertion.entity ?? "";
     const poseDistance = assertion.compareToStep === undefined
       ? undefined
-      : physicsDebugMeanPoseDistance(snapshot, comparisonSnapshot, assertion.entity);
+      : physicsDebugMeanPoseDistance(snapshot, comparisonSnapshot, selectedEntity);
     const posePass = assertion.minMeanPoseDistance === undefined
       || (poseDistance !== undefined && poseDistance.sharedBodies >= minimum && poseDistance.mean >= assertion.minMeanPoseDistance);
     const complete = omittedBodies === 0;
-    const pass = complete && bodies.length >= minimum && sleeping === bodies.length && posePass;
+    const pass = complete && candidate !== undefined && bodies.length >= minimum && sleeping === bodies.length && posePass;
+    const resultEntity = candidate?.selector ?? assertion.entity ?? "anonymous";
     assertions.push({
-      details: { atStep: assertion.atStep, bodies: bodies.length, compareToStep: assertion.compareToStep, entity: assertion.entity, minimum, omittedBodies, poseDistance, sleeping },
-      id: `settled.${assertion.entity}`,
+      details: { atStep: assertion.atStep, bodies: bodies.length, candidates: candidate?.candidates ?? [], compareToStep: assertion.compareToStep, entity: resultEntity, minimum, omittedBodies, poseDistance, sleeping },
+      id: `settled.${resultEntity}`,
       pass,
     });
     if (!pass) diagnostics.push({
@@ -1310,10 +1352,10 @@ export function evaluateRichPlaytestAssertions(input: {
       message: !complete
         ? `Physics evidence omitted ${omittedBodies} bod${omittedBodies === 1 ? "y" : "ies"}; settled cannot pass on a partial snapshot.`
         : !posePass
-        ? `Expected mean settled-pose distance for '${assertion.entity}' to reach ${assertion.minMeanPoseDistance}m from step '${assertion.compareToStep}'; observed ${poseDistance?.mean ?? "unavailable"}m across ${poseDistance?.sharedBodies ?? 0} bodies.`
-        : `Expected at least ${minimum} physics bod${minimum === 1 ? "y" : "ies"} matching '${assertion.entity}' to be asleep; observed ${sleeping} of ${bodies.length}.`,
+        ? `Expected mean settled-pose distance for '${resultEntity}' to reach ${assertion.minMeanPoseDistance}m from step '${assertion.compareToStep}'; observed ${poseDistance?.mean ?? "unavailable"}m across ${poseDistance?.sharedBodies ?? 0} bodies.`
+        : `Expected at least ${minimum} physics bod${minimum === 1 ? "y" : "ies"} matching '${resultEntity}' to be asleep; observed ${sleeping} of ${bodies.length}.`,
       observedRuntimePath: "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-      path: `${input.scenario.sourcePath ?? "playtest"}/assert/settled/${assertion.entity}`,
+      path: `${input.scenario.sourcePath ?? "playtest"}/assert/settled/${resultEntity}`,
       severity: "error",
       ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
       suggestion: "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake.",
@@ -1378,7 +1420,7 @@ export function evaluateRichPlaytestAssertions(input: {
     assertions.push({ details: { reason: "registered-without-evaluator" }, id, pass: false });
     diagnostics.push(assertionNotEvaluatedDiagnostic(id, "the registered assertion produced no evaluator result"));
   }
-  if (assertions.length === 0) {
+  if (assertions.length === 0 || (scenarioAssertions.diagnostics === undefined && !assertions.some(({ id }) => id !== "diagnostics"))) {
     const id = "scenario.assertions";
     assertions.push({ details: { reason: "no-evaluated-assertions" }, id, pass: false });
     diagnostics.push({
@@ -1419,36 +1461,69 @@ function movementEnvelopeHorizontalLimit(
   return envelope.forwardReach * (1 + Math.sqrt(dropFromApex / envelope.maxRise));
 }
 
-function countPhysicsDebugContacts(
+interface IContactEvidence {
+  candidates: string[];
+  count: number;
+}
+
+function physicsDebugContactEvidence(
   observations: IPlaytestObservations | undefined,
-  entity: string,
+  entity: string | undefined,
   withEntity: string | undefined,
   selectedSnapshot?: unknown,
-): number {
+): IContactEvidence {
   const snapshots = selectedSnapshot === undefined
     ? [
         observations?.physicsDebug,
         ...(observations?.physicsDebugSeries ?? []).map((sample) => sample.snapshot),
       ]
     : [selectedSnapshot];
-  let count = 0;
+  const candidates: string[] = [];
   for (const snapshot of snapshots) {
     if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) continue;
-    count += snapshot.artifact.primitives.filter((primitive) => {
-      if (!isRecord(primitive) || primitive.category !== "contact" || typeof primitive.id !== "string") return false;
-      return primitive.id.includes(entity) && (withEntity === undefined || primitive.id.includes(withEntity));
-    }).length;
+    for (const primitive of snapshot.artifact.primitives) {
+      if (!isRecord(primitive) || primitive.category !== "contact" || typeof primitive.id !== "string") continue;
+      if (primitive.id.includes(entity ?? "") && (withEntity === undefined || primitive.id.includes(withEntity))) {
+        candidates.push(primitive.id);
+      }
+    }
   }
-  return count;
+  return { candidates: [...new Set(candidates)], count: candidates.length };
 }
 
-function physicsDebugSleepStates(snapshot: unknown, entity: string): Array<{ entity: string; sleeping: boolean }> {
+function settledCandidate(
+  snapshot: unknown,
+  entity: string | undefined,
+): { bodies: Array<{ entity: string; sleeping: boolean }>; candidates: string[]; selector: string } | undefined {
+  const bodies = physicsDebugSleepStates(snapshot, entity);
+  if (entity !== undefined) {
+    return bodies.length === 0 ? undefined : { bodies, candidates: bodies.map(({ entity: body }) => body), selector: entity };
+  }
+  const groups = new Map<string, Array<{ entity: string; sleeping: boolean }>>();
+  for (const body of bodies) {
+    const selector = bodySelector(body.entity);
+    const group = groups.get(selector) ?? [];
+    group.push(body);
+    groups.set(selector, group);
+  }
+  const selected = [...groups.entries()]
+    .sort(([leftSelector, leftBodies], [rightSelector, rightBodies]) => rightBodies.length - leftBodies.length || leftSelector.localeCompare(rightSelector))[0];
+  if (selected === undefined) return undefined;
+  const [selector, selectedBodies] = selected;
+  return { bodies: selectedBodies, candidates: selectedBodies.map(({ entity: body }) => body), selector };
+}
+
+function bodySelector(entity: string): string {
+  return /\d$/.test(entity) ? entity.replace(/\d+$/, "") : entity;
+}
+
+function physicsDebugSleepStates(snapshot: unknown, entity?: string): Array<{ entity: string; sleeping: boolean }> {
   if (!isRecord(snapshot) || !isRecord(snapshot.artifact) || !Array.isArray(snapshot.artifact.primitives)) return [];
   return snapshot.artifact.primitives.flatMap((primitive) => {
     if (!isRecord(primitive)
       || primitive.category !== "sleep"
       || typeof primitive.entity !== "string"
-      || (primitive.entity !== entity && !primitive.entity.startsWith(entity))
+      || (entity !== undefined && primitive.entity !== entity && !primitive.entity.startsWith(entity))
       || typeof primitive.value !== "number") return [];
     return [{ entity: primitive.entity, sleeping: primitive.value >= 1 }];
   });
@@ -1547,23 +1622,125 @@ function evaluateTagCountAssertion(
 function evaluateStateAssertion(
   assertion: IPlaytestStateAssertion,
   observations: unknown,
+  scenario: IPlaytestScenario,
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
-  const gameplay = gameplayObservations(observations);
+  const gameplay = gameplayObservations(runtimeObservationValue(observations));
   const states = isRecord(gameplay?.states) ? gameplay.states : undefined;
-  const observed = typeof states?.[assertion.entity] === "string" ? states[assertion.entity] : undefined;
-  const pass = observed === assertion.equals;
-  const result = { details: { entity: assertion.entity, expected: assertion.equals, observed: observed ?? null }, id: `states.${assertion.entity}`, pass };
+  const candidates = Object.entries(states ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  const matching = assertion.entity === undefined
+    ? candidates.filter(([, state]) => state === assertion.equals)
+    : candidates.filter(([entity]) => entity === assertion.entity);
+  const terminalStep = assertion.entity === undefined
+    ? terminalContactStep(scenario, assertion.equals)
+    : undefined;
+  const terminal: { contactObserved: boolean; historyComplete: boolean; preExisting: boolean; preExistingEntities: string[]; step: string | null } = terminalStep === undefined
+    ? { contactObserved: true, historyComplete: true, preExisting: false, preExistingEntities: [], step: null }
+    : terminalStateEvidence(terminalStep, observations, scenario, matching.map(([entity]) => entity));
+  const selected = matching.find(([entity]) => !terminal.preExistingEntities.includes(entity)) ?? matching[0];
+  const selectedEntity = selected?.[0] ?? assertion.entity;
+  const observed = selected?.[1];
+  const selectedPreExisting = selected === undefined
+    ? terminal.preExisting
+    : terminal.preExistingEntities.includes(selected[0]);
+  const pass = observed === assertion.equals && terminal.contactObserved && terminal.historyComplete && !selectedPreExisting;
+  const result = {
+    details: {
+      candidates: candidates.map(([entity, state]) => ({ entity, state })),
+      entity: selectedEntity ?? "anonymous",
+      expected: assertion.equals,
+      observed: observed ?? null,
+      terminal: { contactObserved: terminal.contactObserved, historyComplete: terminal.historyComplete, preExisting: selectedPreExisting, step: terminal.step },
+    },
+    id: `states.${selectedEntity ?? "anonymous"}`,
+    pass,
+  };
   return pass
     ? { assertion: result }
     : {
         assertion: result,
         diagnostic: {
-          code: "TN_PLAYTEST_STATE_ASSERTION_FAILED",
-          message: `Entity '${assertion.entity}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
+          code: observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
+            ? "TN_PLAYTEST_STATE_ORDERING_FAILED"
+            : "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+          message: observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
+            ? `Terminal state '${assertion.equals}' was not observed after retained contact evidence at '${terminal.step ?? "an unavailable step"}'.`
+            : `Entity '${selectedEntity ?? "anonymous"}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
           severity: "error",
           suggestion: "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
         },
       };
+}
+
+function terminalContactStep(scenario: IPlaytestScenario, expectedState: string): string | undefined {
+  if (expectedState !== "won") return undefined;
+  return [...(scenario.assert?.contacts ?? [])]
+    .reverse()
+    .find((assertion) => {
+      const minimum = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
+      return assertion.atStep !== undefined
+        && minimum > 0
+        && (assertion.requiredOn === undefined || assertion.requiredOn.includes(scenario.target));
+    })?.atStep;
+}
+
+function terminalStateEvidence(
+  contactStep: string,
+  observations: unknown,
+  scenario: IPlaytestScenario,
+  candidateEntities: readonly string[],
+): { contactObserved: boolean; historyComplete: boolean; preExisting: boolean; preExistingEntities: string[]; step: string } {
+  const contactAssertion = [...(scenario.assert?.contacts ?? [])]
+    .reverse()
+    .find((assertion) => assertion.atStep === contactStep);
+  const contactObserved = contactAssertion === undefined
+    ? false
+    : contactAssertionSatisfiedAtStep(contactAssertion, observations, scenario);
+  const labeledSteps = scenario.steps.flatMap(({ label }) => label === undefined ? [] : [label]);
+  const contactIndex = labeledSteps.indexOf(contactStep);
+  const samples = runtimeGameplaySeries(observations);
+  const samplesByLabel = new Map(samples.map((sample) => [sample.label, sample.states] as const));
+  const historyComplete = contactIndex >= 0
+    && labeledSteps.slice(0, contactIndex + 1).every((label) => samplesByLabel.has(label));
+  const preExistingEntities = candidateEntities.filter((entity) => {
+    if (contactIndex < 0) return false;
+    return labeledSteps.slice(0, contactIndex).some((label) => samplesByLabel.get(label)?.[entity] === "won");
+  });
+  return {
+    contactObserved,
+    historyComplete,
+    preExisting: preExistingEntities.length > 0,
+    preExistingEntities,
+    step: contactStep,
+  };
+}
+
+function contactAssertionSatisfiedAtStep(
+  assertion: IPlaytestContactAssertion,
+  observations: unknown,
+  scenario: IPlaytestScenario,
+): boolean {
+  const selectedSample = physicsDebugSeries(observations).find((sample) => sample.label === assertion.atStep);
+  const runtimeSamples = runtimeGameplaySeries(observations);
+  const runtimeStepAvailable = runtimeSamples.some(({ label }) => label === assertion.atStep);
+  const stepAvailable = selectedSample !== undefined || runtimeStepAvailable;
+  const entity = assertion.entity ?? scenario.subject;
+  const anonymous = assertion.entity === undefined && scenario.subject === undefined;
+  const physicsEvidence = assertion.kind === undefined || assertion.kind === "contact"
+    ? physicsDebugContactEvidence(
+        observationsForPhysics(observations),
+        entity,
+        assertion.with,
+        selectedSample?.snapshot,
+      )
+    : { candidates: [], count: 0 };
+  const runtimeEvidence = runtimeContactEvidence(observations, entity, assertion.with, assertion.kind, assertion.atStep);
+  const candidates = [...new Set([...physicsEvidence.candidates, ...runtimeEvidence.candidates])];
+  const count = physicsEvidence.count + runtimeEvidence.count;
+  const minimum = assertion.minCount ?? (assertion.maxCount === undefined ? 1 : 0);
+  return stepAvailable
+    && (!anonymous || candidates.length > 0)
+    && count >= minimum
+    && (assertion.maxCount === undefined || count <= assertion.maxCount);
 }
 
 function evaluateWorldAssertion(
@@ -1621,12 +1798,78 @@ function gameplayObservations(value: unknown): Record<string, unknown> | undefin
   return isRecord(gameplay) ? gameplay : undefined;
 }
 
-function countRuntimeContacts(observations: unknown, entity: string, withEntity: string | undefined, kind: string | undefined): number {
+function runtimeObservationValue(value: unknown): unknown {
+  if (!isRecord(value) || !Object.hasOwn(value, "runtimeObservations")) return value;
+  return value.runtimeObservations;
+}
+
+function runtimeGameplaySamples(value: unknown): Array<{ gameplay: Record<string, unknown>; label: string }> {
+  const runtime = runtimeObservationValue(value);
+  if (!isRecord(runtime) || !Array.isArray(runtime.gameplaySeries)) return [];
+  return runtime.gameplaySeries.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.label !== "string") return [];
+    const direct = isRecord(entry.gameplay) ? entry.gameplay : undefined;
+    const nested = isRecord(entry.snapshot) && isRecord(entry.snapshot.gameplay) ? entry.snapshot.gameplay : undefined;
+    return direct === undefined && nested === undefined ? [] : [{ gameplay: direct ?? nested!, label: entry.label }];
+  });
+}
+
+function runtimeGameplaySeries(value: unknown): Array<{ label: string; states: Record<string, string> }> {
+  return runtimeGameplaySamples(value).map(({ gameplay, label }) => ({
+    label,
+    states: isRecord(gameplay.states)
+      ? Object.fromEntries(Object.entries(gameplay.states).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : {},
+  }));
+}
+
+function runtimeGameplayAtStep(value: unknown, atStep: string | undefined): Record<string, unknown> | undefined {
+  const runtime = runtimeObservationValue(value);
+  if (atStep === undefined) return gameplayObservations(runtime);
+  return runtimeGameplaySamples(runtime).find(({ label }) => label === atStep)?.gameplay;
+}
+
+function physicsDebugSeries(value: unknown): Array<{ label: string; snapshot: unknown }> {
+  if (!isRecord(value) || !Array.isArray(value.physicsDebugSeries)) return [];
+  return value.physicsDebugSeries.flatMap((sample) => {
+    if (!isRecord(sample) || typeof sample.label !== "string") return [];
+    return [{ label: sample.label, snapshot: sample.snapshot }];
+  });
+}
+
+function observationsForPhysics(value: unknown): IPlaytestObservations | undefined {
+  return isRecord(value) ? value as unknown as IPlaytestObservations : undefined;
+}
+
+function runtimeContactEvidence(
+  observations: unknown,
+  entity: string | undefined,
+  withEntity: string | undefined,
+  kind: string | undefined,
+  atStep: string | undefined,
+): IContactEvidence {
+  const gameplay = runtimeGameplayAtStep(observations, atStep);
+  if (!Array.isArray(gameplay?.contacts)) return { candidates: [], count: 0 };
+  const candidates: string[] = [];
+  for (const contact of gameplay.contacts) {
+    if (!isRecord(contact)
+      || typeof contact.entity !== "string"
+      || typeof contact.with !== "string"
+      || typeof contact.kind !== "string"
+      || (entity !== undefined && contact.entity !== entity)
+      || (withEntity !== undefined && contact.with !== withEntity)
+      || (kind !== undefined && contact.kind !== kind)) continue;
+    candidates.push(`${contact.entity}:${contact.with}:${contact.kind}`);
+  }
+  return { candidates: [...new Set(candidates)], count: candidates.length };
+}
+
+function countRuntimeContacts(observations: unknown, entity: string | undefined, withEntity: string | undefined, kind: string | undefined): number {
   const gameplay = gameplayObservations(observations);
   if (!Array.isArray(gameplay?.contacts)) return 0;
   return gameplay.contacts.filter((contact) => {
     if (!isRecord(contact)) return false;
-    return contact.entity === entity
+    return (entity === undefined || contact.entity === entity)
       && (withEntity === undefined || contact.with === withEntity)
       && (kind === undefined || contact.kind === kind);
   }).length;
@@ -1954,7 +2197,7 @@ function shortJson(value: unknown): string {
 
 function evaluateDiagnosticsPolicy(
   report: IPlaytestReport,
-  policy: NonNullable<IPlaytestScenario["assert"]>["diagnostics"],
+  policy: IPlaytestDiagnosticsPolicy,
 ): IPlaytestDiagnostic[] {
   const diagnostics: IPlaytestDiagnostic[] = [];
   if (policy?.runtimeReady === true && report.diagnostics.some((diagnostic) => diagnostic.code === "TN_PLAYTEST_RUNTIME_NOT_READY")) {
@@ -1966,7 +2209,7 @@ function evaluateDiagnosticsPolicy(
     });
   }
   const capturedConsoleErrors = consoleErrors(report.observations?.console ?? []);
-  if (policy?.noConsoleErrors === true && capturedConsoleErrors.length > 0) {
+  if (policy.noConsoleErrors && capturedConsoleErrors.length > 0) {
     diagnostics.push({
       code: "TN_PLAYTEST_CONSOLE_ERROR",
       message: `${capturedConsoleErrors.length} browser console error(s) were captured during playtest.`,
@@ -1974,7 +2217,7 @@ function evaluateDiagnosticsPolicy(
       suggestion: "Open console.json in the playtest artifact directory and fix the first runtime error.",
     });
   }
-  if (policy?.noNetworkErrors === true && (report.observations?.network.length ?? 0) > 0) {
+  if (policy.noNetworkErrors && (report.observations?.network.length ?? 0) > 0) {
     diagnostics.push({
       code: "TN_PLAYTEST_NETWORK_ERROR",
       message: `${report.observations?.network.length ?? 0} failed network request(s) were captured during playtest.`,
@@ -1983,7 +2226,7 @@ function evaluateDiagnosticsPolicy(
     });
   }
   const runtimeErrors = runtimeDiagnostics(report.observations?.runtimeDiagnostics);
-  if (policy?.noRuntimeDiagnostics === true && runtimeErrors.length > 0) {
+  if (policy.noRuntimeDiagnostics && runtimeErrors.length > 0) {
     diagnostics.push({
       code: "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
       message: `${runtimeErrors.length} runtime diagnostic error(s) were captured during playtest.`,

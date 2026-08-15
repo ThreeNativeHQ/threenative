@@ -1,0 +1,18 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The page error is isolated from the console policy.",
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Network observation is not part of the page-error fixture.",
+      "noRuntimeDiagnostics": true
+    }
+  },
+  "artifacts": { "screenshots": false },
+  "name": "negative-page-error",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitFrames": 4 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 2
+}

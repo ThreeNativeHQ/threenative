@@ -7,7 +7,11 @@ with ThreeNative installed from tarballs carrying PRD-107 and PRD-108. Archived 
 **Not comparable to the 68/100 of 2026-08-14 round 5.** That score used a six-axis rubric with
 different weights and no rendered-visual or abstraction-leverage axis. This is a seven-axis score.
 
-**Framework: 63/100. Vanilla (estimate): 58/100.**
+Functional-column numbers recorded before the PRD-113 sealed proof contract are not comparable with numbers recorded after the revised proof hash. Superseded proof hash: `c241ea5e4120afd4a50325a5b9ee0606e81e1b9d8539896f2b6e9f6b8f85da0d`; revised proof hash: `d8e90936be7bec4046af766b108fdd7b1dcb92aad3d1e87e4c72b2de40d592f3`.
+**Framework: 63/100. Vanilla (estimate): 58/100 — superseded by PRD-114 round-7 measurement.**
+The round-6 vanilla number was a counterfactual, not an executed arm. Round 7 measured the
+vanilla archive's authored cost and proof result; its functional result remains unmeasured as a
+fair comparison because the vanilla arm stopped at the `runtime.world` capability preflight.
 Verdict: the framework now wins on plumbing and abstraction fit rather than on its harness, and it
 loses most of its margin to a visual gap and a proof capability the builder walked past.
 

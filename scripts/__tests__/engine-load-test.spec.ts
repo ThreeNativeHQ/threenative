@@ -13,8 +13,8 @@ import {
   parseRunReport,
   summarize,
 } from "../engine-load-test/report.js";
-import { runCapturing } from "../engine-load-test/run-desktop.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
+import { runCapturing } from "../engine-load-test/run-desktop.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -271,8 +271,8 @@ describe("engine load test desktop capture", () => {
   }, 60_000);
 
   it("should still fail closed when a host exits without ever emitting a report", async () => {
-    await expect(runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() })).rejects.toThrow(
-      /TN_BENCH_NO_REPORT/,
-    );
+    await expect(
+      runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
+    ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
 });

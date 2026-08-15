@@ -1,4 +1,12 @@
-import { BoxGeometry, CylinderGeometry, Group, Mesh, type Object3D, SphereGeometry } from "three";
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  Group,
+  Mesh,
+  type Object3D,
+  SphereGeometry,
+  TorusGeometry,
+} from "three";
 import { createMaterials } from "./materials.js";
 
 export function board(width = 28, depth = 20): Mesh {
@@ -49,6 +57,21 @@ export function attacker(): Group {
   core.position.set(0, 0.58, -0.34);
   core.castShadow = true;
   group.add(body, core);
+  return group;
+}
+
+export function commander(): Group {
+  const materials = createMaterials();
+  const group = new Group();
+  const base = new Mesh(new CylinderGeometry(0.55, 0.7, 0.16, 8), materials.shadow);
+  base.position.y = 0.08;
+  const ring = new Mesh(new TorusGeometry(0.5, 0.06, 8, 16), materials.route);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.18;
+  const beacon = new Mesh(new SphereGeometry(0.3, 12, 8), materials.accent);
+  beacon.position.y = 0.5;
+  for (const mesh of [base, ring, beacon]) mesh.castShadow = mesh.receiveShadow = true;
+  group.add(base, ring, beacon);
   return group;
 }
 

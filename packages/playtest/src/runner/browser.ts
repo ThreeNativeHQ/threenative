@@ -7,6 +7,10 @@ export const WEBGPU_BROWSER_ARGS = [
   "--ignore-gpu-blocklist",
 ] as const;
 
+export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] {
+  return [...(browserArgs ?? [])];
+}
+
 export interface IBrowserPointerChange {
   isPrimary: boolean;
   pointer: Required<IPlaytestPointer>;

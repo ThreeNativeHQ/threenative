@@ -2,10 +2,14 @@
   "name": "platformer-run-proof",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
-  "subject": "player",
-  "artifacts": { "screenshots": "before-after" },
+  "artifacts": {
+    "screenshots": "before-after"
+  },
   "steps": [
     {
       "kind": "input",
@@ -16,20 +20,42 @@
     }
   ],
   "assert": {
-    "diagnostics": { "noNetworkErrors": true, "runtimeReady": true },
-    "camera": {
-      "entity": "camera.main",
-      "follows": "player",
-      "targetInViewport": true,
-      "within": 12
+    "diagnostics": {
+      "noNetworkErrors": true,
+      "runtimeReady": true
     },
-    "movement": { "entity": "player", "minDistance": 5 },
     "resources": [
-      { "id": "state", "path": "coins", "gte": 1, "changed": true },
-      { "id": "state", "path": "goalReached", "equals": true, "changed": true },
-      { "id": "state", "path": "respawns", "gte": 1, "changed": true }
+      {
+        "id": "state",
+        "path": "playerX",
+        "gte": 5,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "coins",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "goalReached",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "respawns",
+        "gte": 1,
+        "changed": true
+      }
     ],
-    "hud": [{ "id": "coins", "changed": true }],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.001
+        }
+      }
+    ]
   }
 }

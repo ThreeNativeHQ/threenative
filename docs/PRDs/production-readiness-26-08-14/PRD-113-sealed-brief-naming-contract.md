@@ -1,6 +1,14 @@
 # PRD-113 — The sealed proof stops testing whether the builder guessed the names
 
-**Status: OPEN — OPTION C CHOSEN, implementation pending, written 2026-08-14.** Sliced from
+**Status: BLOCKED — 2026-08-15, after three repair lanes.** Option C was implemented. The `r2` lane
+stopped at `93c76b7`; repair r1 (`46187a8`) and repair r2 (`8412788`) each drew REQUEST_CHANGES for
+accepting autonomous motion as input-driven evidence, and repair r3 closed that thread at
+`5af281e` on an APPROVE with no findings
+(`docs/PRDs/done/PRD-113-repair-causal-baseline-and-pointer-input.md`) — anonymous movement now
+needs a zero-motion causal baseline, and a buttonless pointer counts as input on both the browser
+and Android paths. **What remains open is the consumer proof:** the committed replay record has
+1/6 positive direct rows and the paired round is explicitly void. See
+`repairs/PRD-113-repair-sealed-behavior-proof.md`. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 4.
 
 **Complexity: 3 → LOW mode as code. HIGH as consequence.** A small edit to a sealed input voids

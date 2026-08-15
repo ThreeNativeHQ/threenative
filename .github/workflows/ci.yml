@@ -64,7 +64,7 @@ jobs:
       - run: xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:browser
       - run: pnpm test:playtest
 
-  scaffold-smoke:
+  golden-path:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -247,6 +247,8 @@ jobs:
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
           xvfb-run -a -s '-screen 0 1600x900x24' pnpm --dir "$target" test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm verify:golden-path
 
   benchmark:
     needs: test
@@ -274,7 +276,7 @@ jobs:
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   visuals:
-    needs: scaffold-smoke
+    needs: golden-path
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

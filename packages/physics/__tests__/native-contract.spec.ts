@@ -337,4 +337,53 @@ describe("native physics contract", () => {
       })[0]?.body.id,
     ).toBe(0);
   });
+
+  it("keeps the old-runtime actuation guard removal-sensitive", () => {
+    const native = createNativePhysicsSimulation({} as unknown as INativeSimulation, "0.30.0");
+    const vector = { x: 1, y: 0, z: 0 };
+
+    expect(() => native.applyBodyImpulse(0, vector)).toThrow(/TN_NATIVE_PHYSICS_ACTUATION_MISSING/);
+    expect(() => native.applyBodyForce(0, vector)).toThrow(/TN_NATIVE_PHYSICS_ACTUATION_MISSING/);
+    expect(() => native.setBodyLinearVelocity(0, vector)).toThrow(
+      /TN_NATIVE_PHYSICS_ACTUATION_MISSING/,
+    );
+    expect(() => native.readBodyLinearVelocity(0)).toThrow(/TN_NATIVE_PHYSICS_ACTUATION_MISSING/);
+  });
+
+  it("forwards native actuation and refuses malformed or disposed calls", () => {
+    const applyBodyImpulse = vi.fn();
+    const applyBodyForce = vi.fn();
+    const setBodyLinearVelocity = vi.fn();
+    const readBodyLinearVelocity = vi.fn(() => ({ x: 4, y: 0, z: 0 }));
+    const dispose = vi.fn();
+    const native = createNativePhysicsSimulation(
+      {
+        applyBodyForce,
+        applyBodyImpulse,
+        dispose,
+        readBodyLinearVelocity,
+        setBodyLinearVelocity,
+      } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+
+    native.applyBodyImpulse(7, { x: 1, y: 2, z: 3 });
+    native.applyBodyForce(7, { x: 4, y: 5, z: 6 });
+    native.setBodyLinearVelocity(7, { x: 7, y: 8, z: 9 });
+
+    expect(applyBodyImpulse).toHaveBeenCalledWith(7, { x: 1, y: 2, z: 3 });
+    expect(applyBodyForce).toHaveBeenCalledWith(7, { x: 4, y: 5, z: 6 });
+    expect(setBodyLinearVelocity).toHaveBeenCalledWith(7, { x: 7, y: 8, z: 9 });
+    expect(native.readBodyLinearVelocity(7)).toEqual({ x: 4, y: 0, z: 0 });
+
+    expect(() => native.applyBodyImpulse(7, { x: Number.NaN, y: 0, z: 0 })).toThrow(
+      /TN_PHYSICS_NON_FINITE/,
+    );
+    expect(applyBodyImpulse).toHaveBeenCalledTimes(1);
+
+    native.dispose();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(() => native.applyBodyForce(7, { x: 1, y: 0, z: 0 })).toThrow(/disposed/i);
+    expect(() => native.readBodyLinearVelocity(7)).toThrow(/disposed/i);
+  });
 });

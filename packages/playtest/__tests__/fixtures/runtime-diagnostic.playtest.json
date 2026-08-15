@@ -1,0 +1,18 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "Console observation is not part of the runtime-diagnostic fixture.",
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Network observation is not part of the runtime-diagnostic fixture.",
+      "noRuntimeDiagnostics": true
+    }
+  },
+  "artifacts": { "screenshots": false },
+  "name": "negative-runtime-diagnostic",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitFrames": 4 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 2
+}

@@ -1,0 +1,14 @@
+{
+  "promptSha256": "81d03ec057ae2e5cba791397d719d9b4a53926487109cefb168719e6f5dd3b1b",
+  "samples": [
+    {
+      "image": "sample-01/image.png",
+      "label": "sample-01"
+    },
+    {
+      "image": "sample-02/image.png",
+      "label": "sample-02"
+    }
+  ],
+  "verdict": "ready"
+}

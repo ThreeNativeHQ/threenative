@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyVariant, backendOf, summarizeFrames } from "../profile-starter.js";
+import { applyVariant, backendOf, parseArgs, summarizeFrames } from "../profile-starter.js";
 
 describe("starter profiler", () => {
   it("summarizes frame percentiles and slow frames", () => {
@@ -22,14 +22,17 @@ describe("starter profiler", () => {
   });
 
   it("applies only declared isolation variants", () => {
-    const source = [
-      '    if (ctx.renderer.kind === "webgpu") ctx.add(createParticles());',
-      "    ctx.add(sculptureMesh);",
-    ].join("\n");
+    const source = "    ctx.add(sculptureMesh);";
 
-    expect(applyVariant(source, "no-particles")).not.toContain("ctx.add(createParticles())");
     expect(applyVariant(source, "no-sculpture")).not.toContain("ctx.add(sculptureMesh)");
+    expect(() => applyVariant(source, "no-particles" as never)).toThrow(/Unsupported/);
     expect(() => applyVariant("", "no-sculpture")).toThrow(/marker is missing/);
+  });
+
+  it("rejects the removed particle profile variant", () => {
+    expect(parseArgs(["--variant", "baseline"]).variant).toBe("baseline");
+    expect(parseArgs(["--variant", "no-sculpture"]).variant).toBe("no-sculpture");
+    expect(() => parseArgs(["--variant", "no-particles"])).toThrow(/baseline or no-sculpture/);
   });
 
   it("names a software rasteriser instead of reporting it as a GPU", () => {

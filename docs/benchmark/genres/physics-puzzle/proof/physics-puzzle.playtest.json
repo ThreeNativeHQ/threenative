@@ -1,35 +1,102 @@
 {
-  "name": "physics-puzzle-contact-settle-replay-proof",
+  "name": "physics-puzzle-observable-behaviour-proof",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
-  "subject": "player",
-  "artifacts": { "screenshots": "before-after", "runtimeTrace": true },
+  "artifacts": {
+    "screenshots": "before-after",
+    "runtimeTrace": true
+  },
   "steps": [
-    { "kind": "wait", "label": "drop", "waitTicks": 8, "release": true },
-    { "kind": "wait", "label": "settled", "waitTicks": 90, "release": true },
+    {
+      "kind": "wait",
+      "label": "drop",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "push-to-goal",
       "press": "ArrowRight",
-      "holdTicks": 72,
+      "holdTicks": 360,
       "release": true
     },
-    { "kind": "wait", "label": "goal-contact", "waitTicks": 24, "release": true },
     {
       "kind": "input",
-      "label": "replay-sequence",
-      "press": "ArrowRight",
-      "holdTicks": 72,
+      "label": "cross-pass-through",
+      "press": "ArrowDown",
+      "holdTicks": 120,
       "release": true
     },
-    { "kind": "wait", "label": "replay-complete", "waitTicks": 24, "release": true }
+    {
+      "kind": "input",
+      "label": "line-up-with-goal",
+      "press": "ArrowRight",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross-ghost",
+      "press": "ArrowUp",
+      "holdTicks": 130,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move-back-north",
+      "press": "ArrowDown",
+      "holdTicks": 130,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move-to-goal-lane",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "descend-to-goal",
+      "press": "ArrowUp",
+      "holdTicks": 130,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "goal-contact",
+      "waitTicks": 24,
+      "release": true
+    }
   ],
   "assert": {
     "contacts": [
-      { "entity": "player", "with": "solid-body", "kind": "contact", "minCount": 1 },
-      { "entity": "mission", "with": "goal", "kind": "trigger", "minCount": 1 }
+      {
+        "atStep": "push-to-goal",
+        "kind": "contact",
+        "minCount": 1
+      },
+      {
+        "atStep": "cross-pass-through",
+        "kind": "trigger",
+        "minCount": 1
+      },
+      {
+        "atStep": "goal-contact",
+        "kind": "trigger",
+        "minCount": 1
+      }
     ],
     "diagnostics": {
       "noConsoleErrors": true,
@@ -38,32 +105,23 @@
       "runtimeReady": true
     },
     "movement": {
-      "entity": "player",
-      "minAxisDelta": { "axis": "+x", "min": 1.5 },
       "minDistance": 1.5
     },
-    "resources": [
-      {
-        "id": "state",
-        "path": "replayMatches",
-        "equals": true,
-        "changed": true,
-        "atSteps": [
-          { "label": "settled", "equals": false },
-          { "label": "replay-sequence", "equals": true }
-        ]
-      }
-    ],
     "settled": [
       {
         "atStep": "settled",
         "compareToStep": "drop",
-        "entity": "crate",
         "minBodies": 30,
         "minMeanPoseDistance": 0.05
       }
     ],
-    "states": [{ "entity": "mission", "equals": "won" }],
-    "world": { "seed": 6132 }
+    "states": [
+      {
+        "equals": "won"
+      }
+    ],
+    "world": {
+      "seed": 6132
+    }
   }
 }

@@ -235,6 +235,16 @@ export async function build(options: IBuildOptions): Promise<void> {
   }
 }
 
+export function buildHelp(): string {
+  return `${[
+    "Usage: threenative build [--target web|desktop|android|ios]",
+    "",
+    "Options:",
+    "  --target <target>  Choose web, desktop, android, or ios (default: web).",
+    "  --help             Show this help.",
+  ].join("\n")}\n`;
+}
+
 export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (argv[0] !== "build") {
     throw new Error("Usage: threenative build [--target web|desktop|android|ios]");

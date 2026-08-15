@@ -193,10 +193,48 @@ function runDesktopPhysics(scenario) {
   return { assertionCount, query };
 }
 
+function buildPreset() {
+  return process.platform === "darwin"
+    ? "tn-macos"
+    : process.platform === "win32"
+      ? "tn-windows"
+      : "tn-linux";
+}
+
+// The regular desktop scene does not call the actuation methods. Execute the runtime's own JS
+// engine against the binding target so the proof crosses JS -> C++ -> C ABI -> Rapier.
+function runActuationBindingsProof() {
+  const windows = process.platform === "win32";
+  const venvCmake = join(
+    runtimeRoot,
+    ".runtime",
+    "tools-venv",
+    windows ? "Scripts" : "bin",
+    windows ? "cmake.exe" : "cmake",
+  );
+  const cmake =
+    spawnSync("cmake", ["--version"], { stdio: "ignore" }).status === 0
+      ? "cmake"
+      : venvCmake;
+  if (cmake === venvCmake && !existsSync(venvCmake))
+    throw new Error("cmake was not found on PATH or in .runtime/tools-venv; run pnpm native:build");
+
+  const buildDir = join(runtimeRoot, "build", buildPreset());
+  const target = "threenative-physics-actuation-bindings-test";
+  run(cmake, ["--build", buildDir, "--target", target, "--parallel"], { timeout: 900_000 });
+  const executable = join(buildDir, windows ? `${target}.exe` : target);
+  const log = run(executable, [], { timeout: 120_000 });
+  if (!log.includes("native physics actuation bindings passed"))
+    throw new Error(`actuation bindings proof did not report a pass:\n${log}`);
+  return log;
+}
+
 function main() {
   const { desktop } = readPhysicsPlaytestPair();
   buildPhysicsBundle();
   try {
+    runActuationBindingsProof();
+    console.info("desktop physics actuation bindings proof passed");
     const result = runDesktopPhysics(desktop);
     console.info(`desktop physics playtest proof passed: ${result.assertionCount} assertions`);
     console.info(`desktop physics query proof passed: ${JSON.stringify(result.query)}`);

@@ -109,6 +109,7 @@ test("true negative: a working application passes and reports the distance it me
   expect(report.distance).toBeGreaterThan(0.5);
   expect(report.diagnostics.filter(({ severity }) => severity === "error")).toEqual([]);
   expect(report.assertionResults?.map(({ id, pass }) => ({ id, pass }))).toEqual([
+    { id: "diagnostics", pass: true },
     { id: "movement.distance", pass: true },
   ]);
 }, 60_000);
@@ -150,6 +151,16 @@ test("true positive: a scenario that asserts nothing does not report pass", asyn
 
   expect(report.pass).toBe(false);
   expect(report.assertionResults).toEqual([
+    {
+      details: {
+        consoleErrors: 0,
+        networkErrors: 0,
+        policy: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true },
+        runtimeDiagnostics: 0,
+      },
+      id: "diagnostics",
+      pass: true,
+    },
     { details: { reason: "no-evaluated-assertions" }, id: "scenario.assertions", pass: false },
   ]);
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SCENARIO_NO_ASSERTIONS");
@@ -221,11 +232,25 @@ createServer((_request, response) => response.end(html)).listen(${port}, "127.0.
 
 test("transport-only browser errors reach runtime diagnostics without a bridge", async () => {
   const report = await run("no-bridge-error", {
-    diagnostics: { noConsoleErrors: false, noRuntimeDiagnostics: true },
+    diagnostics: {
+      noConsoleErrors: false,
+      consoleErrorsOptOutReason: "This test isolates the transport page error from the console policy.",
+      noRuntimeDiagnostics: true,
+    },
   });
 
   expect(report.assertionResults).toContainEqual({
-    details: { consoleErrors: 1, networkErrors: 0, runtimeDiagnostics: 1 },
+    details: {
+      consoleErrors: 1,
+      networkErrors: 0,
+      policy: {
+        consoleErrorsOptOutReason: "This test isolates the transport page error from the console policy.",
+        noConsoleErrors: false,
+        noNetworkErrors: true,
+        noRuntimeDiagnostics: true,
+      },
+      runtimeDiagnostics: 1,
+    },
     id: "diagnostics",
     pass: false,
   });

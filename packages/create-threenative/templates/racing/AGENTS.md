@@ -28,6 +28,10 @@ and tune car constants in `src/entities/RacingCar.ts`.
 `ctx.entities` so playtests can observe them. The HUD is a web convenience; the portable game
 does not import React or the UI package.
 
+`playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the racing
+gameplay; the other `playtests/` scenarios are examples for shortcuts, reversing, boosts,
+rescues, rankings, and race outcomes.
+
 The normal physics API selects the native backend on desktop and Android. The optional
 `intersectRay` query is used when the host provides PRD-088's coarse ray probe; the track has
 an ordinary Three.js fallback so the starter remains runnable before that backend is present.

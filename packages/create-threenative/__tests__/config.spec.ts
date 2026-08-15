@@ -19,12 +19,36 @@ async function project(name = "fox-game"): Promise<string> {
   roots.push(root);
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
-  await writeFile(path.join(root, "package.json"), JSON.stringify({ name, type: "module" }));
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({ name, type: "module", devDependencies: {} }),
+  );
   return root;
 }
 
 async function config(root: string, source: string): Promise<void> {
   await writeFile(path.join(root, "threenative.config.ts"), `${source}\n`);
+}
+
+async function expectActionableFailure(
+  root: string,
+  code: string,
+  layer: string,
+  searchedLocation: string,
+): Promise<void> {
+  let result: Error | undefined;
+  try {
+    await loadConfig(root);
+  } catch (error) {
+    result = error instanceof Error ? error : new Error(String(error));
+  }
+  expect(result).toBeInstanceOf(Error);
+  expect(result?.message).toContain(code);
+  expect(result?.message).toContain(`${layer} layer failed`);
+  expect(result?.message).toContain(searchedLocation);
+  expect(result?.message).toContain("Searched:");
+  expect(result?.message).toContain("Fix:");
+  expect(result?.message).toContain("pnpm exec threenative build --target web");
 }
 
 describe("threenative.config.ts", () => {
@@ -74,6 +98,35 @@ describe("threenative.config.ts", () => {
     });
   });
 
+  it("uses the Vite-owned esbuild without invoking Vite's config loader", async () => {
+    const root = await project();
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "fox-game", type: "module", devDependencies: { vite: "8.2.0" } }),
+    );
+    await mkdir(path.join(root, "node_modules/vite/dist/node"), { recursive: true });
+    await writeFile(
+      path.join(root, "node_modules/vite/package.json"),
+      JSON.stringify({
+        name: "vite",
+        type: "module",
+        exports: { ".": "./dist/node/index.js" },
+      }),
+    );
+    await writeFile(
+      path.join(root, "node_modules/vite/dist/node/index.js"),
+      `export async function loadConfigFromFile() {
+  throw new Error("Vite's config loader must not run");
+}
+`,
+    );
+    await config(root, "export default { renderer: { preferWebGPU: true } }; ");
+
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      renderer: { preferWebGPU: true },
+    });
+  });
+
   it("rejects a package without a name with the named code", async () => {
     const root = await project();
     await writeFile(path.join(root, "package.json"), JSON.stringify({ type: "module" }));
@@ -83,7 +136,12 @@ describe("threenative.config.ts", () => {
   it("rejects malformed package metadata with the named code", async () => {
     const root = await project();
     await writeFile(path.join(root, "package.json"), "{\n");
-    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_PACKAGE_INVALID/u);
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_PACKAGE_INVALID",
+      "package manifest",
+      path.join(root, "package.json"),
+    );
   });
 
   it("rejects a non-object package compatibility block with the named code", async () => {
@@ -193,7 +251,12 @@ describe("threenative.config.ts", () => {
   it("rejects a non-PNG icon with the named code", async () => {
     const root = await project();
     await config(root, 'export default { app: { icon: "icon.jpg" } };');
-    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ICON_INVALID/u);
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_ICON_INVALID",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
   });
 
   it("rejects corrupt PNG content with the named code", async () => {
@@ -218,7 +281,12 @@ describe("threenative.config.ts", () => {
       JSON.stringify({ name: "fox-game", threenative: { nativeEntry: "src/game.ts" } }),
     );
     await config(root, 'export default { nativeEntry: "src/game.ts" };');
-    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_CONFLICT/u);
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_CONFLICT",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
   });
 
   it("rejects a native entry outside the project with the named code", async () => {
@@ -242,7 +310,12 @@ describe("threenative.config.ts", () => {
   it("rejects an unknown config key with the named code", async () => {
     const root = await project();
     await config(root, "export default { plugins: {} };");
-    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_UNKNOWN_KEY",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
   });
 
   it("rejects an invalid fullscreen value with the named code", async () => {
@@ -303,6 +376,24 @@ describe("threenative.config.ts", () => {
     const root = await project();
     await config(root, 'throw new Error("config failed");');
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_LOAD_FAILED/u);
+  });
+
+  it("keeps loading provenance tied to the config source, not an embedded error-code prefix", async () => {
+    const root = await project();
+    await config(root, 'throw new Error("TN_CONFIG_PACKAGE_INVALID: config-owned failure");');
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_LOAD_FAILED",
+      "config loading",
+      path.join(root, "threenative.config.ts"),
+    );
+    let message = "";
+    try {
+      await loadConfig(root);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).not.toContain("package manifest layer failed");
   });
 
   it("rejects a second package.json config surface", async () => {

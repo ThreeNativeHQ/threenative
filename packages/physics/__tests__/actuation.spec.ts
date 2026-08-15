@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh } from "three";
@@ -19,6 +21,28 @@ import { type IPhysicsContext, rapier } from "../src/plugin.js";
 // game by platform. These tests cover the portable path.
 
 type PhysicsCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
+
+const PRD_116_VERIFICATION_RECORD = path.resolve(
+  process.cwd(),
+  "docs/verification/PRD-116-native-physics-actuation.md",
+);
+const EXPECTED_NATIVE_LOC_AREAS = [
+  ["src/", 38_082],
+  ["conformance/", 5_720],
+  ["tests/", 7_438],
+  ["scripts/", 9_066],
+  ["include/", 3_760],
+  ["android/", 1_843],
+  ["native/", 2_914],
+  ["Root CMakeLists.txt", 1_639],
+  ["cmake/", 280],
+  ["CMakePresets.json", 140],
+  ["ios/", 104],
+  ["package.json", 57],
+  ["vitest.config.ts", 10],
+] as const;
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 141 files, 1,237 passed, 35 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 42 files, 243 passed, 37 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();
@@ -45,7 +69,7 @@ async function world(): Promise<{ ctx: PhysicsCtx; step: (frames: number) => voi
   };
 }
 
-function crate(ctx: PhysicsCtx, x = 0): RigidBody3D {
+function crate(ctx: PhysicsCtx, x = 0, collisionLayer = 1, collisionMask = 0xffff): RigidBody3D {
   const mesh = new Mesh(new BoxGeometry(1, 1, 1));
   mesh.position.set(x, 0.5, 0);
   return new RigidBody3D({
@@ -53,6 +77,8 @@ function crate(ctx: PhysicsCtx, x = 0): RigidBody3D {
     object: mesh,
     physics: ctx.physics,
     shape: CollisionShape3D.box(1, 1, 1),
+    collisionLayer,
+    collisionMask,
   });
 }
 
@@ -178,6 +204,74 @@ describe("character push", () => {
     const ignored = await displacement(false);
 
     expect(pushed).toBeGreaterThan(0.5);
-    expect(ignored).toBeLessThan(pushed / 2);
+    expect(Math.abs(ignored)).toBeLessThan(0.01);
+  });
+
+  it("pushes only a mutually included dynamic body", async () => {
+    const { ctx, step } = await world();
+    ground(ctx);
+    const included = crate(ctx, 2.2, 2, 1);
+    const excluded = crate(ctx, 1.2, 4, 1);
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1));
+    mesh.position.set(-0.5, 0.5, 0);
+    const character = new CharacterBody3D({
+      object: mesh,
+      physics: ctx.physics,
+      collisionLayer: 1,
+      collisionMask: 2,
+      gravity: 0,
+      pushesDynamicBodies: true,
+      shape: CollisionShape3D.capsule(0.3, 0.3),
+    });
+    const includedStart = included.object.position.x;
+    const excludedStart = excluded.object.position.x;
+
+    for (let frame = 0; frame < 90; frame += 1) {
+      character.velocity.x = 2.4;
+      character.moveAndSlide(1 / 60);
+      step(1);
+    }
+
+    expect(included.object.position.x - includedStart).toBeGreaterThan(0.1);
+    expect(Math.abs(excluded.object.position.x - excludedStart)).toBeLessThan(0.01);
+  });
+});
+
+describe("PRD-116 verification evidence", () => {
+  it("keeps the native census and final test counts tied to committed gate output", () => {
+    const record = readFileSync(PRD_116_VERIFICATION_RECORD, "utf8");
+    const censusStart = record.indexOf("| Counted area | Lines | Owner |");
+    const totalStart = record.indexOf("| **Total** |", censusStart);
+    expect(censusStart).toBeGreaterThanOrEqual(0);
+    expect(totalStart).toBeGreaterThan(censusStart);
+
+    const rows = [
+      ...record.slice(censusStart, totalStart).matchAll(/^\| ([^|]+) \| ([\d,]+) \|/gmu),
+    ].map((match) => {
+      const area = match[1];
+      const lines = match[2];
+      if (area === undefined || lines === undefined) {
+        throw new Error("PRD-116 verification record contains a malformed census row.");
+      }
+      return [area.replaceAll("`", "").trim(), Number(lines.replaceAll(",", ""))] as const;
+    });
+    expect(rows).toEqual(EXPECTED_NATIVE_LOC_AREAS);
+
+    const totalMatch = record.match(/^\| \*\*Total\*\* \| \*\*([\d,]+)\*\*/mu);
+    if (!totalMatch || totalMatch[1] === undefined) {
+      throw new Error("PRD-116 verification record is missing its census total.");
+    }
+    const total = Number(totalMatch[1].replaceAll(",", ""));
+    expect(rows.reduce((sum, [, lines]) => sum + lines, 0)).toBe(total);
+
+    const budgetMatch = record.match(
+      /^\| `pnpm budgets` \|.*?([\d,]+)\/50,000 native runtime LOC/mu,
+    );
+    if (!budgetMatch || budgetMatch[1] === undefined) {
+      throw new Error("PRD-116 verification record is missing budget output.");
+    }
+    expect(Number(budgetMatch[1].replaceAll(",", ""))).toBe(total);
+    expect(record).toContain(EXPECTED_ROOT_VITEST_SUMMARY);
+    expect(record).toContain(EXPECTED_RUNTIME_VITEST_SUMMARY);
   });
 });

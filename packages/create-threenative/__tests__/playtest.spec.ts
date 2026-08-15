@@ -2,7 +2,92 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+const DURABLE_PLAYTEST_TEMPLATES = [
+  "starter",
+  "minimal",
+  "platformer",
+  "action-rpg",
+  "defense",
+  "racing",
+  "shooter",
+] as const;
+
 describe("starter playtest proof", () => {
+  it.each(DURABLE_PLAYTEST_TEMPLATES)(
+    "should name survives as the durable scenario in the %s guide",
+    async (template) => {
+      const guide = await readFile(
+        path.resolve(`packages/create-threenative/templates/${template}/AGENTS.md`),
+        "utf8",
+      );
+
+      expect(guide).toContain("playtests/survives.playtest.json");
+    },
+  );
+
+  it.each(DURABLE_PLAYTEST_TEMPLATES)(
+    "should drive the registered player with input in the %s durable scenario",
+    async (template) => {
+      const scenario = JSON.parse(
+        await readFile(
+          path.resolve(
+            `packages/create-threenative/templates/${template}/playtests/survives.playtest.json`,
+          ),
+          "utf8",
+        ),
+      ) as {
+        assert?: { movement?: { entity?: string; minDistance?: number } };
+        steps?: Array<{ holdFrames?: number; holdTicks?: number; kind?: string; press?: string }>;
+        subject?: string;
+      };
+
+      const inputStep = scenario.steps?.find(
+        (step) => step.kind === "input" && step.press === "ArrowUp",
+      );
+      expect(scenario.subject).toBe("player");
+      expect(scenario.assert?.movement?.entity).toBe("player");
+      expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
+      expect(inputStep).toMatchObject({ kind: "input", press: "ArrowUp" });
+      expect(inputStep?.holdTicks ?? inputStep?.holdFrames).toBeGreaterThan(0);
+    },
+  );
+
+  it("should register defense's input-controlled player subject", async () => {
+    const scene = await readFile(
+      path.resolve("packages/create-threenative/templates/defense/src/scenes/Defense.ts"),
+      "utf8",
+    );
+    const player = await readFile(
+      path.resolve("packages/create-threenative/templates/defense/src/entities/Player.ts"),
+      "utf8",
+    );
+    const game = await readFile(
+      path.resolve("packages/create-threenative/templates/defense/src/game.ts"),
+      "utf8",
+    );
+
+    expect(scene).toContain('ctx.entities.add("player", player)');
+    expect(scene).toContain("player.update(frameCtx, dt)");
+    expect(player).toContain('ctx.input.vector("move")');
+    expect(game).toContain("move: {");
+  });
+
+  it("should run survives first", async () => {
+    const packageJson = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/starter/package.json"),
+        "utf8",
+      ),
+    ) as { scripts: { test: string } };
+
+    const survivesIndex = packageJson.scripts.test.indexOf("playtests/survives.playtest.json");
+    const playIndex = packageJson.scripts.test.indexOf("playtests/play.playtest.json");
+
+    expect(survivesIndex).toBeGreaterThanOrEqual(0);
+    expect(playIndex).toBeGreaterThanOrEqual(0);
+    expect(survivesIndex).toBeLessThan(playIndex);
+  });
+
   it("should contain a loadable movement and score scenario", async () => {
     const scenario = await readFile(
       path.resolve("packages/create-threenative/templates/starter/playtests/play.playtest.json"),
@@ -191,28 +276,18 @@ describe("starter playtest proof", () => {
     ).rejects.toThrow();
   });
 
-  it("should ship a boot-to-play jump scenario", async () => {
+  it("should start directly in Play without a redundant boot scene", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/game.ts"),
       "utf8",
     );
-    const boot = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/src/scenes/Boot.ts"),
-      "utf8",
-    );
-    const player = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/src/entities/Player.ts"),
-      "utf8",
-    );
-    const scenario = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/playtest/boot-to-play.json"),
-      "utf8",
-    );
-
-    expect(game).toContain("scenes: { boot: Boot, play: Play }");
-    expect(game).toContain("buttons: [0]");
-    expect(boot).toContain('ctx.goto("play")');
-    expect(player).toContain('ctx.input.justPressed("jump")');
-    expect(scenario).toContain('"axis": "+y"');
+    expect(game).toContain("scenes: { play: Play }");
+    expect(game).toContain('start: "play"');
+    await expect(
+      readFile(
+        path.resolve("packages/create-threenative/templates/starter/src/scenes/Boot.ts"),
+        "utf8",
+      ),
+    ).rejects.toThrow();
   });
 });

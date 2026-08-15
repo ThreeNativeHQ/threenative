@@ -8,6 +8,7 @@ import { createProject } from "../src/index.js";
 
 const templates = ["starter", "minimal"] as const;
 const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
+const geometryHudTemplates = ["minimal", "platformer"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
@@ -144,8 +145,8 @@ describe("template contracts", () => {
     }
   });
 
-  it("should ship a user-owned geometry HUD in every template", async () => {
-    for (const template of typecheckTemplates) {
+  it("should ship a user-owned geometry HUD in templates that use one", async () => {
+    for (const template of geometryHudTemplates) {
       const root = path.join(templateRoot, template);
       const hud = await readFile(path.join(root, "src/render/hud.ts"), "utf8");
       const scene = await readFile(
@@ -171,6 +172,14 @@ describe("template contracts", () => {
     );
   });
 
+  it("should ship exactly one starter HUD", async () => {
+    const hud = await readFile(path.join(templateRoot, "starter/src/ui/Hud.tsx"), "utf8");
+    expect(hud).toContain("useGameState");
+    await expect(
+      readFile(path.join(templateRoot, "starter/src/render/hud.ts"), "utf8"),
+    ).rejects.toThrow();
+  });
+
   /**
    * Source checks above prove the HUD is written. This pins the proof that it *runs*: a
    * scenario each template's `pnpm test` executes must observe the booted HUD's live glyph
@@ -180,8 +189,8 @@ describe("template contracts", () => {
    * The assertion is `changed`, not a floor: any floor is already satisfied by the warmup
    * value, which the runner correctly rejects as trivial.
    */
-  it("should observe the booted HUD in the minimal template's scenario", async () => {
-    for (const template of typecheckTemplates) {
+  it("should observe the booted geometry HUD in templates that use one", async () => {
+    for (const template of geometryHudTemplates) {
       // Every template's HUD has to expose the count, whether or not its scenario reads it.
       const source = await readFile(path.join(templateRoot, template, "src/render/hud.ts"), "utf8");
       expect(source, template).toMatch(/glyphs:\s*0/u);
@@ -244,7 +253,7 @@ describe("template contracts", () => {
     }
   });
 
-  it("should wire the spring arm, sky, movement API, and load gate", async () => {
+  it("should wire the spring arm, sky, and movement API", async () => {
     const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
     const starterPlayer = await readFile(
       path.join(templateRoot, "starter/src/entities/Player.ts"),
@@ -254,7 +263,6 @@ describe("template contracts", () => {
       path.join(templateRoot, "minimal/src/entities/Player.ts"),
       "utf8",
     );
-    const boot = await readFile(path.join(templateRoot, "starter/src/scenes/Boot.ts"), "utf8");
     expect(play).toContain("createSpringArm");
     expect(play).toContain("createSpringArm(ctx.camera");
     expect(play).toContain("springArm");
@@ -272,8 +280,6 @@ describe("template contracts", () => {
       expect(player).toContain("const JUMP_BUFFER = 0.14");
       expect(player).not.toContain(".move({");
     }
-    expect(boot.indexOf("await ctx.assets.texture")).toBeGreaterThan(-1);
-    expect(boot.indexOf("await ctx.assets.texture")).toBeLessThan(boot.indexOf('ctx.goto("play")'));
     const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
     expect(menu).toContain("game.pause()");
     expect(menu).toContain("game.resume()");

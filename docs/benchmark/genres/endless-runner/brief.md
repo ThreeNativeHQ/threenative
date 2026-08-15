@@ -7,5 +7,8 @@ Build a small, playable 3D endless runner from the supplied `reference.png`.
 - Spawn an unbounded-feeling sequence of obstacles and collectibles with increasing pace.
 - Show distance, score, and the current speed in a readable HUD.
 - Make a collision restart the run without a page reload.
+- The sealed proof uses `ArrowRight` for a lane change and `Space` for the jump or slide input.
+- The sealed proof reads resource `state` paths `state.distance`, `state.collected`, `state.lane`,
+  `state.speed`, `state.jumps`, `state.peakRise`, `state.slides`, and `state.peakSlide`.
 
 The first playable screen must be visible without a user account or external asset service.
