@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-110 — A playtest that saw errors cannot report pass
 
-**Status: OPEN, written 2026-08-14. Nothing here has been executed.** Sliced from
+**Status: OPEN — PHASE 0 RE-SCOPED AFTER MIXED-FIXTURE NON-REPRODUCTION, written 2026-08-14.** Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 1.
 
 **Complexity: 6 → MEDIUM mode.** One package (`packages/playtest/`), one default flip, one
@@ -124,6 +124,15 @@ console errors and no `diagnostics` row"*, or *"not reproduced, and here is what
 actually hit"*. If it does not reproduce, **stop and re-scope**; do not write the fix from the
 report. The strategy document is explicit that this claim outranks everything else in it *if
 true*.
+
+**Phase 0 outcome and owner re-scope (2026-08-14).** The mixed fixture was **not reproduced**:
+the exact run exited `1`, reported `pass: false`, included a `diagnostics` row, observed two
+console errors, one failed request, and two runtime diagnostics, while the movement assertion
+passed. The failed request was normalized into runtime diagnostics, so it could not isolate the
+permissive console/network policy described by this PRD. Phase 0 is therefore re-scoped to use
+an isolated console-error fixture for the baseline reproduction and to cover the network policy
+with its own seeded negative fixture in Phase 2. The mixed run remains evidence of the original
+failure mode and is not treated as proof of the permissive-pass claim.
 
 ### Phase 1 — Console and network errors fail closed
 

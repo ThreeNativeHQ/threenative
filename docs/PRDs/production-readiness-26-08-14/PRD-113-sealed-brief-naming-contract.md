@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-113 — The sealed proof stops testing whether the builder guessed the names
 
-**Status: OPEN — BLOCKED ON AN OWNER DECISION, written 2026-08-14.** Sliced from
+**Status: OPEN — OPTION C CHOSEN, implementation pending, written 2026-08-14.** Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 4.
 
 **Complexity: 3 → LOW mode as code. HIGH as consequence.** A small edit to a sealed input voids
@@ -94,7 +94,18 @@ starts.** No decision, no phase.
 
 ## 3. Decision record
 
-> *(empty — the owner fills this in. Chosen option, why, date, and what it costs in comparability.)*
+> **Chosen option: C — both, scoped. (2026-08-14)**
+>
+> The brief will state only the irreducible harness inputs: `world.seed` and the input key.
+> The proof will rewrite the remaining named-entity and named-state rows around observable
+> behavior: movement under input, blocking versus pass-through contact, terminal success after
+> contact, settling at least thirty bodies, and deterministic replay. This preserves the useful
+> contract without asking a blind builder to guess vocabulary that the proof secretly requires.
+>
+> The cost is a sealed-contract discontinuity: functional-column scores before the revised proof
+> hash are not comparable with scores after it. The old hash remains attached to the archived
+> rounds, and the new round ledger records the replacement hash. The negative replay remains
+> mandatory so the behavioral wording cannot become a vacuous pass.
 
 ## 4. Integration Ledger
 
