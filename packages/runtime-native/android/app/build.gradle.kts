@@ -48,6 +48,12 @@ tasks.register("copyV8Snapshot") {
     val engine = nativeJsEngine.get().lowercase()
     val source = runtimeRoot.file("third_party/v8-android/snapshot_blob/arm64-v8a/snapshot_blob.bin")
     val target = generatedThreeNativeAssets.map { it.file("v8/snapshot_blob.bin") }
+    // Declaring only the output made Gradle skip this whenever the file happened to survive from an
+    // earlier build, and an APK then shipped `libv8android.so` with no snapshot beside it — it
+    // installs, launches, and dies with "V8 startup snapshot asset is missing". The engine choice is
+    // the real input, so switching engines has to invalidate the copy.
+    inputs.property("threenativeJsEngine", engine)
+    if (engine == "v8") inputs.file(source)
     outputs.file(target)
     doLast {
         val out = target.get().asFile

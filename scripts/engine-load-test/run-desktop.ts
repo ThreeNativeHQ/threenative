@@ -119,22 +119,27 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
 
   const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
   const bundle = path.join(example, "dist/engine-load-test-desktop.js");
-  return runCapturing(
-    "xvfb-run",
-    [
-      "-a",
-      "-s",
-      "-screen 0 1600x900x24",
-      binary,
-      "run",
-      bundle,
-      "--width",
-      "1280",
-      "--height",
-      "720",
-    ],
-    { cwd: repoRoot, env: x11Environment() },
-  );
+  const hostArgs = ["run", bundle, "--width", "1280", "--height", "720"];
+  // Godot's desktop arm reports `vsync off`, so the host has to present uncapped too or the two
+  // arms are not comparable: pinned to a 60 Hz display ThreeNative reads 16.6 ms at every rung and
+  // its real cost is unknowable. The host refuses to fall back to FIFO, so this fails loudly.
+  if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
+  // `TN_BENCH_DISPLAY` puts the host on a real X display instead of a virtual one. It matters:
+  // `runGodotDesktop` has always launched its binary straight onto `DISPLAY`, so wrapping only this
+  // arm in `xvfb-run` compared one engine on the compositor against the other on a virtual server
+  // that costs ~25 ms a frame by itself — 256 cubes measured 26.13 ms under it. Point both arms at
+  // the same display and the desktop comparison means something.
+  const display = process.env.TN_BENCH_DISPLAY;
+  if (display !== undefined && display.length > 0) {
+    return runCapturing(binary, hostArgs, {
+      cwd: repoRoot,
+      env: { ...x11Environment(), DISPLAY: display },
+    });
+  }
+  return runCapturing("xvfb-run", ["-a", "-s", "-screen 0 1600x900x24", binary, ...hostArgs], {
+    cwd: repoRoot,
+    env: x11Environment(),
+  });
 }
 
 export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {

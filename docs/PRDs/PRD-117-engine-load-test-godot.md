@@ -4,11 +4,21 @@ prd_contract: v1
 
 # PRD-117 — The engine load test: what ThreeNative and Godot each cost per object, on the browser and on one Android phone
 
-**Status: PLAN ONLY, 2026-08-14. Nothing in this document has been executed.** No number
-below is a measurement; every table is a shape waiting to be filled. Godot 4.7.1.stable is
-installed on this machine (`/home/joao/.local/bin/godot`); **no Android device is attached
-right now** (`adb devices` is empty), so the Android arms are device-gated from the start
-and this PRD may not be closed without one.
+**Status: EXECUTED, 2026-08-15. Web and desktop closed; the phone arm is running.** The
+plan below was written before any of it ran, so tables in later sections may still show the
+shape rather than the result — `docs/verification/engine-load-test-summary-2026-08-15.md`
+is the record of what was actually measured, and it wins over any number here.
+
+Two comparisons now pass `checkEquivalence`: **web L2** (ThreeNative 3.9× faster at 16 384,
+knee 16 384 against no Godot knee on the ladder) and **desktop L2** (3.0× faster at 16 384,
+knee 65 536 against 16 384). Both arms uncapped, same display, triangle counts identical.
+
+**One fair comparison is lost and stays lost: web L1**, one `Mesh` per cube with no batching
+on either side — knee 1 024 against Godot's 4 096. Profiling puts the whole gap inside
+three.js's WebGPU per-object submission path (~11.3 µs/object against Godot's ~5.3 µs), which
+is upstream of this framework. An earlier revision of the summary claimed wins on all three
+platforms by pairing ThreeNative's L3 against Godot's L1 and by quoting web L2 alone; those
+claims were withdrawn on 2026-08-15 and the gate now runs on every published pair.
 
 **Complexity: 6 → MEDIUM mode.** A new example, a new Godot project, a new scorer, and one
 external toolchain (Godot export templates) plus one device lane. No package changes, no

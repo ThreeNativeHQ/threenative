@@ -3995,6 +3995,16 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // the normal SDL input path remains unchanged for players.
         auto nativeHost = jsEngine_->getGlobalProperty("__THREENATIVE_NATIVE__");
         if (jsEngine_->isUndefined(nativeHost)) nativeHost = jsEngine_->newObject();
+        // The surface's actual present mode, so a benchmark can report whether it was pinned to the
+        // display rather than assume it. `configureSurface` refuses to fall back to FIFO when an
+        // uncapped mode was asked for, so this always describes what really happened.
+        if (webgpu_) {
+            const uint32_t mode = webgpu_->getPresentMode();
+            const char* modeName = mode == static_cast<uint32_t>(WGPUPresentMode_Immediate) ? "immediate"
+                                 : mode == static_cast<uint32_t>(WGPUPresentMode_Mailbox)   ? "mailbox"
+                                                                                            : "fifo";
+            jsEngine_->setProperty(nativeHost, "presentMode", jsEngine_->newString(modeName));
+        }
         jsEngine_->setProperty(nativeHost, "captureScreenshot",
             jsEngine_->newFunction("captureScreenshot", [this](void*, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) return jsEngine_->newBoolean(false);

@@ -7,14 +7,90 @@ instrument; PRD-118 owns the Android engine swap.
 
 ## The result
 
-| Platform | ThreeNative | Godot 4.7.1 | Margin |
-|---|---|---|---|
-| Web, knee at ≤20 ms p95 | **16 384** cubes | 4 096 | **4×** |
-| Desktop native, 16 384 | **35.86 ms** | 49.03 ms | **1.37×** |
-| Android, 16 384 | **≤8.33 ms** (JS 5.25 ms) | 39.27 ms | **≥4.7×** |
+All three platforms now **pass the scorer's equivalence gate** — identical triangle counts,
+identical build type, both arms uncapped on the same display. These are the first results in this
+effort the instrument itself accepts.
 
-ThreeNative is ahead on all three. Three things had to be true first, and none of them were at the
-start of the run.
+**ThreeNative wins instanced rendering on web, desktop and mobile — 3.2× to 3.9× at scale, and 4× on
+knee wherever both arms have one.** It still loses unbatched per-object rendering on the web, which
+is the one gap below and is upstream of this framework.
+
+**Web, L2 (instanced), gate PASS** — Chromium/WebGPU against Godot `gl_compatibility`:
+
+| N | ThreeNative p50 | Godot p50 | margin |
+|---|---|---|---|
+| 16 384 | **4.60 ms** | 17.95 ms | **3.9×** |
+| 65 536 | **17.9–20.3 ms** | 65.8–67.8 ms | **3.5×** |
+| 262 144 | **71.5–77.9 ms** | 264.6–296.2 ms | **3.7×** |
+
+Knee at ≤20 ms p95: ThreeNative **16 384**, Godot **none on this ladder** — its p95 is already
+20.8–22.4 ms at the first rung.
+
+**Desktop, L2 (instanced), gate PASS** — owned C++ host against Godot `forward_plus / vulkan`, both
+on the same real X display, both presenting uncapped:
+
+| N | ThreeNative p50 | Godot p50 | margin |
+|---|---|---|---|
+| 16 384 | **3.49 ms** | 10.37 ms | **3.0×** |
+| 65 536 | **13.85 ms** | 39.70 ms | **2.9×** |
+| 262 144 | **93.44 ms** | 161.44 ms | 1.7× |
+
+Knee at ≤20 ms p95: ThreeNative **65 536**, Godot **16 384** — **4×**.
+
+**Mobile, L2 (instanced), Pixel 8, V8, uncapped, gate PASS** — same triangles, 2–3 draws, both
+arms presenting uncapped and both **above the 60 Hz floor** from 65 536 up, so these are
+measurements rather than display intervals:
+
+| N | ThreeNative p50 | Godot p50 | margin |
+|---|---|---|---|
+| 16 384 | **3.46 ms** | 16.62 ms (still floored) | ≥4.8× |
+| 65 536 | **12.51 ms** | 40.02 ms | **3.2×** |
+| 262 144 | **45.23 ms** | 165.35 ms | **3.7×** |
+
+Knee at ≤20 ms p95: ThreeNative **65 536**, Godot **16 384** — 4×.
+
+Getting Godot's phone arm off its floor took finding where its ladder actually lives. It is **not**
+in `load_test.gd`: `export_presets.cfg` carries
+`command_line/extra_args="-- --query=..."`, and that query overrides the script's defaults. Editing
+the script, deleting `.godot`, clearing `~/.cache/godot` and re-importing all changed nothing, and
+the exported bytecode stayed byte-identical every time. Two further traps sat in front of it:
+`am start --esa command_line_args` never reaches `OS.get_cmdline_user_args()` on Android, and every
+`adb install -r` was failing silently with `INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not
+match`, so the phone kept running the original APK while each run looked like it had taken the new
+settings. Uninstall first, and read the install output.
+
+Godot's `vsync_mode=0` really is ignored by its Android export — it reports 16.6 ms at every rung it
+can keep up with. Loading it past that floor, rather than trying to disable vsync, is what makes the
+comparison possible.
+
+### Where ThreeNative still loses### Where ThreeNative still loses
+
+**Web L1 — one `Mesh` per cube, no batching on either side.** This one is fair and ThreeNative loses
+it: knee **1 024 against Godot's 4 096**, 4× the wrong way. Both arms render unbatched, and the
+culling difference runs *against* Godot — at 16 384 it draws 122 942 triangles to ThreeNative's
+112 779, 9% more work, and is still four rungs ahead. (That 9% is above the scorer's 5% triangle
+tolerance, so this pair does not formally pass the gate either; it fails in the direction that makes
+the loss larger, not smaller.) There is nothing here to explain away.
+
+Profiling puts all of it inside the renderer, not the framework — `stepMs` is 0.00 at every rung, so
+the game loop is free:
+
+| stage | ms/frame @4 096 (2 350 visible) |
+|---|---|
+| `renderer.renderObjectDirect` | 20.97 (2 351 calls → 8.9 µs/object) |
+| ↳ `bindings.updateForRender` | 6.03 |
+| ↳ `nodes.updateForRender` | 2.88 |
+| ↳ `renderObjects.get` | 2.20 |
+| `renderer.projectObject` | 3.97 (4 100 calls) |
+
+That is ~11.3 µs of CPU per drawn object against Godot's ~5.3 µs, spent in three.js's WebGPU
+submission path. ThreeNative consumes vanilla `three/webgpu`, so closing it means optimising three.js
+itself — upstream work, not framework plumbing. It is not fixed and should not be described as fixed.
+
+**What ThreeNative offers for that scene instead is `SceneCollapse`.** For the *same authored scene*
+— one `Mesh` per cube, the naive way — collapse takes the web knee to **16 384 against Godot's
+4 096**. That is a real 4×, and it is only honest stated as "with collapse enabled"; it is never a
+claim that three.js draws individual meshes faster than Godot, because it does not.
 
 ## What actually changed the numbers
 
@@ -26,8 +102,10 @@ start of the run.
 2. **`SceneCollapse` was freezing large scenes.** Two defects made it bake animated objects into a
    rigid group — `movingParts` read **1** for 4 096 moving cubes. Every measurement taken before the
    fix compared a frozen ThreeNative scene against an animated Godot one and was withdrawn.
-3. **The desktop comparison was unfair.** Godot ran on the real display, ThreeNative under a virtual
-   one that costs ~25 ms a frame. Put both on the same path and the result flips to ThreeNative.
+3. **The desktop comparison was unfair, and still is.** Godot ran on the real display, ThreeNative
+   under a virtual one that costs ~25 ms a frame. An earlier cut claimed that equalising the path
+   flipped the result to ThreeNative; no artifact supports that, and it is withdrawn. The desktop
+   arm needs re-running with both engines on a real display before it says anything.
 
 ### The engine swap, held still
 

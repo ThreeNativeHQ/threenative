@@ -315,10 +315,14 @@ export async function packageAndroid(
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
     const command = process.platform === 'win32' ? gradlew : 'sh';
-    const args =
-      process.platform === 'win32'
-        ? ['assembleDebug', '-x', 'buildAndroidFirstProofBundle']
-        : [gradlew, 'assembleDebug', '-x', 'buildAndroidFirstProofBundle'];
+    // Build variants the app already understands — `-PthreenativeJsEngine=v8`,
+    // `-PthreenativeVsync=false` — are only reachable if something can pass them through. Without
+    // this the properties exist in `build.gradle.kts` and no caller can ever set them.
+    const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
+      .split(' ')
+      .filter((entry) => entry.length > 0);
+    const baseArgs = ['assembleDebug', '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {
       cwd: androidRoot,

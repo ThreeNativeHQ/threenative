@@ -112,6 +112,9 @@ async function main(): Promise<void> {
   // property access like `scope.__TN_PLATFORM__` is never replaced and silently reads undefined —
   // which filed every phone run as `tn-desktop`.
   const onAndroid = __TN_PLATFORM__ === "android";
+  const presentMode =
+    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
+      ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
     build: {
@@ -126,9 +129,10 @@ async function main(): Promise<void> {
     display: {
       height: VIEWPORT_HEIGHT,
       refreshHz: __TN_BENCH_CONFIG__.refreshHz,
-      // The native host presents FIFO on both targets, so this reports what happens rather than
-      // what was asked for.
-      vsync: true,
+      // Read back from the surface, never assumed: the host reports `fifo`, `immediate` or
+      // `mailbox`, and only `fifo` pins frames to the display. Reporting `true` unconditionally is
+      // how an uncapped run still described itself as display-bound.
+      vsync: presentMode === "fifo",
       width: VIEWPORT_WIDTH,
     },
     driver: {

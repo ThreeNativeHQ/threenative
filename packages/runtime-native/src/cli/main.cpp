@@ -506,6 +506,7 @@ struct CLIOptions {
     int frames = 60;
     bool quiet = false;
     bool noSdl = false;  // Run without SDL (headless GPU, no window)
+    bool vsync = true;   // --no-vsync selects an uncapped present mode (immediate/mailbox)
 
     // Video recording mode
     std::string videoPath;      // Output video path
@@ -575,6 +576,11 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             opts.screenshotPath = argv[++i];
         } else if (arg == "--frames" && i + 1 < argc) {
             opts.frames = std::stoi(argv[++i]);
+        } else if (arg == "--no-vsync") {
+            // Presenting FIFO pins every frame to the display and turns a benchmark into a
+            // measurement of the monitor. `configureSurface` already refuses to fall back to FIFO
+            // when an uncapped mode is unavailable, so this either measures the engine or fails.
+            opts.vsync = false;
         } else if (arg == "--quiet" || arg == "-q") {
             opts.quiet = true;
         } else if (arg == "--headless") {
@@ -1446,6 +1452,7 @@ int runScript(const CLIOptions& opts) {
     config.resizable = opts.resizable;
     config.noSdl = opts.noSdl;
     config.watch = opts.watch;
+    config.vsync = opts.vsync;
     config.debug = debugMode;
 
     auto runtime = mystral::Runtime::create(config);
