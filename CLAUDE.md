@@ -249,8 +249,21 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
 
 Exit `0` passed, `1` assertions failed, `2` never reached assertions. `--browser-recipe
 webgpu` supplies the current Chromium WebGPU flags; `--browser-arg` is the escape hatch. For
-screenshot or `visual` assertions on headless Linux, prefix with
-`xvfb-run -a -s '-screen 0 1600x900x24'`.
+screenshot or `visual` assertions on headless Linux, prefix with `sh scripts/xvfb.sh`.
+
+**Do not use `xvfb-run`, and do not trust an exit code that came through it.** On
+`xorg-server-xvfb 21.1.24` it captures the command's status, re-enables `set -e`, then runs a
+cleanup `kill` that fails because Xvfb has already exited — and that failing kill's status
+replaces the real one. `xvfb-run -a -s '-screen 0 1600x900x24' true` exits `1`. Every gate
+wrapped in it reports failure whether it passed or not, which manufactures a red that costs
+hours to chase. `scripts/xvfb.sh` picks a free display, cleans up, and exits with the
+command's own status.
+
+**A WebGPU run that does not name its adapter is not evidence.** Without
+`--enable-features=Vulkan` Chromium never reaches the Linux Vulkan driver and silently serves
+WebGPU from SwiftShader, its CPU rasteriser — no error, healthy-looking limits, and a software
+renderer's results. The `webgpu` recipe now passes the flag; if you hand-roll browser
+arguments, check `adapter.info` and treat `swiftshader` as a failed run.
 
 The same scenario runs on device with `--target android|ios` (`--device`, `--ios-transport`).
 That is how a behaviour change gets proved on both halves of the codebase rather than
