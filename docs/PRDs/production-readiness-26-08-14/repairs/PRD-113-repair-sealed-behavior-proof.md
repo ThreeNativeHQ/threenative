@@ -9,6 +9,16 @@ consumer proof remains unmet: the committed replay record has only 1/6 positive 
 the paired round is explicitly void. Keep this PRD active until a fresh positive replay passes all
 six behavior dimensions and the negative archive reaches assertions and fails behavior rows.
 
+**The remaining work is now named, with fresh evidence:**
+`docs/verification/prd-113-sealed-proof-still-tests-naming-2026-08-15.md`. A round-8 arm that
+never saw the proof scored 0/2 on the replay scenario purely on unpublished tokens — the proof
+demands `state.replayPhase` equal `"done"` and `state.replayMatch` equal the string `"match"`,
+while the brief publishes only the two paths. The build produced `"complete"` and boolean `true`
+with a correct, hash-identical replay. Option C is therefore not carried through to
+`physics-puzzle-replay.playtest.json`, and making those two rows behaviour-based — `changed`
+for the phase, an `anyOf` decisive check for the match — is the change this PRD still owes.
+Editing it moves the sealed hash, so it lands with a before/after run rather than mid-round.
+
 Fresh repair for the review-2 blocker on capped lane
 `linchpin/prd-113-sealed-brief-naming-contract-r2` at `93c76b7`. The recorded owner decision remains
 Option C: publish only irreducible harness inputs and make the rest behavior-based.
