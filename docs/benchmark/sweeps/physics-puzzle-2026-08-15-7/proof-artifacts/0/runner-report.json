@@ -1,0 +1,3470 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'replayMatch'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "33 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "33 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    }
+  ],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 1801,
+  "observations": {
+    "components": {
+      "crate-00": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.298451900482178,
+          "after": -4.291100978851318
+        },
+        "y": {
+          "before": 0.3949751853942871,
+          "after": 0.39834389090538025
+        },
+        "z": {
+          "before": -4.997844696044922,
+          "after": -5.031518936157227
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-01": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.29172945022583,
+          "after": -4.286247253417969
+        },
+        "y": {
+          "before": 1.3204092979431152,
+          "after": 1.1965926885604858
+        },
+        "z": {
+          "before": -5.065965175628662,
+          "after": -5.110432147979736
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-02": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.377028942108154,
+          "after": -4.471132755279541
+        },
+        "y": {
+          "before": 2.491503953933716,
+          "after": 1.9947558641433716
+        },
+        "z": {
+          "before": -5.101041316986084,
+          "after": -5.168638229370117
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-03": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.298466205596924,
+          "after": -4.30372428894043
+        },
+        "y": {
+          "before": 0.39497512578964233,
+          "after": 0.3984261155128479
+        },
+        "z": {
+          "before": -4.1678361892700195,
+          "after": -4.185792446136475
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-04": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.2804646492004395,
+          "after": -4.353945255279541
+        },
+        "y": {
+          "before": 1.3194111585617065,
+          "after": 1.1966490745544434
+        },
+        "z": {
+          "before": -4.246441841125488,
+          "after": -4.247424602508545
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-05": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.396097660064697,
+          "after": -4.528465270996094
+        },
+        "y": {
+          "before": 2.4886693954467773,
+          "after": 1.994578242301941
+        },
+        "z": {
+          "before": -4.1500701904296875,
+          "after": -4.1495490074157715
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-06": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.298457622528076,
+          "after": -4.337251663208008
+        },
+        "y": {
+          "before": 0.3949751555919647,
+          "after": 0.39837148785591125
+        },
+        "z": {
+          "before": -3.337841272354126,
+          "after": -3.2995290756225586
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-07": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.3435258865356445,
+          "after": -4.398369789123535
+        },
+        "y": {
+          "before": 1.321707844734192,
+          "after": 1.1968132257461548
+        },
+        "z": {
+          "before": -3.274240493774414,
+          "after": -3.2155561447143555
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-08": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -4.492679119110107,
+          "after": -5.366316795349121
+        },
+        "y": {
+          "before": 2.488231658935547,
+          "after": 0.39872390031814575
+        },
+        "z": {
+          "before": -3.1369025707244873,
+          "after": -3.181694269180298
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-09": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.468449592590332,
+          "after": -3.4840967655181885
+        },
+        "y": {
+          "before": 0.3949751853942871,
+          "after": 0.3981870710849762
+        },
+        "z": {
+          "before": -4.99784517288208,
+          "after": -5.031774520874023
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-10": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.4730262756347656,
+          "after": -3.4483702182769775
+        },
+        "y": {
+          "before": 1.3202996253967285,
+          "after": 1.1964417695999146
+        },
+        "z": {
+          "before": -5.037323474884033,
+          "after": -5.121644020080566
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-11": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.4979567527770996,
+          "after": -3.529588222503662
+        },
+        "y": {
+          "before": 2.493055582046509,
+          "after": 1.9956947565078735
+        },
+        "z": {
+          "before": -5.148293495178223,
+          "after": -5.310956954956055
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-12": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.4684576988220215,
+          "after": -3.473651885986328
+        },
+        "y": {
+          "before": 0.39497512578964233,
+          "after": 0.39817216992378235
+        },
+        "z": {
+          "before": -4.167840957641602,
+          "after": -4.158191204071045
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-13": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.469107151031494,
+          "after": -3.489945650100708
+        },
+        "y": {
+          "before": 1.3196818828582764,
+          "after": 1.1964956521987915
+        },
+        "z": {
+          "before": -4.13901948928833,
+          "after": -4.1244378089904785
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-14": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.3799829483032227,
+          "after": -3.3734805583953857
+        },
+        "y": {
+          "before": 2.491865396499634,
+          "after": 1.9950017929077148
+        },
+        "z": {
+          "before": -4.199716567993164,
+          "after": -4.267223358154297
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-15": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.4684641361236572,
+          "after": -3.489088535308838
+        },
+        "y": {
+          "before": 0.3949751853942871,
+          "after": 0.3982534408569336
+        },
+        "z": {
+          "before": -3.3378372192382812,
+          "after": -3.3013367652893066
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-16": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.4628820419311523,
+          "after": -3.5046839714050293
+        },
+        "y": {
+          "before": 1.3212835788726807,
+          "after": 1.196365237236023
+        },
+        "z": {
+          "before": -3.270934820175171,
+          "after": -3.210686683654785
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-17": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -3.466604232788086,
+          "after": -3.546647548675537
+        },
+        "y": {
+          "before": 2.489434242248535,
+          "after": 1.9952133893966675
+        },
+        "z": {
+          "before": -3.2379531860351562,
+          "after": -3.1081690788269043
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-18": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.6384389400482178,
+          "after": -2.608302116394043
+        },
+        "y": {
+          "before": 0.3949751853942871,
+          "after": 0.39837658405303955
+        },
+        "z": {
+          "before": -4.9978532791137695,
+          "after": -5.049428939819336
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-19": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.6716389656066895,
+          "after": -2.623603343963623
+        },
+        "y": {
+          "before": 1.3203108310699463,
+          "after": 1.1969971656799316
+        },
+        "z": {
+          "before": -5.035742282867432,
+          "after": -5.165036201477051
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-20": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.486374855041504,
+          "after": -2.3914268016815186
+        },
+        "y": {
+          "before": 2.487396717071533,
+          "after": 0.3987242579460144
+        },
+        "z": {
+          "before": -5.208391189575195,
+          "after": -6.722651958465576
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-21": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.6384451389312744,
+          "after": -2.6112942695617676
+        },
+        "y": {
+          "before": 0.3949751555919647,
+          "after": 0.39844805002212524
+        },
+        "z": {
+          "before": -4.167849063873291,
+          "after": -4.163280010223389
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-22": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.645494222640991,
+          "after": -2.5725815296173096
+        },
+        "y": {
+          "before": 1.3211041688919067,
+          "after": 1.1972073316574097
+        },
+        "z": {
+          "before": -4.203179836273193,
+          "after": -4.163990497589111
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-23": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.4204022884368896,
+          "after": -0.8913966417312622
+        },
+        "y": {
+          "before": 2.4948842525482178,
+          "after": 0.3987242877483368
+        },
+        "z": {
+          "before": -4.148234844207764,
+          "after": -4.246622562408447
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-24": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.6384575366973877,
+          "after": -2.5635011196136475
+        },
+        "y": {
+          "before": 0.39497512578964233,
+          "after": 0.3984481990337372
+        },
+        "z": {
+          "before": -3.337841033935547,
+          "after": -3.2690911293029785
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-25": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.6058273315429688,
+          "after": -2.4037539958953857
+        },
+        "y": {
+          "before": 1.3198140859603882,
+          "after": 1.1969066858291626
+        },
+        "z": {
+          "before": -3.300569534301758,
+          "after": -3.157270669937134
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-26": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stack",
+          "after": "stack"
+        },
+        "x": {
+          "before": -2.3317525386810303,
+          "after": -1.231967806816101
+        },
+        "y": {
+          "before": 2.4889822006225586,
+          "after": 0.3987240791320801
+        },
+        "z": {
+          "before": -3.2173798084259033,
+          "after": -2.016599655151367
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-27": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "keystone",
+          "after": "keystone"
+        },
+        "x": {
+          "before": -3.0438902378082275,
+          "after": -3.0441510677337646
+        },
+        "y": {
+          "before": 0.3956896960735321,
+          "after": 0.3987237215042114
+        },
+        "z": {
+          "before": 3.044900417327881,
+          "after": 3.044588804244995
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-28": {
+        "kind": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "x": {
+          "before": -2.2662854194641113,
+          "after": -2.2665529251098633
+        },
+        "y": {
+          "before": 0.3889542818069458,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": 2.2669780254364014,
+          "after": 2.266538381576538
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "phantom"
+          ],
+          "after": [
+            "crate",
+            "phantom"
+          ]
+        }
+      },
+      "crate-29": {
+        "kind": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "x": {
+          "before": -1.3470463752746582,
+          "after": -1.3473145961761475
+        },
+        "y": {
+          "before": 0.3889542818069458,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": 1.3477389812469482,
+          "after": 1.3472987413406372
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "phantom"
+          ],
+          "after": [
+            "crate",
+            "phantom"
+          ]
+        }
+      },
+      "crate-30": {
+        "kind": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "phantom",
+          "after": "phantom"
+        },
+        "x": {
+          "before": 4.451229572296143,
+          "after": 4.450963020324707
+        },
+        "y": {
+          "before": 0.3889543116092682,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": -2.1877944469451904,
+          "after": -2.1882336139678955
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "phantom"
+          ],
+          "after": [
+            "crate",
+            "phantom"
+          ]
+        }
+      },
+      "crate-31": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": -1.9129942655563354,
+          "after": -1.912988305091858
+        },
+        "y": {
+          "before": 1.207218050956726,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": 5.589949607849121,
+          "after": 5.589989185333252
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-32": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": -5.589949607849121,
+          "after": -5.589977264404297
+        },
+        "y": {
+          "before": 0.5684347748756409,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": -1.4811183214187622,
+          "after": -1.4811524152755737
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-33": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": 4.450966835021973,
+          "after": 4.4509596824646
+        },
+        "y": {
+          "before": 0.5372510552406311,
+          "after": 0.3987237215042114
+        },
+        "z": {
+          "before": 0.3573593199253082,
+          "after": 0.3573639690876007
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-34": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": 5.440916061401367,
+          "after": 5.440794467926025
+        },
+        "y": {
+          "before": 1.1711735725402832,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": -2.329646348953247,
+          "after": -2.3296070098876953
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-35": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": 1.7639610767364502,
+          "after": 1.7639167308807373
+        },
+        "y": {
+          "before": 0.8250060081481934,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": -5.440916061401367,
+          "after": -5.4409260749816895
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-36": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": 2.6124892234802246,
+          "after": 2.6124773025512695
+        },
+        "y": {
+          "before": 1.2737759351730347,
+          "after": 0.3987237513065338
+        },
+        "z": {
+          "before": 4.175735950469971,
+          "after": 4.175815582275391
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "crate-37": {
+        "kind": {
+          "before": "solid",
+          "after": "solid"
+        },
+        "occupied": {
+          "before": false,
+          "after": false
+        },
+        "pushed": {
+          "before": false,
+          "after": false
+        },
+        "role": {
+          "before": "stray",
+          "after": "stray"
+        },
+        "x": {
+          "before": 0.20832611620426178,
+          "after": 0.2082740068435669
+        },
+        "y": {
+          "before": 0.7527459263801575,
+          "after": 0.3987237215042114
+        },
+        "z": {
+          "before": -5.582337856292725,
+          "after": -5.5823259353637695
+        },
+        "tags": {
+          "before": [
+            "crate",
+            "solid"
+          ],
+          "after": [
+            "crate",
+            "solid"
+          ]
+        }
+      },
+      "player": {
+        "grounded": {
+          "before": true,
+          "after": true
+        },
+        "state": {
+          "before": "idle",
+          "after": "idle"
+        },
+        "x": {
+          "before": -4.599999904632568,
+          "after": -4.599999904632568
+        },
+        "y": {
+          "before": 0.7096627354621887,
+          "after": 0.7096627354621887
+        },
+        "z": {
+          "before": 4.59999942779541,
+          "after": 4.59999942779541
+        },
+        "tags": {
+          "before": [
+            "character"
+          ],
+          "after": [
+            "character"
+          ]
+        }
+      },
+      "goal": {
+        "x": {
+          "before": 1.4811183182043095,
+          "after": 1.4811183182043095
+        },
+        "y": {
+          "before": 0,
+          "after": 0
+        },
+        "z": {
+          "before": -1.4811183182043095,
+          "after": -1.4811183182043095
+        },
+        "tags": {
+          "before": [
+            "goal"
+          ],
+          "after": [
+            "goal"
+          ]
+        }
+      },
+      "reach": {
+        "x": {
+          "before": -4.599999904632568,
+          "after": -4.599999904632568
+        },
+        "y": {
+          "before": 0.7096627354621887,
+          "after": 0.7096627354621887
+        },
+        "z": {
+          "before": 4.59999942779541,
+          "after": 4.59999942779541
+        },
+        "tags": {
+          "before": [
+            "reach"
+          ],
+          "after": [
+            "reach"
+          ]
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "start-replay",
+        "snapshots": {
+          "crate-00": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.298629283905029,
+            "y": 0.5482969284057617,
+            "z": -4.998124122619629,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-01": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.280666351318359,
+            "y": 1.718259334564209,
+            "z": -5.04617166519165,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-02": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.313962459564209,
+            "y": 2.888171434402466,
+            "z": -5.0122599601745605,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-03": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.298629283905029,
+            "y": 0.5482969284057617,
+            "z": -4.168124198913574,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-04": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.274041652679443,
+            "y": 1.7182539701461792,
+            "z": -4.184153079986572,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-05": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.2849955558776855,
+            "y": 2.888442039489746,
+            "z": -4.087367534637451,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-06": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.298629283905029,
+            "y": 0.5482969284057617,
+            "z": -3.3381240367889404,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-07": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.268457889556885,
+            "y": 1.7183446884155273,
+            "z": -3.3580117225646973,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-08": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.217568397521973,
+            "y": 2.8881406784057617,
+            "z": -3.3256032466888428,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-09": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4686291217803955,
+            "y": 0.5482969284057617,
+            "z": -4.998124122619629,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-10": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.465935230255127,
+            "y": 1.71830415725708,
+            "z": -5.033592700958252,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-11": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.409268856048584,
+            "y": 2.888120174407959,
+            "z": -4.97139310836792,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-12": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4686291217803955,
+            "y": 0.5482969284057617,
+            "z": -4.168124198913574,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-13": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.5226569175720215,
+            "y": 1.7183201313018799,
+            "z": -4.117736339569092,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-14": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.3524773120880127,
+            "y": 2.8884832859039307,
+            "z": -4.118184566497803,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-15": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4686291217803955,
+            "y": 0.5482969284057617,
+            "z": -3.3381240367889404,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-16": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4289650917053223,
+            "y": 1.7183105945587158,
+            "z": -3.2966575622558594,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-17": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.434642791748047,
+            "y": 2.8884732723236084,
+            "z": -3.404428005218506,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-18": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.638629198074341,
+            "y": 0.5482969284057617,
+            "z": -4.998124122619629,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-19": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.675366163253784,
+            "y": 1.7182573080062866,
+            "z": -5.016197681427002,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-20": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.6023964881896973,
+            "y": 2.8882832527160645,
+            "z": -4.947872638702393,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-21": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.638629198074341,
+            "y": 0.5482969284057617,
+            "z": -4.168124198913574,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-22": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.652316093444824,
+            "y": 1.7183291912078857,
+            "z": -4.225168704986572,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-23": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.6214945316314697,
+            "y": 2.8883581161499023,
+            "z": -4.267406463623047,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-24": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.638629198074341,
+            "y": 0.5482969284057617,
+            "z": -3.3381240367889404,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-25": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.675285577774048,
+            "y": 1.7182929515838623,
+            "z": -3.2957193851470947,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-26": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.6120572090148926,
+            "y": 2.8882007598876953,
+            "z": -3.4134535789489746,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-27": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "keystone",
+            "x": -3.044365167617798,
+            "y": 0.7482969164848328,
+            "z": 3.044365167617798,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-28": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": -2.266547679901123,
+            "y": 0.6482968926429749,
+            "z": 2.266547679901123,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-29": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": -1.3473087549209595,
+            "y": 0.6482968926429749,
+            "z": 1.3473087549209595,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-30": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": 4.450966835021973,
+            "y": 0.6482968926429749,
+            "z": -2.188225030899048,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-31": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": -1.9129942655563354,
+            "y": 1.6050678491592407,
+            "z": 5.589949607849121,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-32": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": -5.589949607849121,
+            "y": 0.9662847518920898,
+            "z": -1.4811183214187622,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-33": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 4.450966835021973,
+            "y": 0.9351009726524353,
+            "z": 0.3573593199253082,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-34": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 5.440916061401367,
+            "y": 1.5690233707427979,
+            "z": -2.329646348953247,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-35": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 1.7639610767364502,
+            "y": 1.222855806350708,
+            "z": -5.440916061401367,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-36": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 2.6124892234802246,
+            "y": 1.6716257333755493,
+            "z": 4.175735950469971,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-37": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 0.20832611620426178,
+            "y": 1.150595784187317,
+            "z": -5.582337856292725,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "player": {
+            "grounded": false,
+            "state": "idle",
+            "x": -4.599999904632568,
+            "y": 0.777275025844574,
+            "z": 4.599999904632568,
+            "tags": [
+              "character"
+            ]
+          },
+          "goal": {
+            "x": 1.4811183182043095,
+            "y": 0,
+            "z": -1.4811183182043095,
+            "tags": [
+              "goal"
+            ]
+          },
+          "reach": {
+            "x": -4.6,
+            "y": 0.78,
+            "z": 4.6,
+            "tags": [
+              "reach"
+            ]
+          }
+        },
+        "tick": 34
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "crate-00": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.291100978851318,
+            "y": 0.39834389090538025,
+            "z": -5.031518936157227,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-01": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.286247253417969,
+            "y": 1.1965926885604858,
+            "z": -5.110432147979736,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-02": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.471132755279541,
+            "y": 1.9947558641433716,
+            "z": -5.168638229370117,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-03": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.30372428894043,
+            "y": 0.3984261155128479,
+            "z": -4.185792446136475,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-04": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.353945255279541,
+            "y": 1.1966490745544434,
+            "z": -4.247424602508545,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-05": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.528465270996094,
+            "y": 1.994578242301941,
+            "z": -4.1495490074157715,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-06": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.337251663208008,
+            "y": 0.39837148785591125,
+            "z": -3.2995290756225586,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-07": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -4.398369789123535,
+            "y": 1.1968132257461548,
+            "z": -3.2155561447143555,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-08": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -5.366316795349121,
+            "y": 0.39872390031814575,
+            "z": -3.181694269180298,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-09": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4840967655181885,
+            "y": 0.3981870710849762,
+            "z": -5.031774520874023,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-10": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.4483702182769775,
+            "y": 1.1964417695999146,
+            "z": -5.121644020080566,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-11": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.529588222503662,
+            "y": 1.9956947565078735,
+            "z": -5.310956954956055,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-12": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.473651885986328,
+            "y": 0.39817216992378235,
+            "z": -4.158191204071045,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-13": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.489945650100708,
+            "y": 1.1964956521987915,
+            "z": -4.1244378089904785,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-14": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.3734805583953857,
+            "y": 1.9950017929077148,
+            "z": -4.267223358154297,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-15": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.489088535308838,
+            "y": 0.3982534408569336,
+            "z": -3.3013367652893066,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-16": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.5046839714050293,
+            "y": 1.196365237236023,
+            "z": -3.210686683654785,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-17": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -3.546647548675537,
+            "y": 1.9952133893966675,
+            "z": -3.1081690788269043,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-18": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.608302116394043,
+            "y": 0.39837658405303955,
+            "z": -5.049428939819336,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-19": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.623603343963623,
+            "y": 1.1969971656799316,
+            "z": -5.165036201477051,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-20": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.3914268016815186,
+            "y": 0.3987242579460144,
+            "z": -6.722651958465576,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-21": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.6112942695617676,
+            "y": 0.39844805002212524,
+            "z": -4.163280010223389,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-22": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.5725815296173096,
+            "y": 1.1972073316574097,
+            "z": -4.163990497589111,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-23": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -0.8913966417312622,
+            "y": 0.3987242877483368,
+            "z": -4.246622562408447,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-24": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.5635011196136475,
+            "y": 0.3984481990337372,
+            "z": -3.2690911293029785,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-25": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -2.4037539958953857,
+            "y": 1.1969066858291626,
+            "z": -3.157270669937134,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-26": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stack",
+            "x": -1.231967806816101,
+            "y": 0.3987240791320801,
+            "z": -2.016599655151367,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-27": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "keystone",
+            "x": -3.0441510677337646,
+            "y": 0.3987237215042114,
+            "z": 3.044588804244995,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-28": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": -2.2665529251098633,
+            "y": 0.3987237513065338,
+            "z": 2.266538381576538,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-29": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": -1.3473145961761475,
+            "y": 0.3987237513065338,
+            "z": 1.3472987413406372,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-30": {
+            "kind": "phantom",
+            "occupied": false,
+            "pushed": false,
+            "role": "phantom",
+            "x": 4.450963020324707,
+            "y": 0.3987237513065338,
+            "z": -2.1882336139678955,
+            "tags": [
+              "crate",
+              "phantom"
+            ]
+          },
+          "crate-31": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": -1.912988305091858,
+            "y": 0.3987237513065338,
+            "z": 5.589989185333252,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-32": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": -5.589977264404297,
+            "y": 0.3987237513065338,
+            "z": -1.4811524152755737,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-33": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 4.4509596824646,
+            "y": 0.3987237215042114,
+            "z": 0.3573639690876007,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-34": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 5.440794467926025,
+            "y": 0.3987237513065338,
+            "z": -2.3296070098876953,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-35": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 1.7639167308807373,
+            "y": 0.3987237513065338,
+            "z": -5.4409260749816895,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-36": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 2.6124773025512695,
+            "y": 0.3987237513065338,
+            "z": 4.175815582275391,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "crate-37": {
+            "kind": "solid",
+            "occupied": false,
+            "pushed": false,
+            "role": "stray",
+            "x": 0.2082740068435669,
+            "y": 0.3987237215042114,
+            "z": -5.5823259353637695,
+            "tags": [
+              "crate",
+              "solid"
+            ]
+          },
+          "player": {
+            "grounded": true,
+            "state": "idle",
+            "x": -4.599999904632568,
+            "y": 0.7096627354621887,
+            "z": 4.59999942779541,
+            "tags": [
+              "character"
+            ]
+          },
+          "goal": {
+            "x": 1.4811183182043095,
+            "y": 0,
+            "z": -1.4811183182043095,
+            "tags": [
+              "goal"
+            ]
+          },
+          "reach": {
+            "x": -4.599999904632568,
+            "y": 0.7096627354621887,
+            "z": 4.59999942779541,
+            "tags": [
+              "reach"
+            ]
+          }
+        },
+        "tick": 1834
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":77,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":80,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":18,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":77,\"cameraOverlay\":0,\"layers\":0,\"renderOrder\":0,\"renderHook\":0,\"transparency\":3,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
+        "type": "info"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "page-error",
+        "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43028:9)",
+        "type": "pageerror"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "GameState": {
+        "before": {
+          "bodies": 38,
+          "goalContacts": 0,
+          "phantomOverlaps": 0,
+          "phantomPasses": 0,
+          "playerX": -4.599999904632568,
+          "playerY": 0.7096627354621887,
+          "playerZ": 4.59999942779541,
+          "pushes": 0,
+          "replayChecks": 0,
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": false,
+          "replayPhase": "idle",
+          "replayTick": 0,
+          "seed": 6132,
+          "settled": 12,
+          "solved": false,
+          "solvedBy": ""
+        },
+        "after": {
+          "bodies": 38,
+          "goalContacts": 0,
+          "phantomOverlaps": 0,
+          "phantomPasses": 4,
+          "playerX": -4.599999904632568,
+          "playerY": 0.7096627354621887,
+          "playerZ": 4.59999942779541,
+          "pushes": 0,
+          "replayChecks": 1,
+          "replayHashA": "5321f074",
+          "replayHashB": "5321f074",
+          "replayMatch": true,
+          "replayPhase": "done",
+          "replayTick": 0,
+          "seed": 6132,
+          "settled": 38,
+          "solved": false,
+          "solvedBy": ""
+        }
+      },
+      "state": {
+        "before": {
+          "bodies": 38,
+          "goalContacts": 0,
+          "phantomOverlaps": 0,
+          "phantomPasses": 0,
+          "playerX": -4.599999904632568,
+          "playerY": 0.7096627354621887,
+          "playerZ": 4.59999942779541,
+          "pushes": 0,
+          "replayChecks": 0,
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": false,
+          "replayPhase": "idle",
+          "replayTick": 0,
+          "seed": 6132,
+          "settled": 12,
+          "solved": false,
+          "solvedBy": ""
+        },
+        "after": {
+          "bodies": 38,
+          "goalContacts": 0,
+          "phantomOverlaps": 0,
+          "phantomPasses": 4,
+          "playerX": -4.599999904632568,
+          "playerY": 0.7096627354621887,
+          "playerZ": 4.59999942779541,
+          "pushes": 0,
+          "replayChecks": 1,
+          "replayHashA": "5321f074",
+          "replayHashB": "5321f074",
+          "replayMatch": true,
+          "replayPhase": "done",
+          "replayTick": 0,
+          "seed": 6132,
+          "settled": 38,
+          "solved": false,
+          "solvedBy": ""
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "start-replay",
+        "snapshots": {
+          "GameState": {
+            "bodies": 38,
+            "goalContacts": 0,
+            "phantomOverlaps": 0,
+            "phantomPasses": 0,
+            "playerX": -4.6,
+            "playerY": 0.78,
+            "playerZ": 4.6,
+            "pushes": 0,
+            "replayChecks": 0,
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": false,
+            "replayPhase": "run1",
+            "replayTick": 1,
+            "seed": 6132,
+            "settled": 38,
+            "solved": false,
+            "solvedBy": ""
+          },
+          "state": {
+            "bodies": 38,
+            "goalContacts": 0,
+            "phantomOverlaps": 0,
+            "phantomPasses": 0,
+            "playerX": -4.6,
+            "playerY": 0.78,
+            "playerZ": 4.6,
+            "pushes": 0,
+            "replayChecks": 0,
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": false,
+            "replayPhase": "run1",
+            "replayTick": 1,
+            "seed": 6132,
+            "settled": 38,
+            "solved": false,
+            "solvedBy": ""
+          }
+        },
+        "tick": 34
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "GameState": {
+            "bodies": 38,
+            "goalContacts": 0,
+            "phantomOverlaps": 0,
+            "phantomPasses": 4,
+            "playerX": -4.599999904632568,
+            "playerY": 0.7096627354621887,
+            "playerZ": 4.59999942779541,
+            "pushes": 0,
+            "replayChecks": 1,
+            "replayHashA": "5321f074",
+            "replayHashB": "5321f074",
+            "replayMatch": true,
+            "replayPhase": "done",
+            "replayTick": 0,
+            "seed": 6132,
+            "settled": 38,
+            "solved": false,
+            "solvedBy": ""
+          },
+          "state": {
+            "bodies": 38,
+            "goalContacts": 0,
+            "phantomOverlaps": 0,
+            "phantomPasses": 4,
+            "playerX": -4.599999904632568,
+            "playerY": 0.7096627354621887,
+            "playerZ": 4.59999942779541,
+            "pushes": 0,
+            "replayChecks": 1,
+            "replayHashA": "5321f074",
+            "replayHashB": "5321f074",
+            "replayMatch": true,
+            "replayPhase": "done",
+            "replayTick": 0,
+            "seed": 6132,
+            "settled": 38,
+            "solved": false,
+            "solvedBy": ""
+          }
+        },
+        "tick": 1834
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "page-error",
+          "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=fb842e1b:43028:9)",
+          "type": "pageerror"
+        }
+      ],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {
+          "player": "idle"
+        },
+        "tags": {
+          "crate": {
+            "count": 38
+          },
+          "solid": {
+            "count": 35
+          },
+          "phantom": {
+            "count": 3
+          },
+          "character": {
+            "count": 1
+          },
+          "goal": {
+            "count": 1
+          },
+          "reach": {
+            "count": 1
+          }
+        },
+        "audio": {
+          "queued": 0,
+          "voices": 0
+        },
+        "world": {
+          "seed": 6132,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+            "core": "0.1.0",
+            "randomState": 6132,
+            "rapier": "0.19.3",
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {
+              "player": "idle"
+            },
+            "tags": {
+              "crate": {
+                "count": 38
+              },
+              "solid": {
+                "count": 35
+              },
+              "phantom": {
+                "count": 3
+              },
+              "character": {
+                "count": 1
+              },
+              "goal": {
+                "count": 1
+              },
+              "reach": {
+                "count": 1
+              }
+            },
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 6132,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 6132,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "start-replay",
+          "tick": 34
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {
+              "player": "idle"
+            },
+            "tags": {
+              "crate": {
+                "count": 38
+              },
+              "solid": {
+                "count": 35
+              },
+              "phantom": {
+                "count": 3
+              },
+              "character": {
+                "count": 1
+              },
+              "goal": {
+                "count": 1
+              },
+              "reach": {
+                "count": 1
+              }
+            },
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 6132,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 6132,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "replay-complete",
+          "tick": 1834
+        }
+      ]
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "start-replay",
+        "signals": [],
+        "tick": 34
+      },
+      {
+        "label": "replay-complete",
+        "signals": [],
+        "tick": 1834
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.0021299913194444443,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/physics-puzzle-2026-08-15-7/proof-artifacts/0",
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "assertionResults": [
+    {
+      "details": {
+        "after": "done",
+        "before": "idle",
+        "expected": {
+          "equals": "done",
+          "changed": true
+        },
+        "id": "state",
+        "path": "replayPhase",
+        "trivial": false
+      },
+      "id": "resource.state.replayPhase",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": true,
+        "before": false,
+        "expected": {
+          "equals": "match",
+          "changed": true
+        },
+        "id": "state",
+        "path": "replayMatch",
+        "trivial": false
+      },
+      "id": "resource.state.replayMatch",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": 6132,
+        "expectedRuntime": null,
+        "observed": 6132,
+        "observedRuntime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "core": "0.1.0",
+          "randomState": 6132,
+          "rapier": "0.19.3",
+          "step": 0.016666666666666666
+        }
+      },
+      "id": "world.seed",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 33,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 33
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "physics-puzzle-deterministic-replay-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5190"
+}
