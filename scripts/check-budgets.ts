@@ -61,6 +61,11 @@ const NATIVE_RUNTIME_DIRECTORY_NAMES = new Set([
 ]);
 const WALK_EXCLUSIONS = new Set([
   ".cache",
+  // Agent worktrees are checkouts of this repository, so every one of them carries its own
+  // packages/runtime-native. Walking into them reports the same runtime tree several times over
+  // and fails the hard native-runtime invariant for reasons that have nothing to do with the
+  // change under test.
+  ".claude",
   ".git",
   ".worktrees",
   "artifacts",

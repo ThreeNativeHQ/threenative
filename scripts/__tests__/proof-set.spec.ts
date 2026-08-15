@@ -156,7 +156,7 @@ describe("sealed genre proof set", () => {
     const replay = JSON.parse(
       await readFile(path.join(root, "proof/physics-puzzle-replay.playtest.json"), "utf8"),
     ) as {
-      assert?: { resources?: Array<{ path?: string }> };
+      assert?: { resources?: Array<{ anyOf?: Array<{ path?: string }>; path?: string }> };
       steps?: Array<{ kind?: string; label?: string; press?: string }>;
     };
 
@@ -183,8 +183,14 @@ describe("sealed genre proof set", () => {
       label: "start-replay",
       press: "KeyV",
     });
-    expect(replay.assert?.resources?.map(({ path: resourcePath }) => resourcePath)).toEqual(
-      expect.arrayContaining(["replayPhase", "replayMatch"]),
+    // Both paths must still be observed, but PRD-113 made the match row an `anyOf` so a boolean
+    // `true` and the string "match" both satisfy it. The proof no longer tests which word the
+    // builder picked, so paths are read through the alternatives as well as the top level.
+    const replayPaths = (replay.assert?.resources ?? []).flatMap((assertion) =>
+      (assertion.anyOf ?? [assertion]).flatMap(({ path: resourcePath }) =>
+        resourcePath === undefined ? [] : [resourcePath],
+      ),
     );
+    expect(replayPaths).toEqual(expect.arrayContaining(["replayPhase", "replayMatch"]));
   });
 });
