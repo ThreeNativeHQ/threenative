@@ -54,7 +54,7 @@ one deploy configuration,
 `docs/strategy/VALUE-PROPOSITION.md`.
 
 **Depends on:** nothing. **Unblocks:** the Tier 2 review trigger in
-[`docs/PRDs/native/blocked/README.md`](../native/blocked/README.md), every adoption claim in
+[`docs/PRDs/BLOCKED/README.md`](../BLOCKED/README.md), every adoption claim in
 `VALUE-PROPOSITION.md`, and the Studio/Cloud question the roadmap parks behind it.
 
 ---
@@ -159,7 +159,7 @@ flowchart TD
 **How is this reached?** A person opens a URL on their own device and plays. That is the
 entry point, and today it does not exist.
 **Pre-existing files edited:** `docs/strategy/METRICS.md`, `docs/strategy/ROADMAP.md`,
-`docs/strategy/VALUE-PROPOSITION.md`, `docs/PRDs/native/blocked/README.md`, and the chosen
+`docs/strategy/VALUE-PROPOSITION.md`, `docs/PRDs/BLOCKED/README.md`, and the chosen
 subject's entry.
 **User-facing?** Maximally. The user is a stranger and the interface is the whole product.
 **What does it replace?** Four inconsistent specifications of one experiment, and the claim
@@ -179,7 +179,7 @@ at it.
 - `docs/product/STRANGER-TEST-PROTOCOL.md` — NEW
 - `docs/strategy/METRICS.md` — EDIT: link, delete the restatement
 - `docs/strategy/ROADMAP.md` — EDIT: both restatements become links
-- `docs/PRDs/native/blocked/README.md` — EDIT: the Tier 2 unlock row links it
+- `docs/PRDs/BLOCKED/README.md` — EDIT: the Tier 2 unlock row links it
 
 **The protocol must fix, in writing:**
 
@@ -291,7 +291,7 @@ currently assert no stranger has played are corrected.
 - `docs/strategy/VALUE-PROPOSITION.md` — EDIT: "what would change the answer" row 1, and the
   *"no stranger has ever played"* row in the not-earned table
 - `docs/strategy/ROADMAP.md` — EDIT: the Tier 2 reopen trigger's state
-- `docs/PRDs/native/blocked/README.md` — EDIT: the unlock row
+- `docs/PRDs/BLOCKED/README.md` — EDIT: the unlock row
 
 **The Tier 2 question is raised, not answered.** The trigger's wording names *the first
 external user who installs the framework and asks for a device build* — the successor
@@ -348,7 +348,7 @@ Consumer-scoped, and the consumer here is a person who has never heard of this p
 - [ ] **The pass/fail criteria were committed and hashed before the person was contacted**,
       and the hash in the result matches.
 - [ ] **One definition of this experiment exists in the repository**, and `METRICS.md`,
-      `ROADMAP.md` (both places) and `blocked/README.md` link it instead of restating it.
+      `ROADMAP.md` (both places) and `BLOCKED/README.md` link it instead of restating it.
 - [ ] **A browser without WebGPU shows a message, not a black rectangle** — proved on a real
       browser, both ways.
 - [ ] **The three documents asserting that no stranger has played are corrected**, with the

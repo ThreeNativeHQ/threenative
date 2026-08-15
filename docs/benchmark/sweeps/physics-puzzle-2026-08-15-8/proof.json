@@ -67,7 +67,7 @@
                 "replayTicks": 0,
                 "seed": 6132,
                 "settledCrates": 40,
-                "tick": 95,
+                "tick": 90,
                 "won": false,
                 "state": {
                   "awakeCrates": 0,
@@ -90,7 +90,7 @@
                   "replayTicks": 0,
                   "seed": 6132,
                   "settledCrates": 40,
-                  "tick": 95,
+                  "tick": 90,
                   "won": false
                 }
               },
@@ -115,7 +115,7 @@
                 "replayTicks": 180,
                 "seed": 6132,
                 "settledCrates": 40,
-                "tick": 2872,
+                "tick": 1952,
                 "won": false,
                 "state": {
                   "awakeCrates": 0,
@@ -138,7 +138,7 @@
                   "replayTicks": 180,
                   "seed": 6132,
                   "settledCrates": 40,
-                  "tick": 2872,
+                  "tick": 1952,
                   "won": false
                 }
               }
@@ -243,7 +243,7 @@
         },
         {
           "details": {
-            "distance": 2.3894498473236636,
+            "distance": 2.4298309090854264,
             "entity": "crate.27",
             "minimum": 1.5
           },
@@ -259,7 +259,7 @@
               "player:crate.27:contact",
               "player:crate.28:contact"
             ],
-            "count": 36,
+            "count": 32,
             "entity": "anonymous",
             "kind": "contact",
             "minCount": 1
@@ -375,9 +375,9 @@
           "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
           "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
           "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-          "path": "/tmp/threenative-proof-Vnoo27/physics-puzzle.playtest.json/assert/settled/crate.",
+          "path": "/tmp/threenative-proof-L3uMrQ/physics-puzzle.playtest.json/assert/settled/crate.",
           "severity": "error",
-          "sourcePath": "/tmp/threenative-proof-Vnoo27/physics-puzzle.playtest.json",
+          "sourcePath": "/tmp/threenative-proof-L3uMrQ/physics-puzzle.playtest.json",
           "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
         }
       ],

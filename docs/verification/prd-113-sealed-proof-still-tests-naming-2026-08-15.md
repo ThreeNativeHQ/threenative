@@ -1,6 +1,6 @@
 # The sealed replay proof still tests naming — round 8 evidence, 2026-08-15
 
-Evidence for `docs/PRDs/production-readiness-26-08-14/repairs/PRD-113-repair-sealed-behavior-proof.md`,
+Evidence for `docs/PRDs/BLOCKED/requires-sealed-proof/PRD-113-repair-sealed-behavior-proof.md`,
 produced by a fresh uninformed build rather than by reading the proof.
 
 ## What happened

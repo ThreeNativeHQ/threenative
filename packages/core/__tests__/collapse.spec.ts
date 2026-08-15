@@ -406,6 +406,49 @@ describe("SceneCollapse", () => {
     await expect(smallCollapse.whenSettled()).resolves.toBeUndefined();
   });
 
+  // A level that streams its far half in after the loading screen adds to the very group this
+  // pass detached. It used to land in a subtree no renderer walks, and simply never drew: on the
+  // fox game the platform past the first bridge, its grass, its ? block and the ground under a
+  // snail were all missing, with no error anywhere. Nothing about that is visible to a unit test
+  // unless the test adds after the collapse and then asks whether the addition can be reached.
+  it("draws geometry a game adds to a consumed group after the collapse has settled", () => {
+    const scene = new Scene();
+    const material = new MeshToonMaterial({ color: 0x5cbb37 });
+    const level = new Group();
+    scene.add(level);
+    fill(level, material, 10);
+    const { collapse, report } = run(scene, 4);
+    expect(report?.collapsed).toBe(true);
+    expect(level.parent).toBe(null);
+
+    const streamedIn = fill(level, material, 3);
+    collapse.frame();
+
+    expect(level.parent).toBe(scene);
+    expect(collapse.adoptedRoots).toBe(1);
+    const reachable = new Set<Object3D>();
+    scene.traverse((object) => reachable.add(object));
+    for (const mesh of streamedIn) expect(reachable.has(mesh)).toBe(true);
+  });
+
+  // The adoption must not undo the collapse for everyone else. A root nobody touches stays out of
+  // the scene, because putting it back is exactly the per-frame traversal the pass exists to
+  // remove — and the merged draws keep drawing what it used to.
+  it("leaves a consumed group the game never touches out of the scene", () => {
+    const scene = new Scene();
+    const material = new MeshToonMaterial({ color: 0x5cbb37 });
+    const untouched = new Group();
+    scene.add(untouched);
+    fill(untouched, material, 10);
+    const { collapse, report } = run(scene, 4);
+    expect(report?.collapsed).toBe(true);
+
+    for (let index = 0; index < 10; index += 1) collapse.frame();
+
+    expect(untouched.parent).toBe(null);
+    expect(collapse.adoptedRoots).toBe(0);
+  });
+
   it("restores the original scene graph on demand", () => {
     const scene = new Scene();
     const meshes = fill(scene, new MeshToonMaterial({ color: 0x5cbb37 }), 10);

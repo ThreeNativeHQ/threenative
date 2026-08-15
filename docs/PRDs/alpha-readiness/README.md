@@ -1,9 +1,10 @@
 # Batch — alpha readiness, 2026-08-15
 
-**Status: ASSEMBLED, 2026-08-15. Nothing in this folder has been executed as a batch.** Eight of
-the ten PRDs here already existed and were moved from `docs/PRDs/` and
-`docs/PRDs/production-readiness-26-08-14/`; their own status lines are unchanged and still govern
-what has and has not run. Two are new and unexecuted: PRD-119 and PRD-120. No mobile-readiness,
+**Status: ASSEMBLED, 2026-08-15. Nothing in this folder has been executed as a batch.** Seven of
+the ten PRDs remain here; three explicitly blocked PRDs moved to `docs/PRDs/BLOCKED/`. The
+remaining PRDs were moved from `docs/PRDs/` and `docs/PRDs/production-readiness-26-08-14/`; their
+own status lines are unchanged and still govern what has and has not run. Two are new and
+unexecuted: PRD-119 and PRD-120. No mobile-readiness,
 physical-device or iOS claim is made anywhere in this folder.
 
 ## What alpha means here, and how it differs from the beta bar
@@ -32,9 +33,9 @@ Seven rows. Each names the PRD that owns it and the one sentence that is not tru
 | # | Alpha requirement | Owning PRD(s) | Not true yet, because |
 |---|---|---|---|
 | A1 | A stranger can install it from the public registry | [PRD-119](PRD-119-the-alpha-release-train.md) | `create-threenative`, `@threenative/studio` and `@threenative/runtime-native` are **404**; the four packages that exist were published 2026-08-09, 83 commits and 649 changed files ago |
-| A2 | The golden path completes from published artifacts — create → dev → test → build web → build native → package | [PRD-112](PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | the packed seven-template gate is red on action-rpg; 10 release tags produced **0 published releases** |
-| A3 | Verification cannot report green while asserting nothing | [PRD-113](PRD-113-sealed-brief-naming-contract.md) | the sealed consumer proof reads 1/6 positive direct rows |
-| A4 | The value claim rests on one measured paired round, not an estimate | [PRD-114](PRD-114-paired-round-on-the-repaired-instrument.md), then [PRD-121](PRD-121-delete-unreached-actuation-members.md) | round 7 is **VOID**; `pnpm round:next` says *"Stop condition recorded: void"* |
+| A2 | The golden path completes from published artifacts — create → dev → test → build web → build native → package | [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | the packed seven-template gate is red on action-rpg; 10 release tags produced **0 published releases** |
+| A3 | Verification cannot report green while asserting nothing | [PRD-113](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md) | the sealed consumer proof reads 1/6 positive direct rows |
+| A4 | The value claim rests on one measured paired round, not an estimate | [PRD-114](../BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md), then [PRD-121](PRD-121-delete-unreached-actuation-members.md) | round 7 is **VOID**; `pnpm round:next` says *"Stop condition recorded: void"* |
 | A5 | Every platform claim is checkable and the ledgers agree | [PRD-077](PRD-077-desktop-multitouch-injector.md) → [PRD-076](PRD-076-tier-1-parity-reconciliation.md) | `parity-2026-08-10-r2` and `tier-1-2026-08-10` disagree on the same device on the same day; the desktop lane cannot exit `0` because the harness has no multitouch injector |
 | A6 | One stranger has actually used it | [PRD-080](PRD-080-five-minute-stranger-test.md) | run zero times, and specified two mutually inconsistent ways |
 | A7 | The bar is runnable, not transcribed | [PRD-120](PRD-120-the-alpha-bar-is-runnable.md) | this table is typed by hand, which means it cannot go red |
@@ -83,7 +84,7 @@ Four agent lanes with no file overlap, plus one that is not agent work.
 | [PRD-079](../PRD-079-phase-2-exit-criteria.md) | Rewrites the **beta** exit gate. Its harness half was overtaken by the instrument repairs; reopening the beta gate is not an alpha blocker |
 | [PRD-073](../PRD-073-performance-by-default.md), [PRD-117](../PRD-117-engine-load-test-godot.md), [PRD-118](../PRD-118-android-js-engine.md) | Performance work. A slow alpha is an alpha |
 | [`asset-pipeline/`](../asset-pipeline/), [`starter-kits/`](../starter-kits/), [`studio-hosting/`](../studio-hosting/) | Product surface. None of it changes whether an outsider can install and ship |
-| [`production-readiness-26-08-14/`](../production-readiness-26-08-14/README.md) | The night that produced four of these. Kept as that night's record, including the two superseded repair lanes in its `repairs/` |
+| [`production-readiness-26-08-14/`](../production-readiness-26-08-14/README.md) | The night that produced four of these. Kept as that night's record; its two superseded repair lanes now live in `BLOCKED/` with their source PRDs |
 
 ## Two bookkeeping facts about this folder
 

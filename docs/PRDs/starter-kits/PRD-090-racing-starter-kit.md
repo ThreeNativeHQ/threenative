@@ -7,7 +7,7 @@ prd_contract: v1
 **Status: IMPLEMENTED; generated browser evidence recorded 2026-08-12.** Desktop execution is
 covered by the batch record; no mobile readiness is claimed.
 **Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
-**Depends on:** [PRD-088](./PRD-088-physics-spatial-queries.md) for the on-road probe,
+**Depends on:** [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md) for the on-road probe,
 [PRD-091](./PRD-091-genre-kit-delivery-rail.md) for the registry and the Studio picker.
 **Sequenced after:** [PRD-089](./PRD-089-shooter-starter-kit.md) — one new genre at a time.
 **Feeds:** [PRD-092](./PRD-092-strategy-starter-kit.md), which acts on the number this PRD

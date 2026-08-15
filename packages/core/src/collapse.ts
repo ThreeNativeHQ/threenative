@@ -647,6 +647,16 @@ export class SceneCollapse {
   #markSettled: () => void = () => undefined;
   #restore: (() => void) | undefined;
   #update: (() => void) | undefined;
+  /**
+   * Roots the bake lifted out of the scene, each with the child count it had when it left.
+   *
+   * The pass consumes a hierarchy and settles, but the game keeps its references and is entitled
+   * to go on using them — a level that streams its far half in after the loading screen adds to
+   * the very group this pass detached. Without this watch that geometry lands in a subtree no
+   * renderer walks and never draws, with no error to notice: the map is simply missing a piece.
+   */
+  #adoptable: { readonly root: IObjectLike; children: number }[] = [];
+  #adopted = 0;
 
   constructor(scene: IObjectLike, options: ISceneCollapseOptions = {}) {
     const observeFrames = options.observeFrames ?? 8;
@@ -679,6 +689,17 @@ export class SceneCollapse {
       report(value);
       this.#markSettled();
     };
+  }
+
+  /**
+   * Detached roots the pass has put back because the game added to them after the collapse.
+   *
+   * Non-zero means a game is still building into a hierarchy this pass consumed. That is
+   * supported, not a fault, but it is worth seeing: each adoption gives one root its per-frame
+   * traversal back.
+   */
+  get adoptedRoots(): number {
+    return this.#adopted;
   }
 
   /** The pass has reached a verdict — collapsed or declined. */
@@ -831,6 +852,9 @@ export class SceneCollapse {
     this.#restore?.();
     this.#restore = undefined;
     this.#update = undefined;
+    // Every root is back in the scene on its own account; watching them for growth would only
+    // re-add what is already there.
+    this.#adoptable.length = 0;
   }
 
   #countMeshes(): number {
@@ -1220,7 +1244,34 @@ export class SceneCollapse {
     };
   }
 
+  /**
+   * Puts a detached root back in the scene once the game has added to it.
+   *
+   * The bake consumed what was there and removed each baked mesh from its parent, so a root that
+   * comes back draws only what arrived after the collapse — the merged geometry keeps drawing the
+   * rest and nothing is drawn twice. Re-attaching costs that root's traversal again, which is the
+   * whole reason the pass detached it; paying it for a root the game demonstrably still builds
+   * into is the correct trade, and a root nobody touches never pays.
+   *
+   * One integer compare per detached root per frame. There are tens of them, not thousands.
+   */
+  #adoptGrownRoots(): void {
+    if (this.#adoptable.length === 0) return;
+    let remaining = 0;
+    for (const entry of this.#adoptable) {
+      if (entry.root.children.length === entry.children) {
+        this.#adoptable[remaining] = entry;
+        remaining += 1;
+        continue;
+      }
+      this.#scene.add(entry.root);
+      this.#adopted += 1;
+    }
+    this.#adoptable.length = remaining;
+  }
+
   #refreshTransforms(): void {
+    this.#adoptGrownRoots();
     if (this.#update === undefined) return;
     if (!this.#measureTransformRefresh) {
       this.#update();
@@ -1569,6 +1620,7 @@ export class SceneCollapse {
       if (containsLight(child)) continue;
       detached.push(child);
       this.#scene.remove(child);
+      this.#adoptable.push({ children: child.children.length, root: child });
     }
     const movingRoots: IObjectLike[] = [];
     for (const part of movingParts) {

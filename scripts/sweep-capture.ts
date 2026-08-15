@@ -8,6 +8,12 @@ import {
   verifySealedProof,
 } from "./sweep-proof.js";
 
+/**
+ * The sealed proof failed, but the run got far enough to produce frames and they have been
+ * written. Distinguished from every other error so the captures survive the failure.
+ */
+export class SealedProofFailedAfterCapture extends Error {}
+
 const REPO = path.resolve(import.meta.dirname, "..");
 
 export interface CaptureIndexEntry extends CaptureFrameStats {
@@ -39,7 +45,10 @@ function safePart(value: string): string {
 export function captureSweep(sourceDirectory: string, repo = REPO): CaptureResult {
   const source = path.resolve(sourceDirectory);
   const proofFiles = verifySealedProof(path.join(source, "sweep.json"), repo);
-  const proof = runProof(source, repo, { headed: true });
+  // Collect frames even when the sealed proof fails. Round 7 and round 8 both lost their visual
+  // column to a functional failure, though the PNGs were sitting in proof-artifacts the whole
+  // time. The failure is re-raised below, after the captures are written.
+  const proof = runProof(source, repo, { headed: true, tolerateFailure: true });
   const capturesDirectory = path.join(source, "captures");
   const hadCaptures = fs.existsSync(capturesDirectory);
   fs.mkdirSync(capturesDirectory, { recursive: true });
@@ -76,9 +85,16 @@ export function captureSweep(sourceDirectory: string, repo = REPO): CaptureResul
       path.join(capturesDirectory, "index.json"),
       `${JSON.stringify({ recipe: "webgpu-xvfb-headed", captures }, null, 2)}\n`,
     );
+    if (proof.passed !== proof.total) {
+      throw new SealedProofFailedAfterCapture(
+        `Sealed proof failed: ${proof.passed}/${proof.total} scenarios passed. Captures were still written to ${path.relative(repo, capturesDirectory)}.`,
+      );
+    }
     return { captures, proof };
   } catch (error) {
-    if (!hadCaptures) fs.rmSync(capturesDirectory, { force: true, recursive: true });
+    // A functional failure keeps its captures; anything else cleans up after itself.
+    if (!hadCaptures && !(error instanceof SealedProofFailedAfterCapture))
+      fs.rmSync(capturesDirectory, { force: true, recursive: true });
     throw error;
   }
 }

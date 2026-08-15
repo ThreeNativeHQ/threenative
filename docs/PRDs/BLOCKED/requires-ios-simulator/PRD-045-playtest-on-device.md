@@ -1,6 +1,6 @@
 # PRD-045 — Playtest on device
 
-**Status: BLOCKED — moved to `native/blocked/` on 2026-08-10. Criterion 7 UNVERIFIED; the code
+**Status: BLOCKED — moved to `docs/PRDs/BLOCKED/requires-ios-simulator/` on 2026-08-15. Criterion 7 UNVERIFIED; the code
 is written and the remaining work is execution this host cannot perform.**
 
 **Block reason, stated plainly: the only thing left is two consecutive green runs of the iOS

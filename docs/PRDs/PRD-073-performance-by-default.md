@@ -35,7 +35,7 @@ by a Phase 0 number, not by this document.
   native-runtime PRDs. **This PRD owns what a framework game gets for free on every
   platform** — the measurement channel, the asset pipeline, resource lifetime, and the
   resolution decision — and owns none of their subject matter.
-- **PRD-058** (`docs/PRDs/native/blocked/`) owns performance thresholds. This PRD produces
+- **PRD-058** (`docs/PRDs/BLOCKED/requires-physical-proof/`) owns performance thresholds. This PRD produces
   numbers and an instrument; it must not set, tune, or waive a threshold.
 - **PRD-056** already shipped accelerated ray queries. §2 records that as closed, not open.
 

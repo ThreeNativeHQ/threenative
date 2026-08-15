@@ -13,7 +13,7 @@ Everything below is the original 2026-08-02 plan and its failed run, retained be
 as the record of what had *not* been observed at the time. **Do not execute it.** The RN
 route it prescribes is deleted; `react-native-webgpu` is not a dependency of this repo.
 Physical-hardware and frame-rate debt stays open — see
-[`../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md`](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md).
+[`../PRDs/BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md`](../PRDs/BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md).
 
 **Background:** [`../architecture/NATIVE-RUNTIME.md`](../architecture/NATIVE-RUNTIME.md) —
 the path and the physics verdict. This document is only the executable plan for 0a.

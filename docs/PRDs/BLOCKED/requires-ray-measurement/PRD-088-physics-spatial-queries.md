@@ -7,13 +7,13 @@ prd_contract: v1
 **Status: BLOCKED — the Phase 0 ABI-selection criterion is unmet, 2026-08-12.** The web and
 Linux desktop implementation is present, but the required pre-implementation ray measurement
 was not recorded. Android and iOS execution were not performed on this operator machine.
-**Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md), which scored this **91/100** — the
+**Parent:** [PRD-087](../../starter-kits/PRD-087-genre-borrow-ledger.md), which scored this **91/100** — the
 only surveyed candidate above the Tier-1 bar.
-**Blocks:** [PRD-089](./PRD-089-shooter-starter-kit.md) (hitscan, radius damage, target
-acquisition), [PRD-090](./PRD-090-racing-starter-kit.md) (on-road probe),
-[PRD-092](./PRD-092-strategy-starter-kit.md) (placement validation, tower acquisition),
-[PRD-093](./PRD-093-action-rpg-starter-kit.md) (aggro range and line of sight).
-**Independent of** [PRD-091](./PRD-091-genre-kit-delivery-rail.md); the two run in parallel.
+**Blocks:** [PRD-089](../../starter-kits/PRD-089-shooter-starter-kit.md) (hitscan, radius damage, target
+acquisition), [PRD-090](../../starter-kits/PRD-090-racing-starter-kit.md) (on-road probe),
+[PRD-092](../../starter-kits/PRD-092-strategy-starter-kit.md) (placement validation, tower acquisition),
+[PRD-093](../../starter-kits/PRD-093-action-rpg-starter-kit.md) (aggro range and line of sight).
+**Independent of** [PRD-091](../../starter-kits/PRD-091-genre-kit-delivery-rail.md); the two run in parallel.
 
 **Complexity: 7 → HIGH mode.** New public surface on `@threenative/physics`, a new method
 group on the simulation ABI, and a native implementation in C++. That is three seams, and
@@ -201,7 +201,7 @@ invent a pre-implementation ray measurement or change the platform scope.
   test fail before the predicate was restored.
 
 The executed repair evidence is recorded in
-[`docs/verification/PRD-088-physics-spatial-queries.md`](../../verification/PRD-088-physics-spatial-queries.md).
+[`docs/verification/PRD-088-physics-spatial-queries.md`](../../../verification/PRD-088-physics-spatial-queries.md).
 
 ## 5. Verification strategy
 

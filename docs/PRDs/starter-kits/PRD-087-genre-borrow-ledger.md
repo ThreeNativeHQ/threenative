@@ -21,7 +21,7 @@ re-argues these.
 | PRD | Delivers | Depends on |
 |---|---|---|
 | PRD-087 | platformer terminal-loop qualification repair | existing platformer template; no child-PRD dependency |
-| [PRD-088](./PRD-088-physics-spatial-queries.md) | physics spatial queries — the one accepted package change | — |
+| [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md) | physics spatial queries — the one accepted package change | — |
 | [PRD-091](./PRD-091-genre-kit-delivery-rail.md) | the kit registry, the fail-closed gate, the Studio picker | — |
 | [PRD-089](./PRD-089-shooter-starter-kit.md) | `shooter` starter kit | 088, 091 |
 | [PRD-090](./PRD-090-racing-starter-kit.md) | `racing` starter kit | 088, 091 |

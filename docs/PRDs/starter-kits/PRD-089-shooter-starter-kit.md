@@ -7,7 +7,7 @@ prd_contract: v1
 **Status: IMPLEMENTED; generated browser evidence recorded 2026-08-12.** Desktop execution is
 covered by the batch record; no mobile readiness is claimed.
 **Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
-**Depends on:** [PRD-088](./PRD-088-physics-spatial-queries.md) for the physics raycast, and
+**Depends on:** [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md) for the physics raycast, and
 [PRD-091](./PRD-091-genre-kit-delivery-rail.md) for the registry and the Studio picker.
 
 **Complexity: 6 → HIGH mode.** No package code. The scope is a *game*, not a scene — it has to

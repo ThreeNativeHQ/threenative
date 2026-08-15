@@ -5,7 +5,7 @@
 dependency fails the journey. **The exact packed seven-template gate is still red** — the
 action-rpg layer fails with `TN_PLAYTEST_RUNNER_FAILED: page.evaluate: Execution context was
 destroyed`, and the doubtful assumption is that one headed WebGPU page can be reused across the
-packed scenarios. See `repairs/PRD-112-repair-golden-path-contract.md`. Sliced from
+packed scenarios. See `PRD-112-repair-golden-path-contract.md`. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 3.
 
 **Complexity: 5 → MEDIUM mode.** One reproduction, one resolver fix, one CI matrix, one error-text

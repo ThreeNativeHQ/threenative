@@ -79,7 +79,7 @@ and production path for running the browser Studio against durable game reposito
 The 2026-08-08 course correction is closed and its file deleted: the `@threenative/physics`
 node fork was removed, each public class is one file, and only the `PhysicsSimulation`
 backend swaps on the export condition. Write-once/run-anywhere is now owned as a gate by
-[PRDs/native/blocked/PRD-054-write-once-run-anywhere.md](PRDs/native/blocked/PRD-054-write-once-run-anywhere.md), which is
+[PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md](PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md), which is
 **open** — blocked at acceptance criterion 1.
 
 ## Product
@@ -99,7 +99,7 @@ recorded here and nothing else cites it.
 `pnpm budgets` fails CI above 10 files in `docs/PRDs/` — files only, so `docs/PRDs/done/`
 does not count against the cap. Edit an existing document by preference.
 
-[`PRDs/native/blocked/`](PRDs/native/blocked/) holds PRDs whose every remaining item is
+[`PRDs/BLOCKED/`](PRDs/BLOCKED/) holds PRDs whose every remaining item is
 blocked on hardware the operator does not have — as of 2026-08-08, no Apple machine, so no
 Xcode, simulator or iOS device. **Blocked is not done.** The criterion stays unmet and the
 PRD moves to `done/` only when it is met on real hardware, never by rewriting it to fit

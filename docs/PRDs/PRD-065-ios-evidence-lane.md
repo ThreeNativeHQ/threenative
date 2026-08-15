@@ -35,14 +35,14 @@ time-boxed spike that is permitted to end in `BLOCKED`.
 `packages/runtime-native/tests/ios-contract.test.mjs`, `packages/create-threenative/src/build.ts`
 or `packages/runtime-native/scripts/bundle.mjs` (whichever Phase 1 proves at fault),
 `examples/native-smoke/`, `docs/verification/ios-<date>.md`,
-`docs/PRDs/native/blocked/README.md`.
+`docs/PRDs/BLOCKED/README.md`.
 
 **Depends on:** PRD-045 (the iOS playtest transport, criteria 1–6 and 8 MET),
 PRD-048 (`package-ios.mjs` distribution mechanics), PRD-054 (fail-closed parity),
 PRD-064 (the Tier 1/Tier 2 split this PRD does not move). None is re-specified here.
 
 **Never claim a platform you did not execute; the device matrix and performance parity rule apply.**
-`docs/PRDs/native/blocked/README.md` owns what
+`docs/PRDs/BLOCKED/README.md` owns what
 counts as a physical-device unlock; **Phase 4 may propose a new unlock row but may not
 declare one met.**
 
@@ -225,7 +225,7 @@ report's `simulator.runtime` is unproven in the field**, and criterion 1 below i
 on the **iOS simulator**". Every control in `devicePlaytest` did produce its required exit code,
 but on a **visionOS** simulator. That is not criterion 7, and the criterion's own instruction —
 "do not soften the requirement to fit the hardware" — applies to this exactly. PRD-045 stays in
-`native/blocked/`; the reason changes from "no Apple machine" to "the executed simulator was
+`BLOCKED/`; the reason changes from "no Apple machine" to "the executed simulator was
 not an iOS one". Re-evaluate after the first green post-fix run.
 
 ---
@@ -281,7 +281,7 @@ them:
 
 **Estimate:** half a day. The iteration loop is a ~24-minute CI run on `macos-15`; budget 4–6
 runs. This cannot be shortened locally — there is no Apple hardware on this machine
-(`docs/PRDs/native/blocked/README.md`, standing block 2026-08-08).
+(`docs/PRDs/BLOCKED/README.md`, standing block 2026-08-08).
 
 ---
 
@@ -380,7 +380,7 @@ control; the contract test for the report keys fails.
 **Files:**
 
 - `docs/verification/ios-browserstack-spike-<date>.md` — NEW
-- `docs/PRDs/native/blocked/README.md` — EDIT: add or reject a cloud-device unlock row
+- `docs/PRDs/BLOCKED/README.md` — EDIT: add or reject a cloud-device unlock row
 
 **Implementation:**
 
@@ -446,7 +446,7 @@ previous state.
 7. [ ] **The frame-timing diagnostic cannot fail a build and is labelled as not device
        evidence**, verified by making it implausible and observing the run still pass.
 8. [ ] **The BrowserStack question is answered in writing** as PROVEN or BLOCKED with the exact
-       missing prerequisite. `docs/PRDs/native/blocked/README.md` reflects the answer.
+       missing prerequisite. `docs/PRDs/BLOCKED/README.md` reflects the answer.
 
 **Integration gates:**
 
@@ -456,7 +456,7 @@ previous state.
 - [ ] No phase added a file without editing a pre-existing one
 
 **Not claimed by this PRD, at any phase:** iOS device readiness, mobile readiness, iOS
-performance, or any movement of PRD-056 out of `native/blocked/`.
+performance, or any movement of PRD-056 out of `docs/PRDs/BLOCKED/`.
 
 ---
 

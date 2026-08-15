@@ -8,7 +8,7 @@ accepting autonomous motion as input-driven evidence, and repair r3 closed that 
 needs a zero-motion causal baseline, and a buttonless pointer counts as input on both the browser
 and Android paths. **What remains open is the consumer proof:** the committed replay record has
 1/6 positive direct rows and the paired round is explicitly void. See
-`repairs/PRD-113-repair-sealed-behavior-proof.md`. Sliced from
+`PRD-113-repair-sealed-behavior-proof.md`. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 4.
 
 **Complexity: 3 → LOW mode as code. HIGH as consequence.** A small edit to a sealed input voids

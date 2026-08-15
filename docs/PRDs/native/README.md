@@ -48,7 +48,7 @@ flowchart LR
 | # | PRD | What it buys | State |
 |---|---|---|---|
 | 1 | [PRD-047](done/PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **done** — Phases 0–5 closed on current cross-platform evidence; 6 split out |
-| 2 | [PRD-045](blocked/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **simulator/emulator pass** — physical mobile hardware remains open |
+| 2 | [PRD-045](../BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **simulator/emulator pass** — physical mobile hardware remains open |
 | 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — implementation contract repaired; PRD-048 owns the clean consumer gate |
 | 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
 | 5 | [PRD-049](done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |

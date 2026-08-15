@@ -52,7 +52,7 @@ contract that must not turn a permission problem into a silent pass.
 `docs/verification/`.
 
 **Depends on:** nothing. **Unblocks:** [PRD-076](PRD-076-tier-1-parity-reconciliation.md)
-Phase 3's unqualified desktop aggregate, [PRD-054](../native/blocked/PRD-054-write-once-run-anywhere.md)
+Phase 3's unqualified desktop aggregate, [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md)
 criterion 1, and beta bar row 4.
 
 ---
@@ -271,7 +271,7 @@ absence becomes loud.
 - `docs/verification/desktop-multitouch-2026-08-11.md` — EDIT: the full-lane result
 - `packages/runtime-native/docs/` — EDIT: one operator note, the udev rule, if Phase 0
   needed one
-- `docs/PRDs/native/blocked/PRD-054-write-once-run-anywhere.md` — EDIT: criterion 1's
+- `docs/PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md` — EDIT: criterion 1's
   desktop blocker resolved or restated
 - `docs/strategy/ROADMAP.md` — EDIT: beta row 4's desktop clause
 

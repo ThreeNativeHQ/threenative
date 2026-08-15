@@ -163,7 +163,7 @@ path `defineGame` collapses away, so a normally written game does not sit on it.
 
 | Not earned | Why, precisely |
 |---|---|
-| **"Ships to iOS"** | **No Apple hardware exists here.** Simulator only, and the lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence ([PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
+| **"Ships to iOS"** | **No Apple hardware exists here.** Simulator only, and the lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence ([PRD-045](../PRDs/BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
 | **"Ships to Android"** as a *product* claim | One physical Pixel 8 (`shiba`, arm64-v8a, Android 17), one thermal state, no second device, no Play Store release. The frame-rate numbers are real; the fleet claim is not |
 | **"The asset MCP improves your game"** | PRD-032's live-agent exit gate **failed**: the no-MCP control produced the better frame. The owner retained the capability as a disposition, not a pass. Frames, hashes and reviewer scores in `docs/verification/PRD-032-asset-proof/`. PRD-049 shipped with preference and token telemetry recorded **unavailable** |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so that axis tops out near 40/100 — a ceiling, not a backlog item |
@@ -191,7 +191,7 @@ Ranked by how much the sentence at the top would move, cheapest first.
 | 1 | **A stranger plays for five minutes** | Every adoption claim — the project's decisive test | An afternoon and one external person |
 | 2 | **A second physical Android device** | Turns one device into a fleet claim; axis 4 → 18 | Hardware |
 | 3 | **An honest asset-MCP win** — a rerun where the MCP arm beats the no-MCP control | Axis 2 is capped at 10/20 until then | A rerun of PRD-032's live-agent gate |
-| 4 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/native/blocked/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
+| 4 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
 | 5 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+Android sentence outright | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
 | 6 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time; §5 of [the benchmark record](../verification/native-performance-benchmarks-2026-08-11.md) specifies it |
 

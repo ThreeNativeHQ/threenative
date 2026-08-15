@@ -41,6 +41,12 @@ export interface ProofResult {
 
 export interface ProofOptions {
   readonly headed?: boolean;
+  /**
+   * Return the result instead of throwing when scenarios fail. Only `sweep:capture` sets this,
+   * so that a failing functional column does not also destroy the visual one: the frames are
+   * already on disk by then. The caller stays responsible for surfacing the failure.
+   */
+  readonly tolerateFailure?: boolean;
 }
 
 export interface BufferedRunnerResult {
@@ -388,7 +394,7 @@ export function runProof(
       total: scenarios.length,
     };
     fs.writeFileSync(path.join(source, "proof.json"), `${JSON.stringify(result, null, 2)}\n`);
-    if (passed !== result.total)
+    if (passed !== result.total && options.tolerateFailure !== true)
       throw new Error(
         `Sealed proof failed for ${manifest.arm}/${manifest.genre}: ${passed}/${result.total} scenarios passed.`,
       );

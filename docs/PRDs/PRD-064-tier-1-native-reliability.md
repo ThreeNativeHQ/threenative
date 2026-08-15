@@ -12,7 +12,7 @@ unrun emulator matrix, one same-hardware performance proof, one ledger.
 **Blast radius: ~11 repository paths.** `packages/runtime-native/conformance/`,
 `packages/runtime-native/scripts/`, `packages/runtime-native/tests/`,
 `packages/create-threenative/templates/platformer/`, `docs/strategy/ROADMAP.md`,
-`docs/strategy/CONFLICTS.md`, `docs/PRDs/native/blocked/README.md`,
+`docs/strategy/CONFLICTS.md`, `docs/PRDs/BLOCKED/README.md`,
 `docs/verification/tier-1-<date>.md`.
 
 **Depends on:** PRD-047 (absorbed runtime), PRD-053 (multitouch), PRD-054 (the parity gate and
@@ -27,7 +27,7 @@ The device matrix and the five-minute stranger test define the readiness boundar
 The owner's bar is a Three.js TypeScript game that runs **reliably on web, desktop and
 Android**, with iOS deferred. "Reliably" was never defined as something anyone can run, so the
 native lane has been spending its effort on PRDs whose every criterion needs hardware this
-machine does not have — eight of nine PRDs are in `native/blocked/`, and nine of the last
+machine does not have — eight of nine PRDs are in `BLOCKED/`, and nine of the last
 fifteen commits touched zero package files.
 
 This PRD defines reliability as five runnable dimensions, splits them into what this host can
@@ -73,7 +73,7 @@ phase is incomplete.
 
 | # | New thing | Live caller (non-test) | Replaces | Negative control |
 |---|---|---|---|---|
-| 1 | Tier 1/Tier 2 decision rows | `ROADMAP.md` Open table; `native/blocked/README.md` header; `CONFLICTS.md` row 9 | the standing "blocked, revisit each batch" wording | TBD |
+| 1 | Tier 1/Tier 2 decision rows | `ROADMAP.md` Open table; `BLOCKED/README.md` header; `CONFLICTS.md` row 9 | the standing "blocked, revisit each batch" wording | TBD |
 | 2 | `90-multitouch-input` fix | `conformance/run-conformance.mjs` browser target | the currently red row | drop one pointer → row red |
 | 3 | `25-camera-parented-overlay` fix | `conformance/run-conformance.mjs` desktop target | the currently red row | remove the resize → `TN_CONFORMANCE_RESIZE_NOT_APPLIED` |
 | 4 | desktop-multitouch disposition | `conformance/registry.json` `exclusions[]` with owner + reason | the silent `blocked` cell | an excluded row claimed as pass → runner exits non-zero |
@@ -100,7 +100,7 @@ Phases 1, 2 and 3 are independent of each other and may run in any order or in p
 **Files (3, all pre-existing):** `docs/strategy/ROADMAP.md` — EDIT: Tier 1/Tier 2 rows and the
 reopen trigger; also repair the stale `production-readiness/` pointer for PRD-057…060.
 `docs/strategy/CONFLICTS.md` — EDIT: new row 9, the device-matrix tension.
-`docs/PRDs/native/blocked/README.md` — EDIT: each blocked PRD carries its tier and unlock
+`docs/PRDs/BLOCKED/README.md` — EDIT: each blocked PRD carries its tier and unlock
 condition.
 
 **Why it is not a charter edit:** the mobile promise is *staged*, not deleted. `CONFLICTS.md`
@@ -194,7 +194,7 @@ Consumer-scoped: each is about a build someone could tell apart, not about code 
    are recorded with their exit codes. A pass with no observed red is written `UNVERIFIED`.
 6. `docs/verification/tier-1-<date>.md` exists, its schema test passes, and `ROADMAP.md` beta
    rows 4 and 5 cite it — **including a "not reached" outcome.**
-7. `ROADMAP.md`, `CONFLICTS.md` and `native/blocked/README.md` carry the tier split and the
+7. `ROADMAP.md`, `CONFLICTS.md` and `BLOCKED/README.md` carry the tier split and the
    five-minute stranger reopen trigger, and no document claims mobile readiness.
 
 ## 7. What this deliberately does not do
