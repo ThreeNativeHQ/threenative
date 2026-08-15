@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-121 — Delete unreached physics actuation members
 
-**Status: NOT STARTED — blocked on an independent fresh paired round, corrected 2026-08-15.**
+**Status: CLOSED AS REJECTED — 2026-08-15.** The independent fresh paired round ran (round 8) and
+confirmed no uninformed build reaches either member for a third round. The deletion does not
+follow: `packages/runtime-native/native/physics/src/lib.rs` implements `apply_body_impulse` and
+`apply_body_force` behind them, shipped by PRD-116 the same day. A live caller reopens the keep
+decision, and this PRD's own completion record says the close is *rejected* rather than *deleted*.
+See the completion record below.
 
 **Renumbered 2026-08-15, 117 → 121.** Two PRDs held the number 117: this one and
 `docs/PRDs/PRD-117-engine-load-test-godot.md`, which is executed and owns the Godot load-test
@@ -55,9 +60,47 @@ Evidence:
 
 ## Completion record
 
-The closing evidence must name the exact search command, the package declaration diff, the
-removal-sensitive test, and the next-round deletion output. If a live caller is found, record why
-the member stays and close this PRD as rejected rather than preserving an unexamined abstraction.
+**CLOSED AS REJECTED — 2026-08-15. A live caller was found, so both members stay.**
+
+Step 1, the independent fresh paired build, ran as round 8
+(`docs/verification/round-8-2026-08-15.md`). Neither member appears anywhere in the framework
+arm's authored source, so this is the third consecutive round in which no uninformed build reached
+for them.
+
+Step 2, the exact search:
+
+```sh
+grep -rn "applyImpulse\|applyForce" \
+  packages/*/src packages/*/__tests__ packages/create-threenative/templates examples \
+  packages/runtime-native/include packages/runtime-native/native
+```
+
+Step 3, the callers it found. No template and no example calls either member — the single
+`examples/` hit is a bundled `dist/` artifact, not source. But the package surface is wired
+through to a **native backend that did not exist when this PRD was written**:
+
+| Caller | What it is |
+| --- | --- |
+| `packages/physics/src/RigidBody3D.ts` | the public declarations |
+| `packages/physics/src/simulation.ts` | the web backend behind them |
+| `packages/runtime-native/native/physics/src/lib.rs` | `apply_body_impulse` and `apply_body_force`, the native Rust implementations |
+| `packages/physics/__tests__/actuation.spec.ts` | removal-sensitive coverage of both |
+
+`packages/runtime-native/native/physics/src/lib.rs:382` is the decisive one. PRD-116 shipped
+native physics actuation on 2026-08-15 — the same day — and its delivery includes a native ABI and
+a budgets census that count this code. This PRD's premise was that the two members were unexamined
+abstraction with nothing behind them; a native backend delivered under its own PRD, with its own
+gates and removal-sensitive tests, is the opposite of unexamined.
+
+Step 3 of the work sequence is explicit that a caller reopens the keep decision, and the completion
+record is explicit that the correct close in that case is **rejected**, not deleted. So nothing is
+deleted and steps 4 and 5 do not run.
+
+**What stays true and should be re-examined.** No user-space build has reached for either member in
+three rounds. That is a real signal about the *shape of the API*, not a licence to delete code a
+sibling PRD is actively building on. The question a later round should ask is whether native
+actuation wants a different surface, not whether these two names should vanish while a Rust
+implementation sits behind them.
 
 ## Not in scope
 
