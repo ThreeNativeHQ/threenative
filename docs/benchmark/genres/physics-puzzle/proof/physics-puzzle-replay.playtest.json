@@ -37,14 +37,14 @@
       {
         "id": "state",
         "path": "replayPhase",
-        "equals": "done",
         "changed": true
       },
       {
         "id": "state",
-        "path": "replayMatch",
-        "equals": "match",
-        "changed": true
+        "anyOf": [
+          { "path": "replayMatch", "equals": true },
+          { "path": "replayMatch", "equals": "match" }
+        ]
       }
     ],
     "world": {
