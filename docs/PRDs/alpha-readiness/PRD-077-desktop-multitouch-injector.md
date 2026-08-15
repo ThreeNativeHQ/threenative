@@ -52,7 +52,7 @@ contract that must not turn a permission problem into a silent pass.
 `docs/verification/`.
 
 **Depends on:** nothing. **Unblocks:** [PRD-076](PRD-076-tier-1-parity-reconciliation.md)
-Phase 3's unqualified desktop aggregate, [PRD-054](native/blocked/PRD-054-write-once-run-anywhere.md)
+Phase 3's unqualified desktop aggregate, [PRD-054](../native/blocked/PRD-054-write-once-run-anywhere.md)
 criterion 1, and beta bar row 4.
 
 ---

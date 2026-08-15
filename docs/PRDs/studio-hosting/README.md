@@ -187,6 +187,6 @@ work around.
 
 Two facts a reader should carry out of this folder: **nothing here has been built**, and **no
 stranger has played a ThreeNative game for five minutes yet** — the open test in
-[PRD-080](../PRD-080-five-minute-stranger-test.md). This series describes the shape a public
+[PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md). This series describes the shape a public
 Studio would take, so that the day it is started the answer is a plan rather than a quarter of
 design.

@@ -38,6 +38,15 @@ phase gates are this file's subject. If a number disagrees, the value-propositio
 Rows 3–5 are the beta blockers. Rows 1–2 are held, not finished — they stay green or the
 change does not land.
 
+## The alpha bar — the step before this one
+
+**Added 2026-08-15.** [`docs/PRDs/alpha-readiness/`](../PRDs/alpha-readiness/README.md) collects
+the ten PRDs that stand between the tree and *"an outsider can install this and ship a small
+game"*. Seven rows, and the one that governs the rest: `create-threenative` is a **404** on the
+public registry, and the four packages that do exist were published 2026-08-09, 83 commits ago.
+Beta rows 3, 4 and 5 are all represented there — PRD-114, PRD-076/077 and PRD-078 — because a
+claim an outsider cannot check is an alpha problem before it is a beta one.
+
 ## Native reliability tiers — owner decision, 2026-08-10
 
 "Reliable" is split into what this machine can prove and what only physical hardware can.
@@ -100,11 +109,11 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 | iOS evidence lane | [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md) | ⚠️ open, filed 2026-08-10 — Phase 0 landed (the lane was selecting an **Apple Vision Pro**, so every prior "iOS" artifact was visionOS). Phases 1–3 repair the red consumer handoff, widen the trigger and make the report legible; Phase 4 is a time-boxed real-device spike permitted to end `BLOCKED`. Makes no mobile-readiness claim |
 | Physical mobile production qualification | [native/blocked/PRD-056](../PRDs/native/blocked/PRD-056-physical-mobile-qualification.md) | ❌ filed under `native/blocked/` — every criterion needs a physical device or an Apple signing identity; an untracked duplicate under `production-readiness/` was removed 2026-08-09 |
 | Production readiness: audio parity, profiling, SBOM, promoted distribution | [native/blocked/PRD-057…060](../PRDs/native/blocked/) | ❌ **Tier 2, parked.** Moved out of `production-readiness/` (now empty) on 2026-08-10. PRD-058 Phase 5 is the one device-free part and is executed by PRD-064; 059 needs a hosted prerelease, 060 needs release credentials |
-| **Beta row 4 — reconcile the two contradicting parity ledgers** | [PRD-076](../PRDs/PRD-076-tier-1-parity-reconciliation.md) | ⚠️ proposed 2026-08-11. `parity-2026-08-10-r2` and `tier-1-2026-08-10` disagree on the same device on the same day (Android `67/0/0` vs `27/40/0`; desktop overlay pass vs GPU-validation fail). The r2 desktop cell `66/0/1 exit 0` is **not producible** — `reportExitCode` returns `2` whenever `blocked > 0`. Phase 0 is provenance, not repair |
-| **Beta row 4 — desktop native multitouch** | [PRD-077](../PRDs/PRD-077-desktop-multitouch-injector.md) | ⚠️ proposed 2026-08-11. The desktop host already dispatches `SDL_EVENT_FINGER_*` as multi-contact PointerEvents (`platform/input.cpp:480`); the `desktop-multitouch-input` exclusion exists only because the harness has no injector, and it guarantees the desktop lane can never exit `0` |
-| **Beta row 5 — the toolchain-free consumer proof** | [PRD-078](../PRDs/PRD-078-toolchain-free-consumer-proof.md) | ⚠️ proposed 2026-08-11. 10 release tags, 10 runs, **0 published releases** — `cleanup-failed-release` deletes each one after `clean-consumer` fails. Run `31360511081` died in 314 ms: `SDL_CreateWindow failed: Installed Vulkan doesn't implement the VK_KHR_surface extension`. A missing runner ICD, not a framework defect |
+| **Beta row 4 — reconcile the two contradicting parity ledgers** | [PRD-076](../PRDs/alpha-readiness/PRD-076-tier-1-parity-reconciliation.md) | ⚠️ proposed 2026-08-11. `parity-2026-08-10-r2` and `tier-1-2026-08-10` disagree on the same device on the same day (Android `67/0/0` vs `27/40/0`; desktop overlay pass vs GPU-validation fail). The r2 desktop cell `66/0/1 exit 0` is **not producible** — `reportExitCode` returns `2` whenever `blocked > 0`. Phase 0 is provenance, not repair |
+| **Beta row 4 — desktop native multitouch** | [PRD-077](../PRDs/alpha-readiness/PRD-077-desktop-multitouch-injector.md) | ⚠️ proposed 2026-08-11. The desktop host already dispatches `SDL_EVENT_FINGER_*` as multi-contact PointerEvents (`platform/input.cpp:480`); the `desktop-multitouch-input` exclusion exists only because the harness has no injector, and it guarantees the desktop lane can never exit `0` |
+| **Beta row 5 — the toolchain-free consumer proof** | [PRD-078](../PRDs/alpha-readiness/PRD-078-toolchain-free-consumer-proof.md) | ⚠️ proposed 2026-08-11. 10 release tags, 10 runs, **0 published releases** — `cleanup-failed-release` deletes each one after `clean-consumer` fails. Run `31360511081` died in 314 ms: `SDL_CreateWindow failed: Installed Vulkan doesn't implement the VK_KHR_surface extension`. A missing runner ICD, not a framework defect |
 | **Beta row 3 — reopen the Phase 2 win criteria** | [PRD-079](../PRDs/PRD-079-phase-2-exit-criteria.md) | ⚠️ proposed 2026-08-11, executing round 4's own recorded next action. Both arms failed `TN_PLAYTEST_CAPABILITY_MISSING` for `runtime.physics`: `core/src/playtest.ts:144` auto-advertises only `runtime.audio` and `runtime.world`, and nothing in `packages/` writes `physicsDebugSeries`. The round-4 "functional tie" is a tie between two runs that never reached assertion evaluation |
-| **The five-minute stranger test** | [PRD-080](../PRDs/PRD-080-five-minute-stranger-test.md) | ⚠️ proposed 2026-08-11. Specified two mutually inconsistent ways (a *player* in `METRICS.md`, an *adopting developer* in the Tier 2 trigger below) and run zero times. No deploy configuration exists, so nothing is reachable by anyone outside this repository |
+| **The five-minute stranger test** | [PRD-080](../PRDs/alpha-readiness/PRD-080-five-minute-stranger-test.md) | ⚠️ proposed 2026-08-11. Specified two mutually inconsistent ways (a *player* in `METRICS.md`, an *adopting developer* in the Tier 2 trigger below) and run zero times. No deploy configuration exists, so nothing is reachable by anyone outside this repository |
 | Build-time asset pipeline | none | ❌ deferred behind two measured triggers (`docs/product/ASSET-PIPELINE.md`) |
 | Device spikes 0a / 0b | none — forbidden | ❌ never a PRD (`CHARTER.md:364`); both were answered by the native lane instead |
 

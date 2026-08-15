@@ -13,7 +13,7 @@ claim, and no physical-hardware claim is made anywhere.
 device on the same day, and a roadmap that cites both.** Beta rows 4 and 5 hinge on which
 one is real, and today the project cannot say.
 
-| Target | [`parity-2026-08-10-r2.md`](../verification/parity-2026-08-10-r2.md) | [`tier-1-2026-08-10.md`](../verification/tier-1-2026-08-10.md) |
+| Target | [`parity-2026-08-10-r2.md`](../../verification/parity-2026-08-10-r2.md) | [`tier-1-2026-08-10.md`](../../verification/tier-1-2026-08-10.md) |
 |---|---|---|
 | Browser | `67 / 0 / 0`, exit `0` | `67 / 0 / 0`, exit `0` |
 | Desktop Linux | `66 / 0 / 1`, exit **`0`** | `65 / 1 / 1`, exit `1` |

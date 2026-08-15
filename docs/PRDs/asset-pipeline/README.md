@@ -28,7 +28,7 @@ declined without stranding anything.
 pipeline, last re-checked 2026-08-09, with a two-part trigger that **has not fired**:
 
 1. a stranger has played a ThreeNative game for five minutes, with a transcript —
-   open as [PRD-080](../PRD-080-five-minute-stranger-test.md);
+   open as [PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md);
 2. a reference game fails a device performance budget **for asset reasons**, measured.
 
 **Both are still open, and nothing in this folder may be implemented until both are true.**

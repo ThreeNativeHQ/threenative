@@ -58,7 +58,7 @@ on the measurement, not a wait on anyone.**
 **Depends on:** Phase 0's spike result, and nothing else. The CONFLICTS row 1 gate — *"Studio
 starts only after a stranger has played a game for five minutes"* — **is amended by the owner
 decision at the foot of this file, dated 2026-08-12**: Studio may be built in parallel with
-[PRD-080](../PRD-080-five-minute-stranger-test.md) rather than after it. **Unblocks:** the
+[PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md) rather than after it. **Unblocks:** the
 Studio surface in
 [POSITIONING.md](../../strategy/POSITIONING.md), currently *"Barely — `DebugOverlay` and
 `window.__THREENATIVE__.snapshot()`."*
@@ -383,7 +383,7 @@ since its own dogfood recorded three major findings and this PRD is partly built
 |---|---|---|
 | Reopen the closed "an editor" question? | **Yes.** Reopened for this PRD's shape — an agent editing plain TypeScript — not for a GUI that writes a scene, which stays closed. | 2026-08-12 |
 | Admit `@threenative/studio` as a package, or send it to its own repository? | **Admit it** as a workspace package, on the §4 dependency argument. | 2026-08-12 |
-| Amend or hold the CONFLICTS row 1 gate — *"Studio starts only after a stranger has played a game for five minutes"*? | **Amended.** Studio proceeds in parallel with [PRD-080](../PRD-080-five-minute-stranger-test.md) instead of after it. The five-minute test remains the beta bar; it is no longer a predecessor of this work. | 2026-08-12 |
+| Amend or hold the CONFLICTS row 1 gate — *"Studio starts only after a stranger has played a game for five minutes"*? | **Amended.** Studio proceeds in parallel with [PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md) instead of after it. The five-minute test remains the beta bar; it is no longer a predecessor of this work. | 2026-08-12 |
 
 **The only thing still ahead of Phase 1 is Phase 0's measurement.** Nothing here waits on a
 person.

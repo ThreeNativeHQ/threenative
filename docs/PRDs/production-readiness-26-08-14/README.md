@@ -1,19 +1,23 @@
 # Batch — production readiness, 2026-08-14
 
-**Status: PARTIALLY DELIVERED, 2026-08-15.** Four of seven are done and archived in
-`docs/PRDs/done/`: PRD-111, PRD-115, PRD-110 and PRD-116. Three remain active here, each with a
-named unmet criterion rather than an unstarted one:
+**Status: DELIVERED IN PART, THE REMAINDER MOVED, 2026-08-15.** Four of seven are done and
+archived in `docs/PRDs/done/`: PRD-111, PRD-115, PRD-110 and PRD-116. **The four that were still
+active moved to [`../alpha-readiness/`](../alpha-readiness/README.md)**, which is now their owning
+batch — they are alpha blockers, not one night's slate. This folder stays as the record of what
+that night executed; it is archived when the moved four land.
 
-| PRD | State | What is actually left |
-| --- | --- | --- |
-| PRD-112 | BLOCKED | The exact packed seven-template gate is red — action-rpg dies on `page.evaluate: Execution context was destroyed`. |
-| PRD-113 | BLOCKED | Input causality is fixed and archived; the sealed *consumer* proof still reads 1/6 positive direct rows. |
-| PRD-114 | BLOCKED | The instrument is repaired and honest; round 7 is still VOID, so no paired round has been run on it. |
-| PRD-117 | NOT STARTED | Blocked behind PRD-114's fresh paired round. |
+| PRD | Now lives in | State when moved | What is actually left |
+| --- | --- | --- | --- |
+| PRD-112 | `alpha-readiness/` | BLOCKED | The exact packed seven-template gate is red — action-rpg dies on `page.evaluate: Execution context was destroyed`. |
+| PRD-113 | `alpha-readiness/` | BLOCKED | Input causality is fixed and archived; the sealed *consumer* proof still reads 1/6 positive direct rows. |
+| PRD-114 | `alpha-readiness/` | BLOCKED | The instrument is repaired and honest; round 7 is still VOID, so no paired round has been run on it. |
+| PRD-117 → **PRD-121** | `alpha-readiness/` | NOT STARTED | Blocked behind PRD-114's fresh paired round. Renumbered on the move: `docs/PRDs/PRD-117-engine-load-test-godot.md` already held 117. |
+
+The two superseded repair lanes stay here in [`repairs/`](repairs/) — they are this batch's
+history, not alpha work.
 
 Eight repair lanes ran on 2026-08-15 to get here; five closed on APPROVE and are archived, two hit
-their two-review limit and were superseded by fresh PRDs, and the two above are still open. The
-batch folder stays until PRD-117 lands. Sliced from
+their two-review limit and were superseded by fresh PRDs, and the four above are still open. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md`, which is itself a proposal and not a commitment. Every
 claim below is either cited to a file and line, or marked unverified.
 
@@ -32,9 +36,9 @@ collisions, and the one PRD that must run alone.
 |---|---|---|---|---|---|
 | 1 | [PRD-111 — the proof survives a real game](../done/PRD-111-proof-survives-a-real-game.md) | 2 | *"The `test` script is dead the moment you change the game."* | **Delivered**, needed `xvfb` for capture | Phase 1: half a day · Phase 2: one day |
 | 2 | [PRD-110 — verification fails closed](PRD-110-verification-fails-closed.md) | 1 | *"A playtest that saw 18 console errors reported pass."* | **Yes.** Phase 0 is one fixture run | Phase 0: 1 h · Phases 1–4: two days |
-| 3 | [PRD-112 — golden path from packed artifacts](PRD-112-golden-path-from-packed-artifacts.md) | 3 | *"`threenative build` failed where `vite build` succeeded."* | **Yes.** Phase 0 is a clean-dir reproduction | Phase 0: 2 h · Phases 1–3: one to two days |
-| 4 | [PRD-113 — the sealed-brief naming contract](PRD-113-sealed-brief-naming-contract.md) | 4 | *"The sealed proof is unpassable by any blind builder."* | **Needs an owner decision first** | decision, then half a day |
-| 5 | [PRD-114 — one paired round, vanilla arm executed](PRD-114-paired-round-on-the-repaired-instrument.md) | 5 | *"No round has ever produced a functional-column comparison."* | **Blocked on 4** | Phase 0: 2 h · the round: one day |
+| 3 | [PRD-112 — golden path from packed artifacts](../alpha-readiness/PRD-112-golden-path-from-packed-artifacts.md) | 3 | *"`threenative build` failed where `vite build` succeeded."* | **Yes.** Phase 0 is a clean-dir reproduction | Phase 0: 2 h · Phases 1–3: one to two days |
+| 4 | [PRD-113 — the sealed-brief naming contract](../alpha-readiness/PRD-113-sealed-brief-naming-contract.md) | 4 | *"The sealed proof is unpassable by any blind builder."* | **Needs an owner decision first** | decision, then half a day |
+| 5 | [PRD-114 — one paired round, vanilla arm executed](../alpha-readiness/PRD-114-paired-round-on-the-repaired-instrument.md) | 5 | *"No round has ever produced a functional-column comparison."* | **Blocked on 4** | Phase 0: 2 h · the round: one day |
 | 1b | [PRD-115 — the scaffold ships what a user keeps](../done/PRD-115-scaffold-ships-what-a-user-keeps.md) | smaller findings | *"Round 6 deleted 607 of the starter's 1117 lines before it had a game."* | **Delivered** | half a day, landed with PRD-111 |
 | — | [PRD-116 — a native build can move a dynamic body](PRD-116-native-physics-actuation.md) | 6 | *"No native build can push a crate yet."* | **Not tonight** — see *Sizing* | multi-day, Rust |
 

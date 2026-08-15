@@ -2,9 +2,16 @@
 prd_contract: v1
 ---
 
-# PRD-117 — Delete unreached physics actuation members
+# PRD-121 — Delete unreached physics actuation members
 
 **Status: NOT STARTED — blocked on an independent fresh paired round, corrected 2026-08-15.**
+
+**Renumbered 2026-08-15, 117 → 121.** Two PRDs held the number 117: this one and
+`docs/PRDs/PRD-117-engine-load-test-godot.md`, which is executed and owns the Godot load-test
+instrument. Nothing about this PRD's content changed. Records written before the renumber —
+`docs/verification/round-7-2026-08-15.md`, `score-physics-puzzle-round-7-2026-08-15.md`, and the
+`production-readiness-26-08-14` batch README — refer to this PRD as **PRD-117**, and are left
+as written because they are the evidence record.
 
 ## Context
 
