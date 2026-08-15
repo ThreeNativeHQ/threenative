@@ -285,6 +285,51 @@ Do not claim ThreeNative is clearly better for production games until all are tr
   kinematic-pair explanation is wrong — and the platformer's handler takes no body argument, so its
   passing test does not prove the player is what entered. Needs a targeted experiment.
 
+## Slicing this into PRDs
+
+Five things a slate cut from this document needs to know, and one thing it must not do.
+
+**1. Framework LOC headroom is 259 lines.** `pnpm budgets` reports 14741/15000. Any PRD that adds
+package code under `packages/*/src` is spending from that, and crossing the trigger obliges a
+justification in the owning PRD plus a kill-switch pass over what was added. Never silence it. Most
+of the work below deliberately lands in templates or scripts, which do not spend it — check the
+column before assuming a PRD is cheap.
+
+The native runtime is already **69910/50000**, well past its review trigger. Any PRD touching
+`packages/runtime-native/` inherits that justification obligation, which matters for item 6.
+
+**2. Where each item lands decides which rules bind it.**
+
+| Item | Lands in | Rough size | Axis weight it moves | Blocked by |
+| --- | --- | --- | --- | --- |
+| 1 Verification fails closed | `packages/playtest/` | large, spans the runner and reporting | 20 (proof) | reproduce the green-with-errors claim first |
+| 2 Proof hook survives a real game | `templates/` | small — one scenario plus default entity registration | 35 (proof + abstraction fit) | none |
+| 3 Golden path | `packages/create-threenative/`, CLI, CI | medium | 10 (setup) | reproduce `TN_CONFIG_TRANSPILER_MISSING` |
+| 4 Sealed-brief naming contract | `docs/benchmark/genres/` | small edit, large consequence | unblocks the functional column entirely | owner decision |
+| 5 Paired round | none — it is a run | re-measures everything | all | item 4 |
+| 6 Native parity, incl. PRD-108's Rust side | `packages/runtime-native/` | large | 15 (plumbing), and the portability claim | native LOC justification |
+| 7 Performance budgets | `packages/playtest/`, scripts | medium | 20 (proof), partly | item 1 |
+| 8 Template quality | `templates/` | medium, mostly art direction | 20 (visual) | none |
+| Handle invalidation (PRD-109 follow-up) | `packages/physics/`, `native/host.ts` | medium, touches the ABI | lets determinism become the default | none |
+
+**3. Item 4 blocks item 5, and item 5 is the point.** A paired round run before the naming contract
+is settled will still measure naming luck in its functional column — round 5 scored 2/10 and round 6
+scored 0/10 on that proof, and the only difference was that round 5 happened to bind ArrowRight and
+name an entity `player`. Sequencing these the wrong way round burns a full paired round for nothing.
+
+**4. One PRD must be a deletion.** `AGENTS.md` rule 2 deletes an abstraction no fresh uninformed
+build reaches for. PRD-108 added four members; round 6 reached for `pushesDynamicBodies` and
+`RigidBody3D.linearVelocity` but **not** `applyImpulse` or `applyForce`. If the next round also does
+not reach them, they go — and that deletion is the PRD, not a footnote in someone else's. A strategy
+document accumulates additions by nature; the kill switch is the only thing that makes the LOC
+budget mean anything.
+
+**5. Do not slice a PRD out of the closed list.** These are closed with evidence and do not get
+reopened as part of a feature: an IR, a scene format, an editor, a preset system, a code-first ECS,
+a bespoke CLI vocabulary. Several items above are adjacent to them — "make templates credible games"
+is not a level editor, and "progressive disclosure" is not a preset system. If a slice starts to
+look like one of the six, that is the signal it was mis-scoped, not that the list needs revisiting.
+
 ## Execution order
 
 1. Reproduce the two unverified claims above (green-with-errors; `TN_CONFIG_TRANSPILER_MISSING`).
