@@ -1,3 +1,4 @@
+import { installRendererStageHooks } from "../../../scripts/render-profile/renderer-stage-hooks.js";
 // Web entry for the PRD-117 ThreeNative arm: drives the ladder and parks a §5.1 run report on
 // `window` for `scripts/engine-load-test/run-web.ts` to collect. Kept out of `game.ts` so the
 // portable half stays free of browser globals.
@@ -19,6 +20,8 @@ import {
 interface IRungReport {
   drawCalls: number;
   frameMs: number[];
+  stageReport?: unknown;
+  stepMs?: number[];
   mode: RenderMode;
   objectCount: number;
   positionHash: string;
@@ -61,7 +64,8 @@ function readModes(): RenderMode[] {
   const raw = parameters.get("modes");
   if (raw === null) return ["L1", "L2"];
   return raw.split(",").map((part) => {
-    if (part !== "L1" && part !== "L2") throw new Error("TN_BENCH_BAD_PARAM:modes");
+    if (part !== "L1" && part !== "L2" && part !== "L3")
+      throw new Error("TN_BENCH_BAD_PARAM:modes");
     return part;
   });
 }
@@ -70,19 +74,41 @@ function nextFrame(): Promise<number> {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+// Opt-in and never part of a published ladder: wrapping every renderer stage inflates the
+// absolute frame time, so a profiled run's proportions are the finding and its milliseconds are
+// not comparable to anything.
+const profileStages = parameters.get("stages") === "1";
+
 async function measureRung(
   harness: Awaited<ReturnType<typeof createLoadTestHarness>>,
   rung: ILoadTestRung,
   repeat: number,
 ): Promise<IRungReport> {
   harness.setRung(rung);
+  // L3 bakes across frames. Drive it to "applied" before a single sample is taken, or the rung
+  // times the bake and reports it as the steady-state cost.
+  if (rung.mode === "L3") {
+    harness.beginCollapse();
+    for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle += 1) {
+      harness.step(settle);
+      await harness.render();
+      await nextFrame();
+    }
+    if (harness.collapseStatus() !== "applied")
+      throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+  }
   const frameMs: number[] = [];
+  const stepMs: number[] = [];
   let drawCalls = 0;
   let triangles = 0;
   let visibleObjects = 0;
   let previous = performance.now();
   const statsFrame = Math.floor((frames + warmup) / 2);
+  const hooks = profileStages
+    ? installRendererStageHooks(harness.renderer, { mode: "full" })
+    : undefined;
   for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
+    if (frameIndex === warmup) hooks?.reset();
     harness.step(frameIndex);
     await harness.render();
     // Read before yielding: three's own rAF resets the per-frame counters, so a read after
@@ -97,11 +123,18 @@ async function measureRung(
     const now = performance.now();
     const interval = now - previous;
     previous = now;
-    if (frameIndex >= warmup) frameMs.push(interval);
+    if (frameIndex >= warmup) {
+      frameMs.push(interval);
+      stepMs.push(harness.stepMs);
+    }
   }
+  const stageReport = hooks?.snapshot({ measuredFrameCount: frames - warmup });
+  hooks?.dispose();
   return {
     drawCalls,
     frameMs,
+    stageReport,
+    stepMs,
     mode: rung.mode,
     objectCount: rung.objectCount,
     positionHash: harness.positionHash,

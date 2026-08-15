@@ -10,7 +10,10 @@ export const WARMUP_FRAMES = 120;
 export const REPEATS = 3;
 export const KNEE_THRESHOLD_MS = 20;
 
-export type RenderMode = "L1" | "L2";
+// L3 is not a third way to author the scene — it is L1's authoring, exactly, with the framework's
+// collapse pass switched on. The comparison it answers is what each engine does for a game that
+// never optimised, which is the question L1 asks and neither engine answers with a knob.
+export type RenderMode = "L1" | "L2" | "L3";
 
 export interface ICubePlacement {
   x: number;

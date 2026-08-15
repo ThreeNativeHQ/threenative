@@ -166,6 +166,21 @@ describe("engine load test equivalence gate", () => {
     expect(fields.some((field) => field.startsWith("positionHash"))).toBe(true);
   });
 
+  it("should refuse an arm whose frame interval is display-pinned rather than load-following", () => {
+    // Godot's Android export ignored VSYNC_DISABLED and read ~19 ms at every rung of a 16x ladder.
+    // The requested `display.vsync` said false, so the flatness has to be caught in the samples.
+    const pinned = ladderReport(24, "godot-web");
+    pinned.rungs = pinned.rungs.map((entry) => ({ ...entry, frameMs: series(19) }));
+    const fields = checkEquivalence(ladderReport(24), pinned).map((failure) => failure.field);
+    expect(fields.some((field) => field.includes("display-pinned"))).toBe(true);
+    // Two arms that both follow the load are comparable and must not trip it.
+    expect(
+      checkEquivalence(ladderReport(24), ladderReport(30, "godot-web")).some((failure) =>
+        failure.field.includes("display-pinned"),
+      ),
+    ).toBe(false);
+  });
+
   it("should refuse a release arm compared against a debug arm", () => {
     const right = ladderReport(24, "godot-web");
     right.build = { notes: "", type: "debug" };

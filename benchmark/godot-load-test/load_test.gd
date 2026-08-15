@@ -334,12 +334,22 @@ func _finish_rung() -> void:
 	_begin_rung()
 
 
+# The arm is read from the running platform, never passed in: a desktop binary labelled as the
+# phone arm would be published as device evidence.
+func _arm_name() -> String:
+	if OS.has_feature("web"):
+		return "godot-web"
+	if OS.get_name() == "Android":
+		return "godot-android"
+	return "godot-desktop"
+
+
 func _emit_report() -> void:
 	_finished = true
 	_clear_rung()
 	var version: Dictionary = Engine.get_version_info()
 	var report := {
-		"arm": "godot-web" if OS.has_feature("web") else "godot-desktop",
+		"arm": _arm_name(),
 		"build": {
 			"notes": "godot export, rendering method read from the engine at runtime",
 			"type": "debug" if OS.is_debug_build() else "release",
@@ -372,7 +382,12 @@ func _emit_report() -> void:
 			"window.__ENGINE_LOAD_TEST__ = JSON.parse(" + JSON.stringify(payload) + ");", true
 		)
 	else:
+		# Android's logcat truncates a line at ~1 KB, so the payload goes out in chunks the
+		# collector rejoins. A single print looks fine on desktop and silently loses the phone run.
 		print("ENGINE_LOAD_TEST_JSON_BEGIN")
-		print(payload)
+		var offset := 0
+		while offset < payload.length():
+			print("TNJSON:", payload.substr(offset, 800))
+			offset += 800
 		print("ENGINE_LOAD_TEST_JSON_END")
 		get_tree().quit()

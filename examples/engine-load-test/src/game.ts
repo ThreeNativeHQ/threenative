@@ -14,6 +14,7 @@ import {
   Scene,
   WebGPURenderer,
 } from "three/webgpu";
+import { type ISceneCollapseReport, SceneCollapse } from "../../../packages/core/src/collapse.js";
 import {
   type ICubePlacement,
   type RenderMode,
@@ -41,15 +42,20 @@ export interface ILoadTestFrameStats {
 
 export interface ILoadTestHarness {
   adapterLabel: string;
+  beginCollapse(): void;
+  collapseStatus(): string;
   dispose(): void;
   positionHash: string;
   render(): Promise<void>;
+  renderer: WebGPURenderer;
   setRung(rung: ILoadTestRung): void;
   stats(): ILoadTestFrameStats;
   step(frameIndex: number): void;
+  stepMs: number;
 }
 
 interface IRungState {
+  collapse: SceneCollapse | undefined;
   cubes: Mesh[];
   instanced: InstancedMesh | undefined;
   placements: ICubePlacement[];
@@ -89,6 +95,10 @@ export async function createLoadTestHarness(
 
   const clearRung = (): void => {
     if (state === undefined) return;
+    // Restore first, remove second. `restore()` puts the collapsed pass's source meshes back into
+    // the scene, so undoing it after the removal loop re-inserts every cube and the next rung
+    // renders the previous rung's leftovers on top of its own.
+    state.collapse?.restore();
     for (const cube of state.cubes) scene.remove(cube);
     if (state.instanced !== undefined) {
       scene.remove(state.instanced);
@@ -102,7 +112,7 @@ export async function createLoadTestHarness(
     const placements = createPlacements(rung.objectCount);
     const cubes: Mesh[] = [];
     let instanced: InstancedMesh | undefined;
-    if (rung.mode === "L1") {
+    if (rung.mode === "L1" || rung.mode === "L3") {
       for (const placement of placements) {
         const cube = new Mesh(cubeGeometry, material);
         cube.position.set(placement.x, placement.y, placement.z);
@@ -116,16 +126,42 @@ export async function createLoadTestHarness(
       instanced.frustumCulled = false;
       scene.add(instanced);
     }
-    state = { cubes, instanced, placements, rung };
+    state = { collapse: undefined, cubes, instanced, placements, rung };
   };
+
+  // Driven by the ladder before the measured window opens: the pass watches, bakes across frames,
+  // and only then starts refreshing moving parts. A rung that begins measuring mid-bake would time
+  // the bake, not the collapsed scene.
+  let collapseReport: ISceneCollapseReport | undefined;
+
+  const beginCollapse = (): void => {
+    if (state === undefined || state.rung.mode !== "L3") return;
+    collapseReport = undefined;
+    // No tuning: `defineGame` constructs `new SceneCollapse(scene)` with defaults and calls
+    // `frame()` every frame, so L3 must use the same defaults or it measures a hand-tuned pass
+    // rather than what a ThreeNative game actually gets.
+    state.collapse = new SceneCollapse(scene as never, {
+      onReport: (value) => {
+        collapseReport = value;
+      },
+    });
+  };
+
+  const collapseStatus = (): string =>
+    collapseReport === undefined ? "pending" : collapseReport.status;
+
+  // The game-side half of a frame, timed separately from the renderer's half: without the split
+  // an L1 regression cannot be told apart from a scene-graph one.
+  let stepMs = 0;
 
   const step = (frameIndex: number): void => {
     if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+    const startedAt = performance.now();
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
     // 100% dirty transforms every frame — the honest worst case a game with moving actors pays.
-    if (state.rung.mode === "L1") {
+    if (state.rung.mode === "L1" || state.rung.mode === "L3") {
       for (let index = 0; index < state.cubes.length; index += 1) {
         const cube = state.cubes[index] as Mesh;
         const placement = state.placements[index] as ICubePlacement;
@@ -133,10 +169,17 @@ export async function createLoadTestHarness(
         cube.rotation.x = cubeRotationX(index, frameIndex);
         cube.rotation.y = cubeRotationY(index, frameIndex);
       }
+      // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
+      // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
+      state.collapse?.frame();
+      stepMs = performance.now() - startedAt;
       return;
     }
     const instanced = state.instanced;
-    if (instanced === undefined) return;
+    if (instanced === undefined) {
+      stepMs = performance.now() - startedAt;
+      return;
+    }
     for (let index = 0; index < state.placements.length; index += 1) {
       const placement = state.placements[index] as ICubePlacement;
       dummy.position.set(placement.x, cubeBobY(index, frameIndex, placement.y), placement.z);
@@ -146,6 +189,7 @@ export async function createLoadTestHarness(
       instanced.setMatrixAt(index, instanceMatrix);
     }
     instanced.instanceMatrix.needsUpdate = true;
+    stepMs = performance.now() - startedAt;
   };
 
   return {
@@ -163,12 +207,20 @@ export async function createLoadTestHarness(
       renderer.info.reset();
       await renderer.render(scene, camera);
     },
+    beginCollapse,
+    collapseStatus,
+    renderer,
     setRung,
+    get stepMs() {
+      return stepMs;
+    },
     stats: () => {
       const drawCalls = renderer.info.render.drawCalls;
       const triangles = renderer.info.render.triangles;
       const visibleObjects =
         state?.rung.mode === "L1" ? Math.max(0, drawCalls - 1) : (state?.rung.objectCount ?? 0);
+      // L3's draw count is the finding: if the collapse applied, it is small; if it declined, this
+      // is L1 with extra steps and the report must show that rather than hide it.
       return { drawCalls, triangles, visibleObjects };
     },
     step,

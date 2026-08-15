@@ -3,10 +3,17 @@
 // empty sample array is an error here — never a default, never a skip.
 
 export const KNEE_THRESHOLD_MS = 20;
-export const ARMS = ["tn-web", "tn-android", "godot-web", "godot-android"] as const;
+export const ARMS = [
+  "tn-web",
+  "tn-android",
+  "tn-desktop",
+  "godot-web",
+  "godot-android",
+  "godot-desktop",
+] as const;
 
 export type Arm = (typeof ARMS)[number];
-export type RenderMode = "L1" | "L2";
+export type RenderMode = "L1" | "L2" | "L3";
 export type BuildType = "release" | "debug";
 
 export interface IRunReportRung {
@@ -155,7 +162,7 @@ export function parseRunReport(value: unknown): IRunReport {
     const path = `report.rungs[${index}]`;
     const rung = requireObject(rawRung, path);
     const mode = requireString(rung, "mode", path);
-    if (mode !== "L1" && mode !== "L2")
+    if (mode !== "L1" && mode !== "L2" && mode !== "L3")
       throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.mode ${mode} is not a render mode`);
     const frameMs = rung.frameMs;
     if (!Array.isArray(frameMs) || frameMs.length === 0)
@@ -305,6 +312,23 @@ function groupRungs(report: IRunReport): Map<string, IRunReportRung[]> {
   return groups;
 }
 
+// A frame interval that barely moves while the object count grows 16x is the display pacing the
+// arm, not the engine costing anything. Godot's Android export ignores VSYNC_DISABLED and reported
+// ~19 ms at every rung of a 16x ladder; the requested `display.vsync` said false and the gate let
+// it through, so the flatness is detected from the samples instead of taken on trust.
+export function looksVsyncPinned(summaries: readonly IRungSummary[], mode: RenderMode): boolean {
+  const ladder = summaries
+    .filter((summary) => summary.mode === mode)
+    .sort((left, right) => left.objectCount - right.objectCount);
+  if (ladder.length < 3) return false;
+  const first = ladder[0] as IRungSummary;
+  const last = ladder[ladder.length - 1] as IRungSummary;
+  const objectGrowth = last.objectCount / Math.max(1, first.objectCount);
+  if (objectGrowth < 4) return false;
+  const costGrowth = last.p95 / Math.max(0.001, first.p95);
+  return costGrowth < 1.25;
+}
+
 export function isSoftwareRasteriser(adapter: string): boolean {
   return /swiftshader|llvmpipe|softwarerasterizer|software adapter/i.test(adapter);
 }
@@ -349,6 +373,18 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
 
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
+  for (const mode of ["L1", "L2", "L3"] as const) {
+    const leftPinned = looksVsyncPinned(leftSummaries, mode);
+    const rightPinned = looksVsyncPinned(rightSummaries, mode);
+    if (leftPinned !== rightPinned) {
+      push(
+        `${mode} frame interval is display-pinned on one arm only`,
+        leftPinned ? "pinned" : "load-following",
+        rightPinned ? "pinned" : "load-following",
+        mode,
+      );
+    }
+  }
   for (const leftSummary of leftSummaries) {
     const key = rungKey(leftSummary.mode, leftSummary.objectCount);
     const rightSummary = rightSummaries.find(
@@ -409,10 +445,18 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
   const rightSummaries = summarize(right);
   return {
     left,
-    leftKnee: { L1: knee(leftSummaries, "L1"), L2: knee(leftSummaries, "L2") },
+    leftKnee: {
+      L1: knee(leftSummaries, "L1"),
+      L2: knee(leftSummaries, "L2"),
+      L3: knee(leftSummaries, "L3"),
+    },
     leftSummaries,
     right,
-    rightKnee: { L1: knee(rightSummaries, "L1"), L2: knee(rightSummaries, "L2") },
+    rightKnee: {
+      L1: knee(rightSummaries, "L1"),
+      L2: knee(rightSummaries, "L2"),
+      L3: knee(rightSummaries, "L3"),
+    },
     rightSummaries,
   };
 }
@@ -438,7 +482,7 @@ export function renderArmMarkdown(report: IRunReport): string {
   }
   lines.push(
     "",
-    `**Knee at ≤ ${KNEE_THRESHOLD_MS} ms p95** — L1: ${formatKnee(knee(summaries, "L1"))}, L2: ${formatKnee(knee(summaries, "L2"))}`,
+    `**Knee at ≤ ${KNEE_THRESHOLD_MS} ms p95** — L1: ${formatKnee(knee(summaries, "L1"))}, L2: ${formatKnee(knee(summaries, "L2"))}, L3: ${formatKnee(knee(summaries, "L3"))}`,
   );
   return lines.join("\n");
 }
@@ -457,7 +501,7 @@ export function renderComparisonMarkdown(comparison: IComparison): string {
     `| mode | knee — ${comparison.left.arm} | knee — ${comparison.right.arm} |`,
     "|---|---|---|",
   ];
-  for (const mode of ["L1", "L2"] as const) {
+  for (const mode of ["L1", "L2", "L3"] as const) {
     lines.push(
       `| ${mode} | ${formatKnee(comparison.leftKnee[mode])} | ${formatKnee(comparison.rightKnee[mode])} |`,
     );

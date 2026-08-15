@@ -21,6 +21,12 @@ warm-up frames.
 |---|---|---|---|
 | **L1** — one node per cube | **1 024** | **4 096** | Godot, by 4× |
 | **L2** — one batched node | **16 384** | **4 096** | ThreeNative, by 4× |
+| **L3** — L1's source, collapse on | **16 384** | — (Godot has no equivalent; its answer is L1) | ThreeNative, by 4× |
+
+L3 was added after the first pass and is described in §2.9. It is not a third way to write the
+scene: it is L1's source file, unmodified, with the framework's `SceneCollapse` pass switched on.
+Against the only thing Godot can offer the same source — its own L1 — ThreeNative holds 16 384
+where Godot holds 4 096.
 
 Frame-time p95, same scene, same frame indices:
 
@@ -150,7 +156,50 @@ boundary an engine landed on rather than what it cost. `display.vsync` was added
 report and the gate refuses two arms that disagree on it, so the deviation cannot be applied to
 one arm only.
 
-### 2.8 Godot's `visibleObjects` and ThreeNative's are not the same quantity
+### 2.8 Godot's desktop renderer auto-batches L1, and that is the trap §5.2 was written for
+
+The Godot desktop arm (Forward+, Vulkan, RTX 2080) reports **2 draw calls** for an L1 rung of 4 096
+cubes with 2 340 objects visible. Its web arm, on the same source, reports 2 582 draws for 2 582
+visible objects.
+
+So Godot's L1 is not one thing. On WebGL2 it issues a draw per object; on Vulkan Forward+ it does
+not, and comparing ThreeNative's per-object L1 against that number would publish "ThreeNative is
+slower at L1" when the two arms were not running the same experiment. The draw-call equivalence
+gate refuses this pairing on sight, which is the gate doing its job rather than a blocker to route
+around.
+
+The consequence for the verdict is specific: **on desktop, Godot gives a naive scene automatic
+batching, and the honest comparison is Godot's L1 against ThreeNative's L3**, not against
+ThreeNative's L1. The mode is renamed in the report rather than quietly compared.
+
+### 2.9 `SceneCollapse` closes the L1 gap, and it is not free yet
+
+L3 is `examples/engine-load-test/src/game.ts` building the same one-`Mesh`-per-cube scene as L1,
+with `SceneCollapse` from `packages/core/src/collapse.ts` switched on. Measured on the same ladder,
+same run, same machine:
+
+| N | L1 p95 | L3 p95 | L2 p95 | L3 draws | L3 triangles |
+|---|---|---|---|---|---|
+| 256 | 2.20 ms | 2.00 ms | 2.20 ms | 3 | 3 075 |
+| 1 024 | 6.70 ms | 2.20 ms | 1.80 ms | 3 | 12 291 |
+| 4 096 | 24.40 ms | 2.00 ms | 1.70 ms | 3 | 49 155 |
+| 16 384 | 95.90 ms | 8.50 ms | 5.60 ms | 3 | 196 611 |
+
+L3's draw and triangle counts are identical to L2's at every rung, so the speed-up is the collapse
+doing what it claims and not a scene that quietly got smaller. At 4 096 it is 12× L1; at 16 384,
+11×. Extending the ladder, L3 crosses 20 ms at 65 536 (29.5 ms) and holds 10.0 ms at 16 384.
+
+L3 costs slightly more than L2 at the top rung — 8.5 ms against 5.6 ms — and that difference is the
+per-frame transform refresh pushing 16 384 moved meshes into the baked draw. A hand-instanced game
+is still the faster one; the collapse buys most of that gap without the game being rewritten.
+
+**What is not true yet:** the load test constructs `SceneCollapse` itself. A game written with
+`defineGame` does not get this, so "ThreeNative holds 16 384 where Godot holds 4 096 for the same
+source" is a claim about the framework's *capability*, not about its default. Making it a default
+is a framework change with its own PRD, and until that lands the L1 column is what a scaffolded
+game actually gets.
+
+### 2.10 Godot's `visibleObjects` and ThreeNative's are not the same quantity
 
 Godot reports 2 objects in frame for an L2 rung of 16 384 instances; ThreeNative reports 16 384.
 Each engine's counter means what that engine means by it. The gate compares draw calls and

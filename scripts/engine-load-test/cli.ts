@@ -11,6 +11,7 @@ import {
   renderArmMarkdown,
   renderComparisonMarkdown,
 } from "./report.js";
+import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -110,6 +111,9 @@ async function main(): Promise<void> {
     let report: IRunReport;
     if (arm === "tn-web") report = await runTnWeb(options);
     else if (arm === "godot-web") report = await runGodotWeb(options);
+    else if (arm === "tn-desktop") report = parseRunReport(await runTnDesktop(repoRoot, options));
+    else if (arm === "godot-desktop")
+      report = parseRunReport(await runGodotDesktop(repoRoot, options));
     else if (arm === "tn-android" || arm === "godot-android")
       throw new Error(
         `TN_BENCH_DEVICE_REQUIRED: ${arm} needs a physical Android device and an \`adb\` on PATH (PRD-117 Phase 4).`,
