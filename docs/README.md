@@ -9,6 +9,9 @@ The first external performance control this repository has had is
 [verification/engine-load-test-summary-2026-08-15.md](verification/engine-load-test-summary-2026-08-15.md)
 — ThreeNative against Godot 4.7.1 on web, desktop and one Android device, with the caveats that
 bound each number.
+[verification/three-webgpu-per-object-cost-2026-08-15.md](verification/three-webgpu-per-object-cost-2026-08-15.md)
+takes the one place ThreeNative loses that comparison and shows it is three.js's per-object
+submission cost rather than the framework's — and that `SceneCollapse` answers it with a 16× knee.
 
 [`CHARTER.md`](architecture/CHARTER.md) is the **only binding document**. Everything
 under `docs/` either implements it (PRDs, verification) or explores what comes after it

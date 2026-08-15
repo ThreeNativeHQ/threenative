@@ -13,7 +13,10 @@ effort the instrument itself accepts.
 
 **ThreeNative wins instanced rendering on web, desktop and mobile — 3.2× to 3.9× at scale, and 4× on
 knee wherever both arms have one.** It still loses unbatched per-object rendering on the web, which
-is the one gap below and is upstream of this framework.
+is the one gap below and is upstream of this framework — though **not a three.js defect**: a standalone plain-three page shows
+three's WebGPU backend already beating its own WebGL backend on that exact case, so the cost is
+JavaScript issuing thousands of draw calls, not a renderer bug. See
+`three-webgpu-per-object-cost-2026-08-15.md`.
 
 **Web, L2 (instanced), gate PASS** — Chromium/WebGPU against Godot `gl_compatibility`:
 
@@ -66,7 +69,11 @@ comparison possible.
 ### Where ThreeNative still loses### Where ThreeNative still loses
 
 **Web L1 — one `Mesh` per cube, no batching on either side.** This one is fair and ThreeNative loses
-it: knee **1 024 against Godot's 4 096**, 4× the wrong way. Both arms render unbatched, and the
+it: knee **1 024 against Godot's 4 096**. Read that 4× carefully — it is a knee artifact. Rungs are
+4× apart, so missing the 20 ms line by a hair costs a whole rung. The **frame-time** gap at 4 096 is
+1.45–1.55×: ThreeNative p50 20.5–21.4 ms / p95 26.2–28.0 against Godot's p50 13.2–13.8 / p95
+17.8–19.8. Flipping the knee needs roughly **25–30% off**, and Godot itself only clears the line by a
+hair. Both arms render unbatched, and the
 culling difference runs *against* Godot — at 16 384 it draws 122 942 triangles to ThreeNative's
 112 779, 9% more work, and is still four rungs ahead. (That 9% is above the scorer's 5% triangle
 tolerance, so this pair does not formally pass the gate either; it fails in the direction that makes
@@ -190,9 +197,60 @@ is still worth doing and is not done.
 ## Open
 
 - Retake the Android numbers at ≥50% battery.
-- Give the native host an unthrottled present mode so desktop measures the engine rather than the
-  display.
 - Decide whether V8 becomes Android's default. It is opt-in today
   (`-PthreenativeJsEngine=v8`), costs ~30 MB of APK, and reverses a documented decision in
   `packages/runtime-native/AGENTS.md`. That is an owner call, and PRD-118 states the case rather than
   making it.
+
+## What this means if you are building a game
+
+**The short answer: yes to both, with one asterisk.**
+
+**Against three.js — faster, by 11.6×**, on the same authored scene. Not because anything draws
+quicker; ThreeNative *is* three.js's draw path, unmodified. Because `SceneCollapse` turns 9 400 draw
+calls into 3. Draw calls are what a frame costs here, not triangles.
+
+**Against Godot — faster on all three platforms, 3.2× to 3.9×**, for scenes built the way games
+actually get built: batched, instanced, lots of repeated props. The asterisk is unbatched per-object
+rendering on the web, where Godot is ~1.5× ahead because it issues those draw calls from compiled
+C++ rather than JavaScript.
+
+### You do not have to do anything to get this
+
+`defineGame` constructs `SceneCollapse` unconditionally (`packages/core/src/game.ts`). No flag, no
+option, no import. It watches 8 frames to learn what actually moves, declines below 200 meshes
+because the bake would cost more than it saves, and spreads the bake across startup frames so it
+never stalls. It handles moving objects — every cube in the L3 rung animates and it still collapses
+to 3 draws.
+
+So a developer writes the obvious loop that adds 5 000 meshes and, about 8 frames later, is paying
+for 3. **Do not hand-roll instancing for static props; the framework already did it.**
+
+This is also why the L1 result is not the warning it looks like. The benchmark harness deliberately
+bypasses `defineGame` — its own build note reads *"defineGame loop not in the measured path"* — so L1
+is raw three.js with the framework switched off. A game written normally does not land there.
+
+### Roughly what fits on screen
+
+At a comfortable 60 fps, one shared material, no shadows:
+
+| | web (RTX 2080) | desktop native | Pixel 8 |
+|---|---|---|---|
+| one `Mesh` each, framework off | ~1 000 | — | — |
+| normal ThreeNative game | **~16 000** | **~65 000** | **~65 000** |
+
+For scale, the phone runs 65 536 instanced objects at ~80 fps where Godot's export manages ~25.
+
+### Where you would still be slow
+
+If your objects are genuinely all unique and individually animated — a few thousand separately
+skinned characters, say — nothing collapses and you are at plain three.js speed, around 1 000
+objects. That is the case Godot handles better, and it is a limit of JavaScript issuing draw calls
+rather than a framework defect. Batch what you can; the rest is physics.
+
+### What this does not promise
+
+Grey cubes, one material, one directional light, no shadows, no textures. This measures how quickly
+an engine hands work to the GPU. It does not say your game will be fast — add shadows, many
+materials or expensive shaders and you are measuring something else. One GPU, one phone, one
+browser. It says the framework will not be your bottleneck.

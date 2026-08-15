@@ -55,7 +55,7 @@ useless value ledger. **Standing total: 67/100**, on a scale that is not compara
 | 1 | **Start a project** | "There is something to run in a minute" | CI `scaffold-smoke`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md) | Three templates — `minimal`, `platformer`, `starter` — each scaffolded and playtested on every CI run. The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default and the CLI names every choice | **16/20** — gated and green; 42.89% of original starter lines survived, so the richer default still carries rewrite cost |
 | 2 | **Author the content** | "An agent can find and make my assets" | the two pinned MCP servers, `asset-mcp-tools.json` | `threenative-asset-mcp@0.4.0` (32 tools) and `threenative-sculpt-mcp@0.1.0` (5 tools + 31 resources) install and launch in all three templates via `.mcp.json`. Surface recorded by running the pinned server, never from its docs | **10/20** — ships and runs, **but the asset MCP's own visual-improvement gate lost to the no-MCP control**; the sculpt MCP has no preference or token telemetry at all |
 | 3 | **Know it works** | "My game is asserted, not eyeballed" | `@threenative/playtest`, exit codes | Fails closed: malformed assertion throws, missing bridge exits `2`, a pre-satisfied assertion reports `TN_PLAYTEST_ASSERTION_TRIVIAL`. Same scenario runs on device with `--target android` or `--target ios` | **18/20** — the strongest thing here; docked only because a plain Three.js project can install the same bridge |
-| 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone | **15/20** — one phone, one thermal state, **no iOS hardware**, no store release |
+| 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone. On an identical-scene load test, **3.0–3.9× Godot 4.7.1** on web, desktop and the same phone, all three pairs `GATE PASS` | **15/20** — one phone, one thermal state, **no iOS hardware**, no store release |
 | 5 | **Write less code** | "You will write less than vanilla" | `pnpm sweep:pair` → `authoredLoc` | Wins 2 of 5 genres: platformer **−187**, topdown **−695**. Loses endless **+442**, exploration **+95**, open-world **+8** | **8/20** — half the corpus, and the ceiling is arithmetic, not backlog (below) |
 
 Evidence: [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md) (axis 5, four
@@ -89,7 +89,7 @@ so **axes 1 and 3 win no benchmark column by construction**. That is a scoring a
 a verdict on their worth, and it is recorded as one in [OPPORTUNITY-AREAS.md](../PRDs/OPPORTUNITY-AREAS.md) #2. Read the
 benchmark for what it is: a control on cost and polish, not a census of what ships.
 
-## The five claims that are actually defensible
+## The six claims that are actually defensible
 
 Each has a run behind it.
 
@@ -131,12 +131,33 @@ the frozen hand-written control's — 68 lines against 138 (`pnpm tsx scripts/co
 Total ratio 91.3%, and **vanilla still wins the total** — the regression ratchet working, not
 a win being hidden.
 
-**Godot is not part of claim 3, deliberately.** A comparable fox platformer in Godot 4.7.1 ran
-53.7–59.5 fps uncapped on the same phone against our ~106, which is favourable — but the two
-games are different codebases and the Godot one renders the heavier scene, so the result is
-indicative and not defensible line by line. The workload that would settle it is one where no
-merge pass can help, and it is untested. Specified in
-[ENGINE-PARITY-SPEC.md](../benchmark/ENGINE-PARITY-SPEC.md).
+**6. Against Godot 4.7.1, on an identical scene, on all three platforms.** This was the open
+question the fox platformer could not answer — different codebases, different scenes, so
+"indicative" at best. PRD-117 built the workload that settles it: the same procedurally placed
+cubes, the same triangle counts to the unit, both engines uncapped on the same display, and
+every pair run through the scorer's equivalence gate before it was quoted.
+
+| L2, instanced | ThreeNative | Godot 4.7.1 | margin |
+|---|---|---|---|
+| Web, 16 384 | **4.60 ms** | 17.95 ms | **3.9×** |
+| Desktop, 16 384 | **3.49 ms** | 10.37 ms | **3.0×** |
+| Pixel 8, 65 536 | **12.51 ms** | 40.02 ms | **3.2×** |
+
+Knee at ≤20 ms p95 is **65 536 against 16 384** on desktop and on the phone. All three pairs
+report `GATE PASS`. The record is
+[engine-load-test-summary-2026-08-15.md](../verification/engine-load-test-summary-2026-08-15.md).
+
+**And against vanilla Three.js, 11.6× on the same authored scene** — 20.90 ms to 1.80 ms at
+4 096 objects, because `SceneCollapse` turns 9 400 draw calls into 3. `defineGame` constructs
+it unconditionally, so a game gets that without asking, which is claim 3's "zero game-side
+lines" showing up a second time.
+
+**Where it loses, stated plainly:** unbatched per-object rendering on the web, where Godot is
+~1.5× ahead on frame time. That is JavaScript issuing thousands of draw calls against compiled
+C++, not a framework defect and not a Three.js defect either — a standalone plain-three page
+shows Three's WebGPU backend already beating its own WebGL backend on that case. It is also the
+path `defineGame` collapses away, so a normally written game does not sit on it. See
+[three-webgpu-per-object-cost-2026-08-15.md](../verification/three-webgpu-per-object-cost-2026-08-15.md).
 
 ## Where the claim is not earned — read before quoting any of the above
 
