@@ -122,6 +122,43 @@ scaffold from it still hit ERESOLVE. `0.2.2` is the first version whose template
 that can actually be installed together — which is exactly why PRD-119 required template pins to
 move in the same commit as the packages, and a lesson about ordering that the PRD did not state.
 
+## The published artifacts run, and fail closed
+
+PRD-119 criteria 1 and 2, verified against the packages on the registry rather than the repo.
+
+**Criterion 1 — the scaffolded project's own playtest suite passes**, driven by the published
+`threenative-playtest` binary in a real browser on a real adapter:
+
+```console
+$ ./node_modules/.bin/threenative-playtest --scenario playtests/survives.playtest.json \
+    --url http://127.0.0.1:4173 --server-command "npx vite …" --browser-recipe webgpu --headed
+{
+  "assertions": [ { "distance": 2.0000287621633768, "entity": "player", "minimum": 0.5,
+                    "id": "movement.distance", "pass": true } ],
+  "pass": true,
+  "scenario": "survives",
+  "runtime": "web"
+}
+```
+
+Nothing in that project came from this workspace. The CLI, the framework and the template all
+came from `registry.npmjs.org`, and the player moved 2.0 units under simulated input.
+
+**Criterion 2 — the same published binary fails closed.** Pointed at a page with a canvas and no
+playtest bridge, it must refuse rather than report a vacuous pass:
+
+```console
+$ ./node_modules/.bin/threenative-playtest --scenario playtests/survives.playtest.json \
+    --url http://127.0.0.1:4319 --server-command "npx serve … /blank" --browser-recipe webgpu --headed
+  "pass": false,
+  "scenario": "survives"
+EXIT=2
+```
+
+`pass: false` and exit `2` — never reached its assertions, and said so. **The published artifact
+carries the fail-closed default, not just the repository.** That is the property this project's
+harness rules exist to protect, verified on the thing a stranger downloads.
+
 ## What is still broken, and is not claimed fixed
 
 - **The native runtime has no binaries.** `@threenative/runtime-native@0.2.0` is published, and its
@@ -131,7 +168,7 @@ move in the same commit as the packages, and a lesson about ordering that the PR
 - **Publishing happened from a laptop, not from CI.** `.github/workflows/npm-release.yml` is
   authored and has still never run. Until `NPM_TOKEN` exists as a repository secret, the reviewed
   lane cannot execute and releases stay manual.
-- **`npm run dev` and `npm test` were not run in the clean room.** Scaffold, install and build were.
+- **One playtest scenario was run, not the whole suite.** `survives` passed and the negative control failed closed; the other nine scenarios in the scaffold were not run.
 - **No claim that every template installs.** `starter` was the one exercised.
 - **`0.2.0` of `create-threenative`, `physics` and `ui` are burned.** npm versions are immutable;
   those three are published and broken, and can only be deprecated, never replaced.

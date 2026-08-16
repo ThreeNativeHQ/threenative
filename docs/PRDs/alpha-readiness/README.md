@@ -1,26 +1,25 @@
 # Batch — alpha readiness, 2026-08-15
 
-**Status: IN EXECUTION, 2026-08-15. One done, one blocked, four partial.** No mobile-readiness,
+**Status: IN EXECUTION. Three done, one blocked, two open.** No mobile-readiness,
 physical-device or iOS claim is made anywhere in this folder.
 
 | PRD | State |
 |---|---|
 | PRD-120 — the alpha bar is runnable | **done**, archived to `docs/PRDs/done/`. `pnpm alpha:bar` generates the table below, and a hand edit to it is reverted |
 | PRD-077 — desktop multitouch injector | **BLOCKED**, moved to `BLOCKED/requires-evdev-delivery/`. The injector is built and proved to the kernel boundary; no host here delivers what it writes |
-| PRD-119 — the alpha release train | Phases 0, 1, 3 executed. **Phase 2 is owner-gated and nothing is published** |
+| PRD-119 — the alpha release train | **done**, archived. Seven packages live on npm; a stranger can install and build |
 | PRD-078 — toolchain-free consumer proof | Phase 1's version-skew question answered and fixed; Phase 0 still needs a tag push, which is owner-gated |
 | PRD-080 — five-minute stranger test | Phase 0 executed — one definition, and it measures a *player*. Phases 1–4 need a deploy and a human |
-| PRD-076 — reconcile the parity ledgers | Phase 0 executed; a third desktop measurement is in progress |
+| PRD-076 — reconcile the parity ledgers | **done**, archived. Desktop `66/0/1` and Android `67/0/0` measured with provenance; both predecessors superseded |
 
 **What each remaining PRD is actually waiting on** — none of it is more agent work on the same
 lane:
 
 | Waiting on | PRDs |
 |---|---|
-| An owner running an irreversible publish | PRD-119 Phase 2, PRD-078 Phase 0's tag |
+| An owner running an irreversible publish | PRD-078 Phase 0's release tag |
 | A host that delivers a kernel input device, or a seated X server | PRD-077 |
 | A public deploy and one external person | PRD-080 Phases 1–4 |
-| An Android emulator lane, and the desktop run finishing | PRD-076 Phases 2–3 |
 
 **The folder is not archived while any row above is not done.** A blocked criterion is not
 completion, and neither is an owner-gated one.
@@ -70,11 +69,11 @@ Which PRD owns which row:
 
 | # | Owning PRD(s) |
 |---|---|
-| A1 | [PRD-119](PRD-119-the-alpha-release-train.md) |
+| A1 | [PRD-119](../done/PRD-119-the-alpha-release-train.md) — **done 2026-08-16** |
 | A2 | [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](PRD-078-toolchain-free-consumer-proof.md) |
 | A3 | [PRD-113](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md) |
-| A4 | [PRD-114](../BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md), then PRD-121 |
-| A5 | [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) — **blocked** → [PRD-076](PRD-076-tier-1-parity-reconciliation.md) |
+| A4 | [PRD-114](../done/PRD-114-paired-round-on-the-repaired-instrument.md) delivered, then PRD-121 |
+| A5 | [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) — **blocked** → [PRD-076](../done/PRD-076-tier-1-parity-reconciliation.md) |
 | A6 | [PRD-080](PRD-080-five-minute-stranger-test.md) |
 | A7 | [PRD-120](../done/PRD-120-the-alpha-bar-is-runnable.md) — **done 2026-08-15** |
 
@@ -142,8 +141,8 @@ Four agent lanes with no file overlap, plus one that is not agent work.
 
 ## Two bookkeeping facts about this folder
 
-**PRD-117 was renumbered to PRD-121 on the move.** Two PRDs held 117: the actuation deletion and
-`docs/PRDs/PRD-117-engine-load-test-godot.md`, which is executed and owns the Godot load-test
+**The actuation deletion is PRD-121; the load-test instrument is PRD-117.** Two PRDs held 117 in
+an earlier draft: the actuation deletion and `docs/PRDs/PRD-117-engine-load-test-godot.md`, which is executed but still has an open phone arm and owns the Godot load-test
 instrument. Verification records written before 2026-08-15 —
 `docs/verification/round-7-2026-08-15.md` and `score-physics-puzzle-round-7-2026-08-15.md` — call
 it **PRD-117** and are left as written, because they are the evidence record and evidence is not
@@ -170,7 +169,7 @@ These are the repository's rules, restated because this batch is where they are 
   untracked.
 - **Name the layer before the fix.** Engine bug → `packages/`. Game bug → the example or the
   template.
-- **WebGPU on this host needs `xvfb-run -a -s '-screen 0 1600x900x24'`.** A run that never reached
+- **WebGPU on this host needs `sh scripts/xvfb.sh`.** A run that never reached
   its assertions exits `2` and is recorded as **unmeasured** — never a pass, never a red.
 - **Validate locally, not by pushing to CI.** CI minutes are scarce on this plan; the clean-room
   install gate runs on tag pushes only.

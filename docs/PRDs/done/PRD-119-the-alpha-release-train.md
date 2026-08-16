@@ -4,19 +4,34 @@ prd_contract: v1
 
 # PRD-119 — Alpha row 1: three of seven packages are 404, and the four that exist are six days behind the tree
 
-**Status: PHASES 0, 1 AND 3 EXECUTED — PHASE 2 OWNER-GATED, 2026-08-15. This PRD is not done, and
-nothing has been published.**
+**Status: COMPLETE, 2026-08-16.** All four phases executed. Seven packages are on
+`registry.npmjs.org`, and a stranger can install ThreeNative and build a game. Evidence:
+[`registry-install-2026-08-16.md`](../../verification/registry-install-2026-08-16.md) and
+[`publish-state-2026-08-15.md`](../../verification/publish-state-2026-08-15.md).
 
-| Phase | State |
+| Criterion | Result |
 |---|---|
-| 0 — record the red | **executed**, `docs/verification/publish-state-2026-08-15.md`. All five commands pasted. `npm create threenative@latest` 404s and creates nothing; the PRD's stop rule did not fire |
-| 1 — the preflight | **executed**. `pnpm publish:check` (`scripts/check-publish-state.ts`, 11 spec cases) exits `1` on this tree, naming four packages whose version cannot go up |
-| 2 — publish all seven | **not run.** The workflow is authored at `.github/workflows/npm-release.yml` and has never been triggered; no version field was bumped. The owner's answer on 2026-08-15 was *preflight only, stop before publish*, which is also what the batch's own stop rule requires |
-| 3 — the clean-room gate | **script executed, red as expected.** `scripts/verify-registry-install.ts` (6 spec cases) fails at `scaffold` with a 404. It cannot go green before Phase 2 runs |
+| 1. Clean machine: create → install from the registry → a game that runs | **met.** `npx create-threenative@0.2.2` scaffolds; `npm install` resolves every package from `registry.npmjs.org`; `npm run build` succeeds; and the published `threenative-playtest` drives the project in a real browser to `"pass": true`, measuring the player moving 2.0 units |
+| 2. The published `@threenative/playtest` fails closed | **met.** Against a page with a canvas and no bridge it reports `"pass": false` and exits `2` — the published artifact carries the fail-closed default, not just the repository |
+| 3. `publish:check` red before, green only after every version moved | **met.** Red on four packages before the bump, green after |
+| 4. Zero `file:` and zero `link:` in the generated lockfile | **met.** `grep -cE '"(file\|link):' package-lock.json` → `0` |
+| 5. A dated verification file records the Phase 0 red and the Phase 3 green | **met**, in the two files named above |
 
-**What Phase 2 needs from the owner:** approval of `0.2.0` across all seven packages (the decision
-recorded in §1), then a `v0.2.0` tag push. `pnpm publish:check` is the gate it runs behind, and it
-is red today by design — it goes green only once every version has moved.
+**It took four publishes, not one, and the two extra were real defects the clean room caught:**
+`create-threenative@0.2.0` was a no-op when installed (a `bin` symlink defeated its entry guard),
+and `@threenative/physics@0.2.0`/`@threenative/ui@0.2.0` declared a peer range excluding the core
+beside them, so `npm install` died with ERESOLVE. Both are fixed, both now have a gate —
+`cli-bin.spec.ts` and a `publish:check` rule — and the four broken versions are deprecated on npm
+with messages naming the good one. `pnpm release` exists so the sequence is one command.
+
+**What this does not license.** `@threenative/runtime-native@0.2.0` is published but **zero GitHub
+releases exist**, so its prebuilt binaries 404; it is an `optionalDependency`, so the web path
+installs and the native path does not — PRD-078's lane. Publishing happened from a laptop, not
+from CI, because the repository has no `NPM_TOKEN` secret. One playtest scenario was run, not the
+whole suite. `starter` was the only template exercised. No mobile-readiness, physical-device or
+iOS claim is made.
+
+---
 
 §1 is a read of the public registry, of `.github/workflows/`, and of the tree at `5df0783f`, taken
 2026-08-15. Every number below was produced by a command that is pasted with it. No
@@ -25,7 +40,7 @@ mobile-readiness, physical-device or iOS claim is made.
 **Complexity: 7 → HIGH mode.** Multi-package, a new release lane, an external registry, and a
 version-of-record decision that cannot be un-published once wrong.
 
-**Depends on:** nothing. **Unblocks:** [PRD-080](PRD-080-five-minute-stranger-test.md) — a stranger
+**Depends on:** nothing. **Unblocks:** [PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md) — a stranger
 cannot install a package that 404s — and the registry half of
 [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md).
 

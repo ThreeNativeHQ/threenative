@@ -122,7 +122,7 @@ Phase 4: `docs/strategy/ROADMAP.md`, `docs/strategy/VALUE-PROPOSITION.md`,
 
 **Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../PRD-064-tier-1-native-reliability.md)
 Phase 4's unreached positive measurement, and the four criteria
-[PRD-048](../native/done/PRD-048-native-distribution.md) closed as *"waived by the owner, not
+[PRD-048](../done/PRD-048-native-distribution.md) closed as *"waived by the owner, not
 met"* — the release rerun, the checksum lock, the registry packages, and the clean-machine
 build.
 
@@ -160,7 +160,7 @@ on a published artifact.
 The `ubuntu-24.04` runner image ships a Vulkan *loader* but the ICD available under `xvfb`
 does not implement the surface extension SDL needs to attach a swapchain to an X11 window.
 The repository's other headless lanes work around the same family of problem with
-`xvfb-run -a -s '-screen 0 1600x900x24'`, which this step already uses — **xvfb is necessary
+`sh scripts/xvfb.sh`, which this step already uses — **xvfb is necessary
 and not sufficient.** A software Vulkan ICD (`mesa-vulkan-drivers`, lavapipe) is what is
 missing, and it is an apt install on the runner, not a code change.
 
