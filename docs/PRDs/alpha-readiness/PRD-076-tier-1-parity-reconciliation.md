@@ -32,11 +32,32 @@ environment-specific — nothing available distinguishes them, and this PRD does
 `pnpm parity:ledger` passes it while failing both predecessors; both carry superseded banners
 scoped to the desktop lane alone.
 
-**Phase 2 is open and is the sharpest remaining disagreement.** The Android emulator lane —
-`67/0/0` against `27/40/0` — was **not run**. Four AVDs exist on this host and `adb` lists no
-running device; booting one, building and installing the app is its own run. The
-`ANDROID_SDK_ROOT`/`ANDROID_HOME` hypothesis for the 40-row delta is still untested. The browser
-lane was not re-run either, and Tier 1 is not claimed reached.
+**Phase 2 is open, and the Android lane was attempted rather than skipped.** `threenative_api35`
+boots — Phase 0's "no emulator" is no longer true — and the lane stops at the first row, before it
+compares anything:
+
+```
+TN_ANDROID_DISPLAY_ORIENTATION: captured 720x1280 but the lane requires 1280x720;
+the display was still rotating.
+```
+
+Reproduced twice, the second time with `TN_ANDROID_SETTLE_MS=8000`,
+`TN_ANDROID_ROTATION_TIMEOUT_MS=30000` and rotation forced. The AVD's panel is 1080x2400 portrait;
+`wm size 1280x720` letterboxes a logical display into it without rotating the framebuffer, so
+`waitForAndroidDisplaySize` is satisfied by the override reading back and the capture is still
+portrait. This is the same panel-versus-logical-display hazard `android-touch.mjs` documents for
+touch coordinates, arriving in the capture path.
+
+**Phase 0's `ANDROID_SDK_ROOT`/`ANDROID_HOME` hypothesis is not what stops the lane today** — both
+were set. That does not refute it for the 2026-08-10 run; it is simply a different, named blocker.
+An environment mismatch failing every capture-comparing row identically is the shape a 40-row delta
+would take, and it is recorded as a hypothesis with evidence, **not** as the explanation for
+`27/40/0` — that run's report no longer exists.
+
+What would settle it: an AVD with a native 1280x720 landscape panel, or a lane that captures the
+logical display rather than the panel. Neither was attempted.
+
+The browser lane was not re-run, and Tier 1 is not claimed reached.
 
 ---
 
