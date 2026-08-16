@@ -55,10 +55,19 @@ test('a missing release lock and a missing platform asset both fail closed', () 
 });
 
 test('the default checksum lock URL is tied to the installed package version', () => {
+  // Asserted against the manifest rather than a literal. The literal was 0.1.14 and made every
+  // version bump fail a test whose subject is the tie between the two, not the number. The tie
+  // is what matters: a consumer installing @threenative/runtime-native@X fetches its prebuilt
+  // binaries from the release tagged runtime-native-vX, so a bump without a matching release is
+  // an install that 404s.
+  const version = JSON.parse(
+    readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'),
+  ).version;
   assert.equal(
     releaseManifestUrl(),
-    'https://github.com/jonit-dev/threenative/releases/download/runtime-native-v0.1.14/prebuilt-lock.json',
+    `https://github.com/jonit-dev/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
   );
+  assert.match(releaseManifestUrl(), /\/runtime-native-v\d+\.\d+\.\d+\//u);
 });
 
 test('the installer can bootstrap a remote checksum lock before fetching the runtime', async () => {

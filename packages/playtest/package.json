@@ -1,6 +1,6 @@
 {
   "name": "@threenative/playtest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scenario-driven playtest harness for Three.js games. Runs on plain Three.js with zero ThreeNative dependencies.",
   "type": "module",
   "files": ["dist"],

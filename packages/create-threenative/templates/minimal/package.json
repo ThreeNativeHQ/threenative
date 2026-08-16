@@ -15,15 +15,15 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@threenative/core": "0.1.0",
-    "@threenative/physics": "0.1.0",
+    "@threenative/core": "0.2.0",
+    "@threenative/physics": "0.2.0",
     "three": "0.185.1"
   },
   "devDependencies": {
-    "@threenative/playtest": "0.1.0",
-    "@threenative/studio": "0.1.0",
+    "@threenative/playtest": "0.2.0",
+    "@threenative/studio": "0.2.0",
     "@types/three": "0.185.3",
-    "create-threenative": "0.1.0",
+    "create-threenative": "0.2.0",
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "threenative-asset-mcp": "0.4.0",
@@ -32,7 +32,7 @@
     "vite": "8.2.0"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": "0.1.14"
+    "@threenative/runtime-native": "0.2.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["@threenative/runtime-native"]
