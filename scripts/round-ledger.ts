@@ -55,8 +55,16 @@ export interface RoundLedger {
   readonly stopCondition: string;
 }
 
+/**
+ * The two spellings of "no stop condition has been met". Round ledgers have been written with
+ * both — the template says `none yet` and round 10 says `none` — and the difference is not a
+ * difference in meaning. Anything outside this set is a real stop that halts the loop, so the
+ * two must be recognised in one place rather than compared by string at each call site.
+ */
+export const NO_STOP_CONDITION = new Set(["none yet", "none"]);
+
 const STOP_CONDITIONS = new Set([
-  "none yet",
+  ...NO_STOP_CONDITION,
   "parity",
   "budget",
   "plateau",
@@ -66,6 +74,27 @@ const STOP_CONDITIONS = new Set([
 ]);
 const PLACEHOLDER = /(?:^|\s)(?:TBD|<[^>]+>)(?:\s|$)/iu;
 
+function hasSection(markdown: string, title: string): boolean {
+  return markdown.indexOf(`## ${title}`) >= 0;
+}
+
+/**
+ * Whether this ledger declares that it has no paired build.
+ *
+ * Round 10 opened on the template visual floor rather than on a framework/vanilla pair, so it
+ * carries no `## Arms` and no `## Column verdicts`. `parseRoundLedger` demanded both,
+ * `latestRoundFile` picks the newest ledger, and `pnpm round:next` — the loop's own "what next"
+ * command — threw before it computed anything.
+ *
+ * The absence has to be **declared**, which is what keeps this fail-closed. A ledger that simply
+ * lost its `## Arms` heading to a bad edit still throws; only one whose `Genres` field says it
+ * has none may omit the sections that describe a pair. Inferring "no arms" from "no Arms
+ * section" would turn a damaged ledger into a round that measured nothing and said so calmly.
+ */
+function declaresNoGenres(markdown: string): boolean {
+  return /^none\b/iu.test(value(markdown, "Genres"));
+}
+
 function section(markdown: string, title: string): string {
   const start = markdown.indexOf(`## ${title}`);
   if (start < 0) throw new Error(`Round ledger is missing '## ${title}'.`);
@@ -74,19 +103,44 @@ function section(markdown: string, title: string): string {
   return end < 0 ? rest : rest.slice(0, end);
 }
 
+/**
+ * Splits a markdown table row on its *unescaped* pipes.
+ *
+ * `\|` is how markdown writes a literal pipe inside a cell, and round 5's gap list uses it for a
+ * regex alternation: `applyImpulse\|applyForce\|setLinvel\|addForce`. Splitting on every pipe
+ * shattered that one cell into five, so the row read ten cells against a six-column header and
+ * every column after the third was silently read from the wrong place. Nothing reported it,
+ * because the extra cells were simply ignored.
+ */
 function cells(line: string): string[] {
   return line
     .trim()
-    .split("|")
+    .split(/(?<!\\)\|/u)
     .slice(1, -1)
-    .map((cell) => cell.trim());
+    .map((cell) => cell.replaceAll("\\|", "|").trim());
 }
 
+/**
+ * The first table in a section, and only that one.
+ *
+ * Every pipe line in the section used to be collected, so a section carrying a second table
+ * silently merged it into the first. Round 10's `## Dispositions` records the dispositions and
+ * then a two-shape comparison for an owner decision; its 3-cell rows were parsed as dispositions
+ * and `pnpm round:next` died on a row "missing 'Named live caller'".
+ *
+ * A blank line or a line of prose ends the table. Rows are then required to match the header's
+ * width: stopping early means a foreign row can no longer arrive from a neighbour, and the width
+ * check means a malformed row inside the table still throws instead of yielding an undefined
+ * cell that reads as an empty one.
+ */
 function table(markdown: string, title: string): { header: string[]; rows: string[][] } {
-  const lines = section(markdown, title)
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("|") && line.endsWith("|"));
+  const lines: string[] = [];
+  for (const raw of section(markdown, title).split(/\r?\n/u)) {
+    const line = raw.trim();
+    const isRow = line.startsWith("|") && line.endsWith("|");
+    if (isRow) lines.push(line);
+    else if (lines.length > 0) break;
+  }
   if (lines.length < 2) throw new Error(`Round ledger section '${title}' has no table.`);
   const first = lines[0];
   if (first === undefined) throw new Error(`Round ledger section '${title}' has no header.`);
@@ -95,6 +149,11 @@ function table(markdown: string, title: string): { header: string[]; rows: strin
     .slice(2)
     .map(cells)
     .filter((row) => row.some((cell) => !/^[-:]+$/u.test(cell)));
+  for (const [index, row] of rows.entries())
+    if (row.length !== header.length)
+      throw new Error(
+        `Round ledger section '${title}' row ${index + 1} has the wrong number of cells: expected ${header.length}, found ${row.length}.`,
+      );
   return { header, rows };
 }
 
@@ -127,6 +186,7 @@ function required(markdown: string, label: string): string {
 }
 
 function parseArms(markdown: string): RoundArm[] {
+  if (!hasSection(markdown, "Arms") && declaresNoGenres(markdown)) return [];
   const parsed = table(markdown, "Arms");
   const genre = column(parsed.header, "Genre");
   const armIndex = column(parsed.header, "Arm");
@@ -154,6 +214,7 @@ function parseArms(markdown: string): RoundArm[] {
 }
 
 function parseColumns(markdown: string): RoundColumnVerdict[] {
+  if (!hasSection(markdown, "Column verdicts") && declaresNoGenres(markdown)) return [];
   const parsed = table(markdown, "Column verdicts");
   const cost = column(parsed.header, "Cost");
   const functional = column(parsed.header, "Functional");
@@ -167,21 +228,32 @@ function parseColumns(markdown: string): RoundColumnVerdict[] {
   }));
 }
 
+/**
+ * A baseline round's gap list has a different shape, and honestly so: with no vanilla arm there
+ * is no genre to attribute a gap to and nothing "vanilla did better", so round 10 writes
+ * `| # | Column | Defect | Evidence | Smallest change |`. The paired columns are required as
+ * before whenever the ledger names a genre — the alternative shape is unlocked by the same
+ * declaration that unlocks the missing Arms section, not by a column simply being absent.
+ */
 function parseGaps(markdown: string): RoundGap[] {
   const parsed = table(markdown, "Gap list");
+  const baseline = declaresNoGenres(markdown);
   const number = column(parsed.header, "#");
-  const genre = column(parsed.header, "Genre");
   const columnName = column(parsed.header, "Column");
-  const what = column(parsed.header, "What vanilla did better");
   const evidence = column(parsed.header, "Evidence");
+  const genre = baseline && !parsed.header.includes("Genre") ? -1 : column(parsed.header, "Genre");
+  const what =
+    baseline && !parsed.header.includes("What vanilla did better")
+      ? column(parsed.header, "Defect")
+      : column(parsed.header, "What vanilla did better");
   return parsed.rows
     .filter((row) => rowValue(row, number, "#") !== "None")
     .map((row) => ({
       column: rowValue(row, columnName, "Column"),
       evidence: rowValue(row, evidence, "Evidence"),
-      genre: rowValue(row, genre, "Genre"),
+      genre: genre < 0 ? "none" : rowValue(row, genre, "Genre"),
       number: rowValue(row, number, "#"),
-      what: rowValue(row, what, "What vanilla did better"),
+      what: rowValue(row, what, baseline ? "Defect" : "What vanilla did better"),
     }));
 }
 

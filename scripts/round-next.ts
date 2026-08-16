@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readManifest } from "./make-sandbox.js";
-import { type RoundArm, latestRoundFile, readRoundLedger } from "./round-ledger.js";
+import {
+  NO_STOP_CONDITION,
+  type RoundArm,
+  latestRoundFile,
+  readRoundLedger,
+} from "./round-ledger.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -127,7 +132,7 @@ function openPrd(repo: string, prd: string): boolean {
 
 export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo)): RoundNextAction {
   const ledger = readRoundLedger(ledgerFile);
-  if (ledger.stopCondition !== "none yet")
+  if (!NO_STOP_CONDITION.has(ledger.stopCondition))
     return candidate(
       `stop round ${ledger.round}`,
       `Stop condition recorded: ${ledger.stopCondition}. Resolve it before resuming the round.`,

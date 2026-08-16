@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateRoundLedger } from "../round-ledger.js";
+import { NO_STOP_CONDITION, parseRoundLedger, validateRoundLedger } from "../round-ledger.js";
 
 function ledger(overrides: string[] = []): string {
   return [
@@ -151,9 +151,11 @@ describe("round ledger schema", () => {
   });
 
   it("requires a void stop condition when the firewall fails", () => {
+    // The fixture keeps the row's three cells. It used to drop one and trail a stray pipe, which
+    // still reached the void check only because the table parser tolerated ragged rows.
     const invalid = ledger().replace(
-      "| Arms built in separate contexts | yes |",
-      "| Arms built in separate contexts | no |\n|",
+      "| Arms built in separate contexts | yes | builder-a and builder-b |",
+      "| Arms built in separate contexts | no | builder-a and builder-b |",
     );
     expect(() => validateRoundLedger(invalid, "void.md")).toThrow(/void/u);
   });
@@ -174,5 +176,161 @@ describe("round ledger schema", () => {
     expect(round).toMatch(/^Stop condition met: void$/mu);
     expect(round).toContain("| physics-puzzle | unmeasured | unmeasured | loss | void");
     expect(score).toMatch(/^\*\*Verdict: VOID\b/mu);
+  });
+});
+
+describe("a round that declares no genres", () => {
+  // Round 10 opens on the template visual floor rather than a paired build, so it carries no
+  // Arms and no Column verdicts. `parseRoundLedger` demanded both, `latestRoundFile` picks the
+  // newest ledger, and `pnpm round:next` — the loop's own "what next" command — threw before it
+  // computed anything.
+  //
+  // The rule that keeps this fail-closed is that the absence must be **declared**. A ledger that
+  // simply lost its `## Arms` heading still throws; only one whose `Genres` says so may omit it.
+  function baseline(genres: string, sections: string[] = []): string {
+    return [
+      "# Improvement round ledger — round 10 — the template quality floor — 2026-08-16",
+      "",
+      "Round: 10",
+      "Date: 2026-08-16",
+      "Framework commit: 937085e1",
+      "Framework version: 0.1.0",
+      `Genres: ${genres}`,
+      "Budget: not yet granted",
+      "Stop condition met: none",
+      "Next action: round 11 runs scripts/visual-ab.ts",
+      "",
+      ...sections,
+      "## Gap list",
+      "",
+      "| # | Genre | Column | What vanilla did better | Evidence | Smallest change that would close it |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Dispositions",
+      "",
+      "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Gates",
+      "",
+      "| Gate | Command | Result |",
+      "| --- | --- | --- |",
+      "| Typecheck | pnpm typecheck | pass |",
+      "| Lint | pnpm lint | pass |",
+      "| Test | pnpm test | pass |",
+      "| Budgets | pnpm budgets | pass |",
+      "",
+      "## Notes",
+      "",
+      "The baseline and its gap list cost nothing further.",
+      "",
+    ].join("\n");
+  }
+
+  it("parses with no Arms and no Column verdicts", () => {
+    const ledger = parseRoundLedger(
+      baseline("none yet — this round opens on the template baseline rather than a paired build"),
+    );
+    expect(ledger.round).toBe(10);
+    expect(ledger.arms).toEqual([]);
+    expect(ledger.columns).toEqual([]);
+    expect(ledger.stopCondition).toBe("none");
+  });
+
+  it("still throws when a round that names a genre is missing its Arms", () => {
+    // The inverted control. Without it, "Arms may be absent" would be true of every ledger and
+    // a section lost to a bad edit would parse as a round that measured nothing.
+    expect(() => parseRoundLedger(baseline("platformer"))).toThrow(/missing '## Arms'/u);
+  });
+
+  it("parses the Arms a baseline round does carry, rather than assuming it has none", () => {
+    const ledger = parseRoundLedger(
+      baseline("none yet — see notes", [
+        "## Arms",
+        "",
+        "| Genre | Arm | Archive | Brief SHA-256 | Proof SHA-256 | Proof passed/total | Instrument visual | User LOC | Source files | Reach rate |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| platformer | framework | docs/framework | brief | proof | 2/2 | 4 | 100 | 2 | 0.5 |",
+        "| platformer | vanilla | docs/vanilla | brief | proof | 2/2 | 4 | 176 | 2 | n/a |",
+        "",
+      ]),
+    );
+    expect(ledger.arms.map((arm) => arm.arm)).toEqual(["framework", "vanilla"]);
+  });
+
+  it("refuses a paired round through validateRoundLedger even when it declares no genres", () => {
+    // The write-time validator keeps its bar. Reading a baseline round is not the same as
+    // blessing one as a completed paired round.
+    expect(() => validateRoundLedger(baseline("none yet — baseline"), "round-10.md")).toThrow(
+      /Arms table has no rows/u,
+    );
+  });
+
+  it("reads only the section's own table, not a second one that follows it", () => {
+    // Round 10's Dispositions section carries the disposition table and then a second table
+    // comparing two shapes for an owner decision. `table()` collected every pipe line in the
+    // section, so the second table's 3-cell rows were parsed as dispositions and round:next died
+    // on a row "missing 'Named live caller'".
+    const withSecondTable = baseline("none yet — baseline").replace(
+      "| None | None | None | None | None | None |\n\n## Gates",
+      [
+        "| None | None | None | None | None | None |",
+        "",
+        "Two defensible shapes, recorded for the owner:",
+        "",
+        "| Shape | What ships | What it costs |",
+        "| --- | --- | --- |",
+        "| A | one HUD | native parity |",
+        "",
+        "## Gates",
+      ].join("\n"),
+    );
+
+    const ledger = parseRoundLedger(withSecondTable);
+
+    expect(ledger.dispositions).toEqual([]);
+  });
+
+  it("keeps an escaped pipe inside a cell instead of splitting on it", () => {
+    // Round 5's gap list writes a regex alternation, applyImpulse\|applyForce\|setLinvel, which
+    // is how markdown escapes a literal pipe. Splitting on every pipe turned one cell into five,
+    // so the row read ten cells against a six-column header and every later column came from the
+    // wrong place — silently, because the surplus cells were simply dropped.
+    const escaped = baseline("none yet — baseline").replace(
+      "| None | None | None | None | None | None |\n\n## Dispositions",
+      "| 1 | platformer | Visual | grep for `applyImpulse\\|applyForce` returns nothing | captures | fix it |\n\n## Dispositions",
+    );
+
+    const [gap] = parseRoundLedger(escaped).gaps;
+
+    expect(gap?.what).toBe("grep for `applyImpulse|applyForce` returns nothing");
+    expect(gap?.evidence).toBe("captures");
+  });
+
+  it("refuses a row whose cell count does not match its header", () => {
+    // The fail-closed half. Stopping at the first blank line means a malformed row can no longer
+    // arrive from a neighbouring table; a malformed row inside the table itself must still throw
+    // rather than yield an undefined cell.
+    const ragged = baseline("none yet — baseline").replace(
+      "| None | None | None | None | None | None |\n\n## Gates",
+      "| None | None | None | None | None | None |\n| 1 | user space |\n\n## Gates",
+    );
+    expect(() => parseRoundLedger(ragged)).toThrow(/wrong number of cells/u);
+  });
+
+  it("reads 'none' and 'none yet' as the same absence of a stop condition", () => {
+    // Round 10 writes `none`; the template writes `none yet`. Treating them differently made
+    // round:next answer "stop round 10" for a round with nothing wrong with it.
+    for (const spelling of ["none", "none yet"]) {
+      const ledger = parseRoundLedger(
+        baseline("none yet — baseline").replace(
+          "Stop condition met: none",
+          `Stop condition met: ${spelling}`,
+        ),
+      );
+      expect(NO_STOP_CONDITION.has(ledger.stopCondition)).toBe(true);
+    }
   });
 });
