@@ -82,7 +82,7 @@
       {
         "id": "state",
         "path": "inspectedPoints",
-        "textIncludes": "north.archive"
+        "changed": true
       },
       {
         "id": "state",

@@ -2,7 +2,8 @@
 
 Build a small, playable 3D exploration game from the supplied `reference.png`.
 
-- Use a third-person camera and a compact hub that leads to at least two distinct areas.
+- Use a third-person camera and a compact hub that leads to at least two distinct areas. Name the
+  starting area the literal `hub`; the proof compares `state.area` against that word.
 - Let the player walk, inspect three points of interest, and return to the hub.
 - Load or reveal a different arrangement of props in each area, with a clear transition.
 - Keep a journal or objective panel that records the inspected points of interest.

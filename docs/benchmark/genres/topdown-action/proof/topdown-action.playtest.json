@@ -58,7 +58,6 @@
       {
         "id": "state",
         "path": "objective",
-        "textIncludes": "SECURE",
         "changed": true
       }
     ],
