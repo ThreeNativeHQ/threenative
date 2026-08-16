@@ -2,7 +2,15 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -40,11 +48,111 @@ import {
   writeProjectScene,
 } from "./project-mode.mjs";
 
-const REPORT_SCHEMA_VERSION = "0.2.0";
+const REPORT_SCHEMA_VERSION = "0.3.0";
 const REGISTRY_SCHEMA_VERSION = "0.1.0";
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
 const runnerPath = fileURLToPath(import.meta.url);
+
+/**
+ * The environment a parity run reads. Values are hashed, never recorded, so a report can say
+ * that two runs saw a different `ANDROID_SDK_ROOT` without publishing anyone's home directory.
+ * A key that was unset is recorded with a null digest rather than omitted — "not set" is the
+ * observation that separated the two 2026-08-10 Android ledgers, so it has to survive.
+ */
+export const PROVENANCE_ENV_KEYS = Object.freeze([
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "DISPLAY",
+  "MYSTRAL_BIN",
+  "THREENATIVE_RUNTIME_BINARY",
+  "THREENATIVE_TOUCH_DEVICE",
+  "TN_ANDROID_ROTATION_TIMEOUT_MS",
+  "TN_ANDROID_SETTLE_MS",
+  "TN_ANDROID_TIMEOUT_MS",
+  "TN_BROWSER_TIMEOUT_MS",
+  "TN_MULTITOUCH_DROP_POINTER",
+  "TN_MULTITOUCH_TIMEOUT_MS",
+  "TN_RUNTIME",
+]);
+
+const PROVENANCE_FIELDS = Object.freeze([
+  "commit",
+  "dirty",
+  "runtimeSha256",
+  "referenceSetSha256",
+  "device",
+  "env",
+]);
+
+const REPORT_FIELDS = Object.freeze([
+  "schemaVersion",
+  "registrySchemaVersion",
+  "generatedAt",
+  "threeVersion",
+  "mode",
+  "target",
+  "project",
+  "host",
+  "provenance",
+  "summary",
+  "results",
+  "supplemental",
+]);
+
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/u;
+
+export function fileSha256(path) {
+  return path && existsSync(path) ? sha256(readFileSync(path)) : null;
+}
+
+/**
+ * One digest over the whole browser capture set a native lane compared against, so a later
+ * reader can tell "the same rows against a different reference" from a real regression.
+ */
+export function captureSetSha256(directory) {
+  if (!directory || !existsSync(directory)) return null;
+  const names = readdirSync(directory)
+    .filter((name) => name.toLowerCase().endsWith(".png"))
+    .sort();
+  if (names.length === 0) return null;
+  const manifest = names
+    .map((name) => `${name}:${sha256(readFileSync(join(directory, name)))}`)
+    .join("\n");
+  return sha256(manifest);
+}
+
+export function gitProvenance(cwd = workspaceRoot) {
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  const status = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
+  if (head.status !== 0 || status.status !== 0) {
+    throw new Error(
+      "TN_PARITY_PROVENANCE_UNAVAILABLE: git could not identify the tree this run was made " +
+        "from, so the report would not be traceable to a commit.",
+    );
+  }
+  return { commit: head.stdout.trim(), dirty: status.stdout.trim() !== "" };
+}
+
+export function provenanceEnv(env = process.env) {
+  return PROVENANCE_ENV_KEYS.map((key) => ({
+    key,
+    valueSha256: env[key] === undefined ? null : sha256(String(env[key])),
+  }));
+}
+
+export function buildProvenance(options = {}) {
+  const { commit, dirty } = gitProvenance(options.cwd);
+  return {
+    commit,
+    dirty,
+    runtimeSha256: fileSha256(options.runtime ?? null),
+    referenceSetSha256: captureSetSha256(options.referenceRoot ?? null),
+    device: options.device ?? null,
+    env: provenanceEnv(options.env),
+  };
+}
 
 function usage() {
   return `Usage: node conformance/run-conformance.mjs [options]
@@ -138,8 +246,79 @@ export function validateRegistry(registry) {
   return errors;
 }
 
+function validateProvenanceEnv(entries) {
+  const errors = [];
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return ["report.provenance.env must be a non-empty array of hashed environment keys"];
+  }
+  const keys = entries.map((entry) => entry?.key);
+  if (JSON.stringify(keys) !== JSON.stringify([...keys].sort())) {
+    errors.push("report.provenance.env must be sorted by key");
+  }
+  if (new Set(keys).size !== keys.length) errors.push("report.provenance.env has duplicate keys");
+  for (const entry of entries) {
+    const label = typeof entry?.key === "string" ? entry.key : "an unnamed entry";
+    if (typeof entry?.key !== "string" || entry.key.trim() === "") {
+      errors.push("report.provenance.env entries must carry a non-empty key");
+    }
+    for (const field of Object.keys(entry ?? {})) {
+      if (!["key", "valueSha256"].includes(field)) {
+        errors.push(`report.provenance.env.${label}.${field} is not a recognised field`);
+      }
+    }
+    const digest = entry?.valueSha256;
+    if (digest !== null && (typeof digest !== "string" || !SHA256_PATTERN.test(digest))) {
+      errors.push(`report.provenance.env.${label}.valueSha256 must be null or a sha256 digest`);
+    }
+  }
+  return errors;
+}
+
+export function validateProvenance(provenance) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    return [
+      "report.provenance must record the commit, runtime, reference set, device and environment " +
+        "this run was made from",
+    ];
+  }
+  const errors = [];
+  for (const field of PROVENANCE_FIELDS) {
+    if (!(field in provenance)) errors.push(`report.provenance.${field} is required`);
+  }
+  for (const field of Object.keys(provenance)) {
+    if (!PROVENANCE_FIELDS.includes(field)) {
+      errors.push(`report.provenance.${field} is not a recognised provenance field`);
+    }
+  }
+  if (typeof provenance.commit !== "string" || !COMMIT_PATTERN.test(provenance.commit)) {
+    errors.push("report.provenance.commit must be a git object id");
+  }
+  if (typeof provenance.dirty !== "boolean") {
+    errors.push("report.provenance.dirty must be a boolean");
+  }
+  for (const field of ["runtimeSha256", "referenceSetSha256"]) {
+    const digest = provenance[field];
+    if (digest !== null && (typeof digest !== "string" || !SHA256_PATTERN.test(digest))) {
+      errors.push(`report.provenance.${field} must be null or a sha256 digest`);
+    }
+  }
+  if (
+    provenance.device !== null &&
+    (typeof provenance.device !== "string" || provenance.device.trim() === "")
+  ) {
+    errors.push("report.provenance.device must be null or a non-empty device serial");
+  }
+  return [...errors, ...validateProvenanceEnv(provenance.env)];
+}
+
 export function validateReport(report, registry) {
   const errors = [];
+  for (const field of Object.keys(report)) {
+    if (!REPORT_FIELDS.includes(field)) {
+      errors.push(`report.${field} is not a recognised report field`);
+    }
+  }
+  errors.push(...validateProvenance(report.provenance));
   if (report.schemaVersion !== REPORT_SCHEMA_VERSION) {
     errors.push(`report schemaVersion must be ${REPORT_SCHEMA_VERSION}`);
   }
@@ -1160,7 +1339,7 @@ function physicalAndroidBlocker(device) {
   }
 }
 
-function createReport(registry, mode, target, runtime, project) {
+function createReport(registry, mode, target, runtime, project, provenance) {
   return {
     schemaVersion: REPORT_SCHEMA_VERSION,
     registrySchemaVersion: registry.schemaVersion,
@@ -1169,6 +1348,7 @@ function createReport(registry, mode, target, runtime, project) {
     mode,
     target,
     project: project ? { root: project.root, nativeEntry: project.nativeEntry } : null,
+    provenance,
     host: {
       platform: process.platform,
       arch: process.arch,
@@ -1202,13 +1382,13 @@ function outputLayout(outArg, target) {
   return { reportPath: join(absolute, "report.json"), captureRoot: absolute };
 }
 
+export function referenceRootPath(referenceArg) {
+  if (!referenceArg) return join(runtimeRoot, "artifacts/conformance/web");
+  return isAbsolute(referenceArg) ? referenceArg : resolve(runtimeRoot, referenceArg);
+}
+
 function referencePath(referenceArg, id) {
-  const referenceRoot = referenceArg
-    ? isAbsolute(referenceArg)
-      ? referenceArg
-      : resolve(runtimeRoot, referenceArg)
-    : join(runtimeRoot, "artifacts/conformance/web");
-  return join(referenceRoot, `${id}.png`);
+  return join(referenceRootPath(referenceArg), `${id}.png`);
 }
 
 function applyReferenceAndMetrics(test, result, reference) {
@@ -1255,7 +1435,11 @@ function writeReport(report, path) {
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-function reportExitCode(report) {
+/**
+ * The one rule that decides a lane's exit code. Exported so a ledger checker recomputes it
+ * from a summary instead of trusting a number somebody typed into a markdown table.
+ */
+export function reportExitCode(report) {
   if (report.summary.fail > 0) return 1;
   if (report.summary.blocked > 0) return 2;
   return 0;
@@ -1360,7 +1544,21 @@ async function main(argv = process.argv.slice(2)) {
   const entryRoot = join(artifactRoot, "entries");
   const bundleRoot = join(artifactRoot, `${target}-bundles`);
   for (const path of [entryRoot, bundleRoot, captureRoot]) mkdirSync(path, { recursive: true });
-  const report = createReport(registry, dryRun ? "dry-run" : "execution", target, runtime, project);
+  const device = valueAfter(argv, "--device");
+  const provenance = buildProvenance({
+    runtime: !dryRun && target === "desktop" ? runtime : null,
+    referenceRoot:
+      !dryRun && target !== "web" ? referenceRootPath(valueAfter(argv, "--reference")) : null,
+    device,
+  });
+  const report = createReport(
+    registry,
+    dryRun ? "dry-run" : "execution",
+    target,
+    runtime,
+    project,
+    provenance,
+  );
   const targetBlocker = dryRun
     ? null
     : target === "android-hardware"

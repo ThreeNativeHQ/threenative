@@ -4,10 +4,35 @@ prd_contract: v1
 
 # PRD-076 — Tier 1 aggregate: reconcile two ledgers that cannot both be true, then hold one green run
 
-**Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 and §2 are a read of two
-tracked verification files and of `run-conformance.mjs` at the commit each was written
-against. No new run has been performed for this document. No mobile-readiness claim, no iOS
-claim, and no physical-hardware claim is made anywhere.
+**Status: PHASE 0 EXECUTED, 2026-08-15. Phases 1–3 not started; this PRD is not done.**
+Evidence: [`docs/verification/parity-reconciliation-2026-08-15.md`](../../verification/parity-reconciliation-2026-08-15.md).
+
+**What executed.** The conformance report now carries `provenance` (commit + dirty flag,
+runtime binary hash, reference-capture-set hash, device, and the sorted environment keys the
+run read with their values hashed); `REPORT_SCHEMA_VERSION` moved `0.2.0` → `0.3.0` and
+`validateReport` requires it and rejects unrecognised fields. `scripts/check-parity-ledger.ts`
+ships as `pnpm parity:ledger` and recomputes every `Exit` cell from `reportExitCode`'s rule
+instead of reading the recorded number. **The r2 desktop exit cell is adjudicated wrong**: a
+`66 / 0 / 1` summary exits `2` under the rule as it stood at `65a8836`, the commit that landed
+that ledger, and the surviving `.runtime/parity-desktop3/report.json` confirms the `66 / 0 / 1`
+summary. Four negative controls were observed red with their output pasted.
+`pnpm typecheck && pnpm lint && pnpm test` and `pnpm budgets` are green.
+
+**What did not execute.** **No parity lane was re-run.** The browser and desktop-native lanes
+were held off the shared GPU by the session coordinator while another session ran a headed
+Chromium gate; the desktop lane additionally has no built runtime in this worktree. The Android
+emulator lane is unreachable here — `adb` lists one physical Pixel 8 and no emulator, and
+`--target android` refuses physical hardware by design. All three are recorded **unexecuted**,
+never as a pass and never as a red. The `ANDROID_SDK_ROOT`/`ANDROID_HOME` hypothesis for the
+40-row Android delta is therefore **untested**, and the reference-set hash behind each
+2026-08-10 run is **not recoverable** — no report written before today recorded one, which is
+the finding. Whether `25-camera-parented-overlay` really passes on desktop is **not settled**:
+the tier-1 report that recorded its failure no longer exists.
+
+**A Phase 0 that cannot reproduce either ledger is a valid Phase 0 result.** Phase 2 therefore
+owns a third, traceable measurement rather than a repair, and Phase 3 is not authorised by
+this run. No mobile-readiness claim, no iOS claim, and no physical-hardware claim is made
+anywhere. This PRD still depends on PRD-077.
 
 **The subject is not a failing test. It is two evidence files that disagree about the same
 device on the same day, and a roadmap that cites both.** Beta rows 4 and 5 hinge on which

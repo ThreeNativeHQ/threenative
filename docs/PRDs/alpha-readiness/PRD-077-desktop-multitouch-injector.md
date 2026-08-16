@@ -4,10 +4,24 @@ prd_contract: v1
 
 # PRD-077 — Desktop multitouch: the runtime already handles it, the harness cannot reach it
 
-**Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 and §2 are a code read of the
-tree at commit `8c5fc40`. No desktop touch injection has been attempted on this host, and
-whether `/dev/uinput` is usable here is an open question that Phase 0 answers. No
-mobile-readiness claim and no physical-device claim is made.
+**Status: PHASE 0 PARTIAL, 2026-08-15.** Two of Phase 0's three questions are answered with
+evidence in [`docs/verification/desktop-multitouch-2026-08-15.md`](../../verification/desktop-multitouch-2026-08-15.md):
+`/dev/uinput` **is** openable unprivileged on this host through an ACL entry (`user:joao:rw-`),
+and a virtual device created through it **is** enumerated by the kernel as a direct touchscreen
+carrying `ABS_MT_SLOT`, `ABS_MT_TRACKING_ID` and `ABS_MT_POSITION_X/Y`. **The permitted-failure
+branch therefore does not fire: this PRD is not blocked on host permissions.** The third
+question — whether SDL3 receives the events and what window geometry contacts must be aimed at —
+is **unexecuted**, because it needs the opt-in native build and a GPU-backed X11 run. No
+injection has reached a running game, `registry.json` is untouched, and Phase 1 is not
+authorised. §1 and §2 remain a code read of the tree at commit `8c5fc40`. No mobile-readiness
+claim and no physical-device claim is made.
+
+**One key decision below is now known to be wrong.** *"Node writes the `input_event` structs
+directly with a `Buffer`. No new dependency"* holds for writing events and fails for creating
+the device: creation is a sequence of ioctls and Node exposes no ioctl. The Android lane never
+creates a device — `sendevent` writes to one the hardware already provides. The verification
+document sets out three options and recommends none; picking one is the owner's call, and it
+gates Phase 1.
 
 **The subject is the last registry exclusion standing between the parity matrix and an
 unqualified aggregate**, and it is not a missing capability.
