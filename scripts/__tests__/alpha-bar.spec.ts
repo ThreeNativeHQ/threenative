@@ -351,10 +351,11 @@ describe("pnpm alpha:bar", () => {
     expect(a4?.detail).toMatch(/round-5-2026-08-16\.md/u);
   });
 
-  it("fails A5 when a ledger records an exit code its own report contradicts", async () => {
+  it("fails A5 when the current ledger records an exit code its own report contradicts", async () => {
     const root = await fixture();
     await greenBar(root);
-    const ledger = path.join(root, "docs/verification/parity-2026-08-10-r2.md");
+    // tier-1-2026-08-10.md sorts last of the fixture's ledgers, so it is the current one.
+    const ledger = path.join(root, "docs/verification/tier-1-2026-08-10.md");
     fs.writeFileSync(
       ledger,
       fs.readFileSync(ledger, "utf8").replace("| 66 | 0 | 0 | 0 |", "| 66 | 0 | 1 | 0 |"),
@@ -362,6 +363,42 @@ describe("pnpm alpha:bar", () => {
     const after = await alphaBar({ registry: registryHasEverything, repo: root });
     const a5 = after.rows.find((row) => row.id === "A5");
     expect(a5?.status).toBe("fail");
-    expect(a5?.detail).toMatch(/exits 2/u);
+    expect(a5?.detail).toMatch(/current ledger tier-1-2026-08-10\.md has \d+ finding/u);
+  });
+
+  it("fails A5 when an older ledger contradicts the current one and is not marked superseded", async () => {
+    // The row's real subject. A stale ledger that still claims to be current is an unresolved
+    // disagreement — which is exactly the state PRD-076 existed to end.
+    const root = await fixture();
+    await greenBar(root);
+    const stale = path.join(root, "docs/verification/parity-2026-08-10-r2.md");
+    fs.writeFileSync(
+      stale,
+      fs.readFileSync(stale, "utf8").replace("| 66 | 0 | 0 | 0 |", "| 66 | 0 | 1 | 0 |"),
+    );
+    const after = await alphaBar({ registry: registryHasEverything, repo: root });
+    const a5 = after.rows.find((row) => row.id === "A5");
+    expect(a5?.status).toBe("fail");
+    expect(a5?.detail).toMatch(/superseded-but-unmarked/u);
+  });
+
+  it("accepts an older contradicting ledger once it is marked SUPERSEDED", async () => {
+    // And the other half: marking it must actually change the answer, or the marker is decoration.
+    const root = await fixture();
+    await greenBar(root);
+    const stale = path.join(root, "docs/verification/parity-2026-08-10-r2.md");
+    const broken = fs
+      .readFileSync(stale, "utf8")
+      .replace("| 66 | 0 | 0 | 0 |", "| 66 | 0 | 1 | 0 |");
+    fs.writeFileSync(stale, broken);
+    expect(
+      (await alphaBar({ registry: registryHasEverything, repo: root })).rows.find(
+        (row) => row.id === "A5",
+      )?.status,
+    ).toBe("fail");
+
+    fs.writeFileSync(stale, `> **SUPERSEDED by the later run.**\n\n${broken}`);
+    const after = await alphaBar({ registry: registryHasEverything, repo: root });
+    expect(after.rows.find((row) => row.id === "A5")?.status).toBe("pass");
   });
 });

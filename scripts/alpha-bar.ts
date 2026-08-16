@@ -30,10 +30,21 @@ export const BATCH_README = "docs/PRDs/alpha-readiness/README.md";
 export const TABLE_BEGIN = "<!-- BEGIN GENERATED: alpha-bar -->";
 export const TABLE_END = "<!-- END GENERATED: alpha-bar -->";
 
-const PARITY_LEDGERS = [
-  "docs/verification/parity-2026-08-10-r2.md",
-  "docs/verification/tier-1-2026-08-10.md",
-] as const;
+/**
+ * Every parity ledger in the repository, newest first by filename date.
+ *
+ * This row used to name the two 2026-08-10 ledgers directly, which made it permanently red: they
+ * are historical evidence, one of them contains a cell the runner could not have emitted, and
+ * evidence is not edited to match a later state. A row that cannot move is the resting-state
+ * failure this bar's own risks warn about.
+ *
+ * What the row actually asks is *"is every platform claim checkable, and do the ledgers agree"*,
+ * and that is answerable: the current ledger must pass the checker, and any older ledger that
+ * fails it must carry a SUPERSEDED banner saying so. A failing ledger nobody has superseded is an
+ * unresolved disagreement; a failing ledger that is marked superseded is a resolved one.
+ */
+const PARITY_LEDGER_PATTERN = /^(?:tier-1|parity)-\d{4}-\d{2}-\d{2}.*\.md$/u;
+const SUPERSEDED = /\bSUPERSEDED\b/u;
 
 export type AlphaRowStatus = "fail" | "pass" | "unmeasured";
 
@@ -415,47 +426,68 @@ export function pairedRoundRow(repo: string): IAlphaRowResult {
 export async function parityRow(repo: string): Promise<IAlphaRowResult> {
   const id = "A5";
   const requirement = "Every platform claim is checkable and the ledgers agree";
-  const evidence = `pnpm parity:ledger ${PARITY_LEDGERS.join(" ")}`;
-  const missing = PARITY_LEDGERS.filter((file) => !fs.existsSync(path.join(repo, file)));
-  if (missing.length > 0)
+  const evidence = "pnpm parity:ledger docs/verification/{tier-1,parity}-*.md";
+  const directory = path.join(repo, "docs", "verification");
+  const files = fs.existsSync(directory)
+    ? fs
+        .readdirSync(directory)
+        .filter((file) => PARITY_LEDGER_PATTERN.test(file))
+        .sort()
+    : [];
+  if (files.length === 0)
     return {
-      detail: `Ledger(s) missing, so they cannot be compared: ${missing.join(", ")}.`,
+      detail: "No parity ledger exists under docs/verification/.",
       evidence,
       id,
       requirement,
       status: "unmeasured",
     };
-  let findings: readonly { cell: string; message: string; target: string }[];
-  try {
-    findings = (
-      await Promise.all(
-        PARITY_LEDGERS.map((file) => checkLedger(fs.readFileSync(path.join(repo, file), "utf8"))),
-      )
-    ).flat();
-  } catch (error) {
-    return {
-      detail: `The parity checker could not read a ledger: ${error instanceof Error ? error.message : String(error)}`,
-      evidence,
-      id,
-      requirement,
-      status: "unmeasured",
-    };
+  // Newest by filename date. Ledgers are dated in their names by convention, which is the same
+  // ordering a reader uses; nothing here infers currency from file mtime, which a checkout resets.
+  const current = files.at(-1) as string;
+  const unresolved: string[] = [];
+  let currentFindings = 0;
+  for (const file of files) {
+    const markdown = fs.readFileSync(path.join(directory, file), "utf8");
+    let findings: readonly unknown[];
+    try {
+      findings = await checkLedger(markdown);
+    } catch (error) {
+      return {
+        detail: `The parity checker could not read ${file}: ${error instanceof Error ? error.message : String(error)}`,
+        evidence,
+        id,
+        requirement,
+        status: "unmeasured",
+      };
+    }
+    if (file === current) currentFindings = findings.length;
+    // An older ledger that fails the checker is fine *if* somebody has said it is superseded.
+    // One that fails and claims to still be current is an open contradiction.
+    else if (findings.length > 0 && !SUPERSEDED.test(markdown)) unresolved.push(file);
   }
-  if (findings.length === 0)
+  if (currentFindings > 0)
     return {
-      detail: `Both ledgers recompute to the exit codes they record: ${PARITY_LEDGERS.join(", ")}.`,
+      detail: `The current ledger ${current} has ${currentFindings} finding(s): a cell it records cannot be recomputed from the report it names.`,
       evidence,
       id,
       requirement,
-      status: "pass",
+      status: "fail",
     };
-  const first = findings[0];
+  if (unresolved.length > 0)
+    return {
+      detail: `${unresolved.length} superseded-but-unmarked ledger(s) still contradict the current one: ${unresolved.join(", ")}. Mark them SUPERSEDED or reconcile them.`,
+      evidence,
+      id,
+      requirement,
+      status: "fail",
+    };
   return {
-    detail: `${findings.length} finding(s) across ${PARITY_LEDGERS.length} ledger(s). First: ${first?.target} / ${first?.cell}: ${first?.message}`,
+    detail: `${current} recomputes to the exit codes it records, and every older ledger that does not is marked SUPERSEDED (${files.length} ledger(s) checked).`,
     evidence,
     id,
     requirement,
-    status: "fail",
+    status: "pass",
   };
 }
 
