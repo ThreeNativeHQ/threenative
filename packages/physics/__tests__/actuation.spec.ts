@@ -28,18 +28,22 @@ const PRD_116_VERIFICATION_RECORD = path.resolve(
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
-  ["conformance/", 5_918],
-  ["tests/", 7_588],
-  ["scripts/", 9_073],
+  ["conformance/", 6_169],
+  ["tests/", 7_850],
+  ["scripts/", 9_082],
   ["include/", 3_760],
   ["android/", 1_843],
   ["native/", 2_914],
-  ["Root CMakeLists.txt", 1_639],
+  ["Root CMakeLists.txt", 1_665],
   ["cmake/", 280],
   ["CMakePresets.json", 140],
   ["ios/", 104],
   ["package.json", 57],
   ["vitest.config.ts", 10],
+  // The desktop multitouch injector's ioctl helper, PRD-077. A new counted area, so it appears
+  // here rather than growing an existing row: the point of this list is that a native area
+  // cannot be added without somebody writing its kill-switch verdict in the record.
+  ["tools/", 145],
 ] as const;
 const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 141 files, 1,237 passed, 35 skipped.";
 const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 42 files, 243 passed, 37 skipped.";
