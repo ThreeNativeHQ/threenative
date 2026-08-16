@@ -1,6 +1,13 @@
 # PRD-113 — The sealed proof stops testing whether the builder guessed the names
 
-**Status: BLOCKED — 2026-08-15, after three repair lanes.** Option C was implemented. The `r2` lane
+**Status: BLOCKED on criteria 2 and 3 — 2026-08-15.** Five of seven criteria are met and marked
+below with their evidence. What remains is two runs, not two decisions: round 6's archive replayed
+against the revised contract scoring meaningfully above 0/10, and a build that does not satisfy the
+brief still failing that contract, run and pasted. Both need an archive replayed against the
+current sealed hashes; the round-8 archives cannot serve, because the physics-puzzle brief moved to
+`a2a40e96` and `sweep:proof` refuses the mismatch rather than re-scoring.
+
+Originally: **BLOCKED — 2026-08-15, after three repair lanes.** Option C was implemented. The `r2` lane
 stopped at `93c76b7`; repair r1 (`46187a8`) and repair r2 (`8412788`) each drew REQUEST_CHANGES for
 accepting autonomous motion as input-driven evidence, and repair r3 closed that thread at
 `5af281e` on an APPROVE with no findings
@@ -178,13 +185,13 @@ than discovering it again.
 
 | # | Criterion | Met? |
 | --- | --- | --- |
-| 1 | §3 contains a written, dated decision with its reasoning | — |
+| 1 | §3 contains a written, dated decision with its reasoning | **yes** — §3 records Option C, dated 2026-08-14, with the reasoning and the discontinuity it costs |
 | 2 | Round 6's archive, replayed against the revised contract, scores meaningfully above 0/10 | — |
 | 3 | A build that does not satisfy the brief still fails the revised contract — run and pasted | — |
 | 4 | No value the proof pins is absent from its brief, for every one of the six genres | **yes** — `docs/verification/sealed-token-gate-2026-08-15.md`. Five surviving tokens in four genres, each dispositioned: `won` and `hub` published, `SECURE`, `north.archive` and `"7"` made behavioural |
 | 5 | `scripts/__tests__/sealed-contract.spec.ts` fails when a pinned-but-unstated value is re-added | **yes**, across two gates — that file still covers identifiers, keys, resource ids/paths and seeds with its existing red controls; pinned *values* are covered by `sealed-proof-tokens.spec.ts`, observed red on all five tokens before any proof or brief was edited |
-| 6 | The comparability discontinuity is written into the round ledger and the score docs | — |
-| 7 | `pnpm typecheck && pnpm lint && pnpm test` green | — |
+| 6 | The comparability discontinuity is written into the round ledger and the score docs | **yes** — `docs/verification/round-8-2026-08-15.md` records all four moved hashes, that its own archives are historical and not re-runnable, and that `sweep:proof` refuses the mismatch rather than re-scoring; `docs/verification/sealed-token-gate-2026-08-15.md` carries the same discontinuity from the change side |
+| 7 | `pnpm typecheck && pnpm lint && pnpm test` green | **yes** at `25c3cd75` — typecheck 0 errors, `biome check . --diagnostic-level=error` 0 errors, `pnpm test` exit 0 with 1,280 passed and 32 skipped |
 
 Criterion 3 is the one that keeps criterion 2 from being bought with a weaker gate.
 
