@@ -191,7 +191,7 @@ Update round 6's score doc to mark its 58/100 vanilla estimate **superseded by m
 | 1 | `pnpm round:next` exits 0 and prints an action | **yes** — `a5d0406e`. It threw on round 8 because a paired round produces one candidate per arm and `assertOne` rejected plurality; rounds 3–7 never reached that path. Re-verified after the fix: exit 0, printing `pnpm sweep:proof …-9` and the count of what follows |
 | 2 | Both arms produce archives that **boot**, verified by `assertArchiveResolves` plus a real capture | **yes** — both archives carry `captures/index.json` with 4 frames each, produced by the guarded path after `04e730f5` stopped `sweep:capture` discarding frames when the sealed proof failed |
 | 3 | The functional column carries a measured number for both arms — no estimate anywhere in the row | **yes** — framework 0/2 scenarios and 7/12 rows, vanilla 1/2 and 10/12, in `round-8-2026-08-15.md`. Round 6's 58/100 estimate is superseded by measurement |
-| 4 | Deleting an imported sibling from an archive fails the archive step — the instrument's own control, observed red | **no** — not run for round 8, and not recorded in its ledger. This is the one control that proves the repaired instrument measures anything at all, so it stays open |
+| 4 | Deleting an imported sibling from an archive fails the archive step — the instrument's own control, observed red | **yes** — `docs/verification/archive-guard-control-2026-08-15.md`. Run against round 8's real framework archive rather than a fixture: positive half archived, then deleting `threenative.config.ts` produced `Refusing to archive an unbootable project; src/ imports files the archive does not carry: src/game.ts -> ../threenative.config.js`, and left no archive behind |
 | 5 | The round used the post-PRD-113 proof hash, recorded in the ledger | **yes** — `e5be692b`, recorded for both arms, with the pre-repair `33c3acb0` scores kept beside them so the difference is visible. **Superseded 2026-08-15**: the six-genre token gate moved physics-puzzle's *brief* hash to `a2a40e96`, so these archives are historical and `sweep:proof` refuses to re-score them |
 | 6 | The published result names where vanilla won, not only where the framework did | **yes** — the column verdict is `vanilla wins`, on both measured columns, with the framework arm's `diagnostics` failure named as a product finding |
 | 7 | The `applyImpulse`/`applyForce` verdict is recorded, and if unreached, its deletion PRD exists as a file | **yes** — recorded as *not deleted*, because `native/physics/src/lib.rs` implements both behind the ABI. `PRD-121` exists as a file |
@@ -201,10 +201,11 @@ Criterion 2 is consumer-scoped deliberately. *"The sweep ran"* is what rounds 3,
 have claimed.
 
 **Status of this table, 2026-08-15.** Filled in against round 8 by a peer session, from the
-committed ledger and the archives themselves rather than from a report. Two things keep this PRD
-open: **criterion 4**, whose control was never run, and the **blind visual score**, which
-`round-8-2026-08-15.md` records as `unmeasured` rather than estimated. The visual column stays
-with whoever runs the round, because the judge must be fresh, read-only and blind to arm.
+committed ledger and the archives themselves rather than from a report. Seven of eight criteria
+carry evidence and the eighth is not yet applicable. **One thing keeps this PRD open: the blind
+visual score**, which `round-8-2026-08-15.md` records as `unmeasured` rather than estimated. It
+stays with whoever runs the round, because the judge must be fresh, read-only and blind to arm —
+so the last step here is a run under the arm firewall, not a decision.
 
 ## 6. Evidence
 
@@ -214,7 +215,7 @@ with whoever runs the round, because the judge must be fresh, read-only and blin
 | Framework arm | `pnpm sandbox --arm framework --genre physics-puzzle` | — |
 | Vanilla arm | `pnpm sandbox --arm vanilla --genre physics-puzzle` | — |
 | Archive guard | `pnpm sweep:archive` (both arms) | — |
-| Archive guard, negative control | delete `threenative.config.ts` → `pnpm sweep:archive` | — |
+| Archive guard, negative control | delete `threenative.config.ts` → `archiveSandbox` on a staged copy of `physics-puzzle-2026-08-15-9` | **red as required**, 2026-08-15: `Refusing to archive an unbootable project; src/ imports files the archive does not carry: src/game.ts -> ../threenative.config.js`. Positive half archived first; the failed run left 0 archives behind. `docs/verification/archive-guard-control-2026-08-15.md` |
 | Capture | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:capture` | — |
 | Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | — |
 | Deletions | `pnpm round:deletions` | — |
