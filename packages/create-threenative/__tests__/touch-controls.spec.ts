@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   stickDeflection,
   touchControlPoint,
-} from "../templates/platformer/src/render/touch-controls.js";
+} from "../templates/platformer/src/render/touch-layout.js";
 
 const RADIUS = 72;
 

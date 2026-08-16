@@ -3,7 +3,7 @@ import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threen
 import { Group, Vector3 } from "three";
 import { ONE_WAY_LAYER } from "../level/Platform.js";
 import { animateCharacter, createCharacterRig } from "../render/rig.js";
-import type { ITouchInput } from "../render/touch-controls.js";
+import type { ITouchInput } from "../render/touch-layout.js";
 import type { GameState } from "../state.js";
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 export const PLAYER_LAYER = 1;

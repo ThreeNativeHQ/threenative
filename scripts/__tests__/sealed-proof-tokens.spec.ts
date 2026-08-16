@@ -55,19 +55,22 @@ function guessableTokens(assertion: IResourceAssertion, text: string): string[] 
 describe("sealed physics-puzzle proof", () => {
   it("requires no string token the brief never publishes", () => {
     const text = brief();
-    const offenders = ["physics-puzzle.playtest.json", "physics-puzzle-replay.playtest.json"]
-      .flatMap((file) =>
-        (proofScenario(file).assert?.resources ?? []).flatMap((assertion) =>
-          guessableTokens(assertion, text).map((token) => `${file}: ${token}`),
-        ),
-      );
+    const offenders = [
+      "physics-puzzle.playtest.json",
+      "physics-puzzle-replay.playtest.json",
+    ].flatMap((file) =>
+      (proofScenario(file).assert?.resources ?? []).flatMap((assertion) =>
+        guessableTokens(assertion, text).map((token) => `${file}: ${token}`),
+      ),
+    );
 
     expect(offenders).toEqual([]);
   });
 
   it("accepts the natural boolean encoding of a matching replay", () => {
-    const replayMatch = (proofScenario("physics-puzzle-replay.playtest.json").assert?.resources ??
-      []).find((assertion) =>
+    const replayMatch = (
+      proofScenario("physics-puzzle-replay.playtest.json").assert?.resources ?? []
+    ).find((assertion) =>
       (assertion.anyOf ?? [assertion]).some((alternative) => alternative.path === "replayMatch"),
     );
 
@@ -79,8 +82,9 @@ describe("sealed physics-puzzle proof", () => {
   });
 
   it("does not pin a terminal phase token", () => {
-    const phase = (proofScenario("physics-puzzle-replay.playtest.json").assert?.resources ?? [])
-      .find((assertion) => assertion.path === "replayPhase");
+    const phase = (
+      proofScenario("physics-puzzle-replay.playtest.json").assert?.resources ?? []
+    ).find((assertion) => assertion.path === "replayPhase");
 
     // `changed` is the behaviour — a game that never runs a replay leaves the phase alone and
     // still fails. The specific word it lands on is the game's business.

@@ -1,5 +1,6 @@
 import {
   CircleGeometry,
+  type ColorRepresentation,
   Group,
   MathUtils,
   Mesh,
@@ -9,62 +10,35 @@ import {
   Vector2,
 } from "three";
 import { palette } from "./palette.js";
+import {
+  BUTTON_RADIUS,
+  type ITouchInput,
+  type ITouchPointer,
+  type ITouchViewport,
+  MOVE_RADIUS,
+  stickDeflection,
+  touchControlPoint,
+} from "./touch-layout.js";
 
-const MOVE_RADIUS = 72;
-const BUTTON_RADIUS = 64;
-const EDGE = 36;
-
-interface ITouchPointer {
-  readonly position: Vector2;
+/** Flat overlay material: drawn over the scene, never occluded by it. */
+function overlayMaterial(color: ColorRepresentation, opacity: number): MeshBasicMaterial {
+  return new MeshBasicMaterial({
+    color,
+    depthTest: false,
+    depthWrite: false,
+    opacity,
+    transparent: true,
+  });
 }
 
-interface ITouchViewport {
-  readonly height: number;
-  readonly width: number;
+/** Controls live on a flat plane, so z is always 0. */
+function place(mesh: Mesh, x: number, y: number): void {
+  mesh.position.set(x, y, 0);
 }
 
-type TouchControlName = "dash" | "jump" | "move";
-
-export function touchControlPoint(size: ITouchViewport, name: TouchControlName): Vector2 {
-  if (name === "move") return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS - EDGE);
-
-  if (size.height > size.width) {
-    const yOffset = name === "jump" ? BUTTON_RADIUS * 2 + EDGE : 0;
-    return new Vector2(
-      size.width - BUTTON_RADIUS - EDGE,
-      size.height - BUTTON_RADIUS - EDGE - yOffset,
-    );
-  }
-
-  const x =
-    name === "jump" ? size.width - BUTTON_RADIUS - EDGE : size.width - BUTTON_RADIUS * 3 - EDGE;
-  return new Vector2(x, size.height - BUTTON_RADIUS - EDGE);
-}
-
-export interface ITouchInput {
-  readonly dashPressed: boolean;
-  readonly jumpPressed: boolean;
-  readonly move: Vector2;
-}
-
-/**
- * Deflection of a thumb from where that thumb landed, not from where the ring is drawn.
- *
- * A thumb does not arrive on the circle. It lands wherever the player's hand already was, and
- * measuring from a fixed centre turns that landing spot into an instant full-strength direction
- * the player never asked for — press the middle of the pad and the character bolts diagonally
- * before you have moved at all. Anchoring on touch is what every thumbstick that feels right
- * does, and it is the difference between a control that works and one that fights you.
- *
- * Exported so it can be tested without a renderer: it is pure arithmetic on two points.
- */
-export function stickDeflection(anchor: Vector2, current: Vector2, radius: number): Vector2 {
-  return new Vector2(
-    MathUtils.clamp((current.x - anchor.x) / radius, -1, 1),
-    // Screen y grows downward and the game's move.y is +up, so this axis inverts here rather
-    // than in the character, which reads `move` from keyboard and touch alike.
-    MathUtils.clamp((anchor.y - current.y) / radius, -1, 1),
-  );
+/** The 5px-thick outline every control shares. */
+function ringMesh(radius: number, material: MeshBasicMaterial): Mesh {
+  return new Mesh(new RingGeometry(radius - 5, radius, 32), material);
 }
 
 export class TouchControls {
@@ -84,33 +58,12 @@ export class TouchControls {
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = new MeshBasicMaterial({
-      color: palette.shadow,
-      depthTest: false,
-      depthWrite: false,
-      opacity: 0.28,
-      transparent: true,
-    });
-    this.#activeMaterial = new MeshBasicMaterial({
-      color: palette.accent,
-      depthTest: false,
-      depthWrite: false,
-      opacity: 0.58,
-      transparent: true,
-    });
-    this.#moveBase = new Mesh(
-      new RingGeometry(MOVE_RADIUS - 5, MOVE_RADIUS, 32),
-      this.#idleMaterial,
-    );
+    this.#idleMaterial = overlayMaterial(palette.shadow, 0.28);
+    this.#activeMaterial = overlayMaterial(palette.accent, 0.58);
+    this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);
-    this.#dash = new Mesh(
-      new RingGeometry(BUTTON_RADIUS - 5, BUTTON_RADIUS, 32),
-      this.#idleMaterial,
-    );
-    this.#jump = new Mesh(
-      new RingGeometry(BUTTON_RADIUS - 5, BUTTON_RADIUS, 32),
-      this.#idleMaterial,
-    );
+    this.#dash = ringMesh(BUTTON_RADIUS, this.#idleMaterial);
+    this.#jump = ringMesh(BUTTON_RADIUS, this.#idleMaterial);
     this.root.add(this.#moveBase, this.#moveKnob, this.#dash, this.#jump);
     this.root.renderOrder = 10_001;
     camera.add(this.root);
@@ -137,12 +90,7 @@ export class TouchControls {
     // The ring follows the thumb to its anchor, so the player can see where the stick went
     // instead of watching a knob move against a circle their thumb is nowhere near.
     const center = this.#moveAnchor ?? resting;
-    this.#moveBase.position.set(center.x, center.y, 0);
-    this.#moveKnob.position.set(
-      center.x + move.x * MOVE_RADIUS,
-      center.y - move.y * MOVE_RADIUS,
-      0,
-    );
+    place(this.#moveKnob, center.x + move.x * MOVE_RADIUS, center.y - move.y * MOVE_RADIUS);
     this.#jump.material = jump ? this.#activeMaterial : this.#idleMaterial;
     this.#dash.material = dash ? this.#activeMaterial : this.#idleMaterial;
     this.#input = {
@@ -179,9 +127,9 @@ export class TouchControls {
     const move = this.#moveAnchor ?? touchControlPoint(size, "move");
     const dash = touchControlPoint(size, "dash");
     const jump = touchControlPoint(size, "jump");
-    this.#moveBase.position.set(move.x, move.y, 0);
-    this.#dash.position.set(dash.x, dash.y, 0);
-    this.#jump.position.set(jump.x, jump.y, 0);
+    place(this.#moveBase, move.x, move.y);
+    place(this.#dash, dash.x, dash.y);
+    place(this.#jump, jump.x, jump.y);
   }
 
   #isMovementPointer(
