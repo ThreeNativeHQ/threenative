@@ -82,3 +82,50 @@ Editing a sealed proof changes its hash and voids comparison with every earlier 
 is why this is recorded as evidence first and implemented as PRD-113's own change with its own
 before/after run, rather than edited mid-round underneath archives that were built against the
 current hash.
+
+## The gate that caught this is too narrow — a second audit, 2026-08-15
+
+`scripts/__tests__/sealed-proof-tokens.spec.ts` reads `physics-puzzle` only, and walks only
+`assert.resources`. A peer session generalised the same `publishedInBrief` predicate over all six
+genres and over whole scenarios rather than the resources block, and five real offenders survive:
+
+| Genre | Scenario | Pin | Value |
+| --- | --- | --- | --- |
+| physics-puzzle | `physics-puzzle.playtest.json` | `assert.states[0].equals` | `"won"` |
+| topdown-action | `topdown-action.playtest.json` | `assert.resources[2].textIncludes` | `"SECURE"` |
+| exploration | `exploration.playtest.json` | `assert.resources[0].equals` | `"hub"` |
+| exploration | `exploration.playtest.json` | `assert.resources[2].textIncludes` | `"north.archive"` |
+| open-world | `open-world.playtest.json` | `assert.resources[2].textIncludes` | `"7"` |
+
+Two of these matter more than the count.
+
+**`states[0].equals = "won"` is this document's own defect, in the other physics-puzzle proof.**
+Verified: the brief contains the string `won` zero times, and the pin sits under `assert.states`
+rather than `assert.resources`, so the gate written to catch exactly this never sees it.
+`sealed-contract.spec.ts` does not catch it either — it classifies pins as identifier, key,
+resource-id, resource-path or seed, and a pinned *value* is none of those. Round 8's arm happened
+to choose `won`, which is why this has never gone red. "The builder guessed right this time" is
+the condition PRD-113 exists to stop measuring.
+
+**`textIncludes` is a second unguarded class.** `"SECURE"`, `"north.archive"` and `"7"` are HUD
+strings no brief publishes. `open-world`'s `"7"` is the sharpest: a substring match on one digit
+is both unguessable and nearly vacuous, since almost any HUD containing a 7 satisfies it.
+
+One reported hit is a false positive worth recording so it is not re-raised:
+`physics-puzzle-replay.playtest.json` `assert.resources[1].anyOf[1].equals = "match"` is exempt,
+because `anyOf[0].equals = true` makes that group satisfiable without a guess. Any generalised
+walker needs the `anyOf` exemption before it is fit to be a gate.
+
+### What this changes about the remaining work
+
+PRD-113 criteria 4 and 5 are **not met**, and the remaining work is now specified rather than
+gestured at:
+
+1. Widen `sealed-proof-tokens.spec.ts` to all six genres, walk the whole scenario rather than
+   `assert.resources`, and cover `textIncludes` alongside `equals`, keeping the `anyOf` exemption.
+2. Disposition the five tokens one at a time — publish the value in that genre's brief, or make
+   the row behavioural — which is a product decision per genre, not a mechanical edit.
+
+Not done here, deliberately. Four genres' sealed inputs are involved and every edit moves a proof
+or brief hash, which is the same "lands with a before/after run rather than mid-round" case this
+document already names. Round 8 is recorded on the current hashes; this is the next round's work.
