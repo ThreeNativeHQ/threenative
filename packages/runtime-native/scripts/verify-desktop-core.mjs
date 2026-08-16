@@ -65,9 +65,12 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     '--frames',
     String(frames),
   ];
-  const command = process.platform === 'linux' ? 'xvfb-run' : binary;
+  // Not `xvfb-run`: on xorg-server-xvfb 21.1.24 its cleanup `kill` fails after Xvfb has already
+  // exited and that failing kill's status replaces the command's, so this gate reported a red
+  // 300-frame run that had in fact rendered every frame and written a good screenshot.
+  const command = process.platform === 'linux' ? 'sh' : binary;
   const args = process.platform === 'linux'
-    ? ['-a', '-s', '-screen 0 1600x900x24', binary, ...runtimeArgs]
+    ? [join(workspace, 'scripts', 'xvfb.sh'), binary, ...runtimeArgs]
     : runtimeArgs;
   const runtimeEnv = { ...process.env };
   if (process.platform === 'linux') runtimeEnv.SDL_VIDEODRIVER = 'x11';

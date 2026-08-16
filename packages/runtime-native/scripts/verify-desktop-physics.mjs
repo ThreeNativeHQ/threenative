@@ -170,10 +170,12 @@ function runDesktopPhysics(scenario) {
   const screenshot = join(runtimeRoot, "artifacts", "desktop-physics-query.png");
   mkdirSync(join(runtimeRoot, "artifacts"), { recursive: true });
   const runtimeArgs = ["run", bundle, "--screenshot", screenshot, "--frames", "180"];
-  const command = process.platform === "linux" ? "xvfb-run" : binary;
+  // See verify-desktop-core.mjs: `xvfb-run` returns its own failing cleanup kill's status here,
+  // which turns a passing gate red.
+  const command = process.platform === "linux" ? "sh" : binary;
   const args =
     process.platform === "linux"
-      ? ["-a", "-s", "-screen 0 1600x900x24", binary, ...runtimeArgs]
+      ? [join(workspaceRoot, "scripts", "xvfb.sh"), binary, ...runtimeArgs]
       : runtimeArgs;
   const log = run(command, args, {
     env: process.platform === "linux" ? { ...process.env, SDL_VIDEODRIVER: "x11" } : process.env,

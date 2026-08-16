@@ -346,6 +346,27 @@ function containsLight(object: IObjectLike): boolean {
   return found;
 }
 
+/**
+ * True when a subtree holds something the pass refused to merge and therefore still has to draw.
+ *
+ * A preserved mesh is one the pass declined on purpose — transparent, sprite, points, its own
+ * render order — and declining to merge it is a promise to keep drawing it. Lifting the root it
+ * happens to live under out of the scene breaks that promise silently: the mesh is in no merged
+ * buffer and in no traversed graph, so it is simply gone. The fox game's waterfalls disappeared
+ * exactly this way, and the collapse still reported success.
+ *
+ * Keeping such a root costs its traversal back, which is the saving the detach was for. That is
+ * the right way round: a level that draws correctly and traverses is worth more than one that
+ * traverses cheaply and is missing its water.
+ */
+function containsPreserved(object: IObjectLike, preserved: ReadonlySet<IObjectLike>): boolean {
+  let found = false;
+  object.traverse((child) => {
+    if (preserved.has(child)) found = true;
+  });
+  return found;
+}
+
 const objectKeys = new WeakMap<object, string>();
 
 /**
@@ -1618,6 +1639,8 @@ export class SceneCollapse {
       // them out with it left every lit material shading from nothing: the level went black while
       // the unlit HUD and waterfalls looked perfect.
       if (containsLight(child)) continue;
+      // Same reasoning as lights, for the meshes this pass deliberately did not merge.
+      if (containsPreserved(child, scan.preserved)) continue;
       detached.push(child);
       this.#scene.remove(child);
       this.#adoptable.push({ children: child.children.length, root: child });

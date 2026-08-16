@@ -4,9 +4,10 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
+const workspaceRoot = resolve(fileURLToPath(import.meta.url), '..', '..', '..', '..');
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
 
@@ -59,9 +60,10 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   const reportPath = join(artifactDirectory, 'starter-desktop-report.json');
   mkdirSync(artifactDirectory, { recursive: true });
   const runtimeArgs = ['--screenshot', screenshot, '--frames', String(frames)];
-  const command = process.platform === 'linux' ? 'xvfb-run' : artifact;
+  // See verify-desktop-core.mjs: `xvfb-run` hands back its own failing cleanup kill's status.
+  const command = process.platform === 'linux' ? 'sh' : artifact;
   const args = process.platform === 'linux'
-    ? ['-a', '-s', '-screen 0 1600x900x24', artifact, ...runtimeArgs]
+    ? [join(workspaceRoot, 'scripts', 'xvfb.sh'), artifact, ...runtimeArgs]
     : runtimeArgs;
   const result = spawnSync(command, args, {
     cwd: projectRoot,
