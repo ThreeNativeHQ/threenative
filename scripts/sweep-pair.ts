@@ -272,9 +272,9 @@ function sealedAssertionIds(scenario: Record<string, unknown>, context: string):
       add(`tags.${stringField(assertion, "tag", context)}`);
   }
   if (hasField(assertions, "states")) {
+    // Anonymous assertions are keyed by position, matching how the runner ids them; naming
+    // them after a discovered entity would make the two arms' rows unjoinable.
     for (const [index, assertion] of recordArray(assertions, "states", context).entries())
-      // Anonymous assertions are keyed by position, matching how the runner ids them; naming
-      // them after a discovered entity would make the two arms' rows unjoinable.
       add(`states.${typeof assertion.entity === "string" ? assertion.entity : index}`);
   }
   if (hasField(assertions, "diagnostics")) add("diagnostics");

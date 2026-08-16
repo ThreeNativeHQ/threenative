@@ -5,6 +5,7 @@
       "**/dist/**",
       "artifacts/**",
       ".worktrees/**",
+      ".claude/worktrees/**",
       "packages/runtime-native/**",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
