@@ -1,0 +1,603 @@
+#!/usr/bin/env tsx
+/**
+ * `pnpm alpha:bar` — the alpha bar, computed instead of typed.
+ *
+ * The bar it replaces was seven markdown rows with ✅ and ⚠️ typed into them by whoever last
+ * edited the file. Nothing recomputed it, so nothing could contradict it, and nothing noticed
+ * when a row became true. This recomputes every row from the file it reads or the command it
+ * runs, and regenerates that table between markers so a hand edit is reverted on the next run.
+ *
+ * Fail closed everywhere:
+ *  - a row that can name neither a file nor a command is refused at construction, not printed;
+ *  - a row whose evidence is absent prints `unmeasured` and exits `2` — never `pass`, never `0`;
+ *  - a malformed evidence block throws rather than emitting a partial row;
+ *  - an empty row set is an error, because a bar that asserts nothing is the defect this file
+ *    exists to prevent.
+ *
+ * Exit `0` alpha, `1` a row is red, `2` a row could not be measured. `2` outranks `1`: not
+ * knowing is worse than knowing the answer is no.
+ */
+
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { checkLedger } from "./check-parity-ledger.js";
+import { type RoundLedger, readRoundLedger } from "./round-ledger.js";
+
+const REPO = path.resolve(import.meta.dirname, "..");
+
+export const BATCH_README = "docs/PRDs/alpha-readiness/README.md";
+export const TABLE_BEGIN = "<!-- BEGIN GENERATED: alpha-bar -->";
+export const TABLE_END = "<!-- END GENERATED: alpha-bar -->";
+
+const PARITY_LEDGERS = [
+  "docs/verification/parity-2026-08-10-r2.md",
+  "docs/verification/tier-1-2026-08-10.md",
+] as const;
+
+export type AlphaRowStatus = "fail" | "pass" | "unmeasured";
+
+export interface IAlphaRowResult {
+  /** One line of what was actually read, including the numbers that decided it. */
+  readonly detail: string;
+  /** The file this row read or the command it ran. Never a PRD status line. */
+  readonly evidence: string;
+  readonly id: string;
+  readonly requirement: string;
+  readonly status: AlphaRowStatus;
+}
+
+export interface IAlphaBarReport {
+  readonly exitCode: 0 | 1 | 2;
+  readonly failed: number;
+  readonly passed: number;
+  readonly rows: readonly IAlphaRowResult[];
+  readonly unmeasured: number;
+}
+
+/**
+ * A row sourced from a PRD document is the hand-typed table with extra steps: the `**Status:**`
+ * line it would read is the same sentence somebody typed. Rejected by path, at construction.
+ *
+ * The batch README is not a PRD document and is not rejected: A7 reads the table this file
+ * generated, which is the opposite of reading a claim somebody typed.
+ */
+export const PRD_DOCUMENT = /docs\/PRDs\/(?:[^\s]*\/)?PRD-\d+[^\s]*\.md/u;
+
+function assertEvidenceSource(row: IAlphaRowResult): void {
+  const evidence = row.evidence.trim();
+  if (evidence.length === 0)
+    throw new Error(`TN_ALPHA_ROW_NO_EVIDENCE: row ${row.id} names no file and no command.`);
+  if (PRD_DOCUMENT.test(evidence))
+    throw new Error(
+      `TN_ALPHA_ROW_PRD_SOURCED: row ${row.id} reads ${evidence}. A PRD status line is not evidence.`,
+    );
+  if (row.detail.trim().length === 0)
+    throw new Error(`TN_ALPHA_ROW_NO_DETAIL: row ${row.id} reported no observation.`);
+}
+
+/** Turns rows into a report. An empty set is an error, not an alpha. */
+export function summariseAlphaBar(rows: readonly IAlphaRowResult[]): IAlphaBarReport {
+  if (rows.length === 0)
+    throw new Error("TN_ALPHA_BAR_EMPTY: the alpha bar asserted nothing. Name at least one row.");
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.id)) throw new Error(`TN_ALPHA_ROW_DUPLICATE: row ${row.id} appears twice.`);
+    seen.add(row.id);
+    assertEvidenceSource(row);
+  }
+  const unmeasured = rows.filter((row) => row.status === "unmeasured").length;
+  const failed = rows.filter((row) => row.status === "fail").length;
+  return {
+    exitCode: unmeasured > 0 ? 2 : failed > 0 ? 1 : 0,
+    failed,
+    passed: rows.filter((row) => row.status === "pass").length,
+    rows,
+    unmeasured,
+  };
+}
+
+/* ------------------------------------------------------------------ evidence blocks */
+
+export interface IEvidenceBlock {
+  readonly detail: string;
+  readonly file: string;
+  readonly row: string;
+  readonly source: string;
+  readonly status: "fail" | "pass";
+}
+
+const BLOCK = /```alpha-bar\r?\n([\s\S]*?)```/gu;
+
+function blockField(body: string, key: string, file: string): string {
+  const match = body.match(new RegExp(`^${key}:[ \\t]*(.+)$`, "mu"));
+  const value = match?.[1]?.trim();
+  if (value === undefined || value.length === 0)
+    throw new Error(
+      `TN_ALPHA_EVIDENCE_MALFORMED: ${file} has an alpha-bar block without '${key}'.`,
+    );
+  return value;
+}
+
+/**
+ * Reads every `alpha-bar` evidence block under a directory. A block that is missing a field, or
+ * carries a status this file does not know, throws — a partially-read block is exactly the
+ * dropped-assertion failure the repository's harness rules exist to prevent.
+ */
+export function readEvidenceBlocks(directory: string): readonly IEvidenceBlock[] {
+  if (!fs.existsSync(directory)) return [];
+  const blocks: IEvidenceBlock[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const file = path.join(directory, entry.name);
+    const markdown = fs.readFileSync(file, "utf8");
+    for (const match of markdown.matchAll(BLOCK)) {
+      const body = match[1] ?? "";
+      const row = blockField(body, "row", file);
+      const status = blockField(body, "status", file);
+      if (status !== "pass" && status !== "fail")
+        throw new Error(
+          `TN_ALPHA_EVIDENCE_MALFORMED: ${file} block for ${row} has status '${status}'. Use pass or fail; absence is unmeasured and is expressed by having no block.`,
+        );
+      const source = blockField(body, "source", file);
+      if (PRD_DOCUMENT.test(source))
+        throw new Error(
+          `TN_ALPHA_EVIDENCE_PRD_SOURCED: ${file} block for ${row} names ${source} as its source. A PRD is not a run.`,
+        );
+      blocks.push({ detail: blockField(body, "detail", file), file, row, source, status });
+    }
+  }
+  return blocks;
+}
+
+function evidenceRow(
+  id: string,
+  requirement: string,
+  blocks: readonly IEvidenceBlock[],
+  repo: string,
+): IAlphaRowResult {
+  const evidence = `an alpha-bar evidence block for ${id} in docs/verification/`;
+  const mine = blocks.filter((block) => block.row === id);
+  if (mine.length === 0)
+    return {
+      detail: `No alpha-bar evidence block for ${id} was found in docs/verification/.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  // Two runs disagreeing is not a tie to be broken by ordering; it is an unanswered question.
+  const statuses = new Set(mine.map((block) => block.status));
+  if (statuses.size > 1)
+    return {
+      detail: `${mine.length} evidence blocks for ${id} disagree: ${mine
+        .map((block) => `${path.relative(repo, block.file)}=${block.status}`)
+        .join(", ")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  const latest = [...mine].sort((left, right) => left.file.localeCompare(right.file)).at(-1);
+  if (latest === undefined) throw new Error(`TN_ALPHA_EVIDENCE_MALFORMED: no block for ${id}.`);
+  return {
+    detail: `${latest.detail} (${path.relative(repo, latest.file)}, produced by: ${latest.source})`,
+    evidence,
+    id,
+    requirement,
+    status: latest.status,
+  };
+}
+
+/* ------------------------------------------------------------------ A1: the registry */
+
+export type RegistryProbe = (packageName: string) => readonly string[] | "absent" | "unreachable";
+
+/** Every workspace package a stranger would have to install. `private` packages are not shipped. */
+export function publishablePackages(repo: string): readonly { name: string; version: string }[] {
+  const root = path.join(repo, "packages");
+  if (!fs.existsSync(root)) return [];
+  const packages: { name: string; version: string }[] = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifestFile = path.join(root, entry.name, "package.json");
+    if (!fs.existsSync(manifestFile)) continue;
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as {
+      name?: unknown;
+      private?: unknown;
+      version?: unknown;
+    };
+    if (manifest.private === true) continue;
+    if (typeof manifest.name !== "string" || typeof manifest.version !== "string")
+      throw new Error(`TN_ALPHA_MANIFEST_MALFORMED: ${manifestFile} has no name or version.`);
+    packages.push({ name: manifest.name, version: manifest.version });
+  }
+  return packages.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * The registry, asked directly. `--userconfig .npmrc` keeps the repository-local registry config
+ * out of the environment and out of this file; its contents are never read here and never printed.
+ */
+function parseVersions(stdout: string, packageName: string): readonly string[] {
+  const parsed = JSON.parse(stdout) as unknown;
+  if (typeof parsed === "string") return [parsed];
+  if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  throw new Error(`npm view ${packageName} returned ${stdout.slice(0, 80)}`);
+}
+
+/**
+ * A 404 is an answer: the package is not there, and the row is red. Anything else — a timeout, a
+ * DNS failure, an auth error — means the question never reached the registry, which is unmeasured.
+ */
+function registryAnswer(error: unknown): "absent" | "unreachable" {
+  const text = `${(error as { stderr?: unknown }).stderr ?? ""}${
+    (error as { stdout?: unknown }).stdout ?? ""
+  }${error instanceof Error ? error.message : String(error)}`;
+  return /E404|404 Not Found|is not in this registry/u.test(text) ? "absent" : "unreachable";
+}
+
+export function npmRegistryProbe(repo: string): RegistryProbe {
+  const userconfig = path.join(repo, ".npmrc");
+  const config = fs.existsSync(userconfig) ? ["--userconfig", userconfig] : [];
+  return (packageName) => {
+    try {
+      return parseVersions(
+        execFileSync("npm", [...config, "view", packageName, "versions", "--json"], {
+          cwd: repo,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: 30_000,
+        }),
+        packageName,
+      );
+    } catch (error) {
+      return registryAnswer(error);
+    }
+  };
+}
+
+export function registryRow(repo: string, probe: RegistryProbe): IAlphaRowResult {
+  const id = "A1";
+  const requirement = "A stranger can install it from the public registry";
+  const evidence = "npm view <package> versions --json";
+  const packages = publishablePackages(repo);
+  if (packages.length === 0)
+    return {
+      detail: `No publishable package was found under ${path.join(repo, "packages")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  const absent: string[] = [];
+  const stale: string[] = [];
+  const unreachable: string[] = [];
+  for (const item of packages) {
+    const versions = probe(item.name);
+    if (versions === "unreachable") unreachable.push(item.name);
+    else if (versions === "absent") absent.push(item.name);
+    else if (!versions.includes(item.version)) stale.push(`${item.name} ${item.version}`);
+  }
+  if (unreachable.length > 0)
+    return {
+      detail: `The registry could not be reached for ${unreachable.length} of ${packages.length} package(s): ${unreachable.join(", ")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  if (absent.length > 0 || stale.length > 0)
+    return {
+      detail: [
+        absent.length > 0
+          ? `${absent.length} of ${packages.length} publishable package(s) are absent from the registry: ${absent.join(", ")}.`
+          : "",
+        stale.length > 0 ? `Unpublished workspace version(s): ${stale.join(", ")}.` : "",
+      ]
+        .filter((part) => part.length > 0)
+        .join(" "),
+      evidence,
+      id,
+      requirement,
+      status: "fail",
+    };
+  return {
+    detail: `All ${packages.length} publishable package(s) are on the registry at their workspace versions.`,
+    evidence,
+    id,
+    requirement,
+    status: "pass",
+  };
+}
+
+/* ------------------------------------------------------------------ A4: a paired round */
+
+function ledgerFiles(repo: string): readonly string[] {
+  const directory = path.join(repo, "docs", "verification");
+  if (!fs.existsSync(directory)) return [];
+  return fs
+    .readdirSync(directory)
+    .filter((file) => /^round-\d+-\d{4}-\d{2}-\d{2}\.md$/u.test(file))
+    .map((file) => path.join(directory, file));
+}
+
+function pairedAndMeasured(ledger: RoundLedger): string | undefined {
+  if (ledger.stopCondition === "void") return `round ${ledger.round} is VOID`;
+  const genres = new Map<string, number>();
+  for (const arm of ledger.arms) genres.set(arm.genre, (genres.get(arm.genre) ?? 0) + 1);
+  const paired = [...genres.entries()].filter(([, count]) => count === 2).map(([genre]) => genre);
+  if (paired.length === 0) return `round ${ledger.round} names no paired genre`;
+  const unmeasuredArm = ledger.arms.find(
+    (arm) =>
+      paired.includes(arm.genre) &&
+      (arm.archive === "unmeasured" ||
+        arm.archive === "pending" ||
+        arm.proofResult === "unmeasured" ||
+        arm.instrumentVisual === "unmeasured"),
+  );
+  if (unmeasuredArm !== undefined)
+    return `round ${ledger.round}'s ${unmeasuredArm.arm} ${unmeasuredArm.genre} arm is unmeasured`;
+  const unmeasuredColumn = ledger.columns.find(
+    (row) =>
+      paired.includes(row.genre) &&
+      [row.cost, row.functional, row.visual].some((cell) => cell === "unmeasured"),
+  );
+  if (unmeasuredColumn !== undefined)
+    return `round ${ledger.round}'s ${unmeasuredColumn.genre} columns are not all measured`;
+  return undefined;
+}
+
+export function pairedRoundRow(repo: string): IAlphaRowResult {
+  const id = "A4";
+  const requirement = "The value claim rests on one measured paired round";
+  const evidence = "docs/verification/round-*.md";
+  const files = ledgerFiles(repo);
+  if (files.length === 0)
+    return {
+      detail: "No round ledger exists under docs/verification/.",
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  // A ledger this repository's own parser cannot read is not a round that failed the bar; it is
+  // a round the bar could not see. Recorded, and it makes the row unmeasured rather than red.
+  const unreadable: string[] = [];
+  const ledgers: RoundLedger[] = [];
+  for (const file of files) {
+    try {
+      ledgers.push(readRoundLedger(file));
+    } catch (error) {
+      unreadable.push(
+        `${path.relative(repo, file)} (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+  ledgers.sort((left, right) => left.round - right.round);
+  // Fail closed before searching, not after: a bar that found its pass among the ledgers it could
+  // read, and stayed quiet about the one it could not, is claiming to have read evidence it never
+  // opened. Today this is what reports that `round-10` broke `pnpm round:next`.
+  if (unreadable.length > 0)
+    return {
+      detail: `${unreadable.length} of ${files.length} round ledger(s) could not be parsed, so the current state is unknown: ${unreadable.join("; ")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  const reasons: string[] = [];
+  for (const ledger of [...ledgers].reverse()) {
+    const reason = pairedAndMeasured(ledger);
+    if (reason === undefined)
+      return {
+        detail: `Round ${ledger.round} (${ledger.date}) records a measured paired round: ${ledger.arms
+          .map((arm) => `${arm.genre}/${arm.arm} ${arm.proofResult}`)
+          .join(", ")}.`,
+        evidence,
+        id,
+        requirement,
+        status: "pass",
+      };
+    reasons.push(reason);
+  }
+  return {
+    detail: `No round ledger records a measured paired round across ${ledgers.length} ledger(s). Most recent first: ${reasons.slice(0, 3).join("; ")}.`,
+    evidence,
+    id,
+    requirement,
+    status: "fail",
+  };
+}
+
+/* ------------------------------------------------------------------ A5: the parity ledgers */
+
+export async function parityRow(repo: string): Promise<IAlphaRowResult> {
+  const id = "A5";
+  const requirement = "Every platform claim is checkable and the ledgers agree";
+  const evidence = `pnpm parity:ledger ${PARITY_LEDGERS.join(" ")}`;
+  const missing = PARITY_LEDGERS.filter((file) => !fs.existsSync(path.join(repo, file)));
+  if (missing.length > 0)
+    return {
+      detail: `Ledger(s) missing, so they cannot be compared: ${missing.join(", ")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  let findings: readonly { cell: string; message: string; target: string }[];
+  try {
+    findings = (
+      await Promise.all(
+        PARITY_LEDGERS.map((file) => checkLedger(fs.readFileSync(path.join(repo, file), "utf8"))),
+      )
+    ).flat();
+  } catch (error) {
+    return {
+      detail: `The parity checker could not read a ledger: ${error instanceof Error ? error.message : String(error)}`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  }
+  if (findings.length === 0)
+    return {
+      detail: `Both ledgers recompute to the exit codes they record: ${PARITY_LEDGERS.join(", ")}.`,
+      evidence,
+      id,
+      requirement,
+      status: "pass",
+    };
+  const first = findings[0];
+  return {
+    detail: `${findings.length} finding(s) across ${PARITY_LEDGERS.length} ledger(s). First: ${first?.target} / ${first?.cell}: ${first?.message}`,
+    evidence,
+    id,
+    requirement,
+    status: "fail",
+  };
+}
+
+/* ------------------------------------------------------------------ A7: the generated table */
+
+export function renderTable(rows: readonly IAlphaRowResult[]): string {
+  const glyph: Record<AlphaRowStatus, string> = {
+    fail: "red",
+    pass: "green",
+    unmeasured: "unmeasured",
+  };
+  return [
+    TABLE_BEGIN,
+    "",
+    "<!-- Generated by `pnpm alpha:bar --write`. A hand edit here is reverted on the next run. -->",
+    "",
+    "| # | Alpha requirement | State | What the bar read, and what it said |",
+    "|---|---|---|---|",
+    ...rows.map(
+      (row) =>
+        `| ${row.id} | ${row.requirement} | **${glyph[row.status]}** | \`${row.evidence}\` — ${row.detail.replaceAll("|", "\\|")} |`,
+    ),
+    // A7 reports on the six above, so it cannot be one of them: rendering its own status would
+    // need that status before it has one. It is stated as the invariant the generator makes
+    // true, and a hand edit to this line fails the whole-file comparison like any other.
+    `| A7 | The bar is runnable, not transcribed | **green** | \`${BATCH_README}\` — this table is \`pnpm alpha:bar --write\` output; the command re-reads it and goes red if it drifts. |`,
+    "",
+    TABLE_END,
+  ].join("\n");
+}
+
+export function writeTable(markdown: string, table: string, file: string): string {
+  const begin = markdown.indexOf(TABLE_BEGIN);
+  const end = markdown.indexOf(TABLE_END);
+  if (begin === -1 || end === -1 || end < begin)
+    throw new Error(
+      `TN_ALPHA_TABLE_MARKERS_MISSING: ${file} has no ${TABLE_BEGIN} … ${TABLE_END} pair to generate into.`,
+    );
+  return `${markdown.slice(0, begin)}${table}${markdown.slice(end + TABLE_END.length)}`;
+}
+
+function generatedTableRow(repo: string, rows: readonly IAlphaRowResult[]): IAlphaRowResult {
+  const id = "A7";
+  const requirement = "The bar is runnable, not transcribed";
+  const evidence = BATCH_README;
+  const file = path.join(repo, BATCH_README);
+  if (!fs.existsSync(file))
+    return {
+      detail: `${BATCH_README} is missing, so the generated table cannot be compared.`,
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  const markdown = fs.readFileSync(file, "utf8");
+  // A7 reports on the other six rows, so it renders them without itself: including its own row
+  // would need its own result before it has one.
+  let expected: string;
+  try {
+    expected = writeTable(markdown, renderTable(rows), file);
+  } catch (error) {
+    return {
+      detail: error instanceof Error ? error.message : String(error),
+      evidence,
+      id,
+      requirement,
+      status: "unmeasured",
+    };
+  }
+  return expected === markdown
+    ? {
+        detail: `The generated table in ${BATCH_README} is byte-identical to this run.`,
+        evidence,
+        id,
+        requirement,
+        status: "pass",
+      }
+    : {
+        detail: `The generated table in ${BATCH_README} does not match this run. Rerun pnpm alpha:bar --write.`,
+        evidence,
+        id,
+        requirement,
+        status: "fail",
+      };
+}
+
+/* ------------------------------------------------------------------ the bar */
+
+export interface IAlphaBarOptions {
+  readonly registry?: RegistryProbe;
+  readonly repo?: string;
+}
+
+export async function alphaBar(options: IAlphaBarOptions = {}): Promise<IAlphaBarReport> {
+  const repo = options.repo ?? REPO;
+  const blocks = readEvidenceBlocks(path.join(repo, "docs", "verification"));
+  const rows: IAlphaRowResult[] = [
+    registryRow(repo, options.registry ?? npmRegistryProbe(repo)),
+    evidenceRow("A2", "The golden path completes from published artifacts", blocks, repo),
+    evidenceRow("A3", "Verification cannot report green while asserting nothing", blocks, repo),
+    pairedRoundRow(repo),
+    await parityRow(repo),
+    evidenceRow("A6", "One stranger has actually used it", blocks, repo),
+  ];
+  rows.push(generatedTableRow(repo, rows));
+  return summariseAlphaBar(rows);
+}
+
+export function formatReport(report: IAlphaBarReport): string {
+  const lines = report.rows.flatMap((row) => [
+    `${row.id}  ${row.status.padEnd(10)}  ${row.requirement}`,
+    `    ${row.detail}`,
+    `    evidence: ${row.evidence}`,
+  ]);
+  lines.push(
+    report.exitCode === 0
+      ? `${report.passed} of ${report.rows.length} rows pass. Alpha.`
+      : `${report.unmeasured} of ${report.rows.length} rows unmeasured, ${report.failed} failed. Not alpha.`,
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+async function main(argv: readonly string[]): Promise<void> {
+  const json = argv.includes("--json");
+  const write = argv.includes("--write");
+  const unknown = argv.filter((arg) => arg !== "--json" && arg !== "--write");
+  if (unknown.length > 0) {
+    process.stderr.write(`TN_ALPHA_BAR_UNKNOWN_FLAG: ${unknown.join(", ")}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  let report = await alphaBar();
+  if (write) {
+    const file = path.join(REPO, BATCH_README);
+    const rows = report.rows.filter((row) => row.id !== "A7");
+    fs.writeFileSync(file, writeTable(fs.readFileSync(file, "utf8"), renderTable(rows), file));
+    // Re-measure A7 against what is now on disk rather than assuming the write took. Writing the
+    // table never launders another row: A1 red before --write is A1 red after it.
+    report = summariseAlphaBar([...rows, generatedTableRow(REPO, rows)]);
+  }
+  process.stdout.write(json ? `${JSON.stringify(report, undefined, 2)}\n` : formatReport(report));
+  process.exitCode = report.exitCode;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) await main(process.argv.slice(2));

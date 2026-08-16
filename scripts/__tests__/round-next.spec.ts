@@ -313,6 +313,71 @@ describe("round:next", () => {
     expect(action.reason).toMatch(/1 further arm action follows it\./u);
   });
 
+  it("reports a PRD inside a batch folder as open", async () => {
+    // PRDs are grouped into batch folders once a night's work is assembled, and `readdirSync`
+    // does not recurse. An open PRD that moved into one did not merely go unreported: the loop
+    // skipped straight to `close round N`, its terminal action, with the blocker still open.
+    const root = await fixture();
+    const framework = await archive(root, "framework", "framework", true, true);
+    const vanilla = await archive(root, "vanilla", "vanilla", true, true);
+    const closed = baseLedger({
+      frameworkArchive: framework,
+      frameworkProof: "2/2",
+      frameworkVisual: "4",
+      vanillaArchive: vanilla,
+      vanillaProof: "2/2",
+      vanillaVisual: "4",
+      functional: "tie",
+      visual: "loss",
+      cost: "win",
+      gap: "1 | platformer | visual | clearer goal | improve.md | improve goal",
+      disposition:
+        "1 | framework change | over 20 lines | packages/core/src/viewport.ts | PRD-021 | n/a",
+      gates: "pass",
+    });
+    const file = await writeLedger(root, closed);
+    await mkdir(path.join(root, "docs/PRDs/alpha-readiness"), { recursive: true });
+    await writeFile(
+      path.join(root, "docs/PRDs/alpha-readiness/PRD-021-in-a-batch.md"),
+      "---\nprd_contract: v1\n---\n\n**Status:** implementation in progress.\n",
+    );
+
+    expect(nextRoundAction(root, file)).toMatchObject({ command: "implement PRD-021" });
+  });
+
+  it("does not reopen a PRD that was archived to docs/PRDs/done", async () => {
+    // The mirror of the case above: recursing must not resurrect finished work. `done/` is where
+    // a PRD goes when it closes, so a file there is not an open blocker.
+    const root = await fixture();
+    const framework = await archive(root, "framework", "framework", true, true);
+    const vanilla = await archive(root, "vanilla", "vanilla", true, true);
+    const file = await writeLedger(
+      root,
+      baseLedger({
+        frameworkArchive: framework,
+        frameworkProof: "2/2",
+        frameworkVisual: "4",
+        vanillaArchive: vanilla,
+        vanillaProof: "2/2",
+        vanillaVisual: "4",
+        functional: "tie",
+        visual: "loss",
+        cost: "win",
+        gap: "1 | platformer | visual | clearer goal | improve.md | improve goal",
+        disposition:
+          "1 | framework change | over 20 lines | packages/core/src/viewport.ts | PRD-021 | n/a",
+        gates: "pass",
+      }),
+    );
+    await mkdir(path.join(root, "docs/PRDs/done/night-watch"), { recursive: true });
+    await writeFile(
+      path.join(root, "docs/PRDs/done/night-watch/PRD-021-finished.md"),
+      "---\nprd_contract: v1\n---\n\n**Status:** implementation in progress.\n",
+    );
+
+    expect(nextRoundAction(root, file)).toMatchObject({ command: "close round 1" });
+  });
+
   it("stops instead of resuming a blocked round", async () => {
     const root = await fixture();
     const file = await writeLedger(root, baseLedger({ stop: "blocked" }));

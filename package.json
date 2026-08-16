@@ -39,6 +39,7 @@
     "sweep:proof": "tsx scripts/sweep-proof.ts",
     "sweep:judge": "tsx scripts/sweep-judge.ts",
     "sweep:pair": "tsx scripts/sweep-pair.ts",
+    "alpha:bar": "tsx scripts/alpha-bar.ts",
     "round:next": "tsx scripts/round-next.ts",
     "round:deletions": "tsx scripts/round-deletions.ts",
     "bench:engines": "tsx scripts/engine-load-test/cli.ts",

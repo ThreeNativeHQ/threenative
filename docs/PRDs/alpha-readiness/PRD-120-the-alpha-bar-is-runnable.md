@@ -4,9 +4,20 @@ prd_contract: v1
 
 # PRD-120 — The alpha bar is a hand-typed table, and a hand-typed table cannot go red
 
-**Status: PROPOSED, 2026-08-15. Nothing here is executed.** §1 is a read of
-`docs/strategy/ROADMAP.md`, `scripts/round-next.ts` and `scripts/check-budgets.ts` at `5df0783f`.
-No gate in this document has been run.
+**Status: COMPLETE, 2026-08-15.** All four phases executed. `pnpm alpha:bar` computes seven rows
+and exits `2` on this tree; the batch README table is generated between markers; `openPrd` walks
+`docs/PRDs/**` excluding `done/`. Every negative control was observed red with its command pasted,
+in `docs/verification/alpha-bar-2026-08-15.md`.
+
+Two findings the phases turned up beyond what §1 predicted, both recorded rather than fixed here:
+
+- **`pnpm round:next` throws on `main`.** `docs/verification/round-10-2026-08-16.md` is a baseline
+  round with no `## Arms` section, and `parseRoundLedger` requires one. Row A4 reports it. The fix
+  is the round owner's call — either the ledger contract admits a round with no paired arms, or
+  round 10 carries explicit empty sections — and it is not this PRD's to make.
+- **A4's stated blocker was stale.** The hand-typed table read *"round 7 is VOID"*; round 9 is a
+  measured paired platformer round. The row is still not green, for a different reason. That is
+  §1's argument arriving as evidence: nothing noticed when a row changed.
 
 **Complexity: 4 → MEDIUM mode.** One new script, one pre-existing instrument defect, no package
 code.

@@ -89,15 +89,37 @@ function notePath(notes: string, label: string): string | undefined {
   return line?.slice(line.indexOf(":") + 1).trim();
 }
 
+/**
+ * Finds a PRD anywhere under `docs/PRDs`, excluding `done/`.
+ *
+ * A non-recursive read was correct only while every PRD sat at the top level. PRDs are grouped
+ * into batch folders once a night's work is assembled, and from that moment an open PRD in one
+ * read as *not found* — which this function reports as *not open*, so the loop advanced to
+ * `close round N` with the blocker still open. `done/` stays excluded: a PRD archived there is
+ * finished whatever its status line still says.
+ */
+function findPrd(directory: string, prd: string): string | undefined {
+  if (!fs.existsSync(directory)) return undefined;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === "done") continue;
+      const found = findPrd(path.join(directory, entry.name), prd);
+      if (found !== undefined) return found;
+      continue;
+    }
+    if (
+      entry.name === `${prd}.md` ||
+      (entry.name.startsWith(`${prd}-`) && entry.name.endsWith(".md"))
+    )
+      return path.join(directory, entry.name);
+  }
+  return undefined;
+}
+
 function openPrd(repo: string, prd: string): boolean {
   if (!/^PRD-\d+$/u.test(prd)) return false;
-  const directory = path.join(repo, "docs", "PRDs");
-  if (!fs.existsSync(directory)) return false;
-  const fileName = fs
-    .readdirSync(directory)
-    .find((file) => file === `${prd}.md` || (file.startsWith(`${prd}-`) && file.endsWith(".md")));
-  if (fileName === undefined) return false;
-  const file = path.join(directory, fileName);
+  const file = findPrd(path.join(repo, "docs", "PRDs"), prd);
+  if (file === undefined) return false;
   const statusMatch = fs.readFileSync(file, "utf8").match(/^\*\*Status:\*\*\s*(.+)$/mu);
   const status = statusMatch?.[1]?.toLowerCase();
   return status === undefined || !/\b(?:complete|completed|closed|done)\b/u.test(status);
