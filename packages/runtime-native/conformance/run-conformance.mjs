@@ -1585,8 +1585,11 @@ async function main(argv = process.argv.slice(2)) {
       } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
         result.status = "blocked";
         result.blockedReason =
-          "TN_PARITY_ROW_EXCLUDED: desktop-multitouch-input — the desktop lane has no native " +
-          "multitouch injector; browser PointerEvents and Android sendevent cover the proof.";
+          "TN_PARITY_ROW_EXCLUDED: desktop-multitouch-input — the injector exists and reaches " +
+          "the kernel, but nothing on this host reads the device it creates: /dev/input/event* " +
+          "is root:input 0660 with this user outside the input group, and the lane runs under " +
+          "Xvfb, which has no evdev backend. A host constraint, not a missing capability. See " +
+          "docs/verification/desktop-multitouch-2026-08-15-r2.md.";
       } else {
         result.status = dryRun ? "validated" : "pass";
         let bundled;

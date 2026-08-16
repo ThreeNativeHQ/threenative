@@ -4,8 +4,36 @@ prd_contract: v1
 
 # PRD-077 — Desktop multitouch: the runtime already handles it, the harness cannot reach it
 
-**Status: PHASE 0 PARTIAL, 2026-08-15.** Two of Phase 0's three questions are answered with
-evidence in [`docs/verification/desktop-multitouch-2026-08-15.md`](../../verification/desktop-multitouch-2026-08-15.md):
+**Status: BLOCKED — host cannot deliver a contact, 2026-08-15.** Phase 0 is complete: all three
+questions are answered, the third negatively. The **permitted failure in §7 fired**, in a different
+place than it was expected to.
+
+The PRD anticipated being blocked on opening `/dev/uinput`. That is not the blocker — writing works
+unprivileged through an ACL. The blocker is on the **read** side, and delivery is a read:
+`/dev/input/event*` is `root:input 0660`, this user is not in the `input` group, and the lane runs
+under Xvfb, which has no evdev backend at all. Two independent host facts, either sufficient.
+
+**What landed anyway, because it is proved and useful the moment a host can deliver:**
+`tools/uinput_touch_device.c` and `conformance/desktop-touch.mjs`, 12 spec cases. The device is
+created unprivileged and settles in 6ms; the kernel enumerates it as `INPUT_PROP_DIRECT` with
+exactly the four `ABS_MT_*` axes and **no mouse interface** — closing Phase 0 finding 3b by
+measurement, `H: Handlers=event23` where the spike had `event23 mouse3`; contacts are aimed at the
+window's real rectangle, measured at 1280×720 inset at (160, 90) of a 1600×900 screen, so the
+full-screen assumption the PRD warned about would indeed have missed.
+
+Per §7, the exclusion **stays**, its reason is rewritten to name the real blocker rather than a
+missing injector, and its owner moves from PRD-064 to this PRD. Evidence:
+[`desktop-multitouch-2026-08-15-r2.md`](../../verification/desktop-multitouch-2026-08-15-r2.md).
+
+**Two things a reader must not take from this:** the runner is unchanged — `runDesktop` is
+`spawnSync` and cannot inject mid-run, and making it async is not worth landing before a host can
+deliver a contact — and the seated-X-server path was **not attempted**, because it would place
+synthetic contacts on the operator's live desktop while they were away.
+
+---
+
+The original Phase 0 record, unchanged. Two of three questions were answered with evidence in
+[`docs/verification/desktop-multitouch-2026-08-15.md`](../../verification/desktop-multitouch-2026-08-15.md):
 `/dev/uinput` **is** openable unprivileged on this host through an ACL entry (`user:joao:rw-`),
 and a virtual device created through it **is** enumerated by the kernel as a direct touchscreen
 carrying `ABS_MT_SLOT`, `ABS_MT_TRACKING_ID` and `ABS_MT_POSITION_X/Y`. **The permitted-failure

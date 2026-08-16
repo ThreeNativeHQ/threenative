@@ -44,8 +44,8 @@
       "title": "Desktop multitouch input injection",
       "category": "input",
       "status": "excluded",
-      "reason": "The desktop lane has no native multitouch injector; browser PointerEvents and Android sendevent cover the simultaneous-touch proof.",
-      "owner": "PRD-064",
+      "reason": "The injector exists and works to the kernel boundary (conformance/desktop-touch.mjs, tools/uinput_touch_device.c): it creates a virtual touchscreen unprivileged, the kernel enumerates it with INPUT_PROP_DIRECT and the four ABS_MT_* axes, and contacts are aimed at the window's real rectangle. Nothing downstream reads it on this host. /dev/input/event* is root:input 0660 and this user is not in the input group, so SDL's evdev path cannot open it; and the lane runs under Xvfb, which has no evdev backend at all. This is a host and display-server constraint, not a missing capability. Evidence: docs/verification/desktop-multitouch-2026-08-15-r2.md.",
+      "owner": "PRD-077",
       "target": "desktop",
       "row": "90-multitouch-input"
     }
