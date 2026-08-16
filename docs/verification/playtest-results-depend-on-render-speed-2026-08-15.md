@@ -127,6 +127,17 @@ inference alone is the move this repository exists to prevent, so `combat.playte
 the hold engaged. If it reads 95, the constant is wrong and can be changed on evidence. If it reads
 90, the boot race is not the whole cause and the fix above is incomplete.
 
+That run was attempted and did not produce an answer. Rather than pay for a full
+`pnpm verify:golden-path` to get a scaffold, the current `@threenative/core` and
+`@threenative/playtest` builds were copied into an older scaffold left behind by a previous gate
+run. It failed `TN_PLAYTEST_CAPABILITY_MISSING` — an error the full gate does **not** produce on a
+freshly scaffolded project, so it is an artefact of that scaffold's template being several
+revisions old, not a property of the fix. No conclusion is drawn from it.
+
+The measurement therefore still needs a scaffold generated from the current templates. That is one
+`pnpm verify:golden-path` away, and it is the only thing standing between this finding and a
+decision about the committed expectation.
+
 The code landed inside commit `22123b79`, whose subject describes unrelated work — a concurrent
 session committed a dirty shared tree. The change is intact; this note is where its reasoning
 lives.
