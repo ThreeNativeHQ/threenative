@@ -150,7 +150,16 @@ describe("platformer checkpoints", () => {
 
       const movement = controls.update(new Map([[1, { id: 1, position: movementPosition }]]), size);
       expect(movement.dashPressed).toBe(false);
-      expect(movement.move.length()).toBeGreaterThan(0);
+      // The stick anchors where the thumb lands, so the landing frame is zero by design and the
+      // drag is what deflects it. This test is about which region claimed the pointer.
+      expect(movement.move.toArray()).toEqual([0, 0]);
+      // Dragged up, not right: on the 320-wide screen a rightward drag of this size reaches the
+      // dash button's exclusion radius and the pointer stops being a movement pointer at all.
+      const dragged = controls.update(
+        new Map([[1, { id: 1, position: movementPosition.clone().add(new Vector2(0, -30)) }]]),
+        size,
+      );
+      expect(dragged.move.length()).toBeGreaterThan(0);
 
       controls.update(new Map(), size);
       const dash = controls.update(new Map([[2, { id: 2, position: dashCenter }]]), size);
@@ -167,7 +176,11 @@ describe("platformer checkpoints", () => {
           size,
         );
         expect(movementAtBoundary.dashPressed).toBe(false);
-        expect(movementAtBoundary.move.length()).toBeGreaterThan(0);
+        const draggedAtBoundary = controls.update(
+          new Map([[3, { id: 3, position: outsideDash.clone().add(new Vector2(0, -30)) }]]),
+          size,
+        );
+        expect(draggedAtBoundary.move.length()).toBeGreaterThan(0);
 
         controls.update(new Map(), size);
         const dashAtBoundary = controls.update(
@@ -190,10 +203,19 @@ describe("platformer checkpoints", () => {
     const size = { aspect: 2400 / 1080, height: 1080, width: 2400 };
 
     const first = controls.update(pointers, size);
-    const second = controls.update(pointers, size);
-
-    expect(first.move.x).toBe(1);
+    // Landing frame anchors the stick; jump is edge-triggered and fires immediately.
+    expect(first.move.x).toBe(0);
     expect(first.jumpPressed).toBe(true);
+
+    // The moving thumb drags a full radius right while the jump thumb stays down. Both pointers
+    // must still be honoured: this is the case a single-pointer reading cannot express.
+    const dragged = new Map([
+      [7, { buttons: 1, id: 7, position: new Vector2(180 + 72, 972) }],
+      [3, { buttons: 1, id: 3, position: new Vector2(2300, 980) }],
+    ]);
+    const second = controls.update(dragged, size);
+
+    expect(second.move.x).toBe(1);
     expect(second.jumpPressed).toBe(false);
     controls.dispose();
   });

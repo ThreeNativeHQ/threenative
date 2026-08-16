@@ -47,12 +47,34 @@ export interface ITouchInput {
   readonly move: Vector2;
 }
 
+/**
+ * Deflection of a thumb from where that thumb landed, not from where the ring is drawn.
+ *
+ * A thumb does not arrive on the circle. It lands wherever the player's hand already was, and
+ * measuring from a fixed centre turns that landing spot into an instant full-strength direction
+ * the player never asked for — press the middle of the pad and the character bolts diagonally
+ * before you have moved at all. Anchoring on touch is what every thumbstick that feels right
+ * does, and it is the difference between a control that works and one that fights you.
+ *
+ * Exported so it can be tested without a renderer: it is pure arithmetic on two points.
+ */
+export function stickDeflection(anchor: Vector2, current: Vector2, radius: number): Vector2 {
+  return new Vector2(
+    MathUtils.clamp((current.x - anchor.x) / radius, -1, 1),
+    // Screen y grows downward and the game's move.y is +up, so this axis inverts here rather
+    // than in the character, which reads `move` from keyboard and touch alike.
+    MathUtils.clamp((anchor.y - current.y) / radius, -1, 1),
+  );
+}
+
 export class TouchControls {
   readonly root = new Group();
   #camera: PerspectiveCamera;
   #input: ITouchInput = { dashPressed: false, jumpPressed: false, move: new Vector2() };
   #wasDash = false;
   #wasJump = false;
+  /** Where the current thumb landed. Undefined between touches. */
+  #moveAnchor: Vector2 | undefined;
   #moveBase: Mesh;
   #moveKnob: Mesh;
   #dash: Mesh;
@@ -102,15 +124,20 @@ export class TouchControls {
     const left = [...pointers.values()].find((pointer) =>
       this.#isMovementPointer(pointer, size, dashCenter, jumpCenter),
     );
-    const center = touchControlPoint(size, "move");
+    const resting = touchControlPoint(size, "move");
     const move = this.#input.move;
-    if (left === undefined) move.set(0, 0);
-    else {
-      move.set(
-        MathUtils.clamp((left.position.x - center.x) / MOVE_RADIUS, -1, 1),
-        MathUtils.clamp((center.y - left.position.y) / MOVE_RADIUS, -1, 1),
-      );
+    if (left === undefined) {
+      // Thumb lifted: forget where it was, so the next touch anchors fresh.
+      this.#moveAnchor = undefined;
+      move.set(0, 0);
+    } else {
+      this.#moveAnchor ??= left.position.clone();
+      move.copy(stickDeflection(this.#moveAnchor, left.position, MOVE_RADIUS));
     }
+    // The ring follows the thumb to its anchor, so the player can see where the stick went
+    // instead of watching a knob move against a circle their thumb is nowhere near.
+    const center = this.#moveAnchor ?? resting;
+    this.#moveBase.position.set(center.x, center.y, 0);
     this.#moveKnob.position.set(
       center.x + move.x * MOVE_RADIUS,
       center.y - move.y * MOVE_RADIUS,
@@ -148,7 +175,8 @@ export class TouchControls {
     const worldWidth = size.width * pixels;
     this.root.position.set(-worldWidth / 2, worldHeight / 2, -1);
     this.root.scale.set(pixels, -pixels, 1);
-    const move = touchControlPoint(size, "move");
+    // The anchor wins while a thumb is down; this only re-homes the ring once it lifts.
+    const move = this.#moveAnchor ?? touchControlPoint(size, "move");
     const dash = touchControlPoint(size, "dash");
     const jump = touchControlPoint(size, "jump");
     this.#moveBase.position.set(move.x, move.y, 0);
