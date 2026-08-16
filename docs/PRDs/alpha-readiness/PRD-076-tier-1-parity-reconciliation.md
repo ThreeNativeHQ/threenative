@@ -4,8 +4,43 @@ prd_contract: v1
 
 # PRD-076 — Tier 1 aggregate: reconcile two ledgers that cannot both be true, then hold one green run
 
-**Status: PHASE 0 EXECUTED, 2026-08-15. Phases 1–3 not started; this PRD is not done.**
-Evidence: [`docs/verification/parity-reconciliation-2026-08-15.md`](../../verification/parity-reconciliation-2026-08-15.md).
+**Status: PHASES 0, 1 AND 3 EXECUTED ON THE DESKTOP LANE — PHASE 2 OPEN ON ANDROID, 2026-08-15.
+This PRD is not done.**
+Evidence: [`parity-reconciliation-2026-08-15.md`](../../verification/parity-reconciliation-2026-08-15.md)
+for Phase 0, [`tier-1-2026-08-15.md`](../../verification/tier-1-2026-08-15.md) for the rest.
+
+**A third desktop run happened, with provenance, and it adjudicates the disagreement.**
+`66 pass / 0 fail / 1 blocked`, exit `2`, at commit `0358c025` (tree `dirty: true`, recorded not
+tidied — another agent held uncommitted edits outside the conformance path).
+
+| Claim | Verdict |
+|---|---|
+| r2's desktop **summary** `66 / 0 / 1` | **reproduces exactly**, same single excluded row |
+| r2's desktop **exit cell** `0` | **still impossible.** The same summary exits `2`. Phase 0 adjudicated it from the code; this is the same verdict from a live run |
+| tier-1's desktop `65 / 1 / 1`, `25-camera-parented-overlay` failing on resize | **does not reproduce.** The row passes with zero GPU validation errors, and `renderer.setSize` did run inside the viewport loop |
+
+**Phase 1 therefore has nothing to fix, and fixed nothing.** Its outcome — the overlay row passing
+after a mid-run resize with no scene-side annotation — is already true, measured, with the scene
+file unedited. `packages/core/src/renderer.ts` and `viewport.ts` are untouched: a fix authored
+against a defect that does not reproduce would be a change with no observed red behind it.
+
+This does **not** say `tier-1-2026-08-10.md` was wrong when written. The defect does not reproduce
+five days later and the report that would settle which no longer exists. Fixed in passing or
+environment-specific — nothing available distinguishes them, and this PRD does not guess.
+
+**Phase 3 landed for the desktop lane only:** `tier-1-2026-08-15.md` is the generated ledger and
+`pnpm parity:ledger` passes it while failing both predecessors; both carry superseded banners
+scoped to the desktop lane alone.
+
+**Phase 2 is open and is the sharpest remaining disagreement.** The Android emulator lane —
+`67/0/0` against `27/40/0` — was **not run**. Four AVDs exist on this host and `adb` lists no
+running device; booting one, building and installing the app is its own run. The
+`ANDROID_SDK_ROOT`/`ANDROID_HOME` hypothesis for the 40-row delta is still untested. The browser
+lane was not re-run either, and Tier 1 is not claimed reached.
+
+---
+
+The original Phase 0 record follows, unchanged.
 
 **What executed.** The conformance report now carries `provenance` (commit + dirty flag,
 runtime binary hash, reference-capture-set hash, device, and the sorted environment keys the
