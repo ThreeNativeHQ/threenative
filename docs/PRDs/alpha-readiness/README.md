@@ -39,9 +39,11 @@ question. It cannot be alpha while its install command 404s, while two of its ow
 about the same device on the same day, or while its headline verification claim has never survived
 contact with a game somebody else wrote.
 
-**Today's honest answer is: alpha in substance, not in reach.** The gates hold on every landed
-change, three templates scaffold and pass their playtests, desktop native and the iOS simulator
-execute — and nobody outside this machine can install any of it.
+**Today's honest answer is: not alpha at the bar yet.** The published registry and golden-path
+rows pass, but A3 and A6 remain unmeasured; the current seven-template gate also has a reproducible
+action-rpg navigation failure ([verification](../../verification/template-gate-2026-08-16.md)).
+Desktop native and the iOS simulator execute, but nobody outside this machine has completed the
+stranger test.
 
 ## The alpha bar
 

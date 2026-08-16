@@ -17,7 +17,12 @@ describe("core package build", () => {
     const module = await import(
       `${pathToFileURL(path.join(dist, "index.js")).href}?test=${Date.now()}`
     );
-    expect(module.version).toBe("0.1.0");
+    // Asserted against the manifest, never a literal: the literal was 0.1.0 while the package
+    // published 0.2.0, so this test certified the skew it existed to prevent.
+    const manifest = JSON.parse(
+      await readFile(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(module.version).toBe(manifest.version);
     expect(module.AnimationPlayer).toBeDefined();
     expect(module.Scheduler).toBeDefined();
     expect(module.createRandom).toBeDefined();

@@ -27,6 +27,23 @@ URL; nothing installs. It is the *adopting-developer* successor that needs a reg
 not 404. The batch README's claim that PRD-080 is blocked on lane A was true only of the
 experiment this PRD just decided not to run first.
 
+**Phase 1's stated premise does not hold, and that is a finding rather than a blocker.** Rows 2
+and 3 of the Integration Ledger, and Phase 1's revert check, all describe a WebGPU-less browser
+showing *"a silent blank canvas"* / *"a black canvas"*. It does not:
+`packages/core/src/renderer.ts:159-176` prefers WebGPU and **falls back to a `WebGLRenderer`**
+when `navigator.gpu` is absent or `WebGPURenderer` construction throws. A browser without WebGPU
+gets a rendered game on WebGL2, not a black rectangle.
+
+So the preflight Phase 1 asks for is not repairing a blank screen. It may still be worth building
+— a stranger on WebGL2 is having a different experience than the one being measured, and the
+session record should say which they got — but that is a **different justification**, and the
+phase should be rewritten around it before it is executed rather than shipping a fix for a
+symptom nobody has reproduced. The negative control as written ("break the preflight → a black
+canvas returns") cannot be observed red, because the black canvas was never the behaviour.
+
+Nothing about the fallback is claimed to be *good*: WebGL2 output has not been compared against
+WebGPU output for this subject, and PRD-080 is not the PRD to do it in.
+
 **Phase 1 is where it stops today.** It needs a public deploy — an outward-facing action — and
 Phases 3 and 4 need a human stranger, which is not agent work.
 

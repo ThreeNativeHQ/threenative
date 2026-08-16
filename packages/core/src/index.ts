@@ -1,4 +1,12 @@
-export const version = "0.1.0";
+/**
+ * The version this library reports.
+ *
+ * It read `0.1.0` while the package published `0.2.0`, and `__tests__/build.spec.ts` asserted the
+ * stale literal, so the test held the bug in place rather than catching it. A literal is
+ * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
+ * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
+ */
+export const version = "0.2.0";
 
 export { AnimationPlayer } from "./animation.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
