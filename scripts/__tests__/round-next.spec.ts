@@ -305,6 +305,11 @@ describe("round:next", () => {
 
     const action = nextRoundAction(root, file);
 
+    // Assert which arm comes first, not merely that a count was printed. The property that makes
+    // this safe is "returns the first candidate in arm order and drops none"; a regression that
+    // reversed the order, or returned the second candidate, would satisfy the count alone.
+    expect(action.command).toBe("pnpm sandbox --bare --arm framework --genre platformer");
+    expect(action.reason).toMatch(/^Build the missing framework arm for platformer\./u);
     expect(action.reason).toMatch(/1 further arm action follows it\./u);
   });
 
