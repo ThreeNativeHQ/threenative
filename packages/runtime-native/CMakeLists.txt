@@ -1,5 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
-project(MystralNativeRuntime VERSION 0.1.13 LANGUAGES C CXX)
+
+# The version is read from package.json, never typed here.
+#
+# It was typed here, and it drifted: release v0.1.14 shipped a binary whose launch log read
+# `Version: 0.1.13`, because package.json was bumped and this line was not. Nothing failed —
+# the consumer proof reported a version skew it could not explain, and ten releases were built
+# and deleted before anyone traced it to two numbers that had to be edited together.
+#
+# MYSTRAL_VERSION compiles into getVersion(), so this single source is what the binary reports.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" MYSTRAL_PACKAGE_JSON)
+string(JSON MYSTRAL_PACKAGE_VERSION GET "${MYSTRAL_PACKAGE_JSON}" version)
+if(NOT MYSTRAL_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
+    message(FATAL_ERROR
+        "TN_NATIVE_VERSION_UNREADABLE: package.json version '${MYSTRAL_PACKAGE_VERSION}' is not "
+        "a three-part version. Refusing to build a runtime that would misreport its version.")
+endif()
+
+project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
 
 if(APPLE)
     enable_language(OBJCXX)

@@ -4,10 +4,39 @@ prd_contract: v1
 
 # PRD-078 — Beta row 5: ten releases were built, published, and deleted again, and one line says why
 
-**Status: PARTIAL, 2026-08-12.** The Phase 0 workflow edit and its local controls are in
-place, but the software Vulkan path is unverified and no tag or workflow was triggered. The
-exact `v0.1.14` version skew is diagnosed as stale native version literals; Phase 1 remains
-unauthorised until Phase 0 executes green. See
+**Status: PARTIAL — Phase 1's question answered, Phase 0 still needs a tag, 2026-08-15.**
+
+**Phase 1's first question is settled by measurement rather than by choosing between three
+candidates.** It asked why a `v0.1.14` release's consumer ran a binary reporting `0.1.13`. It is
+candidate one, a version constant not bumped with the package, and it is two lines:
+
+```console
+$ grep -n version packages/runtime-native/package.json | head -1
+3:  "version": "0.1.14",
+$ head -2 packages/runtime-native/CMakeLists.txt | tail -1
+project(MystralNativeRuntime VERSION 0.1.13 LANGUAGES C CXX)
+$ grep -n 'MYSTRAL_VERSION' packages/runtime-native/CMakeLists.txt
+1229:    MYSTRAL_VERSION="${PROJECT_VERSION}"
+```
+
+`MYSTRAL_VERSION` compiles into `getVersion()`, which `main.cpp:1416` prints as the launch log's
+`Version:` line. Two numbers had to be edited together, one was, and **nothing failed when they
+diverged** — so the consumer proof reported a skew it could not explain and ten releases were
+built and deleted before anyone traced it. Neither a cached artifact nor a manifest resolved from
+a different tag is needed to explain it.
+
+`CMakeLists.txt` now reads the version from `package.json` and refuses to configure if it cannot,
+with `tests/native-version-stamp.test.mjs` asserting the literal cannot come back.
+
+**Unverified, and stated as such: this host has no CMake**, so the two cases that configure the
+project skip here and only the "no literal in CMakeLists.txt" case ran. `which cmake` → not found.
+The change is exercised by `pnpm native:build` or by any machine with CMake on `PATH`, and it is
+not claimed green until one runs.
+
+**Phase 0 still needs its tag, and this session did not push one.** A tag push builds and
+publishes GitHub release binaries — an outward-facing, irreversible action of the same class as
+PRD-119 Phase 2, which the owner gated on 2026-08-15. The software Vulkan path therefore remains
+unverified and no workflow was triggered. See
 [`consumer-handoff-2026-08-12.md`](../../verification/consumer-handoff-2026-08-12.md).
 The original evidence below is a read of
 `.github/workflows/native-release.yml` at commit `8c5fc40`, of `gh run`/`gh api` output taken
