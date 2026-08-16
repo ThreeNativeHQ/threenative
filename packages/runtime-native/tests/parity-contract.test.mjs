@@ -77,7 +77,10 @@ test("the parity registry implements Tier 1 and Tier 2 rows and documents exclus
     ["rapier-wasm-mobile", "PRD-046"],
     ["recast-wasm-mobile", "PRD-052"],
     ["raw-glsl-shader-material-webgpu", "PRD-054"],
-    ["desktop-multitouch-input", "PRD-064"],
+    // Moved from PRD-064 on 2026-08-15. The exclusion's reason was "the desktop lane has no
+    // native multitouch injector"; it has one, and what it lacks is a host that delivers what
+    // the injector writes. PRD-077 owns that finding, so it owns the exclusion.
+    ["desktop-multitouch-input", "PRD-077"],
   ]);
 });
 
