@@ -68,3 +68,29 @@ Trace how `dt` reaches game systems during a harness-driven run and make it come
 frames the harness pumped. A scenario that says `holdTicks: 30` should produce exactly the same
 simulation on every machine. Until that holds, `pnpm verify:golden-path` is red on any host whose
 GPU is fast enough, and the action-rpg combat scenario is the first place it shows.
+
+## An attempted fix, and why it was reverted — 2026-08-15
+
+The framework already carries the remedy: `playtest({ holdUntilAttached: true })` holds the loop
+until a runner calls `describe()`, and its own doc comment describes this exact race. **No shipped
+template opts in** — all seven install `playtest()` bare, so every template races its own boot.
+
+The obvious fix is to make it the default whenever a runner is actually present: the runner sets a
+global in `addInitScript` before any game code evaluates, and `playtest()` holds when it sees that
+global. That keeps `pnpm dev` unaffected, since no runner means no hold.
+
+It was implemented, unit-tested, proven removal-sensitive, and **reverted**, because
+`pnpm verify:golden-path` then failed with `TN_PLAYTEST_CAPABILITY_MISSING` where it had not
+before. Holding that early means `describe()` answers before the game has finished registering its
+runtime observations, so the description the runner reads is missing capabilities the scenario
+requires. The option's own documentation warns about the ordering — "a provider used with this
+option must be ordered before `playtest()`" — and that constraint is exactly why it ships opt-in
+rather than on.
+
+So the remedy exists but cannot simply be defaulted on. Making the boot deterministic needs either
+the hold to begin after capability registration rather than before it, or the capability
+contributions to be collected before the hold. That is a design change in the plugin's setup
+ordering, not a flag, and it should be made deliberately rather than as a side effect of chasing a
+red gate.
+
+Recorded so the next attempt starts from the failure rather than repeating it.
