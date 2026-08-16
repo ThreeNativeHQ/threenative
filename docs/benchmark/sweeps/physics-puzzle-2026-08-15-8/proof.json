@@ -375,9 +375,9 @@
           "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
           "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
           "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-          "path": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json/assert/settled/crate.",
+          "path": "/tmp/threenative-proof-DkNVjs/physics-puzzle.playtest.json/assert/settled/crate.",
           "severity": "error",
-          "sourcePath": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json",
+          "sourcePath": "/tmp/threenative-proof-DkNVjs/physics-puzzle.playtest.json",
           "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
         }
       ],

@@ -41,22 +41,22 @@
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0xfec0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0xdd400163c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0xfec0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0xdd400163c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0xfec0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0xdd400163c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0xfec0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
+        "text": "[.WebGL-0xdd400163c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
         "type": "warning"
       }
     ],
@@ -769,7 +769,7 @@
       }
     ],
     "visual": {
-      "changedPixelRatio": 0.004559461805555555,
+      "changedPixelRatio": 0.004544270833333333,
       "comparisonSource": "before-after"
     }
   },

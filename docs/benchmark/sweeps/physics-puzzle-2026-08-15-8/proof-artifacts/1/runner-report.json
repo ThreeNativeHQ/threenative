@@ -41,9 +41,9 @@
       "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
       "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
       "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-      "path": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json/assert/settled/crate.",
+      "path": "/tmp/threenative-proof-DkNVjs/physics-puzzle.playtest.json/assert/settled/crate.",
       "severity": "error",
-      "sourcePath": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json",
+      "sourcePath": "/tmp/threenative-proof-DkNVjs/physics-puzzle.playtest.json",
       "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
     }
   ],
@@ -133,22 +133,22 @@
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0x58c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0x58c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "text": "[.WebGL-0x58c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
         "type": "warning"
       },
       {
         "source": "browser-console",
-        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
+        "text": "[.WebGL-0x58c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
         "type": "warning"
       }
     ],
@@ -9676,7 +9676,7 @@
       }
     ],
     "visual": {
-      "changedPixelRatio": 0.16702256944444444,
+      "changedPixelRatio": 0.16703884548611111,
       "comparisonSource": "before-after"
     }
   },

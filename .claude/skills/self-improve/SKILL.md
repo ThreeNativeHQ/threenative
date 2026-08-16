@@ -115,6 +115,24 @@ round — say so and rebuild, never publish a contaminated pair.
 - **Neither builder reads `packages/`, `docs/`, `CHARTER.md`, or any `AGENTS.md` in this
   repo** — that is `build-on-sandbox`'s core rule, and the sandbox exists to enforce it.
 
+## Verify the control before believing what it proved
+
+A negative control that does not bite produces a result that reads as evidence and is not. On
+2026-08-15 a gutted-arm control set `CRATE_COUNT` to `0` and the build scored **10/12 — identical
+to the intact arm**. Read without checking, that is a devastating finding: *the sealed proof cannot
+tell a gutted build from a working one*. The archive's own details said `bodies: 29`. The constant
+governed only part of the level, so nothing had been gutted, and the striking result was an artefact
+of a control that changed nothing.
+
+This is the exact inversion of the defect this loop exists to catch. There a gate reported green
+while asserting nothing; here a gate would have reported *alarming* while controlling nothing. Both
+are the instrument lying with confidence, and the second is more dangerous because it looks like a
+finding worth acting on.
+
+**So: before you believe what a control proved, confirm the control changed what it said it
+changed.** Read the observation, not the score — body counts, entity lists, the fields the run
+reports back. A control you have not verified is not evidence in either direction.
+
 ## What a round may not do
 
 - Edit a sealed `brief.md`, `reference.png`, or proof scenario. Their hashes are in the
