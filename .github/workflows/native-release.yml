@@ -351,7 +351,7 @@ jobs:
           log="$RUNNER_TEMP/threenative-consumer.log"
           screenshot="$RUNNER_TEMP/threenative-consumer.png"
           trap 'status=$?; trap - ERR; cat "$log"; exit "$status"' ERR
-          xvfb-run -a -s '-screen 0 1600x900x24' \
+          sh scripts/xvfb.sh \
             "$CONSUMER_TARGET/dist-native/threenative-consumer-proof" \
             --screenshot "$screenshot" --frames 300 > "$log" 2>&1
           grep -F 'TN_NATIVE_SMOKE_READY:webgpu' "$log"

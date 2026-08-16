@@ -1,11 +1,11 @@
-# Mystral Native - Android Build
+# ThreeNative Runtime — Android Build
 
 ## Prerequisites
 
 1. **Android Studio** (or command-line SDK tools)
 2. **Android NDK** r25 or later
 3. **CMake** 3.22.1+
-4. **Mystral dependencies** downloaded
+4. **ThreeNative runtime dependencies** downloaded
 
 ## Download Dependencies
 

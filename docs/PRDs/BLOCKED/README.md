@@ -7,7 +7,6 @@ dependency is not ready.
 
 | Reason | PRDs | What unblocks it |
 |---|---|---|
-| [`requires-ios-simulator/`](requires-ios-simulator/) | [PRD-045](requires-ios-simulator/PRD-045-playtest-on-device.md) | Two consecutive green hosted iOS-simulator runs |
 | [`requires-parity-rerun/`](requires-parity-rerun/) | [PRD-054](requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | A clean, non-blocked cross-platform parity run |
 | [`requires-touch-evidence/`](requires-touch-evidence/) | [PRD-055](requires-touch-evidence/PRD-055-native-hud-reopened.md) | Android touch-playability evidence |
 | [`requires-physical-device/`](requires-physical-device/) | [PRD-056](requires-physical-device/PRD-056-physical-mobile-qualification.md) | Named physical Android/iOS devices, signed artifacts, and Apple credentials |
@@ -18,7 +17,6 @@ dependency is not ready.
 | [`requires-ray-measurement/`](requires-ray-measurement/) | [PRD-088](requires-ray-measurement/PRD-088-physics-spatial-queries.md) | Authoritative pre-implementation ray measurement |
 | [`requires-packed-gate/`](requires-packed-gate/) | [PRD-112](requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [repair](requires-packed-gate/PRD-112-repair-golden-path-contract.md) | Green packed seven-template gate |
 | [`requires-sealed-proof/`](requires-sealed-proof/) | [PRD-113](requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md), [repair](requires-sealed-proof/PRD-113-repair-sealed-behavior-proof.md) | Positive behavior-based sealed proof |
-| [`requires-paired-round/`](requires-paired-round/) | [PRD-114](requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md) | Fresh paired framework/vanilla round |
 | [`requires-evdev-delivery/`](requires-evdev-delivery/) | [PRD-077](requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) | A host that delivers a kernel input device to the window under test: this user in the `input` group, or the desktop lane on a seated X server instead of Xvfb. The injector itself is built and proved to the kernel boundary |
 
 Moved on 2026-08-15. The old `docs/PRDs/native/blocked/README.md` remains as a native-lane

@@ -52,8 +52,8 @@ useless value ledger. **Standing total: 67/100**, on a scale that is not compara
 
 | # | Axis | The claim a user would care about | Instrument | Measured | Score |
 |---|---|---|---|---|---|
-| 1 | **Start a project** | "There is something to run in a minute" | CI `scaffold-smoke`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md) | Three templates — `minimal`, `platformer`, `starter` — each scaffolded and playtested on every CI run. The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default and the CLI names every choice | **16/20** — gated and green; 42.89% of original starter lines survived, so the richer default still carries rewrite cost |
-| 2 | **Author the content** | "An agent can find and make my assets" | the two pinned MCP servers, `asset-mcp-tools.json` | `threenative-asset-mcp@0.4.0` (32 tools) and `threenative-sculpt-mcp@0.1.0` (5 tools + 31 resources) install and launch in all three templates via `.mcp.json`. Surface recorded by running the pinned server, never from its docs | **10/20** — ships and runs, **but the asset MCP's own visual-improvement gate lost to the no-MCP control**; the sculpt MCP has no preference or token telemetry at all |
+| 1 | **Start a project** | "There is something to run in a minute" | CI `scaffold-smoke`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md) | Seven templates — `minimal`, `platformer`, `starter`, `action-rpg`, `defense`, `racing`, `shooter` — are scaffolded and playtested by the template gate. The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default and the CLI names every choice | **16/20** — gated and green; 42.89% of original starter lines survived, so the richer default still carries rewrite cost |
+| 2 | **Author the content** | "An agent can find and make my assets" | the two pinned MCP servers, `asset-mcp-tools.json` | `threenative-asset-mcp@0.4.0` (32 tools) and `threenative-sculpt-mcp@0.1.0` (5 tools + 31 resources) install and launch in all seven templates via `.mcp.json`. Surface recorded by running the pinned server, never from its docs | **10/20** — ships and runs, **but the asset MCP's own visual-improvement gate lost to the no-MCP control**; the sculpt MCP has no preference or token telemetry at all |
 | 3 | **Know it works** | "My game is asserted, not eyeballed" | `@threenative/playtest`, exit codes | Fails closed: malformed assertion throws, missing bridge exits `2`, a pre-satisfied assertion reports `TN_PLAYTEST_ASSERTION_TRIVIAL`. Same scenario runs on device with `--target android` or `--target ios` | **18/20** — the strongest thing here; docked only because a plain Three.js project can install the same bridge |
 | 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone. On an identical-scene load test, **3.0–3.9× Godot 4.7.1** on web, desktop and the same phone, all three pairs `GATE PASS` | **15/20** — one phone, one thermal state, **no iOS hardware**, no store release |
 | 5 | **Write less code** | "You will write less than vanilla" | `pnpm sweep:pair` → `authoredLoc` | Wins 2 of 5 genres: platformer **−187**, topdown **−695**. Loses endless **+442**, exploration **+95**, open-world **+8** | **8/20** — half the corpus, and the ceiling is arithmetic, not backlog (below) |
@@ -118,7 +118,7 @@ lines plus scene-graph annotations and lost the sky, clouds, HUD, animation and 
 `SceneCollapse` in the framework keeps all of them with **zero game-side lines**. That is the
 engine-bug/game-bug rule paying out in a measurement.
 
-**4. The scaffold hands an agent two working asset servers.** All three templates pin and
+**4. The scaffold hands an agent two working asset servers.** All seven templates pin and
 launch `threenative-asset-mcp@0.4.0` (32 tools, surface recorded by running the pinned server
 from inside a scaffolded project) and `threenative-sculpt-mcp@0.1.0` (5 tools, 31
 technique-safe resources), with the generated `AGENTS.md` routing conventional assets,
@@ -163,7 +163,7 @@ path `defineGame` collapses away, so a normally written game does not sit on it.
 
 | Not earned | Why, precisely |
 |---|---|
-| **"Ships to iOS"** | **No Apple hardware exists here.** Simulator only, and the lane ran on an **Apple Vision Pro** until PRD-065 Phase 0; its first genuine iOS run passed and its next run failed. No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence ([PRD-045](../PRDs/BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
+| **"Ships to iOS"** | **iOS-simulator evidence exists from the hosted `macos-15` lane.** No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence follows, so this is not a physical-device or mobile-readiness claim ([PRD-045](../PRDs/done/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
 | **"Ships to Android"** as a *product* claim | One physical Pixel 8 (`shiba`, arm64-v8a, Android 17), one thermal state, no second device, no Play Store release. The frame-rate numbers are real; the fleet claim is not |
 | **"The asset MCP improves your game"** | PRD-032's live-agent exit gate **failed**: the no-MCP control produced the better frame. The owner retained the capability as a disposition, not a pass. Frames, hashes and reviewer scores in `docs/verification/PRD-032-asset-proof/`. PRD-049 shipped with preference and token telemetry recorded **unavailable** |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so that axis tops out near 40/100 — a ceiling, not a backlog item |
@@ -191,9 +191,9 @@ Ranked by how much the sentence at the top would move, cheapest first.
 | 1 | **A stranger plays for five minutes** | Every adoption claim — the project's decisive test | An afternoon and one external person |
 | 2 | **A second physical Android device** | Turns one device into a fleet claim; axis 4 → 18 | Hardware |
 | 3 | **An honest asset-MCP win** — a rerun where the MCP arm beats the no-MCP control | Axis 2 is capped at 10/20 until then | A rerun of PRD-032's live-agent gate |
-| 4 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md) criterion 7, reopened; the attach-race fix landed in `0e4897a` |
-| 5 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+Android sentence outright | [PRD-064](../PRDs/night-watch-26-08-10/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
-| 6 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time; §5 of [the benchmark record](../verification/native-performance-benchmarks-2026-08-11.md) specifies it |
+| 4 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/done/PRD-045-playtest-on-device.md) — hosted simulator evidence is recorded; no physical-device claim follows |
+| 5 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+Android sentence outright | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
+| 6 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time; [the benchmark record](../verification/native-performance-benchmarks-2026-08-11.md) specifies it |
 
 ## The one-line claim, in two versions
 

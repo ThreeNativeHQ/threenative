@@ -18,7 +18,7 @@ These are a quality floor, not a shared style. Users can rewrite or delete the g
 source. A framework package must never import or provide these visual decisions.
 
 `pnpm visuals` checks the six-file structure, scaffolds and builds each template, captures a
-headed WebGPU frame under `xvfb-run`, rejects blank frames with the capture guard, and writes
+headed WebGPU frame through `scripts/xvfb.sh`, rejects blank frames with the capture guard, and writes
 reference images under `docs/verification/visuals/`. A human scores the frames with the
 blind Visuals rubric; the floor is 4/5. The framework arm and frozen vanilla control are
 also scored as a blind pair, with any loss recorded rather than hidden.

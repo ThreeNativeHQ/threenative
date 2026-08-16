@@ -1,10 +1,5 @@
-# The npm release lane. Nothing in this repository published to npm before this file existed:
-# the four packages on the registry were pushed by hand on 2026-08-09 and three were never
-# pushed at all.
-#
-# It runs on a `v*` tag push only. CI minutes are scarce on this plan and a publish is
-# irreversible — a version can be deprecated but never recalled — so this must not be reachable
-# from an ordinary commit.
+# The npm release lane runs on a `v*` tag push only. A publish is irreversible — a version can be
+# deprecated but never recalled — so this must not be reachable from an ordinary commit.
 #
 # `pnpm publish`, never `npm publish`: the workspace declares dependencies as `catalog:` and
 # `workspace:*`, and only pnpm rewrites those to resolved versions on pack. A raw `npm publish`
@@ -69,7 +64,7 @@ jobs:
       - run: pnpm build
       # The publish set, named one package per line so `pnpm publish:check` can assert that no
       # publishable package is missing from it. A package that exists, is not private, and is
-      # absent here is exactly how create-threenative, studio and runtime-native reached 404.
+      # absent here would be omitted from the release.
       #
       #   @threenative/core
       #   @threenative/physics

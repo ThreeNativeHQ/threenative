@@ -1,6 +1,6 @@
 # Asset pipeline — still deferred, with a trigger
 
-**Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-09 — **still
+**Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-16 — **still
 deferred, neither trigger fired.** Nothing in `packages/` or `scripts/` implements a
 build-time asset pipeline, and that is the intended state. Asset discovery is retained by
 product-owner decision after its 2026-08-09 live-agent gate failed. The package budget is a
@@ -12,7 +12,7 @@ it carries a dependency the others must not inherit.
 
 Asset **discovery** — finding a licensed model, texture, HDRI or sound and recording its
 attribution — is separate from the build-time pipeline below. Its scaffold integration
-exists and still ships: all three templates pin `threenative-asset-mcp@0.4.0` and generate a
+exists and still ships: all seven templates pin `threenative-asset-mcp@0.4.0` and generate a
 `.mcp.json`. PRD-032's 2026-08-09 live-agent gate ran against real providers, but the no-MCP
 control produced the better frame (`4/5` overall versus `3/5`). That is a failed visual
 improvement result, not a pass. The product owner intentionally retained the external
@@ -103,7 +103,7 @@ Collider       missing         !
 Not in `@threenative/core`. It is build-time, it carries heavy Node-only dependencies, and
 The package-boundary rule makes that a separate release lane — the shape already used by
 `asset-mcp`: published, MIT, its own lane, 32 tools recorded. Reuse that lane. Package
-count is governed by the dependency-boundary rule and not by a number — six framework
+count is governed by the dependency-boundary rule and not by a number — seven framework
 packages today — so "there is room for one more" is never the argument.
 
 ## The longer-term reason to care

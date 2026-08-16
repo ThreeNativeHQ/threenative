@@ -51,7 +51,7 @@ jobs:
       - name: Capture browser references
         run: |
           set +e
-          xvfb-run -a -s '-screen 0 1600x900x24' \
+          sh scripts/xvfb.sh \
             node packages/runtime-native/conformance/run-conformance.mjs \
             --target web --out artifacts/conformance/web
           status=$?

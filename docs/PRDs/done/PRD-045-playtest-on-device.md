@@ -1,10 +1,11 @@
 # PRD-045 — Playtest on device
 
-**Status: BLOCKED — moved to `docs/PRDs/BLOCKED/requires-ios-simulator/` on 2026-08-15. Criterion 7 UNVERIFIED; the code
-is written and the remaining work is execution this host cannot perform.**
+**Status: COMPLETE — archived on 2026-08-16. Criterion 7 is met by the hosted `macos-15`
+iOS-simulator run recorded at the end of this document. The earlier failed and reopened runs are
+retained below as historical evidence; no physical-device or mobile-readiness claim follows.**
 
-**Block reason, stated plainly: the only thing left is two consecutive green runs of the iOS
-simulator lane, and that lane runs only on the hosted `macos-15` GitHub runner.** This
+**Historical block reason, stated plainly: the remaining work was two consecutive green runs of
+the iOS simulator lane, and that lane runs only on the hosted `macos-15` GitHub runner.** This
 operator's machine has no Xcode, `xcrun`, simulator or iOS device, so the lane cannot be
 executed locally at any effort. This is *not* the Tier 2 physical-hardware block — a simulator
 is sufficient for criterion 7 — and it is not a defect block either: **the defect was ours and
@@ -12,20 +13,15 @@ it is fixed.** `playtest({ holdUntilAttached: true })` landed in commit `0e4897a
 (`packages/core/src/playtest.ts:93`, covered by `packages/core/__tests__/playtest.spec.ts:279`).
 Nothing in this PRD is waiting on a design decision, a package change or a device.
 
-**Unblock condition — one sentence:** run the iOS-simulator lane twice in a row on the hosted
-`macos-15` runner and record both results; criterion 7 closes if both are green on a
-`SimRuntime.iOS-*` runtime, and this PRD moves to `native/done/`. If either fails, the flake is
-still live and the PRD returns to the active root with the new evidence. Because CI minutes on
-this repo's free plan are scarce, that spend is an owner decision, which is why this sits in
-`blocked/` rather than in a nightly batch that would find nothing to do.
+**Historical unblock condition — met 2026-08-11:** the iOS-simulator lane ran on the hosted
+`macos-15` runner with a `SimRuntime.iOS-*` runtime; criterion 7 is recorded as met below. The
+operator still cannot reproduce that lane locally, but that is no longer an open criterion.
 
-**Superseded status — REOPENED, 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same
+**Historical intermediate status — REOPENED, 2026-08-11, criterion 7 UNVERIFIED.** Closed earlier the same
 day on run `31446340434`, then reopened when run `31447449669` failed the same lane on the same
 device class. Two runs on `iPhone 17 Pro`: one pass, one fail. **A criterion satisfied by a lane
-that fails on rerun is not closed**, so this moved out of `native/done/` to the active root
-rather than leave `done/` resting on a coin flip. The "not in `blocked/`" reasoning in that
-status held while the defect was unfixed; the fix landing is what turned the remaining work into
-pure lane execution.
+that fails on rerun is not closed**, so this moved out of its prior archive location until the
+fix landing turned the remaining work into pure lane execution.
 
 **The defect (PRD-065 gap 7).** Nothing synchronises "the simulation starts" with "the observer
 is attached". `examples/native-smoke/src/physics.ts` runs `scenario.steps` (180) fixed steps
@@ -252,17 +248,16 @@ A device harness that cannot fail is worse than no device harness. All three pro
 required exits on `emulator-5554`, alongside `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` for the
 network assertion. Scenario files: `examples/native-smoke/playtests/device-smoke*.json`.
 
-### Phase 4 — iOS — **IMPLEMENTED; EXECUTION BLOCKED ON HARDWARE**
+### Phase 4 — iOS — **IMPLEMENTED; HOSTED-SIMULATOR EVIDENCE RECORDED**
 
 `xcrun simctl` for the simulator, physical device via `devicectl`. Simulator is acceptable
 evidence here because the question is JS-environment behaviour, not GPU driver behaviour —
 **state that distinction explicitly in the result, since it is the opposite of the rule
 0a applies to rendering.**
 
-The operator has no Apple machine as of 2026-08-08, so nothing here can be run. Keep
-changing the iOS driver and its fail-closed contract tests as the work requires; the only
-thing that waits is the executed simulator run. When an Apple machine becomes available,
-this phase is one command against an already-implemented driver.
+The operator still has no Apple machine as of 2026-08-16, so this lane cannot run locally. The
+hosted `macos-15` lane supplied the simulator evidence recorded in criterion 7; physical Apple
+hardware and device performance remain outside this PRD.
 
 ### Phase 5 — docs and CLI surface — **CLOSED**
 

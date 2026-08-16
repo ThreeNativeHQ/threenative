@@ -163,7 +163,7 @@ round-tripped, and never notice the game does not use the restored value.
 - **The UI boundary is asserted structurally**: no file under `src/ui/` imports from
   `src/entities/`. That is the mistake Flare's `GuiInterface` separation exists to prevent, and
   a lint-shaped assertion catches it before it becomes the kit's teaching example.
-- **`--browser-recipe webgpu`, `xvfb-run -a -s '-screen 0 1600x900x24'` for visuals.**
+- **`--browser-recipe webgpu`, `sh scripts/xvfb.sh` for visuals.**
 
 ## 6. Acceptance criteria
 

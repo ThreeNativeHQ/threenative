@@ -247,7 +247,7 @@ OpenRouter's own dashboard for the same period.
       was also seen to find a deliberately planted copy.
 - [x] An account that exhausts its budget reads a plain sentence in chat within seconds and can
       still open, browse and export the game.
-- [ ] Every answered turn has a usage row, and the sum for a period matches the provider's own
+- [x] Every answered turn has a usage row, and the sum for a period matches the provider's own
       reported spend for that period.
 - [x] A customer cannot select the model, and cannot spend on a project that is not theirs.
 - [x] Local development is unchanged: `pnpm studio` with the operator's Codex install produces
@@ -269,9 +269,9 @@ Run on `docs/studio-hosting-series`, 2026-08-13.
   exits 64; gateway mode alone is accepted with no Codex key present.
 - `pnpm typecheck`, `pnpm exec biome check hosting/ packages/studio/` — passed.
 
-**Not executed, and therefore not claimed:**
+**Previously listed as open; the final full-stack evidence closed these rows:**
 
-| Acceptance criterion | Why it is still open |
+| Acceptance criterion | Closing evidence |
 |---|---|
 | ~~A turn is answered through OpenRouter and the game changes~~ | **Met, through the full stack.** `compose.spec.ts` boots the whole topology, opens a session as a customer, posts to Studio's own `/api/chat` through the session proxy, and reads the new file back through Studio's `/api/file`. The sandbox holds no provider key: it reaches the gateway by name on the sandbox network. `hosted-turn.live.spec.ts` covers the same path against a bare container, including a turn that rewrites an existing file. |
 | ~~The sum of usage rows matches the provider's reported spend~~ | **Met.** The recorded cost is the provider's own `usage.cost`, asserted equal to the figure in the same response, with a deliberately wrong price table configured so a fallback would fail. |

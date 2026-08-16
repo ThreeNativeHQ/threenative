@@ -1,9 +1,9 @@
 # Docs map
 
-**Picking up the native lane?** Start at
-[NEXT-STEPS-2026-08-09.md](NEXT-STEPS-2026-08-09.md) — the executable work queue as of
-`fd92899`, with its evidence in
-[verification/unblocked-2026-08-09-android-touch.md](verification/unblocked-2026-08-09-android-touch.md).
+**Picking up the native lane?** Start at the latest
+[self-improvement ledger](verification/round-10-2026-08-16.md), then follow its recorded next
+action and evidence links. Native platform claims remain evidence-bound: hosted iOS-simulator
+execution exists, while physical-device and performance parity claims remain open.
 
 The first external performance control this repository has had is
 [verification/engine-load-test-summary-2026-08-15.md](verification/engine-load-test-summary-2026-08-15.md)
@@ -20,7 +20,7 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 
 | Folder | Holds | Status of contents |
 |---|---|---|
-| `PRDs/` | Numbered work specs, one per shipped unit | **Binding once merged.** Capped at 10 files |
+| `PRDs/` | Numbered work specs, active proposals, and archived delivery records | Status follows the owning folder; `pnpm budgets` reports counts but does not enforce a PRD-file cap |
 | `verification/` | Gate results per PRD, dated, plus round ledgers | Historical record |
 | `benchmark/` | Protocol, sealed prompts, dated results | Binding protocol, VOID result |
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
@@ -51,9 +51,8 @@ The recomputed round-2 comparison is in
 is [`verification/arm-census-2026-08-08.md`](verification/arm-census-2026-08-08.md).
 
 The self-improvement loop resumes from the newest round ledger — currently
-[`verification/round-3-2026-08-09.md`](verification/round-3-2026-08-09.md), with
-[round 2](verification/round-2-2026-08-07.md) and
-[round 1](verification/round-1-2026-08-06.md) behind it. Resume with `pnpm round:next`;
+[`verification/round-10-2026-08-16.md`](verification/round-10-2026-08-16.md), with earlier rounds
+behind it. Resume with `pnpm round:next`;
 persistent unused-export evidence comes from `pnpm round:deletions`.
 
 The [Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
@@ -91,16 +90,18 @@ backend swaps on the export condition. Write-once/run-anywhere is now owned as a
 ## Spikes
 
 - [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — **CLOSED 2026-08-09.** Its own run never observed a device render; the question was answered *yes* by PRD-047's owned runtime (300 desktop frames + Android emulator, [verification/PRD-047.md](verification/PRD-047.md)). Retained only because superseded PRD-044 and [strategy/NATIVE-LEVELS-2026-08-08.md](strategy/NATIVE-LEVELS-2026-08-08.md) cite it; the React Native route it prescribes is deleted
-- 0b — physics on device: never written as a spike. It became [PRDs/native/PRD-046-physics-native.md](PRDs/native/done/PRD-046-physics-native.md)
+- 0b — physics on device: never written as a spike. It became [PRD-046](PRDs/done/PRD-046-physics-native.md)
 
 A spike is not a PRD. It buys an answer, ships nothing, and is deleted once its answer is
 recorded here and nothing else cites it.
 
-`pnpm budgets` fails CI above 10 files in `docs/PRDs/` — files only, so `docs/PRDs/done/`
-does not count against the cap. Edit an existing document by preference.
+`pnpm budgets` reports framework-package, example-workspace, LOC-trigger, and active-PRD counts;
+it does not enforce a ten-file PRD cap. Archive completed work by lifecycle and keep active
+specifications small enough to review.
 
-[`PRDs/BLOCKED/`](PRDs/BLOCKED/) holds PRDs whose every remaining item is
-blocked on hardware the operator does not have — as of 2026-08-08, no Apple machine, so no
-Xcode, simulator or iOS device. **Blocked is not done.** The criterion stays unmet and the
-PRD moves to `done/` only when it is met on real hardware, never by rewriting it to fit
-what this machine can run. A PRD with any non-hardware work left stays in `PRDs/native/`.
+[`PRDs/BLOCKED/`](PRDs/BLOCKED/) holds PRDs whose remaining work is blocked on unavailable
+hardware, hosted execution, credentials, or another explicit external dependency. Hosted
+`macos-15` runs can produce iOS-simulator evidence; physical devices, signing, thermal, battery,
+and performance-parity claims remain separate. **Blocked is not done.** A PRD moves to `done/`
+only when its acceptance evidence is met, never by rewriting it to fit what this machine can run.
+A PRD with non-blocked work left stays in its active owning folder.

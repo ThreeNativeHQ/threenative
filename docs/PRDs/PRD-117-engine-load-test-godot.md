@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-117 — The engine load test: what ThreeNative and Godot each cost per object, on the browser and on one Android phone
 
-**Status: EXECUTED, 2026-08-15. Web and desktop closed; the phone arm is running.** The
+**Status: PARTIAL — executed 2026-08-15; web and desktop closed, phone arm and acceptance remain
+open.** The
 plan below was written before any of it ran, so tables in later sections may still show the
 shape rather than the result — `docs/verification/engine-load-test-summary-2026-08-15.md`
 is the record of what was actually measured, and it wins over any number here.

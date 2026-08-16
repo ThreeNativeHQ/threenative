@@ -174,7 +174,7 @@ So the detector has to look at pixels, on every frame, across the startup window
 - **Fail closed, in the specific ways this harness has been burned before.** Zero observed
   startup frames is a failure, not a pass. A scenario that never reaches the loading window exits
   `2`, not `0`. A run that cannot read pixels — headless Chromium without WebGPU — fails loudly
-  and names `xvfb-run` in the message, rather than skipping the assertion.
+  and names the capture wrapper in the message, rather than skipping the assertion.
 - **An in-tree reproduction.** `fox-native` is not tracked by this repository and cannot be a
   gate. The repro needs a committed scene that reproduces the same shape: a mesh that keeps
   moving through startup, so the collapse classifies it as a moving part, behind a loading

@@ -1,17 +1,17 @@
 # Batch — production readiness, 2026-08-14
 
-**Status: DELIVERED IN PART, THE REMAINDER MOVED, 2026-08-15.** Four of seven are done and
-archived in `docs/PRDs/done/`: PRD-111, PRD-115, PRD-110 and PRD-116. **The three explicitly
-blocked PRDs moved to [`../BLOCKED/`](../BLOCKED/)**, which now owns their blockers; PRD-121 remains
-in `alpha-readiness/` as `NOT STARTED`. This folder stays as the record of what that night executed;
-it is archived when the moved work lands.
+**Status: DELIVERED IN PART, THE REMAINDER MOVED, 2026-08-16.** Five of the original seven are
+done and archived in `docs/PRDs/done/`: PRD-111, PRD-115, PRD-110, PRD-114 and PRD-116. The two
+blocked PRDs moved to [`../BLOCKED/`](../BLOCKED/), which now owns their blockers. PRD-121 is a
+separate follow-up and is complete in `done/`. This folder stays as the record of what that night
+executed; it is archived when the moved work lands.
 
 | PRD | Now lives in | State when moved | What is actually left |
 | --- | --- | --- | --- |
 | PRD-112 | [`BLOCKED/requires-packed-gate/`](../BLOCKED/requires-packed-gate/) | BLOCKED | The exact packed seven-template gate is red — action-rpg dies on `page.evaluate: Execution context was destroyed`. |
 | PRD-113 | [`BLOCKED/requires-sealed-proof/`](../BLOCKED/requires-sealed-proof/) | BLOCKED | Input causality is fixed and archived; the sealed *consumer* proof still reads 1/6 positive direct rows. |
-| PRD-114 | [`BLOCKED/requires-paired-round/`](../BLOCKED/requires-paired-round/) | BLOCKED | The instrument is repaired and honest; round 7 is still VOID, so no paired round has been run on it. |
-| PRD-117 → **PRD-121** | `alpha-readiness/` | NOT STARTED | Blocked behind PRD-114's fresh paired round. Renumbered on the move: `docs/PRDs/PRD-117-engine-load-test-godot.md` already held 117. |
+| PRD-114 | [`done/PRD-114`](../done/PRD-114-paired-round-on-the-repaired-instrument.md) | DELIVERED | Round 8 is recorded; the instrument is repaired and the result is retained as evidence. |
+| PRD-121 | [`done/PRD-121`](../done/PRD-121-delete-unreached-actuation-members.md) | COMPLETE | The actuation deletion is separate from PRD-117's load-test instrument. |
 
 The two superseded repair lanes moved with their source PRDs into [`BLOCKED/`](../BLOCKED/) —
 they are this batch's history, not active alpha work.
@@ -35,12 +35,12 @@ collisions, and the one PRD that must run alone.
 | # | PRD | Item | The sentence it closes | Runnable on this host? | Estimate |
 |---|---|---|---|---|---|
 | 1 | [PRD-111 — the proof survives a real game](../done/PRD-111-proof-survives-a-real-game.md) | 2 | *"The `test` script is dead the moment you change the game."* | **Delivered**, needed `xvfb` for capture | Phase 1: half a day · Phase 2: one day |
-| 2 | [PRD-110 — verification fails closed](PRD-110-verification-fails-closed.md) | 1 | *"A playtest that saw 18 console errors reported pass."* | **Yes.** Phase 0 is one fixture run | Phase 0: 1 h · Phases 1–4: two days |
+| 2 | [PRD-110 — verification fails closed](../done/PRD-110-verification-fails-closed.md) | 1 | *"A playtest that saw 18 console errors reported pass."* | **Yes.** Phase 0 is one fixture run | Phase 0: 1 h · Phases 1–4: two days |
 | 3 | [PRD-112 — golden path from packed artifacts](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md) | 3 | *"`threenative build` failed where `vite build` succeeded."* | **Yes.** Phase 0 is a clean-dir reproduction | Phase 0: 2 h · Phases 1–3: one to two days |
 | 4 | [PRD-113 — the sealed-brief naming contract](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md) | 4 | *"The sealed proof is unpassable by any blind builder."* | **Needs an owner decision first** | decision, then half a day |
-| 5 | [PRD-114 — one paired round, vanilla arm executed](../BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md) | 5 | *"No round has ever produced a functional-column comparison."* | **Blocked on 4** | Phase 0: 2 h · the round: one day |
+| 5 | [PRD-114 — one paired round, vanilla arm executed](../done/PRD-114-paired-round-on-the-repaired-instrument.md) | 5 | *"No round has ever produced a functional-column comparison."* | **Delivered** | Phase 0: 2 h · the round: one day |
 | 1b | [PRD-115 — the scaffold ships what a user keeps](../done/PRD-115-scaffold-ships-what-a-user-keeps.md) | smaller findings | *"Round 6 deleted 607 of the starter's 1117 lines before it had a game."* | **Delivered** | half a day, landed with PRD-111 |
-| — | [PRD-116 — a native build can move a dynamic body](PRD-116-native-physics-actuation.md) | 6 | *"No native build can push a crate yet."* | **Not tonight** — see *Sizing* | multi-day, Rust |
+| — | [PRD-116 — a native build can move a dynamic body](../done/PRD-116-native-physics-actuation.md) | 6 | *"No native build can push a crate yet."* | **Delivered** — see the archived PRD | multi-day, Rust |
 
 **Start at 1.** PRD-111 is the only unblocked item with no reproduction gate in front of it, it
 lands entirely in templates, and it is the largest unrealised value in the product — 35 combined
@@ -161,7 +161,7 @@ was added. Never silence it.
   export, it was mis-scoped.
 - **Never own the look.** Round 6's visual defects are game-owned and stay that way. The scaffold's
   starting point is the lever, never `packages/`.
-- **WebGPU on this host needs `xvfb-run -a -s '-screen 0 1600x900x24'`.** Headless Chromium renders
+- **WebGPU on this host needs `sh scripts/xvfb.sh`.** Headless Chromium renders
   the canvas blank while the page still loads, so a blank screenshot reads as a styling bug rather
   than a GPU failure. A run that never reached its assertions exits `2` and is recorded as
   **unmeasured** — never a pass, never a red.

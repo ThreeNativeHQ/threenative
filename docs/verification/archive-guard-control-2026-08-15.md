@@ -1,7 +1,7 @@
 # The archive guard fires on round 8's real archive — PRD-114 criterion 4, 2026-08-15
 
 Criterion 4 of
-[PRD-114](../PRDs/BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md):
+[PRD-114](../PRDs/done/PRD-114-paired-round-on-the-repaired-instrument.md):
 *"Deleting an imported sibling from an archive fails the archive step — the instrument's own
 control, observed red."* Round 8 did not run it. This runs it.
 

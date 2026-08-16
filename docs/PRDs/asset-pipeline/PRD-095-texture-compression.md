@@ -238,7 +238,7 @@ Gates:
 
 ```sh
 pnpm typecheck && pnpm lint && pnpm test
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates
+sh scripts/xvfb.sh pnpm test:templates
 ```
 
 ---

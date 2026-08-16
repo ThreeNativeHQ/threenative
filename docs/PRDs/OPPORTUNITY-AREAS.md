@@ -64,7 +64,7 @@ do not treat this original score table as an execution queue.
 ### 1. Asset discovery & licensing — 94 · live gate failed; retained by owner with evidence gap
 
 Three.js ships a `GLTFLoader` and nothing that tells you *where a legally usable model
-lives*. All three current templates now contain `.mcp.json` and install the external asset
+lives*. All seven current templates now contain `.mcp.json` and install the external asset
 MCP; no server code is vendored. The live surface is still 32 tools, not the bounded eight-tool
 profile proposed by PRD-032. The 2026-08-09 live-agent gate completed: the positive arm
 downloaded and credited real Poly Haven and Kenney assets, but a blind critic preferred the

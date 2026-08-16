@@ -4,7 +4,29 @@ prd_contract: v1
 
 # PRD-078 — Beta row 5: ten releases were built, published, and deleted again, and one line says why
 
-**Status: PARTIAL — Phase 1's question answered, Phase 0 still needs a tag, 2026-08-15.**
+**Status: BLOCKED — requires a green hosted release run, 2026-08-16.**
+
+Phase 1 is executed and verified. Phase 0's tag was pushed, the run was read, and the failure this
+PRD was written about is **fixed**: the desktop core gate passed on the runner with 300 frames and
+a non-blank screenshot, and the `SDL_CreateWindow` / `VK_KHR_surface` error that killed the
+previous ten tags did not recur. `darwin-arm64` and `build-android` succeeded.
+
+It is blocked because three *other* legs fail, and none of them can be fixed from here without
+guessing at CI environments:
+
+| Leg | Failure | Why it is not fixable blind |
+|---|---|---|
+| `linux-x64` | `verify-desktop-physics.mjs:185`, *"missed the completed parity marker"* | The same script exits `0` on this host with all three proofs passing. Not the 120s timeout — `spawnSync` reports that as `exited null` |
+| `win32-x64` | `argon2 install: gyp ERR! Could not find any Visual Studio installation` | `argon2` is used only by `hosting/control-plane/`, but `hosting/` is not a workspace package, so it must be a root dependency. The fix is a CI install change that cannot be verified without spending another run |
+| `build-ios-simulator` | `xcrun simctl launch … failed (4)` | Needs an Apple runner to iterate against |
+
+`publish` and both `clean-consumer` jobs were skipped, so no release exists and the consumer proof
+this PRD exists to turn green has still not run. **Beta bar row 5 stays open.**
+
+**What unblocks it:** one hosted release run in which all five build legs are green. The three
+failures above are independent and each has a named next step.
+
+---
 
 **Phase 1's first question is settled by measurement rather than by choosing between three
 candidates.** It asked why a `v0.1.14` release's consumer ran a binary reporting `0.1.13`. It is

@@ -408,7 +408,7 @@ Gates:
 pnpm typecheck && pnpm lint && pnpm test
 pnpm test:templates
 pnpm budgets                 # the 15k trigger report is expected to move; record the new number
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:playtest
+sh scripts/xvfb.sh pnpm test:playtest
 ```
 
 ---

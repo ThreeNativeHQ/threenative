@@ -157,7 +157,7 @@ starts.** No decision, no phase.
    is the vacuous pass the whole verification package exists to prevent.
 
 Both archives exist under `docs/benchmark/sweeps/`. Both runs need
-`xvfb-run -a -s '-screen 0 1600x900x24'`; a run that never reaches its assertions exits `2` and is
+`sh scripts/xvfb.sh`; a run that never reaches its assertions exits `2` and is
 recorded as **unmeasured**, never a pass and never a red.
 
 ### Phase 2 — Audit the other five genres
@@ -199,7 +199,7 @@ Criterion 3 is the one that keeps criterion 2 from being bought with a weaker ga
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Positive replay | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof …` (round 6 archive) | — |
+| Positive replay | `sh scripts/xvfb.sh pnpm sweep:proof …` (round 6 archive) | — |
 | Negative replay | same, against the gutted/round-5 archive | — |
 | Genre audit | `pnpm exec vitest run scripts/__tests__/sealed-contract.spec.ts` | — |
 | Audit negative control | re-add one pinned id → same command | — |

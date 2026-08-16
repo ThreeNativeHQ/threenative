@@ -1,7 +1,7 @@
 # The sealed token gate covers six genres — PRD-113 criteria 4 and 5, 2026-08-15
 
 Closes criteria 4 and 5 of
-[PRD-113](../PRDs/alpha-readiness/PRD-113-sealed-brief-naming-contract.md): *"No value the proof
+[PRD-113](../PRDs/BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md): *"No value the proof
 pins is absent from its brief, for every one of the six genres"* and *"the audit fails when a
 pinned-but-unstated value is re-added"*.
 

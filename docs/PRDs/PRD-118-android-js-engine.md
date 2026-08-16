@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-118 — The Android JavaScript engine: why the phone is three times slower, and what replacing QuickJS costs
 
-**Status: MEASURED, 2026-08-15 — V8 lands, and it closes the gap the PRD was written for.**
+**Status: PARTIAL / PROVISIONAL, 2026-08-15 — V8 lands and closes the measured gap, but the
+required battery precondition failed.** The numerical result is promising; formal acceptance waits
+for a retake on a charged device.
 
 | Pixel 8, 16 384 cubes, collapsed scene | frame p50 | JS per frame |
 |---|---|---|

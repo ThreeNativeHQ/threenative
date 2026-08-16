@@ -264,8 +264,8 @@ cp -R "$positive_source" "$scratch_root/positive"
 cp -R "$negative_source" "$scratch_root/negative"
 REPLAY_POSITIVE_DIR="$scratch_root/positive" REPLAY_NEGATIVE_DIR="$scratch_root/negative" \
   pnpm exec tsx -e 'import fs from "node:fs"; import { sealedProofHash } from "./scripts/make-sandbox.ts"; const hash=sealedProofHash(process.cwd(),"physics-puzzle"); for (const dir of [process.env.REPLAY_POSITIVE_DIR,process.env.REPLAY_NEGATIVE_DIR]) { if (!dir) throw new Error("missing replay directory"); const p=`${dir}/sweep.json`; const v=JSON.parse(fs.readFileSync(p,"utf8")); v.proofHash=hash; fs.writeFileSync(p,`${JSON.stringify(v,null,2)}\n`); }'
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof "$scratch_root/positive"
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof "$scratch_root/negative"
+sh scripts/xvfb.sh pnpm sweep:proof "$scratch_root/positive"
+sh scripts/xvfb.sh pnpm sweep:proof "$scratch_root/negative"
 ```
 
 **Revert check:** evaluate the positive raw report with one required behavior removed; its direct
@@ -278,12 +278,12 @@ the immutable committed source was not silently reinterpreted.
 | Gate | Negative control | Expected red | Exact command/result |
 | --- | --- | --- | --- |
 | anonymous candidate collection | supply no contact/state/body candidates | the evaluator reports unavailable or zero candidates instead of passing | `command: pnpm exec vitest run packages/playtest/__tests__/runner.spec.ts`; result: RED observed: omitted selectors resolved to zero candidates or an empty subject; exit: 1 |
-| pass-through presence | remove the pass-through trigger from raw observations | the labelled pass-through row fails instead of passing on absence | `command: xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-4`; result: RED observed: pass-through step had no present trigger/contact observation; exit: 1 |
-| terminal after contact | provide contact without `won`, then `won` without retained goal contact | terminal success is rejected unless ordered after goal contact | `command: xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-4`; result: RED observed: terminal won state was missing or not ordered after retained goal contact; exit: 1 |
+| pass-through presence | remove the pass-through trigger from raw observations | the labelled pass-through row fails instead of passing on absence | `command: sh scripts/xvfb.sh pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-4`; result: RED observed: pass-through step had no present trigger/contact observation; exit: 1 |
+| terminal after contact | provide contact without `won`, then `won` without retained goal contact | terminal success is rejected unless ordered after goal contact | `command: sh scripts/xvfb.sh pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-4`; result: RED observed: terminal won state was missing or not ordered after retained goal contact; exit: 1 |
 | proof-shape guard | restore baseline `maxCount: 0` or remove the terminal row | the proof-shape test rejects the vacuous or incomplete contract | `command: pnpm exec vitest run scripts/__tests__/proof-set.spec.ts`; result: RED observed: proof shape retained a zero-contact pass-through or lacked terminal success; exit: 1 |
 | public-name firewall | restore one of the four direct identifiers to `brief.md` | the sealed-contract audit reports the leaked gameplay identifier | `command: pnpm exec vitest run scripts/__tests__/sealed-contract.spec.ts`; result: RED observed: public physics-puzzle brief exposed a forbidden gameplay identifier; exit: 1 |
 | resource-path audit | mutate the `state` id and a nested resource path | the retained six-genre audit reports both mutations | `command: pnpm exec vitest run scripts/__tests__/sealed-contract.spec.ts`; result: RED observed: a mutated resource id or nested resource path escaped the sealed audit; exit: 1 |
-| behavior discrimination | replay the gutted committed archive | the replay reaches assertions but fails behavior rows, not an infrastructure exit | `command: xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-5`; result: RED observed: gutted archive failed movement/contact/pass-through/terminal behavior rows; exit: 1 |
+| behavior discrimination | replay the gutted committed archive | the replay reaches assertions but fails behavior rows, not an infrastructure exit | `command: sh scripts/xvfb.sh pnpm sweep:proof docs/benchmark/sweeps/physics-puzzle-2026-08-15-5`; result: RED observed: gutted archive failed movement/contact/pass-through/terminal behavior rows; exit: 1 |
 
 ## Acceptance Criteria
 

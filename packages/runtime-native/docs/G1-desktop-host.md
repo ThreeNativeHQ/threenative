@@ -21,7 +21,7 @@ evidence run must record its dated command, log checks, screenshot path, host an
 Command:
 
 ```sh
-SDL_VIDEODRIVER=x11 xvfb-run -a -s '-screen 0 1600x900x24' \
+SDL_VIDEODRIVER=x11 sh scripts/xvfb.sh \
   packages/runtime-native/build/tn-linux/mystral run \
   examples/native-smoke/dist/native-smoke.js \
   --screenshot packages/runtime-native/artifacts/desktop-core-2026-08-08.png \

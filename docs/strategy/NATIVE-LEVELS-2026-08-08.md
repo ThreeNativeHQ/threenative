@@ -1,6 +1,8 @@
 # Going native — state diagnosis, three levels, effort
 
-**Status:** proposal, 2026-08-08. Not binding. `CHARTER.md` wins on any conflict.
+**Status:** SUPERSEDED historical proposal, 2026-08-08. Not binding. Native runtime and
+hosted-simulator evidence have moved on; use `docs/README.md` and `ROADMAP.md` for current
+status. This record remains because it captures the earlier decision context.
 **Companion to:** `../architecture/NATIVE-RUNTIME.md` (the path), `../spikes/0a-mobile-render.md`
 (the unrun gate), `ROADMAP.md` (which phase), `../PRDs/OPPORTUNITY-AREAS.md` (which area).
 

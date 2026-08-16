@@ -15,8 +15,8 @@ be playable and it has to clear the visual floor, and those two are most of the 
 
 ## 1. Why this is user value and not tidying
 
-Three templates ship and all three are one genre: `minimal`, `starter` and `platformer` are a
-capsule that walks and jumps. **We have never scaffolded a game whose core verb is not
+Before the genre kits, the three original templates were one genre: `minimal`, `starter` and
+`platformer` were a capsule that walks and jumps. **We had never scaffolded a game whose core verb is not
 locomotion**, so every claim that the framework generalises across genres is an argument, not
 a run.
 
@@ -168,7 +168,7 @@ nothing. Every assertion is a quantity the game produces:
 - **The loop is asserted as transitions**, not as a final score: damage → death → respawn →
   pickup → wave cleared, each with its own assertion, so a game that silently skips respawn
   cannot pass by reaching the end.
-- **`--browser-recipe webgpu`, and `xvfb-run -a -s '-screen 0 1600x900x24'` for anything
+- **`--browser-recipe webgpu`, and `sh scripts/xvfb.sh` for anything
   visual**, because headless Chromium renders WebGPU blank here and a blank canvas has passed a
   screenshot assertion in this repo before.
 

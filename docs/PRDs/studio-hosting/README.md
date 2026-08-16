@@ -4,7 +4,7 @@ prd_contract: v1
 
 # The Studio hosting series
 
-**Status: 100–102 COMPLETE, 103–105 PROPOSAL, 2026-08-13.** The product half of the series runs
+**Status: 100–102 COMPLETE; 103 PARTIAL; 104 COMPLETE; 105 PARTIAL, 2026-08-16.** The product half of the series runs
 on `docs/studio-hosting-series`: a container image, accounts and projects, and a session broker
 that opens a live Studio and pushes every commit to the durable repository. Nothing in 103, 104
 or 105 has run — no microVM has booted, no egress policy is applied, no OpenRouter request has
@@ -116,8 +116,9 @@ Three reasons, all mechanical:
 2. **The framework LOC review trigger counts `packages/*/src`.** Putting a SaaS backend there
    would inflate the number that exists to tell you whether the *framework* is growing, and a
    number routed around is worse than no number.
-3. **`pnpm budgets` caps `docs/PRDs/` at ten files, files only.** This folder is why the series
-   can exist without pushing the cap.
+3. **The PRD directory has no file-count cap.** `pnpm budgets` reports current counts and LOC
+   triggers; lifecycle folders keep active proposals, blocked work, and completed records
+   distinguishable.
 
 `hosting/` needs its own `AGENTS.md`, added in PRD-100, because the rules for a deployed service
 are not the rules for a framework.

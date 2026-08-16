@@ -127,7 +127,7 @@ and never reports pass.
 
 ```sh
 pnpm --filter @threenative/playtest build
-xvfb-run -a -s '-screen 0 1600x900x24' node conformance/browser-reference/capture.mjs \
+sh scripts/xvfb.sh node conformance/browser-reference/capture.mjs \
   --registry conformance/registry.json --out artifacts/conformance/web
 ```
 

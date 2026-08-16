@@ -89,7 +89,7 @@ closed by the physical-device proof below.
 Command, run twice against the same booted emulator:
 
 ```sh
-THREENATIVE_ANDROID_SDK=/home/joao/Android/Sdk \
+THREENATIVE_ANDROID_SDK="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}" \
   node packages/runtime-native/scripts/verify-android-first-proof.mjs \
   --device emulator-5556
 ```
@@ -114,12 +114,12 @@ The fox-native portable entry was bundled and packaged twice with the current An
 packager, once with `--orientation portrait` and once with `--orientation landscape`:
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
-ANDROID_HOME=/home/joao/Android/Sdk \
-ANDROID_SDK_ROOT=/home/joao/Android/Sdk \
+JAVA_HOME="${JAVA_HOME:?set JAVA_HOME}" \
+ANDROID_HOME="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}" \
+ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}" \
 node scripts/package-android.mjs \
   --bundle /tmp/fox-orientation/probe.js \
-  --assets /home/joao/projects/fox-native/public \
+  --assets "${FOX_NATIVE_PUBLIC:?set FOX_NATIVE_PUBLIC to the fox-native public directory}" \
   --orientation portrait --output /tmp/fox-orientation/probe-portrait.apk
 ```
 
@@ -200,8 +200,8 @@ multi-touch is not claimed. Full commands and hashes are in
 Command:
 
 ```sh
-THREENATIVE_JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
-PATH=/home/joao/Android/Sdk/platform-tools:$PATH \
+THREENATIVE_JAVA_HOME="${THREENATIVE_JAVA_HOME:?set THREENATIVE_JAVA_HOME}" \
+PATH="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}/platform-tools:$PATH" \
 pnpm --filter @threenative/runtime-native native:verify:android:multitouch \
   --device emulator-5554
 ```

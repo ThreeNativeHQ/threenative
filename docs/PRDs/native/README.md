@@ -47,15 +47,15 @@ flowchart LR
 
 | # | PRD | What it buys | State |
 |---|---|---|---|
-| 1 | [PRD-047](done/PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **done** — Phases 0–5 closed on current cross-platform evidence; 6 split out |
-| 2 | [PRD-045](../BLOCKED/requires-ios-simulator/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **simulator/emulator pass** — physical mobile hardware remains open |
-| 3 | [PRD-046](PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — implementation contract repaired; PRD-048 owns the clean consumer gate |
-| 4 | [PRD-048](PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
-| 5 | [PRD-049](done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |
-| 6 | [PRD-050](done/PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **done** — Linux desktop + Android emulator executed; iOS packaging-only |
-| 7 | [PRD-051](done/PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **done** — candidate A failed; D binds, so no native HUD abstraction ships |
-| 8 | [PRD-052](done/PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 opened and nobody owned | **done** — template steering passes browser + Android device playtests; navmesh stays browser-only |
-| — | [PRD-044](done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
+| 1 | [PRD-047](../done/PRD-047-mystral-runtime-absorption.md) | The runtime, absorbed as `packages/runtime-native`; render/lifecycle integration | **done** — Phases 0–5 closed on current cross-platform evidence; 6 split out |
+| 2 | [PRD-045](../done/PRD-045-playtest-on-device.md) | The app can be *proven*, not just seen | **simulator/emulator pass** — physical mobile hardware remains open |
+| 3 | [PRD-046](../done/PRD-046-physics-native.md) | Native Rapier behind a coarse host-neutral ABI | **in progress** — implementation contract repaired; PRD-048 owns the clean consumer gate |
+| 4 | [PRD-048](../done/PRD-048-native-distribution.md) | A user with no C++ toolchain ships a game | **in progress** — web/Linux/source-Android proven; prebuilt consumer + Apple/Windows open |
+| 5 | [PRD-049](../done/PRD-049-physics-parity-verification.md) | Measured web/host/device agreement through the shared physics API | **done** — browser, linked Rust, and Android x86_64 observable parity proven; broader platform claims remain open |
+| 6 | [PRD-050](../done/PRD-050-native-build-parity.md) | The native artifact is the game the author wrote, or it refuses to build | **done** — Linux desktop + Android emulator executed; iOS packaging-only |
+| 7 | [PRD-051](../done/PRD-051-native-ui-layer.md) | A decision on how a HUD reaches native at all | **done** — candidate A failed; D binds, so no native HUD abstraction ships |
+| 8 | [PRD-052](../done/PRD-052-navigation-on-mobile.md) | The navmesh gate PRD-046 opened and nobody owned | **done** — template steering passes browser + Android device playtests; navmesh stays browser-only |
+| — | [PRD-044](../done/PRD-044-native-render-adapter.md) | Superseded React Native host/package proposal | **archived** — do not execute |
 
 **PRD-050 closed the fail-open artifact divergences.** Native builds now use a declared
 portable entry, reject unsupported graphs, and stage `public/` on every target. The durable

@@ -214,7 +214,7 @@ pnpm tsx scripts/asset-cost-census.ts --json | jq '.scenes[].triangles'
 # Expected: numbers that change when a model is removed from the scene
 
 # 2. Baseline control — the triangle-drop gate must fail before the change
-git stash && xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates; git stash pop
+git stash && sh scripts/xvfb.sh pnpm test:templates; git stash pop
 # Expected: lod.playtest.json absent or failing
 
 # 3. Caller census

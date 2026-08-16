@@ -1,6 +1,6 @@
 # Desktop multitouch — PRD-077 Phase 0, partial — 2026-08-15
 
-Phase 0 of [PRD-077](../PRDs/alpha-readiness/PRD-077-desktop-multitouch-injector.md) asks three
+Phase 0 of [PRD-077](../PRDs/BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) asks three
 questions about this host. **Two are answered here, with commands and output pasted. The third
 was not attempted and is recorded as unexecuted.** No Phase 1 work is authorised by this
 document; no row was run, no registry exclusion was touched, and no beta-bar claim is made.

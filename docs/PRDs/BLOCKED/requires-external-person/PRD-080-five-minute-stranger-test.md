@@ -4,8 +4,29 @@ prd_contract: v1
 
 # PRD-080 — The five-minute stranger test: the project's decisive experiment, specified twice, never run
 
-**Status: PHASE 0 EXECUTED, 2026-08-15. Phases 1–4 not started. No session has been run, no
-person has been contacted, and nothing here reports a result.** No mobile-readiness claim is made.
+**Status: BLOCKED — requires an external person, 2026-08-16.**
+
+Phase 0 is executed: [`STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md) is the
+single definition, the experiment measures a *player*, and every competing restatement is now a
+link. That was the finding this PRD existed to stop repeating — an experiment specified four ways
+gets run zero times — and it is closed.
+
+It is blocked on the one thing no amount of work here produces: **a person who has not seen this
+project, sitting down and playing.** Phases 3 and 4 are a recorded session with consent and a
+transcript. That is a missing external capability in exactly the sense `requires-physical-device`
+is, and it is filed the same way rather than left looking like unstarted work.
+
+**Phase 1 is also not simply pending — its premise is refuted.** Its ledger rows and revert check
+describe a WebGPU-less browser showing a blank canvas; `packages/core/src/renderer.ts:159-176`
+falls back to a `WebGLRenderer`, so such a browser gets a rendered game on WebGL2. The negative
+control as written cannot be observed red. Phase 1 needs rewriting around a different
+justification — *a stranger on WebGL2 is having a different experience than the one being
+measured, and the record should say which they got* — before it is built.
+
+**What unblocks it:** an owner picking the subject build and URL, a deploy, and one external
+person for an afternoon.
+
+---
 
 **Phase 0's decision: the five-minute stranger test is the *player* test.**
 [`docs/product/STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md) is now the

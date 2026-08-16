@@ -45,13 +45,13 @@ experiment was specified three times and never run. This criterion costs an afte
 and is still open. Until it is closed, every metric above is a plan to measure something
 instead of measuring it.
 
-## Currently green, and worth keeping green
+## Signals to keep watching
 
 | Signal | Command | Last known |
 |---|---|---|
-| Framework LOC vs 15k cap | `pnpm budgets` | ~1,600 |
-| Packages vs cap of 8 | `pnpm budgets` | 7 — see [CONFLICTS.md](CONFLICTS.md) |
-| Vanilla vs framework LOC | `pnpm tsx scripts/count-loc.ts` | vanilla wins, 410 vs 412 |
+| Framework LOC review trigger | `pnpm budgets` | 15,285 against the 15,000 review trigger |
+| Framework packages and example workspaces | `pnpm budgets` | 7 packages, 5 examples; informational counts |
+| Vanilla vs framework LOC | `pnpm tsx scripts/count-loc.ts` | generated comparison; current table is 410 vs 432 |
 | CI | GitHub Actions | must be green; no merge while red |
 
 The LOC comparison currently says **vanilla wins**. The kill switch makes that

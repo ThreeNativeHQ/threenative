@@ -216,7 +216,7 @@ grep -rn "setMeshoptDecoder\|modelPass" packages --include='*.ts' | grep -v __te
 # Expected: core/src/assets.ts and assets/src/compile.ts
 
 # 2. Baseline control
-git stash && xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates; git stash pop
+git stash && sh scripts/xvfb.sh pnpm test:templates; git stash pop
 # Expected: models.playtest.json does not exist. If a version of it passes at baseline, it measures nothing.
 
 # 3. Self-verification is real, not a literal
@@ -233,7 +233,7 @@ Gates:
 
 ```sh
 pnpm typecheck && pnpm lint && pnpm test
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates && pnpm test:playtest
+sh scripts/xvfb.sh pnpm test:templates && pnpm test:playtest
 ```
 
 ---

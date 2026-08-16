@@ -409,7 +409,7 @@ all validation facts agree with candidate/cohort; no store upload or physical ru
       substitutes a tarball. Publish runtime-native only after its versioned GitHub lock exists;
       publish create-threenative last.
 - [ ] Run clean consumer jobs with no checkout and no package tarballs: resolve the exact CLI from
-      npm, scaffold all three templates, install with a fresh store, and assert the lock contains no
+      npm, scaffold all seven templates, install with a fresh store, and assert the lock contains no
       `workspace:`, `link:`, `file:`, localhost, or repository path.
 - [ ] Mask/log `cargo`, C/C++, CMake, Ninja, NDK, Rust, and Xcode build entry points in ordinary
       registry consumers. Build/test web, desktop on Linux/macOS/Windows, Android APK on the
@@ -433,7 +433,7 @@ all validation facts agree with candidate/cohort; no store upload or physical ru
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
 | `npm-cohort` | `packages/create-threenative/__tests__/publication.spec.ts` | `should publish one exact resolvable cohort for every generated template dependency` | set equality across template framework pins and candidate manifest; repository packages public; every dependency returns version/integrity; no E404 or local protocol | force runtime lookup to E404; test/gate exits 1 |
-| `registry-only-consumer` | `.github/workflows/native-release.yml` | `checkout-free public scaffold consumer` | job has no checkout; CLI/package URLs are registry/GitHub HTTPS; lock has no local protocol/path; all three scaffolds install/build and target reports match candidate | inject a local tarball override; audit exits 1 |
+| `registry-only-consumer` | `.github/workflows/native-release.yml` | `checkout-free public scaffold consumer` | job has no checkout; CLI/package URLs are registry/GitHub HTTPS; lock has no local protocol/path; all seven scaffolds install/build and target reports match candidate | inject a local tarball override; audit exits 1 |
 | `no-toolchain-consumer` | `.github/workflows/native-release.yml` | `public consumer does not invoke native build tools` | masked command log absent after desktop/Android/iOS consumer builds; supported prebuilt assets verified by lock | make packager invoke `cmake`; shim exits 97 and job fails |
 
 **Revert check:** Restore the current local-tarball scaffold steps. The registry-only structural
@@ -594,7 +594,7 @@ Every criterion is binary and consumer-scoped. An unchecked item means this PRD 
       candidate version with matching integrity/provenance. `create-threenative` and
       `@threenative/runtime-native` no longer return E404, and no external E404 is hidden by a
       tarball.
-- [ ] Checkout-free clean consumers scaffold all three templates from npm and build/test supported
+- [ ] Checkout-free clean consumers scaffold all seven templates from npm and build/test supported
       ordinary web/desktop/Android/iOS-simulator targets from npm+GitHub only; their lockfiles have
       no local protocols/paths and masked native toolchains are never invoked.
 - [ ] N-1 exact pins build from retained npm/GitHub assets, N-1→N upgrade consumes distinct N

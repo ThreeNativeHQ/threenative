@@ -16,9 +16,9 @@ rows.
 
 ```sh
 SDL_VIDEODRIVER=x11 \
-TN_RUNTIME=/home/joao/projects/threejs-webgpu/packages/runtime-native/build/tn-linux/mystral \
+TN_RUNTIME="${TN_RUNTIME:?set TN_RUNTIME to the native host executable}" \
 TN_BROWSER_TIMEOUT_MS=30000 \
-xvfb-run -a -s '-screen 0 1600x900x24' \
+sh scripts/xvfb.sh \
 node packages/runtime-native/conformance/run-conformance.mjs \
   --only-tests 70-webgpu-renderer-init,89-module-import \
   --allow-blocked --out artifacts/conformance/report-2026-08-08.json
@@ -87,11 +87,11 @@ the v24 compatibility build; it also exposes the minimal event constructors and 
 used by the event rows.
 
 ```sh
-xvfb-run -a -s '-screen 0 1600x900x24' \
+sh scripts/xvfb.sh \
   node packages/runtime-native/conformance/run-conformance.mjs \
   --target web --out .runtime/conformance-final-web
 
-xvfb-run -a -s '-screen 0 1600x900x24' \
+sh scripts/xvfb.sh \
   node packages/runtime-native/conformance/run-conformance.mjs \
   --target desktop --reference .runtime/conformance-final-web \
   --out .runtime/conformance-final-desktop
@@ -116,8 +116,8 @@ the final target report, with historical failed attempts retained as history.
 The exact command was:
 
 ```sh
-THREENATIVE_JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
-PATH=/home/joao/Android/Sdk/platform-tools:$PATH \
+THREENATIVE_JAVA_HOME="${THREENATIVE_JAVA_HOME:?set THREENATIVE_JAVA_HOME}" \
+PATH="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}/platform-tools:$PATH" \
 pnpm --filter @threenative/runtime-native native:verify:android:multitouch \
   --device emulator-5554
 ```

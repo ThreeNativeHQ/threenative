@@ -192,7 +192,7 @@ gate script, this PRD did not finish** — that is the test of whether the rail 
   a kit, its card has no image — a missing picture is the visible symptom of an ungated kit,
   which is the right way round.
 - **Studio checks run with `--browser`**, and anything visual runs under
-  `xvfb-run -a -s '-screen 0 1600x900x24'`, because headless Chromium renders WebGPU blank on
+  `sh scripts/xvfb.sh`, because headless Chromium renders WebGPU blank on
   this machine and a blank canvas has passed a screenshot assertion here before.
 
 ## 6. Acceptance criteria

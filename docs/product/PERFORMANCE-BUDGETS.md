@@ -26,7 +26,7 @@ applies as well: options in the framework are reached only through the options, 
 everything unanticipated becomes unreachable.
 
 Budgets are **test assertions**, and the repo already works this way — `scripts/check-budgets.ts`
-enforces LOC and package caps in CI and fails the build. Frame budgets are the
+reports LOC review triggers and hard native-runtime invariants in CI. Frame budgets are the
 same idea pointed at the game:
 
 ```ts
@@ -94,6 +94,6 @@ which is the difference between an agent that iterates and an agent that drifts.
 2. A `performance` assertion block that **throws on malformed input**, never skips —
    the silently-inert-assertion hole.
 3. Profiles as data in the scenario, calibrated later.
-4. Device-lab calibration. **Blocked on Phase 0a.**
+4. Device-lab calibration. **Blocked on the remaining physical-device evidence.**
 
 Steps 1–3 are worth doing on web alone. Step 4 is where the numbers become honest.

@@ -180,7 +180,7 @@ pass through a trigger looks correct for a whole first lap.
 - **Ranking asserts route progress.** Two racers at equal world distance from the finish, one a
   lap behind; assert the order. This is the exact bug the borrowed `getDistanceFromStart()`
   design exists to prevent.
-- **`--browser-recipe webgpu`, and `xvfb-run -a -s '-screen 0 1600x900x24'` for anything
+- **`--browser-recipe webgpu`, and `sh scripts/xvfb.sh` for anything
   visual**, per the standing headless WebGPU limitation on this machine.
 
 ## 6. Acceptance criteria

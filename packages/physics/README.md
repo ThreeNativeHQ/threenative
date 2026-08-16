@@ -5,10 +5,10 @@ Godot-shaped physics nodes backed by Rapier: `RigidBody3D`, `Area3D`,
 
 ## Backend portability
 
-Browser and desktop builds use Rapier WASM `0.19.3`. Android and iOS builds select the
+Browser builds use Rapier WASM `0.19.3`. Native desktop, Android, and iOS builds select the
 ThreeNative runtime's native Rapier `0.30.0` adapter through the `threenative-native` export
 condition. Physics replays and snapshots are repeatable only within the exact pinned runtime
-that recorded them; they are not portable between web/desktop and mobile-native builds,
+that recorded them; they are not portable between web and native builds,
 Rapier versions, operating systems, or architectures.
 
 `world.raw`, `body.raw`, `collider.raw`, and `CollisionShape3D.raw` are backend-specific.

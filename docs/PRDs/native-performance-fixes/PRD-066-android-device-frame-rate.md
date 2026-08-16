@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-066 — Android device frame rate: the debug APK ships an unoptimized interpreter, and QuickJS has no JIT
 
-**Status: ROOT CAUSE MEASURED ON PHYSICAL HARDWARE, 2026-08-10. PHASE 1 LANDED; PHASES 2–5
-OPEN.** First physical Android device ever attached to this repository: a Pixel 8 (`shiba`,
+**Status: PARTIAL — root cause measured on physical hardware; Phase 1 landed; Phases 2–5 remain
+open, 2026-08-10.** First physical Android device ever attached to this repository: a Pixel 8 (`shiba`,
 serial `37251FDJH0037Z`, arm64-v8a, Android 17, 1080×2400, Mali-G715). Every number below was
 executed on it. Nothing here is emulator-derived and nothing here licenses an iOS claim.
 

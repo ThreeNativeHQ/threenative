@@ -198,7 +198,7 @@ happens to be slow, with nothing to catch it.
 
 ### G5 — Template render defaults are untuned, and that is the user's file. Game-side.
 
-All three templates enable soft shadows at 2048×2048 from a single directional key, with a
+All seven templates enable soft shadows at 2048×2048 from a single directional key, with a
 hand-tuned 18-unit shadow camera extent
 (`templates/starter/src/render/lighting.ts:20-44`, and the platformer and minimal
 equivalents). Nothing uses `THREE.LOD` and nothing sets `matrixAutoUpdate = false` on static
@@ -342,11 +342,12 @@ thresholds owned by this PRD.
 Run command:
 
 ```text
-xvfb-run -a -s '-screen 0 1600x900x24' pnpm test:templates
+sh scripts/xvfb.sh pnpm test:templates
 ```
 
-Observed result: exit 0; minimal, starter, and platformer scaffolded playtests passed. The
-three rows above are desktop-web evidence only. No Android, iOS, simulator, physical-device,
+Observed result, recorded for the three-template cohort on 2026-08-11: exit 0; minimal, starter,
+and platformer scaffolded playtests passed. The three rows above are desktop-web evidence only;
+they do not stand in for the current seven-template gate. No Android, iOS, simulator, physical-device,
 or mobile-readiness claim follows from them.
 
 The permanent negative control is unit-driven but uses the production `FixedStepLoop` and

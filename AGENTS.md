@@ -137,9 +137,8 @@ pnpm native:build                  # opt-in; downloads deps, compiles the C++ ho
 pnpm native:verify:desktop         # 300-frame desktop run + non-blank screenshot
 ```
 
-Registry commands use the repository-local `.npmrc` (copied from
-`~/projects/threejs-to-bevy/.npmrc`). Keep it ignored and untracked, never print its
-contents, and pass it explicitly when needed: `npm --userconfig .npmrc <command>`.
+Registry commands use the repository-local `.npmrc`. Keep it ignored and untracked, never print
+its contents, and pass it explicitly when needed: `npm --userconfig .npmrc <command>`.
 
 CI chains `install → typecheck → lint → test → scaffold-smoke → visuals`, with `benchmark`,
 `build → budgets` branching off `test`; each link blocks the next. Native platforms run in a
@@ -157,7 +156,7 @@ A PRD whose status is explicitly `BLOCKED` goes to `docs/PRDs/BLOCKED/<reason>/`
 names the missing evidence or failing gate; `NOT STARTED`, `PARTIAL`, `OPEN` and `PROPOSED` stay in
 their owning batch even when a dependency is not ready. See `docs/PRDs/BLOCKED/README.md`.
 For grouped batches such as `docs/PRDs/starter-kits/`,
-`docs/PRDs/native-performance-fixes/`, and `docs/PRDs/night-watch-26-08-10/`, archive the
+`docs/PRDs/native-performance-fixes/`, and `docs/PRDs/production-readiness-26-08-14/`, archive the
 whole folder with `git mv docs/PRDs/<batch>/ docs/PRDs/done/<batch>/` in the commit that closes
 the last PRD. Do not archive a batch while any PRD is `OPEN`, `SCOPING`, `NOT STARTED`,
 `BLOCKED`, or otherwise partial; a blocked criterion is not completion. If one PRD finishes

@@ -147,7 +147,7 @@ Phase 3: `docs/verification/`, `docs/strategy/ROADMAP.md`,
 `docs/strategy/VALUE-PROPOSITION.md`.
 **No phase after 0 is authorised by this document alone.** Each needs a Phase 0 number first.
 
-**Depends on:** [PRD-077](PRD-077-desktop-multitouch-injector.md) for the desktop
+**Depends on:** [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) for the desktop
 `90-multitouch-input` exclusion, which is the only remaining registry exclusion that keeps
 the desktop lane from being an unqualified aggregate. This PRD can reach green *with* that
 exclusion standing; it cannot reach an unqualified beta row 4 without PRD-077.

@@ -23,7 +23,7 @@ full-screen assumption the PRD warned about would indeed have missed.
 
 Per §7, the exclusion **stays**, its reason is rewritten to name the real blocker rather than a
 missing injector, and its owner moves from PRD-064 to this PRD. Evidence:
-[`desktop-multitouch-2026-08-15-r2.md`](../../verification/desktop-multitouch-2026-08-15-r2.md).
+[`desktop-multitouch-2026-08-15-r2.md`](../../../verification/desktop-multitouch-2026-08-15-r2.md).
 
 **Two things a reader must not take from this:** the runner is unchanged — `runDesktop` is
 `spawnSync` and cannot inject mid-run, and making it async is not worth landing before a host can
@@ -33,7 +33,7 @@ synthetic contacts on the operator's live desktop while they were away.
 ---
 
 The original Phase 0 record, unchanged. Two of three questions were answered with evidence in
-[`docs/verification/desktop-multitouch-2026-08-15.md`](../../verification/desktop-multitouch-2026-08-15.md):
+[`docs/verification/desktop-multitouch-2026-08-15.md`](../../../verification/desktop-multitouch-2026-08-15.md):
 `/dev/uinput` **is** openable unprivileged on this host through an ACL entry (`user:joao:rw-`),
 and a virtual device created through it **is** enumerated by the kernel as a direct touchscreen
 carrying `ABS_MT_SLOT`, `ABS_MT_TRACKING_ID` and `ABS_MT_POSITION_X/Y`. **The permitted-failure
@@ -93,8 +93,8 @@ contract that must not turn a permission problem into a silent pass.
 `packages/runtime-native/docs/` (one operator note on the udev rule),
 `docs/verification/`.
 
-**Depends on:** nothing. **Unblocks:** [PRD-076](PRD-076-tier-1-parity-reconciliation.md)
-Phase 3's unqualified desktop aggregate, [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md)
+**Depends on:** nothing. **Unblocks:** [PRD-076](../../done/PRD-076-tier-1-parity-reconciliation.md)
+Phase 3's unqualified desktop aggregate, [PRD-054](../requires-parity-rerun/PRD-054-write-once-run-anywhere.md)
 criterion 1, and beta bar row 4.
 
 ---

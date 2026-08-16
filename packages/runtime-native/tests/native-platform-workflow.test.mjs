@@ -135,7 +135,7 @@ test('clean desktop consumer provisions software Vulkan and prints its log on fa
   )?.[1];
   expect(launch).toBeDefined();
   expect(launch).toContain(`trap 'status=$?; trap - ERR; cat "$log"; exit "$status"' ERR`);
-  expect(launch.indexOf('cat "$log"')).toBeLessThan(launch.indexOf('xvfb-run'));
+  expect(launch.indexOf('cat "$log"')).toBeLessThan(launch.indexOf('scripts/xvfb.sh'));
   expect(launch).toContain('trap - ERR');
 });
 

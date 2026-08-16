@@ -161,7 +161,7 @@ both.
 `threenative.config.ts` is the source of truth. `package.json`'s `threenative.nativeEntry`
 keeps working, because projects exist that use it, but declaring the entry in both files throws
 `TN_CONFIG_CONFLICT` rather than silently picking one. `renderer.preferWebGPU` either gets
-wired to something real in this PRD or is deleted from all three templates — it does not stay
+wired to something real in this PRD or is deleted from all seven templates — it does not stay
 as a field that reads well and does nothing.
 
 **Fail closed.** Every unrecognised value, malformed group, and missing icon file throws at
@@ -209,7 +209,7 @@ downscale is not worth the dependency.
 - Export a `ThreeNativeConfig` type the template can `satisfies`.
 - `build.ts` reads `nativeEntry` from the loaded config; `package.json`'s block remains a
   fallback and both-declared throws `TN_CONFIG_CONFLICT`.
-- Decide `renderer.preferWebGPU`: wire it or delete it from all three templates. Record which.
+- Decide `renderer.preferWebGPU`: wire it or delete it from all seven templates. Record which.
 - Tests: each group parses; each invalid value throws its named code; absent file yields
   documented defaults; conflict throws.
 
@@ -248,7 +248,7 @@ downscale is not worth the dependency.
 
 ### Phase 6 — the templates teach it, and the record closes
 
-- All three `threenative.config.ts` files ship the full shape with real values and a comment per
+- All seven `threenative.config.ts` files ship the full shape with real values and a comment per
   group, because the scaffold is the documentation and a model learns the API from that file.
 - Template `AGENTS.md`/`CLAUDE.md`: the diagram node stops saying "renderer + plugins" and says
   what the file actually controls. `pnpm sync:agents`.

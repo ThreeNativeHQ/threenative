@@ -54,7 +54,7 @@ partly real in this repo: `ctx.entities` (PRD-006) makes state addressable,
 
 | Surface | What it is | Exists today? |
 |---|---|---|
-| **Runtime** | Open-source engine and framework: `@threenative/core`, `physics`, `ui`, `playtest`, `create-threenative` | **Yes** — 5 packages, ~1,600 LOC |
+| **Runtime** | Open-source engine and framework: `@threenative/core`, `physics`, `ui`, `playtest`, `create-threenative`, `runtime-native`, `studio` | **Yes** — seven packages |
 | **Studio** | Local-first creation, inspection, testing | **Barely** — `DebugOverlay`, `window.__THREENATIVE__.snapshot()`. Full Studio is deferred (CONFLICTS #1) |
 | **Cloud** | Builds, device testing, releases, operations | **No.** Gated on a native render path running on a physical phone |
 

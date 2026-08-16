@@ -156,7 +156,7 @@ this file records the number that closed it.
   deliberately leaks twenty and asserts the fail transition.
 - **Economy is asserted as a ledger**: income over N frames plus spend equals balance. A
   free-tower bug passes any test that only checks a tower appeared.
-- **`--browser-recipe webgpu`, `xvfb-run -a -s '-screen 0 1600x900x24'` for visuals.**
+- **`--browser-recipe webgpu`, `sh scripts/xvfb.sh` for visuals.**
 
 ## 6. Acceptance criteria
 
