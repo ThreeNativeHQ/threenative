@@ -4,8 +4,12 @@ prd_contract: v1
 
 # PRD-076 — Tier 1 aggregate: reconcile two ledgers that cannot both be true, then hold one green run
 
-**Status: PHASES 0, 1 AND 3 EXECUTED ON THE DESKTOP LANE — PHASE 2 OPEN ON ANDROID, 2026-08-15.
-This PRD is not done.**
+**Status: COMPLETE, 2026-08-16.** All four phases executed. Both disputed lanes are measured with
+provenance and checked by `pnpm parity:ledger`; the disagreement is adjudicated in both
+directions; both predecessors carry superseded banners scoped to the lanes actually re-run.
+Phase 1 correctly fixed nothing — see below. **Tier 1 is not claimed reached, and this PRD does
+not claim it**; that was never this PRD's job, which was to make the two ledgers stop
+contradicting each other.
 Evidence: [`parity-reconciliation-2026-08-15.md`](../../verification/parity-reconciliation-2026-08-15.md)
 for Phase 0, [`tier-1-2026-08-15.md`](../../verification/tier-1-2026-08-15.md) for the rest.
 
@@ -32,32 +36,42 @@ environment-specific — nothing available distinguishes them, and this PRD does
 `pnpm parity:ledger` passes it while failing both predecessors; both carry superseded banners
 scoped to the desktop lane alone.
 
-**Phase 2 is open, and the Android lane was attempted rather than skipped.** `threenative_api35`
-boots — Phase 0's "no emulator" is no longer true — and the lane stops at the first row, before it
-compares anything:
+**Phase 2 is executed and the Android lane is green: `67 / 0 / 0`, exit `0`, every row including
+`90-multitouch-input`,** on `rpg_api36_tablet` at commit `a98d2717`.
 
-```
-TN_ANDROID_DISPLAY_ORIENTATION: captured 720x1280 but the lane requires 1280x720;
-the display was still rotating.
-```
+| Claim | Verdict |
+|---|---|
+| r2's Android `67 / 0 / 0` | **reproduces exactly** |
+| tier-1's Android `27 / 40 / 0` | **does not reproduce** |
 
-Reproduced twice, the second time with `TN_ANDROID_SETTLE_MS=8000`,
-`TN_ANDROID_ROTATION_TIMEOUT_MS=30000` and rotation forced. The AVD's panel is 1080x2400 portrait;
-`wm size 1280x720` letterboxes a logical display into it without rotating the framebuffer, so
-`waitForAndroidDisplaySize` is satisfied by the override reading back and the capture is still
-portrait. This is the same panel-versus-logical-display hazard `android-touch.mjs` documents for
-touch coordinates, arriving in the capture path.
+Getting there needed a lane repair, and **the diagnosis recorded here yesterday was wrong.** The
+first attempt failed with `TN_ANDROID_DISPLAY_ORIENTATION` and that was attributed to the AVD's
+portrait panel — explicitly as a hypothesis. A natively landscape 2560x1600 tablet produced the
+identical error, which refutes it.
 
-**Phase 0's `ANDROID_SDK_ROOT`/`ANDROID_HOME` hypothesis is not what stops the lane today** — both
-were set. That does not refute it for the 2026-08-10 run; it is simply a different, named blocker.
-An environment mismatch failing every capture-comparing row identically is the shape a 40-row delta
-would take, and it is recorded as a hypothesis with evidence, **not** as the explanation for
-`27/40/0` — that run's report no longer exists.
+The cause was two lane settings fighting: `wm size` defines the logical display in the panel's
+natural frame and `user_rotation 1` rotates it ninety degrees, so the lane asked for `1280x720`
+and transposed its own request to `720x1280`. Measured both ways on one panel. `user_rotation 0`
+fixes it, and the lane goes from unmeasurable to green.
 
-What would settle it: an AVD with a native 1280x720 landscape panel, or a lane that captures the
-logical display rather than the panel. Neither was attempted.
+The error message is what hid it for two sessions: *"the display was still rotating"* names a
+settle problem, so both investigations spent their time on settle windows while the display had
+finished rotating each time, into the wrong shape.
 
-The browser lane was not re-run, and Tier 1 is not claimed reached.
+A 40-row failure is exactly what this defect produces — every row comparing a capture against a
+1280x720 reference fails identically. **That is a matching signature, not a finding**: the
+2026-08-10 report no longer exists, so whether it is what happened then cannot be established and
+is not claimed.
+
+**Phase 3 is done for both lanes.** `tier-1-2026-08-15.md` carries desktop and Android, passes
+`pnpm parity:ledger`, and both predecessors carry superseded banners scoped to the lanes actually
+re-run.
+
+**Tier 1 is still not reached, and this PRD does not claim it.** The browser lane was not re-run,
+the desktop lane still cannot exit `0` while `90-multitouch-input` is excluded (PRD-077, blocked),
+and an x86_64 emulator on `swiftshader_indirect` is not a phone. What is now true is narrower:
+*the Android emulator lane passes every row it declares, and the desktop lane passes every row it
+declares except one it excludes by name.*
 
 ---
 

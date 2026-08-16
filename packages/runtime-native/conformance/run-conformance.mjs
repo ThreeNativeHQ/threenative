@@ -986,7 +986,14 @@ async function runAndroid(
     if (!/Success/iu.test(String(install.stdout)))
       throw new Error(`adb install did not report Success: ${install.stdout}`);
     common("shell", "settings", "put", "system", "accelerometer_rotation", "0");
-    common("shell", "settings", "put", "system", "user_rotation", "1");
+    // Rotation 0, not 1. `wm size` below defines the *logical* display in the panel's natural
+    // frame, and a 90-degree user rotation transposes it: the lane asked for 1280x720, set
+    // rotation 1, and got a 720x1280 logical frame and a 720x1280 capture, then reported
+    // "the display was still rotating" — a settle problem that was never a settle problem.
+    // Measured on a 2560x1600 panel: rotation 1 gives logicalFrame 0,0-720,1280 and a 720x1280
+    // screencap; rotation 0 gives logicalFrame 0,0-1280,720 and a 1280x720 screencap. The
+    // override alone is what makes the display landscape, so the rotation only fought it.
+    common("shell", "settings", "put", "system", "user_rotation", "0");
     const originalSize = String(common("shell", "wm", "size").stdout || "");
     displayRestore = /^Override size:\s*(\d+x\d+)$/mu.exec(originalSize)?.[1] || "reset";
     common("shell", "wm", "size", ANDROID_CAPTURE_SIZE);

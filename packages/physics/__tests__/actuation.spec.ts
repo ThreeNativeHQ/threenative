@@ -28,8 +28,8 @@ const PRD_116_VERIFICATION_RECORD = path.resolve(
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
-  ["conformance/", 6_169],
-  ["tests/", 7_853],
+  ["conformance/", 6_176],
+  ["tests/", 7_862],
   ["scripts/", 9_082],
   ["include/", 3_760],
   ["android/", 1_843],
