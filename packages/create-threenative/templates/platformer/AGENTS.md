@@ -189,6 +189,11 @@ its creator, license, and source URL to `CREDITS.md` before the turn ends.
 ## Budget real time for the look
 
 The automated gates are blind to how the game looks. **Budget real time for the look:** boot
-the game, capture a headed screenshot under `xvfb-run`, and inspect the silhouette, contact
-shadows, motion, and HUD before calling a visual change done. headless Chromium usually cannot render WebGPU; use a real browser or browser tool, or headed Playwright with
-`--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist`.
+the game, capture a headed screenshot, and inspect the silhouette, contact shadows, motion,
+and HUD before calling a visual change done. Note that headless Chromium usually cannot render WebGPU;
+use a real browser or browser tool, or
+`npx @threenative/playtest <scenario> --browser-recipe webgpu --headed`, whose recipe carries
+the flags a WebGPU capture needs — including `--enable-features=Vulkan`, without which
+Chromium silently serves WebGPU from its CPU rasteriser. On a screenless machine start `Xvfb`
+yourself rather than using `xvfb-run`, which replaces a successful command's exit status with
+a failing one.

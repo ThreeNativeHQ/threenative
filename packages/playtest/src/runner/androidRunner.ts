@@ -34,7 +34,7 @@ import {
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
-import { buildReport, failedDiagnosticsAssertion, playtestStepDrivesMovement, type IStandalonePlaytestReport } from "./runner.js";
+import { buildReport, failedDiagnosticsAssertion, playtestStepDrivesMovement, writeObservationArtifacts, type IStandalonePlaytestReport } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
 
 export interface IAndroidPlaytestDependencies {
@@ -341,6 +341,13 @@ export async function runDevicePlaytest(
       undefined,
       movementSamples,
     );
+    // Same artifacts as the browser target: a diagnostic that names console.json must find it
+    // there whichever target produced the run.
+    await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {
+      console: consoleEntries,
+      network: [],
+      runtimeTrace: undefined,
+    });
     return { ...report, runtime: "native", target: target.name, url: endpoint };
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {

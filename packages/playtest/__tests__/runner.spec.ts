@@ -95,6 +95,65 @@ function report(
   );
 }
 
+// Without --enable-features=Vulkan, or headless on a host the browser will not take a GPU
+// from, Chromium serves WebGPU from SwiftShader and says nothing: the adapter answers, the
+// limits look healthy, and the run reports a CPU rasteriser's results. One sweep lost a
+// scenario to 43 spurious console errors this way. See
+// docs/verification/sweep-platformer-2026-08-16.md.
+function reportWithAdapter(
+  adapter: Record<string, string>,
+  config: IStandalonePlaytestConfig = CONFIG,
+) {
+  return buildReport(
+    config,
+    scenario(undefined),
+    undefined,
+    undefined,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    {
+      adapter,
+      browserArgs: [],
+      captureMethod: "page.screenshot",
+      rendererKind: "webgpu",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    },
+  );
+}
+
+test.each([
+  ["architecture", { architecture: "swiftshader", vendor: "google" }],
+  ["description", { description: "llvmpipe (LLVM 17, 256 bits)", vendor: "mesa" }],
+  ["device", { device: "Microsoft Basic Render Driver", vendor: "microsoft" }],
+])("a software WebGPU adapter named in %s fails the run", (_field, adapter) => {
+  const result = reportWithAdapter(adapter);
+
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+  expect(result.pass).toBe(false);
+});
+
+test("a hardware WebGPU adapter passes without a software diagnostic", () => {
+  const result = reportWithAdapter({ architecture: "turing", vendor: "nvidia" });
+
+  expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+});
+
+test("--allow-software accepts the fallback deliberately", () => {
+  const result = reportWithAdapter(
+    { architecture: "swiftshader", vendor: "google" },
+    { ...CONFIG, allowSoftwareAdapter: true },
+  );
+
+  expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+});
+
 test("runner carries a supplied HUD observation into the evaluated report", () => {
   const result = report(
     scenario({ hud: [{ id: "score", path: "#root", textIncludes: "1" }] }),

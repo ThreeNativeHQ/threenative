@@ -17,6 +17,22 @@ export function resolveBrowserArguments(browserArgs: readonly string[] | undefin
   return [...(browserArgs ?? [])];
 }
 
+const SOFTWARE_ADAPTER = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
+
+/**
+ * Name a software adapter from what `adapter.info` reported. Every field is searched because
+ * which one carries the giveaway depends on the platform: Linux Dawn puts `swiftshader` in
+ * `architecture`, Mesa reports `llvmpipe` in `description`, and a headless Windows run says
+ * `Microsoft Basic Render Driver` in `device`.
+ */
+export function softwareAdapterName(adapter: Readonly<Record<string, string>> | undefined): string | undefined {
+  if (adapter === undefined) return undefined;
+  for (const value of Object.values(adapter)) {
+    if (typeof value === "string" && SOFTWARE_ADAPTER.test(value)) return value;
+  }
+  return undefined;
+}
+
 export interface IBrowserPointerChange {
   isPrimary: boolean;
   pointer: Required<IPlaytestPointer>;

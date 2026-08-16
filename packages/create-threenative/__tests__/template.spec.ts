@@ -518,4 +518,57 @@ describe("template contracts", () => {
     ) as { assert?: { movement?: { minAxisDelta?: { axis?: string; min?: number } } } };
     expect(forward.assert?.movement?.minAxisDelta).toEqual({ axis: "-z", min: 0.5 });
   });
+
+  // Every template reads `input.vector("move")` and six of the seven used to inherit that
+  // binding invisibly from a default, so nothing in the generated project showed an agent what
+  // an axis binding looks like. The same templates bound their buttons with `down`, teaching
+  // the reading of that field the type does not mean. Round 9 friction ledger.
+  it("should declare the move axis and bind buttons with keys", async () => {
+    const names = (await readdir(templateRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    expect(names.length).toBeGreaterThan(3);
+    for (const template of names) {
+      const source = await readFile(path.join(templateRoot, template, "src/game.ts"), "utf8");
+      expect(source, template).toMatch(/move: \{[\s\S]*?up: \[/);
+      const buttonBindings = source
+        .split("\n")
+        .filter((line) => /^\s+\w+: \{[^\n]*\bdown: \[/.test(line));
+      expect(buttonBindings, `${template} binds a button with down instead of keys`).toEqual([]);
+    }
+  });
+
+  // The generated instructions told an agent to use xvfb-run, which replaces a successful
+  // command's exit status with a failing one, and listed Chromium flags without
+  // --enable-features=Vulkan — documenting the SwiftShader configuration the same file calls
+  // invalid evidence.
+  it("should never instruct xvfb-run or a flag list missing Vulkan", async () => {
+    const names = (await readdir(templateRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    for (const template of names) {
+      const agentsPath = path.join(templateRoot, template, "AGENTS.md");
+      const agents = await readFile(agentsPath, "utf8").catch(() => undefined);
+      if (agents === undefined) continue;
+      const lines = agents.split("\n");
+      lines.forEach((line, index) => {
+        // A mention is fine when it carries the warning; an instruction to run it is not.
+        // The warning wraps, so read the sentence around the mention rather than the line.
+        if (/xvfb-run/.test(line)) {
+          const sentence = lines.slice(Math.max(0, index - 3), index + 4).join(" ");
+          expect(sentence, `${template} AGENTS.md line ${index + 1}`).toMatch(
+            /\bnot\b|\bnever\b|rather than|replaces a successful/i,
+          );
+        }
+      });
+      // Positive requirement rather than a guard against the old flag list: a file that tells
+      // an agent how to capture WebGPU must name the configuration that actually reaches the
+      // GPU driver, not one that leaves Chromium on its CPU rasteriser.
+      if (/headed/i.test(agents) && /WebGPU/.test(agents)) {
+        expect(agents, `${template} AGENTS.md`).toMatch(
+          /--browser-recipe webgpu|--enable-features=Vulkan/,
+        );
+      }
+    }
+  });
 });

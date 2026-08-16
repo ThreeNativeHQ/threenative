@@ -57,6 +57,7 @@ export {
   rejectUnknownKeys,
 } from "./scenario.js";
 export type {
+  IPlaytestArtifactRequest,
   IPlaytestPathAssertion,
   IPlaytestFramebufferCoverageAssertion,
   IPlaytestPerformanceAssertion,

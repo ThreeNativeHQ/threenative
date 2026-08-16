@@ -8,6 +8,14 @@ export interface IPlaytestServerConfig {
 }
 
 export interface IStandalonePlaytestConfig {
+  /**
+   * Accept a software WebGPU adapter. Off by default: without `--enable-features=Vulkan`, or
+   * headless on a host whose GPU the browser will not reach, Chromium serves WebGPU from
+   * SwiftShader and nothing errors — the adapter answers, limits look healthy, and the run
+   * reports a CPU rasteriser's results. A run that cannot name a hardware adapter is not
+   * render evidence, so it fails unless the operator says otherwise.
+   */
+  allowSoftwareAdapter?: boolean;
   android?: { activity: string; packageName: string };
   adbPath?: string;
   artifactDirectory: string;
@@ -37,6 +45,7 @@ export interface IPlaytestFlagHelp {
 
 export const PLAYTEST_FLAGS = {
   "--adb": { default: "auto-discover", summary: "absolute adb executable path", takesValue: true },
+  "--allow-software": { default: "false", summary: "accept a software WebGPU adapter as evidence", takesValue: false },
   "--activity": { default: ".MystralActivity", summary: "Android launch activity", takesValue: true },
   "--app": { default: "required for iOS", summary: "built iOS .app bundle", takesValue: true },
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
@@ -126,6 +135,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
         : [];
   return {
     ...(flags.get("--adb")?.[0] === undefined ? {} : { adbPath: flags.get("--adb")![0] }),
+    allowSoftwareAdapter: argv.includes("--allow-software"),
     android: {
       activity: flags.get("--activity")?.[0] ?? ".MystralActivity",
       packageName: flags.get("--package")?.[0] ?? "com.mystral.engine",

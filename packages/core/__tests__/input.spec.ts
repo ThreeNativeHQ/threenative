@@ -179,4 +179,41 @@ describe("InputMap", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  // `keys` exists because `down` reads as "the keys that press this action" while it means
+  // "the −y direction of the axis". A build bound `jump: { down: ["Space"] }`, which worked,
+  // then found `pressed("move")` true whenever ArrowDown was held. See the round 9 friction
+  // ledger, docs/verification/sweep-platformer-2026-08-16.md.
+  it("should press a button action bound with keys", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ jump: { keys: ["Space"] } }, target);
+
+    target.dispatchEvent(keyEvent("keydown", "Space"));
+    input.tick();
+
+    expect(input.pressed("jump")).toBe(true);
+    expect(input.justPressed("jump")).toBe(true);
+    input.dispose();
+  });
+
+  it("should keep keys out of the action vector", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ aim: { keys: ["KeyS", "ArrowDown"] } }, target);
+
+    target.dispatchEvent(keyEvent("keydown", "ArrowDown"));
+
+    expect(input.vector("aim").toArray()).toEqual([0, 0]);
+    expect(input.pressed("aim")).toBe(true);
+    input.dispose();
+  });
+
+  it("should still press an action bound the older way, with down", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ jump: { down: ["Space"] } }, target);
+
+    target.dispatchEvent(keyEvent("keydown", "Space"));
+
+    expect(input.pressed("jump")).toBe(true);
+    input.dispose();
+  });
 });

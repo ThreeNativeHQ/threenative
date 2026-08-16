@@ -29,7 +29,17 @@ export interface ICharacterBody3DOptions {
     readonly includeDynamicBodies?: boolean;
   };
   readonly snapToGround?: number;
+  /**
+   * Vertical acceleration in m/s², added to `velocity.y` every `moveAndSlide(dt)`. It is a
+   * signed component of a velocity, not a strength: **down is negative**. `-9.81` is earth,
+   * `-24` a snappy platformer, `0` a planar top-down game that must not fall, and a positive
+   * value accelerates the character upward.
+   *
+   * Passing the magnitude — `gravity: 24` — makes the character fly, which on screen is
+   * indistinguishable from a broken collider. Default `-9.81`.
+   */
   readonly gravity?: number;
+  /** Terminal downward speed in m/s, as a positive magnitude. Default 50. */
   readonly maxFallSpeed?: number;
   /** Godot's collision_layer — which layers this body occupies. Default 1. */
   readonly collisionLayer?: number;
@@ -60,6 +70,7 @@ export class CharacterBody3D {
   readonly controller: IPhysicsHandle;
   readonly object: Object3D;
   readonly velocity: Vector3;
+  /** Signed vertical acceleration; see `ICharacterBody3DOptions.gravity`. Down is negative. */
   gravity: number;
   maxFallSpeed: number;
   readonly oneWayLayers: number;

@@ -354,6 +354,68 @@ describe("CharacterBody3D", () => {
     character.dispose();
   });
 
+  // Both of these pin a documented contract a build got wrong on screen rather than in a
+  // stack trace: a positive gravity flew the character upward, and a rig parented straight
+  // onto the body floated half a capsule above the floor. See the round 9 friction ledger,
+  // docs/verification/sweep-platformer-2026-08-16.md.
+  it("should treat gravity as a signed velocity component, not a strength", async () => {
+    const { ctx, plugin } = await setup();
+    const falling = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    falling.position.y = 8;
+    const rising = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    rising.position.y = 8;
+    const down = new CharacterBody3D({
+      gravity: -24,
+      object: falling,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+    const up = new CharacterBody3D({
+      gravity: 24,
+      object: rising,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+
+    for (let step = 0; step < 20; step += 1) {
+      down.moveAndSlide(1 / 60);
+      up.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(falling.position.y).toBeLessThan(8);
+    expect(rising.position.y).toBeGreaterThan(8);
+    down.dispose();
+    up.dispose();
+  });
+
+  it("should rest a capsule body's origin halfHeight + radius above the floor", async () => {
+    const { ctx, plugin } = await setup();
+    const halfHeight = 0.26;
+    const radius = 0.28;
+    fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 10), 0, -0.1);
+    const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    object.position.set(0, 3, 0);
+    const character = new CharacterBody3D({
+      gravity: -24,
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(halfHeight, radius),
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.grounded).toBe(true);
+    // The origin is the capsule's centre, so a rig standing on its own origin needs a
+    // -(halfHeight + radius) offset or it floats by exactly this gap.
+    expect(object.position.y).toBeGreaterThan(halfHeight + radius);
+    expect(object.position.y).toBeLessThan(halfHeight + radius + 0.05);
+    character.dispose();
+  });
+
   it("should throw when teleported after dispose", async () => {
     const { ctx } = await setup();
     const character = new CharacterBody3D({

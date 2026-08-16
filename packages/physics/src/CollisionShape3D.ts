@@ -109,6 +109,20 @@ export class CollisionShape3D {
     });
   }
 
+  /**
+   * A capsule of total height `2 * (halfHeight + radius)`, **centred on the body's origin** like
+   * every other shape here — `halfHeight` is the straight section's half-length, measured from
+   * that centre, and the hemispherical cap adds `radius` beyond it.
+   *
+   * So the body origin sits at the character's waist, not at its feet. A visual rig modelled
+   * standing on its own origin, parented straight onto the body object, therefore floats exactly
+   * `halfHeight + radius` above every surface it lands on. Offset the rig down by that amount:
+   *
+   * ```ts
+   * const shape = CollisionShape3D.capsule(0.26, 0.28);
+   * rig.position.y = -(0.26 + 0.28); // feet reach the capsule's bottom cap
+   * ```
+   */
   static capsule(halfHeight: number, radius: number): CollisionShape3D {
     if (!Number.isFinite(halfHeight) || halfHeight < 0)
       throw new Error("CollisionShape3D.capsule requires a finite non-negative halfHeight.");

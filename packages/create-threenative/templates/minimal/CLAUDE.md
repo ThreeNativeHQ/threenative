@@ -378,10 +378,17 @@ Run `pnpm dev`, then get eyes on it. In rough order of preference:
    or an equivalent MCP browser tool. Best option by far: real GPU, so WebGPU works, and
    you can navigate, press keys, screenshot and read the console in one loop. Drive the
    game, do not just load the menu.
-2. **Headed Chromium via Playwright**, under a virtual display if there is no screen
-   (`xvfb-run -a -s "-screen 0 1600x900x24"`), with
-   `--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist`.
+2. **`npx @threenative/playtest <scenario> --browser-recipe webgpu --headed`.** The recipe
+   carries the Chromium flags a WebGPU capture needs, including `--enable-features=Vulkan`.
+   Without that one flag Chromium serves WebGPU from SwiftShader, its CPU rasteriser, with no
+   error and healthy-looking limits; the runner fails that run with
+   `TN_PLAYTEST_SOFTWARE_ADAPTER` rather than reporting a software renderer's picture.
 3. **Ask the user to look**, saying specifically what to check.
+
+On a machine with no screen, run under a virtual display — but **not `xvfb-run`**: its
+cleanup `kill` fails after Xvfb exits and replaces the real exit status, so
+`xvfb-run -a -s '-screen 0 1600x900x24' true` exits `1` and every gate wrapped in it reports
+failure whether it passed or not. Start `Xvfb` yourself and export `DISPLAY`.
 
 What does *not* work: **headless Chromium usually cannot render WebGPU.** The page loads,
 the DOM HUD paints, and the 3D canvas comes out blank — which looks exactly like a bug in

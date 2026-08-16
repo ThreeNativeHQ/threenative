@@ -422,10 +422,21 @@ Run `pnpm dev`, then get eyes on it. In rough order of preference:
    a real GPU, so WebGPU works, and you can navigate, press keys, screenshot, and read the
    console in the same loop you are already coding in. Drive the game, do not just load the
    menu.
-2. **Headed Chromium via Playwright**, under a virtual display if the machine has no screen
-   (`xvfb-run -a -s "-screen 0 1600x900x24"`), launched with
-   `--enable-unsafe-webgpu --disable-gpu-sandbox --ignore-gpu-blocklist`.
+2. **`npx @threenative/playtest <scenario> --browser-recipe webgpu --headed`.** The recipe
+   carries the Chromium flags a WebGPU capture needs, including `--enable-features=Vulkan`.
+   Do not hand-roll the flag list: without that one flag Chromium never reaches the Linux
+   Vulkan driver and serves WebGPU from SwiftShader, its CPU rasteriser — no error, healthy
+   limits, and a software renderer's picture. The runner now fails such a run with
+   `TN_PLAYTEST_SOFTWARE_ADAPTER` and prints the adapter it got; `--allow-software` accepts
+   the fallback if you truly want it.
 3. **Ask the user to look**, and say specifically what you want them to check.
+
+On a machine with no screen, run any of those under a virtual display. **Do not use
+`xvfb-run`:** on `xorg-server-xvfb` 21.1.x its cleanup `kill` fails after Xvfb has already
+exited and that failing kill's status replaces the real one, so
+`xvfb-run -a -s '-screen 0 1600x900x24' true` exits `1`. Every gate wrapped in it reports
+failure whether it passed or not. Start `Xvfb` yourself on a free display and export
+`DISPLAY`, or check the command's own exit code separately.
 
 What does *not* work: **headless Chromium usually cannot render WebGPU.** The page loads,
 the HUD paints, and the 3D canvas comes out blank or black. That looks exactly like a bug

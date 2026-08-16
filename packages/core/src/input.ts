@@ -1,11 +1,36 @@
 import { Vector2 } from "three";
 
+/**
+ * One action, read either as a button through `pressed`/`justPressed` or as a 2D axis through
+ * `vector`. Which one you get depends on the fields you fill in, and mixing the two is what
+ * makes bindings confusing to read:
+ *
+ * ```ts
+ * jump: { keys: ["Space"], buttons: [0] }                 // a button
+ * move: { up: ["KeyW"], down: ["KeyS"], left: [...], right: [...] }  // an axis
+ * ```
+ *
+ * `up`/`down`/`left`/`right` are **directions of an axis**, not "the keys that press this".
+ * They are named after the vector they build, so `pressed("move")` is true whenever any
+ * direction is held — including `ArrowDown`. For a button, use `keys`.
+ */
 export interface IInputAction {
+  /** Gamepad button indices that press this action. */
   readonly buttons?: readonly number[];
+  /**
+   * Keyboard codes that press this action. Use this for a button — `jump`, `restart`, `fire`.
+   * A key listed here never contributes to `vector`.
+   */
+  readonly keys?: readonly string[];
+  /** The **−y** direction of `vector(name)`. Not "the keys that press this action" — see `keys`. */
   readonly down?: readonly string[];
+  /** The −x direction of `vector(name)`. */
   readonly left?: readonly string[];
+  /** Any active pointer or touch presses this action. */
   readonly pointer?: boolean;
+  /** The +x direction of `vector(name)`. */
   readonly right?: readonly string[];
+  /** The +y direction of `vector(name)`. */
   readonly up?: readonly string[];
 }
 
@@ -132,6 +157,7 @@ export class InputMap {
     const binding = this.#bindings[name];
     if (binding === undefined) return false;
     return (
+      this.#isHeld(binding.keys) ||
       this.#isHeld(binding.down) ||
       this.#isHeld(binding.left) ||
       this.#isHeld(binding.right) ||

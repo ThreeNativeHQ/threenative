@@ -192,6 +192,39 @@ round-9 rows are all about its defaults: SwiftShader without `--headed`, a `cons
 names but never writes, scenarios wired to `pnpm dev` that only pass against `vite preview`, and a
 scaffolded `AGENTS.md` documenting the SwiftShader configuration.
 
+### What was changed on 2026-08-16, and what was not
+
+Five of the six candidates were implemented in the same pass, each with a test that fails when the
+change is reverted. `pnpm typecheck` and `pnpm lint` are clean (215 pre-existing warnings, zero
+errors); `pnpm test` is green apart from two `packages/runtime-native` failures that predate this
+work — `tests/parity-contract.test.mjs` expects `PRD-064` where commit `0358c025` set the registry
+owner to `PRD-077`, reproduced with these changes stashed, and `tests/conformance-runner.test.mjs`
+times out at 60s on a loaded machine.
+
+| Candidate | Change | Proof |
+| --- | --- | --- |
+| 2 — `CharacterBody3D` contract | `gravity` documented as a signed velocity component with the failure mode named; `CollisionShape3D.capsule` documents the centre origin and the `-(halfHeight + radius)` rig offset | `physics/__tests__/character.spec.ts`: a positive gravity rises and a negative one falls; a capsule body rests with its origin between `halfHeight + radius` and `+0.05`. `documentation.spec.ts` gates both doc comments so they cannot be silently deleted |
+| 4 — `Object3D` acceptance | Nothing to change. **The round 9 diagnosis does not reproduce**: a `Group` of parts observes 177×124 px through `Box3.setFromObject`, not zero | `playtest/__tests__/group-entity-visibility.spec.ts` pins Group bounds, a Group's bounds exceeding any single part's, and an empty Group reporting none. The row stays open against a real reproduction rather than a ruled-out cause |
+| 5 — `IInputAction` | Added `keys` for button actions; `down`/`up`/`left`/`right` documented as axis directions; `pressed` honours `keys`, `vector` ignores it. All seven templates now declare `move` explicitly and bind buttons with `keys` — six had been inheriting the axis from an invisible default | `core/__tests__/input.spec.ts`: `keys` presses, `keys` stays out of the vector, and the older `down` form still presses. `create-threenative/__tests__/template.spec.ts` asserts every template declares the axis and binds no button with `down` |
+| 6a — named artifacts | `console.json`, `network.json` and `runtime-trace.json` are written when a channel has content or `artifacts.*` asked for it. `artifacts.console`, `artifacts.network` and `artifacts.runtimeTrace` were accepted and discarded | `playtest/__tests__/artifact-files.spec.ts`, 4 cases including "writes nothing when nothing was asked for and nothing has content" |
+| 6b — software adapter | A WebGPU run whose `adapter.info` names SwiftShader, llvmpipe, lavapipe or a basic render driver fails `TN_PLAYTEST_SOFTWARE_ADAPTER`; `--allow-software` accepts it deliberately, borrowing the flag `scripts/profile-starter.ts` already uses. Scoped to `rendererKind === "webgpu"`, because the repo runs WebGL fixtures headless on purpose | `playtest/__tests__/runner.spec.ts`: three fields that can carry the giveaway each fail, a hardware adapter does not, and `--allow-software` clears it |
+| 6c — scaffolded instructions | Three template `AGENTS.md` files stopped instructing `xvfb-run` and stopped listing flags without `--enable-features=Vulkan`; they now point at `--browser-recipe webgpu --headed` and explain the exit-status trap | `template.spec.ts` fails on any AGENTS.md that mentions `xvfb-run` outside a warning, or that explains WebGPU capture without naming the recipe or the flag |
+
+Two candidates were **not** implemented, on purpose:
+
+- **1 — scene prop content.** The largest measured cost and not a framework change: a screenshot
+  shows every one of those props, so they can only ship as generated user source or come through the
+  asset path. Which of those two, and whether `minimal` should look richer, are product decisions.
+- **3 — a `SceneCollapse` escape hatch.** `packages/core/src/collapse.ts` states the opposite
+  commitment in its own header: "deliberately invisible to the game: nothing here reads a `userData`
+  flag… where the picture cannot be preserved the pass declines and says why". Round 9 fixed the
+  shadow-flag loss inside the pass, which is what that commitment requires. Adding an opt-out
+  reverses a stated design decision and is the owner's call, not a defect fix.
+
+Also left alone, with reasons already on the record: `templates/starter/playtests/seed.playtest.json`
+asserting a starter internal (round 9 deferred it with an open coverage question), and the template
+`test` script targeting `pnpm dev` (round 9 declined to change it as unreproduced on a quiet machine).
+
 ### Closed by this data, so they do not need re-arguing
 
 | Candidate | Why not |

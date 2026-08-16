@@ -9,6 +9,7 @@ import {
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   resolveDiagnosticsPolicy,
+  type IPlaytestArtifactRequest,
   type IPlaytestAssertionResult,
   type IPlaytestCaptureProvenance,
   type IPlaytestDiagnosticsPolicy,
@@ -28,7 +29,7 @@ import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
-import { reconcileBrowserPointers, resolveBrowserArguments } from "./browser.js";
+import { reconcileBrowserPointers, resolveBrowserArguments, softwareAdapterName } from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   finishFramebufferCoverageProbe,
@@ -72,6 +73,38 @@ export async function writeCaptureProvenance(
   provenance: IPlaytestCaptureProvenance,
 ): Promise<void> {
   await writeFile(join(artifactDirectory, "capture.json"), `${JSON.stringify(provenance, null, 2)}\n`);
+}
+
+/**
+ * Diagnostics name `console.json` and `runtime-trace.json`, and `artifacts.console`,
+ * `artifacts.network` and `artifacts.runtimeTrace` accept a request for them. Neither was
+ * written: a build hitting TN_PLAYTEST_CONSOLE_ERROR found the artifact directory holding
+ * only `after.png` and `capture.json`, and had to reconstruct the errors from provenance.
+ * A message that names a file the runner never writes sends the reader somewhere empty, so
+ * write each one whenever it has content or was asked for.
+ */
+export async function writeObservationArtifacts(
+  artifactDirectory: string,
+  requested: IPlaytestArtifactRequest | undefined,
+  observations: {
+    console: readonly unknown[];
+    network: readonly unknown[];
+    runtimeTrace: { readonly recentRuntimeErrors?: readonly unknown[]; readonly [key: string]: unknown } | undefined;
+  },
+): Promise<readonly string[]> {
+  const runtimeErrors = observations.runtimeTrace?.recentRuntimeErrors ?? [];
+  const files: Array<[string, unknown, boolean]> = [
+    ["console.json", observations.console, observations.console.length > 0 || requested?.console === true],
+    ["network.json", observations.network, observations.network.length > 0 || requested?.network === true],
+    ["runtime-trace.json", observations.runtimeTrace, runtimeErrors.length > 0 || requested?.runtimeTrace === true],
+  ];
+  const written: string[] = [];
+  for (const [name, content, wanted] of files) {
+    if (!wanted || content === undefined) continue;
+    await writeFile(join(artifactDirectory, name), `${JSON.stringify(content, null, 2)}\n`);
+    written.push(name);
+  }
+  return written;
 }
 
 interface ILabeledPlaytestSample {
@@ -402,6 +435,11 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       captureFailure,
       movementSamples,
     );
+    await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {
+      console: consoleEntries,
+      network: networkEntries,
+      runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
+    });
     await context.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
@@ -556,6 +594,20 @@ export function buildReport(
   const cameraResult = evaluateCamera(scenario, afterSnapshot);
   const assertionResults = [...evaluated.assertions, ...(cameraResult === undefined ? [] : [cameraResult])];
   const allDiagnostics = [...diagnostics, ...evaluated.diagnostics];
+  // Scoped to WebGPU because that is where the fallback is silent: a WebGL context reports its
+  // software renderer in the same provenance field, but the browser never pretends otherwise
+  // and the repo already runs WebGL fixtures headless on purpose.
+  const softwareAdapter =
+    capture?.rendererKind === "webgpu" ? softwareAdapterName(capture.adapter) : undefined;
+  if (softwareAdapter !== undefined && config.allowSoftwareAdapter !== true) {
+    allDiagnostics.push({
+      code: "TN_PLAYTEST_SOFTWARE_ADAPTER",
+      message: `WebGPU was served by a software adapter: '${softwareAdapter}'. Nothing errored, so every result in this run is a CPU rasteriser's.`,
+      severity: "error",
+      suggestion:
+        "Run with --headed under a display and --browser-recipe webgpu so Chromium reaches the GPU driver, or pass --allow-software to accept the fallback deliberately.",
+    });
+  }
   if (captureFailure !== undefined) {
     allDiagnostics.push({
       code: captureFailure.code,
@@ -1143,7 +1195,7 @@ function normalizedRuntimeDiagnostics(
   snapshot: IPlaytestObservationSnapshot | undefined,
   scenario: IPlaytestScenario,
   consoleEntries: RunnerConsoleEntry[],
-): unknown {
+): { recentRuntimeErrors: unknown[]; runtimeReadouts: unknown[]; scene: { renderedEntities: unknown[] } } {
   const published = snapshot?.diagnostics ?? [];
   return {
     recentRuntimeErrors: [

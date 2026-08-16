@@ -10,13 +10,21 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
   input: {
-    blast: { down: ["KeyE"], buttons: [2] },
-    damage: { down: ["KeyH"] },
-    fire: { buttons: [0], down: ["KeyF"], pointer: true },
-    lethal: { down: ["KeyX"] },
-    probe: { down: ["KeyC"] },
-    projectile: { buttons: [1], down: ["KeyG"] },
-    restart: { down: ["KeyR"] },
+    // The four directions of `input.vector("move")`. Declared rather than inherited from the
+    // default binding, so the axis every scene reads is visible where the game is defined.
+    move: {
+      down: ["ArrowDown", "KeyS"],
+      left: ["ArrowLeft", "KeyA"],
+      right: ["ArrowRight", "KeyD"],
+      up: ["ArrowUp", "KeyW"],
+    },
+    blast: { keys: ["KeyE"], buttons: [2] },
+    damage: { keys: ["KeyH"] },
+    fire: { buttons: [0], keys: ["KeyF"], pointer: true },
+    lethal: { keys: ["KeyX"] },
+    probe: { keys: ["KeyC"] },
+    projectile: { buttons: [1], keys: ["KeyG"] },
+    restart: { keys: ["KeyR"] },
   },
   plugins: [rapier(), replay(), playtest({ events: drainPlaytestEvents })],
   render: config.renderer,
