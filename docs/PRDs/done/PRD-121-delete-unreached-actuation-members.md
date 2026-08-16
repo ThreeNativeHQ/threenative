@@ -96,6 +96,22 @@ Step 3 of the work sequence is explicit that a caller reopens the keep decision,
 record is explicit that the correct close in that case is **rejected**, not deleted. So nothing is
 deleted and steps 4 and 5 do not run.
 
+**Step 5, run rather than skipped.** `pnpm round:deletions` exits `0` against archives
+`physics-puzzle-2026-08-15-9` and `-4`. It reports 273 persistent-unused candidates and
+`applyImpulse` and `applyForce` are not among them, which is consistent with the caller chain
+above: the native backend reaches both.
+
+It could not run at all until the framework archive was rebuilt — the re-seal had been made by
+copying source into a sandbox without installing, so it carried no `node_modules/@threenative`
+declarations and both `round:deletions` and `sweep:pair` refused to measure it. Installing and
+re-archiving fixed both.
+
+**A finding from that output, recorded not silenced.** 58 of the 273 candidates are one or two
+characters long — `$`, `A`, `B`, `C`, `v`, `w`, `x`, `y`, `z`. Those are minified bundle
+identifiers leaking into the export census, not framework exports anyone could delete. The report
+is therefore roughly a fifth noise, which matters because this is the instrument a kill-switch
+decision reads. Not this PRD's to fix; worth knowing before anyone trusts a count from it.
+
 **What stays true and should be re-examined.** No user-space build has reached for either member in
 three rounds. That is a real signal about the *shape of the API*, not a licence to delete code a
 sibling PRD is actively building on. The question a later round should ask is whether native

@@ -62,7 +62,7 @@
                 "replayPhase": "idle",
                 "replayTick": 0,
                 "seed": 6132,
-                "settled": 12,
+                "settled": 9,
                 "solved": false,
                 "solvedBy": ""
               },
@@ -355,7 +355,7 @@
             "minimum": 30,
             "omittedBodies": 0,
             "poseDistance": {
-              "mean": 0.22430896537687894,
+              "mean": 0.23099226060560613,
               "sharedBodies": 38
             },
             "sleeping": 0
@@ -394,9 +394,9 @@
           "code": "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
           "message": "Expected at least 30 physics bodies matching 'crate-' to be asleep; observed 0 of 38.",
           "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-          "path": "/tmp/threenative-proof-hdrfFN/physics-puzzle.playtest.json/assert/settled/crate-",
+          "path": "/tmp/threenative-proof-UMjiXm/physics-puzzle.playtest.json/assert/settled/crate-",
           "severity": "error",
-          "sourcePath": "/tmp/threenative-proof-hdrfFN/physics-puzzle.playtest.json",
+          "sourcePath": "/tmp/threenative-proof-UMjiXm/physics-puzzle.playtest.json",
           "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
         }
       ],
