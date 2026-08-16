@@ -1546,6 +1546,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(mystral src/cli/main.cpp)
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
+    # The desktop conformance lane's multitouch injector. It is a separate program rather than
+    # part of the runtime because it must run *beside* a game, not inside one: it creates a
+    # virtual touchscreen the kernel then delivers to whatever window has focus. Linux only —
+    # uinput is a Linux kernel interface, and the other desktop platforms keep their existing
+    # disposition rather than being silently covered by this result.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(threenative-uinput-touch tools/uinput_touch_device.c)
+    endif()
+
     add_executable(threenative-audio-graph-test EXCLUDE_FROM_ALL tests/audio_graph_test.cpp)
     target_link_libraries(threenative-audio-graph-test PRIVATE mystral-runtime)
 
