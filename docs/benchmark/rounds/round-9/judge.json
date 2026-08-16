@@ -1,0 +1,78 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-03",
+    "confidence": "high",
+    "rationale": "sample-03 is the closest read of the reference: saturated gold star-face coins in a readable line, warm-toned brown wood on a rope bridge in the foreground plane, tan-brown cliff faces under saturated green caps, and a skyline of stone towers plus a windmill on floating islands - all named reference motifs. The character is centred, unoccluded, and framed from behind and above at roughly the reference camera height, and the HUD carries portrait, hearts, coin count, objective line, timer, and jump/restart prompts. sample-02 and sample-04 render cleanly and have the tidiest HUD typography of the four, but their palette departs from the reference: cliffs are neutral grey, distance is fogged to near-white, and coins are pale cream discs rather than saturated gold. sample-01 shares sample-03's palette but its camera has let terrain occlude the player almost completely."
+  },
+  "samples": [
+    {
+      "biggestGap": "The player is occluded by level geometry - only two ear tips are visible behind a platform edge - where the reference keeps the character centred and fully readable.",
+      "evidence": "Coin counter reads 8 / 14 and the timer 00:07.67, and one of three heart pips is greyed out, so collection, timing and a damage state are all progressing - that is real evidence of a working loop, inferred from a still. Composition is the failure: cropping the centre at 3x shows only orange ear tips poking above a grass slab, the rest of the avatar behind a cliff. Two large brown-and-green slabs fill the mid frame and a hard black shadow mass sits under the right slab. Background is on-palette with the reference - gold star coins, red mushroom house, warm-toned brown cliff faces, pink and yellow flowers, a goal pole with a cyan ring - but the horizon sits high and the sky reads pale near the bottom. HUD is complete: portrait, hearts, 8 / 14, objective banner, timer, jump and restart prompts.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.6
+    },
+    {
+      "biggestGap": "Palette drift from the reference: cliff bodies are neutral grey and the distance fogs to near-white, so the warm-toned brown rock and saturated sky that carry the reference's mood are absent.",
+      "evidence": "The fox stands mid-frame on a plank bridge with rope rails over a gap, third-person from behind and slightly above - the reference's staging. HUD reads 8 / 19 coins, JUMPS 0, FALLS 1, plus objective, pause and jump/restart prompts, so collection and a fall/respawn path have both been exercised; a still can only infer the rest. Coins render as pale cream discs with a face-like inset instead of the reference's saturated gold star. Cropping the right side at 2.5x-4x shows the goal pole (white shaft, small yellow tip) on a far ledge and a dark red rounded prop half-hidden by bushes that reads as the hazard. Wood posts and planks are warm tan and do match the reference; cliff sides are flat grey with bead-like green grass rims. Sky is a plain vertical blue gradient with a few flat cloud puffs, thinner than the reference's stacked cumulus.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "Surfaces are flat and untextured with simple hard-edged cones for trees, so the frame lacks the reference's material richness - grass fringe, foliage layering and soft contact shading.",
+      "evidence": "Opening state: 0 / 14 coins, timer 00:00.92, three full hearts. The fox is centred on a wood-plank rope bridge that reads as the reference's foreground bridge almost beat for beat, camera behind and above. Right of frame, at 2.5x, is a line of saturated gold coins with embossed stars over a saturated green ledge, warm-toned brown crates, an exclamation block, pink and cream flowers, rounded bush clusters along the ledge rim, and tan-brown cliff faces - the reference's prop vocabulary. Background carries stone towers with a flag, a windmill, waterfalls and floating islands against a blue sky with white cumulus, matching the reference skyline. HUD gives portrait, hearts, coin count, objective, timer and jump/restart prompts. Playability beyond framing is inferred: a still cannot show that the jump or goal actually work.",
+      "label": "sample-03",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 3.2
+    },
+    {
+      "biggestGap": "The opening frame is a broad, near-empty flat green plain with the challenge pushed to the right edge, where the reference packs coins, hazards and a raised route into the first screen.",
+      "evidence": "Opening state: 0 / 19 coins, JUMPS 0, FALLS 0. The fox is left of centre on a large unbroken light-green plane whose shading barely varies; a triangulation seam is visible running to the bottom-right corner. Two flat-shaded conifers and shapeless blob bush clusters are the only near props. Cropping the right side at 2.5x shows the coin line rendering as pale cream discs with a face-like inset rather than saturated gold stars, and a wood bridge and rail at the frame edge. Distant islands are grey-white and fogged, so the mid-ground reads colourless next to the reference's warm-toned brown cliffs. Sky is a clean blue gradient with soft cloud puffs but washes to white at the horizon. HUD is legible and well laid out - objective, coin count, in-play badge, jumps and falls counters, pause, run and jump/restart prompts.",
+      "label": "sample-04",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.6
+    }
+  ],
+  "verdict": "ready"
+}

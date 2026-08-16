@@ -702,3 +702,60 @@ describe("scene collapse motion detection", () => {
     expect(report?.movingParts).toBe(movers.length);
   });
 });
+
+describe("shadow flags survive the collapse", () => {
+  /**
+   * Round 9's framework arm set `castShadow` on roughly 500 props and rendered with two casters.
+   * The merged meshes were built with Three.js's defaults — both flags `false` — and the sources
+   * were then removed from the scene, so the flags were gone from the graph entirely while
+   * `renderer.shadowMap.enabled` still read `true`. No gate reported it: a scene with no shadows
+   * typechecks, lints, and passes every playtest.
+   */
+  it("should carry castShadow and receiveShadow onto the merged mesh", () => {
+    const scene = new Scene();
+    const material = new MeshToonMaterial({ color: 0x88aa44 });
+    const level = new Group();
+    scene.add(level);
+    for (const mesh of fill(level, material, 24)) {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+    }
+
+    const { report } = run(scene, 6);
+    expect(report?.collapsed).toBe(true);
+
+    const merged = scene.children.filter((child): child is Mesh => (child as Mesh).isMesh === true);
+    expect(merged.length).toBeGreaterThan(0);
+    for (const mesh of merged) {
+      expect(mesh.castShadow).toBe(true);
+      expect(mesh.receiveShadow).toBe(true);
+    }
+  });
+
+  /**
+   * The flags are part of the group key, not merely copied. Copying alone would take whichever
+   * mesh happened to create the group and impose its shadow behaviour on every other mesh sharing
+   * the material — a floor that suddenly casts, or props that stop.
+   */
+  it("should not merge a caster with a non-caster that shares its material", () => {
+    const scene = new Scene();
+    const material = new MeshToonMaterial({ color: 0x88aa44 });
+    const level = new Group();
+    scene.add(level);
+    const meshes = fill(level, material, 24);
+    for (const [index, mesh] of meshes.entries()) {
+      mesh.castShadow = index % 2 === 0;
+      mesh.receiveShadow = true;
+    }
+
+    const { report } = run(scene, 6);
+    expect(report?.collapsed).toBe(true);
+
+    const merged = scene.children.filter((child): child is Mesh => (child as Mesh).isMesh === true);
+    // One draw for the casters and one for the rest, rather than a single draw that has to lie
+    // about one of them.
+    expect(merged.filter((mesh) => mesh.castShadow).length).toBeGreaterThan(0);
+    expect(merged.filter((mesh) => !mesh.castShadow).length).toBeGreaterThan(0);
+    for (const mesh of merged) expect(mesh.receiveShadow).toBe(true);
+  });
+});

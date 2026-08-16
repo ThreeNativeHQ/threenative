@@ -142,7 +142,15 @@ describe("genre sandbox", () => {
       "You may install any npm package you choose, including a physics engine.",
     );
     expect(agents).toContain("fixedStep");
-    expect(agents).toContain("diagnostics: () => []");
+    // The snippet publishes a readout rather than an empty array, and the prose states the
+    // contract. Round 9's vanilla arm followed the old wording — "`diagnostics` returns current
+    // runtime diagnostics" — published its debug HUD, and lost both sealed scenarios because every
+    // entry was counted as a runtime error.
+    expect(agents).toContain('diagnostics: () => [{ label: "FPS", value: fps }]');
+    expect(agents).toContain("is a readout and never fails a proof");
+    // Installing fixedStep without its tick provider throws at module scope and takes the whole
+    // entry file down; the snippet omitted it, and the vanilla builder lost its bootstrap to that.
+    expect(agents).toContain("tick: () => frame");
     expect(agents).toContain("gameplay: () => ({");
     expect(agents).toContain('animation: { player: { clip: "idle", advancedFrames: 1 } }');
     expect(agents).toContain('states: { player: "idle", mission: "playing" }');

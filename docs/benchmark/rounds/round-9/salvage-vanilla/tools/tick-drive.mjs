@@ -1,0 +1,18 @@
+import { chromium } from "playwright";
+const url = process.env.SHOT_URL ?? "http://localhost:5276/";
+const browser = await chromium.launch({ headless: false, args: ["--enable-unsafe-webgpu","--disable-gpu-sandbox","--ignore-gpu-blocklist","--enable-features=Vulkan"] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.goto(url, { waitUntil: "load" });
+await page.waitForTimeout(2000);
+const read = () => page.evaluate(async () => (await window.__THREENATIVE_PLAYTEST_BRIDGE__.sample({ label: `s${Math.random()}`, resources: ["state"] })).resources.state);
+console.log("start:", JSON.stringify(await read()));
+await page.keyboard.down("ArrowRight");
+await page.evaluate(() => window.__THREENATIVE_PLAYTEST_BRIDGE__.advance(60));
+console.log("after 60 ticks holding ArrowRight:", JSON.stringify(await read()));
+await page.keyboard.down("Space");
+await page.evaluate(() => window.__THREENATIVE_PLAYTEST_BRIDGE__.advance(20));
+await page.keyboard.up("Space");
+await page.evaluate(() => window.__THREENATIVE_PLAYTEST_BRIDGE__.advance(40));
+console.log("after Space + 60 ticks:", JSON.stringify(await read()));
+await page.keyboard.up("ArrowRight");
+await browser.close();

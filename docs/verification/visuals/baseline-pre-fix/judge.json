@@ -1,0 +1,129 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-04",
+    "confidence": "medium",
+    "rationale": "sample-04 is the only frame where every visual decision reads as deliberate at a glance: a genuine vertical sky gradient (031528 at y=100 falling to 02070E at y=340), one warm high-value hero silhouette centred against a cool dark field, a cool teal pickup that carries the accent role, real directional cast shadows with clear contact darkening under both the hero mass and the small pickup, and a single small HUD that does not fight the scene. sample-02 is close and has the best HUD craft of the seven (ruled panels for character, inventory and ability), but roughly the upper-left 40 percent of its frame is dead near-black and its floor is a large flat grey with little tonal variety. What separates sample-04 from the weakest frames (sample-06, sample-03) is content and light: sample-06 is one box on a slab in a void with only 3552 unique colours in the whole frame, and sample-03 is a single dark board floating in a near-constant teal field (177888 to 1B7988 down a 240px column) with a giant glowing duplicate stat block covering the play area. Confidence is medium rather than high because sample-04 wins partly by subtraction: its surround is empty void, so it has less to get wrong than sample-02."
+  },
+  "samples": [
+    {
+      "biggestGap": "Fog and exposure wash the entire frame to one pale mint hue, so mid-ground geometry loses its own colour and the palette collapses to a single value band.",
+      "evidence": "Frame mean luminance 0.77, the highest of the seven. The sky is effectively flat (D3EBF2 to DCEFF2 over 240px). Ground, platform and props all converge toward the same pale mint at distance; a dark crate at left keeps almost no hue. Shadowing is genuinely good and is not a failure mode here: the raised platform casts a hard directional shadow across the ground and each egg prop has a distinct elliptical contact shadow. Two HUD layers are drawn on top of each other - a small crisp COINS/HEARTS/CHECKPOINT row and a large pixel-font HEARTS/COINS/TIME/TERM block underneath it - and the large one is nearly invisible against the pale sky. Playability is inferred only from the still: a character with legs and a head stands on ground, an input prompt row reads ARROWS / WASD MOVE, SPACE JUMP, SHIFT DASH, and counters exist, so a loop is plausible but unobserved.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 2
+      },
+      "polishAverage": 2.2
+    },
+    {
+      "biggestGap": "About 40 percent of the frame - the whole upper-left - is dead near-black with nothing in it, so the composition is a small lit island in a large void.",
+      "evidence": "Warm-versus-cool lighting is deliberate: a teal-lit player capsule with a pale sphere head against salmon crates and a warm amber floor strip, with a warm bounce on the far wall. Contact is present and correct - the player, the salmon crate and the pickup cube each sit in a soft darkened footprint, and the wall block at upper right casts a hard shadow across the floor. The background is not a flat wash; the room is bounded by walls with distinct value steps rather than fogged toward one colour. HUD craft is the strongest of the seven: ROOM 1 / 3 title, a CHARACTER panel with a health bar at 95/100 and damage 12, an INVENTORY panel listing 3/6 items, and an ARCANE SURGE ability panel with a READY state and a key legend. Frame mean luminance 0.067, so it is a dark frame by design rather than by failure. Playability is inferred from the still: HUD state, a weapon-carrying avatar and an enemy-coloured crate imply a working loop, but no motion was observed.",
+      "label": "sample-02",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 3.2
+    },
+    {
+      "biggestGap": "The background is a single flat uniform teal with no gradient or horizon, and the one board floats in it with no ground, environment or contact relationship to anything.",
+      "evidence": "This is the flat-distance failure mode in its clearest form: a 240px vertical sample of the background runs 177888, 187888, 197988, 1B7988 - visually one colour. Only 8001 unique colours in the whole frame. The scene is a single dark trapezoidal board with a thin glowing route line and one gold blob prop near the right edge; the board has no cast shadow and nothing beneath or behind it, so it reads as a floating card rather than a place. A large glowing pixel stat block (CRED 133 / WAVE 05:10 / LEAK 00:20 / TOWR 0 / PLAYING) is plastered across the centre of the play surface and duplicates data already shown in the crisp top-left and bottom-left HUD rows. The small HUD itself is competent - WAVE 5/10 PLAYING, LEAKS 0/20, CREDITS 132, INCOME +12.3, and a CLICK BOARD TO BUILD hint. Playability is inferred from that HUD only; nothing on the board is moving in a still.",
+      "label": "sample-03",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 3,
+        "visuals": 2,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 2
+      },
+      "polishAverage": 2
+    },
+    {
+      "biggestGap": "The arena is a bare slab floating in black void with no horizon or surrounding environment, and the hero silhouette is an unmodified Three.js torus-knot primitive doing the work a designed subject should do.",
+      "evidence": "Neither named failure mode is present. The sky is a real gradient (031528 at y=100 to 02070E at y=340) rather than a flat fill, and shadows are unambiguous: a 2x crop of the ground shows a hard directional shadow cast from the knot across the slab, a dark footprint tight against the base of the green capsule, and a separate cast shadow beside the teal pickup - every object is planted. Palette is coherent and hierarchical: warm orange hero, one cool teal accent on the pickup and its glowing triangle marker, muted olive-green ground, dark blue field. Composition is deliberate: the hero mass sits centre-left against empty dark space, the pickup sits right, and the eye moves between them. HUD is restrained - SCORE 0 with a thin POSITION bar, and an input prompt row with real pause and restart buttons. Playability is inferred from the still only: WASD / ARROWS TO MOVE, COLLECT THE PICKUP and a visible pickup imply a complete loop, but no movement was observed and only one collectible is in frame.",
+      "label": "sample-04",
+      "playability": 3,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 3,
+        "visuals": 4,
+        "effects": 4,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 3.2
+    },
+    {
+      "biggestGap": "Two HUD layers are drawn on top of each other at full brightness, turning the upper-left quarter of the frame into unreadable overlapping glyph mush.",
+      "evidence": "A 2x crop of the top-left shows WAVE 1/5, CLEAR 5 WAVES - FAIL 0 LIVES, HEALTH 100 and LIVES 100 with bars, all colliding with a large glowing pixel block reading CLEAR 5 WAVES / FAIL 0 LIVES / WAVE 1/5 / HP 100 LIVES 3 / TARGETS 1 / SCAN 42 / TIME 00:02 - the two sets interleave letter-by-letter and neither is legible. The shadowless-geometry failure mode is also present: a 1.7x crop shows the four pink target boxes sitting on the yellow grid floor with no contact darkening at all, so they read as stickers, while the player capsule and a small pad have faint footprints. The grid lines also overdraw the target boxes - a yellow line runs straight across the front faces of two of them. In its favour, the neon palette is internally consistent and the perspective grid gives real depth recession. Playability is inferred from HUD counters and a two-line key legend (F HITSCAN, G PROJECTILE, E RADIUS TEST, C WALL PROBE), which itself reads as a test menu rather than a game.",
+      "label": "sample-05",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 3,
+        "visuals": 2,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 1
+      },
+      "polishAverage": 2
+    },
+    {
+      "biggestGap": "The frame is essentially empty - one box on a bare slab in a void - so there is no scene to compose, and an unstyled default-browser HUD chip sits on top of it.",
+      "evidence": "Only 3552 unique colours in the entire 1280x720 frame, the lowest of the seven, and standard deviation 0.119. A 2x crop confirms the whole content: a single mint-green rectangular prism on a dark teal slab, floating in black. The background does have a real vertical gradient (003453 to 001323), and the box does have a small soft contact shadow, so neither named failure mode is fully present - the problem is that there is almost nothing else in the image. The HUD contradicts the scene: it reads ITEMS 20 while zero items are visible. Two HUD systems again overlap in purpose - a raw white-on-dark Score: 0 chip in default browser styling at the very top-left, plus a glowing pixel SCORE / ITEMS / TIME block beneath it. The default-styled chip in particular is what makes this read as a test harness rather than a product. Playability is inferred and scored low because the still shows no collectible, no opponent and no input prompt of any kind.",
+      "label": "sample-06",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 2,
+        "visuals": 2,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 1
+      },
+      "polishAverage": 1.6
+    },
+    {
+      "biggestGap": "Camera framing fails the subject: the vehicle is tiny, near the right edge and partly occluded by a gate post, while roughly two thirds of the frame is a featureless dark-olive plane at a grazing angle that reads as a wall rather than a track.",
+      "evidence": "A 1.6x crop shows the red car sliced by a yellow gate upright and pressed against the boundary between track and sky, so at first glance the eye cannot resolve what is the subject or which way is up. The flat-distance failure mode is present in the sky: the pale wedge at right samples CEE6EA at y=100, 180, 260 and 340 - byte-identical, a completely flat fill with no gradient or horizon band. Shadowless geometry is not a problem: the orange marker block has a clear dark cast shadow against the surface behind it, and the gate uprights cast shadows along the track. Materials and palette are genuinely pleasant and coherent - cream barriers, muted teal wall, one saturated orange accent - and the HUD is clean and single-layered: CIRCUIT / NORTHERN LOOP, LAP 1/3 RACING, POSITION P2, SPEED 0 KM/H, TIME 00:02.0, BOOST 0 READY, plus an input prompt row. Playability is inferred from that HUD and the presence of a car and gates; no motion was observed and SPEED reads 0.",
+      "label": "sample-07",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      },
+      "polishAverage": 2.6
+    }
+  ],
+  "verdict": "ready"
+}

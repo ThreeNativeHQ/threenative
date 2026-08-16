@@ -7,7 +7,6 @@ import { Player } from "../entities/Player.js";
 import { type DefensePhysics, directSpaceState } from "../physics.js";
 import { Buildable, type PlacementReason } from "../placement/Buildable.js";
 import { setupCamera } from "../render/camera.js";
-import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -30,7 +29,6 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
-    const hud = ctx.entities.add("hud", createHud(ctx.camera as PerspectiveCamera));
     const board = new RouteBoard(ctx);
     const player = new Player(ctx);
     ctx.entities.add("player", player);
@@ -162,13 +160,6 @@ export class Defense extends Scene<GameState, DefensePhysics> {
         wave: waves.spawned,
       };
       frameCtx.state.set(state);
-      hud.update({
-        balance: state.balance,
-        leaks: state.leaks,
-        status: state.status,
-        towers: state.towers,
-        wave: state.wave,
-      });
     };
   }
 }

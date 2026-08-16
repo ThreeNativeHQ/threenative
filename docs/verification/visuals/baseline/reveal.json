@@ -1,0 +1,37 @@
+[
+  {
+    "arm": "platformer",
+    "id": "platformer-frame",
+    "label": "sample-01"
+  },
+  {
+    "arm": "action-rpg",
+    "id": "action-rpg-frame",
+    "label": "sample-02"
+  },
+  {
+    "arm": "defense",
+    "id": "defense-frame",
+    "label": "sample-03"
+  },
+  {
+    "arm": "starter",
+    "id": "starter-frame",
+    "label": "sample-04"
+  },
+  {
+    "arm": "shooter",
+    "id": "shooter-frame",
+    "label": "sample-05"
+  },
+  {
+    "arm": "minimal",
+    "id": "minimal-frame",
+    "label": "sample-06"
+  },
+  {
+    "arm": "racing",
+    "id": "racing-frame",
+    "label": "sample-07"
+  }
+]

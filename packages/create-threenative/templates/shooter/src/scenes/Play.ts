@@ -15,7 +15,6 @@ import { Target } from "../entities/Target.js";
 import { SpawnPoints } from "../level/SpawnPoints.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createArenaCamera } from "../render/camera.js";
-import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
@@ -79,7 +78,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
-    const hud = ctx.entities.add("hud", createHud(camera));
     const rig = createArenaCamera(camera);
     ctx.viewport.resize();
 
@@ -405,16 +403,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         health: player.health,
         scanCount,
         targetsRemaining: liveTargets,
-        wave: waveDirector.wave,
-        wavesCleared: waveDirector.cleared,
-      });
-      const state = frameCtx.state.getState();
-      hud.update({
-        health: player.health,
-        lives: state.lives,
-        scanCount,
-        seconds: elapsed.value,
-        targets: liveTargets,
         wave: waveDirector.wave,
         wavesCleared: waveDirector.cleared,
       });

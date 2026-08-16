@@ -12,7 +12,6 @@ import {
 } from "../templates/defense/src/economy.js";
 import { Player } from "../templates/defense/src/entities/Player.js";
 import { Buildable } from "../templates/defense/src/placement/Buildable.js";
-import { createHud } from "../templates/defense/src/render/hud.js";
 import { toon } from "../templates/defense/src/render/palette.js";
 import { MAX_LEAKS, registerLeak } from "../templates/defense/src/state.js";
 import {
@@ -164,34 +163,10 @@ describe("defense starter kit", () => {
     }
   });
 
-  it("keeps win and loss geometry HUD glyphs inside the camera frustum", () => {
-    const camera = new PerspectiveCamera(48, 390 / 844, 0.1, 120);
-    const hud = createHud(camera);
-    const matrix = new Matrix4();
-
-    for (const status of ["WON", "LOST"]) {
-      hud.update({ balance: 0, leaks: 0, status, towers: 0, wave: 0 });
-      camera.updateMatrixWorld(true);
-      const root = camera.children.at(-1);
-      if (!(root instanceof InstancedMesh)) throw new Error("Defense HUD root is not instanced.");
-
-      let statusPixels = 0;
-      for (let index = 0; index < root.count; index += 1) {
-        root.getMatrixAt(index, matrix);
-        const local = new Vector3().setFromMatrixPosition(matrix);
-        if (local.y > -36) continue;
-        const point = local.applyMatrix4(root.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
-        const halfHeight = Math.tan((camera.fov * Math.PI) / 360) * -point.z;
-        expect(point.z).toBeLessThan(-camera.near);
-        expect(Math.abs(point.x)).toBeLessThan(halfHeight * camera.aspect);
-        expect(Math.abs(point.y)).toBeLessThan(halfHeight);
-        statusPixels += 1;
-      }
-      expect(statusPixels).toBeGreaterThan(0);
-    }
-
-    hud.dispose();
-  });
+  // The geometry HUD this test covered was removed in round 10: defense mounted it *and* a React
+  // <Hud />, so both drew the same numbers on top of each other. The subject is gone, so the
+  // assertion has no subject. The replacement invariant lives in template.spec.ts — no template
+  // may mount two HUDs — and it fails when a call site is restored.
 
   it("keys toon materials by color and roughness", () => {
     const smooth = toon(0x123456, 0.2);

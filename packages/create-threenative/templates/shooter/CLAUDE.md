@@ -33,8 +33,13 @@ Hitscan, radius damage, and target scans use `ctx.physics.directSpaceState` from
 `@threenative/physics`. Do not replace it with `ctx.raycast()`, a mesh raycaster, or a JavaScript
 distance scan. `CharacterBody3D.moveAndSlide()` owns movement and gravity.
 
-The geometry HUD in `src/render/hud.ts` follows the game onto desktop and mobile. React in
-`src/ui/` is a richer web convenience, not a gameplay dependency.
+**This template has one HUD, and it is `src/ui/Hud.tsx`.** It previously shipped a
+camera-attached geometry HUD as well, and both drew the same numbers on top of each other: a blind
+score of the first frame found the upper-left quarter unreadable, with the two sets of glyphs
+interleaved letter by letter. Gameplay and state transitions live in the portable scene and reach
+the HUD through `ctx.state.set`, so nothing about that is web-only. **A native build therefore has
+no HUD until you add one** — write it in your own `src/render/` code, in Three.js rather than DOM,
+if your game needs one there.
 
 ## Layout
 

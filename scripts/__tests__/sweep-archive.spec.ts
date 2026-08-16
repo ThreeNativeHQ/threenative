@@ -98,6 +98,32 @@ describe("sweep archive", () => {
   // which the starter's own src/game.ts imports as "../threenative.config.js" -- never
   // travelled. Every framework archive 500'd on that import, and three consecutive rounds
   // recorded 0/1 for both arms against builds that had never booted.
+  it("archives the directories a builder created, not a two-name allowlist", async () => {
+    // The archiver used to copy root files plus `public` and `assets` only, and reported success
+    // while dropping everything else. The sandbox is wiped for the next arm straight afterwards,
+    // so the drop was permanent: round 9 lost a finished build's 27 iteration screenshots,
+    // including its final hero shot, and had to rescue the other arm's capture harness by hand.
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await mkdir(path.join(sandbox, "shots"), { recursive: true });
+    await mkdir(path.join(sandbox, "tools"), { recursive: true });
+    await writeFile(path.join(sandbox, "shots", "27-hero-final.png"), "not really a png\n");
+    await writeFile(path.join(sandbox, "tools", "shot.mjs"), "// capture harness\n");
+
+    const archive = await archiveSandbox(sandbox, path.join(root, "archive"));
+
+    await expect(readFile(path.join(archive, "shots/27-hero-final.png"), "utf8")).resolves.toBe(
+      "not really a png\n",
+    );
+    await expect(readFile(path.join(archive, "tools/shot.mjs"), "utf8")).resolves.toBe(
+      "// capture harness\n",
+    );
+    // The exclusions still hold: an archive that carried node_modules or build output would be
+    // unusable, and that is a different failure from dropping evidence.
+    await expect(access(path.join(archive, "node_modules"))).rejects.toThrow();
+    await expect(access(path.join(archive, "dist"))).rejects.toThrow();
+  });
+
   it("carries the root config files a scaffolded project needs to boot", async () => {
     const root = await fixtureRoot();
     const sandbox = await writeSandbox(root);

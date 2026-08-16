@@ -45,9 +45,13 @@ Godot-named nodes keeps that correct without thinking about it.
   platformer gameplay. The other `playtests/` scenarios prove movement, collection, stomping,
   respawn, and one-way platforms in this example game.
 
-`src/render/hud.ts` is generated user-owned source, not a framework widget. It renders hearts,
-coins and a clock as instanced planes without `CanvasTexture`, so it follows the portable game
-onto desktop and Android. The React HUD and menu remain web conveniences. `src/render/touch-controls.ts`
+**This template has one HUD, and it is `src/ui/Hud.tsx`.** It previously shipped a
+camera-attached geometry HUD as well, and both drew hearts, coins and the clock on top of each
+other. Gameplay and state transitions live in the portable scene and reach the HUD through
+`ctx.state.set`, so nothing about that is web-only. **This template claims desktop, and a desktop
+build has no HUD until you add one** — write it in your own `src/render/` code, as instanced
+Three.js geometry rather than DOM, if your game needs one there. That is a real gap and it is
+stated rather than hidden. `src/render/touch-controls.ts`
 draws the thumbstick, jump and dash surfaces and maps `ctx.input.raw.pointers` in the scene, so
 the platformer remains playable without a keyboard on a touch target.
 

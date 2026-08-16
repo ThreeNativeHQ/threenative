@@ -24,9 +24,21 @@ const SKIP_DIRECTORIES = new Set([
 // generated CLAUDE.md mirror. Keep this explicit as the hosting tree grows its own subdirectories.
 const MIRRORED_APPLICATION_ROOTS = new Set(["hosting"]);
 
+/**
+ * Trees whose `AGENTS.md` files are evidence rather than repository rules.
+ *
+ * A sweep archive is a frozen copy of what a builder was given and what it wrote. Framework-arm
+ * archives happen to carry a `CLAUDE.md` because the template ships both, so this never bit until
+ * round 9 archived the first vanilla arm — whose `AGENTS.md` the sandbox generates on its own. The
+ * mirror check then wanted to write a `CLAUDE.md` into a sealed archive, which would edit evidence
+ * to satisfy a rule that does not apply to it. Skipped by path, not by directory name, so an
+ * ordinary `sweeps/` elsewhere in the repo would still be mirrored.
+ */
+const SKIP_PATHS = new Set([path.join("docs", "benchmark")]);
+
 export const BANNER = "<!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->\n";
 
-export async function agentsFiles(root: string): Promise<string[]> {
+export async function agentsFiles(root: string, base = root): Promise<string[]> {
   if (!existsSync(root)) return [];
   const entries = await readdir(root, { withFileTypes: true });
   const found: string[] = [];
@@ -34,7 +46,8 @@ export async function agentsFiles(root: string): Promise<string[]> {
     const absolute = path.join(root, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRECTORIES.has(entry.name) && !MIRRORED_APPLICATION_ROOTS.has(entry.name)) continue;
-      found.push(...(await agentsFiles(absolute)));
+      if (SKIP_PATHS.has(path.relative(base, absolute))) continue;
+      found.push(...(await agentsFiles(absolute, base)));
     } else if (entry.name === "AGENTS.md") {
       found.push(absolute);
     }

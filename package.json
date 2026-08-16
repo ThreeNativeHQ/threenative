@@ -46,7 +46,8 @@
     "profile:starter": "tsx scripts/profile-starter.ts",
     "profile:production": "node packages/runtime-native/scripts/profile-production.mjs",
     "profile:native-cpu": "tsx scripts/profile-native-cpu.ts",
-    "profile:native-cpu:fox": "sh scripts/xvfb.sh pnpm profile:native-cpu -- --visual-evidence fox-scale --allow-software"
+    "profile:native-cpu:fox": "sh scripts/xvfb.sh pnpm profile:native-cpu -- --visual-evidence fox-scale --allow-software",
+    "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

@@ -28,7 +28,7 @@ export function setupSky(scene: Scene): void {
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
   const dome = new Mesh(
     geometry,
-    new MeshBasicMaterial({ side: BackSide, toneMapped: false, vertexColors: true }),
+    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
   );
   // The dome is authored at the origin and never moves; freeze only this
   // known-static render object, leaving gameplay transforms under user control.

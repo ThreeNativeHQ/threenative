@@ -8,7 +8,11 @@ import { createProject } from "../src/index.js";
 
 const templates = ["starter", "minimal"] as const;
 const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
-const geometryHudTemplates = ["minimal", "platformer"] as const;
+// Only `minimal` still ships a camera-attached geometry HUD, because it is the one template with
+// no React and therefore no other way to draw one. Round 10 removed it from platformer, shooter,
+// racing and defense, where it rendered *on top of* their React HUD: four templates drew the same
+// numbers twice, and in shooter the overlap was unreadable.
+const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
@@ -145,14 +149,47 @@ describe("template contracts", () => {
     }
   });
 
+  it("should never draw two HUDs at once", async () => {
+    // Round 10's blind baseline caught this: four templates mounted a camera-attached geometry HUD
+    // from the portable scene *and* a React <Hud /> from src/ui/App.tsx, so both drew the same
+    // numbers over each other on web. In shooter the overlap made the upper-left quarter of the
+    // frame unreadable and scored its UX 1 of 5. Nothing reported it — a doubled HUD typechecks,
+    // lints, and passes every playtest, because the assertions read game state rather than pixels.
+    const roots = (await readdir(templateRoot, { withFileTypes: true })).filter((entry) =>
+      entry.isDirectory(),
+    );
+    expect(roots.length).toBeGreaterThanOrEqual(4);
+    for (const entry of roots) {
+      const root = path.join(templateRoot, entry.name);
+      const sources = await sourceFiles(root);
+      const mountsReactHud = sources.some(
+        ([file, source]) => file.endsWith("App.tsx") && /<Hud\b/u.test(source),
+      );
+      // Call sites only. The definition in src/render/hud.ts also matches `createHud(`, and a
+      // template that ships the file without calling it draws nothing twice.
+      const mountsGeometryHud = sources.some(
+        ([file, source]) =>
+          !file.endsWith(path.join("src", "render", "hud.ts")) && /\bcreateHud\s*\(/u.test(source),
+      );
+      // A DOM readout counts too. `minimal` ships no React and slipped through the first version of
+      // this check while drawing a #score chip from main.ts *and* a geometry HUD showing SCORE —
+      // the same doubling, one layer down. A blind score read the chip overlapping the glyphs.
+      const mountsDomHud = sources.some(([, source]) =>
+        /querySelector<[^>]*>\("#(?:score|hud)"\)/u.test(source),
+      );
+      const layers = [mountsReactHud, mountsGeometryHud, mountsDomHud].filter(Boolean).length;
+      expect(
+        layers,
+        `${entry.name} mounts ${layers} HUD layers; they render on top of each other`,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("should ship a user-owned geometry HUD in templates that use one", async () => {
     for (const template of geometryHudTemplates) {
       const root = path.join(templateRoot, template);
       const hud = await readFile(path.join(root, "src/render/hud.ts"), "utf8");
-      const scene = await readFile(
-        path.join(root, template === "platformer" ? "src/scenes/Level.ts" : "src/scenes/Play.ts"),
-        "utf8",
-      );
+      const scene = await readFile(path.join(root, "src/scenes/Play.ts"), "utf8");
       expect(hud, template).toContain("InstancedMesh");
       expect(hud, template).toContain("camera.add(root)");
       expect(hud, template).toContain("renderOrder");
@@ -349,10 +386,39 @@ describe("template contracts", () => {
   it("should set matched sky background and fog, and reject an incomplete gradient", async () => {
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
     expect(sky).toContain("scene.background = top");
-    expect(sky).toContain("scene.fog = new Fog(bottom, 18, 80)");
     expect(sky).toContain("resolved.top === undefined");
     expect(sky).toContain("resolved.bottom === undefined");
     expect(sky).toContain("throw new TypeError");
+    // Round 9 lost the visual column to fog reaching the playable middle distance: a blind judge
+    // chose against the build because "the distance fogs to near-white". The near plane belongs
+    // past where the next jump is, not 18 units from the camera.
+    const range = /new Fog\([^,]+,\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)/u.exec(sky);
+    expect(range, "starter sky must construct a Fog with a literal near and far").not.toBeNull();
+    const [near, far] = [Number(range?.[1]), Number(range?.[2])];
+    expect(near).toBeGreaterThanOrEqual(40);
+    expect(far).toBeGreaterThan(near);
+  });
+
+  it("should never let fog swallow a template's sky dome", async () => {
+    // A sky dome is the horizon, so fog must never apply to it. Where it does and the dome sits
+    // at or past the fog far plane, the dome renders as one flat fog-coloured wash and the
+    // authored gradient never reaches the screen. Round 9 found this shipping in four templates
+    // at once — starter, minimal, platformer and shooter — with nothing reporting it: typecheck,
+    // lint and every playtest pass on a flat sky.
+    const skies = (await readdir(templateRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(templateRoot, entry.name, "src/render/sky.ts"));
+    const checked: string[] = [];
+    for (const file of skies) {
+      const source = await readFile(file, "utf8").catch(() => undefined);
+      if (source === undefined) continue;
+      checked.push(file);
+      const material = /new MeshBasicMaterial\(\{[^}]*\}\)/u.exec(source)?.[0];
+      expect(material, `${file}: sky dome must build a MeshBasicMaterial`).toBeDefined();
+      expect(material, `${file}: sky dome material must set fog: false`).toContain("fog: false");
+    }
+    // Fail closed: a glob that matched nothing would otherwise pass this test silently.
+    expect(checked.length).toBeGreaterThanOrEqual(4);
   });
 
   it("should document the rigged-asset path and AnimationPlayer", async () => {

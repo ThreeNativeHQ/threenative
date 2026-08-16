@@ -8,7 +8,7 @@ import { palette } from "./palette.js";
 export function setupSky(scene: Scene): void {
   const dome = new Mesh(
     new SphereGeometry(80, 8, 4),
-    new MeshBasicMaterial({ color: palette.skyLow, side: BackSide, toneMapped: false }),
+    new MeshBasicMaterial({ color: palette.skyLow, fog: false, side: BackSide, toneMapped: false }),
   );
   dome.frustumCulled = false;
   dome.name = "dungeon-ambient-dome";

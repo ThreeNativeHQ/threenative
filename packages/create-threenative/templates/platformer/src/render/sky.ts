@@ -25,7 +25,7 @@ function skyDome(): Mesh {
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
   const mesh = new Mesh(
     geometry,
-    new MeshBasicMaterial({ side: BackSide, toneMapped: false, vertexColors: true }),
+    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
   );
   // The dome is authored at the origin and never moves; freeze only this
   // known-static render object, leaving gameplay transforms under user control.
@@ -37,6 +37,11 @@ function skyDome(): Mesh {
 
 export function setupSky(scene: Scene): void {
   scene.background = new Color(palette.skyHigh);
-  scene.fog = new Fog(palette.skyLow, 28, 180);
+  // Fog starting 28 units out reached the playable middle distance and pulled ground, platforms
+  // and props toward the same pale sky colour: a blind score of the first frame measured mean
+  // luminance 0.77, the highest of the seven templates, with the palette collapsed to one value
+  // band. Start it past where the next jump is and let the horizon fade instead. Tune both numbers
+  // to your level — this is your file.
+  scene.fog = new Fog(palette.skyLow, 90, 240);
   scene.add(skyDome());
 }

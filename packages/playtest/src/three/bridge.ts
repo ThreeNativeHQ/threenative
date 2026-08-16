@@ -29,6 +29,15 @@ export interface IThreePlaytestResources {
 export interface IThreePlaytestBridgeOptions {
   camera: Camera;
   components?: () => Record<string, Record<string, JsonValue>>;
+  /**
+   * Runtime diagnostics for the current frame.
+   *
+   * An entry shaped `{ label: string, value: string | number | boolean }` is treated as a
+   * **readout** — publish your FPS counter, coin tally or backend name here freely, and a proof
+   * asserting `noRuntimeDiagnostics` will not fail because of it. Anything else counts as a
+   * runtime **error**, including an entry carrying `severity: "error"`, `type: "error"` or an
+   * `error` field. Ambiguous entries count as errors on purpose: this harness fails closed.
+   */
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<number | void> | number | void;

@@ -1,0 +1,129 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-05",
+    "confidence": "medium",
+    "rationale": "sample-05 is the only frame that builds a world rather than a stage: a vertical sky gradient from deep violet to near-black, a receding amber grid that gives real perspective depth, angled arena walls with teal rim light, and a three-tier colour hierarchy (teal player, hot red threats, amber field) that makes the subject readable instantly. Its HUD is layered and typeset with intent. The weakest frame, sample-06, is the opposite on every axis: a single untouched box on a bare plane in an empty field, with two score readouts stacked on top of each other so the number 0 appears twice. The separation is composition and information design, not fidelity - sample-05 uses no better material or shader than sample-06, it just decided where the camera goes, what the eye should hit first, and how the space recedes."
+  },
+  "samples": [
+    {
+      "biggestGap": "Fog and bloom wash the entire mid-ground toward the near-white background colour, so the green ground, the pale props and the sky all converge on one milky value and the scene loses its own hue.",
+      "evidence": "Ground plane at the horizon is within a few percent of the sky value; the boulders and the far platform read as pale cream silhouettes with almost no material separation. The blocky character has a shadow and the boulders have clear contact darkening, so shadows are present - but the character's head is clipped by an unlit platform slab that crosses the frame at eye height, hiding the subject behind level geometry. Two bloom lens circles sit over the lower ground. HUD is a single row of stat labels plus one key hint strip, no doubling. Playability is inferred only: stat counters and a movement hint imply a working input loop, but nothing in the still proves motion.",
+      "label": "sample-01",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 3,
+        "visuals": 2,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 3
+      },
+      "polishAverage": 2.2
+    },
+    {
+      "biggestGap": "The room occupies only the lower-right third of the frame; the upper-left half is empty near-black with nothing in it, so the camera reads as parked rather than composed.",
+      "evidence": "Interior floor has a genuine warm-to-teal falloff and the wall tops carry a warm rim, so lighting is directional and deliberate. Enemies are plain untextured boxes and the player is a capsule with a sphere head and a stick weapon - the primitives are the cast. Contact shadows are present and correctly soft under each box. Glowing amber floor strips and emissive red bodies give a coherent dungeon palette. HUD craft is the strongest of the seven: ruled panels for character stats, inventory and an ability bar, no overlap, though the bottom-left hint wraps mid-item onto a second line. Playability is inferred from HUD state only (room 1/3, health 95/100, inventory 3/6).",
+      "label": "sample-02",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "The background is a single uniform teal fill with no gradient and no horizon, so the board floats in a flat void and the frame has no depth beyond the board's own perspective.",
+      "evidence": "Sampling the background top-to-bottom shows one flat colour edge to edge - the named flat-distance failure, unambiguous here. The board itself is well handled: a dark green field with a glowing amber route that reads instantly, crisp emissive edges, and one faceted amber gem with a small emissive base as the only prop. No cast shadow anywhere, though with a single flat board and emissive lines there is little to cast one. HUD is clean and hierarchical (wave, leaks, credits, income) with no doubling and no clipping. Playability is inferred: wave 5/10 and an income counter imply a running loop; zero towers placed means the frame shows an empty board.",
+      "label": "sample-03",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 3,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "A stock lathe-turned pawn several times the height of everything else floats detached above the platform with no contact shadow, and it is the largest thing in frame - an unmodified primitive carrying the scene.",
+      "evidence": "The orange pawn is cropped by the top of the platform's light pool, sits in mid-air, and casts nothing; the flat white triangle beside it is a zero-thickness billboard that also floats. The three small props on the platform (green capsule, orange cube, spade marker) do have correct soft contact shadows, which makes the floating pair read worse by contrast. Background is a dark navy vignette - not flat, but empty; the platform is a single quad in a void. HUD is a minimal score/position pair, no overlap, but the pause and restart buttons are lowercase boxed defaults inconsistent with the tracked uppercase type above them. Playability inferred only: score 0, a movement hint, and one pickup visible.",
+      "label": "sample-04",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 2,
+        "visuals": 2,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 2
+      },
+      "polishAverage": 1.8
+    },
+    {
+      "biggestGap": "Nothing casts a contact shadow: the red blocks and the teal player sit on the grid with no darkening beneath them, so at close read they float as stickers over the floor rather than standing on it. Fixing that, plus giving the threats a silhouette that is not a bare cube, is what would take this to 5.",
+      "evidence": "Sky is a true vertical gradient (violet through indigo into black) with a magenta bloom pooling behind the arena, not a flat fill. The amber grid converges convincingly and is the frame's main depth cue; angled arena walls catch a teal rim on the right. Colour hierarchy is unambiguous - teal reads as mine, hot red as hostile, amber as the field. Enemy health pips are thin amber lines drawn across the cubes and read as artefacts at this size. HUD is layered and consistent: title block, ruled health and lives bars, target counters, a two-line key hint, no doubled or overlapping readouts. Playability is inferred from the still: wave 1/5, health 100, one target live, and a listed input set imply a working encounter loop, but no motion is observable.",
+      "label": "sample-05",
+      "playability": 4,
+      "screenshotWorthy": "yes",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 4,
+        "particles": 2,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 3.6
+    },
+    {
+      "biggestGap": "Two score readouts are drawn on top of each other - a small dark chip reading 'Score: 0' overlapping a large glowing 'SCORE 0' - so the same number appears twice in the first 200 pixels of the frame.",
+      "evidence": "The crop shows the chip's box physically overlapping the glyphs of the large readout. Beyond the HUD there is one stock rectangular box on a bare dark plane and nothing else in frame: no props, no horizon, no second material. The box does have a correct soft contact shadow and the background carries a faint teal radial gradient, so it is not blank - it reads as a default test scene. Camera is a straight-on side view with the subject small and the lower half of the frame empty. Playability inferred only: item and time counters are running, which implies a loop exists, but the frame shows nothing to interact with.",
+      "label": "sample-06",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 2,
+        "visuals": 2,
+        "effects": 1,
+        "particles": 1,
+        "audio": "na",
+        "ux": 1
+      },
+      "polishAverage": 1.4
+    },
+    {
+      "biggestGap": "The camera is rolled roughly ninety degrees: the horizon runs vertically down the right edge and the track surface fills the frame as a wall, so the scene cannot be read as a course at all.",
+      "evidence": "The pale sky is a vertical strip on the right-hand quarter rather than a band at the top, and the track's edge lines run diagonally as if the ground were a facade. The vehicle is genuinely modelled low-poly with a cabin, wheels and a distinct silhouette, and there is a gate structure with posts - the asset work is better than most of the set and is wasted by the framing. Contact shadow under the vehicle is faint but present; the track surface is a large dark olive expanse with little tonal variation. Top-right HUD label is clipped by the frame edge, showing a truncated word. Playability inferred only: lap 1/3, speed 0, timer at 2 seconds.",
+      "label": "sample-07",
+      "playability": 2,
+      "screenshotWorthy": "no",
+      "visuals": 2,
+      "polish": {
+        "behavior": 2,
+        "visuals": 2,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 2
+      },
+      "polishAverage": 1.8
+    }
+  ],
+  "verdict": "ready"
+}

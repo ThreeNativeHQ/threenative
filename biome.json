@@ -12,7 +12,9 @@
       "examples/abyss-vanilla/src/main.js",
       "examples/abyss-vanilla/src/style.css",
       "examples/abyss-vanilla/vite.config.js",
-      "docs/benchmark/sweeps/**"
+      "docs/benchmark/sweeps/**",
+      "docs/benchmark/rounds/**",
+      "docs/verification/visuals/**"
     ]
   },
   "formatter": {

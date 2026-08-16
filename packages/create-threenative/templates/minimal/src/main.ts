@@ -2,13 +2,12 @@ import { acceptHotUpdate } from "@threenative/core/hot";
 import game from "./game.js";
 import "./style.css";
 
-const score = document.querySelector<HTMLSpanElement>("#score");
 const app = document.querySelector<HTMLElement>("#app");
 if (app === null) throw new Error("Missing #app element.");
 
-game.state.subscribe((state) => {
-  if (score !== null) score.textContent = String(state.score);
-});
+// No DOM readout here. This template's HUD is `src/render/hud.ts`, drawn in the scene so it
+// survives on native, and a second DOM copy of the same score rendered on top of it: a blind score
+// of the first frame read "a small Score: 0 chip overlapping a large glowing SCORE 0". One HUD.
 
 import.meta.hot?.accept();
 acceptHotUpdate(game, import.meta.hot);

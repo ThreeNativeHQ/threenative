@@ -1,0 +1,10 @@
+{
+  "arm": "vanilla",
+  "genre": "platformer",
+  "briefHash": "ca159854f59e5be00ee7306aed862335bfc9dec410a1c4ef91bed27d5505f0ef",
+  "proofHash": "7cf3f69edef397bebc0e9eae66794cfb5b1a6306cc97ef9a161a6bc7d1eba26b",
+  "template": "starter",
+  "date": "2026-08-16T02:11:25.865Z",
+  "frameworkVersion": "0.1.0",
+  "sourceLines": 0
+}

@@ -21,7 +21,9 @@ The portable entry is `src/game.ts`; React mounting stays in `src/main.ts`. The 
 source: `Lap.ts` orders Area3D gate crossings, `TrackSector.ts` records the last ray-probed
 road transform, and `Ranking.ts` ranks by route progress rather than world distance.
 
-`src/render/` owns the palette, lighting, camera, materials, sky, postprocessing and HUD.
+`src/render/` owns the palette, lighting, camera, materials, sky and postprocessing. The HUD is
+`src/ui/Hud.tsx` and there is only one of it: this template used to draw a geometry HUD on top of
+the React one, showing every number twice. A native build has no HUD until you add one.
 There is no track format, racing-line solver, or `VehicleBody3D` abstraction. `Track.ts` uses
 the generic `PathFollow3D` route follower directly. Change the circuit in `src/track/Track.ts`
 and tune car constants in `src/entities/RacingCar.ts`.

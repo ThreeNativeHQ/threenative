@@ -5,7 +5,6 @@ import { RACING_FEEL, RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraRoll, chaseCamera, setupCamera } from "../render/camera.js";
-import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
@@ -56,7 +55,6 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     ctx.add(camera);
-    const worldHud = ctx.entities.add("race-hud", createHud(camera));
     const track = buildTrack(ctx);
     const car = new RacingCar(ctx, SPAWN);
     const spawnDistance = track.route.project(SPAWN).distanceFromStart % track.route.totalLength;
@@ -109,7 +107,6 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let sameDistanceRanking = initialRanked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
     const observedPosition = SPAWN.clone();
     sector.update(SPAWN, car.forward, 0);
-    worldHud.update({ lap: 1, place: initialPlayer.place, status });
     chaseCamera(camera, car.mesh.position, car.forward, 1);
 
     const advanceRace = (frameCtx: GameCtx, dt: number): void => {
@@ -154,11 +151,6 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       status = resolveRaceStatus(status, lap.completed, TOTAL_LAPS, player.place);
       const previous = frameCtx.state.getState();
       const boostPeakSpeed = Math.max(previous.boostPeakSpeed, car.boost.active ? car.speed : 0);
-      worldHud.update({
-        lap: Math.min(TOTAL_LAPS, lap.completed + 1),
-        place: player.place,
-        status,
-      });
       frameCtx.state.set({
         boostActive: car.boost.active,
         boostPeakSpeed,

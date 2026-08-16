@@ -80,18 +80,26 @@ const SHELL_EXCLUDED = new Set([
   "package.json",
   "sweep.json",
 ]);
-/** Root directories a project needs in order to boot. */
-const SHELL_DIRECTORIES = ["public", "assets"] as const;
-
+/**
+ * Every root entry the builder left behind is archived, files and directories alike.
+ *
+ * This used to copy root *files* plus a two-name allowlist, `public` and `assets`. Anything else a
+ * builder created was dropped while the archiver reported success, and the sandbox is wiped for the
+ * next arm immediately afterwards — so the drop was permanent. Round 9 lost a completed build's 27
+ * iteration screenshots, including its own final hero shot, to exactly that, and the other arm's
+ * 151-line capture harness had to be rescued by hand before its sandbox was reused. The skill this
+ * loop runs on says an unarchived build is evidence you destroyed; the archiver was destroying it
+ * and saying "sweep archived".
+ *
+ * There is no size cap here on purpose. A cap would put the drop back, quietly.
+ */
 function copyAppShell(sandbox: string, archive: string): void {
   for (const entry of fs.readdirSync(sandbox, { withFileTypes: true })) {
     if (SHELL_EXCLUDED.has(entry.name) || entry.name.startsWith(".")) continue;
-    if (entry.isFile())
-      fs.copyFileSync(path.join(sandbox, entry.name), path.join(archive, entry.name));
-  }
-  for (const name of SHELL_DIRECTORIES) {
-    const directory = path.join(sandbox, name);
-    if (isDirectory(directory)) fs.cpSync(directory, path.join(archive, name), { recursive: true });
+    const source = path.join(sandbox, entry.name);
+    const destination = path.join(archive, entry.name);
+    if (entry.isFile()) fs.copyFileSync(source, destination);
+    else if (entry.isDirectory()) fs.cpSync(source, destination, { recursive: true });
   }
 }
 

@@ -1113,16 +1113,44 @@ function resourceObservations(before: IPlaytestObservationSnapshot | undefined, 
   return Object.fromEntries([...ids].map((id) => [id, { before: before?.resources?.[id], after: after?.resources?.[id] }]));
 }
 
+/**
+ * A published diagnostic that is unmistakably a *readout* rather than an error.
+ *
+ * The bridge's `diagnostics` channel is typed `() => JsonValue[]` and the generated project
+ * AGENTS.md says it "returns current runtime diagnostics", so a game publishes its debug HUD
+ * through it — that is the documented use. Every entry then landed in `recentRuntimeErrors`, and
+ * a proof with `noRuntimeDiagnostics` failed the build for owning a frame counter. Round 9 lost a
+ * sealed scenario to `{id:"fps",label:"FPS",value:30}` being counted as a runtime error.
+ *
+ * This does **not** guess. Ambiguous entries stay errors, because this package fails closed and an
+ * error counter that quietly stops counting is the exact defect it exists to prevent. Only the
+ * unambiguous readout shape — a labelled scalar, carrying no error marker — is reclassified, and
+ * nothing is dropped: readouts move to `runtimeReadouts` on the same object and stay observable.
+ */
+export function isRuntimeReadout(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+  const record = entry as Record<string, unknown>;
+  if (record.severity === "error" || record.error !== undefined) return false;
+  if (typeof record.type === "string" && ["assert", "error", "pageerror"].includes(record.type)) return false;
+  const value = record.value;
+  return (
+    typeof record.label === "string" &&
+    (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+  );
+}
+
 function normalizedRuntimeDiagnostics(
   snapshot: IPlaytestObservationSnapshot | undefined,
   scenario: IPlaytestScenario,
   consoleEntries: RunnerConsoleEntry[],
 ): unknown {
+  const published = snapshot?.diagnostics ?? [];
   return {
     recentRuntimeErrors: [
-      ...(snapshot?.diagnostics ?? []),
+      ...published.filter((entry) => !isRuntimeReadout(entry)),
       ...consoleEntries.filter(({ source, type }) => source !== "browser-console" && ["assert", "error", "pageerror"].includes(type)),
     ],
+    runtimeReadouts: published.filter(isRuntimeReadout),
     scene: {
       renderedEntities: (snapshot?.entities ?? []).map((entity) => ({
         id: entity.id,

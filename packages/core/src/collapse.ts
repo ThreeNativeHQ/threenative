@@ -56,6 +56,9 @@ interface IObjectLike {
   geometry?: IGeometryLike;
   material?: IMaterialLike | IMaterialLike[];
   renderOrder?: number;
+  /** Shadow participation. Carried through the merge; see the group key below. */
+  castShadow?: boolean;
+  receiveShadow?: boolean;
   onBeforeRender?: unknown;
   onAfterRender?: unknown;
   /** Render-layer mask. The camera pass parks consumed overlays on a layer nothing renders. */
@@ -229,6 +232,12 @@ interface ICollapseGroup {
   readonly material: IMaterialLike;
   readonly chunks: IGeometryLike[];
   readonly dynamic: boolean;
+  /**
+   * The shadow flags every mesh in this group carried. They are part of the group key, so a group
+   * never mixes a caster with a non-caster — merging those would force one behaviour on both.
+   */
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
 }
 
 /**
@@ -1521,8 +1530,23 @@ export class SceneCollapse {
       // scene that meant 220 of 225 draws, and the frame cost of that dwarfed any ordering it
       // bought. They group by look like everything else; opacity, depthWrite and blend mode are
       // all part of the signature, so only genuinely interchangeable surfaces end up together.
-      const key = `${kind}|${materialSignature(material)}`;
-      const group = groups.get(key) ?? { material, chunks: [], dynamic: owner !== undefined };
+      // The shadow flags belong in the key for the same reason the static/moving split does: two
+      // meshes that are not interchangeable must not become one draw. Before this, a merged mesh
+      // was constructed with Three.js's defaults — both flags `false` — and the source meshes were
+      // then removed, so a collapsed scene lost every shadow it had while
+      // `renderer.shadowMap.enabled` still read `true`. Nothing reported it: typecheck, lint and
+      // every playtest pass on a scene with no shadows. Round 9 found a build rendering 2 casters
+      // where the game had set ~500.
+      const castShadow = mesh.castShadow === true;
+      const receiveShadow = mesh.receiveShadow === true;
+      const key = `${kind}|${materialSignature(material)}|cast:${castShadow}|receive:${receiveShadow}`;
+      const group = groups.get(key) ?? {
+        material,
+        chunks: [],
+        dynamic: owner !== undefined,
+        castShadow,
+        receiveShadow,
+      };
       group.chunks.push(geometry);
       groups.set(key, group);
       if (mesh.parent !== null) bakedFrom.push({ mesh, parent: mesh.parent });
@@ -1621,6 +1645,10 @@ export class SceneCollapse {
       const mesh = new Mesh(geometry as never, material as never);
       // The merged geometry spans the level, so a bounding-sphere test can only ever say "visible".
       mesh.frustumCulled = false;
+      // Carried from the group, not defaulted. The sources are removed further down, so a flag not
+      // copied here is a flag the scene no longer has anywhere.
+      mesh.castShadow = group.castShadow;
+      mesh.receiveShadow = group.receiveShadow;
       this.#scene.add(mesh as never as IObjectLike);
       added.push(mesh as never as IObjectLike);
       mergedMeshes += 1;

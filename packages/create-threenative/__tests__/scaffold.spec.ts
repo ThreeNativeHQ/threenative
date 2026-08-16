@@ -112,7 +112,6 @@ const PLATFORMER_PATHS = [
   "src/render/camera.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
-  "src/render/hud.ts",
   "src/render/materials.ts",
   "src/render/rig.ts",
   "src/render/sky.ts",

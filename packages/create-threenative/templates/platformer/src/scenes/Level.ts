@@ -10,7 +10,6 @@ import { Checkpoints } from "../level/Checkpoints.js";
 import { createPlatform } from "../level/Platform.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
-import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
@@ -47,7 +46,6 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     setupCamera(camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
-    const hud = ctx.entities.add("hud", createHud(camera, "HEARTS", "COINS"));
     const touchControls = ctx.entities.add("touch-controls", new TouchControls(camera));
     ctx.viewport.resize();
     createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
@@ -157,12 +155,6 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       const rise = Math.max(0, character.mesh.position.y - SPAWN.y);
       const speed = Math.hypot(character.body.velocity.x, character.body.velocity.z);
       const previous = frameCtx.state.getState();
-      hud.update({
-        counter: coins,
-        primary: checkpoints.hearts,
-        seconds: elapsed,
-        terminal,
-      });
       frameCtx.state.set({
         checkpoint: checkpoints.currentIndex,
         coins,

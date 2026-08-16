@@ -26,8 +26,10 @@ before the economy spends anything. `src/towers/Tower.ts` acquires attackers thr
 shape scan and fires on its own reload clock. Change route points in `src/board/Route.ts`, tower
 rules in `src/towers/`, and the wave schedule in `src/waves.ts`.
 
-`src/render/` owns the camera, palette, sky, lighting, materials, postprocessing and HUD. The
-React HUD reads `GameState`; it never reaches into an attacker or tower. Register gameplay
+`src/render/` owns the camera, palette, sky, lighting, materials and postprocessing. The HUD is
+`src/ui/Hud.tsx` and there is only one of it: this template used to draw a geometry HUD on top of
+the React one, showing every number twice. A native build has no HUD until you add one. The React
+HUD reads `GameState`; it never reaches into an attacker or tower. Register gameplay
 entities with `ctx.entities` so playtests can observe them and the framework can dispose them.
 
 `B` places a tower in the next safe build slot for deterministic playtesting; real games place
