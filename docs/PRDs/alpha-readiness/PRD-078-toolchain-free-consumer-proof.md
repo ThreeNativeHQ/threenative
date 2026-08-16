@@ -28,10 +28,21 @@ a different tag is needed to explain it.
 `CMakeLists.txt` now reads the version from `package.json` and refuses to configure if it cannot,
 with `tests/native-version-stamp.test.mjs` asserting the literal cannot come back.
 
-**Unverified, and stated as such: this host has no CMake**, so the two cases that configure the
-project skip here and only the "no literal in CMakeLists.txt" case ran. `which cmake` → not found.
-The change is exercised by `pnpm native:build` or by any machine with CMake on `PATH`, and it is
-not claimed green until one runs.
+**Verified.** `which cmake` finds nothing on this host, but the native toolchain vendors one at
+`packages/runtime-native/.runtime/tools-venv/bin/cmake` (4.4.2), and with it on `PATH` all three
+cases run:
+
+```console
+$ export PATH="$PWD/packages/runtime-native/.runtime/tools-venv/bin:$PATH"
+$ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+    tests/native-version-stamp.test.mjs
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+```
+
+`project()` reports the version `package.json` declares, and a version it cannot parse fails
+configuration with `TN_NATIVE_VERSION_UNREADABLE` rather than stamping something wrong. The two
+configuring cases skip where no CMake exists, so the default gate still does not require one.
 
 **Phase 0 still needs its tag, and this session did not push one.** A tag push builds and
 publishes GitHub release binaries — an outward-facing, irreversible action of the same class as

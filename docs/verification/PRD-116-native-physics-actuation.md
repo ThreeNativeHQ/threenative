@@ -109,19 +109,29 @@ and a KEEP/DELETE verdict.
 | Counted area | Lines | Owner | Live proof or caller | Alternative considered | Verdict |
 | --- | ---: | --- | --- | --- | --- |
 | `src/` | 38,082 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
-| `conformance/` | 5,918 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
-| `tests/` | 7,588 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
-| `scripts/` | 9,073 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116 | `scripts/verify-desktop-physics.mjs:206-228`; build and platform verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
+| `conformance/` | 6,169 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
+| `tests/` | 7,850 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
+| `scripts/` | 9,082 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116 | `scripts/verify-desktop-physics.mjs:206-228`; build and platform verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
 | `include/` | 3,760 | PRD-046, PRD-047, PRD-053, PRD-116 | `include/threenative/physics_native.h:131`; C ABI consumed at `src/physics/native_bindings.cpp:586` | Add per-game native headers or remove the C boundary | **KEEP** — the coarse host ABI is the shared boundary. |
 | `android/` | 1,843 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054 | Android host sources and `scripts/verify-android-physics-parity.mjs` | Require each game to rebuild Android lifecycle and transport | **KEEP** — required Android packaging and execution plumbing. |
 | `native/` | 2,914 | PRD-046, PRD-049, PRD-116 | `native/physics/src/lib.rs:463`; `native/physics/tests/actuation.rs:324` | Use the web WASM/Rapier backend on native or move physics into games | **KEEP** — this is the native Rust implementation behind the shared API. |
-| Root `CMakeLists.txt` | 1,639 | PRD-047, PRD-048, PRD-050 | `pnpm native:build`; explicit binding target build | Make every game own native dependency discovery and linking | **KEEP** — opt-in host build configuration. |
+| Root `CMakeLists.txt` | 1,665 | PRD-047, PRD-048, PRD-050 | `pnpm native:build`; explicit binding target build | Make every game own native dependency discovery and linking | **KEEP** — opt-in host build configuration. |
 | `cmake/` | 280 | PRD-047, PRD-048, PRD-050 | Root CMake configuration includes these platform modules | Duplicate compiler/platform rules in each game | **KEEP** — shared build modules. |
 | `CMakePresets.json` | 140 | PRD-047, PRD-048, PRD-050 | `tn-linux` preset used by the native build and binding target | Remove declared presets and use undocumented local flags | **KEEP** — reproducible host presets. |
 | `ios/` | 104 | PRD-045, PRD-048, PRD-049, PRD-050 | `scripts/verify-ios-simulator.mjs` and iOS host sources | Make each game own iOS packaging and simulator lifecycle | **KEEP** — shared iOS packaging boundary; this lane made no iOS execution claim. |
 | `package.json` | 57 | PRD-048, PRD-050, PRD-054, PRD-116 | `native:build`, `native:physics:parity`, and `native:verify:desktop` scripts | Hide opt-in native commands in per-game manifests | **KEEP** — package-level command contract. |
 | `vitest.config.ts` | 10 | PRD-048, PRD-050 | Runtime-native Vitest command and parity producer | Drop native package test collection | **KEEP** — declares the native package test boundary. |
-| **Total** | **71,408** |  | `pnpm budgets` post-integration output |  | **No area rejected.** |
+| `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
+| **Total** | **72,101** |  | `pnpm budgets` post-integration output |  | **No area rejected.** |
+
+**Reconciled 2026-08-15 (PRD-076/077 lane), 71,408 → 72,101.** `tools/` is a new counted area,
+justified in its own row above. `conformance/` +251 and `tests/` +262 are the desktop multitouch
+injector and its 12 spec cases plus the native version-stamp cases; `CMakeLists.txt` +26 is the
+version now being read from `package.json` instead of typed twice; `scripts/` +9 is not this
+lane's. `native/` is unchanged at 2,914 — an earlier draft of this reconciliation recorded 3,304
+because it counted Rust build output under `native/physics/target/`, which `check-budgets.ts`
+excludes. **The native review trigger is crossed and stays crossed at +22,101**; nothing here
+silences it, and the kill-switch pass over what this lane added is the `tools/` row's verdict.
 
 The historical absorbed-runtime comparison is `git diff --numstat edcd349^..HEAD --
 packages/runtime-native`: at the lane base it was `+73,260 / -0` across 285 files; the repair
