@@ -94,3 +94,39 @@ ordering, not a flag, and it should be made deliberately rather than as a side e
 red gate.
 
 Recorded so the next attempt starts from the failure rather than repeating it.
+
+## The fix that worked, and what it left behind — 2026-08-15
+
+`holdUntilAttached` could not simply be defaulted on because it blocked inside the playtest
+plugin's own `setup`, which runs **before** the start scene enters. Entity-derived capabilities are
+registered by the scene, so a runner reading `describe()` during that hold saw a description
+missing them: `TN_PLAYTEST_CAPABILITY_MISSING`. That is why the option shipped opt-in.
+
+The repair moves the wait. `IGamePluginRuntime` gained an optional `holdStart`, and `defineGame`
+awaits the registered gates after `#enterScene` and before `gameLoop.start()` — the last point at
+which everything is registered and nothing has stepped. The playtest plugin hands its gate over
+instead of blocking, and falls back to the old inline await when a runtime does not offer
+`holdStart`, so existing embedders are unaffected. The hold then engages by default whenever a
+runner announces itself with `__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__`, set by the runner's
+`addInitScript` before any game code evaluates; a `pnpm dev` session sets nothing and never waits.
+
+The capability failure is gone from `pnpm verify:golden-path`.
+
+**What it did not do is change the number, and that is the interesting part.** Before the repair
+the same action-rpg build gave player health **90 on SwiftShader and 95 on a real GPU**. After it,
+the real GPU still gives 95. If the boot is no longer racing, 95 is the deterministic result and
+**90 was the artefact** — a value calibrated against a software renderer slow enough to let the
+enemy land a second attack before the scripted steps began.
+
+That is inference, not proof: it has not been re-run on SwiftShader with the hold active, which is
+the measurement that would settle it. Changing a committed expectation to match observed output on
+inference alone is the move this repository exists to prevent, so `combat.playtest.json` is left at
+90 and the gate stays red on it.
+
+**The next step is one run, not a decision:** the same scenario, same build, software renderer, with
+the hold engaged. If it reads 95, the constant is wrong and can be changed on evidence. If it reads
+90, the boot race is not the whole cause and the fix above is incomplete.
+
+The code landed inside commit `22123b79`, whose subject describes unrelated work — a concurrent
+session committed a dirty shared tree. The change is intact; this note is where its reasoning
+lives.
