@@ -44,7 +44,32 @@ $ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.conf
 configuration with `TN_NATIVE_VERSION_UNREADABLE` rather than stamping something wrong. The two
 configuring cases skip where no CMake exists, so the default gate still does not require one.
 
-**Phase 0 still needs its tag, and this session did not push one.** A tag push builds and
+**Phase 0's tag was pushed on 2026-08-16 and the run failed. The Vulkan ICD was not the
+blocker.** `runtime-native-v0.2.0`, run `31965691750`. The tag was deleted afterwards so `0.2.0`
+stays retryable; the run remains in Actions.
+
+**The good news is real: the desktop core gate passed on the runner.**
+`desktop core gate passed: 300 frames, 1280x720, artifacts/desktop-core-2026-08-16.png` — the
+`SDL_CreateWindow failed: Installed Vulkan doesn't implement the VK_KHR_surface extension` that
+killed the previous ten runs did not recur. `validate-tag` passed, and `darwin-arm64` and
+`build-android` both **succeeded**.
+
+Three legs failed, for three unrelated reasons, and none is the one this PRD was written about:
+
+| Leg | Failure | Assessment |
+|---|---|---|
+| `linux-x64` | `verify-desktop-physics.mjs:185` — *"desktop physics proof missed the completed parity marker"* | **Does not reproduce here.** The identical script exits `0` on this host with all three proofs passing. `spawnSync` reports a timeout as `exited null`, so this is not the 120s timeout — the runtime exited cleanly and never emitted `TN_NATIVE_PHYSICS_PARITY:native:`. A real runner-versus-host behavioural difference, undiagnosed |
+| `win32-x64` | `argon2 install: gyp ERR! Could not find any Visual Studio installation to use` | **Nothing to do with the native runtime.** `argon2` is a root `package.json` dependency for the hosting control plane, and it needs node-gyp plus Visual Studio. The Windows leg dies during `pnpm install --frozen-lockfile`, before it compiles anything |
+| `build-ios-simulator` | `xcrun simctl launch --terminate-running-process … failed (4)` | Simulator launch, not a build failure |
+
+`publish`, `clean-consumer` and `clean-consumer-ios` were all **skipped**, so no release was
+created and the clean-consumer proof this PRD exists to turn green **still has not run**. The
+`v0.1.14` version skew it was also chasing is fixed and verified separately.
+
+**The cheapest next step is the Windows one**, and it is not a native problem: a hosting
+dependency at the workspace root should not be installed by a native release build.
+
+**Superseded, from 2026-08-15:** A tag push builds and
 publishes GitHub release binaries — an outward-facing, irreversible action of the same class as
 PRD-119 Phase 2, which the owner gated on 2026-08-15. The software Vulkan path therefore remains
 unverified and no workflow was triggered. See
@@ -118,7 +143,7 @@ Phase 2: `.github/workflows/native-release.yml`,
 `packages/create-threenative/templates/platformer/`.
 Phase 3: `packages/runtime-native/scripts/profile-production.mjs`, `docs/verification/`.
 Phase 4: `docs/strategy/ROADMAP.md`, `docs/strategy/VALUE-PROPOSITION.md`,
-`docs/PRDs/native/done/PRD-048-native-distribution.md`.
+`docs/PRDs/done/PRD-048-native-distribution.md`.
 
 **Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../PRD-064-tier-1-native-reliability.md)
 Phase 4's unreached positive measurement, and the four criteria
@@ -272,7 +297,7 @@ tag, and row 6's ultimate caller is a scaffolded user project resolving a manife
 scaffolded project, which calls `install-prebuilt.mjs`.
 **Pre-existing files edited:** `.github/workflows/native-release.yml`,
 `packages/runtime-native/scripts/install-prebuilt.mjs`, `docs/strategy/ROADMAP.md`,
-`docs/strategy/VALUE-PROPOSITION.md`, `docs/PRDs/native/done/PRD-048-native-distribution.md`.
+`docs/strategy/VALUE-PROPOSITION.md`, `docs/PRDs/done/PRD-048-native-distribution.md`.
 **User-facing?** Yes, at row 6 — a user's `pnpm build --target desktop` either finds a
 manifest or does not. Everything before it is the lane that makes that true.
 **What does it replace?** A silent redirect, an unprovisioned GPU environment, an unchecked
@@ -417,7 +442,7 @@ device number, not a fleet number, and not comparable to the Pixel 8 figures in
   run id and asset hashes
 - `docs/strategy/ROADMAP.md` — EDIT: beta row 5
 - `docs/strategy/VALUE-PROPOSITION.md` — EDIT: axis 4 and the "not earned" table
-- `docs/PRDs/native/done/PRD-048-native-distribution.md` — EDIT: un-waive **only** the
+- `docs/PRDs/done/PRD-048-native-distribution.md` — EDIT: un-waive **only** the
   criteria an executed run now meets; the rest keep their waiver and say so
 
 **The final check is a user's, not CI's:** on this host, scaffold a fresh project outside the
