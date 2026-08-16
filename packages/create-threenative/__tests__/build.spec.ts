@@ -101,9 +101,20 @@ describe("threenative build", () => {
         "threenative build --target android",
       );
       expect(manifest.scripts?.["build:ios"], template).toBe("threenative build --target ios");
-      expect(manifest.devDependencies?.["create-threenative"], template).toBe("0.1.0");
+      // Read off the workspace manifests rather than written as literals. What matters is that a
+      // scaffolded project pins the versions this repository actually publishes; a literal here
+      // turns every release bump into a failing test that says nothing about that.
+      const published = async (name: string): Promise<string> =>
+        (
+          JSON.parse(await readFile(path.resolve("packages", name, "package.json"), "utf8")) as {
+            version: string;
+          }
+        ).version;
+      expect(manifest.devDependencies?.["create-threenative"], template).toBe(
+        await published("create-threenative"),
+      );
       expect(manifest.optionalDependencies?.["@threenative/runtime-native"], template).toBe(
-        "0.1.14",
+        await published("runtime-native"),
       );
       expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
         "@threenative/runtime-native",

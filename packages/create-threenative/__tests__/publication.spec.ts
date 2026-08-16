@@ -43,7 +43,17 @@ describe("registry publication", () => {
 
   it("reserves a UI version newer than the immutable legacy registry package", async () => {
     const packageJson = await manifest("ui");
-    expect(packageJson.version).toBe("0.1.12");
+    // `@threenative/ui` 0.1.12 is on the public registry and npm cannot replace a publish, so
+    // the package can only ever move above it. Asserted as an ordering against that floor
+    // rather than as an equality: pinning the exact version made every release bump fail a
+    // test that then says nothing about the constraint it exists to enforce.
+    const [major, minor, patch] = packageJson.version.split("-")[0]?.split(".").map(Number) ?? [];
+    if (major === undefined || minor === undefined || patch === undefined)
+      throw new Error(`Not a three-part version: '${packageJson.version}'.`);
+    expect(
+      major > 0 || minor > 1 || (minor === 1 && patch > 12),
+      `@threenative/ui ${packageJson.version} must be newer than the published 0.1.12`,
+    ).toBe(true);
     for (const template of ["starter", "platformer"]) {
       const templateManifest = JSON.parse(
         await readFile(
@@ -51,7 +61,9 @@ describe("registry publication", () => {
           "utf8",
         ),
       ) as { dependencies: Record<string, string> };
-      expect(templateManifest.dependencies["@threenative/ui"], template).toBe("0.1.12");
+      // And a template must pin whatever that version is, exactly — a scaffold pinning a
+      // version the workspace no longer publishes cannot install.
+      expect(templateManifest.dependencies["@threenative/ui"], template).toBe(packageJson.version);
     }
   });
 
