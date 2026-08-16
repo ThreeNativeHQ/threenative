@@ -9,7 +9,8 @@ Build a small, playable 3D physics puzzle from the supplied `reference.png`.
 - Include one body class that the controlled character passes through and another that blocks the controlled character;
   make the distinction visible in the scene.
 - Reach the destination only through simulated contact with the controlled character or a pushed body. A distance
-  check or scripted timer is not a valid win condition.
+  check or scripted timer is not a valid win condition. When it is reached, some gameplay state
+  must read the literal `won`; the proof compares against that word and cannot infer it.
 - Run the same input sequence twice with a fixed seed and fixed-step simulation, and expose
   whether the final state matched on both runs.
 - Use an angled camera and a readable HUD so the controlled character, stack, pass-through body, and destination

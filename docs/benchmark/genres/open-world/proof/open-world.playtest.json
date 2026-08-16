@@ -42,7 +42,6 @@
       {
         "id": "state",
         "path": "activeChunks",
-        "textIncludes": "7",
         "changed": true
       }
     ],

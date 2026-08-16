@@ -11,6 +11,17 @@ and Android paths. **What remains open is the consumer proof:** the committed re
 `PRD-113-repair-sealed-behavior-proof.md`. Sliced from
 `docs/strategy/PRODUCTION-READINESS.md` item 4.
 
+**Criteria 4 and 5 closed 2026-08-15**, by a peer session that was handed them after round 8 was
+recorded — `docs/verification/sealed-token-gate-2026-08-15.md`. The audit that Phase 2 requires
+now walks all six genres and whole scenarios rather than physics-puzzle's `assert.resources`, and
+covers `textIncludes` beside `equals`. It was observed red on five surviving tokens in four
+genres — `won`, `SECURE`, `hub`, `north.archive` and `"7"` — before any proof or brief was
+touched; two were published in their brief and three made behavioural. **This is the second hash
+discontinuity in this PRD's history**: four genres' brief or proof hashes move, so round 8's
+physics-puzzle archives are historical and not re-runnable, and `sweep:proof` refuses the mismatch
+rather than silently re-scoring. Criteria 2, 3 and 6 remain open, and this PRD stays BLOCKED on
+its consumer proof.
+
 **Complexity: 3 → LOW mode as code. HIGH as consequence.** A small edit to a sealed input voids
 comparison with every earlier round, which is why Phase 0 is a decision and not a task.
 
@@ -170,8 +181,8 @@ than discovering it again.
 | 1 | §3 contains a written, dated decision with its reasoning | — |
 | 2 | Round 6's archive, replayed against the revised contract, scores meaningfully above 0/10 | — |
 | 3 | A build that does not satisfy the brief still fails the revised contract — run and pasted | — |
-| 4 | No value the proof pins is absent from its brief, for every one of the six genres | — |
-| 5 | `scripts/__tests__/sealed-contract.spec.ts` fails when a pinned-but-unstated value is re-added | — |
+| 4 | No value the proof pins is absent from its brief, for every one of the six genres | **yes** — `docs/verification/sealed-token-gate-2026-08-15.md`. Five surviving tokens in four genres, each dispositioned: `won` and `hub` published, `SECURE`, `north.archive` and `"7"` made behavioural |
+| 5 | `scripts/__tests__/sealed-contract.spec.ts` fails when a pinned-but-unstated value is re-added | **yes**, across two gates — that file still covers identifiers, keys, resource ids/paths and seeds with its existing red controls; pinned *values* are covered by `sealed-proof-tokens.spec.ts`, observed red on all five tokens before any proof or brief was edited |
 | 6 | The comparability discontinuity is written into the round ledger and the score docs | — |
 | 7 | `pnpm typecheck && pnpm lint && pnpm test` green | — |
 
