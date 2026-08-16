@@ -141,3 +141,38 @@ decision about the committed expectation.
 The code landed inside commit `22123b79`, whose subject describes unrelated work — a concurrent
 session committed a dirty shared tree. The change is intact; this note is where its reasoning
 lives.
+
+## The settling run, and the inference it disproved — 2026-08-15
+
+Run on a scaffold generated from the current templates by `scaffold()` from
+`scripts/verify-golden-path.ts`, so the harness is the same one the gate builds. One project, one
+committed scenario, the `holdStart` fix active in both arms, differing only by a Chromium flag:
+
+| Renderer | `player.health` | Result |
+| --- | --- | --- |
+| software (no `--enable-features=Vulkan`) | **90** | **pass** |
+| real GPU (`--enable-features=Vulkan`) | **95** | fail |
+
+**This disproves the inference recorded above.** That section reasoned that with the boot no longer
+racing, 95 was the deterministic answer and the committed 90 was an artefact of a slow renderer.
+The software arm reproduces 90 and passes. So 90 is not an artefact of anything — it is what this
+build does on that renderer — and the render-speed dependency survives the `holdStart` repair.
+
+The repair was still worth making: it removed `TN_PLAYTEST_CAPABILITY_MISSING` and it moves the
+hold to a defensible place. It simply is not the whole cause. Something after the handshake still
+advances the simulation at a rate the renderer influences, and the boot window was only part of it.
+
+**What this nearly cost.** The previous section came within one edit of recommending
+`combat.playtest.json` be changed from 90 to 95 "on evidence". Doing so would have broken an arm
+that passes in order to make an arm that fails pass, and the repository would have carried a
+committed expectation that no renderer here actually produces reproducibly. The inference was
+confident, documented, and wrong, and the only thing that caught it was running the experiment it
+described rather than acting on it.
+
+The GPU arm also emitted `TN_CAPTURE_BLANK` alongside the assertion failure — a second symptom on
+that path, not investigated here.
+
+**Where PRD-112 actually stands:** the gate is red for a real, reproducible reason. The scenario is
+correct for one renderer and wrong for the other, and neither is the renderer's fault — the game's
+simulation should not be able to tell them apart. That is the defect, it is unfixed, and it is not
+a constant that wants editing.
