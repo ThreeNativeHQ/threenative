@@ -210,14 +210,14 @@ with whoever runs the round, because the judge must be fresh, read-only and blin
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Loop instrument | `pnpm round:next` | — |
+| Loop instrument | `pnpm round:next` | exit `0` — `pnpm sweep:proof …-9`, "1 further arm action follows it." |
 | Framework arm | `pnpm sandbox --arm framework --genre physics-puzzle` | — |
 | Vanilla arm | `pnpm sandbox --arm vanilla --genre physics-puzzle` | — |
-| Archive guard | `pnpm sweep:archive` (both arms) | — |
-| Archive guard, negative control | delete `threenative.config.ts` → `pnpm sweep:archive` | — |
+| Archive guard | `pnpm sweep:archive` (both arms) | exit `0` for both; `-8` vanilla, `-9` framework |
+| Archive guard, negative control | delete `threenative.config.ts` → `pnpm sweep:archive` | exit `1`, `Refusing to archive an unbootable project; src/ imports files the archive does not carry`; restored, archives green |
 | Capture | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:capture` | — |
-| Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | — |
-| Deletions | `pnpm round:deletions` | — |
+| Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | proof, measure and pair all exit `0`; `sweep:judge` **not run** — it consumes a blind critic verdict, and the visual column stays `unmeasured` rather than estimated |
+| Deletions | `pnpm round:deletions` | exit `0`; 273 candidates, `applyImpulse` and `applyForce` absent. 58 of the 273 are one or two characters — minified identifiers leaking into the census |
 
 A run that never reached its assertions exits `2` and is recorded as **unmeasured** — never a pass,
 never a red.
