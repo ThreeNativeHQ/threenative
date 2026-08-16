@@ -11,10 +11,11 @@ in `docs/verification/alpha-bar-2026-08-15.md`.
 
 Two findings the phases turned up beyond what §1 predicted, both recorded rather than fixed here:
 
-- **`pnpm round:next` throws on `main`.** `docs/verification/round-10-2026-08-16.md` is a baseline
-  round with no `## Arms` section, and `parseRoundLedger` requires one. Row A4 reports it. The fix
-  is the round owner's call — either the ledger contract admits a round with no paired arms, or
-  round 10 carries explicit empty sections — and it is not this PRD's to make.
+- **`pnpm round:next` threw on `main`, and row A4 is what reported it.** Repaired 2026-08-15: the
+  ledger contract now admits a round that *declares* no genres, `none` and `none yet` are one
+  meaning, `table()` stops at its own table, and `cells()` honours markdown's `\|` escape. The
+  last two had never failed — round 5's gap rows had been mis-parsed silently since the day they
+  were written, and it took a width assertion to surface it. **A4 has since moved to `pass`.**
 - **A4's stated blocker was stale.** The hand-typed table read *"round 7 is VOID"*; round 9 is a
   measured paired platformer round. The row is still not green, for a different reason. That is
   §1's argument arriving as evidence: nothing noticed when a row changed.
