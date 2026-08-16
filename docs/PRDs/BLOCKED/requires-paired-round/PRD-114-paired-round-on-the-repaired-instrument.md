@@ -188,17 +188,23 @@ Update round 6's score doc to mark its 58/100 vanilla estimate **superseded by m
 
 | # | Criterion | Met? |
 | --- | --- | --- |
-| 1 | `pnpm round:next` exits 0 and prints an action | — |
-| 2 | Both arms produce archives that **boot**, verified by `assertArchiveResolves` plus a real capture | — |
-| 3 | The functional column carries a measured number for both arms — no estimate anywhere in the row | — |
-| 4 | Deleting an imported sibling from an archive fails the archive step — the instrument's own control, observed red | — |
-| 5 | The round used the post-PRD-113 proof hash, recorded in the ledger | — |
-| 6 | The published result names where vanilla won, not only where the framework did | — |
-| 7 | The `applyImpulse`/`applyForce` verdict is recorded, and if unreached, its deletion PRD exists as a file | — |
-| 8 | Every friction-log claim promoted to a PRD was verified against source or an instrument first | — |
+| 1 | `pnpm round:next` exits 0 and prints an action | **yes** — `a5d0406e`. It threw on round 8 because a paired round produces one candidate per arm and `assertOne` rejected plurality; rounds 3–7 never reached that path. Re-verified after the fix: exit 0, printing `pnpm sweep:proof …-9` and the count of what follows |
+| 2 | Both arms produce archives that **boot**, verified by `assertArchiveResolves` plus a real capture | **yes** — both archives carry `captures/index.json` with 4 frames each, produced by the guarded path after `04e730f5` stopped `sweep:capture` discarding frames when the sealed proof failed |
+| 3 | The functional column carries a measured number for both arms — no estimate anywhere in the row | **yes** — framework 0/2 scenarios and 7/12 rows, vanilla 1/2 and 10/12, in `round-8-2026-08-15.md`. Round 6's 58/100 estimate is superseded by measurement |
+| 4 | Deleting an imported sibling from an archive fails the archive step — the instrument's own control, observed red | **no** — not run for round 8, and not recorded in its ledger. This is the one control that proves the repaired instrument measures anything at all, so it stays open |
+| 5 | The round used the post-PRD-113 proof hash, recorded in the ledger | **yes** — `e5be692b`, recorded for both arms, with the pre-repair `33c3acb0` scores kept beside them so the difference is visible. **Superseded 2026-08-15**: the six-genre token gate moved physics-puzzle's *brief* hash to `a2a40e96`, so these archives are historical and `sweep:proof` refuses to re-score them |
+| 6 | The published result names where vanilla won, not only where the framework did | **yes** — the column verdict is `vanilla wins`, on both measured columns, with the framework arm's `diagnostics` failure named as a product finding |
+| 7 | The `applyImpulse`/`applyForce` verdict is recorded, and if unreached, its deletion PRD exists as a file | **yes** — recorded as *not deleted*, because `native/physics/src/lib.rs` implements both behind the ABI. `PRD-121` exists as a file |
+| 8 | Every friction-log claim promoted to a PRD was verified against source or an instrument first | **not yet applicable** — round 8's gap 2 is marked *"to be opened"* and no friction claim has been promoted |
 
 Criterion 2 is consumer-scoped deliberately. *"The sweep ran"* is what rounds 3, 4 and 5 could all
 have claimed.
+
+**Status of this table, 2026-08-15.** Filled in against round 8 by a peer session, from the
+committed ledger and the archives themselves rather than from a report. Two things keep this PRD
+open: **criterion 4**, whose control was never run, and the **blind visual score**, which
+`round-8-2026-08-15.md` records as `unmeasured` rather than estimated. The visual column stays
+with whoever runs the round, because the judge must be fresh, read-only and blind to arm.
 
 ## 6. Evidence
 
