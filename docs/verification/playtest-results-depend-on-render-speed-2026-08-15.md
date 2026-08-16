@@ -176,3 +176,22 @@ that path, not investigated here.
 correct for one renderer and wrong for the other, and neither is the renderer's fault — the game's
 simulation should not be able to tell them apart. That is the defect, it is unfixed, and it is not
 a constant that wants editing.
+
+### One hypothesis narrowed, mechanism still unidentified
+
+The failing scenario is `action-rpg-combat-and-line-of-sight`, and a stable 90 against a stable 95
+with no timing jitter suggested the difference might not be a clock at all — that line-of-sight
+might read renderer state such as culling or projected size, which would differ between a software
+rasteriser and a GPU.
+
+It does not. `templates/action-rpg/src/entities/Enemy.ts:81-86` resolves sight with
+`directSpaceState(ctx.physics).intersectRay(...)` against the physics world, and range with a shape
+query. Both are Rapier, both are deterministic given the same steps, and neither consults the
+renderer. That hypothesis is dead.
+
+So the mechanism remains unidentified, and this note deliberately stops here rather than offering a
+third guess. What is established: the dependency is real, reproducible in both directions, survives
+the `holdStart` repair, and is not line-of-sight reading render state. What is not established is
+where the two renderers diverge. The next person should instrument the tick count and the enemy's
+`#attackTimer` across both arms rather than reason about it — this document has now been wrong once
+by reasoning and right once by measuring.
