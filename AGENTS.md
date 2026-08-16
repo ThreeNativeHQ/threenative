@@ -152,13 +152,13 @@ The self-improvement loop resumes from `docs/verification/round-*.md`: `pnpm rou
 computes the single next action, `pnpm round:deletions` reports exports unreached across
 consecutive rounds. Keep the round ledger as the evidence record.
 
-**When a PRD is finished, `git mv` it to `docs/PRDs/DONE/` in the same commit that finishes it.**
+**When a PRD is finished, `git mv` it to `docs/PRDs/done/` in the same commit that finishes it.**
 A PRD whose status is explicitly `BLOCKED` goes to `docs/PRDs/BLOCKED/<reason>/`, where the folder
 names the missing evidence or failing gate; `NOT STARTED`, `PARTIAL`, `OPEN` and `PROPOSED` stay in
 their owning batch even when a dependency is not ready. See `docs/PRDs/BLOCKED/README.md`.
 For grouped batches such as `docs/PRDs/starter-kits/`,
 `docs/PRDs/native-performance-fixes/`, and `docs/PRDs/night-watch-26-08-10/`, archive the
-whole folder with `git mv docs/PRDs/<batch>/ docs/PRDs/DONE/<batch>/` in the commit that closes
+whole folder with `git mv docs/PRDs/<batch>/ docs/PRDs/done/<batch>/` in the commit that closes
 the last PRD. Do not archive a batch while any PRD is `OPEN`, `SCOPING`, `NOT STARTED`,
 `BLOCKED`, or otherwise partial; a blocked criterion is not completion. If one PRD finishes
 before its siblings, archive that PRD individually and leave the batch folder active until all
