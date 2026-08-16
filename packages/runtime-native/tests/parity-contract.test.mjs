@@ -18,6 +18,7 @@ import {
 import {
   androidEmulatorBlocker,
   assertAndroidEmulator,
+  buildProvenance,
   defaultDesktopRuntimePath,
   desktopRuntimeBuildCommands,
   prepareDesktopRuntime,
@@ -96,11 +97,12 @@ test("execution reports have only pass, fail, and blocked states", () => {
   const value = registry();
   const results = value.tests.map(({ id }) => ({ id, status: "blocked" }));
   const report = {
-    schemaVersion: "0.2.0",
+    schemaVersion: "0.3.0",
     registrySchemaVersion: value.schemaVersion,
     threeVersion: value.threeVersion,
     mode: "execution",
     target: "desktop",
+    provenance: buildProvenance(),
     summary: { pass: 0, fail: 0, blocked: results.length, planned: 0, validated: 0 },
     results,
   };
@@ -121,11 +123,12 @@ test("an excluded desktop row cannot be claimed as a pass", () => {
     gpuValidationErrors: [],
   });
   const report = {
-    schemaVersion: "0.2.0",
+    schemaVersion: "0.3.0",
     registrySchemaVersion: value.schemaVersion,
     threeVersion: value.threeVersion,
     mode: "execution",
     target: "desktop",
+    provenance: buildProvenance(),
     summary: { pass: 1, fail: 0, blocked: results.length - 1, planned: 0, validated: 0 },
     results,
   };

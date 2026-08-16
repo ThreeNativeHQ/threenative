@@ -30,6 +30,7 @@ import {
   ANDROID_CAPTURE_SIZE,
   androidDisplaySize,
   androidSystemDialog,
+  buildProvenance,
   validateRegistry,
   validateReport,
 } from "../conformance/run-conformance.mjs";
@@ -262,12 +263,13 @@ test("Android parity owns the standalone multitouch proof without contaminating 
 test("Android reports fail closed when multitouch supplemental evidence is missing", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const report = {
-    schemaVersion: "0.2.0",
+    schemaVersion: "0.3.0",
     registrySchemaVersion: registry.schemaVersion,
     threeVersion: registry.threeVersion,
     mode: "execution",
     target: "android",
     project: null,
+    provenance: buildProvenance(),
     summary: { pass: 0, fail: 0, blocked: registry.tests.length, planned: 0, validated: 0 },
     results: registry.tests.map(({ id }) => ({ id, status: "blocked" })),
   };

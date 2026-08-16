@@ -29,6 +29,7 @@
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
     "parity": "sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs",
+    "parity:ledger": "tsx scripts/check-parity-ledger.ts",
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
