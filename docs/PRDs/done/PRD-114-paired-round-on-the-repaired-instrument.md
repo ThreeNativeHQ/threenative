@@ -1,15 +1,25 @@
 # PRD-114 — One paired round, with the vanilla arm actually executed
 
-**Status: BLOCKED — 2026-08-15. The instrument is repaired; the round it exists to produce is
-not.** The `r2` lane stopped at `a042641`, and the repair lane closed that blocker at `39c2d14` on
-an APPROVE with no findings
-(`docs/PRDs/done/PRD-114-repair-diagnostics-side-effect-archive.md`). Both commits are integrated:
-the archiver now carries the root config a scaffolded project imports, so an archived arm boots
-instead of 500-ing on it, and the published diagnostics rows are derived from committed
-`proof.json` rather than transcribed. **Round 7 remains VOID** — the repair deliberately did not
-rerun builders or promote a comparison, so no paired round has been executed on the repaired
-instrument. That run is the remaining work, and PRD-117 is blocked behind it. Sliced from
-`docs/strategy/PRODUCTION-READINESS.md` item 5.
+**Status: DELIVERED — 2026-08-15.** The round exists. Two independent builders built the same
+sealed physics-puzzle brief in separate sandboxes and contexts, and every gate in §6 has been run:
+`round:next` 0, `sweep:archive` 0 for both arms with its negative control observed red then green,
+`sweep:proof` 0, `sweep:measure` 0, `sweep:pair` 0, `sweep:judge` ready on a blind bundle, and
+`round:deletions` 0. All eight criteria in §5 carry evidence; criterion 8 is not applicable because
+the round promotes no friction-log claim — its one promotion was withdrawn when the defect behind
+it did not reproduce. The record is `docs/verification/round-8-2026-08-15.md`.
+
+**What the round found is not a verdict, and that is the result.** The framework arm wins the
+visual column on a blind score (4/3, screenshot-worthy, against 3/2 and not). It loses the
+functional column by one row — and that column moved 7/12 to 9/12 between identical runs, so it
+does not reproduce. The cost column reverses depending on which measure is used: 1,815 final lines
+against vanilla's 1,605, but 1,315 *authored* against 1,605 once surviving scaffold is separated
+out. This PRD was written to produce one honest paired round rather than a favourable one, and an
+honest round that says "no verdict, here is why, in three different ways" is what it produced.
+
+Two findings outlived it and are recorded separately: playtest results depend on how fast the
+machine renders, and anonymising the sealed proof had made the two arms unpairable until row ids
+were keyed by sealed position. Both were found by running this round rather than by reasoning about
+it. Sliced from `docs/strategy/PRODUCTION-READINESS.md` item 5.
 
 **Complexity: 4 → MEDIUM mode.** It is a run, not a feature — but it has a broken instrument in
 front of it and it produces a deletion verdict behind it.
@@ -217,7 +227,7 @@ so the last step here is a run under the arm firewall, not a decision.
 | Archive guard | `pnpm sweep:archive` (both arms) | — |
 | Archive guard, negative control | delete `threenative.config.ts` → `archiveSandbox` on a staged copy of `physics-puzzle-2026-08-15-9` | **red as required**, 2026-08-15: `Refusing to archive an unbootable project; src/ imports files the archive does not carry: src/game.ts -> ../threenative.config.js`. Positive half archived first; the failed run left 0 archives behind. `docs/verification/archive-guard-control-2026-08-15.md` |
 | Capture | `xvfb-run -a -s '-screen 0 1600x900x24' pnpm sweep:capture` | — |
-| Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | proof, measure and pair all exit `0`; `sweep:judge` **not run** — it consumes a blind critic verdict, and the visual column stays `unmeasured` rather than estimated |
+| Proof / measure / judge / pair | `pnpm sweep:proof && pnpm sweep:measure && pnpm sweep:judge && pnpm sweep:pair` | all four exit `0`. `sweep:judge` returns ready on a blind two-sample bundle scored by a fresh read-only critic; artefacts in `docs/benchmark/rounds/round-8/`. Framework 4/3 screenshot-worthy yes, vanilla 3/2 no |
 | Deletions | `pnpm round:deletions` | exit `0`; 273 candidates, `applyImpulse` and `applyForce` absent. 58 of the 273 are one or two characters — minified identifiers leaking into the census |
 
 A run that never reached its assertions exits `2` and is recorded as **unmeasured** — never a pass,

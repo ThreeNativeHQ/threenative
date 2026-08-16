@@ -1,0 +1,25 @@
+{
+  "samples": [
+    {
+      "label": "sample-01",
+      "playability": 4,
+      "visuals": 3,
+      "screenshotWorthy": "yes",
+      "evidence": "Status panel reads VAULT 6132 / delivered / BY PLAYER; DYNAMIC BODIES 38, AT REST 38/38, CRATES SHOVED 6, INSIDE PHANTOM no, PHANTOM PASSES 3, RANGE TO PAD 4.5 m. Separate DETERMINISM CHECK panel with RUN 1/RUN 2 and FINAL STATE pending. Terminal state, push interaction, both body classes and the replay affordance are legible on one screen. Palette and light direction match the reference: warm lantern pools along wooden rails, dark floor, one cyan concentric-ring pad, translucent cyan pass-through cubes clearly distinct from opaque solids.",
+      "biggestGap": "A floating tray in a black void with untextured bevel-edged cubes, where the reference is a lit enclosed room with X-braced crates. The avatar is a tiny cream figure by the far rail, not in contact with anything, so the first screen does not show the push relationship the reference does."
+    },
+    {
+      "label": "sample-02",
+      "playability": 3,
+      "visuals": 2,
+      "screenshotWorthy": "no",
+      "evidence": "Left panel Crate Vault / PHYSICS PUZZLE / SEED 6132 with Mission won badge, Crates settled 40/40, Crates pushed 4, Passed through 2, Tick 1389, and a written legend for arrows and V. Centred PAD REACHED banner. Right panel Determinism / FIXED STEP / FIXED SEED with Phase idle and Run A/Run B dashes. Crates carry X bracing and the room is genuinely enclosed by wooden walls, both real matches to the reference.",
+      "biggestGap": "A saturated green pad floods the right wall and the ambient where the reference is warm lantern orange with a small cyan accent, and the pass-through class is drawn as white hard-outlined wireframe boxes in a regular row of five, reading as debug helper geometry. The controlled character is a stack of white capsules with no limbs or facing, half-occluded at the frame edge."
+    }
+  ],
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "medium",
+    "rationale": "sample-01 keeps the reference's warm-lantern and cyan-accent palette with a coherent material set, while sample-02 floods the room green and renders its pass-through class as debug-style wireframe boxes. Neither reaches the reference's material and prop fidelity, so this is a comparison, not a pass against the bar. Confidence is medium: one still per sample, so every playability score rests on HUD readouts rather than observed motion."
+  }
+}
