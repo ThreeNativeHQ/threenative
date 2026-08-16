@@ -62,7 +62,7 @@
                 "replayPhase": "idle",
                 "replayTick": 0,
                 "seed": 6132,
-                "settled": 9,
+                "settled": 12,
                 "solved": false,
                 "solvedBy": ""
               },
@@ -209,9 +209,7 @@
             "candidates": [
               "physics.body.0:crate-03",
               "physics.body.0:crate-29",
-              "physics.body.0:crate-28",
               "physics.body.0:crate-30",
-              "physics.body.0:crate-27",
               "crate-00:crate-01",
               "crate-12:crate-13",
               "crate-06:crate-07",
@@ -253,6 +251,8 @@
               "physics.body.0:crate-20",
               "physics.body.0:crate-08",
               "crate-27:crate-28",
+              "physics.body.0:crate-27",
+              "physics.body.0:crate-28",
               "crate-28:crate-29",
               "crate-00:crate-09"
             ],
@@ -273,7 +273,7 @@
               "crate-28:reach:trigger",
               "crate-29:reach:trigger"
             ],
-            "count": 5,
+            "count": 4,
             "entity": "anonymous",
             "kind": "trigger",
             "minCount": 1
@@ -290,7 +290,6 @@
               "crate-28:reach:trigger",
               "crate-29:reach:trigger",
               "crate-20:reach:trigger",
-              "crate-19:reach:trigger",
               "crate-37:reach:trigger",
               "crate-23:reach:trigger",
               "crate-33:reach:trigger",
@@ -298,7 +297,7 @@
               "crate-30:reach:trigger",
               "crate-35:reach:trigger"
             ],
-            "count": 16,
+            "count": 14,
             "entity": "anonymous",
             "kind": "trigger",
             "minCount": 1
@@ -355,7 +354,7 @@
             "minimum": 30,
             "omittedBodies": 0,
             "poseDistance": {
-              "mean": 0.23099226060560613,
+              "mean": 0.22763719537271185,
               "sharedBodies": 38
             },
             "sleeping": 0
@@ -394,9 +393,9 @@
           "code": "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
           "message": "Expected at least 30 physics bodies matching 'crate-' to be asleep; observed 0 of 38.",
           "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-          "path": "/tmp/threenative-proof-UMjiXm/physics-puzzle.playtest.json/assert/settled/crate-",
+          "path": "/tmp/threenative-proof-svqHHv/physics-puzzle.playtest.json/assert/settled/crate-",
           "severity": "error",
-          "sourcePath": "/tmp/threenative-proof-UMjiXm/physics-puzzle.playtest.json",
+          "sourcePath": "/tmp/threenative-proof-svqHHv/physics-puzzle.playtest.json",
           "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
         }
       ],
