@@ -1,11 +1,20 @@
 # Batch — alpha readiness, 2026-08-15
 
-**Status: ASSEMBLED, 2026-08-15. Nothing in this folder has been executed as a batch.** Seven of
-the ten PRDs remain here; three explicitly blocked PRDs moved to `docs/PRDs/BLOCKED/`. The
-remaining PRDs were moved from `docs/PRDs/` and `docs/PRDs/production-readiness-26-08-14/`; their
-own status lines are unchanged and still govern what has and has not run. Two are new and
-unexecuted: PRD-119 and PRD-120. No mobile-readiness,
-physical-device or iOS claim is made anywhere in this folder.
+**Status: IN EXECUTION, 2026-08-15. One PRD done, five open.** Three explicitly blocked PRDs moved
+to `docs/PRDs/BLOCKED/` when the batch was assembled. No mobile-readiness, physical-device or iOS
+claim is made anywhere in this folder.
+
+| PRD | State |
+|---|---|
+| PRD-120 — the alpha bar is runnable | **done**, archived to `docs/PRDs/done/`. `pnpm alpha:bar` generates the table below |
+| PRD-119 — the alpha release train | phases 0, 1 and 3 executed; **Phase 2 is owner-gated** and nothing is published |
+| PRD-077 — desktop multitouch injector | Phase 0 partial; the injector approach is decided, the SDL3 question is open |
+| PRD-076 — reconcile the parity ledgers | Phase 0 executed; phases 1–3 need PRD-077 |
+| PRD-078 — toolchain-free consumer proof | partial, from 2026-08-12 |
+| PRD-080 — five-minute stranger test | not agent work, and blocked on PRD-119 Phase 2 |
+
+**The folder is not archived while any row above is not done.** A blocked criterion is not
+completion.
 
 ## What alpha means here, and how it differs from the beta bar
 
@@ -58,7 +67,7 @@ Which PRD owns which row:
 | A4 | [PRD-114](../BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md), then PRD-121 |
 | A5 | [PRD-077](PRD-077-desktop-multitouch-injector.md) → [PRD-076](PRD-076-tier-1-parity-reconciliation.md) |
 | A6 | [PRD-080](PRD-080-five-minute-stranger-test.md) |
-| A7 | [PRD-120](PRD-120-the-alpha-bar-is-runnable.md) |
+| A7 | [PRD-120](../done/PRD-120-the-alpha-bar-is-runnable.md) — **done 2026-08-15** |
 
 A7 exists because of the other six. A hand-maintained status table is the same failure mode as a
 harness that drops malformed assertions: it reports with the confidence of a measurement and is

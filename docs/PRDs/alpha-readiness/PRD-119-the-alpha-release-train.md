@@ -4,10 +4,23 @@ prd_contract: v1
 
 # PRD-119 — Alpha row 1: three of seven packages are 404, and the four that exist are six days behind the tree
 
-**Status: PROPOSED, 2026-08-15. Nothing here is executed.** §1 is a read of the public registry,
-of `.github/workflows/`, and of the tree at `5df0783f`, taken 2026-08-15. Every number below was
-produced by a command that is pasted with it. No mobile-readiness, physical-device or iOS claim is
-made.
+**Status: PHASES 0, 1 AND 3 EXECUTED — PHASE 2 OWNER-GATED, 2026-08-15. This PRD is not done, and
+nothing has been published.**
+
+| Phase | State |
+|---|---|
+| 0 — record the red | **executed**, `docs/verification/publish-state-2026-08-15.md`. All five commands pasted. `npm create threenative@latest` 404s and creates nothing; the PRD's stop rule did not fire |
+| 1 — the preflight | **executed**. `pnpm publish:check` (`scripts/check-publish-state.ts`, 11 spec cases) exits `1` on this tree, naming four packages whose version cannot go up |
+| 2 — publish all seven | **not run.** The workflow is authored at `.github/workflows/npm-release.yml` and has never been triggered; no version field was bumped. The owner's answer on 2026-08-15 was *preflight only, stop before publish*, which is also what the batch's own stop rule requires |
+| 3 — the clean-room gate | **script executed, red as expected.** `scripts/verify-registry-install.ts` (6 spec cases) fails at `scaffold` with a 404. It cannot go green before Phase 2 runs |
+
+**What Phase 2 needs from the owner:** approval of `0.2.0` across all seven packages (the decision
+recorded in §1), then a `v0.2.0` tag push. `pnpm publish:check` is the gate it runs behind, and it
+is red today by design — it goes green only once every version has moved.
+
+§1 is a read of the public registry, of `.github/workflows/`, and of the tree at `5df0783f`, taken
+2026-08-15. Every number below was produced by a command that is pasted with it. No
+mobile-readiness, physical-device or iOS claim is made.
 
 **Complexity: 7 → HIGH mode.** Multi-package, a new release lane, an external registry, and a
 version-of-record decision that cannot be un-published once wrong.
