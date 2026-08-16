@@ -157,6 +157,9 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     }
     page = await context.newPage();
     await page.addInitScript(() => {
+      // Announce the runner before any game code evaluates, so an adapter can hold its loop
+      // instead of racing this run's first observation.
+      (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__ = true;
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event.reason instanceof Error
           ? event.reason.stack || event.reason.message

@@ -64,18 +64,18 @@ export function playtest<
         attached = undefined;
         contactHistory = [];
       };
-      // IGame.start() awaits plugin setup and only calls gameLoop.start() afterwards, so
-      // awaiting here holds the entire loop -- including the physics plugin's first
-      // simulation step -- until the runner is on the line.
-      // A provider used with this option must be ordered before playtest(), because sequential
-      // plugin setup deliberately stops here until the runner attaches.
+      // Hand the hold to the game rather than blocking this plugin's setup. Blocking here stops
+      // the sequence before the start scene enters, so entity-derived capabilities are not yet
+      // registered and a runner reading describe() during the hold sees a description missing
+      // them -- observed as TN_PLAYTEST_CAPABILITY_MISSING. runtime.holdStart waits at the last
+      // point before the loop moves, with everything registered.
       if (attached !== undefined) {
-        try {
-          await attached;
-        } catch (error) {
+        const gate = attached.catch((error: unknown) => {
           cleanup();
           throw error;
-        }
+        });
+        if (runtime?.holdStart === undefined) await gate;
+        else runtime.holdStart(gate);
       }
       return cleanup;
     },
@@ -97,11 +97,29 @@ export const PLAYTEST_ATTACH_TIMEOUT_MS = 30_000;
  * Fails closed: if no runner attaches within the timeout, setup throws rather than quietly
  * starting anyway and reproducing the race it was added to remove.
  */
+/** The global a playtest runner sets before the page loads, so a game can tell one is coming. */
+export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__";
+
+/**
+ * Hold when told to, and by default whenever a runner announced itself.
+ *
+ * Without it a scenario races the boot, and how much simulation elapses before the first
+ * observation depends on how fast the machine renders — measured on action-rpg's combat
+ * scenario, player health 90 on SwiftShader and 95 on a real GPU from the same build. Keyed off
+ * the runner rather than off the plugin being installed, because every template installs
+ * `playtest()` unconditionally and a game that holds for a runner who never arrives is broken
+ * for whoever ran `pnpm dev`.
+ */
+function shouldHoldUntilAttached(options: IPlaytestOptions): boolean {
+  if (options.holdUntilAttached !== undefined) return options.holdUntilAttached;
+  return (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
+}
+
 function holdUntilAttached(
   bridge: IPlaytestBridgeV1,
   options: IPlaytestOptions,
 ): Promise<void> | undefined {
-  if (options.holdUntilAttached !== true) return undefined;
+  if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`TN_PLAYTEST_ATTACH_TIMEOUT_INVALID: ${String(options.attachTimeoutMs)}`);

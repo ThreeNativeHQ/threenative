@@ -39,6 +39,15 @@ export interface IGameRuntimeObservations {
 
 export interface IGamePluginRuntime {
   readonly fixedStep: (ticks: number) => number;
+  /**
+   * Hold the frame loop until `gate` settles, after the start scene has entered.
+   *
+   * A plugin that blocks its own `setup` blocks it too early: entity-derived capabilities are
+   * registered by the scene, which runs after plugin setup, so a runner reading `describe()`
+   * during that hold sees a description missing them. Handing the gate here instead holds the
+   * loop at the last possible moment — everything is registered, nothing has stepped.
+   */
+  readonly holdStart?: (gate: Promise<void>) => void;
   readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
@@ -528,8 +537,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     });
     loopState.current = gameLoop;
     this.#loop = gameLoop;
+    const startGates: Promise<void>[] = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      holdStart: (gate) => startGates.push(gate),
       observations: createRuntimeObservations(),
       tick: gameLoop.tick,
       random,
@@ -563,6 +574,20 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#aborted) {
       this.#teardown(ctx);
       return;
+    }
+    // Plugins that must not let the game step before something external arrives wait here, with
+    // the scene entered and every capability registered, and with the loop still stopped.
+    if (startGates.length > 0) {
+      try {
+        await Promise.all(startGates);
+      } catch (error) {
+        this.#teardown(ctx);
+        throw error;
+      }
+      if (this.#aborted) {
+        this.#teardown(ctx);
+        return;
+      }
     }
     this.#started = true;
     gameLoop.start();
