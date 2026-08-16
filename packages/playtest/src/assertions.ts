@@ -955,8 +955,8 @@ export function evaluateRichPlaytestAssertions(input: {
       diagnostics.push(result.diagnostic);
     }
   }
-  for (const assertion of scenarioAssertions.states ?? []) {
-    const result = evaluateStateAssertion(assertion, input.report.observations, input.scenario);
+  for (const [stateIndex, assertion] of (scenarioAssertions.states ?? []).entries()) {
+    const result = evaluateStateAssertion(assertion, input.report.observations, input.scenario, stateIndex);
     assertions.push(result.assertion);
     if (result.diagnostic !== undefined) {
       diagnostics.push(result.diagnostic);
@@ -1235,13 +1235,13 @@ export function evaluateRichPlaytestAssertions(input: {
       diagnostics.push(result.diagnostic);
     }
   }
-  for (const assertion of scenarioAssertions.contacts ?? []) {
+  for (const [contactIndex, assertion] of (scenarioAssertions.contacts ?? []).entries()) {
     const entity = assertion.entity ?? input.scenario.subject;
     const anonymous = entity === undefined;
     if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
       assertions.push({
         details: { entity: entity || "anonymous", requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
-        id: `contact.${entity || "anonymous"}`,
+        id: assertion.entity === undefined ? `contact.${contactIndex}` : `contact.${entity}`,
         pass: true,
       });
       continue;
@@ -1276,7 +1276,7 @@ export function evaluateRichPlaytestAssertions(input: {
     const candidatesAvailable = !anonymous || candidates.length > 0;
     const pass = stepAvailable && candidatesAvailable && count >= minCount && (assertion.maxCount === undefined || count <= assertion.maxCount);
     const resultEntity = entity || "anonymous";
-    assertions.push({ details: { atStep: assertion.atStep, candidates, count, entity: resultEntity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: `contact.${resultEntity}`, pass });
+    assertions.push({ details: { atStep: assertion.atStep, candidates, count, entity: resultEntity, kind: assertion.kind, maxCount: assertion.maxCount, minCount, with: assertion.with }, id: assertion.entity === undefined ? `contact.${contactIndex}` : `contact.${resultEntity}`, pass });
     if (!pass) {
       const partial = summarizeMatchingEntries(effectEvidence, [entity, assertion.with].filter((item): item is string => item !== undefined));
       const hasPhysicsDebugEvidence = input.report.observations?.physicsDebug !== undefined
@@ -1310,7 +1310,7 @@ export function evaluateRichPlaytestAssertions(input: {
       });
     }
   }
-  for (const assertion of scenarioAssertions.settled ?? []) {
+  for (const [settledIndex, assertion] of (scenarioAssertions.settled ?? []).entries()) {
     if (assertion.requiredOn !== undefined && !assertion.requiredOn.includes(input.scenario.target)) {
       assertions.push({
         details: { entity: assertion.entity ?? "anonymous", requiredOn: assertion.requiredOn, skipped: true, target: input.scenario.target },
@@ -1341,7 +1341,7 @@ export function evaluateRichPlaytestAssertions(input: {
     const resultEntity = candidate?.selector ?? assertion.entity ?? "anonymous";
     assertions.push({
       details: { atStep: assertion.atStep, bodies: bodies.length, candidates: candidate?.candidates ?? [], compareToStep: assertion.compareToStep, entity: resultEntity, minimum, omittedBodies, poseDistance, sleeping },
-      id: `settled.${resultEntity}`,
+      id: assertion.entity === undefined ? `settled.${settledIndex}` : `settled.${assertion.entity}`,
       pass,
     });
     if (!pass) diagnostics.push({
@@ -1619,10 +1619,19 @@ function evaluateTagCountAssertion(
       };
 }
 
+/**
+ * `index` identifies an assertion that names no entity.
+ *
+ * Naming the row after the entity the run happened to discover makes the identifier depend on the
+ * build rather than on the proof, so two arms of a paired round emit different ids for the same
+ * sealed assertion — `states.mission` against `states.anonymous` — and nothing can join them. The
+ * discovered entity stays in `details`, where it is evidence rather than identity.
+ */
 function evaluateStateAssertion(
   assertion: IPlaytestStateAssertion,
   observations: unknown,
   scenario: IPlaytestScenario,
+  index: number,
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
   const gameplay = gameplayObservations(runtimeObservationValue(observations));
   const states = isRecord(gameplay?.states) ? gameplay.states : undefined;
@@ -1651,7 +1660,7 @@ function evaluateStateAssertion(
       observed: observed ?? null,
       terminal: { contactObserved: terminal.contactObserved, historyComplete: terminal.historyComplete, preExisting: selectedPreExisting, step: terminal.step },
     },
-    id: `states.${selectedEntity ?? "anonymous"}`,
+    id: assertion.entity === undefined ? `states.${index}` : `states.${assertion.entity}`,
     pass,
   };
   return pass

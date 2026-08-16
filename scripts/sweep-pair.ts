@@ -272,8 +272,10 @@ function sealedAssertionIds(scenario: Record<string, unknown>, context: string):
       add(`tags.${stringField(assertion, "tag", context)}`);
   }
   if (hasField(assertions, "states")) {
-    for (const assertion of recordArray(assertions, "states", context))
-      add(`states.${stringField(assertion, "entity", context)}`);
+    for (const [index, assertion] of recordArray(assertions, "states", context).entries())
+      // Anonymous assertions are keyed by position, matching how the runner ids them; naming
+      // them after a discovered entity would make the two arms' rows unjoinable.
+      add(`states.${typeof assertion.entity === "string" ? assertion.entity : index}`);
   }
   if (hasField(assertions, "diagnostics")) add("diagnostics");
   if (hasField(assertions, "movement")) {
@@ -298,12 +300,12 @@ function sealedAssertionIds(scenario: Record<string, unknown>, context: string):
       add(`visibility.${typeof assertion.entity === "string" ? assertion.entity : subject}`);
   }
   if (hasField(assertions, "contacts")) {
-    for (const assertion of recordArray(assertions, "contacts", context))
-      add(`contact.${typeof assertion.entity === "string" ? assertion.entity : subject}`);
+    for (const [index, assertion] of recordArray(assertions, "contacts", context).entries())
+      add(`contact.${typeof assertion.entity === "string" ? assertion.entity : index}`);
   }
   if (hasField(assertions, "settled")) {
-    for (const assertion of recordArray(assertions, "settled", context))
-      add(`settled.${stringField(assertion, "entity", context)}`);
+    for (const [index, assertion] of recordArray(assertions, "settled", context).entries())
+      add(`settled.${typeof assertion.entity === "string" ? assertion.entity : index}`);
   }
   if (hasField(assertions, "occluded")) {
     for (const assertion of recordArray(assertions, "occluded", context))

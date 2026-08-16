@@ -844,7 +844,7 @@ test("anonymous contact assertions require a retained candidate even for maxCoun
     [],
   );
 
-  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.anonymous", pass: false }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.0", pass: false }));
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE");
   expect(result.pass).toBe(false);
 });
@@ -879,7 +879,13 @@ test("anonymous settled assertions choose an observed body cohort", () => {
     [],
   );
 
-  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.crate.", pass: true }));
+  // Anonymous assertions are identified by their position in the sealed proof, not by the
+  // entity the run discovered — otherwise two arms of a paired round emit different ids for the
+  // same assertion and nothing can join them.
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "settled.0", pass: true }));
+  expect(result.assertionResults).toContainEqual(
+    expect.objectContaining({ details: expect.objectContaining({ entity: "crate." }) }),
+  );
   expect(result.pass).toBe(true);
 });
 
@@ -924,8 +930,14 @@ test("terminal anonymous state passes only after retained contact evidence", () 
     ],
   );
 
-  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.anonymous", pass: true }));
-  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: true }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.0", pass: true }));
+  // Anonymous assertions are identified by their position in the sealed proof, not by the
+  // entity the run discovered — otherwise two arms of a paired round emit different ids for the
+  // same assertion and nothing can join them.
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.0", pass: true }));
+  expect(result.assertionResults).toContainEqual(
+    expect.objectContaining({ details: expect.objectContaining({ entity: "avatar" }) }),
+  );
   expect(result.pass).toBe(true);
 });
 
@@ -969,7 +981,7 @@ test("terminal anonymous state rejects success that predates retained contact", 
     ],
   );
 
-  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: false }));
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.0", pass: false }));
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_STATE_ORDERING_FAILED");
   expect(result.pass).toBe(false);
 });

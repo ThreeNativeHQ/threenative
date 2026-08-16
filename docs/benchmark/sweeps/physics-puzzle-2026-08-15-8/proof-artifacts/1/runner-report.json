@@ -2,17 +2,17 @@
   "after": {
     "frame": 10,
     "position": [
-      -1.228531002998352,
-      0.4998452961444855,
-      0.6751345992088318
+      -1.1860452890396118,
+      0.499845415353775,
+      0.6886266469955444
     ],
     "rotation": [
-      2.994939336531388e-7,
-      0.2648893892765045,
-      -2.6735409619504935e-7,
-      0.9642788171768188
+      1.6857097762112971e-7,
+      0.23385591804981232,
+      -1.6244807454768306e-7,
+      0.9722712635993958
     ],
-    "tick": 1369
+    "tick": 2114
   },
   "before": {
     "frame": 0,
@@ -27,7 +27,7 @@
       -4.513371010261835e-8,
       0.9950041770935059
     ],
-    "tick": 80
+    "tick": 90
   },
   "diagnostics": [
     {
@@ -41,9 +41,9 @@
       "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
       "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
       "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-      "path": "/tmp/threenative-proof-L3uMrQ/physics-puzzle.playtest.json/assert/settled/crate.",
+      "path": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json/assert/settled/crate.",
       "severity": "error",
-      "sourcePath": "/tmp/threenative-proof-L3uMrQ/physics-puzzle.playtest.json",
+      "sourcePath": "/tmp/threenative-proof-ymFTQb/physics-puzzle.playtest.json",
       "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
     }
   ],
@@ -53,66 +53,66 @@
     "noRuntimeDiagnostics": true,
     "runtimeReady": true
   },
-  "distance": 2.4298309090854264,
+  "distance": 2.4684945857986027,
   "entity": "crate.27",
   "expectMoved": true,
   "frames": 1152,
   "movementDelta": [
-    2.37232768535614,
-    -2.086162567138672e-7,
-    -0.525489866733551
+    2.4148133993148804,
+    -8.940696716308594e-8,
+    -0.5119978189468384
   ],
   "observations": {
     "componentSeries": [
       {
         "label": "drop",
         "snapshots": {},
-        "tick": 133
+        "tick": 153
       },
       {
         "label": "settled",
         "snapshots": {},
-        "tick": 223
+        "tick": 298
       },
       {
         "label": "push-to-goal",
         "snapshots": {},
-        "tick": 599
+        "tick": 869
       },
       {
         "label": "cross-pass-through",
         "snapshots": {},
-        "tick": 730
+        "tick": 1080
       },
       {
         "label": "line-up-with-goal",
         "snapshots": {},
-        "tick": 861
+        "tick": 1291
       },
       {
         "label": "cross-ghost",
         "snapshots": {},
-        "tick": 1002
+        "tick": 1517
       },
       {
         "label": "move-back-north",
         "snapshots": {},
-        "tick": 1143
+        "tick": 1743
       },
       {
         "label": "move-to-goal-lane",
         "snapshots": {},
-        "tick": 1194
+        "tick": 1834
       },
       {
         "label": "descend-to-goal",
         "snapshots": {},
-        "tick": 1335
+        "tick": 2060
       },
       {
         "label": "goal-contact",
         "snapshots": {},
-        "tick": 1369
+        "tick": 2109
       }
     ],
     "console": [
@@ -130,6 +130,26 @@
         "source": "browser-console",
         "text": "THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.",
         "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "[.WebGL-0x113c0015fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
+        "type": "warning"
       }
     ],
     "hud": {},
@@ -137,593 +157,6 @@
     "physicsDebugSeries": [
       {
         "label": "drop",
-        "snapshot": {
-          "artifact": {
-            "overflow": {
-              "omittedBodies": 0
-            },
-            "primitives": [
-              {
-                "category": "sleep",
-                "entity": "player",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "player",
-                "position": [
-                  -5.1999993324279785,
-                  0.7596990466117859,
-                  1.1999995708465576
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.0",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.0",
-                "position": [
-                  -2.227370262145996,
-                  0.49956414103507996,
-                  -2.6294143199920654
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.1",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.1",
-                "position": [
-                  -1.2011877298355103,
-                  0.4994751513004303,
-                  -2.616518020629883
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.2",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.2",
-                "position": [
-                  -0.1372954398393631,
-                  0.4995286464691162,
-                  -2.6469228267669678
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.3",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.3",
-                "position": [
-                  -2.270972490310669,
-                  0.49964433908462524,
-                  -1.608436107635498
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.4",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.4",
-                "position": [
-                  -1.1892564296722412,
-                  0.499538391828537,
-                  -1.580957055091858
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.5",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.5",
-                "position": [
-                  -0.18195199966430664,
-                  0.499464750289917,
-                  -1.601922869682312
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.6",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.6",
-                "position": [
-                  -2.2310636043548584,
-                  0.4995723068714142,
-                  -0.5358880758285522
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.7",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.7",
-                "position": [
-                  -1.225400447845459,
-                  0.49959269165992737,
-                  -0.5541483759880066
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.8",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.8",
-                "position": [
-                  -0.14915111660957336,
-                  0.4995127022266388,
-                  -0.5388284921646118
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.9",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.9",
-                "position": [
-                  -2.2615621089935303,
-                  1.4968987703323364,
-                  -2.636705160140991
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.10",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.10",
-                "position": [
-                  -1.1994918584823608,
-                  1.49635910987854,
-                  -2.62865948677063
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.11",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.11",
-                "position": [
-                  -0.149606853723526,
-                  1.4969264268875122,
-                  -2.6458067893981934
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.12",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.12",
-                "position": [
-                  -2.2760279178619385,
-                  1.497060775756836,
-                  -1.5899916887283325
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.13",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.13",
-                "position": [
-                  -1.2117875814437866,
-                  1.4968775510787964,
-                  -1.5869578123092651
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.14",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.14",
-                "position": [
-                  -0.16745051741600037,
-                  1.4965394735336304,
-                  -1.5923610925674438
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.15",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.15",
-                "position": [
-                  -2.2446773052215576,
-                  1.4968910217285156,
-                  -0.5490347743034363
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.16",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.16",
-                "position": [
-                  -1.2324460744857788,
-                  1.4974327087402344,
-                  -0.5801374912261963
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.17",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.17",
-                "position": [
-                  -0.16563378274440765,
-                  1.4967621564865112,
-                  -0.5397047996520996
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.18",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.18",
-                "position": [
-                  -2.2258358001708984,
-                  2.495532751083374,
-                  -2.6661899089813232
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.19",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.19",
-                "position": [
-                  -1.1648917198181152,
-                  2.4952714443206787,
-                  -2.642338752746582
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.20",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.20",
-                "position": [
-                  -0.15756714344024658,
-                  2.495692491531372,
-                  -2.6777470111846924
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.21",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.21",
-                "position": [
-                  -2.224177598953247,
-                  2.4961071014404297,
-                  -1.6039742231369019
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.22",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.22",
-                "position": [
-                  -1.215521216392517,
-                  2.4960296154022217,
-                  -1.6079097986221313
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.23",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.23",
-                "position": [
-                  -0.19227002561092377,
-                  2.495357036590576,
-                  -1.6145069599151611
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.24",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.24",
-                "position": [
-                  -2.271254777908325,
-                  2.4954833984375,
-                  -0.5591835379600525
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.25",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.25",
-                "position": [
-                  -1.1810014247894287,
-                  2.496596097946167,
-                  -0.5712626576423645
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.26",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.26",
-                "position": [
-                  -0.14090557396411896,
-                  2.495591640472412,
-                  -0.5759149193763733
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.27",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.27",
-                "position": [
-                  -3.600858688354492,
-                  0.4998455047607422,
-                  1.2006244659423828
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.28",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.28",
-                "position": [
-                  1.399051308631897,
-                  0.49984538555145264,
-                  1.0995218753814697
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.29",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.29",
-                "position": [
-                  -6.011106967926025,
-                  0.4998452365398407,
-                  4.968735694885254
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.30",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.30",
-                "position": [
-                  -5.309215545654297,
-                  0.49984487891197205,
-                  -3.551804304122925
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.31",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.31",
-                "position": [
-                  -2.8319664001464844,
-                  0.4998454451560974,
-                  -4.356855869293213
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.32",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.32",
-                "position": [
-                  -6.745397567749023,
-                  0.4998454451560974,
-                  -2.9027910232543945
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.33",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.33",
-                "position": [
-                  -0.879824697971344,
-                  0.49984481930732727,
-                  5.044121742248535
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.34",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.34",
-                "position": [
-                  -2.30955171585083,
-                  0.4998449385166168,
-                  3.7398319244384766
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.35",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.35",
-                "position": [
-                  1.0542958974838257,
-                  0.4998449683189392,
-                  4.981910228729248
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.36",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.36",
-                "position": [
-                  7.572379112243652,
-                  0.499845415353775,
-                  4.272839546203613
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.37",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.37",
-                "position": [
-                  -4.2440361976623535,
-                  0.4998452961444855,
-                  -2.186995267868042
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.38",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.38",
-                "position": [
-                  0.9737767577171326,
-                  0.49984511733055115,
-                  3.0331811904907227
-                ]
-              },
-              {
-                "category": "sleep",
-                "entity": "crate.39",
-                "value": 1
-              },
-              {
-                "category": "center-of-mass",
-                "entity": "crate.39",
-                "position": [
-                  5.112602710723877,
-                  0.4998454451560974,
-                  -4.927218914031982
-                ]
-              }
-            ]
-          }
-        },
-        "tick": 133
-      },
-      {
-        "label": "settled",
         "snapshot": {
           "artifact": {
             "overflow": {
@@ -1307,7 +740,594 @@
             ]
           }
         },
-        "tick": 223
+        "tick": 153
+      },
+      {
+        "label": "settled",
+        "snapshot": {
+          "artifact": {
+            "overflow": {
+              "omittedBodies": 0
+            },
+            "primitives": [
+              {
+                "category": "sleep",
+                "entity": "player",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "player",
+                "position": [
+                  -5.1999993324279785,
+                  0.7595998048782349,
+                  1.1999996900558472
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.0",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.0",
+                "position": [
+                  -2.227370262145996,
+                  0.49956414103507996,
+                  -2.6294143199920654
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.1",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.1",
+                "position": [
+                  -1.2011877298355103,
+                  0.4994751513004303,
+                  -2.616518020629883
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.2",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.2",
+                "position": [
+                  -0.1372954398393631,
+                  0.4995286464691162,
+                  -2.6469228267669678
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.3",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.3",
+                "position": [
+                  -2.270972490310669,
+                  0.49964433908462524,
+                  -1.608436107635498
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.4",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.4",
+                "position": [
+                  -1.1892564296722412,
+                  0.499538391828537,
+                  -1.580957055091858
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.5",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.5",
+                "position": [
+                  -0.18195199966430664,
+                  0.499464750289917,
+                  -1.601922869682312
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.6",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.6",
+                "position": [
+                  -2.2310636043548584,
+                  0.4995723068714142,
+                  -0.5358880758285522
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.7",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.7",
+                "position": [
+                  -1.225400447845459,
+                  0.49959269165992737,
+                  -0.5541483759880066
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.8",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.8",
+                "position": [
+                  -0.14915111660957336,
+                  0.4995127022266388,
+                  -0.5388284921646118
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.9",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.9",
+                "position": [
+                  -2.2615621089935303,
+                  1.4968987703323364,
+                  -2.636705160140991
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.10",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.10",
+                "position": [
+                  -1.1994918584823608,
+                  1.49635910987854,
+                  -2.62865948677063
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.11",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.11",
+                "position": [
+                  -0.149606853723526,
+                  1.4969264268875122,
+                  -2.6458067893981934
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.12",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.12",
+                "position": [
+                  -2.2760279178619385,
+                  1.497060775756836,
+                  -1.5899916887283325
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.13",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.13",
+                "position": [
+                  -1.2117875814437866,
+                  1.4968775510787964,
+                  -1.5869578123092651
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.14",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.14",
+                "position": [
+                  -0.16745051741600037,
+                  1.4965394735336304,
+                  -1.5923610925674438
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.15",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.15",
+                "position": [
+                  -2.2446773052215576,
+                  1.4968910217285156,
+                  -0.5490347743034363
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.16",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.16",
+                "position": [
+                  -1.2324460744857788,
+                  1.4974327087402344,
+                  -0.5801374912261963
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.17",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.17",
+                "position": [
+                  -0.16563378274440765,
+                  1.4967621564865112,
+                  -0.5397047996520996
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.18",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.18",
+                "position": [
+                  -2.2258358001708984,
+                  2.495532751083374,
+                  -2.6661899089813232
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.19",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.19",
+                "position": [
+                  -1.1648917198181152,
+                  2.4952714443206787,
+                  -2.642338752746582
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.20",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.20",
+                "position": [
+                  -0.15756714344024658,
+                  2.495692491531372,
+                  -2.6777470111846924
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.21",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.21",
+                "position": [
+                  -2.224177598953247,
+                  2.4961071014404297,
+                  -1.6039742231369019
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.22",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.22",
+                "position": [
+                  -1.215521216392517,
+                  2.4960296154022217,
+                  -1.6079097986221313
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.23",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.23",
+                "position": [
+                  -0.19227002561092377,
+                  2.495357036590576,
+                  -1.6145069599151611
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.24",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.24",
+                "position": [
+                  -2.271254777908325,
+                  2.4954833984375,
+                  -0.5591835379600525
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.25",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.25",
+                "position": [
+                  -1.1810014247894287,
+                  2.496596097946167,
+                  -0.5712626576423645
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.26",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.26",
+                "position": [
+                  -0.14090557396411896,
+                  2.495591640472412,
+                  -0.5759149193763733
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.27",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.27",
+                "position": [
+                  -3.600858688354492,
+                  0.4998455047607422,
+                  1.2006244659423828
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.28",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.28",
+                "position": [
+                  1.399051308631897,
+                  0.49984538555145264,
+                  1.0995218753814697
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.29",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.29",
+                "position": [
+                  -6.011106967926025,
+                  0.4998452365398407,
+                  4.968735694885254
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.30",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.30",
+                "position": [
+                  -5.309215545654297,
+                  0.49984487891197205,
+                  -3.551804304122925
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.31",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.31",
+                "position": [
+                  -2.8319664001464844,
+                  0.4998454451560974,
+                  -4.356855869293213
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.32",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.32",
+                "position": [
+                  -6.745397567749023,
+                  0.4998454451560974,
+                  -2.9027910232543945
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.33",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.33",
+                "position": [
+                  -0.879824697971344,
+                  0.49984481930732727,
+                  5.044121742248535
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.34",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.34",
+                "position": [
+                  -2.30955171585083,
+                  0.4998449385166168,
+                  3.7398319244384766
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.35",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.35",
+                "position": [
+                  1.0542958974838257,
+                  0.4998449683189392,
+                  4.981910228729248
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.36",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.36",
+                "position": [
+                  7.572379112243652,
+                  0.499845415353775,
+                  4.272839546203613
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.37",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.37",
+                "position": [
+                  -4.2440361976623535,
+                  0.4998452961444855,
+                  -2.186995267868042
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.38",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.38",
+                "position": [
+                  0.9737767577171326,
+                  0.49984511733055115,
+                  3.0331811904907227
+                ]
+              },
+              {
+                "category": "sleep",
+                "entity": "crate.39",
+                "value": 1
+              },
+              {
+                "category": "center-of-mass",
+                "entity": "crate.39",
+                "position": [
+                  5.112602710723877,
+                  0.4998454451560974,
+                  -4.927218914031982
+                ]
+              }
+            ]
+          }
+        },
+        "tick": 298
       },
       {
         "label": "push-to-goal",
@@ -1326,9 +1346,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.65999698638916,
-                  0.7599275708198547,
-                  1.8509553670883179
+                  8.659899711608887,
+                  0.7599673271179199,
+                  1.8438323736190796
                 ]
               },
               {
@@ -1718,9 +1738,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -1732,9 +1752,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -1894,7 +1914,7 @@
             ]
           }
         },
-        "tick": 599
+        "tick": 869
       },
       {
         "label": "cross-pass-through",
@@ -1913,9 +1933,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659966468811035,
-                  0.7600958943367004,
-                  6.159935474395752
+                  8.659844398498535,
+                  0.7599967122077942,
+                  6.159951210021973
                 ]
               },
               {
@@ -2305,9 +2325,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -2319,9 +2339,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -2481,7 +2501,7 @@
             ]
           }
         },
-        "tick": 730
+        "tick": 1080
       },
       {
         "label": "line-up-with-goal",
@@ -2500,9 +2520,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659929275512695,
-                  0.7601000070571899,
-                  6.1598920822143555
+                  8.660005569458008,
+                  0.7600000500679016,
+                  6.1563825607299805
                 ]
               },
               {
@@ -2892,9 +2912,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -2906,9 +2926,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -3068,7 +3088,7 @@
             ]
           }
         },
-        "tick": 861
+        "tick": 1291
       },
       {
         "label": "cross-ghost",
@@ -3087,9 +3107,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659327507019043,
-                  0.7592689394950867,
-                  -3.748197555541992
+                  8.656403541564941,
+                  0.7599577307701111,
+                  -6.159931182861328
                 ]
               },
               {
@@ -3479,9 +3499,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -3493,9 +3513,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -3655,7 +3675,7 @@
             ]
           }
         },
-        "tick": 1002
+        "tick": 1517
       },
       {
         "label": "move-back-north",
@@ -3674,9 +3694,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659276962280273,
-                  0.7600967288017273,
-                  6.1599016189575195
+                  8.656294822692871,
+                  0.7601000666618347,
+                  6.15993595123291
                 ]
               },
               {
@@ -4066,9 +4086,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -4080,9 +4100,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -4242,7 +4262,7 @@
             ]
           }
         },
-        "tick": 1143
+        "tick": 1743
       },
       {
         "label": "move-to-goal-lane",
@@ -4261,9 +4281,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659952163696289,
+                  8.659996032714844,
                   0.7600969076156616,
-                  6.158780097961426
+                  6.159150123596191
                 ]
               },
               {
@@ -4653,9 +4673,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -4667,9 +4687,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -4829,7 +4849,7 @@
             ]
           }
         },
-        "tick": 1194
+        "tick": 1834
       },
       {
         "label": "descend-to-goal",
@@ -4848,9 +4868,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659635543823242,
-                  0.7599643468856812,
-                  -4.190340518951416
+                  8.65986442565918,
+                  0.7598568797111511,
+                  -6.159930229187012
                 ]
               },
               {
@@ -5240,9 +5260,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -5254,9 +5274,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -5416,7 +5436,7 @@
             ]
           }
         },
-        "tick": 1335
+        "tick": 2060
       },
       {
         "label": "goal-contact",
@@ -5435,9 +5455,9 @@
                 "category": "center-of-mass",
                 "entity": "player",
                 "position": [
-                  8.659635543823242,
-                  0.7592988014221191,
-                  -4.190339088439941
+                  8.65986442565918,
+                  0.7598936557769775,
+                  -6.159930229187012
                 ]
               },
               {
@@ -5827,9 +5847,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.27",
                 "position": [
-                  -1.228531002998352,
-                  0.4998452961444855,
-                  0.6751345992088318
+                  -1.1860452890396118,
+                  0.499845415353775,
+                  0.6886266469955444
                 ]
               },
               {
@@ -5841,9 +5861,9 @@
                 "category": "center-of-mass",
                 "entity": "crate.28",
                 "position": [
-                  1.7159878015518188,
-                  0.4998452663421631,
-                  0.9590630531311035
+                  1.6041274070739746,
+                  0.49984562397003174,
+                  0.9933665990829468
                 ]
               },
               {
@@ -6003,7 +6023,7 @@
             ]
           }
         },
-        "tick": 1369
+        "tick": 2109
       }
     ],
     "resources": {
@@ -6029,7 +6049,7 @@
           "replayTicks": 0,
           "seed": 6132,
           "settledCrates": 40,
-          "tick": 80,
+          "tick": 90,
           "won": false,
           "state": {
             "awakeCrates": 0,
@@ -6052,7 +6072,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 80,
+            "tick": 90,
             "won": false
           }
         },
@@ -6064,12 +6084,12 @@
           "ghostCount": 5,
           "ghostPasses": 2,
           "mission": "won",
-          "playerGoalHits": 483,
+          "playerGoalHits": 682,
           "playerState": "idle",
           "playerX": 8.66,
-          "playerY": 0.759,
-          "playerZ": -4.19,
-          "pushEvents": 4,
+          "playerY": 0.76,
+          "playerZ": -6.16,
+          "pushEvents": 3,
           "replayHashA": null,
           "replayHashB": null,
           "replayMatch": false,
@@ -6077,7 +6097,7 @@
           "replayTicks": 0,
           "seed": 6132,
           "settledCrates": 40,
-          "tick": 1369,
+          "tick": 2114,
           "won": true,
           "state": {
             "awakeCrates": 0,
@@ -6087,12 +6107,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 483,
+            "playerGoalHits": 682,
             "playerState": "idle",
             "playerX": 8.66,
-            "playerY": 0.759,
-            "playerZ": -4.19,
-            "pushEvents": 4,
+            "playerY": 0.76,
+            "playerZ": -6.16,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6100,7 +6120,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1369,
+            "tick": 2114,
             "won": true
           }
         }
@@ -6131,7 +6151,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 133,
+            "tick": 153,
             "won": false,
             "state": {
               "awakeCrates": 0,
@@ -6154,12 +6174,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 133,
+              "tick": 153,
               "won": false
             }
           }
         },
-        "tick": 133
+        "tick": 153
       },
       {
         "label": "settled",
@@ -6185,7 +6205,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 223,
+            "tick": 298,
             "won": false,
             "state": {
               "awakeCrates": 0,
@@ -6208,12 +6228,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 223,
+              "tick": 298,
               "won": false
             }
           }
         },
-        "tick": 223
+        "tick": 298
       },
       {
         "label": "push-to-goal",
@@ -6226,12 +6246,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 232,
+            "playerGoalHits": 426,
             "playerState": "idle",
             "playerX": 8.66,
             "playerY": 0.76,
-            "playerZ": 1.851,
-            "pushEvents": 4,
+            "playerZ": 1.844,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6239,7 +6259,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 599,
+            "tick": 869,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6249,12 +6269,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 232,
+              "playerGoalHits": 426,
               "playerState": "idle",
               "playerX": 8.66,
               "playerY": 0.76,
-              "playerZ": 1.851,
-              "pushEvents": 4,
+              "playerZ": 1.844,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6262,12 +6282,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 599,
+              "tick": 869,
               "won": true
             }
           }
         },
-        "tick": 599
+        "tick": 869
       },
       {
         "label": "cross-pass-through",
@@ -6280,12 +6300,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 245,
+            "playerGoalHits": 444,
             "playerState": "idle",
             "playerX": 8.66,
             "playerY": 0.76,
             "playerZ": 6.16,
-            "pushEvents": 4,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6293,7 +6313,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 730,
+            "tick": 1080,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6303,12 +6323,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 245,
+              "playerGoalHits": 444,
               "playerState": "idle",
               "playerX": 8.66,
               "playerY": 0.76,
               "playerZ": 6.16,
-              "pushEvents": 4,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6316,12 +6336,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 730,
+              "tick": 1080,
               "won": true
             }
           }
         },
-        "tick": 730
+        "tick": 1080
       },
       {
         "label": "line-up-with-goal",
@@ -6334,12 +6354,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 245,
+            "playerGoalHits": 444,
             "playerState": "idle",
             "playerX": 8.66,
             "playerY": 0.76,
-            "playerZ": 6.16,
-            "pushEvents": 4,
+            "playerZ": 6.156,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6347,7 +6367,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 861,
+            "tick": 1291,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6357,12 +6377,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 245,
+              "playerGoalHits": 444,
               "playerState": "idle",
               "playerX": 8.66,
               "playerY": 0.76,
-              "playerZ": 6.16,
-              "pushEvents": 4,
+              "playerZ": 6.156,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6370,12 +6390,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 861,
+              "tick": 1291,
               "won": true
             }
           }
         },
-        "tick": 861
+        "tick": 1291
       },
       {
         "label": "cross-ghost",
@@ -6388,12 +6408,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 324,
+            "playerGoalHits": 523,
             "playerState": "idle",
-            "playerX": 8.659,
-            "playerY": 0.759,
-            "playerZ": -3.748,
-            "pushEvents": 4,
+            "playerX": 8.656,
+            "playerY": 0.76,
+            "playerZ": -6.16,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6401,7 +6421,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1002,
+            "tick": 1517,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6411,12 +6431,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 324,
+              "playerGoalHits": 523,
               "playerState": "idle",
-              "playerX": 8.659,
-              "playerY": 0.759,
-              "playerZ": -3.748,
-              "pushEvents": 4,
+              "playerX": 8.656,
+              "playerY": 0.76,
+              "playerZ": -6.16,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6424,12 +6444,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 1002,
+              "tick": 1517,
               "won": true
             }
           }
         },
-        "tick": 1002
+        "tick": 1517
       },
       {
         "label": "move-back-north",
@@ -6442,12 +6462,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 405,
+            "playerGoalHits": 604,
             "playerState": "idle",
-            "playerX": 8.659,
+            "playerX": 8.656,
             "playerY": 0.76,
             "playerZ": 6.16,
-            "pushEvents": 4,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6455,7 +6475,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1143,
+            "tick": 1743,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6465,12 +6485,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 405,
+              "playerGoalHits": 604,
               "playerState": "idle",
-              "playerX": 8.659,
+              "playerX": 8.656,
               "playerY": 0.76,
               "playerZ": 6.16,
-              "pushEvents": 4,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6478,12 +6498,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 1143,
+              "tick": 1743,
               "won": true
             }
           }
         },
-        "tick": 1143
+        "tick": 1743
       },
       {
         "label": "move-to-goal-lane",
@@ -6496,12 +6516,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 405,
+            "playerGoalHits": 604,
             "playerState": "idle",
             "playerX": 8.66,
             "playerY": 0.76,
             "playerZ": 6.159,
-            "pushEvents": 4,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6509,7 +6529,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1194,
+            "tick": 1834,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6519,12 +6539,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 405,
+              "playerGoalHits": 604,
               "playerState": "idle",
               "playerX": 8.66,
               "playerY": 0.76,
               "playerZ": 6.159,
-              "pushEvents": 4,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6532,12 +6552,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 1194,
+              "tick": 1834,
               "won": true
             }
           }
         },
-        "tick": 1194
+        "tick": 1834
       },
       {
         "label": "descend-to-goal",
@@ -6550,12 +6570,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 483,
+            "playerGoalHits": 682,
             "playerState": "idle",
             "playerX": 8.66,
             "playerY": 0.76,
-            "playerZ": -4.19,
-            "pushEvents": 4,
+            "playerZ": -6.16,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6563,7 +6583,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1335,
+            "tick": 2060,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6573,12 +6593,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 483,
+              "playerGoalHits": 682,
               "playerState": "idle",
               "playerX": 8.66,
               "playerY": 0.76,
-              "playerZ": -4.19,
-              "pushEvents": 4,
+              "playerZ": -6.16,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6586,12 +6606,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 1335,
+              "tick": 2060,
               "won": true
             }
           }
         },
-        "tick": 1335
+        "tick": 2060
       },
       {
         "label": "goal-contact",
@@ -6604,12 +6624,12 @@
             "ghostCount": 5,
             "ghostPasses": 2,
             "mission": "won",
-            "playerGoalHits": 483,
+            "playerGoalHits": 682,
             "playerState": "idle",
             "playerX": 8.66,
-            "playerY": 0.759,
-            "playerZ": -4.19,
-            "pushEvents": 4,
+            "playerY": 0.76,
+            "playerZ": -6.16,
+            "pushEvents": 3,
             "replayHashA": null,
             "replayHashB": null,
             "replayMatch": false,
@@ -6617,7 +6637,7 @@
             "replayTicks": 0,
             "seed": 6132,
             "settledCrates": 40,
-            "tick": 1369,
+            "tick": 2109,
             "won": true,
             "state": {
               "awakeCrates": 0,
@@ -6627,12 +6647,12 @@
               "ghostCount": 5,
               "ghostPasses": 2,
               "mission": "won",
-              "playerGoalHits": 483,
+              "playerGoalHits": 682,
               "playerState": "idle",
               "playerX": 8.66,
-              "playerY": 0.759,
-              "playerZ": -4.19,
-              "pushEvents": 4,
+              "playerY": 0.76,
+              "playerZ": -6.16,
+              "pushEvents": 3,
               "replayHashA": null,
               "replayHashB": null,
               "replayMatch": false,
@@ -6640,12 +6660,12 @@
               "replayTicks": 0,
               "seed": 6132,
               "settledCrates": 40,
-              "tick": 1369,
+              "tick": 2109,
               "won": true
             }
           }
         },
-        "tick": 1369
+        "tick": 2109
       }
     ],
     "runtimeDiagnostics": {
@@ -6656,12 +6676,12 @@
             "id": "player",
             "projectedBounds": {
               "max": [
-                0.4445643400905086,
-                0.4659969725592763
+                0.39110504009286085,
+                0.5583578151092257
               ],
               "min": [
-                0.373796366626878,
-                0.32377286760036406
+                0.32554685335912503,
+                0.42237695994484536
               ]
             },
             "visible": true
@@ -7132,12 +7152,12 @@
             "id": "crate.27",
             "projectedBounds": {
               "max": [
-                0.015174921242796291,
-                -0.015240115994751724
+                0.017247873595109153,
+                -0.016538516847526052
               ],
               "min": [
-                -0.10470004622930529,
-                -0.2519351906351137
+                -0.10052765378743467,
+                -0.25053958455164627
               ]
             },
             "visible": true
@@ -7146,12 +7166,12 @@
             "id": "crate.28",
             "projectedBounds": {
               "max": [
-                0.20594402844844284,
-                0.017724660849958496
+                0.19628403809187445,
+                0.009062592984004691
               ],
               "min": [
-                0.10470707626970177,
-                -0.18345397413271924
+                0.10154612385141992,
+                -0.18525913353174106
               ]
             },
             "visible": true
@@ -7317,7 +7337,7 @@
       "gameplay": {
         "animation": {
           "player": {
-            "advancedFrames": 1060,
+            "advancedFrames": 1615,
             "clip": "idle"
           }
         },
@@ -7441,16 +7461,6 @@
             "entity": "crate",
             "kind": "contact",
             "with": "crate"
-          },
-          {
-            "entity": "player",
-            "kind": "contact",
-            "with": "crate"
-          },
-          {
-            "entity": "player",
-            "kind": "contact",
-            "with": "crate.27"
           },
           {
             "entity": "player",
@@ -7697,7 +7707,7 @@
             }
           },
           "label": "drop",
-          "tick": 133
+          "tick": 153
         },
         {
           "gameplay": {
@@ -7856,13 +7866,13 @@
             }
           },
           "label": "settled",
-          "tick": 223
+          "tick": 298
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 370,
+                "advancedFrames": 550,
                 "clip": "idle"
               }
             },
@@ -7986,16 +7996,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -8085,13 +8085,13 @@
             }
           },
           "label": "push-to-goal",
-          "tick": 599
+          "tick": 869
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 495,
+                "advancedFrames": 740,
                 "clip": "idle"
               }
             },
@@ -8215,16 +8215,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -8314,13 +8304,13 @@
             }
           },
           "label": "cross-pass-through",
-          "tick": 730
+          "tick": 1080
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 620,
+                "advancedFrames": 930,
                 "clip": "idle"
               }
             },
@@ -8444,16 +8434,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -8543,13 +8523,13 @@
             }
           },
           "label": "line-up-with-goal",
-          "tick": 861
+          "tick": 1291
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 750,
+                "advancedFrames": 1135,
                 "clip": "idle"
               }
             },
@@ -8673,16 +8653,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -8772,13 +8742,13 @@
             }
           },
           "label": "cross-ghost",
-          "tick": 1002
+          "tick": 1517
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 885,
+                "advancedFrames": 1340,
                 "clip": "idle"
               }
             },
@@ -8902,16 +8872,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -9001,13 +8961,13 @@
             }
           },
           "label": "move-back-north",
-          "tick": 1143
+          "tick": 1743
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 925,
+                "advancedFrames": 1410,
                 "clip": "idle"
               }
             },
@@ -9131,16 +9091,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -9230,13 +9180,13 @@
             }
           },
           "label": "move-to-goal-lane",
-          "tick": 1194
+          "tick": 1834
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 1060,
+                "advancedFrames": 1615,
                 "clip": "idle"
               }
             },
@@ -9360,16 +9310,6 @@
                 "entity": "crate",
                 "kind": "contact",
                 "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate.27"
               },
               {
                 "entity": "player",
@@ -9459,13 +9399,13 @@
             }
           },
           "label": "descend-to-goal",
-          "tick": 1335
+          "tick": 2060
         },
         {
           "gameplay": {
             "animation": {
               "player": {
-                "advancedFrames": 1060,
+                "advancedFrames": 1615,
                 "clip": "idle"
               }
             },
@@ -9618,16 +9558,6 @@
               {
                 "entity": "player",
                 "kind": "contact",
-                "with": "crate.27"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
-                "with": "crate"
-              },
-              {
-                "entity": "player",
-                "kind": "contact",
                 "with": "crate.28"
               },
               {
@@ -9688,7 +9618,7 @@
             }
           },
           "label": "goal-contact",
-          "tick": 1369
+          "tick": 2109
         }
       ]
     },
@@ -9697,64 +9627,64 @@
       {
         "label": "drop",
         "signals": [],
-        "tick": 133
+        "tick": 153
       },
       {
         "label": "settled",
         "signals": [],
-        "tick": 223
+        "tick": 298
       },
       {
         "label": "push-to-goal",
         "signals": [],
-        "tick": 599
+        "tick": 869
       },
       {
         "label": "cross-pass-through",
         "signals": [],
-        "tick": 730
+        "tick": 1080
       },
       {
         "label": "line-up-with-goal",
         "signals": [],
-        "tick": 861
+        "tick": 1291
       },
       {
         "label": "cross-ghost",
         "signals": [],
-        "tick": 1002
+        "tick": 1517
       },
       {
         "label": "move-back-north",
         "signals": [],
-        "tick": 1143
+        "tick": 1743
       },
       {
         "label": "move-to-goal-lane",
         "signals": [],
-        "tick": 1194
+        "tick": 1834
       },
       {
         "label": "descend-to-goal",
         "signals": [],
-        "tick": 1335
+        "tick": 2060
       },
       {
         "label": "goal-contact",
         "signals": [],
-        "tick": 1369
+        "tick": 2109
       }
     ],
     "visual": {
-      "changedPixelRatio": 0.16779622395833332,
+      "changedPixelRatio": 0.16702256944444444,
       "comparisonSource": "before-after"
     }
   },
   "artifactDirectory": "/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/physics-puzzle-2026-08-15-8/proof-artifacts/1",
   "capture": {
     "adapter": {
-      "renderer": "ANGLE (Mesa, llvmpipe (LLVM 22.1.8 256 bits), OpenGL 4.6)",
-      "vendor": "Google Inc. (Mesa)"
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)"
     },
     "browserArgs": [
       "--ozone-platform=x11",
@@ -9810,7 +9740,7 @@
           "step": "goal-contact"
         }
       },
-      "id": "states.mission",
+      "id": "states.0",
       "pass": false
     },
     {
@@ -9830,7 +9760,7 @@
     },
     {
       "details": {
-        "distance": 2.4298309090854264,
+        "distance": 2.4684945857986027,
         "entity": "crate.27",
         "minimum": 1.5
       },
@@ -9846,12 +9776,12 @@
           "player:crate.27:contact",
           "player:crate.28:contact"
         ],
-        "count": 32,
+        "count": 30,
         "entity": "anonymous",
         "kind": "contact",
         "minCount": 1
       },
-      "id": "contact.anonymous",
+      "id": "contact.0",
       "pass": true
     },
     {
@@ -9869,7 +9799,7 @@
         "kind": "trigger",
         "minCount": 1
       },
-      "id": "contact.anonymous",
+      "id": "contact.1",
       "pass": true
     },
     {
@@ -9887,7 +9817,7 @@
         "kind": "trigger",
         "minCount": 1
       },
-      "id": "contact.anonymous",
+      "id": "contact.2",
       "pass": true
     },
     {
@@ -9946,7 +9876,7 @@
         },
         "sleeping": 40
       },
-      "id": "settled.crate.",
+      "id": "settled.0",
       "pass": false
     }
   ],

@@ -1,5 +1,18 @@
 {
-  "diagnostics": [],
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "33 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "33 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    }
+  ],
   "diagnosticsPolicy": {
     "noConsoleErrors": true,
     "noNetworkErrors": true,
@@ -30,15 +43,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.2926025390625,
+          "before": -4.298443794250488,
           "after": -4.291100978851318
         },
         "y": {
-          "before": 0.3984531760215759,
+          "before": 0.39385291934013367,
           "after": 0.39834389090538025
         },
         "z": {
-          "before": -5.032079219818115,
+          "before": -4.997820854187012,
           "after": -5.031518936157227
         },
         "tags": {
@@ -70,15 +83,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.289037704467773,
+          "before": -4.291183948516846,
           "after": -4.286247253417969
         },
         "y": {
-          "before": 1.197235345840454,
+          "before": 1.3657073974609375,
           "after": 1.1965926885604858
         },
         "z": {
-          "before": -5.110931873321533,
+          "before": -5.065003871917725,
           "after": -5.110432147979736
         },
         "tags": {
@@ -110,15 +123,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.476638317108154,
+          "before": -4.37329626083374,
           "after": -4.471132755279541
         },
         "y": {
-          "before": 1.9950520992279053,
+          "before": 2.5366904735565186,
           "after": 1.9947558641433716
         },
         "z": {
-          "before": -5.1692047119140625,
+          "before": -5.096297740936279,
           "after": -5.168638229370117
         },
         "tags": {
@@ -150,15 +163,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.304880142211914,
+          "before": -4.298459053039551,
           "after": -4.30372428894043
         },
         "y": {
-          "before": 0.3990812301635742,
+          "before": 0.3938528895378113,
           "after": 0.3984261155128479
         },
         "z": {
-          "before": -4.183902263641357,
+          "before": -4.167812347412109,
           "after": -4.185792446136475
         },
         "tags": {
@@ -190,15 +203,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.358058929443359,
+          "before": -4.280575275421143,
           "after": -4.353945255279541
         },
         "y": {
-          "before": 1.1980928182601929,
+          "before": 1.3647806644439697,
           "after": 1.1966490745544434
         },
         "z": {
-          "before": -4.246150016784668,
+          "before": -4.243042945861816,
           "after": -4.247424602508545
         },
         "tags": {
@@ -230,15 +243,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.5364484786987305,
+          "before": -4.390120029449463,
           "after": -4.528465270996094
         },
         "y": {
-          "before": 1.995805025100708,
+          "before": 2.5341203212738037,
           "after": 1.994578242301941
         },
         "z": {
-          "before": -4.148559093475342,
+          "before": -4.146646499633789,
           "after": -4.1495490074157715
         },
         "tags": {
@@ -270,15 +283,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.339024066925049,
+          "before": -4.298449993133545,
           "after": -4.337251663208008
         },
         "y": {
-          "before": 0.4075798988342285,
+          "before": 0.39385291934013367,
           "after": 0.39837148785591125
         },
         "z": {
-          "before": -3.28865122795105,
+          "before": -3.337817430496216,
           "after": -3.2995290756225586
         },
         "tags": {
@@ -310,15 +323,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.403361797332764,
+          "before": -4.339480400085449,
           "after": -4.398369789123535
         },
         "y": {
-          "before": 1.2057119607925415,
+          "before": 1.366929292678833,
           "after": 1.1968132257461548
         },
         "z": {
-          "before": -3.17974853515625,
+          "before": -3.2788782119750977,
           "after": -3.2155561447143555
         },
         "tags": {
@@ -350,15 +363,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.795696258544922,
+          "before": -4.47614049911499,
           "after": -5.366316795349121
         },
         "y": {
-          "before": 2.0060389041900635,
+          "before": 2.533705472946167,
           "after": 0.39872390031814575
         },
         "z": {
-          "before": -2.895481824874878,
+          "before": -3.146946668624878,
           "after": -3.181694269180298
         },
         "tags": {
@@ -390,15 +403,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.483591079711914,
+          "before": -3.4684414863586426,
           "after": -3.4840967655181885
         },
         "y": {
-          "before": 0.3988288342952728,
+          "before": 0.39385291934013367,
           "after": 0.3981870710849762
         },
         "z": {
-          "before": -5.032761096954346,
+          "before": -4.99782133102417,
           "after": -5.031774520874023
         },
         "tags": {
@@ -430,15 +443,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.447355031967163,
+          "before": -3.472757339477539,
           "after": -3.4483702182769775
         },
         "y": {
-          "before": 1.1973061561584473,
+          "before": 1.3656120300292969,
           "after": 1.1964417695999146
         },
         "z": {
-          "before": -5.123798847198486,
+          "before": -5.037180423736572,
           "after": -5.121644020080566
         },
         "tags": {
@@ -470,15 +483,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.5297741889953613,
+          "before": -3.4927620887756348,
           "after": -3.529588222503662
         },
         "y": {
-          "before": 2.0038230419158936,
+          "before": 2.5381760597229004,
           "after": 1.9956947565078735
         },
         "z": {
-          "before": -5.331681728363037,
+          "before": -5.139437675476074,
           "after": -5.310956954956055
         },
         "tags": {
@@ -510,15 +523,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.473707675933838,
+          "before": -3.468449831008911,
           "after": -3.473651885986328
         },
         "y": {
-          "before": 0.3985898494720459,
+          "before": 0.3938528597354889,
           "after": 0.39817216992378235
         },
         "z": {
-          "before": -4.158047199249268,
+          "before": -4.167817115783691,
           "after": -4.158191204071045
         },
         "tags": {
@@ -550,15 +563,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.489990472793579,
+          "before": -3.471343755722046,
           "after": -3.489945650100708
         },
         "y": {
-          "before": 1.1971514225006104,
+          "before": 1.3651151657104492,
           "after": 1.1964956521987915
         },
         "z": {
-          "before": -4.124023914337158,
+          "before": -4.13811731338501,
           "after": -4.1244378089904785
         },
         "tags": {
@@ -590,15 +603,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.3734312057495117,
+          "before": -3.379042625427246,
           "after": -3.3734805583953857
         },
         "y": {
-          "before": 1.9964429140090942,
+          "before": 2.537052869796753,
           "after": 1.9950017929077148
         },
         "z": {
-          "before": -4.266773700714111,
+          "before": -4.193454742431641,
           "after": -4.267223358154297
         },
         "tags": {
@@ -630,15 +643,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.4882798194885254,
+          "before": -3.468456983566284,
           "after": -3.489088535308838
         },
         "y": {
-          "before": 0.39870530366897583,
+          "before": 0.39385294914245605,
           "after": 0.3982534408569336
         },
         "z": {
-          "before": -3.301295042037964,
+          "before": -3.337813138961792,
           "after": -3.3013367652893066
         },
         "tags": {
@@ -670,15 +683,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.5042285919189453,
+          "before": -3.4604759216308594,
           "after": -3.5046839714050293
         },
         "y": {
-          "before": 1.197189211845398,
+          "before": 1.3665050268173218,
           "after": 1.196365237236023
         },
         "z": {
-          "before": -3.2083208560943604,
+          "before": -3.2720754146575928,
           "after": -3.210686683654785
         },
         "tags": {
@@ -710,15 +723,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.549323797225952,
+          "before": -3.46352481842041,
           "after": -3.546647548675537
         },
         "y": {
-          "before": 2.0057437419891357,
+          "before": 2.5348503589630127,
           "after": 1.9952133893966675
         },
         "z": {
-          "before": -3.074953317642212,
+          "before": -3.248331069946289,
           "after": -3.1081690788269043
         },
         "tags": {
@@ -750,15 +763,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6076736450195312,
+          "before": -2.638429641723633,
           "after": -2.608302116394043
         },
         "y": {
-          "before": 0.40971094369888306,
+          "before": 0.39385291934013367,
           "after": 0.39837658405303955
         },
         "z": {
-          "before": -5.06141471862793,
+          "before": -4.997829437255859,
           "after": -5.049428939819336
         },
         "tags": {
@@ -790,15 +803,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6231260299682617,
+          "before": -2.6717629432678223,
           "after": -2.623603343963623
         },
         "y": {
-          "before": 1.207258939743042,
+          "before": 1.3656375408172607,
           "after": 1.1969971656799316
         },
         "z": {
-          "before": -5.208425045013428,
+          "before": -5.03542947769165,
           "after": -5.165036201477051
         },
         "tags": {
@@ -830,15 +843,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.4102976322174072,
+          "before": -2.4922657012939453,
           "after": -2.3914268016815186
         },
         "y": {
-          "before": 1.9847193956375122,
+          "before": 2.532909393310547,
           "after": 0.3987242579460144
         },
         "z": {
-          "before": -5.710123062133789,
+          "before": -5.192060470581055,
           "after": -6.722651958465576
         },
         "tags": {
@@ -870,15 +883,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.610203266143799,
+          "before": -2.6384365558624268,
           "after": -2.6112942695617676
         },
         "y": {
-          "before": 0.3989565372467041,
+          "before": 0.3938528597354889,
           "after": 0.39844805002212524
         },
         "z": {
-          "before": -4.163670539855957,
+          "before": -4.167825698852539,
           "after": -4.163280010223389
         },
         "tags": {
@@ -910,15 +923,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.569365978240967,
+          "before": -2.6463961601257324,
           "after": -2.5725815296173096
         },
         "y": {
-          "before": 1.19827401638031,
+          "before": 1.3662910461425781,
           "after": 1.1972073316574097
         },
         "z": {
-          "before": -4.164957523345947,
+          "before": -4.203353404998779,
           "after": -4.163990497589111
         },
         "tags": {
@@ -950,15 +963,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.0328197479248047,
+          "before": -2.432075262069702,
           "after": -0.8913966417312622
         },
         "y": {
-          "before": 1.9724934101104736,
+          "before": 2.539869546890259,
           "after": 0.3987242877483368
         },
         "z": {
-          "before": -4.113915920257568,
+          "before": -4.156890392303467,
           "after": -4.246622562408447
         },
         "tags": {
@@ -990,15 +1003,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.558619976043701,
+          "before": -2.6384496688842773,
           "after": -2.5635011196136475
         },
         "y": {
-          "before": 0.40346619486808777,
+          "before": 0.3938528895378113,
           "after": 0.3984481990337372
         },
         "z": {
-          "before": -3.2685370445251465,
+          "before": -3.3378171920776367,
           "after": -3.2690911293029785
         },
         "tags": {
@@ -1030,15 +1043,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.3884778022766113,
+          "before": -2.6097192764282227,
           "after": -2.4037539958953857
         },
         "y": {
-          "before": 1.2011791467666626,
+          "before": 1.3651723861694336,
           "after": 1.1969066858291626
         },
         "z": {
-          "before": -3.155388116836548,
+          "before": -3.3003339767456055,
           "after": -3.157270669937134
         },
         "tags": {
@@ -1070,15 +1083,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -1.6664540767669678,
+          "before": -2.3496501445770264,
           "after": -1.231967806816101
         },
         "y": {
-          "before": 1.8429789543151855,
+          "before": 2.534376859664917,
           "after": 0.3987240791320801
         },
         "z": {
-          "before": -2.8323123455047607,
+          "before": -3.227916955947876,
           "after": -2.016599655151367
         },
         "tags": {
@@ -1110,15 +1123,15 @@
           "after": "keystone"
         },
         "x": {
-          "before": -3.0441503524780273,
+          "before": -3.044365167617798,
           "after": -3.0441510677337646
         },
         "y": {
-          "before": 0.3987230658531189,
+          "before": 0.39575010538101196,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": 3.0445899963378906,
+          "before": 3.044365167617798,
           "after": 3.044588804244995
         },
         "tags": {
@@ -1150,15 +1163,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": -2.266550302505493,
+          "before": -2.266282081604004,
           "after": -2.2665529251098633
         },
         "y": {
-          "before": 0.3987211585044861,
+          "before": 0.38602498173713684,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 2.2665421962738037,
+          "before": 2.266993999481201,
           "after": 2.266538381576538
         },
         "tags": {
@@ -1190,15 +1203,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": -1.3473113775253296,
+          "before": -1.3470430374145508,
           "after": -1.3473145961761475
         },
         "y": {
-          "before": 0.3987211287021637,
+          "before": 0.38602498173713684,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 1.3473029136657715,
+          "before": 1.347754955291748,
           "after": 1.3472987413406372
         },
         "tags": {
@@ -1230,15 +1243,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": 4.450964450836182,
+          "before": 4.45123291015625,
           "after": 4.450963020324707
         },
         "y": {
-          "before": 0.39872118830680847,
+          "before": 0.38602501153945923,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -2.188230037689209,
+          "before": -2.1877784729003906,
           "after": -2.1882336139678955
         },
         "tags": {
@@ -1270,15 +1283,15 @@
           "after": "stray"
         },
         "x": {
-          "before": -1.9130256175994873,
+          "before": -1.9129942655563354,
           "after": -1.912988305091858
         },
         "y": {
-          "before": 0.39845818281173706,
+          "before": 1.2525211572647095,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 5.589823246002197,
+          "before": 5.589949607849121,
           "after": 5.589989185333252
         },
         "tags": {
@@ -1310,15 +1323,15 @@
           "after": "stray"
         },
         "x": {
-          "before": -5.58995246887207,
+          "before": -5.589949607849121,
           "after": -5.589977264404297
         },
         "y": {
-          "before": 0.3986910581588745,
+          "before": 0.6137378811836243,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -1.4811266660690308,
+          "before": -1.4811183214187622,
           "after": -1.4811524152755737
         },
         "tags": {
@@ -1350,15 +1363,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 4.4509711265563965,
+          "before": 4.450966835021973,
           "after": 4.4509596824646
         },
         "y": {
-          "before": 0.39871469140052795,
+          "before": 0.5825541615486145,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": 0.3573557734489441,
+          "before": 0.3573593199253082,
           "after": 0.3573639690876007
         },
         "tags": {
@@ -1390,15 +1403,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 5.441059112548828,
+          "before": 5.440916061401367,
           "after": 5.440794467926025
         },
         "y": {
-          "before": 0.39813923835754395,
+          "before": 1.2164766788482666,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -2.329714775085449,
+          "before": -2.329646348953247,
           "after": -2.3296070098876953
         },
         "tags": {
@@ -1430,15 +1443,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 1.763991355895996,
+          "before": 1.7639610767364502,
           "after": 1.7639167308807373
         },
         "y": {
-          "before": 0.39863964915275574,
+          "before": 0.8703091144561768,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -5.440915107727051,
+          "before": -5.440916061401367,
           "after": -5.4409260749816895
         },
         "tags": {
@@ -1470,15 +1483,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 2.6125006675720215,
+          "before": 2.6124892234802246,
           "after": 2.6124773025512695
         },
         "y": {
-          "before": 0.3981824219226837,
+          "before": 1.319079041481018,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 4.175544738769531,
+          "before": 4.175735950469971,
           "after": 4.175815582275391
         },
         "tags": {
@@ -1510,15 +1523,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 0.20833919942378998,
+          "before": 0.20832611620426178,
           "after": 0.2082740068435669
         },
         "y": {
-          "before": 0.39864984154701233,
+          "before": 0.7980490326881409,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": -5.582345962524414,
+          "before": -5.582337856292725,
           "after": -5.5823259353637695
         },
         "tags": {
@@ -2132,7 +2145,7 @@
             ]
           }
         },
-        "tick": 81
+        "tick": 27
       },
       {
         "label": "replay-complete",
@@ -2658,7 +2671,7 @@
             ]
           }
         },
-        "tick": 1881
+        "tick": 1827
       }
     ],
     "console": [
@@ -2681,6 +2694,171 @@
         "source": "browser-console",
         "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":77,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":80,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":18,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":77,\"cameraOverlay\":0,\"layers\":0,\"renderOrder\":0,\"renderHook\":0,\"transparency\":3,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
         "type": "info"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "unhandled-rejection",
+        "text": "OperationError: Instance dropped in popErrorScope",
+        "type": "error"
+      },
+      {
+        "source": "page-error",
+        "text": "Instance dropped in popErrorScope",
+        "type": "pageerror"
+      },
+      {
+        "source": "page-error",
+        "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43028:9)",
+        "type": "pageerror"
       }
     ],
     "hud": {},
@@ -2703,7 +2881,7 @@
           "replayPhase": "idle",
           "replayTick": 0,
           "seed": 6132,
-          "settled": 25,
+          "settled": 12,
           "solved": false,
           "solvedBy": ""
         },
@@ -2745,7 +2923,7 @@
           "replayPhase": "idle",
           "replayTick": 0,
           "seed": 6132,
-          "settled": 25,
+          "settled": 12,
           "solved": false,
           "solvedBy": ""
         },
@@ -2816,7 +2994,7 @@
             "solvedBy": ""
           }
         },
-        "tick": 81
+        "tick": 27
       },
       {
         "label": "replay-complete",
@@ -2862,11 +3040,177 @@
             "solvedBy": ""
           }
         },
-        "tick": 1881
+        "tick": 1827
       }
     ],
     "runtimeDiagnostics": {
-      "recentRuntimeErrors": [],
+      "recentRuntimeErrors": [
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "unhandled-rejection",
+          "text": "OperationError: Instance dropped in popErrorScope",
+          "type": "error"
+        },
+        {
+          "source": "page-error",
+          "text": "Instance dropped in popErrorScope",
+          "type": "pageerror"
+        },
+        {
+          "source": "page-error",
+          "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=cba77b02:43028:9)",
+          "type": "pageerror"
+        }
+      ],
       "scene": {
         "renderedEntities": []
       }
@@ -2905,7 +3249,7 @@
         "world": {
           "seed": 6132,
           "runtime": {
-            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
             "core": "0.1.0",
             "randomState": 6132,
             "rapier": "0.19.3",
@@ -2948,7 +3292,7 @@
             "world": {
               "seed": 6132,
               "runtime": {
-                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
                 "core": "0.1.0",
                 "randomState": 6132,
                 "rapier": "0.19.3",
@@ -2957,7 +3301,7 @@
             }
           },
           "label": "start-replay",
-          "tick": 81
+          "tick": 27
         },
         {
           "gameplay": {
@@ -2993,7 +3337,7 @@
             "world": {
               "seed": 6132,
               "runtime": {
-                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
                 "core": "0.1.0",
                 "randomState": 6132,
                 "rapier": "0.19.3",
@@ -3002,7 +3346,7 @@
             }
           },
           "label": "replay-complete",
-          "tick": 1881
+          "tick": 1827
         }
       ]
     },
@@ -3011,28 +3355,28 @@
       {
         "label": "start-replay",
         "signals": [],
-        "tick": 81
+        "tick": 27
       },
       {
         "label": "replay-complete",
         "signals": [],
-        "tick": 1881
+        "tick": 1827
       }
     ],
     "visual": {
-      "changedPixelRatio": 0.016754557291666666,
+      "changedPixelRatio": 0.002109375,
       "comparisonSource": "before-after"
     }
   },
   "artifactDirectory": "/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/proof-artifacts/0",
   "capture": {
     "adapter": {
-      "architecture": "turing",
-      "vendor": "nvidia",
-      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
       "limit.maxBindGroups": "4",
-      "limit.maxTextureDimension2D": "16384",
-      "limit.maxStorageBufferBindingSize": "2147483644"
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
     },
     "browserArgs": [
       "--ozone-platform=x11",
@@ -3106,7 +3450,7 @@
             "replayPhase": "idle",
             "replayTick": 0,
             "seed": 6132,
-            "settled": 25,
+            "settled": 12,
             "solved": false,
             "solvedBy": ""
           },
@@ -3141,7 +3485,7 @@
         "expectedRuntime": null,
         "observed": 6132,
         "observedRuntime": {
-          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
           "core": "0.1.0",
           "randomState": 6132,
           "rapier": "0.19.3",
@@ -3153,7 +3497,7 @@
     },
     {
       "details": {
-        "consoleErrors": 0,
+        "consoleErrors": 33,
         "networkErrors": 0,
         "policy": {
           "noConsoleErrors": true,
@@ -3161,13 +3505,13 @@
           "noRuntimeDiagnostics": true,
           "runtimeReady": true
         },
-        "runtimeDiagnostics": 0
+        "runtimeDiagnostics": 33
       },
       "id": "diagnostics",
-      "pass": true
+      "pass": false
     }
   ],
-  "pass": true,
+  "pass": false,
   "runtime": "web",
   "scenario": "physics-puzzle-deterministic-replay-proof",
   "target": "web",
