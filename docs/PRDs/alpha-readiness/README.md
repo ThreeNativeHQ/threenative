@@ -1,28 +1,25 @@
 # Batch — alpha readiness, 2026-08-15
 
-**Status: IN EXECUTION. Three done, one blocked, two open.** No mobile-readiness,
-physical-device or iOS claim is made anywhere in this folder.
+**Status: EXECUTED, 2026-08-16. Every PRD has reached a terminal state and been filed.** Three are
+done, three are blocked on external capabilities. No mobile-readiness, physical-device or iOS
+claim is made anywhere in this folder.
 
-| PRD | State |
+| PRD | Outcome |
 |---|---|
-| PRD-120 — the alpha bar is runnable | **done**, archived to `docs/PRDs/done/`. `pnpm alpha:bar` generates the table below, and a hand edit to it is reverted |
-| PRD-077 — desktop multitouch injector | **BLOCKED**, moved to `BLOCKED/requires-evdev-delivery/`. The injector is built and proved to the kernel boundary; no host here delivers what it writes |
-| PRD-119 — the alpha release train | **done**, archived. Seven packages live on npm; a stranger can install and build |
-| PRD-078 — toolchain-free consumer proof | Phase 1's version-skew question answered and fixed; Phase 0 still needs a tag push, which is owner-gated |
-| PRD-080 — five-minute stranger test | Phase 0 executed — one definition, and it measures a *player*. Phases 1–4 need a deploy and a human |
-| PRD-076 — reconcile the parity ledgers | **done**, archived. Desktop `66/0/1` and Android `67/0/0` measured with provenance; both predecessors superseded |
+| [PRD-076](../done/PRD-076-tier-1-parity-reconciliation.md) | **done.** Desktop `66/0/1` and Android `67/0/0` measured with provenance; both 2026-08-10 ledgers superseded on the lanes actually re-run |
+| [PRD-119](../done/PRD-119-the-alpha-release-train.md) | **done.** Seven packages on npm; a stranger installs, builds, and the published playtest both passes and fails closed |
+| [PRD-120](../done/PRD-120-the-alpha-bar-is-runnable.md) | **done.** `pnpm alpha:bar` computes the table below and reverts a hand edit |
+| [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) | **blocked** — a host that delivers a kernel input device. The injector is built and proved to the kernel boundary |
+| [PRD-078](../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md) | **blocked** — one release run with all five legs green. Its own subject, the missing Vulkan ICD, is fixed |
+| [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) | **blocked** — one external person. The protocol is written and the experiment is defined once |
 
-**What each remaining PRD is actually waiting on** — none of it is more agent work on the same
-lane:
+**This folder is not archived**, and will not be while three PRDs are blocked: a blocked criterion
+is not completion. What changed is that none of them is now *unclassified* — each names the
+capability it waits on, in the folder this repository files that in.
 
-| Waiting on | PRDs |
-|---|---|
-| An owner running an irreversible publish | PRD-078 Phase 0's release tag |
-| A host that delivers a kernel input device, or a seated X server | PRD-077 |
-| A public deploy and one external person | PRD-080 Phases 1–4 |
-
-**The folder is not archived while any row above is not done.** A blocked criterion is not
-completion, and neither is an owner-gated one.
+**The sentence this batch licenses today** is narrower than the one it was assembled to earn:
+*a stranger can install ThreeNative from npm and build a game on the web.* Not that anyone has
+played one, and not that the native path installs.
 
 ## What alpha means here, and how it differs from the beta bar
 
