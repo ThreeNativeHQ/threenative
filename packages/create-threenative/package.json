@@ -1,6 +1,6 @@
 {
   "name": "create-threenative",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Scaffold a readable ThreeNative game project.",
   "type": "module",
   "files": ["dist", "templates"],

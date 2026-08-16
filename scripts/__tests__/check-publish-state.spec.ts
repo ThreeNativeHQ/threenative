@@ -9,6 +9,8 @@ import {
   type RegistryLookup,
   checkPublishState,
   publishSet,
+  satisfiesRange,
+  staleInternalPeerRanges,
   unresolvedTemplateSpecifiers,
 } from "../check-publish-state.js";
 
@@ -167,6 +169,63 @@ describe("pnpm publish:check", () => {
       JSON.stringify({ devDependencies: { "@threenative/playtest": "workspace:*" } }),
     );
     expect(unresolvedTemplateSpecifiers(root)).toHaveLength(1);
+  });
+
+  it("fails when a peer range on a sibling excludes the version shipping beside it", async () => {
+    // @threenative/physics@0.2.0 and @threenative/ui@0.2.0 shipped declaring
+    // @threenative/core@">=0.1.0 <0.2.0", so npm install in a scaffolded project died with
+    // ERESOLVE and no stranger could build anything. The range is hand-maintained and had to
+    // move with the release; nothing made it, so this does.
+    const root = await fixture();
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        name: "@threenative/core",
+        peerDependencies: { "create-threenative": ">=0.1.0 <0.2.0" },
+        version: "0.2.0",
+      }),
+    );
+    write(
+      root,
+      "packages/create-threenative/package.json",
+      JSON.stringify({ name: "create-threenative", version: "0.2.0" }),
+    );
+    const findings = staleInternalPeerRanges(publishSet(root));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toMatch(/excludes the 0\.2\.0 being published beside it/u);
+  });
+
+  it("accepts a peer range that admits the sibling version", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        name: "@threenative/core",
+        peerDependencies: { "create-threenative": ">=0.2.0 <0.3.0" },
+        version: "0.2.0",
+      }),
+    );
+    write(
+      root,
+      "packages/create-threenative/package.json",
+      JSON.stringify({ name: "create-threenative", version: "0.2.0" }),
+    );
+    expect(staleInternalPeerRanges(publishSet(root))).toEqual([]);
+  });
+
+  it("evaluates the range forms this repository writes, and refuses ones it cannot read", () => {
+    expect(satisfiesRange("0.2.0", ">=0.1.0 <0.2.0")).toBe(false);
+    expect(satisfiesRange("0.2.0", ">=0.2.0 <0.3.0")).toBe(true);
+    expect(satisfiesRange("0.2.1", "^0.2.0")).toBe(true);
+    expect(satisfiesRange("0.3.0", "^0.2.0")).toBe(false);
+    expect(satisfiesRange("0.2.1", "~0.2.0")).toBe(true);
+    expect(satisfiesRange("0.2.0", "0.2.0")).toBe(true);
+    expect(satisfiesRange("0.2.0", "*")).toBe(true);
+    // Guessing at a range it cannot parse is how a preflight reports green while asserting
+    // nothing, so an unreadable range is an error rather than an optimistic true.
+    expect(() => satisfiesRange("0.2.0", "1.x || >=2")).toThrow(/TN_PUBLISH_RANGE_UNREADABLE/u);
   });
 
   it("refuses an empty publish set rather than reporting nothing to do", async () => {

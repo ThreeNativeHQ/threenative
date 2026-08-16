@@ -155,6 +155,93 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
   return findings;
 }
 
+function versionParts(version: string): readonly number[] {
+  const parts = version.split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 3 || parts.some(Number.isNaN))
+    throw new Error(`TN_PUBLISH_VERSION_MALFORMED: '${version}' is not a three-part version.`);
+  return parts;
+}
+
+function compareVersions(left: string, right: string): number {
+  const [a, b] = [versionParts(left), versionParts(right)];
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * Whether a version satisfies a range, for the comparator forms this repository actually writes:
+ * `>=X <Y`, `^X`, `~X`, `X` and `*`. Anything else is refused rather than guessed at — a range
+ * this cannot read is a range nobody should be relying on a preflight to check.
+ */
+export function satisfiesRange(version: string, range: string): boolean {
+  const trimmed = range.trim();
+  if (trimmed === "*" || trimmed === "") return true;
+  if (/^\d+\.\d+\.\d+$/u.test(trimmed)) return compareVersions(version, trimmed) === 0;
+  if (/^[\^~]\d+\.\d+\.\d+$/u.test(trimmed)) {
+    const floor = trimmed.slice(1);
+    const [major, minor] = versionParts(floor);
+    if (compareVersions(version, floor) < 0) return false;
+    const [candidateMajor, candidateMinor] = versionParts(version);
+    // npm's caret is special below 1.0.0: ^0.2.0 means >=0.2.0 <0.3.0, not <1.0.0, because a
+    // 0.x minor bump is treated as breaking. Getting this wrong would let the preflight bless a
+    // range that npm then refuses at install time — the exact failure it exists to prevent.
+    if (trimmed.startsWith("^"))
+      return major === 0
+        ? candidateMajor === 0 && candidateMinor === minor
+        : candidateMajor === major;
+    return candidateMajor === major && candidateMinor === minor;
+  }
+  const comparators = trimmed.split(/\s+/u);
+  if (!comparators.every((item) => /^(?:>=|<=|>|<|=)\d+\.\d+\.\d+$/u.test(item)))
+    throw new Error(
+      `TN_PUBLISH_RANGE_UNREADABLE: '${range}' uses a form this preflight cannot evaluate. Rewrite it as >=X <Y, ^X, ~X or an exact version.`,
+    );
+  return comparators.every((item) => {
+    const operator = /^(?:>=|<=|>|<|=)/u.exec(item)?.[0] ?? "=";
+    const bound = item.slice(operator.length);
+    const order = compareVersions(version, bound);
+    if (operator === ">=") return order >= 0;
+    if (operator === "<=") return order <= 0;
+    if (operator === ">") return order > 0;
+    if (operator === "<") return order < 0;
+    return order === 0;
+  });
+}
+
+/**
+ * A peer range on a sibling package must admit the version that sibling is about to publish.
+ *
+ * `@threenative/physics@0.2.0` and `@threenative/ui@0.2.0` shipped declaring
+ * `@threenative/core@">=0.1.0 <0.2.0"` — a range excluding the core released beside them — so
+ * `npm install` in a scaffolded project failed with ERESOLVE and no project could be built. The
+ * range is hand-maintained and had to move with the release; nothing made it.
+ */
+export function staleInternalPeerRanges(
+  packages: readonly IPublishPackage[],
+): readonly IPublishFinding[] {
+  const versions = new Map(packages.map((item) => [item.name, item.version]));
+  const findings: IPublishFinding[] = [];
+  for (const item of packages) {
+    const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as {
+      peerDependencies?: Record<string, string>;
+    };
+    for (const [dependency, range] of Object.entries(manifest.peerDependencies ?? {})) {
+      const sibling = versions.get(dependency);
+      if (sibling === undefined) continue;
+      if (satisfiesRange(sibling, range)) continue;
+      findings.push({
+        detail: `${item.name} declares peer ${dependency}@'${range}', which excludes the ${sibling} being published beside it. Installing both fails with ERESOLVE.`,
+        package: item.name,
+        severity: "fail",
+      });
+    }
+  }
+  return findings;
+}
+
 export const RELEASE_WORKFLOW = ".github/workflows/npm-release.yml";
 
 /**
@@ -231,6 +318,7 @@ export function checkPublishState(options: ICheckPublishOptions = {}): IPublishR
     const finding = versionFinding(item, lookup(item.name), commits);
     if (finding !== undefined) findings.push(finding);
   }
+  findings.push(...staleInternalPeerRanges(packages));
   findings.push(...missingFromReleaseWorkflow(repo, packages));
   findings.push(...unresolvedTemplateSpecifiers(repo));
   const blocked = findings.some((finding) => finding.severity === "blocked");

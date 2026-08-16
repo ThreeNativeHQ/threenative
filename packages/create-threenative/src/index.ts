@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -375,9 +375,20 @@ async function main(): Promise<void> {
   else process.stdout.write("Next: cd into the project and run pnpm dev.\n");
 }
 
+// `realpathSync`, not `path.resolve`. A package manager installs a `bin` as a symlink, so the
+// installed CLI runs as `node_modules/.bin/create-threenative` while `import.meta.url` is the
+// real `dist/index.js`. `path.resolve` normalises a path but does not follow symlinks, so the
+// two never matched, this guard was false, and the published CLI exited 0 having done nothing —
+// no project, no error, no output. It worked in this workspace only because the tests invoke
+// `dist/index.js` directly.
+//
+// `packages/playtest/src/runner/cli.ts:180` carries the same fix for the same reason; its
+// regression test is `__tests__/cli-bin.spec.ts`.
+const entryPath = process.argv[1];
 if (
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+  entryPath !== undefined &&
+  existsSync(entryPath) &&
+  realpathSync(path.resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))
 ) {
   main().catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
