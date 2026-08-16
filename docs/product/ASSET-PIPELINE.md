@@ -57,8 +57,8 @@ physical hardware to prove which optimizations actually matter.
 
 Both must be true:
 
-1. A stranger has played a ThreeNative game for
-   five minutes, with a transcript.
+1. The five-minute stranger test has closed —
+   [`STRANGER-TEST-PROTOCOL.md`](STRANGER-TEST-PROTOCOL.md) defines it.
 2. A reference game fails a device performance budget **for asset reasons**, measured, not
    assumed.
 

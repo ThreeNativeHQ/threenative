@@ -32,8 +32,13 @@ measurable but means nothing.
 
 ## The one measurement that outranks all of these
 
-The five-minute stranger test: **one game played by a stranger for five minutes, with a
-transcript.**
+The five-minute stranger test, defined once in
+[`docs/product/STRANGER-TEST-PROTOCOL.md`](../product/STRANGER-TEST-PROTOCOL.md) and nowhere
+else. In one line: **one stranger plays one ThreeNative game at a URL, and the result is how long
+they keep playing before stopping of their own accord.**
+
+The protocol is the definition; this paragraph is a pointer to it. It was restated here, and in
+two places in `ROADMAP.md`, in forms that turned out to describe two different experiments.
 
 v1 spent seven weeks unable to answer whether it was working, because its decisive
 experiment was specified three times and never run. This criterion costs an afternoon

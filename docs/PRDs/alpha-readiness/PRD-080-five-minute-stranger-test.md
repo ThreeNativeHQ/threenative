@@ -4,10 +4,33 @@ prd_contract: v1
 
 # PRD-080 — The five-minute stranger test: the project's decisive experiment, specified twice, never run
 
-**Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 is a read of tracked strategy
-documents and of the repository tree at commit `8c5fc40`. No session has been run, no person
-has been contacted, and nothing in this document reports a result. No mobile-readiness claim
-is made.
+**Status: PHASE 0 EXECUTED, 2026-08-15. Phases 1–4 not started. No session has been run, no
+person has been contacted, and nothing here reports a result.** No mobile-readiness claim is made.
+
+**Phase 0's decision: the five-minute stranger test is the *player* test.**
+[`docs/product/STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md) is now the
+single definition, and it fixes subject, stranger, clock, script, recording and consent.
+
+Decided this way because the project's own documents already do. `METRICS.md` is the document that
+defines the criterion and warns what happens if it stays unrun, and it says *played*.
+`CHARTER.md`'s acceptance item — *"One game is played by a stranger for five minutes, with a
+transcript"* — agrees, and the charter binds. The `ROADMAP.md` Tier 2 trigger's *adopting
+developer* was the outlier, and it is now labelled as the separate experiment it always was rather
+than a restatement of this one; it needs its own PRD before it can be claimed.
+
+Restatements were replaced with links in `METRICS.md`, `ROADMAP.md` (both places),
+`docs/product/ASSET-PIPELINE.md` and `docs/PRDs/asset-pipeline/README.md`. The charter keeps its
+own wording, which agrees with the protocol and is not a competing definition.
+
+**One consequence worth stating plainly: this test is not blocked on PRD-119.** A stranger opens a
+URL; nothing installs. It is the *adopting-developer* successor that needs a registry that does
+not 404. The batch README's claim that PRD-080 is blocked on lane A was true only of the
+experiment this PRD just decided not to run first.
+
+**Phase 1 is where it stops today.** It needs a public deploy — an outward-facing action — and
+Phases 3 and 4 need a human stranger, which is not agent work.
+
+§1 below is a read of tracked strategy documents and of the repository tree at commit `8c5fc40`.
 
 **Four tracked documents call this the project's decisive test. None of them agrees with the
 others about what it is.**

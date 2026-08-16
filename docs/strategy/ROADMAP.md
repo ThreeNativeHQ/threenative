@@ -58,11 +58,16 @@ order lives in [`docs/PRDs/BLOCKED/README.md`](../PRDs/BLOCKED/README.md).
 | **Tier 1** — the shipping bar | Renders-the-same, controls, and UI green on browser + Linux desktop + Android emulator; performance and soak green on web + native desktop | *"Runs on browser WebGPU, desktop Linux/macOS/Windows, and the Android emulator; iOS builds and packages."* **Nothing else.** |
 | **Tier 2** — deferred, not dropped | Physical Android and iOS: real GPU drivers, arm64, frame-rate parity, device soak, signed distribution | mobile readiness — **unclaimable until executed on hardware** |
 
-**Tier 2 reopen trigger — the project's decisive test:** a stranger has played a
-ThreeNative game for five minutes — concretely, the first external user who installs the
-framework and asks for a device build. A physical Android device arriving earlier reopens the
-Android half alone; it does not reopen iOS. Until then PRD-056, 057, 058 (device rows), 060
-and every **physical** iOS row are parked, not worked.
+**Tier 2 reopen trigger:** the first external user who **installs the framework and asks for a
+device build** — an *adopting developer*, which is a different experiment from the five-minute
+stranger test and needs its own PRD before it can be claimed. It was written here as a
+restatement of that test; it never was one. The stranger test's single definition is
+[`docs/product/STRANGER-TEST-PROTOCOL.md`](../product/STRANGER-TEST-PROTOCOL.md), it measures a
+*player*, and closing it does not by itself reopen Tier 2.
+
+A physical Android device arriving earlier reopens the Android half alone; it does not reopen
+iOS. Until then PRD-056, 057, 058 (device rows), 060 and every **physical** iOS row are parked,
+not worked.
 
 **Correction, 2026-08-11 — "no Apple machine" was never true of CI.** The free hosted
 `macos-15` runner executes, and simulator-class iOS rows are therefore *not* hardware-blocked;
@@ -181,6 +186,7 @@ A foundation model · a Blender replacement · visual scripting · a multiplayer
 console export · a plugin marketplace · a second renderer with feature parity · a universal
 app-store game player · blank-prompt generation without templates · support for every
 Three.js example · **a hosted Studio or Cloud tier before a stranger has played a
-ThreeNative game for five minutes** — the project's decisive test. Closed with evidence and
+ThreeNative game for five minutes** — the project's decisive test, defined in
+[`STRANGER-TEST-PROTOCOL.md`](../product/STRANGER-TEST-PROTOCOL.md). Closed with evidence and
 not reopened in a feature: an IR, a scene format, an editor, a preset system, a code-first
 ECS, a bespoke CLI vocabulary. Each can absorb the entire company; none is reopened in a feature.
