@@ -294,10 +294,18 @@ describe("round:next", () => {
     });
   });
 
-  it("rejects two missing arms as ambiguous", async () => {
+  it("names the first arm to build and counts the rest, rather than refusing to answer", async () => {
+    // Two arms both needing work is the healthy shape of a paired round, not an ambiguity: a
+    // round has two arms by construction, so any defect that affects both produces two
+    // candidates. Refusing to answer there turned the loop's own "what next" command into a
+    // throw the first time a real paired round reached it. Per-arm work is sequential -- nothing
+    // here is skipped, and the count of what remains is reported rather than dropped.
     const root = await fixture();
     const file = await writeLedger(root, baseLedger());
-    expect(() => nextRoundAction(root, file)).toThrow(/eligible next actions/u);
+
+    const action = nextRoundAction(root, file);
+
+    expect(action.reason).toMatch(/1 further arm action follows it\./u);
   });
 
   it("stops instead of resuming a blocked round", async () => {

@@ -56,12 +56,28 @@ function candidate(command: string, reason: string): RoundNextAction {
   return { command, reason };
 }
 
-function assertOne(candidates: RoundNextAction[], ledgerPath: string): RoundNextAction | undefined {
-  if (candidates.length > 1)
-    throw new Error(
-      `Round ledger '${ledgerPath}' has ${candidates.length} eligible next actions; resolve it first.`,
-    );
-  return candidates[0];
+/**
+ * The next per-arm action, in arm order, when several arms each need one.
+ *
+ * A paired round has two arms by construction, so any defect that affects both produces two
+ * candidates — the healthy shape of a round where neither arm has been proved is exactly the
+ * shape a plural-is-ambiguous guard rejects. Round 8 was the first ledger to reach this path
+ * (rounds 3-7 short-circuited earlier or had no two failing arms), and it turned the loop's own
+ * "what next" command into a throw.
+ *
+ * Per-arm work is sequential, not exclusive: proving the vanilla arm does not stop you proving
+ * the framework arm. So this returns the first and says how many remain rather than refusing to
+ * answer. Nothing is skipped and the count is reported, so the caller still gets one unambiguous
+ * command to run next.
+ */
+function firstOf(candidates: RoundNextAction[]): RoundNextAction | undefined {
+  const [first, ...rest] = candidates;
+  if (first === undefined || rest.length === 0) return first;
+  const plural = rest.length === 1 ? "" : "s";
+  return {
+    command: first.command,
+    reason: `${first.reason} ${rest.length} further arm action${plural} follow${rest.length === 1 ? "s" : ""} it.`,
+  };
 }
 
 function archiveLabel(arm: RoundArm): string {
@@ -137,7 +153,7 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
       );
   }
 
-  const first = assertOne(candidates, ledgerFile);
+  const first = firstOf(candidates);
   if (first !== undefined) return first;
 
   const unmeasuredVisual = ledger.arms.some((arm) => arm.instrumentVisual === "unmeasured");
