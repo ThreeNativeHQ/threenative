@@ -92,8 +92,7 @@ export function npmLookup(repo: string): RegistryLookup {
         { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
       );
       const parsed = JSON.parse(stdout) as { time?: Record<string, string>; version?: string };
-      if (typeof parsed.version !== "string")
-        return { state: "unreachable" };
+      if (typeof parsed.version !== "string") return { state: "unreachable" };
       const published = parsed.time?.[parsed.version];
       return {
         state: "present",
