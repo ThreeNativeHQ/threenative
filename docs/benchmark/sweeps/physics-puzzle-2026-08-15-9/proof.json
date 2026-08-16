@@ -1,7 +1,7 @@
 {
   "arm": "framework",
   "genre": "physics-puzzle",
-  "passed": 0,
+  "passed": 1,
   "proofHash": "e5be692b999fdad36baf5d795195de3423dd82d7bc577eb7fd36f3c241f13a95",
   "scenarios": [
     {
@@ -62,7 +62,7 @@
                 "replayPhase": "idle",
                 "replayTick": 0,
                 "seed": 6132,
-                "settled": 12,
+                "settled": 16,
                 "solved": false,
                 "solvedBy": ""
               },
@@ -97,7 +97,7 @@
             "expectedRuntime": null,
             "observed": 6132,
             "observedRuntime": {
-              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
               "core": "0.1.0",
               "randomState": 6132,
               "rapier": "0.19.3",
@@ -109,7 +109,7 @@
         },
         {
           "details": {
-            "consoleErrors": 33,
+            "consoleErrors": 0,
             "networkErrors": 0,
             "policy": {
               "noConsoleErrors": true,
@@ -117,28 +117,15 @@
               "noRuntimeDiagnostics": true,
               "runtimeReady": true
             },
-            "runtimeDiagnostics": 33
+            "runtimeDiagnostics": 0
           },
           "id": "diagnostics",
-          "pass": false
+          "pass": true
         }
       ],
-      "diagnostics": [
-        {
-          "code": "TN_PLAYTEST_CONSOLE_ERROR",
-          "message": "33 browser console error(s) were captured during playtest.",
-          "severity": "error",
-          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
-        },
-        {
-          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
-          "message": "33 runtime diagnostic error(s) were captured during playtest.",
-          "severity": "error",
-          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
-        }
-      ],
+      "diagnostics": [],
       "name": "physics-puzzle-deterministic-replay-proof",
-      "verdict": "fail"
+      "verdict": "pass"
     },
     {
       "assertions": [
@@ -148,7 +135,7 @@
             "expectedRuntime": null,
             "observed": 6132,
             "observedRuntime": {
-              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
               "core": "0.1.0",
               "randomState": 6132,
               "rapier": "0.19.3",
@@ -181,7 +168,7 @@
         },
         {
           "details": {
-            "consoleErrors": 32,
+            "consoleErrors": 0,
             "networkErrors": 0,
             "policy": {
               "noConsoleErrors": true,
@@ -189,10 +176,10 @@
               "noRuntimeDiagnostics": true,
               "runtimeReady": true
             },
-            "runtimeDiagnostics": 32
+            "runtimeDiagnostics": 0
           },
           "id": "diagnostics",
-          "pass": false
+          "pass": true
         },
         {
           "details": {
@@ -209,7 +196,9 @@
             "candidates": [
               "physics.body.0:crate-03",
               "physics.body.0:crate-29",
+              "physics.body.0:crate-28",
               "physics.body.0:crate-30",
+              "physics.body.0:crate-27",
               "crate-00:crate-01",
               "crate-12:crate-13",
               "crate-06:crate-07",
@@ -250,11 +239,9 @@
               "physics.body.0:crate-23",
               "physics.body.0:crate-20",
               "physics.body.0:crate-08",
+              "crate-00:crate-09",
               "crate-27:crate-28",
-              "physics.body.0:crate-27",
-              "physics.body.0:crate-28",
-              "crate-28:crate-29",
-              "crate-00:crate-09"
+              "crate-28:crate-29"
             ],
             "count": 48,
             "entity": "anonymous",
@@ -354,10 +341,10 @@
             "minimum": 30,
             "omittedBodies": 0,
             "poseDistance": {
-              "mean": 0.22763719537271185,
+              "mean": 0.1593371279095566,
               "sharedBodies": 38
             },
-            "sleeping": 0
+            "sleeping": 10
           },
           "id": "settled.0",
           "pass": false
@@ -371,18 +358,6 @@
           "suggestion": "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact."
         },
         {
-          "code": "TN_PLAYTEST_CONSOLE_ERROR",
-          "message": "32 browser console error(s) were captured during playtest.",
-          "severity": "error",
-          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
-        },
-        {
-          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
-          "message": "32 runtime diagnostic error(s) were captured during playtest.",
-          "severity": "error",
-          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
-        },
-        {
           "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
           "message": "Entity '' moved 0.000000, below required 1.5.",
           "severity": "error",
@@ -391,11 +366,11 @@
         {
           "artifactPath": "observations.json",
           "code": "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
-          "message": "Expected at least 30 physics bodies matching 'crate-' to be asleep; observed 0 of 38.",
+          "message": "Expected at least 30 physics bodies matching 'crate-' to be asleep; observed 10 of 38.",
           "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
-          "path": "/tmp/threenative-proof-svqHHv/physics-puzzle.playtest.json/assert/settled/crate-",
+          "path": "/tmp/threenative-proof-Kp3wGk/physics-puzzle.playtest.json/assert/settled/crate-",
           "severity": "error",
-          "sourcePath": "/tmp/threenative-proof-svqHHv/physics-puzzle.playtest.json",
+          "sourcePath": "/tmp/threenative-proof-Kp3wGk/physics-puzzle.playtest.json",
           "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
         }
       ],

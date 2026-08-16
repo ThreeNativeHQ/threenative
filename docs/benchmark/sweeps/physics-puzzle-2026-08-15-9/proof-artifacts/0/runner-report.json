@@ -1,18 +1,5 @@
 {
-  "diagnostics": [
-    {
-      "code": "TN_PLAYTEST_CONSOLE_ERROR",
-      "message": "33 browser console error(s) were captured during playtest.",
-      "severity": "error",
-      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
-    },
-    {
-      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
-      "message": "33 runtime diagnostic error(s) were captured during playtest.",
-      "severity": "error",
-      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
-    }
-  ],
+  "diagnostics": [],
   "diagnosticsPolicy": {
     "noConsoleErrors": true,
     "noNetworkErrors": true,
@@ -43,15 +30,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.298443794250488,
+          "before": -4.294328212738037,
           "after": -4.291100978851318
         },
         "y": {
-          "before": 0.39385291934013367,
+          "before": 0.40029287338256836,
           "after": 0.39834389090538025
         },
         "z": {
-          "before": -4.997820854187012,
+          "before": -5.03118896484375,
           "after": -5.031518936157227
         },
         "tags": {
@@ -83,15 +70,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.291183948516846,
+          "before": -4.29852294921875,
           "after": -4.286247253417969
         },
         "y": {
-          "before": 1.3657073974609375,
+          "before": 1.2016477584838867,
           "after": 1.1965926885604858
         },
         "z": {
-          "before": -5.065003871917725,
+          "before": -5.104636192321777,
           "after": -5.110432147979736
         },
         "tags": {
@@ -123,15 +110,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.37329626083374,
+          "before": -4.48252534866333,
           "after": -4.471132755279541
         },
         "y": {
-          "before": 2.5366904735565186,
+          "before": 1.9970792531967163,
           "after": 1.9947558641433716
         },
         "z": {
-          "before": -5.096297740936279,
+          "before": -5.150759696960449,
           "after": -5.168638229370117
         },
         "tags": {
@@ -163,15 +150,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.298459053039551,
+          "before": -4.304657936096191,
           "after": -4.30372428894043
         },
         "y": {
-          "before": 0.3938528895378113,
+          "before": 0.400648832321167,
           "after": 0.3984261155128479
         },
         "z": {
-          "before": -4.167812347412109,
+          "before": -4.183403491973877,
           "after": -4.185792446136475
         },
         "tags": {
@@ -203,15 +190,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.280575275421143,
+          "before": -4.35696268081665,
           "after": -4.353945255279541
         },
         "y": {
-          "before": 1.3647806644439697,
+          "before": 1.2084318399429321,
           "after": 1.1966490745544434
         },
         "z": {
-          "before": -4.243042945861816,
+          "before": -4.235929489135742,
           "after": -4.247424602508545
         },
         "tags": {
@@ -243,15 +230,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.390120029449463,
+          "before": -4.519058704376221,
           "after": -4.528465270996094
         },
         "y": {
-          "before": 2.5341203212738037,
+          "before": 2.009059190750122,
           "after": 1.994578242301941
         },
         "z": {
-          "before": -4.146646499633789,
+          "before": -4.137070178985596,
           "after": -4.1495490074157715
         },
         "tags": {
@@ -283,15 +270,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.298449993133545,
+          "before": -4.334926128387451,
           "after": -4.337251663208008
         },
         "y": {
-          "before": 0.39385291934013367,
+          "before": 0.4150431454181671,
           "after": 0.39837148785591125
         },
         "z": {
-          "before": -3.337817430496216,
+          "before": -3.2772438526153564,
           "after": -3.2995290756225586
         },
         "tags": {
@@ -323,15 +310,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.339480400085449,
+          "before": -4.422466278076172,
           "after": -4.398369789123535
         },
         "y": {
-          "before": 1.366929292678833,
+          "before": 1.2127043008804321,
           "after": 1.1968132257461548
         },
         "z": {
-          "before": -3.2788782119750977,
+          "before": -3.1753909587860107,
           "after": -3.2155561447143555
         },
         "tags": {
@@ -363,15 +350,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -4.47614049911499,
+          "before": -4.745040416717529,
           "after": -5.366316795349121
         },
         "y": {
-          "before": 2.533705472946167,
+          "before": 2.0013527870178223,
           "after": 0.39872390031814575
         },
         "z": {
-          "before": -3.146946668624878,
+          "before": -2.9299674034118652,
           "after": -3.181694269180298
         },
         "tags": {
@@ -403,15 +390,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.4684414863586426,
+          "before": -3.4839837551116943,
           "after": -3.4840967655181885
         },
         "y": {
-          "before": 0.39385291934013367,
+          "before": 0.4005434811115265,
           "after": 0.3981870710849762
         },
         "z": {
-          "before": -4.99782133102417,
+          "before": -5.033223628997803,
           "after": -5.031774520874023
         },
         "tags": {
@@ -443,15 +430,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.472757339477539,
+          "before": -3.4505867958068848,
           "after": -3.4483702182769775
         },
         "y": {
-          "before": 1.3656120300292969,
+          "before": 1.1996934413909912,
           "after": 1.1964417695999146
         },
         "z": {
-          "before": -5.037180423736572,
+          "before": -5.120460033416748,
           "after": -5.121644020080566
         },
         "tags": {
@@ -483,15 +470,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.4927620887756348,
+          "before": -3.541722297668457,
           "after": -3.529588222503662
         },
         "y": {
-          "before": 2.5381760597229004,
+          "before": 2.0062901973724365,
           "after": 1.9956947565078735
         },
         "z": {
-          "before": -5.139437675476074,
+          "before": -5.292116165161133,
           "after": -5.310956954956055
         },
         "tags": {
@@ -523,15 +510,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.468449831008911,
+          "before": -3.474731683731079,
           "after": -3.473651885986328
         },
         "y": {
-          "before": 0.3938528597354889,
+          "before": 0.399594247341156,
           "after": 0.39817216992378235
         },
         "z": {
-          "before": -4.167817115783691,
+          "before": -4.158309459686279,
           "after": -4.158191204071045
         },
         "tags": {
@@ -563,15 +550,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.471343755722046,
+          "before": -3.4934120178222656,
           "after": -3.489945650100708
         },
         "y": {
-          "before": 1.3651151657104492,
+          "before": 1.1990028619766235,
           "after": 1.1964956521987915
         },
         "z": {
-          "before": -4.13811731338501,
+          "before": -4.125256538391113,
           "after": -4.1244378089904785
         },
         "tags": {
@@ -603,15 +590,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.379042625427246,
+          "before": -3.3915271759033203,
           "after": -3.3734805583953857
         },
         "y": {
-          "before": 2.537052869796753,
+          "before": 2.018867015838623,
           "after": 1.9950017929077148
         },
         "z": {
-          "before": -4.193454742431641,
+          "before": -4.269382476806641,
           "after": -4.267223358154297
         },
         "tags": {
@@ -643,15 +630,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.468456983566284,
+          "before": -3.4894590377807617,
           "after": -3.489088535308838
         },
         "y": {
-          "before": 0.39385294914245605,
+          "before": 0.39926737546920776,
           "after": 0.3982534408569336
         },
         "z": {
-          "before": -3.337813138961792,
+          "before": -3.301276445388794,
           "after": -3.3013367652893066
         },
         "tags": {
@@ -683,15 +670,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.4604759216308594,
+          "before": -3.5093231201171875,
           "after": -3.5046839714050293
         },
         "y": {
-          "before": 1.3665050268173218,
+          "before": 1.198112964630127,
           "after": 1.196365237236023
         },
         "z": {
-          "before": -3.2720754146575928,
+          "before": -3.209089517593384,
           "after": -3.210686683654785
         },
         "tags": {
@@ -723,15 +710,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -3.46352481842041,
+          "before": -3.5411906242370605,
           "after": -3.546647548675537
         },
         "y": {
-          "before": 2.5348503589630127,
+          "before": 2.0127570629119873,
           "after": 1.9952133893966675
         },
         "z": {
-          "before": -3.248331069946289,
+          "before": -3.0988101959228516,
           "after": -3.1081690788269043
         },
         "tags": {
@@ -763,15 +750,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.638429641723633,
+          "before": -2.607590913772583,
           "after": -2.608302116394043
         },
         "y": {
-          "before": 0.39385291934013367,
+          "before": 0.4002794921398163,
           "after": 0.39837658405303955
         },
         "z": {
-          "before": -4.997829437255859,
+          "before": -5.050941467285156,
           "after": -5.049428939819336
         },
         "tags": {
@@ -803,15 +790,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6717629432678223,
+          "before": -2.628333806991577,
           "after": -2.623603343963623
         },
         "y": {
-          "before": 1.3656375408172607,
+          "before": 1.2069858312606812,
           "after": 1.1969971656799316
         },
         "z": {
-          "before": -5.03542947769165,
+          "before": -5.178548336029053,
           "after": -5.165036201477051
         },
         "tags": {
@@ -843,15 +830,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.4922657012939453,
+          "before": -2.421247959136963,
           "after": -2.3914268016815186
         },
         "y": {
-          "before": 2.532909393310547,
+          "before": 2.0035386085510254,
           "after": 0.3987242579460144
         },
         "z": {
-          "before": -5.192060470581055,
+          "before": -5.558413028717041,
           "after": -6.722651958465576
         },
         "tags": {
@@ -883,15 +870,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6384365558624268,
+          "before": -2.6097092628479004,
           "after": -2.6112942695617676
         },
         "y": {
-          "before": 0.3938528597354889,
+          "before": 0.4011712968349457,
           "after": 0.39844805002212524
         },
         "z": {
-          "before": -4.167825698852539,
+          "before": -4.164201736450195,
           "after": -4.163280010223389
         },
         "tags": {
@@ -923,15 +910,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6463961601257324,
+          "before": -2.5669972896575928,
           "after": -2.5725815296173096
         },
         "y": {
-          "before": 1.3662910461425781,
+          "before": 1.217807412147522,
           "after": 1.1972073316574097
         },
         "z": {
-          "before": -4.203353404998779,
+          "before": -4.184948921203613,
           "after": -4.163990497589111
         },
         "tags": {
@@ -963,15 +950,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.432075262069702,
+          "before": -2.1714091300964355,
           "after": -0.8913966417312622
         },
         "y": {
-          "before": 2.539869546890259,
+          "before": 2.0338008403778076,
           "after": 0.3987242877483368
         },
         "z": {
-          "before": -4.156890392303467,
+          "before": -4.114934921264648,
           "after": -4.246622562408447
         },
         "tags": {
@@ -1003,15 +990,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6384496688842773,
+          "before": -2.565990924835205,
           "after": -2.5635011196136475
         },
         "y": {
-          "before": 0.3938528895378113,
+          "before": 0.4002740979194641,
           "after": 0.3984481990337372
         },
         "z": {
-          "before": -3.3378171920776367,
+          "before": -3.270909309387207,
           "after": -3.2690911293029785
         },
         "tags": {
@@ -1043,15 +1030,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.6097192764282227,
+          "before": -2.4537808895111084,
           "after": -2.4037539958953857
         },
         "y": {
-          "before": 1.3651723861694336,
+          "before": 1.2341309785842896,
           "after": 1.1969066858291626
         },
         "z": {
-          "before": -3.3003339767456055,
+          "before": -3.1911885738372803,
           "after": -3.157270669937134
         },
         "tags": {
@@ -1083,15 +1070,15 @@
           "after": "stack"
         },
         "x": {
-          "before": -2.3496501445770264,
+          "before": -1.9208064079284668,
           "after": -1.231967806816101
         },
         "y": {
-          "before": 2.534376859664917,
+          "before": 2.040849447250366,
           "after": 0.3987240791320801
         },
         "z": {
-          "before": -3.227916955947876,
+          "before": -2.9733381271362305,
           "after": -2.016599655151367
         },
         "tags": {
@@ -1123,15 +1110,15 @@
           "after": "keystone"
         },
         "x": {
-          "before": -3.044365167617798,
+          "before": -3.0441384315490723,
           "after": -3.0441510677337646
         },
         "y": {
-          "before": 0.39575010538101196,
+          "before": 0.39870840311050415,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": 3.044365167617798,
+          "before": 3.0446012020111084,
           "after": 3.044588804244995
         },
         "tags": {
@@ -1163,15 +1150,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": -2.266282081604004,
+          "before": -2.2665297985076904,
           "after": -2.2665529251098633
         },
         "y": {
-          "before": 0.38602498173713684,
+          "before": 0.39867281913757324,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 2.266993999481201,
+          "before": 2.2665677070617676,
           "after": 2.266538381576538
         },
         "tags": {
@@ -1203,15 +1190,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": -1.3470430374145508,
+          "before": -1.3472915887832642,
           "after": -1.3473145961761475
         },
         "y": {
-          "before": 0.38602498173713684,
+          "before": 0.39867284893989563,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 1.347754955291748,
+          "before": 1.3473283052444458,
           "after": 1.3472987413406372
         },
         "tags": {
@@ -1243,15 +1230,15 @@
           "after": "phantom"
         },
         "x": {
-          "before": 4.45123291015625,
+          "before": 4.450984954833984,
           "after": 4.450963020324707
         },
         "y": {
-          "before": 0.38602501153945923,
+          "before": 0.39867284893989563,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -2.1877784729003906,
+          "before": -2.1882050037384033,
           "after": -2.1882336139678955
         },
         "tags": {
@@ -1283,15 +1270,15 @@
           "after": "stray"
         },
         "x": {
-          "before": -1.9129942655563354,
+          "before": -1.9131501913070679,
           "after": -1.912988305091858
         },
         "y": {
-          "before": 1.2525211572647095,
+          "before": 0.39391088485717773,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 5.589949607849121,
+          "before": 5.58906888961792,
           "after": 5.589989185333252
         },
         "tags": {
@@ -1323,15 +1310,15 @@
           "after": "stray"
         },
         "x": {
-          "before": -5.589949607849121,
+          "before": -5.589814186096191,
           "after": -5.589977264404297
         },
         "y": {
-          "before": 0.6137378811836243,
+          "before": 0.3981224000453949,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -1.4811183214187622,
+          "before": -1.4809852838516235,
           "after": -1.4811524152755737
         },
         "tags": {
@@ -1363,15 +1350,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 4.450966835021973,
+          "before": 4.451042175292969,
           "after": 4.4509596824646
         },
         "y": {
-          "before": 0.5825541615486145,
+          "before": 0.3985517919063568,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": 0.3573593199253082,
+          "before": 0.35731130838394165,
           "after": 0.3573639690876007
         },
         "tags": {
@@ -1403,15 +1390,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 5.440916061401367,
+          "before": 5.442114353179932,
           "after": 5.440794467926025
         },
         "y": {
-          "before": 1.2164766788482666,
+          "before": 0.38818979263305664,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -2.329646348953247,
+          "before": -2.330064058303833,
           "after": -2.3296070098876953
         },
         "tags": {
@@ -1443,15 +1430,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 1.7639610767364502,
+          "before": 1.7643623352050781,
           "after": 1.7639167308807373
         },
         "y": {
-          "before": 0.8703091144561768,
+          "before": 0.3971889615058899,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": -5.440916061401367,
+          "before": -5.4408464431762695,
           "after": -5.4409260749816895
         },
         "tags": {
@@ -1483,15 +1470,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 2.6124892234802246,
+          "before": 2.612666606903076,
           "after": 2.6124773025512695
         },
         "y": {
-          "before": 1.319079041481018,
+          "before": 0.38896605372428894,
           "after": 0.3987237513065338
         },
         "z": {
-          "before": 4.175735950469971,
+          "before": 4.174489974975586,
           "after": 4.175815582275391
         },
         "tags": {
@@ -1523,15 +1510,15 @@
           "after": "stray"
         },
         "x": {
-          "before": 0.20832611620426178,
+          "before": 0.20866937935352325,
           "after": 0.2082740068435669
         },
         "y": {
-          "before": 0.7980490326881409,
+          "before": 0.3973750174045563,
           "after": 0.3987237215042114
         },
         "z": {
-          "before": -5.582337856292725,
+          "before": -5.582444190979004,
           "after": -5.5823259353637695
         },
         "tags": {
@@ -2145,7 +2132,7 @@
             ]
           }
         },
-        "tick": 27
+        "tick": 60
       },
       {
         "label": "replay-complete",
@@ -2671,7 +2658,7 @@
             ]
           }
         },
-        "tick": 1827
+        "tick": 1860
       }
     ],
     "console": [
@@ -2694,171 +2681,6 @@
         "source": "browser-console",
         "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":77,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":80,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":18,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":77,\"cameraOverlay\":0,\"layers\":0,\"renderOrder\":0,\"renderHook\":0,\"transparency\":3,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
         "type": "info"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "unhandled-rejection",
-        "text": "OperationError: Instance dropped in popErrorScope",
-        "type": "error"
-      },
-      {
-        "source": "page-error",
-        "text": "Instance dropped in popErrorScope",
-        "type": "pageerror"
-      },
-      {
-        "source": "page-error",
-        "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43028:9)",
-        "type": "pageerror"
       }
     ],
     "hud": {},
@@ -2881,7 +2703,7 @@
           "replayPhase": "idle",
           "replayTick": 0,
           "seed": 6132,
-          "settled": 12,
+          "settled": 16,
           "solved": false,
           "solvedBy": ""
         },
@@ -2923,7 +2745,7 @@
           "replayPhase": "idle",
           "replayTick": 0,
           "seed": 6132,
-          "settled": 12,
+          "settled": 16,
           "solved": false,
           "solvedBy": ""
         },
@@ -2994,7 +2816,7 @@
             "solvedBy": ""
           }
         },
-        "tick": 27
+        "tick": 60
       },
       {
         "label": "replay-complete",
@@ -3040,177 +2862,11 @@
             "solvedBy": ""
           }
         },
-        "tick": 1827
+        "tick": 1860
       }
     ],
     "runtimeDiagnostics": {
-      "recentRuntimeErrors": [
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "unhandled-rejection",
-          "text": "OperationError: Instance dropped in popErrorScope",
-          "type": "error"
-        },
-        {
-          "source": "page-error",
-          "text": "Instance dropped in popErrorScope",
-          "type": "pageerror"
-        },
-        {
-          "source": "page-error",
-          "text": "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (1200) is too large for the implementation when mappedAtCreation == true\n    at WebGPUAttributeUtils.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:54893:20)\n    at WebGPUBackend.createAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:57978:23)\n    at Attributes.update (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:20873:18)\n    at Geometries.updateAttribute (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21077:21)\n    at Geometries.updateAttributes (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21061:13)\n    at Geometries.updateForRender (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:21027:8)\n    at WebGPURenderer._renderObjectDirect (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43226:21)\n    at WebGPURenderer.renderObject (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43178:15)\n    at WebGPURenderer.renderObjectFunction (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:30474:14)\n    at WebGPURenderer._renderObjects (http://127.0.0.1:5190/node_modules/.vite/deps/three.tsl-D2glZI0x.js?v=ca863253:43028:9)",
-          "type": "pageerror"
-        }
-      ],
+      "recentRuntimeErrors": [],
       "scene": {
         "renderedEntities": []
       }
@@ -3249,7 +2905,7 @@
         "world": {
           "seed": 6132,
           "runtime": {
-            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
             "core": "0.1.0",
             "randomState": 6132,
             "rapier": "0.19.3",
@@ -3292,7 +2948,7 @@
             "world": {
               "seed": 6132,
               "runtime": {
-                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
                 "core": "0.1.0",
                 "randomState": 6132,
                 "rapier": "0.19.3",
@@ -3301,7 +2957,7 @@
             }
           },
           "label": "start-replay",
-          "tick": 27
+          "tick": 60
         },
         {
           "gameplay": {
@@ -3337,7 +2993,7 @@
             "world": {
               "seed": 6132,
               "runtime": {
-                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
                 "core": "0.1.0",
                 "randomState": 6132,
                 "rapier": "0.19.3",
@@ -3346,7 +3002,7 @@
             }
           },
           "label": "replay-complete",
-          "tick": 1827
+          "tick": 1860
         }
       ]
     },
@@ -3355,28 +3011,28 @@
       {
         "label": "start-replay",
         "signals": [],
-        "tick": 27
+        "tick": 60
       },
       {
         "label": "replay-complete",
         "signals": [],
-        "tick": 1827
+        "tick": 1860
       }
     ],
     "visual": {
-      "changedPixelRatio": 0.002109375,
+      "changedPixelRatio": 0.018862847222222222,
       "comparisonSource": "before-after"
     }
   },
   "artifactDirectory": "/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/proof-artifacts/0",
   "capture": {
     "adapter": {
-      "architecture": "swiftshader",
-      "vendor": "google",
-      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
       "limit.maxBindGroups": "4",
-      "limit.maxTextureDimension2D": "8192",
-      "limit.maxStorageBufferBindingSize": "1073741824"
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
     },
     "browserArgs": [
       "--ozone-platform=x11",
@@ -3450,7 +3106,7 @@
             "replayPhase": "idle",
             "replayTick": 0,
             "seed": 6132,
-            "settled": 12,
+            "settled": 16,
             "solved": false,
             "solvedBy": ""
           },
@@ -3485,7 +3141,7 @@
         "expectedRuntime": null,
         "observed": 6132,
         "observedRuntime": {
-          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
           "core": "0.1.0",
           "randomState": 6132,
           "rapier": "0.19.3",
@@ -3497,7 +3153,7 @@
     },
     {
       "details": {
-        "consoleErrors": 33,
+        "consoleErrors": 0,
         "networkErrors": 0,
         "policy": {
           "noConsoleErrors": true,
@@ -3505,13 +3161,13 @@
           "noRuntimeDiagnostics": true,
           "runtimeReady": true
         },
-        "runtimeDiagnostics": 33
+        "runtimeDiagnostics": 0
       },
       "id": "diagnostics",
-      "pass": false
+      "pass": true
     }
   ],
-  "pass": false,
+  "pass": true,
   "runtime": "web",
   "scenario": "physics-puzzle-deterministic-replay-proof",
   "target": "web",
