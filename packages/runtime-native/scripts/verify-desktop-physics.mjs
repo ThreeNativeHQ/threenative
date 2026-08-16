@@ -221,6 +221,15 @@ function runActuationBindingsProof() {
   if (cmake === venvCmake && !existsSync(venvCmake))
     throw new Error("cmake was not found on PATH or in .runtime/tools-venv; run pnpm native:build");
 
+  // The C ABI this proof exercises lives in the Rust staticlib, and nothing else in this gate
+  // builds the *desktop* one — `build-native-physics.mjs` defaults to `--android`. So the link
+  // step happily reached for a two-day-old `.a` that predated `tn_physics_apply_body_force` and
+  // its three neighbours, and the gate failed with four undefined references that looked like a
+  // C++ problem and were really a stale artifact. Build it here, where it is consumed.
+  run(process.execPath, [join(runtimeRoot, "scripts", "build-native-physics.mjs"), "--desktop"], {
+    timeout: 1_800_000,
+  });
+
   const buildDir = join(runtimeRoot, "build", buildPreset());
   const target = "threenative-physics-actuation-bindings-test";
   run(cmake, ["--build", buildDir, "--target", target, "--parallel"], { timeout: 900_000 });
