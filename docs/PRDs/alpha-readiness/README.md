@@ -1,20 +1,29 @@
 # Batch — alpha readiness, 2026-08-15
 
-**Status: IN EXECUTION, 2026-08-15. One PRD done, five open.** Three explicitly blocked PRDs moved
-to `docs/PRDs/BLOCKED/` when the batch was assembled. No mobile-readiness, physical-device or iOS
-claim is made anywhere in this folder.
+**Status: IN EXECUTION, 2026-08-15. One done, one blocked, four partial.** No mobile-readiness,
+physical-device or iOS claim is made anywhere in this folder.
 
 | PRD | State |
 |---|---|
-| PRD-120 — the alpha bar is runnable | **done**, archived to `docs/PRDs/done/`. `pnpm alpha:bar` generates the table below |
-| PRD-119 — the alpha release train | phases 0, 1 and 3 executed; **Phase 2 is owner-gated** and nothing is published |
-| PRD-077 — desktop multitouch injector | Phase 0 partial; the injector approach is decided, the SDL3 question is open |
-| PRD-076 — reconcile the parity ledgers | Phase 0 executed; phases 1–3 need PRD-077 |
-| PRD-078 — toolchain-free consumer proof | partial, from 2026-08-12 |
-| PRD-080 — five-minute stranger test | not agent work, and blocked on PRD-119 Phase 2 |
+| PRD-120 — the alpha bar is runnable | **done**, archived to `docs/PRDs/done/`. `pnpm alpha:bar` generates the table below, and a hand edit to it is reverted |
+| PRD-077 — desktop multitouch injector | **BLOCKED**, moved to `BLOCKED/requires-evdev-delivery/`. The injector is built and proved to the kernel boundary; no host here delivers what it writes |
+| PRD-119 — the alpha release train | Phases 0, 1, 3 executed. **Phase 2 is owner-gated and nothing is published** |
+| PRD-078 — toolchain-free consumer proof | Phase 1's version-skew question answered and fixed; Phase 0 still needs a tag push, which is owner-gated |
+| PRD-080 — five-minute stranger test | Phase 0 executed — one definition, and it measures a *player*. Phases 1–4 need a deploy and a human |
+| PRD-076 — reconcile the parity ledgers | Phase 0 executed; a third desktop measurement is in progress |
+
+**What each remaining PRD is actually waiting on** — none of it is more agent work on the same
+lane:
+
+| Waiting on | PRDs |
+|---|---|
+| An owner running an irreversible publish | PRD-119 Phase 2, PRD-078 Phase 0's tag |
+| A host that delivers a kernel input device, or a seated X server | PRD-077 |
+| A public deploy and one external person | PRD-080 Phases 1–4 |
+| An Android emulator lane, and the desktop run finishing | PRD-076 Phases 2–3 |
 
 **The folder is not archived while any row above is not done.** A blocked criterion is not
-completion.
+completion, and neither is an owner-gated one.
 
 ## What alpha means here, and how it differs from the beta bar
 
@@ -65,7 +74,7 @@ Which PRD owns which row:
 | A2 | [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](PRD-078-toolchain-free-consumer-proof.md) |
 | A3 | [PRD-113](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md) |
 | A4 | [PRD-114](../BLOCKED/requires-paired-round/PRD-114-paired-round-on-the-repaired-instrument.md), then PRD-121 |
-| A5 | [PRD-077](PRD-077-desktop-multitouch-injector.md) → [PRD-076](PRD-076-tier-1-parity-reconciliation.md) |
+| A5 | [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) — **blocked** → [PRD-076](PRD-076-tier-1-parity-reconciliation.md) |
 | A6 | [PRD-080](PRD-080-five-minute-stranger-test.md) |
 | A7 | [PRD-120](../done/PRD-120-the-alpha-bar-is-runnable.md) — **done 2026-08-15** |
 
