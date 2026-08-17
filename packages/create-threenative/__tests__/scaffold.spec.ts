@@ -1,5 +1,15 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -20,21 +30,27 @@ const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
-/** Edits a template in place, runs the body, and always puts the file back. The scaffolder
- * resolves its own template root, so a negative control cannot be staged anywhere else. */
+/** Stages a broken template in a throwaway copy of the template tree and hands the body its
+ * root, so a negative control never edits the shipped templates. It used to edit them in place
+ * and put them back: `createProject` resolved its own root, so there was nowhere else to stage
+ * one. Vitest runs spec files in parallel, so any file scaffolding `starter` during that window
+ * read a template that was broken on purpose for this one — `build.spec.ts` failed intermittently
+ * on `must launch from './node_modules/', not '-y'`, a red with nothing wrong behind it.
+ * `createProject` now takes a template root; the copy is this test's alone. */
 async function withBrokenTemplateFile<T>(
   relativePath: string,
   content: string | undefined,
-  body: () => Promise<T>,
+  body: (root: string) => Promise<T>,
 ): Promise<T> {
-  const file = path.join(TEMPLATE_ROOT, relativePath);
-  const original = await readFile(file, "utf8");
+  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-broken-template-"));
   try {
+    await cp(TEMPLATE_ROOT, root, { recursive: true });
+    const file = path.join(root, relativePath);
     if (content === undefined) await rm(file);
     else await writeFile(file, content);
-    return await body();
+    return await body(root);
   } finally {
-    await writeFile(file, original);
+    await rm(root, { force: true, recursive: true });
   }
 }
 
@@ -413,9 +429,13 @@ describe("create-threenative", () => {
   it("should throw when .mcp.json is missing from the template", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-missing-"));
     try {
-      await withBrokenTemplateFile("starter/.mcp.json", undefined, async () => {
+      await withBrokenTemplateFile("starter/.mcp.json", undefined, async (templates) => {
         await expect(
-          createProject({ install: false, target: "my-game", template: "starter" }, root),
+          createProject(
+            { install: false, target: "my-game", template: "starter" },
+            root,
+            templates,
+          ),
         ).rejects.toThrow(/no \.mcp\.json/u);
       });
     } finally {
@@ -434,9 +454,13 @@ describe("create-threenative", () => {
           },
         },
       });
-      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
         await expect(
-          createProject({ install: false, target: "my-game", template: "starter" }, root),
+          createProject(
+            { install: false, target: "my-game", template: "starter" },
+            root,
+            templates,
+          ),
         ).rejects.toThrow(/missing required MCP server 'threenative-sculpt'/u);
       });
     } finally {
@@ -459,9 +483,13 @@ describe("create-threenative", () => {
           },
         },
       });
-      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
         await expect(
-          createProject({ install: false, target: "my-game", template: "starter" }, root),
+          createProject(
+            { install: false, target: "my-game", template: "starter" },
+            root,
+            templates,
+          ),
         ).rejects.toThrow(/not-a-dependency.*does not depend on/u);
       });
     } finally {
@@ -481,9 +509,13 @@ describe("create-threenative", () => {
           "threenative-sculpt": { command: "npx", args: ["-y", SCULPT_MCP] },
         },
       });
-      await withBrokenTemplateFile("starter/.mcp.json", broken, async () => {
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
         await expect(
-          createProject({ install: false, target: "my-game", template: "starter" }, root),
+          createProject(
+            { install: false, target: "my-game", template: "starter" },
+            root,
+            templates,
+          ),
         ).rejects.toThrow(/must launch from '\.\/node_modules\/'/u);
       });
     } finally {

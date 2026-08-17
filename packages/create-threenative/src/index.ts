@@ -291,10 +291,11 @@ async function runInstall(target: string): Promise<void> {
 export async function createProject(
   options: IScaffoldOptions,
   cwd = process.cwd(),
+  root = templateRoot(),
 ): Promise<IScaffoldResult> {
-  const manifests = discoverKitManifests();
+  const manifests = discoverKitManifests(root);
   const template = options.template ?? "starter";
-  if (!manifests.some(({ name }) => name === template)) kitManifest(template);
+  if (!manifests.some(({ name }) => name === template)) kitManifest(template, root);
   const target = path.resolve(cwd, options.target);
   const targetExists = await isEmpty(target).catch(() => false);
   if (!targetExists) {
@@ -302,7 +303,7 @@ export async function createProject(
   }
 
   await mkdir(target, { recursive: true });
-  const source = path.join(templateRoot(), template);
+  const source = path.join(root, template);
   await cp(source, target, { recursive: true, errorOnExist: true });
   const projectName = packageName(target);
   const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
