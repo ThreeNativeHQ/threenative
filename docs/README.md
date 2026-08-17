@@ -1,22 +1,21 @@
 # Docs map
 
-**Picking up the native lane?** Start at the latest
-[self-improvement ledger](verification/round-10-2026-08-16.md), then follow its recorded next
-action and evidence links. Native platform claims remain evidence-bound: hosted iOS-simulator
-execution exists, while physical-device and performance parity claims remain open.
+This directory holds product constraints, work specifications, architecture notes, measured
+verification, and experiments; [`architecture/CHARTER.md`](architecture/CHARTER.md) is the
+binding document.
 
-The first external performance control this repository has had is
-[verification/engine-load-test-summary-2026-08-15.md](verification/engine-load-test-summary-2026-08-15.md)
-— ThreeNative against Godot 4.7.1 on web, desktop and one Android device, with the caveats that
-bound each number.
-[verification/three-webgpu-per-object-cost-2026-08-15.md](verification/three-webgpu-per-object-cost-2026-08-15.md)
-takes the one place ThreeNative loses that comparison and shows it is three.js's per-object
-submission cost rather than the framework's — and that `SceneCollapse` answers it with a 16× knee.
+## Start here
 
-[`CHARTER.md`](architecture/CHARTER.md) is the **only binding document**. Everything
-under `docs/` either implements it (PRDs, verification) or explores what comes after it
-(strategy, architecture, product). When a doc here disagrees, `CHARTER.md` wins until it is
-amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
+- [ROADMAP](strategy/ROADMAP.md) explains the product path and the claims that still need
+  evidence.
+- [CONFLICTS](strategy/CONFLICTS.md) records decisions where strategy and the binding document
+  disagree.
+- [Latest round ledger](verification/round-10-2026-08-16.md) gives the current self-improvement
+  state. The [Studio hosting series](PRDs/studio-hosting/README.md) describes the proposed
+  container, session broker, and production path.
+- [Engine-load summary](verification/engine-load-test-summary-2026-08-15.md) is the current
+  external performance comparison; [per-object cost](verification/three-webgpu-per-object-cost-2026-08-15.md)
+  records the Three.js submission-cost finding.
 
 | Folder | Holds | Status of contents |
 |---|---|---|
@@ -26,34 +25,24 @@ amended — see [strategy/CONFLICTS.md](strategy/CONFLICTS.md).
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
 | `architecture/` | Shape of things not yet built | **Proposal**, except where it records shipped behaviour |
 | `product/` | Constraints that will bind the product later | Mixed — store policy is external fact, the rest is proposal |
-| `spikes/` | Throwaway de-risking experiments and their results | Not binding, not shipped. Results amend `CHARTER.md` |
+| `spikes/` | Throwaway de-risking experiments and their results | Not binding, not shipped. Results amend the binding document |
 
-Genre sweeps live under [`benchmark/sweeps/`](benchmark/sweeps/). Each archived run keeps
-the built `src/`, `playtests/`, `package.json`, sealed `sweep.json` manifest, and framework
-declarations used by the measurer. A matching
-[`verification/SWEEP-TEMPLATE.md`](verification/SWEEP-TEMPLATE.md) ledger is required for
-each run and records the brief hash, reach rate, used and unused exports, and every API that
-blocked the build. The `Round` field distinguishes a baseline from a re-measure. Compare two
-archives with `pnpm sweep:delta <round-1-archive> <round-2-archive>`; it refuses mismatched
-genres, brief hashes, and self-comparisons, then reports reach-rate movement, exports newly
-reached, exports still untouched, and repeated friction rows. The delta record is only valid
-after its numbers are recomputed from the two archived sweeps.
+## PRDs
 
-Each genre also owns a sealed, arm-neutral proof set under `benchmark/genres/<genre>/proof/`.
-Run it against either arm with `pnpm sweep:proof <sandbox-or-archive>`; the command verifies
-the manifest's `Proof SHA-256`, runs every scenario, and writes `proof.json`. Pair one completed
-framework archive with one completed vanilla archive using
-`pnpm sweep:pair <framework-archive> <vanilla-archive>`; the command refuses mismatched arms,
-genres, brief hashes, proof hashes, and missing proof results before reporting passed/total,
-source LOC, source files, and framework reach side by side.
-The recomputed round-2 comparison is in
-[`benchmark/DELTA-2026-08-05.md`](benchmark/DELTA-2026-08-05.md); the current caller census
-is [`verification/arm-census-2026-08-08.md`](verification/arm-census-2026-08-08.md).
+- **Active work:** top-level `PRD-*.md` files remain active; grouped work lives in the active
+  batches below.
+- **Done work:** completed PRDs live in [`done/`](PRDs/done/).
+- **Blocked work:** PRDs blocked on a named external dependency live in
+  [`BLOCKED/<reason>/`](PRDs/BLOCKED/), where blocked is not done.
+- **Archive rule:** a PRD moves to `done/` in the same commit that finishes its acceptance
+  evidence.
 
-The self-improvement loop resumes from the newest round ledger — currently
-[`verification/round-10-2026-08-16.md`](verification/round-10-2026-08-16.md), with earlier rounds
-behind it. Resume with `pnpm round:next`;
-persistent unused-export evidence comes from `pnpm round:deletions`.
+The repository currently records 88 done PRDs and 16 blocked PRDs. Active batches are
+[`agent-leverage/`](PRDs/agent-leverage/), [`alpha-readiness/`](PRDs/alpha-readiness/),
+[`asset-pipeline/`](PRDs/asset-pipeline/), [`experiments/`](PRDs/experiments/),
+[`native/`](PRDs/native/), [`native-performance-fixes/`](PRDs/native-performance-fixes/),
+[`production-readiness-26-08-14/`](PRDs/production-readiness-26-08-14/),
+[`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
 
 **Studio** is the local agent-and-preview surface — `@threenative/studio`, a server plus one
 self-contained page, driven by `pnpm studio:inspect`, `studio:probe` and `studio:loop`. It shipped
@@ -63,14 +52,47 @@ is the standing brief handed to the agent iterating on it. The
 [Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
 and production path for running it against durable game repositories.
 
+## Verification
+
+A verification file is dated evidence for a gate, PRD, device run, or benchmark; it records what
+was executed and what remains unproven. Native claims are evidence-bound: hosted `macos-15`
+execution can produce iOS-simulator evidence, while physical-device, signing, thermal, battery,
+and performance-parity claims remain open.
+
+A round ledger records one self-improvement round's inputs, decisions, evidence, and resulting
+state. `pnpm round:next` resumes from the latest ledger, and `pnpm round:deletions` reports
+persistent unused-export evidence. The [newest ledger is round 10](verification/round-10-2026-08-16.md);
+[rounds 1–9](verification/) are the earlier ledger range.
+
+## Benchmark
+
+The [benchmark protocol](benchmark/PROTOCOL.md), [sealed genre briefs](benchmark/genres/), and
+[LOC report](benchmark/LOC.md) define the comparison. The dated result remains
+[VOID](benchmark/RESULTS-2026-08-02.md); it is a measurement result, not a product claim.
+
+Genre sweeps live under [`benchmark/sweeps/`](benchmark/sweeps/). Each archive retains the
+built source, playtests, package manifest, sealed sweep manifest, and framework declarations
+used by the measurer. Every run has a matching [sweep ledger](verification/SWEEP-TEMPLATE.md)
+with the brief hash, reach rate, used and unused exports, and blocking APIs. `Round` distinguishes
+a baseline from a re-measure.
+
+Compare archives with `pnpm sweep:delta <round-1-archive> <round-2-archive>`; pair completed
+framework and vanilla archives with `pnpm sweep:pair <framework-archive> <vanilla-archive>`.
+Proof sets under `benchmark/genres/<genre>/proof/` run with
+`pnpm sweep:proof <sandbox-or-archive>`. The [round-2 delta](benchmark/DELTA-2026-08-05.md)
+and [caller census](verification/arm-census-2026-08-08.md) are the current supporting records.
+Vendored package tarballs under each archive's `vendor/` directory are not archived; they are
+reproducible with `pnpm pack`, and sweep tests build their own temporary fixtures.
+
 ## Strategy
 
-- [strategy/VALUE-PROPOSITION.md](strategy/VALUE-PROPOSITION.md) — "would I use this instead of vanilla Three.js?" answered per axis, every claim marked earned or unearned against a verification file
-- [strategy/POSITIONING.md](strategy/POSITIONING.md) — Runtime / Studio / Cloud, who we serve, what we refuse
-- [strategy/ROADMAP.md](strategy/ROADMAP.md) — the path to a production-ready beta, every item marked ✅/⚠️/❌; Gate 0 and Phase 1 closed, Phase 2 active, native lane state merged in
-- [strategy/BUSINESS-MODEL.md](strategy/BUSINESS-MODEL.md) — open core, pricing hypotheses, revenue order
-- [strategy/METRICS.md](strategy/METRICS.md) — north star and the metrics that are not vanity
-- [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `CHARTER.md`
+- [VALUE-PROPOSITION](strategy/VALUE-PROPOSITION.md) — the framework's earned and unearned
+  claims compared with vanilla Three.js
+- [POSITIONING](strategy/POSITIONING.md) — Runtime, Studio, Cloud, audience, and refusals
+- [ROADMAP](strategy/ROADMAP.md) — production path and evidence-bound status
+- [BUSINESS-MODEL](strategy/BUSINESS-MODEL.md) — open-core and pricing hypotheses
+- [METRICS](strategy/METRICS.md) — north star and supporting measures
+- [CONFLICTS](strategy/CONFLICTS.md) — resolved disagreements with the binding document
 
 ## Architecture
 
@@ -91,25 +113,17 @@ backend swaps on the export condition. Write-once/run-anywhere is now owned as a
 
 ## Product
 
-- [product/PERFORMANCE-BUDGETS.md](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
-- [product/ASSET-PIPELINE.md](product/ASSET-PIPELINE.md) — build-time pipeline **still deferred**, neither trigger fired as of 2026-08-09; asset *discovery* is separate and is retained by product-owner decision after its live gate failed in [done/PRD-032-asset-discovery-mcp.md](PRDs/done/PRD-032-asset-discovery-mcp.md). The shape the pipeline would take if the trigger fires is proposed, unstarted, in [PRDs/asset-pipeline/](PRDs/asset-pipeline/README.md) — proposals only, and none of them may begin before both triggers fire
-- [product/STORE-POLICY.md](product/STORE-POLICY.md) — Apple and Google rules that constrain the architecture
+- [PERFORMANCE-BUDGETS](product/PERFORMANCE-BUDGETS.md) — frame budgets as test assertions
+- [ASSET-PIPELINE](product/ASSET-PIPELINE.md) — deferred build-time pipeline and its triggers
+- [STORE-POLICY](product/STORE-POLICY.md) — Apple and Google constraints
+- [STRANGER-TEST-PROTOCOL](product/STRANGER-TEST-PROTOCOL.md) — the single definition of the
+  five-minute player experiment
 
 ## Spikes
 
-- [spikes/0a-mobile-render.md](spikes/0a-mobile-render.md) — **CLOSED 2026-08-09.** Its own run never observed a device render; the question was answered *yes* by PRD-047's owned runtime (300 desktop frames + Android emulator, [verification/PRD-047.md](verification/PRD-047.md)). Retained only because superseded PRD-044 and [strategy/NATIVE-LEVELS-2026-08-08.md](strategy/NATIVE-LEVELS-2026-08-08.md) cite it; the React Native route it prescribes is deleted
-- 0b — physics on device: never written as a spike. It became [PRD-046](PRDs/done/PRD-046-physics-native.md)
+- [0a-mobile-render](spikes/0a-mobile-render.md) — closed mobile-render question and retained
+  evidence
+- [studio-loop-2026-08-12](spikes/studio-loop-2026-08-12.md) — Studio-loop de-risking experiment
 
-A spike is not a PRD. It buys an answer, ships nothing, and is deleted once its answer is
-recorded here and nothing else cites it.
-
-`pnpm budgets` reports framework-package, example-workspace, LOC-trigger, and active-PRD counts;
-it does not enforce a ten-file PRD cap. Archive completed work by lifecycle and keep active
-specifications small enough to review.
-
-[`PRDs/BLOCKED/`](PRDs/BLOCKED/) holds PRDs whose remaining work is blocked on unavailable
-hardware, hosted execution, credentials, or another explicit external dependency. Hosted
-`macos-15` runs can produce iOS-simulator evidence; physical devices, signing, thermal, battery,
-and performance-parity claims remain separate. **Blocked is not done.** A PRD moves to `done/`
-only when its acceptance evidence is met, never by rewriting it to fit what this machine can run.
-A PRD with non-blocked work left stays in its active owning folder.
+A spike buys an answer and ships nothing; it is not a PRD. Its result remains here when later
+documents still cite it.

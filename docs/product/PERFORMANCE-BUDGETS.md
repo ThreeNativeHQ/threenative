@@ -103,3 +103,6 @@ which is the difference between an agent that iterates and an agent that drifts.
 4. Device-lab calibration. **Blocked on the remaining physical-device evidence.**
 
 Steps 1–3 are worth doing on web alone. Step 4 is where the numbers become honest.
+
+**A device number without a condition block naming battery, charging, thermal status and screen
+state is not evidence.**

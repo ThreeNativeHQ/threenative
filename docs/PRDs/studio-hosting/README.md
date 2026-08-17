@@ -187,7 +187,7 @@ work around.
 - **No SLA.** PRD-105 deploys the service and proves a restore; it does not promise uptime.
 
 Two facts a reader should carry out of this folder: **nothing here has been built**, and **no
-stranger has played a ThreeNative game for five minutes yet** — the open test in
+stranger has played a ThreeNative game for five minutes yet** — the blocked test in
 [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md). This series describes the shape a public
 Studio would take, so that the day it is started the answer is a plan rather than a quarter of
 design.

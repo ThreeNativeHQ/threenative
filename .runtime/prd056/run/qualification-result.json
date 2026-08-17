@@ -1,0 +1,7 @@
+{
+  "status": "blocked",
+  "code": "TN_QUALIFY_SIGNING_TOOL_REQUIRED",
+  "errors": [
+    "apksigner is unavailable; production signature cannot be verified before adb install."
+  ]
+}
