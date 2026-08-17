@@ -4,9 +4,27 @@ prd_contract: v1
 
 # PRD-129 — The engine is MIT, the editor is not, and neither is written down anywhere
 
-**Status: NOT STARTED, 2026-08-16. NOTHING IN THIS PRD IS IMPLEMENTED.** Every fact in §1
-was measured on this working tree at commit `803906c7`; the commands are pasted beside each
-claim and reproduce. The licensing *decision* in §1.1 is the product owner's, taken
+**Status: §5 DONE, 2026-08-16. §3 and §4 are on an unmerged branch; §6 is blocked; §7 not started.**
+Record: [`docs/verification/prd-129-phase-3-2026-08-16.md`](../../verification/prd-129-phase-3-2026-08-16.md).
+
+- **§5 — the private repository exists and builds.** `jonit-dev/threenative-studio`, private, 127
+  files, seeded by copying rather than rewriting history. §5.4's bar is met from a **clean clone**:
+  `pnpm install && pnpm build` exit 0 with `create-threenative` resolved from the registry
+  (`.pnpm/create-threenative@0.2.2`, not a workspace link), plus typecheck, lint and 190 tests green.
+- **§6 is blocked, and §5 is what found the blocker.** `@threenative/playtest@0.2.0` does not export
+  `WEBGPU_BROWSER_ARGS` or the capture module, both of which `scripts/studio-probe.ts` reaches by
+  workspace-relative deep import. §6.1 deletes that file from here, and today this is the only copy
+  that builds. **Fix the engine's export map and republish before running §6.**
+- **§6.3 is decided with evidence, not yet acted on: the visual gate stays.** `STUDIO_ASSET_ROOT` is
+  write-only — `persistTemplateCapture` writes a second copy of each template frame there and nothing
+  reads it. Remove that branch; keep the gate.
+- **§3 and §4 are not on `main`.** They live on `linchpin/batch-26-08-16-low-complexity-20260816`.
+  The engine still has no `LICENSE` on `main`.
+- **Nothing was removed from this repository and nothing was published.** `packages/studio/` and
+  `hosting/` are still here; the only change is a `LICENSE` and a `license` field asserting no grant.
+
+Every fact in §1 was measured on this working tree at commit `803906c7`; the commands are pasted
+beside each claim and reproduce. The licensing *decision* in §1.1 is the product owner's, taken
 2026-08-16, and this PRD implements it — it does not reopen it.
 
 This repository has been public since 2026-08-03 and publishes seven packages to npm. It
