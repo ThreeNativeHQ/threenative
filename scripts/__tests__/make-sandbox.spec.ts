@@ -75,7 +75,7 @@ describe("genre sandbox", () => {
       ...Object.keys(manifest.devDependencies ?? {}),
     ].filter((name) => name === "create-threenative" || name.startsWith("@threenative/"));
     // Every one of these 404s on the registry today; an unpassed source is a dead scaffold.
-    expect(declared).toContain("@threenative/studio");
+    expect(declared).toContain("@threenative/playtest");
     expect(declared).toContain("create-threenative");
     for (const dependency of declared) {
       const flag =
@@ -91,11 +91,10 @@ describe("genre sandbox", () => {
       assertTemplateSourcesCovered(process.cwd(), "starter", {
         core: "core.tgz",
         physics: "physics.tgz",
-        playtest: "playtest.tgz",
         ui: "ui.tgz",
         "create-threenative": "cli.tgz",
       }),
-    ).toThrow(/@threenative\/studio/);
+    ).toThrow(/@threenative\/playtest/);
   });
 
   it("throws before creating a sandbox when the genre brief is missing", async () => {

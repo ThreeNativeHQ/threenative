@@ -38,7 +38,6 @@ it("bundles one blind sample per template and reveals every one", async () => {
       const { assertFrameShowsSomething } = await import("../capture-guard.js");
       return { content: frame, stats: assertFrameShowsSomething(frame, template) };
     },
-    studioAssetRoot: path.join(root, "studio"),
     visualRoot: path.join(root, "visuals"),
   });
 
@@ -73,7 +72,6 @@ it("fails closed when a template does not capture", async () => {
         const { assertFrameShowsSomething } = await import("../capture-guard.js");
         return { content: frame, stats: assertFrameShowsSomething(frame, template) };
       },
-      studioAssetRoot: path.join(root, "studio"),
       visualRoot: path.join(root, "visuals"),
     }),
   ).rejects.toThrow();

@@ -541,33 +541,6 @@ describe("create-threenative", () => {
     });
   });
 
-  it("should parse a local Studio package flag", () => {
-    expect(parseArgs(["my-game", "--no-install", "--studio-package", "/tmp/studio.tgz"])).toEqual({
-      install: false,
-      packageSources: { "@threenative/studio": "/tmp/studio.tgz" },
-      target: "my-game",
-    });
-  });
-
-  it("should route a local Studio package to devDependencies", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-local-studio-"));
-    try {
-      const result = await createProject(
-        {
-          install: false,
-          packageSources: { "@threenative/studio": "/tmp/studio.tgz" },
-          target: "my-game",
-        },
-        root,
-      );
-      const manifest = JSON.parse(await readFile(path.join(result.target, "package.json"), "utf8"));
-      expect(manifest.devDependencies["@threenative/studio"]).toBe("file:/tmp/studio.tgz");
-      expect(manifest.dependencies?.["@threenative/studio"]).toBeUndefined();
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
   it("should keep a local native runtime optional", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-local-runtime-"));
     try {

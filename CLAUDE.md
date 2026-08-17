@@ -136,10 +136,6 @@ pnpm sync:agents                   # regenerate CLAUDE.md mirrors (--check in CI
 pnpm tsx scripts/count-loc.ts      # regenerates the README LOC table
 pnpm --filter abyss-framework dev  # run the framework example
 
-pnpm studio:inspect --browser      # boot the live Studio and report what it observed
-pnpm studio:probe --browser        # the Studio bar: one line per check, exit 0/1/2
-pnpm studio:loop --dry-run         # the next Studio action, unattended-agent guardrails
-
 pnpm native:build                  # opt-in; downloads deps, compiles the C++ host
 pnpm native:verify:desktop         # 300-frame desktop run + non-blank screenshot
 ```

@@ -2,7 +2,6 @@ import { cp, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { studioKits } from "../../packages/studio/src/server.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   RENDER_LAYER_FILES,
@@ -59,10 +58,9 @@ describe("visual gate", () => {
     }
   });
 
-  it("synchronizes captures through the production orchestration into both output roots", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-studio-sync-"));
+  it("persists every template capture through the production orchestration", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-capture-sync-"));
     const visualRoot = path.join(root, "visuals");
-    const assetRoot = path.join(root, "studio-assets");
     try {
       const captures = await captureAllTemplates(
         path.join(root, "capture-root"),
@@ -78,27 +76,15 @@ describe("visual gate", () => {
               width: 1,
             },
           }),
-          studioAssetRoot: assetRoot,
           visualRoot,
         },
       );
 
       expect(captures.map(({ template }) => template)).toEqual([...TEMPLATE_NAMES]);
-      const kits = studioKits({
-        assetRoot,
-        templateRoot: path.resolve("packages/create-threenative/templates"),
-      });
       for (const template of TEMPLATE_NAMES) {
         const capture = Buffer.from(`${template} visual-gate capture`);
         expect(await readFile(path.join(visualRoot, `${template}.png`))).toEqual(capture);
-        expect(await readFile(path.join(assetRoot, `${template}.png`))).toEqual(capture);
       }
-      expect(kits).toContainEqual(
-        expect.objectContaining({
-          name: "platformer",
-          previewImage: "/api/kits/platformer/preview",
-        }),
-      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

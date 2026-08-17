@@ -32,8 +32,9 @@ const REPO = path.resolve(import.meta.dirname, "..");
  * Dependency order: a package goes out after everything it depends on.
  *
  * The instinct was "publish the scaffolder last, because its templates pin everything else". That
- * is not available — `@threenative/studio` depends on `create-threenative`, so the scaffolder has
- * a dependent and cannot be last. The ordering test caught it.
+ * is not available in general — a package that depends on `create-threenative` gives the scaffolder
+ * a dependent, so it cannot be last. Studio was that package until it moved to its own repository;
+ * the ordering test keeps the case covered so the instinct cannot come back.
  *
  * What actually prevents the 0.2.0 mistake is not the order but publishing **one consistent
  * tree in one run**: the pins in `create-threenative`'s templates and the versions of the

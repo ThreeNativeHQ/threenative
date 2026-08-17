@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["core", "physics", "ui", "playtest", "studio"] as const;
+const PACKAGES = ["core", "physics", "ui", "playtest"] as const;
 const CLI_PACKAGE = "create-threenative";
 const ARMS = ["framework", "vanilla"] as const;
 

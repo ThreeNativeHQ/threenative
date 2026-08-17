@@ -9,8 +9,6 @@ const roots = [
   "ui",
   "runtime-native",
   "create-threenative",
-  // Every template declares it, so an unpublishable studio is a scaffold that cannot install.
-  "studio",
 ] as const;
 
 interface IManifest {

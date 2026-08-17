@@ -70,7 +70,6 @@ jobs:
       #   @threenative/physics
       #   @threenative/playtest
       #   @threenative/runtime-native
-      #   @threenative/studio
       #   @threenative/ui
       #   create-threenative
       - name: Publish every non-private workspace package

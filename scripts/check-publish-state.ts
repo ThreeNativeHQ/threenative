@@ -12,8 +12,8 @@
  *  - has any package's `src/` moved since the version it still carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
  *
- * A registry it cannot reach is not a pass. It exits `2` — `pnpm alpha:bar` and
- * `pnpm studio:probe` use the same rank, where `2` means the question was never answered.
+ * A registry it cannot reach is not a pass. It exits `2` — `pnpm alpha:bar` uses the same rank,
+ * where `2` means the question was never answered.
  */
 
 import { execFileSync } from "node:child_process";

@@ -38,7 +38,6 @@ export const LOCAL_FRAMEWORK_PACKAGES = [
   ["@threenative/physics", "threenative-physics-"],
   ["@threenative/runtime-native", "threenative-runtime-native-"],
   ["@threenative/ui", "threenative-ui-"],
-  ["@threenative/studio", "threenative-studio-"],
   ["create-threenative", "create-threenative-"],
 ] as const;
 
@@ -83,30 +82,21 @@ export type CaptureTemplate = (
 
 export interface IVisualCaptureOptions {
   readonly captureTemplate?: CaptureTemplate;
-  readonly studioAssetRoot?: string;
   readonly visualRoot?: string;
 }
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VISUAL_ROOT = path.join(REPO_ROOT, "docs/verification/visuals");
-export const STUDIO_ASSET_ROOT = path.join(REPO_ROOT, "packages/studio/assets");
 const BASELINE = path.join(REPO_ROOT, "docs/product/VISUAL-BASELINE.md");
 
-/** The gate owns both the verification capture and the package-safe Studio copy. */
+/** The gate owns the verification capture. */
 export async function persistTemplateCapture(
   template: ScaffoldTemplate,
   content: Buffer,
   visualRoot = VISUAL_ROOT,
-  studioAssetRoot = STUDIO_ASSET_ROOT,
 ): Promise<void> {
-  await Promise.all([
-    mkdir(visualRoot, { recursive: true }),
-    mkdir(studioAssetRoot, { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(path.join(visualRoot, `${template}.png`), content),
-    writeFile(path.join(studioAssetRoot, `${template}.png`), content),
-  ]);
+  await mkdir(visualRoot, { recursive: true });
+  await writeFile(path.join(visualRoot, `${template}.png`), content);
 }
 
 function sourceFiles(directory: string): string[] {
@@ -387,12 +377,7 @@ export async function captureAllTemplates(
       ),
     );
     const result = await capture(template, root, packageSources, 5300 + index);
-    await persistTemplateCapture(
-      template,
-      result.content,
-      options.visualRoot,
-      options.studioAssetRoot,
-    );
+    await persistTemplateCapture(template, result.content, options.visualRoot);
     results.push({ stats: result.stats, template });
   }
   return results;

@@ -23,7 +23,6 @@ export interface IScaffoldOptions {
       | "@threenative/physics"
       | "@threenative/playtest"
       | "@threenative/runtime-native"
-      | "@threenative/studio"
       | "@threenative/ui"
       | "create-threenative",
       string
@@ -191,11 +190,7 @@ async function applyPackageSources(
       packageJson.optionalDependencies[name] = source.startsWith("file:")
         ? source
         : `file:${source}`;
-    } else if (
-      name === "@threenative/playtest" ||
-      name === "@threenative/studio" ||
-      name === "create-threenative"
-    ) {
+    } else if (name === "@threenative/playtest" || name === "create-threenative") {
       packageJson.devDependencies ??= {};
       packageJson.devDependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
     } else {
@@ -345,7 +340,6 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     ["@threenative/physics", "--physics-package"],
     ["@threenative/playtest", "--playtest-package"],
     ["@threenative/runtime-native", "--runtime-native-package"],
-    ["@threenative/studio", "--studio-package"],
     ["@threenative/ui", "--ui-package"],
     ["create-threenative", "--cli-package"],
   ] as const) {

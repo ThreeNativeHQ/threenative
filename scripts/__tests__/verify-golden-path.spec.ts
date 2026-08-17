@@ -263,7 +263,6 @@ input.on("line", (line) => {
         "packages/create-threenative/dist/index.js",
         "packages/physics/dist/index.js",
         "packages/playtest/dist/index.js",
-        "packages/studio/dist/server.js",
         "packages/ui/dist/index.js",
       ];
       const built = await Promise.all(

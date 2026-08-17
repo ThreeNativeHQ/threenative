@@ -31,19 +31,22 @@ async function manifests(
 
 describe("pnpm release ordering", () => {
   it("publishes the scaffolder before the package that depends on it", async () => {
-    // The instinct was "scaffolder last, its templates pin everything". It cannot be last:
-    // @threenative/studio depends on create-threenative. Dependency order is the only rule that
-    // is always satisfiable, and this asserts the case that disproved the simpler one.
+    // The instinct was "scaffolder last, its templates pin everything". It cannot be last whenever
+    // something depends on it — Studio did, until it moved to its own repository. Dependency order
+    // is the only rule that is always satisfiable, and this asserts the case that disproved the
+    // simpler one, with a synthetic dependent now that the real one has left the workspace.
     const order = releaseOrder(
       await manifests([
-        { deps: ["create-threenative"], name: "@threenative/studio" },
+        { deps: ["create-threenative"], name: "@threenative/scaffolder-consumer" },
         { name: "create-threenative" },
         { deps: ["@threenative/core"], name: "@threenative/physics" },
         { name: "@threenative/core" },
       ]),
     );
 
-    expect(order.indexOf("create-threenative")).toBeLessThan(order.indexOf("@threenative/studio"));
+    expect(order.indexOf("create-threenative")).toBeLessThan(
+      order.indexOf("@threenative/scaffolder-consumer"),
+    );
   });
 
   it("publishes a package after the workspace packages it depends on", async () => {
@@ -78,7 +81,6 @@ describe("pnpm release ordering", () => {
     const order = releaseOrder(publishSet(repo));
 
     expect(order.indexOf("@threenative/core")).toBeLessThan(order.indexOf("@threenative/physics"));
-    expect(order.indexOf("create-threenative")).toBeLessThan(order.indexOf("@threenative/studio"));
     expect(new Set(order).size).toBe(order.length);
     expect(order).toHaveLength(publishSet(repo).length);
   });

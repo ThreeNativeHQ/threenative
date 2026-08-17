@@ -27,7 +27,6 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@threenative/playtest": "0.2.0",
-    "@threenative/studio": "0.2.0",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "@types/three": "0.185.3",
