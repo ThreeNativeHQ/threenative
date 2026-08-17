@@ -1,7 +1,13 @@
 # Low-complexity lane — everything here is runnable today, on this machine
 
 **You have been handed this file and nothing else. It is complete.** Do the three tasks
-below, in order, and stop where each says stop. Do not look for other work in this folder;
+below, in order, and stop where each says stop.
+
+Complexity, as each PRD rates itself: **PRD-129 §3–§4 is 2, PRD-125 is 4, PRD-127 is 4.**
+Low here means *relative to the rest of this batch*, which runs 5 to 7. It does not mean
+trivial, and two items are judgement rather than mechanics — the README prose in task 2 step 1,
+and the retention note in task 2's stop. **Both get read by a human before they land.** Say so
+in your report rather than marking them done. Do not look for other work in this folder;
 the rest of the batch needs a physical phone and judgement calls this brief does not cover,
 and starting one is worse than doing nothing.
 

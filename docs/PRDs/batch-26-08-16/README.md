@@ -7,13 +7,20 @@ three of those claims *measurable*, not to assert them.
 
 **This file is a map. The work is indexed in two files, and they do not overlap.**
 
-| Index | Who runs it | Contents |
-| --- | --- | --- |
-| [`README-LOW-COMPLEXITY.md`](./README-LOW-COMPLEXITY.md) | a cheap model, today, unattended | PRD-129 §3–§4, PRD-125, PRD-127's code — no hardware, no judgement calls, every criterion a command |
-| [`README-HIGH-COMPLEXITY.md`](./README-HIGH-COMPLEXITY.md) | the operator, with the phone | PRD-126, PRD-128, PRD-129 §5–§7, and the four hardware runs |
+**The line is each PRD's own complexity rating, and it falls cleanly between 4 and 5.**
+
+| Index | Complexity | Who runs it | Contents |
+| --- | --- | --- | --- |
+| [`README-LOW-COMPLEXITY.md`](./README-LOW-COMPLEXITY.md) | **2, 4, 4** | a cheap model, today | PRD-129 §3–§4, PRD-125, PRD-127's code — no hardware, nothing irreversible |
+| [`README-HIGH-COMPLEXITY.md`](./README-HIGH-COMPLEXITY.md) | **5, 6, 7** | the operator, with the phone | PRD-126, PRD-128, PRD-129 §5–§7, and the four hardware runs |
 
 Hand the low-complexity file over on its own. It is self-contained by design, and it never
 mentions the high-complexity lane — a model that cannot read about PRD-128 cannot wander into it.
+
+**Low does not mean unsupervised.** Two things in the low lane are judgement, not mechanics,
+and both need reading before they land: the new `README.md` prose that PRD-125 §3.2 produces,
+and the retention recommendation PRD-125 §6.3 writes. Everything else in that lane is a
+command with an expected exit code.
 
 ## Why this batch, today
 

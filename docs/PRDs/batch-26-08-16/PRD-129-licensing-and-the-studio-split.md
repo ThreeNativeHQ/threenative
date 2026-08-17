@@ -19,6 +19,12 @@ irreversible in one direction — a licence grant cannot be withdrawn from a ver
 published — and that it touches the release lane, which publishes to a public registry on a
 tag push. Read §8 before touching anything under `.github/workflows/`.
 
+**The 7 is not uniform, and the PRD splits on it.** §3 and §4 are **complexity 2**: one
+`LICENSE` file, six one-line manifest edits, and a set of documents assembled from standard
+texts. Nothing in them is irreversible, nothing touches the release lane, and every
+acceptance criterion is a command. **§5 onward carries the whole 7.** The two halves are
+assigned to different lanes for that reason — see this batch's `README.md`.
+
 **Blast radius:** `LICENSE` (new), `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
 `CHANGELOG.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` (all new),
 `license` fields in seven `package.json` files, the removal of `packages/studio/` (41 files)

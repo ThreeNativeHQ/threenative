@@ -1,5 +1,8 @@
 # High-complexity lane — the phone, and the three judgement calls
 
+Complexity, as each PRD rates itself: **PRD-126 is 5, PRD-128 is 6, PRD-129 §5–§7 is 7.** The
+four hardware runs are unrated because their cost is the phone, not the code.
+
 Everything in this lane either needs hardware attached to the operator's machine or turns on
 a judgement that is wrong in a way a passing test does not catch. **None of it is delegable
 to a cheap model.** The rest of the batch is indexed in
