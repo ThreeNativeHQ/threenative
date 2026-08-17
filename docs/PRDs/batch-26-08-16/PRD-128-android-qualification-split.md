@@ -4,8 +4,35 @@ prd_contract: v1
 
 # PRD-128 — PRD-056 is blocked on the union of four things, three of which are not the same blocker
 
-**Status:** PROPOSED, 2026-08-16. Nothing below has executed. No physical-hardware, signing or
-mobile-readiness claim is made by this file. It proposes a split; it does not qualify anything.
+**Status: PHASE 0 EXECUTED, 2026-08-16 — a fifth blocker was found and no folder was moved.** The
+kill switch in §9 fired as written. Nothing else below has executed. No physical-hardware, signing or
+mobile-readiness claim is made by this file, and no device gate has run.
+
+**What Phase 0 found**, in full in
+[`docs/verification/prd-128-phase-0-2026-08-16.md`](../../verification/prd-128-phase-0-2026-08-16.md):
+
+1. **On `main` the qualification command does not exist.** `pnpm native:qualify:physical` exits 254,
+   `Command "native:qualify:physical" not found`. Four of the eight paths in the blast radius below
+   are absent from the tree.
+2. **It was built and never landed.** `linchpin/prd-056-physical-mobile-qualification` carries a
+   1,277-line orchestrator, a 634-line evidence module, seven fixtures and a 573-line test file —
+   2 commits ahead of `main`, **219 behind**.
+3. **Run from that branch against the attached Pixel 8, it exits exactly where §2 predicted**:
+   `TN_QUALIFY_SIGNING_REQUIRED`, exit 2, before reading a single property from the phone. **The
+   split's premise is confirmed on evidence.**
+4. **Recovery is not a cherry-pick.** Five files conflict, and one of them matters: the branch adds
+   `webgpu_->resizeSurface(...)` to the Android resize path, and `main` carries a comment at that
+   exact site recording that this was tried and **killed a Pixel 8 with signal 6**. That hunk must be
+   dropped, not merged.
+5. **A defect, not a blocker:** the script reports `TN_QUALIFY_SIGNING_TOOL_REQUIRED` because
+   `apksigner` is not on `PATH`, while it sits in `~/Android/Sdk/build-tools/`. The engine load test
+   solved this for `adb` at `scripts/engine-load-test/run-android.ts:39`; this script has no
+   equivalent, so it reports a missing capability where the truth is a missing lookup.
+
+**What that changes.** The split's direction is right and Phase 1 stands. Phase 2 is not the edit
+described below — there is nothing on `main` to edit — and the cost line *"a split, three folder
+moves, and then the runs"* is wrong. **Recovering the orchestrator should be its own PRD**, because
+folding a C++ crash decision into a document about folder names hides it.
 
 **Outcome:** the part of physical mobile qualification that a Pixel 8 can execute **today** stops
 being blocked by an Apple signing identity nobody has. PRD-056 is split along its real dependency
@@ -111,7 +138,7 @@ that string rather than leaving a reader to compose it.
 
 ## 4. Phases
 
-### Phase 0 — Confirm the split is real before moving any file
+### Phase 0 — Confirm the split is real before moving any file — **DONE 2026-08-16, second outcome**
 
 Run `native:qualify:physical --platform android` against the Pixel 8 as the command stands today
 and record where it exits. Two outcomes, both pre-committed:
@@ -122,6 +149,19 @@ and record where it exits. Two outcomes, both pre-committed:
   during the runs.**
 
 Half a day, and it is the only phase that can invalidate the rest.
+
+**Result: the second outcome, and then the first.** On `main` the command exits 254 because it does
+not exist — the fifth blocker, written down above and in the verification record, with no folder
+moved. Run from the branch where it does exist, it exits on the signing check exactly as predicted,
+so the split's premise holds. Phase 0 both invalidated the cost and confirmed the direction.
+
+### Phase 0.5 — Recover the orchestrator (**new, and it is now the long pole**)
+
+Its own PRD, not a sub-phase of this one. Bring `qualify-physical-mobile.mjs`,
+`physical-device-evidence.mjs`, the fixtures and the tests onto `main` from
+`linchpin/prd-056-physical-mobile-qualification`; **drop the `runtime.cpp` resize hunk**, which
+`main` rejected with a signal-6 crash on this phone; give `apksigner` the SDK fallback `adb` already
+has. Nothing in Phases 2–3 can start before this.
 
 ### Phase 1 — Split the PRD, move the folders
 
@@ -154,7 +194,9 @@ is incomplete.
 
 ## 6. Acceptance criteria
 
-- [ ] Phase 0 is executed and its exit point recorded **before** any file moves.
+- [x] Phase 0 is executed and its exit point recorded **before** any file moves.
+      **2026-08-16: exit 254 on `main` (command absent), exit 2 `TN_QUALIFY_SIGNING_REQUIRED` on the
+      branch where it exists. No folder moved.**
 - [ ] PRD-056 is three PRDs. A is in an active folder, B names the keystore as its blocker, C names
       Apple hardware and signing as its own.
 - [ ] Every inbound reference to PRD-056 resolves to the correct one of the three.

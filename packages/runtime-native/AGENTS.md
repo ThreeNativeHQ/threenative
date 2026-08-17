@@ -21,7 +21,11 @@ The default is still QuickJS — smallest to integrate, no special runtime deps 
 Do not read the default as a verdict: on a Pixel 8, 16 384 moving cubes, QuickJS spends
 115.64 ms per frame in script and V8 spends 5.25 ms, and the frame goes from 119.19 ms to
 8.32 ms — inside one 120 Hz interval, against Godot's 39.27 ms on the same scene and device
-(`docs/verification/prd-118-charged-retake-2026-08-16.md`). V8 costs +25.6 MB of arm64
+(`docs/PRDs/done/PRD-118-android-js-engine.md`). The V8 side of that was retaken charged on
+2026-08-16 at both 4,096 and 16,384 and did not move;
+`docs/verification/prd-118-charged-retake-2026-08-16.md` is the record. The **QuickJS** figures at
+16,384 are still PRD-117's originals — the QuickJS archive on hand runs one rung, so only 4,096 was
+retaken there. V8 costs +25.6 MB of arm64
 payload, which is why the default has not moved; that is an owner decision, not a technical
 blocker. Selecting V8 requires the shared STL (`libc++_shared.so`), the external startup
 snapshot in `assets/v8/`, and pointer-compression defines that must match the prebuilt
