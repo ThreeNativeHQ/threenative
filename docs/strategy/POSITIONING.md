@@ -54,12 +54,13 @@ partly real in this repo: `ctx.entities` (PRD-006) makes state addressable,
 
 | Surface | What it is | Exists today? |
 |---|---|---|
-| **Runtime** | Open-source engine and framework: `@threenative/core`, `physics`, `ui`, `playtest`, `create-threenative`, `runtime-native`, `studio` | **Yes** — seven packages |
-| **Studio** | Local-first creation, inspection, testing | **Barely** — `DebugOverlay`, `window.__THREENATIVE__.snapshot()`. Full Studio is deferred (CONFLICTS #1) |
+| **Runtime** | Open-source engine and framework: `@threenative/core`, `physics`, `ui`, `playtest`, `create-threenative`, `runtime-native` | **Yes** — six packages, all MIT |
+| **Studio** | Local-first creation, inspection, testing | **Barely** — `DebugOverlay`, `window.__THREENATIVE__.snapshot()`. Full Studio is deferred (CONFLICTS #1). Proprietary since 2026-08-16; its source lives in a private repository |
 | **Cloud** | Builds, device testing, releases, operations | **No.** Gated on a native render path running on a physical phone |
 
 Runtime stays permissively licensed and fully usable offline. That is what makes the
-paid layer credible rather than extractive.
+paid layer credible rather than extractive — and it is now unambiguous, because the
+runtime is MIT with no editor attached.
 
 ## Who this is for
 

@@ -4,8 +4,29 @@ prd_contract: v1
 
 # PRD-129 — The engine is MIT, the editor is not, and neither is written down anywhere
 
-**Status: §5 DONE, 2026-08-16. §3 and §4 are on an unmerged branch; §6 is blocked; §7 not started.**
-Record: [`docs/verification/prd-129-phase-3-2026-08-16.md`](../../verification/prd-129-phase-3-2026-08-16.md).
+**Status: COMPLETE, 2026-08-17.** All five phases have landed.
+Record: [`docs/verification/prd-129-phase-3-2026-08-16.md`](../../verification/prd-129-phase-3-2026-08-16.md)
+for §5, and [`docs/verification/prd-129-closeout-2026-08-17.md`](../../verification/prd-129-closeout-2026-08-17.md)
+for §6 and §7.
+
+**What closed it.** §3 and §4 reached `main` from the low-complexity lane: the root `LICENSE` is
+unmodified MIT and every remaining package declares `"license": "MIT"`. §6 removed
+`packages/studio/` and `hosting/` at HEAD along with the three `scripts/studio-*.ts` drivers and
+their specs — 121 tracked files — after the private repository was verified `PRIVATE` and built
+from a clean clone. §6.3 was acted on as decided: the visual gate stays and only its
+`STUDIO_ASSET_ROOT` branch went. §7 moved Studio out of *Never charged for*, cut it from the Free
+tier and from the open-source package list, marked the `CONFLICTS.md` editor row resolved, and
+annotated `docs/README.md` and the studio-hosting series as describing another repository.
+
+**Two criteria did not land as written, and neither is a Studio question.** §9 criterion 8 wanted
+`pnpm publish:check` at exit 0; it reports the six-package set with Studio absent, which is what
+the criterion was for, and exits 1 on four pending version bumps that predate this work and are a
+release decision. §9 criterion 9 wanted `@threenative/studio@0.2.0` deprecated with a pointer
+message; deprecation writes to a public registry, so it is the owner's to run — the command is in
+§8 and 0.2.0 granted no rights when it was published, so nothing is exposed by the delay.
+
+**History was not rewritten**, per §1.3. Criterion 10 holds by construction: no commit was
+rewritten, so none of the 197 SHAs cited across `docs/` moved.
 
 - **§5 — the private repository exists and builds.** `jonit-dev/threenative-studio`, private, 127
   files, seeded by copying rather than rewriting history. §5.4's bar is met from a **clean clone**:

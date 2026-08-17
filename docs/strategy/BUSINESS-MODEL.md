@@ -11,8 +11,15 @@ downstream of the benchmark resolving.
 | Revenue share on games | Physical-device test minutes |
 | Exporting source code | Store submission automation |
 | Local builds | Asset optimization jobs |
-| Local Studio | Hosted preview bandwidth |
+| — | Studio, local and hosted |
+| — | Hosted preview bandwidth |
 | — | Integrated AI credits (BYO key always free) |
+
+**Studio moved columns on 2026-08-16, by owner decision.** It sat under *Never charged
+for* until then. The engine stays MIT and free — every package, template, example and
+script in this repository — and Studio is the paid surface. Its source left this
+repository for a private one and no licence is granted to it. PRD-129 records the
+decision and carried it out.
 
 A new engine's largest adoption cost is licensing anxiety. Adding a Unity-shaped
 royalty question to an unproven framework is how it never gets tried.
@@ -23,7 +30,7 @@ Starting points to test with design partners, not decisions.
 
 | Plan | Hypothesis | Included |
 |---|---:|---|
-| Free | $0 | Runtime, CLI, local Studio, local web/iOS/Android builds, BYO AI key, community templates |
+| Free | $0 | Runtime, CLI, local web/iOS/Android builds, BYO AI key, community templates |
 | Creator | $19–24/mo | AI credits, private cloud sync, hosted previews, limited cloud builds, asset optimization credits |
 | Pro | $49–59/mo | More build and device minutes, TestFlight/Play automation, crash and performance analytics |
 | Team | $39–49/user/mo + usage | Collaboration, permissions, shared assets, review environments, audit history |

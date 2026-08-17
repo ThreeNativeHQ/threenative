@@ -12,7 +12,7 @@ binding document.
   disagree.
 - [Latest round ledger](verification/round-10-2026-08-16.md) gives the current self-improvement
   state. The [Studio hosting series](PRDs/studio-hosting/README.md) describes the proposed
-  container, session broker, and production path.
+  container, session broker, and production path — for the private Studio repository, not this one.
 - [Engine-load summary](verification/engine-load-test-summary-2026-08-15.md) is the current
   external performance comparison; [per-object cost](verification/three-webgpu-per-object-cost-2026-08-15.md)
   records the Three.js submission-cost finding.
@@ -44,13 +44,15 @@ The repository currently records 88 done PRDs and 16 blocked PRDs. Active batche
 [`production-readiness-26-08-14/`](PRDs/production-readiness-26-08-14/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
 
-**Studio** is the local agent-and-preview surface — `@threenative/studio`, a server plus one
-self-contained page, driven by `pnpm studio:inspect`, `studio:probe` and `studio:loop`. It shipped
-in [PRD-084](PRDs/done/PRD-084-threenative-studio.md) and
-[PRD-085](PRDs/done/PRD-085-studio-wiring.md); [PRD-086](PRDs/PRD-086-studio-self-improvement-loop.md)
-is the standing brief handed to the agent iterating on it. The
-[Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
-and production path for running it against durable game repositories.
+**Studio is no longer in this repository.** It is the local agent-and-preview surface — a server
+plus one self-contained page — and on 2026-08-16 it became the paid product and moved to a private
+repository, along with the `hosting/` service that serves it (PRD-129). Nothing in this repository
+is anything but MIT. The Studio PRDs stay here as the record of how it was built:
+[PRD-084](PRDs/done/PRD-084-threenative-studio.md),
+[PRD-085](PRDs/done/PRD-085-studio-wiring.md),
+[PRD-086](PRDs/PRD-086-studio-self-improvement-loop.md), and the
+[Studio hosting series](PRDs/studio-hosting/README.md) — all of them now describing work that
+lives elsewhere.
 
 ## Verification
 

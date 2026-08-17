@@ -4,6 +4,12 @@ prd_contract: v1
 
 # The Studio hosting series
 
+**This series describes work that no longer lives in this repository.** On 2026-08-16 Studio
+became the paid product; its source and the `hosting/` service moved to a private repository
+(PRD-129), and this repository is entirely MIT with no editor in it. The series stays here as the
+record of how the hosting path was designed and what was and was not proved. Read every path and
+command below as pointing at the private repository, not this one.
+
 **Status: 100–102 COMPLETE; 103 PARTIAL; 104 COMPLETE; 105 PARTIAL, 2026-08-16.** The product half of the series runs
 on `docs/studio-hosting-series`: a container image, accounts and projects, and a session broker
 that opens a live Studio and pushes every commit to the durable repository. Nothing in 103, 104
