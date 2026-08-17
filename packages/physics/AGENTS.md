@@ -39,9 +39,12 @@ crate.body.raw          // Rapier RigidBody on web
 crate.object            // THREE.Object3D
 ```
 
-WASM Rapier is not viable on the Android QuickJS host — that is why the native backend is
-compiled in rather than shipped as WASM. See `docs/architecture/NATIVE-RUNTIME.md` and
-PRD-046.
+WASM Rapier is not shipped on native — that is why the native backend is compiled in. The original
+reason was that Android ran QuickJS, which has no WebAssembly; **Android has defaulted to V8 since
+2026-08-16 (PRD-130), and V8 does have WebAssembly.** The rule stands anyway: nobody has measured
+Rapier-as-WASM on that path, iOS is still JSC, and the coarse bulk ABI was chosen for per-object call
+cost too. See `docs/architecture/NATIVE-RUNTIME.md` and PRD-046 — and do not relax this because the
+engine changed.
 
 ## Contracts to keep
 

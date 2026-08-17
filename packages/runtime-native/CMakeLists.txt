@@ -121,15 +121,23 @@ elseif(WIN32)
     set(MYSTRAL_PLATFORM "windows")
 elseif(ANDROID)
     set(MYSTRAL_PLATFORM "android")
-    # Android defaults to QuickJS (simplest to integrate, no special runtime deps), but the choice
-    # is a default and not a law: forcing it here meant an explicit -DMYSTRAL_USE_V8=ON was accepted
-    # on the command line, silently ignored, and reported back as QuickJS. QuickJS is the only
-    # JIT-less engine ThreeNative ships on any platform and the phone is where it costs the most
-    # (PRD-118), so the swap has to be testable without editing this file.
-    if(NOT MYSTRAL_USE_V8 AND NOT MYSTRAL_USE_JSC)
-        set(MYSTRAL_USE_QUICKJS ON)
+    # Android defaults to V8, decided by the product owner on 2026-08-16 (PRD-130) on PRD-118's
+    # measurement: 115.64 ms of script per frame under QuickJS against 5.25 ms under V8, at 16,384
+    # moving cubes on a Pixel 8. QuickJS was the default while nothing had measured its cost; it now
+    # has one, and it was the only JIT-less engine ThreeNative shipped on a platform anyone plays on.
+    #
+    # `-DMYSTRAL_USE_QUICKJS=ON` is the documented rollback and stays supported. The choice is still
+    # a default and not a law: forcing an engine here is what once made an explicit
+    # -DMYSTRAL_USE_V8=ON be accepted on the command line, silently ignored, and reported back as
+    # QuickJS, so an explicit request always wins.
+    #
+    # Three places state this default — here, `android/app/build.gradle.kts`, and the `tn-android`
+    # CMake preset. They must agree; a preset contradicting this block is how the flag came to work
+    # on one machine only.
+    if(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC)
+        set(MYSTRAL_USE_V8 ON)
     else()
-        set(MYSTRAL_USE_QUICKJS OFF)
+        set(MYSTRAL_USE_V8 OFF)
     endif()
     # wgpu-native has Android support
     set(MYSTRAL_USE_DAWN OFF)

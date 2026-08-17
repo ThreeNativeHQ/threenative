@@ -95,10 +95,23 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     // V8 on Android keeps its startup snapshot outside the library, so it has to be handed over
     // before the engine is created. Missing, the runtime fails with "Failed to create JavaScript
     // engine" and no further detail.
+    //
+    // The snapshot is ABI-specific and the APK ships every ABI it targets, so the path carries the
+    // ABI. A single shared `v8/snapshot_blob.bin` was arm64's, copied into every slice: on arm64 it
+    // worked and nothing else was ever run, which is why it survived. The ABI is known at compile
+    // time, so the right file is selected here rather than guessed at runtime.
     {
-        const std::string snapshot = readAsset("v8/snapshot_blob.bin");
+#if defined(__aarch64__)
+        const char* const snapshotAsset = "v8/arm64-v8a/snapshot_blob.bin";
+#elif defined(__x86_64__)
+        const char* const snapshotAsset = "v8/x86_64/snapshot_blob.bin";
+#else
+#error "No V8 startup snapshot is staged for this Android ABI."
+#endif
+        const std::string snapshot = readAsset(snapshotAsset);
         if (snapshot.empty()) {
-            LOGE("V8 startup snapshot asset is missing; the engine cannot start.");
+            LOGE("V8 startup snapshot asset is missing: %s; the engine cannot start.",
+                 snapshotAsset);
             return 1;
         }
         mystral::js::mystralSetV8SnapshotBlob(snapshot.data(), snapshot.size());

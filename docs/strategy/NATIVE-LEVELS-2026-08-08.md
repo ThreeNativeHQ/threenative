@@ -1,5 +1,10 @@
 # Going native — state diagnosis, three levels, effort
 
+> **Dated 2026-08-08, and one premise has since changed.** This file reasons about L2 as
+> "Hermes/QuickJS". ThreeNative shipped its own host and **Android has defaulted to V8 since
+> 2026-08-16** (PRD-130), measured at 8.34 ms against QuickJS's 101.24 ms on a Pixel 8. Read the
+> level framing as history; the engine question it treats as open is closed.
+
 **Status:** SUPERSEDED historical proposal, 2026-08-08. Not binding. Native runtime and
 hosted-simulator evidence have moved on; use `docs/README.md` and `ROADMAP.md` for current
 status. This record remains because it captures the earlier decision context.

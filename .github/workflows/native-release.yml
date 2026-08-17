@@ -150,7 +150,18 @@ jobs:
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs
       - run: node packages/runtime-native/scripts/build-android-physics-proof.mjs
-      - name: Build both Android release ABIs
+      # Both engines are published, because the prebuilt path can select either and a release that
+      # ships only one makes the other unreachable to anyone without an NDK. QuickJS first, then V8
+      # last so the V8 outputs are the ones left in the build directory.
+      - name: Build both Android release ABIs (QuickJS)
+        working-directory: packages/runtime-native/android
+        run: sh ./gradlew assembleRelease -PthreenativeJsEngine=quickjs -x buildAndroidFirstProofBundle --no-daemon
+      - name: Stage the QuickJS Android runtimes
+        run: |
+          mkdir -p release
+          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so release/threenative-runtime-android-arm64-v8a.so
+          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so release/threenative-runtime-android-x86_64.so
+      - name: Build both Android release ABIs (V8, the default)
         working-directory: packages/runtime-native/android
         run: sh ./gradlew assembleRelease -x buildAndroidFirstProofBundle --no-daemon
       - name: Stage Android runtime payloads
@@ -158,9 +169,15 @@ jobs:
           node --input-type=module <<'NODE'
           import { copyFileSync, mkdirSync, statSync } from "node:fs";
           const assets = {
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a-v8.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libv8android.so": "release/threenative-v8-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libc++_shared.so": "release/threenative-libcxx-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/generated/threenative/assets/v8/arm64-v8a/snapshot_blob.bin": "release/threenative-v8-snapshot-android-arm64-v8a.bin",
+            "packages/runtime-native/android/app/build/generated/threenative/assets/v8/x86_64/snapshot_blob.bin": "release/threenative-v8-snapshot-android-x86_64.bin",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libv8android.so": "release/threenative-v8-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libc++_shared.so": "release/threenative-libcxx-android-x86_64.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64-v8.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
             "packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar": "release/threenative-sdl3-android.aar",
           };
@@ -172,6 +189,21 @@ jobs:
           NODE
           nm -D release/threenative-runtime-android-arm64-v8a.so | grep -F 'tn_physics_step'
           nm -D release/threenative-runtime-android-x86_64.so | grep -F 'tn_physics_step'
+          nm -D release/threenative-runtime-android-arm64-v8a-v8.so | grep -F 'tn_physics_step'
+          # The engine each runtime links is asserted, not assumed: the two binaries are otherwise
+          # indistinguishable by name, and shipping one under the other's key would produce a
+          # prebuilt build whose logcat reports the wrong engine.
+          #
+          # DT_NEEDED, not a symbol grep. V8's symbols are mangled (`_ZN2v8...`), so a literal
+          # 'v8::' matches nothing and the assertion would pass vacuously on both binaries.
+          readelf -d release/threenative-runtime-android-arm64-v8a-v8.so | grep -F 'NEEDED' | grep -F 'libv8android.so'
+          readelf -d release/threenative-runtime-android-x86_64-v8.so | grep -F 'NEEDED' | grep -F 'libv8android.so'
+          for quickjs in release/threenative-runtime-android-arm64-v8a.so release/threenative-runtime-android-x86_64.so; do
+            if readelf -d "$quickjs" | grep -F 'NEEDED' | grep -qF 'libv8android.so'; then
+              echo "$quickjs links V8; the engine-qualified artifacts are crossed." >&2
+              exit 1
+            fi
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: runtime-android
@@ -236,10 +268,18 @@ jobs:
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
           const names = {
             "android-arm64-v8a-runtime": "threenative-runtime-android-arm64-v8a.so",
+            "android-arm64-v8a-runtime-v8": "threenative-runtime-android-arm64-v8a-v8.so",
             "android-arm64-v8a-sdl3": "threenative-sdl3-android-arm64-v8a.so",
+            "android-arm64-v8a-v8": "threenative-v8-android-arm64-v8a.so",
+            "android-arm64-v8a-libcxx": "threenative-libcxx-android-arm64-v8a.so",
+            "android-arm64-v8a-v8-snapshot": "threenative-v8-snapshot-android-arm64-v8a.bin",
             "android-sdl3-aar": "threenative-sdl3-android.aar",
             "android-x86_64-runtime": "threenative-runtime-android-x86_64.so",
+            "android-x86_64-runtime-v8": "threenative-runtime-android-x86_64-v8.so",
             "android-x86_64-sdl3": "threenative-sdl3-android-x86_64.so",
+            "android-x86_64-v8": "threenative-v8-android-x86_64.so",
+            "android-x86_64-libcxx": "threenative-libcxx-android-x86_64.so",
+            "android-x86_64-v8-snapshot": "threenative-v8-snapshot-android-x86_64.bin",
             "darwin-arm64": "threenative-runtime-darwin-arm64",
             "ios-simulator-arm64": "threenative-ios-simulator-arm64.zip",
             "linux-x64": "threenative-runtime-linux-x64",

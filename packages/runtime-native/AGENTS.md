@@ -10,26 +10,32 @@ It is **a host, not a renderer**: upstream Three.js `WebGPURenderer` stays the p
 renderer, at exactly the workspace catalog version. Runtime internals may keep Mystral names
 recognizable during the fork, but public contracts expose ThreeNative names.
 
-Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android QuickJS+wgpu-native,
+Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android V8+wgpu-native,
 iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns the renderer —
 never mirror the `Object3D` tree across threads. Heavy systems use native/GPU/thread
 architectures and batched transfer surfaces.
 
-**Android's engine is a choice, and it is the only platform on an interpreter without a JIT.**
-The default is still QuickJS — smallest to integrate, no special runtime deps — and
-`-PthreenativeJsEngine=v8` builds the same source against `third_party/v8-android` instead.
-Do not read the default as a verdict: on a Pixel 8, 16 384 moving cubes, QuickJS spends
-115.64 ms per frame in script and V8 spends 5.25 ms, and the frame goes from 119.19 ms to
-8.32 ms — inside one 120 Hz interval, against Godot's 39.27 ms on the same scene and device
-(`docs/PRDs/done/PRD-118-android-js-engine.md`). The V8 side of that was retaken charged on
-2026-08-16 at both 4,096 and 16,384 and did not move;
-`docs/verification/prd-118-charged-retake-2026-08-16.md` is the record. The **QuickJS** figures at
-16,384 are still PRD-117's originals — the QuickJS archive on hand runs one rung, so only 4,096 was
-retaken there. V8 costs +25.6 MB of arm64
-payload, which is why the default has not moved; that is an owner decision, not a technical
-blocker. Selecting V8 requires the shared STL (`libc++_shared.so`), the external startup
-snapshot in `assets/v8/`, and pointer-compression defines that must match the prebuilt
-library rather than the host's preference.
+**Android runs V8 by default as of 2026-08-16 (PRD-130), and `-PthreenativeJsEngine=quickjs` is the
+documented rollback.** It was QuickJS while nothing had measured that choice. Measured, on a Pixel 8
+at 16 384 moving cubes: QuickJS 101.24 ms per frame against V8's 8.34 ms, and the V8 figure is the
+120 Hz vsync interval rather than its real cost, so 12× is a lower bound
+(`docs/verification/prd-130-phase-6-2026-08-16.md`). iOS is the one platform still on an engine
+without a JIT, by construction.
+
+Three files state that default — `CMakeLists.txt`'s Android platform block,
+`android/app/build.gradle.kts`, and the `tn-android` CMake preset — and a test fails if they
+disagree. Selecting V8 requires `third_party/v8-android`, which `scripts/download-deps.mjs --android`
+provisions with a pinned checksum; the shared STL (`libc++_shared.so`); a startup snapshot staged
+**per ABI**, since the blobs differ and an ABI without one fails the build; and pointer-compression
+defines that match the prebuilt library rather than the host's preference.
+
+**The prebuilt path carries both engines** as of PRD-130 Phase 4: `android-<abi>-runtime-v8`,
+`android-<abi>-v8`, `android-<abi>-libcxx` and `android-<abi>-v8-snapshot` beside the unqualified
+QuickJS keys, which still mean QuickJS. The runtime binary is engine-qualified because it genuinely
+differs — QuickJS is compiled into it and V8 is not — so one runtime for both engines would report
+the wrong engine at runtime. A prebuilt directory populated for one engine and built for the other
+fails naming both. **The release lane that publishes these has not run**: no tag was pushed, and this
+repository has zero surviving releases across ten tags (PRD-078).
 
 Priority order: correctness → compatibility → platform stability → threading → native systems
 → DX → profiling → optimization.

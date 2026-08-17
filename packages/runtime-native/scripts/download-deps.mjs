@@ -428,6 +428,28 @@ const DEPS = {
       x86_64: `https://github.com/gfx-rs/wgpu-native/releases/download/${DEFAULT_WGPU_VERSION}/wgpu-android-x86_64-release.zip`,
     },
   },
+  'v8-android': {
+    // V8 with JIT for Android, from Kudo/v8-android-buildscripts — the same prebuilt React Native
+    // uses. A JIT-less V8 would reproduce the problem PRD-118 measured, so the `-jit` archive is the
+    // one that matters and the name is not incidental.
+    //
+    // Until 2026-08-16 this was not here at all: `third_party/v8-android/` existed on one machine
+    // because somebody unpacked it by hand, while this file is the package's only supported
+    // reconstruction path. A fresh checkout therefore could not build Android V8.
+    //
+    // The archive nests: zip -> dist.tar -> dist/packages/v8-android-jit/{include,snapshot_blob,org},
+    // with the libraries inside an AAR under `org/`. `extractV8Android` below unwinds that.
+    version: '11.110.1',
+    getUrl: () =>
+      `https://github.com/Kudo/v8-android-buildscripts/releases/download/v${DEPS['v8-android'].version}/v8-android-jit.zip`,
+    sha256: 'b2bc1fc317265163becbf0abe914d44b7d546448bb1aafe921a25e8ba4839a26',
+    extractTo: 'v8-android',
+    // Both ABIs the Android build ships. `copyV8Snapshot` in android/app/build.gradle.kts stages one
+    // snapshot per entry and fails the build when one is absent, so provisioning fewer than this is
+    // caught at build time rather than on a device.
+    abis: ['arm64-v8a', 'x86_64'],
+    needsV8AndroidExtraction: true,
+  },
   'sdl3-android': {
     // SDL3 Android development package
     // Contains AAR with prefab structure for CMake integration
@@ -812,6 +834,18 @@ async function downloadDep(name) {
 
   try {
     await downloadFile(url, archivePath);
+    // A pinned checksum is what makes "reconstructible" mean the same bytes rather than whatever the
+    // URL serves today. Only dependencies that declare one are checked; the rest are unchanged.
+    if (dep.sha256) {
+      const actual = sha256(archivePath);
+      if (actual !== dep.sha256) {
+        rmSync(archivePath);
+        throw new Error(
+          `${name} checksum mismatch: expected ${dep.sha256}, got ${actual}. Refusing to install.`,
+        );
+      }
+      console.log(`Verified ${name} archive checksum`);
+    }
     await extractArchive(archivePath, destDir);
 
     // Clean up archive
@@ -881,6 +915,10 @@ async function downloadDep(name) {
       console.log(`Verified ${name} ${manifest.version}: ${manifest.libraries.length} library artifact(s)`);
     }
 
+    if (dep.needsV8AndroidExtraction) {
+      await reshapeV8Android(destDir, dep);
+    }
+
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
       const aarFiles = await import('fs/promises').then(fs => fs.readdir(destDir));
@@ -899,6 +937,69 @@ async function downloadDep(name) {
   } catch (error) {
     console.error(`Failed to download ${name}:`, error.message);
     return false;
+  }
+}
+
+/**
+ * Turns the extracted `v8-android-jit` tree into the layout CMake and Gradle already expect.
+ *
+ * The archive nests three deep — zip, then `dist.tar`, then an AAR holding the libraries — and the
+ * pieces land in three different places inside it. The build reads exactly three things, so this
+ * produces exactly those and fails loudly if any is absent:
+ *
+ *   include/                             <- dist/packages/v8-android-jit/include
+ *   lib/<abi>/libv8android.so            <- the AAR's jni/<abi>
+ *   snapshot_blob/<abi>/snapshot_blob.bin <- dist/packages/v8-android-jit/snapshot_blob/<abi>
+ *
+ * A partial install is the failure worth preventing here: the CMake build would find headers, link,
+ * and produce an APK whose slice has no snapshot. `copyV8Snapshot` catches that at build time, but
+ * only because it was told to — this refuses earlier and says which ABI.
+ */
+async function reshapeV8Android(destDir, dep) {
+  const tarball = join(destDir, 'dist.tar');
+  if (!existsSync(tarball)) throw new Error(`v8-android archive has no dist.tar at ${tarball}`);
+  execFileSync('tar', ['xf', tarball, '-C', destDir]);
+  rmSync(tarball);
+
+  const pkg = join(destDir, 'dist', 'packages', 'v8-android-jit');
+  if (!existsSync(pkg)) throw new Error(`v8-android archive is missing ${pkg}`);
+
+  const headers = join(pkg, 'include');
+  if (!existsSync(headers)) throw new Error(`v8-android archive is missing ${headers}`);
+  copyTree(headers, join(destDir, 'include'));
+
+  const aar = findFilesRecursive(join(pkg, 'org'), (file) => file.endsWith('.aar'))[0];
+  if (!aar) throw new Error('v8-android archive contains no AAR to take libraries from');
+  const aarDir = join(destDir, '.aar');
+  await extractArchive(aar, aarDir);
+
+  for (const abi of dep.abis) {
+    const library = join(aarDir, 'jni', abi, 'libv8android.so');
+    if (!existsSync(library)) throw new Error(`v8-android AAR has no libv8android.so for ${abi}`);
+    mkdirSync(join(destDir, 'lib', abi), { recursive: true });
+    copyFileSync(library, join(destDir, 'lib', abi, 'libv8android.so'));
+
+    const snapshot = join(pkg, 'snapshot_blob', abi, 'snapshot_blob.bin');
+    if (!existsSync(snapshot)) throw new Error(`v8-android archive has no snapshot for ${abi}`);
+    mkdirSync(join(destDir, 'snapshot_blob', abi), { recursive: true });
+    copyFileSync(snapshot, join(destDir, 'snapshot_blob', abi, 'snapshot_blob.bin'));
+  }
+
+  // The unpacked tree is ~1 GB of build leftovers, unstripped libraries and ABIs this repository
+  // does not ship. Keeping only what the build reads is the difference between a 100 MB dependency
+  // and a 1 GB one.
+  rmSync(join(destDir, 'dist'), { recursive: true, force: true });
+  rmSync(aarDir, { recursive: true, force: true });
+  console.log(`Installed v8-android ${dep.version} for ${dep.abis.join(', ')}`);
+}
+
+function copyTree(from, to) {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from)) {
+    const source = join(from, entry);
+    const target = join(to, entry);
+    if (statSync(source).isDirectory()) copyTree(source, target);
+    else copyFileSync(source, target);
   }
 }
 
@@ -922,7 +1023,7 @@ async function main() {
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];
 
   // Android deps (only downloaded with --only or --android)
-  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android'];
+  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android'];
 
   // Windows-specific deps (only downloaded with --only)
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT

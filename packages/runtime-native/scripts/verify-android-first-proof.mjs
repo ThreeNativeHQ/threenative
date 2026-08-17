@@ -59,6 +59,7 @@ Options:
   --logcat PATH         Captured app log output (default: artifacts/android/first-proof-logcat.txt)
   --report PATH         JSON proof report (default: artifacts/android/first-proof-report.json)
   --screenshot PATH     Required PNG proof path (default: artifacts/android/first-proof.png)
+  --expect-engine NAME  Require the running process to report this engine (v8 or quickjs)
   --skip-build          Reuse the existing debug APK
   --skip-install        Reuse the currently installed app
   --help                Show this help
@@ -79,6 +80,7 @@ export function parseArgs(argv) {
     screenshotPath: defaultScreenshotPath,
     skipBuild: false,
     skipInstall: false,
+    expectEngine: null,
     help: false,
   };
 
@@ -90,6 +92,8 @@ export function parseArgs(argv) {
     ['--logcat', 'logPath'],
     ['--report', 'reportPath'],
     ['--screenshot', 'screenshotPath'],
+    // What the running process must report at runtime.cpp:450. Not the build flag: see assertEngine.
+    ['--expect-engine', 'expectEngine'],
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -115,6 +119,13 @@ export function parseArgs(argv) {
     options[key] = value;
   }
   if (options.timeoutMs < 1000) throw new GateError('--timeout-ms must be at least 1000.');
+  if (options.expectEngine !== null) {
+    const engine = String(options.expectEngine).toLowerCase();
+    if (engine !== 'v8' && engine !== 'quickjs') {
+      throw new GateError(`--expect-engine must be v8 or quickjs, got '${options.expectEngine}'.`);
+    }
+    options.expectEngine = engine;
+  }
 
   for (const key of ['apk', 'logPath', 'reportPath', 'screenshotPath']) {
     if (options[key] && !isAbsolute(options[key])) options[key] = resolve(process.cwd(), options[key]);
@@ -278,6 +289,41 @@ export function filterAppLog(log, pid) {
   }).join('\n');
 }
 
+/**
+ * The engine the running process said it created, from `runtime.cpp:450`.
+ *
+ * A build flag says what was asked for. This says what launched. Those came apart once already:
+ * `-DMYSTRAL_USE_V8=ON` was accepted on the command line, silently ignored, and reported back as
+ * `V8=OFF` (PRD-118 §2), and every measurement taken in between described QuickJS while its author
+ * believed otherwise. So no gate here infers the engine from the flag it passed.
+ *
+ * Returns `null` when the process never said — which is a failure for any caller that asked, and is
+ * kept distinct from "said something else" because the two have different causes: a crash before
+ * engine creation against a build that shipped the wrong engine.
+ */
+export function engineFromLog(log) {
+  const match = /JS engine created:\s*(\S+)/i.exec(log);
+  return match ? match[1] : null;
+}
+
+export function assertEngine(log, expected) {
+  if (!expected) return { engine: engineFromLog(log), expected: null, matched: true };
+  const engine = engineFromLog(log);
+  if (engine === null) {
+    throw new GateError(
+      `Expected the ${expected} engine but the process never reported one. ` +
+        'Either it died before creating an engine, or this build does not log "JS engine created".',
+    );
+  }
+  if (engine.toLowerCase() !== expected.toLowerCase()) {
+    throw new GateError(
+      `Engine mismatch: asked for ${expected}, the running process reported ${engine}. ` +
+        'The installed APK is not the engine this gate is measuring.',
+    );
+  }
+  return { engine, expected, matched: true };
+}
+
 export function analyzeAppLog(log) {
   const failures = [];
   for (const matcher of failureMatchers) {
@@ -418,7 +464,7 @@ function verifyPackagedAndroidBundle(apk, metadata, javaHome) {
   }
 }
 
-function buildApk(tools) {
+function buildApk(tools, engine = null) {
   const androidDir = join(root, 'android');
   const gradleEnv = {
     ...process.env,
@@ -428,10 +474,14 @@ function buildApk(tools) {
     PATH: `${join(tools.javaHome, 'bin')}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH || ''}`,
   };
   const command = process.platform === 'win32' ? join(androidDir, 'gradlew.bat') : 'bash';
+  // A gate that asserts an engine has to build that engine, or it asserts against whatever the
+  // default happens to be that week and the assertion is the only thing that fails.
+  const engineArgs = engine ? [`-PthreenativeJsEngine=${engine}`] : [];
+  const gradleArgs = [':app:assembleDebug', '--console=plain', ...engineArgs];
   const args = process.platform === 'win32'
-    ? [':app:assembleDebug', '--console=plain']
-    : [join(androidDir, 'gradlew'), ':app:assembleDebug', '--console=plain'];
-  console.log('1/4 Building Android debug APK with JDK 17...');
+    ? gradleArgs
+    : [join(androidDir, 'gradlew'), ...gradleArgs];
+  console.log(`1/4 Building Android debug APK with JDK 17${engine ? ` (${engine})` : ''}...`);
   const result = run(command, args, { cwd: androidDir, env: gradleEnv, timeoutMs: 900000 });
   if (result.stdout) process.stdout.write(result.stdout);
 }
@@ -450,7 +500,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   const wait = dependencies.delay || delay;
   const startedAt = now();
 
-  if (!options.skipBuild) buildApk(tools);
+  if (!options.skipBuild) buildApk(tools, options.expectEngine);
   else console.log(`1/4 Reusing Android debug APK ${options.apk}...`);
   if (!existsSync(options.apk)) {
     throw new GateError(`Debug APK not found at ${options.apk}. Remove --skip-build so the gate builds it.`);
@@ -508,6 +558,9 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   analysis = analyzeAppLog(appLog);
   writeText(options.logPath, appLog.endsWith('\n') ? appLog : `${appLog}\n`);
   if (analysis.failures.length) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
+  // Before the screenshot, so a mismatched engine fails on the engine rather than on whatever the
+  // wrong build happened to draw.
+  const engineCheck = assertEngine(appLog, options.expectEngine);
   if (!getPid(tools.adb, serial)) {
     throw new GateError(`Android process ${APP_ID} exited during the ${options.settleMs} ms stability window. Full log: ${options.logPath}`);
   }
@@ -542,6 +595,10 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     },
     appId: APP_ID,
     activity: ACTIVITY,
+    // Recorded unconditionally, whether or not this run asked for a particular engine. A device
+    // report that does not say which engine produced it cannot be compared with another one.
+    jsEngine: engineCheck.engine,
+    jsEngineExpected: engineCheck.expected,
     deviceSerial: serial,
     pid,
     apk: options.apk,

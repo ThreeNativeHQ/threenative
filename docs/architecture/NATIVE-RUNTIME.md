@@ -30,12 +30,19 @@ and fail-closed.
 
 ## Why physics needs a native binding
 
-Rapier ships as WebAssembly. That is not viable on Mystral Android because QuickJS has no
-WebAssembly implementation, and QuickJS is still the Android default —
-`packages/runtime-native/CMakeLists.txt:124`. PRD-118 added V8 as an **opt-in** Android engine
-(`-PthreenativeJsEngine=v8`, 22× less script time on a Pixel 8) and PRD-130 proposes making it the
-default; nobody has measured Rapier-as-WebAssembly on that path, so it changes nothing below until
-someone does. The earlier React Native engine research remains historical support for the same
+Rapier ships as WebAssembly, and the native backend exists because that was not viable on Android.
+
+**The premise changed on 2026-08-16.** The original reason was that QuickJS has no WebAssembly
+implementation and QuickJS was the Android default. PRD-118 measured V8 at 22× less script time on a
+Pixel 8, and **PRD-130 made V8 the Android default** — flipped, and run both directions on the phone
+(`docs/verification/prd-130-phase-6-2026-08-16.md`). V8 does implement WebAssembly, so the sentence
+this section was built on is no longer true.
+
+**Nothing below changes yet, and this is why.** Nobody has measured Rapier-as-WebAssembly on the V8
+Android path; iOS remains JSC by construction; and the coarse bulk ABI was chosen for the
+per-object-call cost as much as for the missing engine feature, which V8 does not address. So the
+native binding stays, and *why* it stays is now an open measurement rather than a settled fact.
+Whoever takes it should read this paragraph as the thing to disprove. The earlier React Native engine research remains historical support for the same
 conclusion:
 
 | Engine | WebAssembly | Evidence |

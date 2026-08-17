@@ -22,6 +22,16 @@ export const GRADLE_WRAPPER_URL =
 export const GRADLE_WRAPPER_SHA256 =
   'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
 
+export const ANDROID_ABIS = ['arm64-v8a', 'x86_64'];
+export const ANDROID_ENGINES = ['quickjs', 'v8'];
+
+/**
+ * The QuickJS prebuilt set. Unchanged, and still the meaning of the unqualified release keys.
+ *
+ * `libmystral-runtime.so` here is the QuickJS-linked runtime: the interpreter is compiled *into*
+ * it, which is why the V8 set below needs a different runtime binary rather than the same one plus
+ * a library.
+ */
 export const ANDROID_PREBUILT_ASSETS = {
   'android-arm64-v8a-runtime': 'jniLibs/arm64-v8a/libmystral-runtime.so',
   'android-arm64-v8a-sdl3': 'jniLibs/arm64-v8a/libSDL3.so',
@@ -29,6 +39,42 @@ export const ANDROID_PREBUILT_ASSETS = {
   'android-x86_64-runtime': 'jniLibs/x86_64/libmystral-runtime.so',
   'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
 };
+
+/**
+ * The V8 prebuilt set, added 2026-08-16 by PRD-130 Phase 4.
+ *
+ * Before this, the prebuilt path could not express V8 at all: it shipped four files, none of them
+ * V8, so a project built from a release artifact got QuickJS **whatever the default said**. Flipping
+ * the engine default without this would have produced a default only operators with an NDK ever
+ * received.
+ *
+ * The runtime binary is engine-qualified rather than shared, because it genuinely differs — 60.4 MB
+ * linked against V8 against 66.6 MB with QuickJS compiled in. Publishing one runtime and bolting a
+ * library onto it would produce a process that reports the wrong engine, which is exactly the class
+ * of failure `--expect-engine` exists to catch.
+ */
+export const ANDROID_PREBUILT_V8_ASSETS = {
+  'android-arm64-v8a-runtime-v8': 'jniLibs/arm64-v8a/libmystral-runtime.so',
+  'android-arm64-v8a-sdl3': 'jniLibs/arm64-v8a/libSDL3.so',
+  'android-arm64-v8a-v8': 'jniLibs/arm64-v8a/libv8android.so',
+  'android-arm64-v8a-libcxx': 'jniLibs/arm64-v8a/libc++_shared.so',
+  'android-arm64-v8a-v8-snapshot': 'assets/v8/arm64-v8a/snapshot_blob.bin',
+  'android-sdl3-aar': 'SDL3-3.2.8.aar',
+  'android-x86_64-runtime-v8': 'jniLibs/x86_64/libmystral-runtime.so',
+  'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
+  'android-x86_64-v8': 'jniLibs/x86_64/libv8android.so',
+  'android-x86_64-libcxx': 'jniLibs/x86_64/libc++_shared.so',
+  'android-x86_64-v8-snapshot': 'assets/v8/x86_64/snapshot_blob.bin',
+};
+
+/** The prebuilt set one engine needs. The engine name is the same one the source path uses. */
+export function androidPrebuiltAssets(engine = 'v8') {
+  const name = String(engine).toLowerCase();
+  if (!ANDROID_ENGINES.includes(name)) {
+    throw new Error(`Unknown Android JS engine '${engine}'; expected one of ${ANDROID_ENGINES.join(', ')}.`);
+  }
+  return name === 'v8' ? ANDROID_PREBUILT_V8_ASSETS : ANDROID_PREBUILT_ASSETS;
+}
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
 
 function androidPaths(root = runtimeRoot) {
@@ -199,15 +245,16 @@ function installAndroidFiles(config, root = runtimeRoot) {
 }
 
 export async function prepareAndroidPrebuilts(options = {}) {
+  // Defaults to the engine the source path defaults to. Two names for one choice is how the flag
+  // gets forgotten, so the prebuilt path takes the same engine names the Gradle property does.
+  const engine = String(options.engine ?? 'v8').toLowerCase();
+  const assets = androidPrebuiltAssets(engine);
   const downloads = await Promise.all(
-    Object.keys(ANDROID_PREBUILT_ASSETS).map(async (key) => [
-      key,
-      await downloadReleaseArtifact(key, options),
-    ]),
+    Object.keys(assets).map(async (key) => [key, await downloadReleaseArtifact(key, options)]),
   );
   const prebuiltRoot = resolve(options.outputRoot ?? join(runtimeRoot, 'android', 'prebuilt'));
   for (const [key, contents] of downloads) {
-    const output = join(prebuiltRoot, ANDROID_PREBUILT_ASSETS[key]);
+    const output = join(prebuiltRoot, assets[key]);
     mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, contents);
   }

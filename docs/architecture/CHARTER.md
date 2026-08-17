@@ -382,9 +382,12 @@ The framework supplies host-neutral TypeScript seams and an import-free bundle. 
 is a host, not a renderer: it must not own Three's renderer, fork Three.js, or replace the
 JavaScript `GLTFLoader`. Exact Three.js compatibility must equal the workspace catalog.
 
-Rapier cannot depend on WebAssembly on Android, because the runtime defaults to QuickJS there.
-(V8 is an opt-in Android engine as of PRD-118 and PRD-130 proposes making it the default; nobody
-has measured Rapier-as-WebAssembly on it, so this rule stands until someone does.)
+Rapier cannot depend on WebAssembly on native. **The stated reason is now out of date and the rule
+is unchanged.** It was that Android defaulted to QuickJS, which has no WebAssembly; PRD-130 made V8
+the Android default on 2026-08-16 and V8 does implement WebAssembly. Nobody has measured
+Rapier-as-WebAssembly on that path, iOS remains JSC, and the coarse ABI answers per-object call cost
+independently of the engine — so the rule stands, but it now rests on an unmeasured claim rather than
+an impossibility. **Whether to keep it is an owner decision this note does not take.**
 Native physics is compiled into the runtime and exposed through a coarse, host-neutral
 typed-array ABI. The TypeScript API stays in `@threenative/physics`, with bulk
 `step`/`readVisibleTransforms` crossings rather than per-object frame calls.

@@ -75,7 +75,7 @@
     },
     {
       "name": "tn-android",
-      "displayName": "ThreeNative Android QuickJS + wgpu-native bootstrap",
+      "displayName": "ThreeNative Android V8 + wgpu-native bootstrap",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/tn-android",
       "cacheVariables": {
@@ -85,9 +85,9 @@
         "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a",
         "CMAKE_ANDROID_STL_TYPE": "c++_shared",
         "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
-        "MYSTRAL_USE_V8": "OFF",
+        "MYSTRAL_USE_V8": "ON",
         "MYSTRAL_USE_JSC": "OFF",
-        "MYSTRAL_USE_QUICKJS": "ON",
+        "MYSTRAL_USE_QUICKJS": "OFF",
         "MYSTRAL_USE_DAWN": "OFF",
         "MYSTRAL_USE_WGPU": "ON",
         "TN_ENABLE_CANVAS2D": "OFF",

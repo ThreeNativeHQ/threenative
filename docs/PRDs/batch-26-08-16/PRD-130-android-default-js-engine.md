@@ -4,8 +4,46 @@ prd_contract: v1
 
 # PRD-130 — Make V8 the Android default, and make it reach someone other than its author
 
-**Status:** ACCEPTED, 2026-08-16. Nothing below has executed. No mobile-readiness, signing, or
-second-device claim is made by this file.
+**Status: ALL SIX PHASES EXECUTED, 2026-08-16.** No mobile-readiness, signing, or second-device
+claim is made by this file, and none of the six changes that.
+
+| Phase | State | Record |
+| --- | --- | --- |
+| 1 — per-ABI snapshot staging | done; V8 runs on x86_64 for the first time | [phase-1](../../verification/prd-130-phase-1-2026-08-16.md) |
+| 2 — `v8-android` in the supported download path | done; rebuilt byte-identically from the script alone | [phase-2](../../verification/prd-130-phase-2-2026-08-16.md) |
+| 3 — per-ABI download size | done; **+25.6 MB on arm64**, measured on artifacts | [size](../../verification/android-engine-size-2026-08-16.md) |
+| 4 — V8 in the prebuilt/release path | done; a V8 APK **built with no NDK** from checksum-verified artifacts, **running V8 on the Pixel 8**. The GitHub Actions run itself is untested | [phase-4](../../verification/prd-130-phase-4-2026-08-16.md) |
+| 5 — correctness on the phone | done; veto not exercised, parity holds | [phase-5](../../verification/prd-130-phase-5-2026-08-16.md) |
+| 6 — flip the default | done; both directions run on the Pixel 8 | [phase-6](../../verification/prd-130-phase-6-2026-08-16.md) |
+
+**The gain, measured on the default that now ships** — same load-test bundle, same device, minutes
+apart, only the engine flag differing: L3 @ 16,384 reads **8.34 ms** against QuickJS's **101.24 ms**.
+The V8 side is the 120 Hz vsync interval, so 12× is a **lower bound**.
+
+**The price is confirmed, not renegotiated.** The +25.6 MB the owner accepted was a sum over
+uncompressed libraries; measured on per-ABI APKs it is +25,607,134 B on arm64. The two agree to
+within 0.03%.
+
+**Three things this PRD did not get to, named rather than implied:**
+
+1. **No tag was pushed, so the artifacts are not hosted.** The consumer path itself *was* executed
+   end to end: twelve artifacts staged under their release names, fetched and checksum-verified
+   through `prepareAndroidPrebuilts`, assembled into a V8 APK with the NDK variables unset and `PATH`
+   reduced to `/usr/bin:/bin`, and **run on the Pixel 8 reporting `JS engine created: V8`**. What a
+   tag adds is hosting, not correctness — and running the lane locally caught an assertion in it that
+   would have passed vacuously, because V8's symbols are mangled and the grep looked for a literal
+   `v8::`. Publishing to a public release is the owner's call.
+2. **Both performance runs are stamped `provisional: ["charging"]`.** PRD-127's preflight refused a
+   charging device and the override wrote the condition into the report rather than hiding it. Both
+   arms were charging at the same 80% and thermal NONE, so the comparison is like-for-like, but a
+   discharging retake is owed.
+3. **`conformance/run-conformance.mjs` was not run under V8.** Phase 5 proved the first-proof gate
+   and multitouch. A conformance row that was not run is not a passing row.
+
+**One correction published the same day.** Phase 5 and Phase 6 first reported the V8 APK as *smaller*
+than the QuickJS one. That was incremental packaging leaving the previous engine's library in the
+file as 25.5 MB of dead bytes; both records now carry the withdrawal inline. An APK's size is only a
+measurement if it was packaged from clean outputs.
 
 **The owner has decided: V8 becomes the Android default.** Recorded 2026-08-16, on the numbers in
 PRD-118 and its charged retake, for +25.6 MB of arm64 payload.

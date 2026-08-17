@@ -227,8 +227,15 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'archive extraction must pass native Windows paths directly to tar without shell rewriting');
   assert.match(deps, /archivePath\.endsWith\('\.zip'\) \|\| archivePath\.endsWith\('\.aar'\)/,
     'Android SDL AARs must be extracted as ZIP archives before CMake configures');
-  assert.match(deps, /const androidDeps = \['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android'\]/,
-    'a clean Android build must download the SDL Java glue as well as the Android AAR');
+  assert.match(deps, /const androidDeps = \['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android'\]/,
+    'a clean Android build must download the SDL Java glue, the Android AAR and V8');
+  // Until 2026-08-16 `third_party/v8-android/` existed only where somebody had unpacked it by hand,
+  // so a fresh checkout could not build Android V8 at all. This file is the only supported
+  // reconstruction path, and the pin is what makes "reconstructible" mean the same bytes.
+  assert.match(deps, /'v8-android': \{[\s\S]*?sha256: '[0-9a-f]{64}'/,
+    'the Android V8 dependency must pin a checksum, not just a URL');
+  assert.match(deps, /abis: \['arm64-v8a', 'x86_64'\]/,
+    'the Android V8 dependency must provision every ABI abiFilters ships, or a slice has no snapshot');
   const nativeBuild = read('scripts/native-build.mjs');
   assert.match(nativeBuild, /VCPKG_INSTALLATION_ROOT[\s\S]*x64-windows-static/,
     'Windows builds must consume the static-CRT HTTP dependencies installed by the platform lane');
@@ -372,4 +379,43 @@ test('native AudioContext exposes the positional graph used by Three.js', () => 
     'the shared audio proof must compile as an Android QuickJS script without top-level await');
   assert.doesNotMatch(audioSmoke, /^await /m,
     'Android QuickJS loads the shared audio proof as a classic script');
+});
+
+
+test('all three Android engine-default sites agree', () => {
+  // The Android default is stated in three places, and PRD-130 requires them to agree: a preset that
+  // contradicts the platform block is how `-DMYSTRAL_USE_V8=ON` came to work on one machine only.
+  // Without this, flipping two of the three leaves the build picking a winner silently depending on
+  // whether it went through Gradle, the preset, or a bare CMake configure.
+  const gradle = read('android/app/build.gradle.kts');
+  const cmake = read('CMakeLists.txt');
+  const presets = JSON.parse(read('CMakePresets.json'));
+
+  const gradleDefault = /providers\.gradleProperty\("threenativeJsEngine"\)\.orElse\("(\w+)"\)/u.exec(gradle)?.[1];
+  assert.equal(gradleDefault, 'v8', 'the Gradle property default must be the Android default engine');
+
+  // The platform block opts out of V8 only when something else was explicitly asked for.
+  assert.match(
+    cmake,
+    /if\(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC\)\s*\n\s*set\(MYSTRAL_USE_V8 ON\)/u,
+    'the CMake Android platform block must default to V8',
+  );
+
+  const android = presets.configurePresets.find(({ name }) => name === 'tn-android');
+  assert.ok(android, 'the tn-android preset must exist');
+  assert.equal(android.cacheVariables.MYSTRAL_USE_V8, 'ON', 'the tn-android preset must select V8');
+  assert.equal(android.cacheVariables.MYSTRAL_USE_QUICKJS, 'OFF', 'the tn-android preset must not also select QuickJS');
+  assert.match(android.displayName, /V8/u, 'the preset name must not still advertise the old engine');
+});
+
+test('the QuickJS rollback stays reachable', () => {
+  // A rollback that stops building is not a rollback. PRD-130 keeps QuickJS as the documented escape
+  // for a device or ABI that turns out not to tolerate V8.
+  const gradle = read('android/app/build.gradle.kts');
+  assert.match(gradle, /engine != "quickjs" && engine != "v8"/u,
+    'the Gradle engine property must still accept quickjs');
+  assert.match(gradle, /-PthreenativeJsEngine=quickjs/u,
+    'the rollback flag must be named where someone editing this file will see it');
+  const cmake = read('CMakeLists.txt');
+  assert.match(cmake, /MYSTRAL_USE_QUICKJS/u, 'the QuickJS option must still exist in CMake');
 });

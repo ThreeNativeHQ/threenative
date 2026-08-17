@@ -17,6 +17,8 @@ import {
 } from '../scripts/install-prebuilt.mjs';
 import {
   ANDROID_PREBUILT_ASSETS,
+  ANDROID_PREBUILT_V8_ASSETS,
+  androidPrebuiltAssets,
   ensureGradleWrapper,
   prepareAndroidPrebuilts,
 } from '../scripts/package-android.mjs';
@@ -106,7 +108,7 @@ test('the installer can bootstrap a remote checksum lock before fetching the run
   }
 });
 
-test('Android prebuilts verify every runtime, SDL, and Java payload before writing', async () => {
+test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload before writing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'threenative-android-prebuilt-'));
   roots.push(root);
   const contents = Object.fromEntries(
@@ -128,7 +130,7 @@ test('Android prebuilts verify every runtime, SDL, and Java payload before writi
     writeFileSync(manifest, `${JSON.stringify({ artifacts })}\n`);
     process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
     const outputRoot = join(root, 'android');
-    await prepareAndroidPrebuilts({ manifestPath: manifest, outputRoot });
+    await prepareAndroidPrebuilts({ engine: 'quickjs', manifestPath: manifest, outputRoot });
     for (const [key, path] of Object.entries(ANDROID_PREBUILT_ASSETS)) {
       assert.deepEqual(readFileSync(join(outputRoot, path)), contents[key]);
     }
@@ -137,7 +139,7 @@ test('Android prebuilts verify every runtime, SDL, and Java payload before writi
     writeFileSync(manifest, `${JSON.stringify({ artifacts })}\n`);
     const rejectedRoot = join(root, 'rejected');
     await assert.rejects(
-      prepareAndroidPrebuilts({ manifestPath: manifest, outputRoot: rejectedRoot }),
+      prepareAndroidPrebuilts({ engine: 'quickjs', manifestPath: manifest, outputRoot: rejectedRoot }),
       /Checksum verification failed.*android-x86_64-runtime/u,
     );
     assert.equal(existsSync(rejectedRoot), false);
@@ -145,7 +147,7 @@ test('Android prebuilts verify every runtime, SDL, and Java payload before writi
     delete artifacts['android-x86_64-runtime'];
     writeFileSync(manifest, `${JSON.stringify({ artifacts })}\n`);
     await assert.rejects(
-      prepareAndroidPrebuilts({ manifestPath: manifest, outputRoot: rejectedRoot }),
+      prepareAndroidPrebuilts({ engine: 'quickjs', manifestPath: manifest, outputRoot: rejectedRoot }),
       /No prebuilt release asset.*android-x86_64-runtime/u,
     );
     assert.equal(existsSync(rejectedRoot), false);
@@ -345,4 +347,50 @@ test('the packed archive reaches the production profile command and evaluator', 
   const archive = await run('tar', ['-tf', packed.archive]);
   assert.match(archive.stdout, /package\/scripts\/profile-production\.mjs\n/u);
   assert.match(archive.stdout, /package\/scripts\/production-evidence\.mjs\n/u);
+});
+
+
+test('the V8 prebuilt set carries an engine-qualified runtime, its library, and a snapshot per ABI', async () => {
+  // PRD-130 Phase 4. Before this the prebuilt path shipped five files, none of them V8, so a project
+  // assembled from a release artifact got QuickJS whatever the engine default said -- a default only
+  // operators with an NDK ever received.
+  const v8Assets = androidPrebuiltAssets('v8');
+  assert.equal(v8Assets, ANDROID_PREBUILT_V8_ASSETS);
+  assert.equal(androidPrebuiltAssets('quickjs'), ANDROID_PREBUILT_ASSETS);
+  assert.throws(() => androidPrebuiltAssets('jsc'), /Unknown Android JS engine/u);
+
+  for (const abi of ['arm64-v8a', 'x86_64']) {
+    // The runtime is engine-qualified because the binaries genuinely differ: QuickJS is compiled
+    // into the runtime and V8 is not. Publishing one runtime for both engines would produce a
+    // process that reports the wrong engine.
+    assert.equal(v8Assets[`android-${abi}-runtime-v8`], `jniLibs/${abi}/libmystral-runtime.so`);
+    assert.equal(v8Assets[`android-${abi}-v8`], `jniLibs/${abi}/libv8android.so`);
+    assert.equal(v8Assets[`android-${abi}-libcxx`], `jniLibs/${abi}/libc++_shared.so`);
+    // Per ABI, because the blobs differ and a slice handed the other ABI's is shipping wrong bytes.
+    assert.equal(v8Assets[`android-${abi}-v8-snapshot`], `assets/v8/${abi}/snapshot_blob.bin`);
+  }
+
+  // The unqualified runtime keys stay QuickJS, so an older consumer of this map is unaffected.
+  assert.equal(ANDROID_PREBUILT_ASSETS['android-arm64-v8a-runtime'], 'jniLibs/arm64-v8a/libmystral-runtime.so');
+  assert.ok(!('android-arm64-v8a-v8' in ANDROID_PREBUILT_ASSETS), 'the QuickJS set must not ship V8');
+});
+
+test('a QuickJS prebuilt directory cannot satisfy a V8 build', async () => {
+  // The negative control PRD-130 Phase 4 asks for: populate android/prebuilt/ from a QuickJS
+  // release, request V8, and the build must refuse rather than produce an APK whose logcat says
+  // QuickJS. Expressed here as the contract the Gradle completeness check reads.
+  const gradle = readFileSync(
+    new URL('../android/app/build.gradle.kts', import.meta.url),
+    'utf8',
+  );
+  assert.match(gradle, /prebuiltEngineFiles = if \(nativeJsEngineName == "v8"\)/u,
+    'the prebuilt file list must depend on the engine');
+  assert.match(gradle, /libv8android\.so/u, 'a V8 prebuilt build must require the V8 library');
+  assert.match(gradle, /assets\/v8\/\$abi\/snapshot_blob\.bin/u,
+    'a V8 prebuilt build must require a snapshot per ABI');
+  assert.match(gradle, /Android prebuilt runtime is incomplete for engine/u,
+    'the refusal must name the engine, or the reader hunts a corrupt download instead of a mismatch');
+
+  // Missing files are listed, so the message says which engine the directory was populated for.
+  assert.match(gradle, /Missing: \$missing/u, 'the refusal must name the files it wanted');
 });

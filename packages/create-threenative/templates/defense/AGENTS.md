@@ -16,8 +16,8 @@ pnpm typecheck
 
 The portable entry is `src/game.ts`; React mounting stays in `src/main.ts`. Attackers follow
 the authored route with `PathFollow3D`. This kit deliberately has no navmesh, fog of war,
-marquee selection or tech tree: `@threenative/physics/navigation` carries WASM and would make
-the strategy sample web-only on QuickJS native hosts.
+marquee selection or tech tree: `@threenative/physics/navigation` carries WASM, and WASM is web-only
+on this framework's native hosts, so it would make the strategy sample web-only too.
 
 `src/placement/Buildable.ts` validates a prospective tower with `directSpaceState.intersectShape`
 before the economy spends anything. `src/towers/Tower.ts` acquires attackers through a jittered

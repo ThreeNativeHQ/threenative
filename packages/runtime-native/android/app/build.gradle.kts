@@ -7,16 +7,49 @@ plugins {
 
 val runtimeRoot = layout.projectDirectory.dir("../..")
 val prebuiltRoot = layout.projectDirectory.dir("../prebuilt")
+
+// The engine, read before anything else, because the prebuilt contract depends on it.
+// V8 is the Android default as of 2026-08-16 (PRD-130) on PRD-118's measurement: 115.64 ms of
+// script per frame under QuickJS against 5.25 ms under V8. `-PthreenativeJsEngine=quickjs` is the
+// documented rollback — keep it working, it is the escape if a device or ABI does not tolerate V8,
+// and a rollback nobody runs is not a rollback.
+val nativeJsEngineName = providers.gradleProperty("threenativeJsEngine").orElse("v8").get().lowercase()
+if (nativeJsEngineName != "quickjs" && nativeJsEngineName != "v8") {
+    throw GradleException("-PthreenativeJsEngine must be quickjs or v8, got '$nativeJsEngineName'")
+}
+
+// What a prebuilt (no-NDK) build needs, per engine. Until 2026-08-16 this listed five files, none of
+// them V8, so `android/prebuilt/` could not express a V8 build at all and a project assembled from a
+// release artifact got QuickJS whatever the default said. The V8 runtime binary is a different file,
+// not the same one plus a library: QuickJS is compiled into the runtime and V8 is not.
+val prebuiltEngineFiles = if (nativeJsEngineName == "v8") listOf(
+    prebuiltRoot.file("jniLibs/arm64-v8a/libv8android.so"),
+    prebuiltRoot.file("jniLibs/arm64-v8a/libc++_shared.so"),
+    prebuiltRoot.file("assets/v8/arm64-v8a/snapshot_blob.bin"),
+    prebuiltRoot.file("jniLibs/x86_64/libv8android.so"),
+    prebuiltRoot.file("jniLibs/x86_64/libc++_shared.so"),
+    prebuiltRoot.file("assets/v8/x86_64/snapshot_blob.bin"),
+) else emptyList()
+
 val prebuiltFiles = listOf(
     prebuiltRoot.file("SDL3-3.2.8.aar"),
     prebuiltRoot.file("jniLibs/arm64-v8a/libSDL3.so"),
     prebuiltRoot.file("jniLibs/arm64-v8a/libmystral-runtime.so"),
     prebuiltRoot.file("jniLibs/x86_64/libSDL3.so"),
     prebuiltRoot.file("jniLibs/x86_64/libmystral-runtime.so")
-)
+) + prebuiltEngineFiles
+
 val prebuiltCount = prebuiltFiles.count { it.asFile.isFile }
 if (prebuiltCount != 0 && prebuiltCount != prebuiltFiles.size) {
-    throw GradleException("Android prebuilt runtime is incomplete: $prebuiltCount/${prebuiltFiles.size} files")
+    // Naming the engine matters: the most likely way to land here is a prebuilt directory populated
+    // for one engine while the build asks for the other, and "incomplete" alone sends the reader
+    // looking for a corrupted download instead of a mismatched engine.
+    val missing = prebuiltFiles.filter { !it.asFile.isFile }.joinToString(", ") { it.asFile.name }
+    throw GradleException(
+        "Android prebuilt runtime is incomplete for engine '$nativeJsEngineName': " +
+            "$prebuiltCount/${prebuiltFiles.size} files. Missing: $missing. " +
+            "Populate android/prebuilt/ for this engine, or build with -PthreenativeJsEngine to match what is there.",
+    )
 }
 val usePrebuiltRuntime = prebuiltCount == prebuiltFiles.size
 if (!usePrebuiltRuntime && !runtimeRoot.file("CMakeLists.txt").asFile.isFile) {
@@ -29,10 +62,13 @@ val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenativ
 val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
 val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
 val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
-// QuickJS stays the default. It is the only JIT-less engine ThreeNative ships on any platform, and
-// the phone is where that costs the most (PRD-118), so the alternative has to be reachable without
-// editing this file. `-PthreenativeJsEngine=v8` needs third_party/v8-android present.
-val nativeJsEngine = providers.gradleProperty("threenativeJsEngine").orElse("quickjs")
+// V8 is the Android default, decided by the product owner on 2026-08-16 (PRD-130) on PRD-118's
+// measurement: 115.64 ms of script per frame under QuickJS against 5.25 ms under V8. It needs
+// third_party/v8-android, which `scripts/download-deps.mjs --android` now provisions.
+//
+// `-PthreenativeJsEngine=quickjs` is the documented rollback. Keep it working: it is the escape if
+// a device or an ABI turns out not to tolerate V8, and a rollback nobody runs is not a rollback.
+val nativeJsEngine = providers.provider { nativeJsEngineName }
 
 fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value ->
     when (value.lowercase()) {
@@ -42,30 +78,65 @@ fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value 
     }
 }.get()
 
+// Every ABI this APK targets. `copyV8Snapshot` and `abiFilters` both read this list, so the set of
+// slices shipped and the set of snapshots staged cannot drift apart — which is the defect this
+// single declaration exists to make impossible.
+val threeNativeAbis = listOf("arm64-v8a", "x86_64")
+
+// Per-ABI APKs instead of one universal APK. Opt-in: see the `splits` block below.
+val threeNativeAbiSplits =
+    providers.gradleProperty("threenativeAbiSplits").orElse("false").get().toBoolean()
+
 // V8 on Android keeps its startup snapshot outside the library, so the APK has to carry it and the
 // runtime reads it back at launch. QuickJS builds have no snapshot and skip this entirely.
+//
+// The snapshot is per-ABI and so is the staging. Until 2026-08-16 this copied arm64's snapshot to a
+// single `v8/snapshot_blob.bin` while `abiFilters` shipped x86_64 as well, so the emulator slice
+// carried an arm64 snapshot. Nothing caught it because every V8 run had been on the phone.
+//
+// **That mismatch did not crash anything, and the control proving so is recorded** — an x86_64
+// emulator handed arm64's snapshot still reported `JS engine created: V8` and ran 300 frames
+// (`docs/verification/prd-130-phase-1-2026-08-16.md`). V8 tolerates a blob whose checksum does not
+// match, silently. So this is correctness of what ships, not a fix for a reproduced failure: the two
+// blobs differ in 44,884 of 45,420 bytes, and shipping one ABI the other's bytes is wrong whether or
+// not this V8 build happens to survive it. Do not restate it as a crash fix.
 tasks.register("copyV8Snapshot") {
     val engine = nativeJsEngine.get().lowercase()
-    val source = runtimeRoot.file("third_party/v8-android/snapshot_blob/arm64-v8a/snapshot_blob.bin")
-    val target = generatedThreeNativeAssets.map { it.file("v8/snapshot_blob.bin") }
+    // A prebuilt (no-NDK) build has no `third_party/`; its snapshots arrive in the prebuilt
+    // directory beside the libraries. Same file, two provenances, one staging path.
+    val sources = threeNativeAbis.associateWith { abi ->
+        if (usePrebuiltRuntime) prebuiltRoot.file("assets/v8/$abi/snapshot_blob.bin")
+        else runtimeRoot.file("third_party/v8-android/snapshot_blob/$abi/snapshot_blob.bin")
+    }
+    val targets = threeNativeAbis.associateWith { abi ->
+        generatedThreeNativeAssets.map { it.file("v8/$abi/snapshot_blob.bin") }
+    }
     // Declaring only the output made Gradle skip this whenever the file happened to survive from an
     // earlier build, and an APK then shipped `libv8android.so` with no snapshot beside it — it
     // installs, launches, and dies with "V8 startup snapshot asset is missing". The engine choice is
     // the real input, so switching engines has to invalidate the copy.
     inputs.property("threenativeJsEngine", engine)
-    if (engine == "v8") inputs.file(source)
-    outputs.file(target)
+    inputs.property("threenativeAbis", threeNativeAbis)
+    if (engine == "v8") sources.values.forEach { inputs.file(it) }
+    targets.values.forEach { outputs.file(it) }
     doLast {
-        val out = target.get().asFile
-        out.parentFile.mkdirs()
-        if (engine == "v8") {
-            val input = source.asFile
-            if (!input.isFile) {
-                throw GradleException("V8 startup snapshot is missing: ${'$'}{input.absolutePath}")
+        for (abi in threeNativeAbis) {
+            val out = targets.getValue(abi).get().asFile
+            out.parentFile.mkdirs()
+            if (engine == "v8") {
+                val input = sources.getValue(abi).asFile
+                // Shipping an ABI with no snapshot is a build failure, never a runtime surprise:
+                // the APK would install and launch on that ABI and die inside V8::Initialize.
+                if (!input.isFile) {
+                    throw GradleException(
+                        "V8 startup snapshot is missing for ABI '$abi': ${'$'}{input.absolutePath}. " +
+                            "Every ABI in abiFilters must have one, or that slice cannot start.",
+                    )
+                }
+                input.copyTo(out, overwrite = true)
+            } else if (out.exists()) {
+                out.delete()
             }
-            input.copyTo(out, overwrite = true)
-        } else if (out.exists()) {
-            out.delete()
         }
     }
 }
@@ -197,7 +268,14 @@ android {
             // Target modern 64-bit architectures
             // arm64-v8a: Most Android devices (ARM64)
             // x86_64: Android emulator on Intel/AMD
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            //
+            // Declared once, at the top of this file, because `copyV8Snapshot` stages one V8
+            // snapshot per entry. Adding an ABI here without a snapshot for it now fails the build
+            // rather than shipping a slice that dies inside V8::Initialize.
+            //
+            // AGP refuses `abiFilters` and `splits.abi` together, so the split build leaves this
+            // empty and the `splits` block below carries the same list.
+            if (!threeNativeAbiSplits) abiFilters.addAll(threeNativeAbis)
         }
 
         if (!usePrebuiltRuntime) externalNativeBuild {
@@ -233,6 +311,26 @@ android {
                 // C/C++ flags
                 cppFlags.add("-std=c++17")
             }
+        }
+    }
+
+    // Per-ABI APKs, off by default.
+    //
+    // Every APK this repository built until 2026-08-16 was universal: it carried arm64-v8a and
+    // x86_64 together, so its size answered no question anyone has. "How many extra megabytes does
+    // an arm64 phone download to get V8" was answered by summing uncompressed native libraries
+    // instead, which is a different number from an artifact's size and was the only figure on
+    // record when the engine default was decided.
+    //
+    // `-PthreenativeAbiSplits=true` produces one APK per ABI so that number can be read off a file.
+    // It stays opt-in because every device gate here installs by path and a split build changes
+    // which paths exist.
+    splits {
+        abi {
+            isEnable = threeNativeAbiSplits
+            reset()
+            include(*threeNativeAbis.toTypedArray())
+            isUniversalApk = false
         }
     }
 

@@ -90,11 +90,16 @@ package, work out what the native host does with it.
 - **Browser globals exist only insofar as the host shims them.** See
   `packages/runtime-native/src/` — `canvas`, `input`, `storage`, `http`, `fs`, `audio`,
   `video`, `workers`, `webgpu`. Reaching for one that is not shimmed breaks native silently.
-- **No WASM on native.** Android runs QuickJS. A WASM dependency is web-only by
-  construction; its native equivalent compiles into `runtime-native` and is reached through
-  a coarse bulk typed-array ABI (`step`, `readVisibleTransforms`), never per-object frame
-  calls. `@threenative/physics/navigation` is therefore browser-only; the shipped platformer
-  uses template-local steering so its portable entry still runs on desktop and Android.
+- **No WASM on native.** A WASM dependency is web-only by construction; its native equivalent
+  compiles into `runtime-native` and is reached through a coarse bulk typed-array ABI (`step`,
+  `readVisibleTransforms`), never per-object frame calls. `@threenative/physics/navigation` is
+  therefore browser-only; the shipped platformer uses template-local steering so its portable entry
+  still runs on desktop and Android.
+  **The reason changed on 2026-08-16 and the rule did not.** This rule was justified by Android
+  running QuickJS, which has no WebAssembly. Android now defaults to **V8** (PRD-130), which does.
+  So the original justification is gone, nobody has measured WASM on that path, and iOS is still
+  JSC. Treat the rule as standing until someone measures it and the owner decides — do not relax it
+  because this bullet no longer says QuickJS.
 - **A backend that cannot honour an option throws at construction.** Accepting it and
   discarding it becomes a gameplay bug on one platform only.
 - **The native bundle is one import-free ESM file.** No code splitting, no dynamic

@@ -23,7 +23,12 @@ optimization lands before a profile names the bottleneck.
 > bindings measure ~2% of a CPU-bound frame — so `SceneCollapse` (`packages/core/src/collapse.ts`)
 > removes the per-object work instead of speeding up the crossing. And the **engine** was worth
 > more than any of it: PRD-118 swapped Android's QuickJS for V8 and cut script time 22× on a
-> Pixel 8. The current numbers, against Godot 4.7.1 on three platforms, are in
+> Pixel 8, and **PRD-130 made V8 the Android default on 2026-08-16** — 8.34 ms against QuickJS's
+> 101.24 ms at 16,384 cubes on the same phone, a 12× lower bound
+> ([`prd-130-phase-6`](../verification/prd-130-phase-6-2026-08-16.md)). **So every row below that
+> treats the missing JIT as an open problem is now history**: it was closed by changing the engine,
+> not by any of the transport work these rows propose. The current numbers, against Godot 4.7.1 on
+> three platforms, are in
 > [`../verification/engine-load-test-summary-2026-08-15.md`](../verification/engine-load-test-summary-2026-08-15.md).
 
 ## The shape of the problem
@@ -56,11 +61,11 @@ profiled** — which is exactly why the next action is G5 and not a fix.
 | Effort | Impact | Bottleneck | Evidence in tree | Platforms | Fixable? | The fix |
 |---|---|---|---|---|---|---|
 | 🟢 | ⭐⭐⭐⭐ | **Three.js does culling and matrix updates in JS, per object, per frame.** Cost scales with object count on the slowest engine you ship to. | upstream `three` at catalog version; no custom renderer, by design | All, worst on Android/iOS | **Partly** | Instancing, static-transform flags, render bundles — in the game's `src/render/`, never in a package. Zero framework code |
-| 🟢 | ⭐⭐⭐ | **Cold start: the whole bundle is parsed as source every launch.** QuickJS supports precompiled bytecode (`JS_ReadObject`); the host only ever calls `JS_Eval`. Plus runtime SWC transpile on the desktop path. | `src/js/quickjs_engine.cpp:210–307`, `src/js/ts_transpiler.cpp` | Android mainly | **Yes, cheaply** | Precompile the bundle to QuickJS bytecode at package time. Launch time only — zero steady-state frame time |
+| 🟡 | ⭐⭐⭐ | **Cold start: the whole bundle is parsed as source every launch.** Still true, but the remedy named here is now stale: it assumed QuickJS bytecode (`JS_ReadObject`), and **Android defaults to V8** since PRD-130. V8's equivalent is a code cache or a custom startup snapshot, neither wired up. Plus runtime SWC transpile on the desktop path. **Unmeasured under V8.** | `src/js/v8_engine.cpp`, `src/js/ts_transpiler.cpp` | Android mainly | **Yes, cheaply** | Measure cold start under V8 first, then use V8's code cache — not QuickJS bytecode |
 | 🟡 | ⭐ *(measured for one shared-material subject)* | **The six hot render-command bindings are not the dominant cost in the measured subject.** `setPipeline`, `setBindGroup`, `draw`, `drawIndexed`, `setVertexBuffer` and `setIndexBuffer` together consumed roughly 2% of the physical Pixel 8 frame in PRD-068. This does not price every binding or every material shape. | `src/webgpu/bindings.cpp`; PRD-068 §1.2 | Android measurement; other targets unmeasured | **Yes, but small in this subject** | Keep counting varied-material calls and price fixed-arity marshalling before any batched ABI; perfect removal of the measured term recovers only about half a millisecond |
 | 🟢 | ⭐ *(closed — inside the measured 2%)* | **The marshalling itself, separately from the number of crossings.** Every binding goes through one universal `std::function<…(const std::vector<JSValueHandle>&)>` signature, so each crossing pays a heap vector, a boxed handle per argument and a `getPrivateData` lookup before `wgpu-native` is reached. `beginRenderPass` also rebuilds its encoder wrapper — 13 closures — every call. | `include/mystral/js/engine.h:32`, `src/webgpu/bindings.cpp:3087–3330` | All, worst on Android/iOS | **Yes, and not worth it** | **PRD-072 is CLOSED UNIMPLEMENTED.** The marshalling sits *inside* the 2% measured above, so fixed-arity entry points can recover only a slice of it — too little to fund a second calling convention across three engine adapters. Reopens only if a varied-material subject puts the six bindings above ~10% of frame. The per-frame wrapper rebuild survives as a cleanup in PRD-071 §3.3 |
 | 🟡 | ⭐⭐⭐ | *(retained for the record; PRD-070 found the persisted-cache half unreachable)* **First-frame shader hitches.** TSL/node materials build WGSL in JavaScript, then wgpu compiles the pipeline, on demand, mid-frame. | upstream `WebGPURenderer`; no pipeline cache in `src/webgpu/context.cpp` | All | **Yes** | Persisted pipeline cache plus a warm-up pass. Kills hitches, not average frame time |
-| 🔴 | ⭐⭐⭐⭐⭐ *(hypothesis; attribution incomplete)* | **QuickJS has no JIT.** The measured six-binding term is small, but the current repeatable artifact still labels the remainder `javascriptAndUninstrumented`: it has not separated JavaScript execution from all other native work. No candidate engine has a device number. | `src/js/quickjs_engine.cpp` — `JS_Eval` only; `packages/runtime-native/docs/G5-profiling.md` | Android | **Yes, expensively** | Finish the physical split, then price V8, JSC, Hermes and tuned QuickJS against the same bundle. A branch with no device number remains UNMEASURED |
+| ✅ | ⭐⭐⭐⭐⭐ | ~~**QuickJS has no JIT.**~~ **CLOSED 2026-08-16.** This row was the biggest thing on the list and it was right. Every candidate engine now has a device number: V8 at 8.34 ms against QuickJS's 101.24 ms, 16,384 cubes, one Pixel 8 — and **V8 is the Android default** as of PRD-130. The fix was one build flag, not the physical attribution split this row demanded. | `src/js/v8_engine.cpp`; `docs/verification/prd-130-phase-6-2026-08-16.md` | Android | **Done** | Nothing further. iOS is still JSC by construction, which is the one platform this closes nothing for |
 | 🔴 | ⭐⭐⭐ | **Everything is on one thread.** `Worker` is a polyfill that runs worker code on the main thread; there is no JobSystem. Only file I/O and image decode use the libuv pool. | `src/runtime.cpp:2493`, `:2625`; `docs/G4-*.md` marks the thread model still owed | All | **Yes** — already an open gate, not new debt | Build the owed worker/thread model and JobSystem. Payoff depends entirely on what the game does off the render path |
 | ⛔ | — | **iOS JSC is interpreter-only.** Apple grants the JIT entitlement to WKWebView, not to embedded JavaScriptCore. Swapping engines does not help — no third-party engine gets JIT on iOS either. | `src/js/jsc_engine.mm` | iOS | **No JIT, ever.** But see the row below | Design around it — the mitigations are the rows above |
 | 🔴 | ⭐? | **The interpreter ceiling assumes the JavaScript is interpreted at all.** Static Hermes compiles JS ahead of time to native code, which needs no JIT entitlement from anyone — so *"no JIT"* and *"no fast execution"* are not the same statement. Unmeasured research tooling; the gain on untyped, megamorphic Three.js code is the open question, not the compiler's existence. | none — nothing in this tree uses it | Android + iOS | **Unknown.** A feasibility spike, not a plan | Compile the bundle with `shermes` on desktop, benchmark scene traversal, close the branch if untyped JS gains little — PRD-068 §4.3a |
@@ -81,9 +86,12 @@ profiled** — which is exactly why the next action is G5 and not a fix.
 
 - **Desktop (V8 + Dawn):** render FFI, threading and shader hitches dominate. Nothing
   structural blocks good numbers.
-- **Android (QuickJS + wgpu-native):** the missing JIT, the render FFI and cold start
-  dominate, and they compound — an interpreter paying per-call FFI is the worst combination
-  on the list.
+- **Android (V8 + wgpu-native, since PRD-130 on 2026-08-16):** ~~the missing JIT~~, the render FFI
+  and cold start. **The missing JIT is gone** — that was the QuickJS default and it dominated this
+  list; V8 has a JIT and the measured frame went 101.24 ms → 8.34 ms. What is left here is the render
+  FFI and cold start, neither re-measured under V8. The old sentence — "an interpreter paying
+  per-call FFI is the worst combination on the list" — described a configuration this framework no
+  longer ships.
 - **iOS (JSC + wgpu-native):** no JIT is available and nobody can lift that. Cutting per-object
   JS work and making the boundary cheaper are the levers that exist today, which makes them
   worth more here than anywhere else. The one idea that would sidestep the floor rather than

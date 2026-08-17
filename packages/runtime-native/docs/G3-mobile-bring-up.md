@@ -7,6 +7,19 @@ evidence.
 ## Android arrival evidence — 2026-08-08
 
 - QuickJS + wgpu-native launched on the x86_64 emulator and packaged both required ABIs.
+- **V8 + wgpu-native launched on the x86_64 emulator, 2026-08-16** (`emulator-5554`,
+  `sdk_gphone64_x86_64`, API 35), reporting `JS engine created: V8` from logcat and passing the
+  multitouch scenario with two simultaneous pointers. Before that day every V8 run had been on the
+  arm64 phone, and the emulator slice shipped arm64's startup snapshot; snapshots are now staged per
+  ABI and an ABI without one fails the build. `docs/verification/prd-130-phase-1-2026-08-16.md`.
+- **What V8 costs a phone, measured on per-ABI artifacts 2026-08-16:** arm64-v8a 76,690,124 B under
+  QuickJS against 102,297,258 B under V8, **+25.6 MB**; x86_64 +26.1 MB. `-PthreenativeAbiSplits=true`
+  produces the per-ABI APKs. Delete `app/build/outputs/apk` between engines or the comparison
+  measures build order rather than size — `docs/verification/android-engine-size-2026-08-16.md`.
+- **The Android engine default is V8 as of 2026-08-16** (PRD-130), with
+  `-PthreenativeJsEngine=quickjs` as the documented rollback. Both directions were exercised on the
+  Pixel 8, engine read from logcat rather than inferred from the flag:
+  `docs/verification/prd-130-phase-6-2026-08-16.md`.
 - Launch, exact marker, liveness, clean-log and screenshot gates passed for the upstream
   Three.js cube.
 - That proof used runtime Three.js 0.182.0, while the workspace catalog is 0.185.1.

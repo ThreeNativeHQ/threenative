@@ -17,7 +17,9 @@ import {
   SUCCESS_MARKER,
   THREE_VERSION_MARKER,
   analyzeAppLog,
+  assertEngine,
   assertPackagedAndroidBundle,
+  engineFromLog,
   filterAppLog,
   inspectScreenshot,
   javaMajorFromRelease,
@@ -143,4 +145,43 @@ test('JDK release parser reports Java 17 from the current fixture path when pres
   const major = javaMajorFromRelease(knownJdk);
   if (major !== null) assert.equal(major, 17);
   assert.equal(javaMajorFromRelease('/path/that/does/not/exist'), null);
+});
+
+
+const V8_LOG = 'I MystralRuntime: Loading asset: v8/arm64-v8a/snapshot_blob.bin\nI MystralRuntime: JS engine created: V8\n';
+const QUICKJS_LOG = 'I MystralRuntime: JS engine created: QuickJS\n';
+
+test('the engine comes from what the process reported, not from what was asked for', () => {
+  assert.equal(engineFromLog(V8_LOG), 'V8');
+  assert.equal(engineFromLog(QUICKJS_LOG), 'QuickJS');
+  assert.equal(engineFromLog('I MystralRuntime: Script path: asset://scripts/main.js\n'), null);
+
+  assert.deepEqual(assertEngine(V8_LOG, 'v8'), { engine: 'V8', expected: 'v8', matched: true });
+  assert.deepEqual(assertEngine(QUICKJS_LOG, 'quickjs'), {
+    engine: 'QuickJS', expected: 'quickjs', matched: true,
+  });
+});
+
+test('a QuickJS build fails a run that asked for V8', () => {
+  // The control the whole assertion exists for. PRD-118 section 2 records -DMYSTRAL_USE_V8=ON being
+  // accepted, silently ignored and reported back as V8=OFF, so every measurement in between
+  // described QuickJS. A parity gate whose two sides can be the same build measures nothing.
+  assert.throws(() => assertEngine(QUICKJS_LOG, 'v8'), /asked for v8, the running process reported QuickJS/u);
+  assert.throws(() => assertEngine(V8_LOG, 'quickjs'), /asked for quickjs, the running process reported V8/u);
+});
+
+test('a process that never reported an engine is distinct from one that reported the wrong one', () => {
+  // Different causes: a crash before engine creation, against a build that shipped the wrong engine.
+  assert.throws(() => assertEngine('I MystralRuntime: Script path: x\n', 'v8'), /never reported one/u);
+});
+
+test('asking for nothing still reads the engine, so every report can name it', () => {
+  assert.deepEqual(assertEngine(V8_LOG, null), { engine: 'V8', expected: null, matched: true });
+});
+
+test('--expect-engine only accepts the two engines that exist', () => {
+  assert.equal(parseArgs(['--expect-engine', 'V8']).expectEngine, 'v8');
+  assert.equal(parseArgs(['--expect-engine', 'quickjs']).expectEngine, 'quickjs');
+  assert.equal(parseArgs([]).expectEngine, null);
+  assert.throws(() => parseArgs(['--expect-engine', 'jsc']), /must be v8 or quickjs/u);
 });

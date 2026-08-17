@@ -138,10 +138,16 @@ a universal figure, and why the verdict is "weak candidate" rather than "dead".
 **What it means.** Swap QuickJS on Android for something faster, and possibly compile the bundle
 ahead of time to native code so nothing hot is interpreted at all.
 
-**Status: an open spike, not a layer.** `PRD-068` prices V8, JavaScriptCore and Hermes against
-tuned QuickJS on one physical phone, and its own first phase is an attribution measurement,
-because "the interpreter is the problem" is currently a conclusion by elimination rather than by
-measurement. Static Hermes AOT is filed there too, as the one idea that could make the iOS
+**Status: the swap is DONE, and it was the largest win in this document.** PRD-118 measured V8 at 22×
+less script time on a Pixel 8 and **PRD-130 made V8 the Android default on 2026-08-16** — 8.34 ms
+against QuickJS's 101.24 ms at 16,384 cubes, a 12× lower bound, with the rollback exercised on the
+same phone ([`prd-130-phase-6`](../verification/prd-130-phase-6-2026-08-16.md)).
+
+**Read that against the rest of this document.** Every transport layer below was proposed while "the
+interpreter is the problem" was a conclusion by elimination. It turned out to be the answer, and it
+was reached by changing one build flag rather than by building any of these layers. The AOT half —
+Static Hermes and friends — remains unexplored, and iOS is still JSC by construction, so that part of
+this row is genuinely open. Static Hermes AOT is filed there too, as the one idea that could make the iOS
 no-JIT rule stop being the binding constraint — and as research tooling with three unchecked
 prerequisites, not a plan.
 
