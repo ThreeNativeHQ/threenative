@@ -382,7 +382,9 @@ The framework supplies host-neutral TypeScript seams and an import-free bundle. 
 is a host, not a renderer: it must not own Three's renderer, fork Three.js, or replace the
 JavaScript `GLTFLoader`. Exact Three.js compatibility must equal the workspace catalog.
 
-Rapier cannot depend on WebAssembly on Android, because the runtime uses QuickJS there.
+Rapier cannot depend on WebAssembly on Android, because the runtime defaults to QuickJS there.
+(V8 is an opt-in Android engine as of PRD-118 and PRD-130 proposes making it the default; nobody
+has measured Rapier-as-WebAssembly on it, so this rule stands until someone does.)
 Native physics is compiled into the runtime and exposed through a coarse, host-neutral
 typed-array ABI. The TypeScript API stays in `@threenative/physics`, with bulk
 `step`/`readVisibleTransforms` crossings rather than per-object frame calls.
@@ -625,11 +627,16 @@ project can honestly make right now.
 frame rate — it fakes the GPU driver. A mobile fps figure sourced from an emulator is the
 reporting failure `AGENTS.md` opens by naming.
 
-**The instrument does not exist yet, and building it is part of the target.** `playtest`
-ships 20 assertion kinds and **none of them measures time**. Until a `performance`
-assertion kind lands — fail-closed like the rest, so a missing timing observation fails
-rather than passes — every number in the table above is an intention. **A performance
-claim without that assertion is unverified, and "unverified" is the honest word for it.**
+**Both of those conditions moved, 2026-08-16, and neither budget above is met yet.** The
+`performance` assertion kind landed and is fail-closed — `maxFrameMsP95`, `maxDrawCalls`,
+`maxTriangles`, requiring the `runtime.performance` capability — so a timing number is now
+verifiable rather than an intention. And a physical Pixel 8 has executed load tests against
+Godot 4.7.1 on web, desktop and the phone
+(`docs/verification/engine-load-test-summary-2026-08-15.md`). **That is benchmark evidence, not
+the mobile budget**: the workload was a cube ladder rather than the `platformer` template, the
+Android build was unsigned, and one run sat at 21% battery. The reference-workload rows in the
+table above remain unmeasured, and the mobile row still needs the phone, the template, and a
+charge condition somebody checked.
 
 ### 10b. Cost caps — what we refuse to spend
 

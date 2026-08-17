@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: BLOCKED — requires an external person, 2026-08-16.**
 
-Phase 0 is executed: [`STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md) is the
+Phase 0 is executed: [`STRANGER-TEST-PROTOCOL.md`](../../../product/STRANGER-TEST-PROTOCOL.md) is the
 single definition, the experiment measures a *player*, and every competing restatement is now a
 link. That was the finding this PRD existed to stop repeating — an experiment specified four ways
 gets run zero times — and it is closed.
@@ -29,7 +29,7 @@ person for an afternoon.
 ---
 
 **Phase 0's decision: the five-minute stranger test is the *player* test.**
-[`docs/product/STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md) is now the
+[`docs/product/STRANGER-TEST-PROTOCOL.md`](../../../product/STRANGER-TEST-PROTOCOL.md) is now the
 single definition, and it fixes subject, stranger, clock, script, recording and consent.
 
 Decided this way because the project's own documents already do. `METRICS.md` is the document that
@@ -75,10 +75,10 @@ others about what it is.**
 
 | Document | What it says the test is |
 |---|---|
-| [`METRICS.md`](../../strategy/METRICS.md) | *"one game **played** by a stranger for five minutes, with a transcript"* |
-| [`ROADMAP.md`](../../strategy/ROADMAP.md) Tier 2 trigger | *"a stranger has played a ThreeNative game for five minutes — concretely, the first external user who **installs the framework and asks for a device build**"* |
-| [`ROADMAP.md`](../../strategy/ROADMAP.md) "Not on the roadmap" | gates a hosted Studio or Cloud tier on it |
-| [`VALUE-PROPOSITION.md`](../../strategy/VALUE-PROPOSITION.md) | ranks it **#1** of six changes that would move the headline claim; blocked on *"an afternoon and one external person"* |
+| [`METRICS.md`](../../../strategy/METRICS.md) | *"one game **played** by a stranger for five minutes, with a transcript"* |
+| [`ROADMAP.md`](../../../strategy/ROADMAP.md) Tier 2 trigger | *"a stranger has played a ThreeNative game for five minutes — concretely, the first external user who **installs the framework and asks for a device build**"* |
+| [`ROADMAP.md`](../../../strategy/ROADMAP.md) "Not on the roadmap" | gates a hosted Studio or Cloud tier on it |
+| [`VALUE-PROPOSITION.md`](../../../strategy/VALUE-PROPOSITION.md) | ranks it **#1** of six changes that would move the headline claim; blocked on *"an afternoon and one external person"* |
 
 The first two are **different experiments with different subjects**. One needs a *player*.
 The other needs a *developer who adopts the framework*. A player finishing five minutes tells
@@ -115,7 +115,7 @@ one deploy configuration,
 `docs/strategy/VALUE-PROPOSITION.md`.
 
 **Depends on:** nothing. **Unblocks:** the Tier 2 review trigger in
-[`docs/PRDs/BLOCKED/README.md`](../BLOCKED/README.md), every adoption claim in
+[`docs/PRDs/BLOCKED/README.md`](../README.md), every adoption claim in
 `VALUE-PROPOSITION.md`, and the Studio/Cloud question the roadmap parks behind it.
 
 ---

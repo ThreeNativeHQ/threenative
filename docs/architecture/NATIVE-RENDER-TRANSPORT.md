@@ -17,6 +17,13 @@ middle three layers of the proposed stack exist to reduce that 2%. The other ~98
 JavaScript-side work in Three.js — render-list build and sort, node and binding refresh,
 per-object matrix updates and culling — and **no layer in this diagram touches it.**
 
+**What did touch it, added 2026-08-16.** One layer of this sketch was right and is now built,
+and it is not one of the three middle ones: the **JS runtime**. PRD-118 put V8 behind
+`-PthreenativeJsEngine=v8` on Android and script time fell 22× on the same Pixel 8. The other
+answer came from outside the stack entirely — `SceneCollapse` deletes the per-object JavaScript
+work rather than transporting it faster. Both are cheaper than a shim, a command stream and a
+render thread, and together they are why this page stays declined.
+
 ## The sketch, as proposed
 
 ```mermaid

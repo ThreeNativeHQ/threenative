@@ -40,7 +40,7 @@ mobile-readiness, physical-device or iOS claim is made.
 **Complexity: 7 → HIGH mode.** Multi-package, a new release lane, an external registry, and a
 version-of-record decision that cannot be un-published once wrong.
 
-**Depends on:** nothing. **Unblocks:** [PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md) — a stranger
+**Depends on:** nothing. **Unblocks:** [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) — a stranger
 cannot install a package that 404s — and the registry half of
 [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md).
 

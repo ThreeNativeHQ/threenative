@@ -5,8 +5,11 @@
 with `docs/PRDs/native/README.md` holding the per-PRD sequence and evidence pointers. Do not
 re-record status here; it drifts.
 
-**One-line status (2026-08-09):** desktop, Android emulator and iOS simulator execute;
-**no physical hardware and no published prebuilt distribution.**
+**One-line status (2026-08-16):** desktop, Android emulator and iOS simulator execute, and one
+physical Android device (Pixel 8, arm64) has executed measured load tests; **no iOS hardware, no
+signed release build, and no published prebuilt distribution.** The phone runs are benchmark
+evidence, not a mobile-readiness claim — the qualification split is
+[PRD-128](../PRDs/batch-26-08-16/PRD-128-android-qualification-split.md).
 **The native runtime is the host for cross-platform plumbing, while the game and its look
 stay in shared Three.js source; execution: PRD-047.**
 
@@ -28,8 +31,12 @@ and fail-closed.
 ## Why physics needs a native binding
 
 Rapier ships as WebAssembly. That is not viable on Mystral Android because QuickJS has no
-WebAssembly implementation. The earlier React Native engine research remains historical
-support for the same conclusion:
+WebAssembly implementation, and QuickJS is still the Android default —
+`packages/runtime-native/CMakeLists.txt:124`. PRD-118 added V8 as an **opt-in** Android engine
+(`-PthreenativeJsEngine=v8`, 22× less script time on a Pixel 8) and PRD-130 proposes making it the
+default; nobody has measured Rapier-as-WebAssembly on that path, so it changes nothing below until
+someone does. The earlier React Native engine research remains historical support for the same
+conclusion:
 
 | Engine | WebAssembly | Evidence |
 |---|---|---|
@@ -107,8 +114,11 @@ catalog version, on every target claimed.
 PRD-045 asserts the trajectory and demonstrates a deliberately broken run failing, and
 PRD-049 measures web/host/device agreement with negative controls.
 
-Both are passed on emulated and simulated targets and open on physical hardware — the
-roadmap's native-lane table is where that state is tracked. **Emulator and simulator results
+Both are passed on emulated and simulated targets. On physical hardware, only 0a has moved: a
+Pixel 8 rendered and was measured against Godot 4.7.1 on 2026-08-14/16
+([engine-load-test-summary](../verification/engine-load-test-summary-2026-08-15.md)), on an
+unsigned release build. Physics on a phone, iOS hardware, signing and soak are all still open —
+the roadmap's native-lane table is where that state is tracked. **Emulator and simulator results
 never become physical-driver, arm64-performance or phone frame-rate evidence**, and no
 combination of them is a mobile-ready claim.
 

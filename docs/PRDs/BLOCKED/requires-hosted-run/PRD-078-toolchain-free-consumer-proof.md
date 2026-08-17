@@ -95,7 +95,7 @@ dependency at the workspace root should not be installed by a native release bui
 publishes GitHub release binaries — an outward-facing, irreversible action of the same class as
 PRD-119 Phase 2, which the owner gated on 2026-08-15. The software Vulkan path therefore remains
 unverified and no workflow was triggered. See
-[`consumer-handoff-2026-08-12.md`](../../verification/consumer-handoff-2026-08-12.md).
+[`consumer-handoff-2026-08-12.md`](../../../verification/consumer-handoff-2026-08-12.md).
 The original evidence below is a read of
 `.github/workflows/native-release.yml` at commit `8c5fc40`, of `gh run`/`gh api` output taken
 2026-08-11, and of the failure artifact downloaded from run
@@ -167,9 +167,9 @@ Phase 3: `packages/runtime-native/scripts/profile-production.mjs`, `docs/verific
 Phase 4: `docs/strategy/ROADMAP.md`, `docs/strategy/VALUE-PROPOSITION.md`,
 `docs/PRDs/done/PRD-048-native-distribution.md`.
 
-**Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../PRD-064-tier-1-native-reliability.md)
+**Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../../PRD-064-tier-1-native-reliability.md)
 Phase 4's unreached positive measurement, and the four criteria
-[PRD-048](../done/PRD-048-native-distribution.md) closed as *"waived by the owner, not
+[PRD-048](../../done/PRD-048-native-distribution.md) closed as *"waived by the owner, not
 met"* — the release rerun, the checksum lock, the registry packages, and the clean-machine
 build.
 
@@ -422,7 +422,7 @@ scaffolded, with no file replaced.
 ships and the subject of every performance claim in `VALUE-PROPOSITION.md`.
 **Requirements the previous subject did not exercise:** the generated `src/render/` layer,
 the template's asset staging, `Ctx.startup` and the loading screen shipped by
-[PRD-070](../native-performance-fixes/PRD-070-startup-and-hitches.md), and `SceneCollapse`.
+[PRD-070](../../native-performance-fixes/PRD-070-startup-and-hitches.md), and `SceneCollapse`.
 **The Android physics leg keeps `native-smoke/src/physics.ts`** because its four negative
 controls (`wrong-height`, `mask`, `mask`-with-control, `wrong-gravity`) are written against
 that scene. Two subjects, each proving what it is good for, both stated.

@@ -55,8 +55,13 @@ The self-improvement loop resumes from the newest round ledger — currently
 behind it. Resume with `pnpm round:next`;
 persistent unused-export evidence comes from `pnpm round:deletions`.
 
-The [Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
-and production path for running the browser Studio against durable game repositories.
+**Studio** is the local agent-and-preview surface — `@threenative/studio`, a server plus one
+self-contained page, driven by `pnpm studio:inspect`, `studio:probe` and `studio:loop`. It shipped
+in [PRD-084](PRDs/done/PRD-084-threenative-studio.md) and
+[PRD-085](PRDs/done/PRD-085-studio-wiring.md); [PRD-086](PRDs/PRD-086-studio-self-improvement-loop.md)
+is the standing brief handed to the agent iterating on it. The
+[Studio hosting series](PRDs/studio-hosting/README.md) tracks the container, session broker,
+and production path for running it against durable game repositories.
 
 ## Strategy
 
@@ -68,6 +73,9 @@ and production path for running the browser Studio against durable game reposito
 - [strategy/CONFLICTS.md](strategy/CONFLICTS.md) — **read first.** Where the strategy contradicts `CHARTER.md`
 
 ## Architecture
+
+*Every file below was re-checked against the tree on 2026-08-16; where one now describes something
+built, it says so and names the file.*
 
 - [architecture/ENTITY-MODEL.md](architecture/ENTITY-MODEL.md) — the ECS question, closed
 - [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours

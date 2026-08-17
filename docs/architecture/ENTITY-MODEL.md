@@ -2,7 +2,7 @@
 
 **Status:** decided and shipped. Plain classes are the default, and abstractions costing more
 code than vanilla are deleted.
-**Implements:** `docs/PRDs/PRD-006-entity-registry.md`.
+**Implements:** `docs/PRDs/done/PRD-006-entity-registry.md`.
 
 ## The decision
 
@@ -15,8 +15,10 @@ greenfield work (8.27x cost-weighted) *and* scored lower on playability and visu
 
 ## What entities actually are here
 
-Plain TypeScript classes. This is `templates/starter/src/entities/Player.ts`, verbatim
-in shape:
+Plain TypeScript classes. This is the shape of
+`packages/create-threenative/templates/starter/src/entities/Player.ts` — trimmed here to the
+bones; the shipped file adds coyote time, a jump buffer and its own material, all of it ordinary
+user source:
 
 ```ts
 export class Player {
@@ -51,14 +53,21 @@ archetypes.
 | An agent, mid-debug | one call instead of a breakpoint hunt | `window.__THREENATIVE__.snapshot()` |
 | Save data, later | a serializable view of the world | `snapshot()` shape |
 
-The whole registry is ~45 lines in `packages/core/src/entities.ts`:
+The whole registry is ~117 lines in `packages/core/src/entities.ts`:
 
 ```ts
 ctx.entities.add("player", new Player(ctx));   // throws on duplicate name
 ctx.entities.get<Player>("player");
 ctx.entities.remove("player");
+ctx.entities.queueFree("coin-3");              // deferred removal, applied after the frame
 ctx.entities.snapshot();   // { player: { grounded: true, position: [0, 0.5, 0] } }
 ```
+
+`queueFree` is the only member added since, and it is Godot's name for Godot's semantics —
+removal that waits until the frame is done rather than mutating the map mid-iteration. Mutating
+during a `snapshot()` throws. PRD-100 also proposed `Signal` and `Groups`; both were **killed
+under the 20-line rule before delivery**, so entity events stay `Area3D.on()` plus whatever queue
+a template writes for itself.
 
 `snapshot()` calls `debug()` when an entity defines one, and falls back to `autoFields()`
 — numbers, strings, booleans and anything with `.toArray()`, capped at 24 fields so a
@@ -94,10 +103,16 @@ What we do **not** do is build the extraction pipeline before a game needs it. T
 switch applies: an abstraction that costs more code than vanilla gets
 deleted, no matter how much work it took.
 
+That "later" arrived once, on evidence, and it did not touch this model: `SceneCollapse`
+(`packages/core/src/collapse.ts`) bakes the parts of the scene graph a game never moves into
+merged geometry, after a profile named per-object Three.js work as the native frame cost. No game
+annotates anything for it, no entity changed shape, and the registry did not learn a new concept —
+which is the test any future optimization has to pass.
+
 ## Direct Three.js access is never removed
 
 ```ts
-ctx.renderer        // RendererLike — .raw is the THREE.WebGPURenderer
+ctx.renderer        // IRendererLike — .raw is the THREE.WebGPURenderer
 ctx.scene           // THREE.Scene
 ctx.camera          // THREE.PerspectiveCamera
 ctx.physics.world   // Rapier World

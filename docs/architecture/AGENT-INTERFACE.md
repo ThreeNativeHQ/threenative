@@ -1,7 +1,17 @@
 # Agent interface
 
-**Status:** proposal, 2026-08-02. The public CLI stays limited to four familiar commands,
-with no bespoke vocabulary.
+**Status:** proposal, 2026-08-02; re-checked 2026-08-16. The public CLI stays limited to four
+familiar commands, with no bespoke vocabulary.
+
+**What exists now that this file was written before.** `@threenative/studio` shipped (PRD-084,
+PRD-085) — a local server plus one self-contained page where an agent edits the project's plain
+TypeScript and the game reloads beside it. It is the surface this document argues for, minus the
+MCP layer, and the owner's amendment that allowed it is explicit that it stays *an agent editing
+plain TypeScript*: a GUI that writes a scene is still closed. `scripts/studio-probe.ts`,
+`studio-inspect.ts` and `studio-loop.ts` are its check/observe/next-action harness, and
+[PRD-086](../PRDs/PRD-086-studio-self-improvement-loop.md) is the standing brief handed to the
+agent iterating on it. **No ThreeNative MCP server exists** — the only MCP in the project is the
+external `threenative-asset-mcp`, for asset discovery.
 
 ## The workflow this replaces
 
@@ -53,7 +63,7 @@ models are bad at discovering novel APIs.
 |---|---|---|
 | `scene.inspect()` | `Registry.snapshot()`, `window.__THREENATIVE__` | **Yes** (PRD-006) |
 | `tests.runScenario(name)` | `@threenative/playtest` runner + bridge | **Yes** |
-| `profile.assertBudget(...)` | playtest observations + frame timing | Partly — see [../product/PERFORMANCE-BUDGETS.md](../product/PERFORMANCE-BUDGETS.md) |
+| `profile.assertBudget(...)` | playtest observations + frame timing | **Yes**, as a scenario assertion: `performance: { maxDrawCalls, maxFrameMsP95, maxTriangles }` (`packages/playtest/src/assertions.ts`). It fails closed — a run with no performance bridge is a failure, not a pass. What is *not* built is a per-device budget profile, see [../product/PERFORMANCE-BUDGETS.md](../product/PERFORMANCE-BUDGETS.md) |
 | `scene.addEntity(...)` | writes an entity class into `src/entities/` | No — and it should stay a **file edit**, not a runtime mutation |
 | `assets.import(...)` | asset compiler | No — [../product/ASSET-PIPELINE.md](../product/ASSET-PIPELINE.md) |
 | `release.build(...)` | `threenative ship` | No — Cloud, ROADMAP Phase 4 |

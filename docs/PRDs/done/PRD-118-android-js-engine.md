@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-118 — The Android JavaScript engine: why the phone is three times slower, and what replacing QuickJS costs
 
 **Status: ACCEPTED, 2026-08-16 — the charged retake ran and the numbers did not move.** The run is
-recorded in [`docs/verification/prd-118-charged-retake-2026-08-16.md`](../verification/prd-118-charged-retake-2026-08-16.md):
+recorded in [`docs/verification/prd-118-charged-retake-2026-08-16.md`](../../verification/prd-118-charged-retake-2026-08-16.md):
 Pixel 8 at **72%** battery, `Thermal Status: 0`, no `--allow-low-battery`, and the installed APK
 proved by hash and by symbol table to be the V8 one.
 

@@ -247,6 +247,10 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
   --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu
 ```
 
+`--server-command "pnpm dev"` assumes a workspace that has a `dev` script — a scaffolded project
+or an example. **There is no root `pnpm dev`**; from the repository root the equivalent is
+`--server-command "pnpm --filter abyss-framework dev"`.
+
 Exit `0` passed, `1` assertions failed, `2` never reached assertions. `--browser-recipe
 webgpu` supplies the current Chromium WebGPU flags; `--browser-arg` is the escape hatch. For
 screenshot or `visual` assertions on headless Linux, prefix with `sh scripts/xvfb.sh`.

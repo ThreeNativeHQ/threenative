@@ -36,7 +36,7 @@ classifier in `--check` mode, so hand-edited numbers fail the benchmark job.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm --filter abyss-framework dev   # there is no root `pnpm dev`
 pnpm test
 pnpm test:browser
 pnpm profile:native-cpu:fox # headed Xvfb + pixel-verified WebGPU visual evidence

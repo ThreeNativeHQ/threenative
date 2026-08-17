@@ -1,7 +1,8 @@
 # Performance budgets
 
-**Status:** proposal, 2026-08-02. The public API stays small, visual choices stay in
-generated user source, and budgets remain bounded.
+**Status:** proposal, 2026-08-02; the assertion half shipped and is marked below, re-checked
+2026-08-16. The public API stays small, visual choices stay in generated user source, and budgets
+remain bounded.
 
 ## The problem
 
@@ -29,20 +30,25 @@ Budgets are **test assertions**, and the repo already works this way — `script
 reports LOC review triggers and hard native-runtime invariants in CI. Frame budgets are the
 same idea pointed at the game:
 
+**This half shipped.** The `performance` assertion is live in
+`packages/playtest/src/assertions.ts`, and these are its real keys:
+
 ```ts
-// tests/perf.playtest.ts — proposed
-export const perfScenario = {
-  name: "level 1 holds 60fps on mobile-mid",
-  target: "web",
-  schemaVersion: 1,
-  profile: "mobile-mid",
-  steps: [{ kind: "input", press: "ArrowRight", holdFrames: 600, release: true }],
-  assert: {
-    diagnostics: { noConsoleErrors: true },
-    performance: { p95FrameTimeMs: 16.7, maxDrawCalls: 180, maxTextureMemoryMB: 384 },
-  },
-} as const;
+// playtests/perf.playtest.json — shipped
+{
+  "name": "level 1 holds its frame budget",
+  "schemaVersion": 1,
+  "steps": [{ "kind": "input", "press": "ArrowRight", "holdFrames": 600, "release": true }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true },
+    "performance": { "maxFrameMsP95": 16.7, "maxDrawCalls": 180, "maxTriangles": 10000 }
+  }
+}
 ```
+
+It requires the `runtime.performance` capability and fails closed: a run that never collected a
+`performanceSeries` is a failure, not a silent pass. **Still proposed, not built:** a named
+`profile` field, texture-memory and download budgets, and the device calibration behind them.
 
 The budget travels with the scenario that exercises it. A game with no perf scenario has
 no budget, and pays nothing for the feature.

@@ -69,11 +69,11 @@ Which PRD owns which row:
 | # | Owning PRD(s) |
 |---|---|
 | A1 | [PRD-119](../done/PRD-119-the-alpha-release-train.md) — **done 2026-08-16** |
-| A2 | [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](PRD-078-toolchain-free-consumer-proof.md) |
+| A2 | [PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md), [PRD-078](../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md) |
 | A3 | [PRD-113](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md) |
 | A4 | [PRD-114](../done/PRD-114-paired-round-on-the-repaired-instrument.md) delivered, then PRD-121 |
 | A5 | [PRD-077](../BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) — **blocked** → [PRD-076](../done/PRD-076-tier-1-parity-reconciliation.md) |
-| A6 | [PRD-080](PRD-080-five-minute-stranger-test.md) |
+| A6 | [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) |
 | A7 | [PRD-120](../done/PRD-120-the-alpha-bar-is-runnable.md) — **done 2026-08-15** |
 
 A7 exists because of the other six. A hand-maintained status table is the same failure mode as a

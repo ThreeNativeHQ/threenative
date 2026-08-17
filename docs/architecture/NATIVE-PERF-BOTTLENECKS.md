@@ -10,12 +10,21 @@ optimization lands before a profile names the bottleneck.
 > they contradict its top ranking: frame time is **not linear in draw count** — there is a knee
 > between 500 and 1,000 submitted draws where marginal cost per mesh jumps ~5.6×, and a
 > per-crossing tax cannot produce that shape. Read this file as the hypothesis list it says it
-> is; the current state of each row lives in `docs/PRDs/native-performance-fixes/` — **PRD-068**
-> owns the Android engine, **PRD-069** owns per-draw cost, **PRD-070** owns launch time and
-> hitches, **PRD-071** bundles the fixes that need no profile, **PRD-072** owns fixed-arity
-> bindings. Where they disagree with this file, they measured and this file did not. The stack
-> those fixes would eventually add up to — JS shim, command stream, render thread — is evaluated
-> layer by layer in [`NATIVE-RENDER-TRANSPORT.md`](NATIVE-RENDER-TRANSPORT.md).
+> is; the current state of each row lives in `docs/PRDs/native-performance-fixes/` — **PRD-069**
+> owns per-draw cost, **PRD-070** owns launch time and hitches, **PRD-071** bundles the fixes that
+> need no profile — plus two now archived in `docs/PRDs/done/`: **PRD-068** (the Android engine)
+> and **PRD-072** (fixed-arity bindings). Where they disagree with this file, they measured and
+> this file did not. The stack those fixes would eventually add up to — JS shim, command stream,
+> render thread — is evaluated layer by layer in
+> [`NATIVE-RENDER-TRANSPORT.md`](NATIVE-RENDER-TRANSPORT.md).
+
+> **Where it actually landed, 2026-08-16.** Two answers arrived after this file and outrank every
+> row in it. **The cost is interpreted JavaScript per object, not the boundary** — the render
+> bindings measure ~2% of a CPU-bound frame — so `SceneCollapse` (`packages/core/src/collapse.ts`)
+> removes the per-object work instead of speeding up the crossing. And the **engine** was worth
+> more than any of it: PRD-118 swapped Android's QuickJS for V8 and cut script time 22× on a
+> Pixel 8. The current numbers, against Godot 4.7.1 on three platforms, are in
+> [`../verification/engine-load-test-summary-2026-08-15.md`](../verification/engine-load-test-summary-2026-08-15.md).
 
 ## The shape of the problem
 
