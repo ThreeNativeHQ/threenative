@@ -367,7 +367,7 @@ function replaceTable(readme: string, table: string): string {
   const start = readme.indexOf(README_START);
   const end = readme.indexOf(README_END);
   if (start < 0 || end < 0 || end < start) {
-    throw new Error(`README.md must contain ${README_START} and ${README_END}.`);
+    throw new Error(`docs/benchmark/LOC.md must contain ${README_START} and ${README_END}.`);
   }
   return `${readme.slice(0, start + README_START.length)}\n${table}\n${readme.slice(end)}`;
 }
@@ -378,12 +378,12 @@ export function updateReadme(
   rows = collectLoc(rootDirectory),
 ): void {
   const root = resolve(rootDirectory);
-  const readmePath = join(root, "README.md");
+  const readmePath = join(root, "docs/benchmark/LOC.md");
   const current = readFileSync(readmePath, "utf8");
   const expected = replaceTable(current, renderLocTable(rows));
   if (check) {
     if (expected !== current)
-      throw new Error("README.md benchmark table is stale; run pnpm tsx scripts/count-loc.ts.");
+      throw new Error("docs/benchmark/LOC.md benchmark table is stale; run pnpm tsx scripts/count-loc.ts.");
     return;
   }
   writeFileSync(readmePath, expected);
