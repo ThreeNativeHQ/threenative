@@ -206,8 +206,9 @@ in this order:
    README, and `docs/architecture/CHARTER.md` described as the binding document. Move the
    `docs/strategy/CONFLICTS.md` pointer out of the root README — it is an internal
    reconciliation note and it should not be the third thing a stranger is told to read.
-9. **Licence.** State it. If `LICENSE` does not exist at the root, do not invent one —
-   record its absence in §9's follow-ups and leave the section out.
+9. **Licence.** One line: MIT, linking `LICENSE`. **PRD-126 §3 creates that file** — if it
+   has not landed yet, leave this section out rather than referencing a file that does not
+   exist. Do not describe the licence of anything else; PRD-126 owns that boundary.
 
 **The benchmark VOID paragraph leaves the root README entirely.** It is a real result and it
 stays where results live: `docs/benchmark/RESULTS-2026-08-02.md` already records it and
@@ -379,10 +380,15 @@ Never record a gate you did not run.**
 - **Moving any PRD or verification file.** Cited by path from dozens of places; §5 fixes the
   index instead.
 - **Deleting sweep screenshots.** §6.3, owner decision.
-- **Per-package READMEs.** `@threenative/core`, `ui`, `runtime-native`, and `studio` are
-  published to npm with no README and therefore render as a blank package page. Real, worth
-  fixing, four separate documents — a follow-up PRD, not this one.
-- **A `LICENSE` file**, if §3.2 step 9 finds none. Record it; do not pick a licence.
+- **Per-package READMEs.** `@threenative/core`, `ui`, and `runtime-native` are published to
+  npm with no README and therefore render as a blank package page. Real, worth fixing, three
+  separate documents — a follow-up PRD, not this one.
+- **Licensing and the community health files** — `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, `.github/` templates. All owned by
+  [PRD-126](PRD-126-licensing-and-the-studio-split.md), which also removes `packages/studio/`
+  and `hosting/` from this repository. **If PRD-126 lands first, §3.2's package table drops to
+  six packages and the §5 docs map loses the studio-hosting series' home** — check which
+  landed before writing either.
 - **Whether any of this works.** The README's job is to make a stranger able to start. Nobody
   has tried. `PRD-080-five-minute-stranger-test.md` is the gate that would answer it and it
   is blocked on a person, not on this document.
