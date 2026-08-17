@@ -22,9 +22,9 @@ import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 type PhysicsCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
 
-const PRD_116_VERIFICATION_RECORD = path.resolve(
+const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
   process.cwd(),
-  "docs/verification/PRD-116-native-physics-actuation.md",
+  "docs/verification/native-runtime-census-2026-08-16.md",
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
@@ -45,8 +45,8 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 141 files, 1,237 passed, 35 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 42 files, 243 passed, 37 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 156 files, 1,369 passed, 35 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 46 files, 271 passed, 39 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();
@@ -243,7 +243,7 @@ describe("character push", () => {
 
 describe("PRD-116 verification evidence", () => {
   it("keeps the native census and final test counts tied to committed gate output", () => {
-    const record = readFileSync(PRD_116_VERIFICATION_RECORD, "utf8");
+    const record = readFileSync(NATIVE_CENSUS_VERIFICATION_RECORD, "utf8");
     const censusStart = record.indexOf("| Counted area | Lines | Owner |");
     const totalStart = record.indexOf("| **Total** |", censusStart);
     expect(censusStart).toBeGreaterThanOrEqual(0);

@@ -6,8 +6,10 @@ every archive; zero means that archive contains no PNG.
 
 The citation scan ran before this note existed over `docs/verification/round-*.md` and
 `docs/PRDs/done/**/*.md`, searching for each archive directory name. The **Cited by** column
-records matching round-ledger filenames. Twenty-two archives are cited by round ledgers; no
-done PRD cites an archive directory name.
+contains direct round-ledger citations and the done-PRD labels inherited from those ledgers. A
+done PRD label in the table does not mean that the done PRD prose directly names the archive
+directory. Twenty-two archives are cited by round ledgers; the scan found no direct archive-
+directory citation in done PRD prose.
 
 | Archive | PNG files | Bytes | Cited by |
 |---|---:|---:|---|

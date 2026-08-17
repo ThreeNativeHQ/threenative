@@ -33,7 +33,7 @@ async function writeNativeCensus(
   rows: readonly (readonly [string, number])[],
   total: number,
 ): Promise<void> {
-  const recordPath = path.join(root, "docs", "verification", "PRD-116-native-physics-actuation.md");
+  const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
   await mkdir(path.dirname(recordPath), { recursive: true });
   const tableRows = rows.map(([area, lines]) => `| ${area} | ${lines} | owner |`).join("\n");
   await writeFile(

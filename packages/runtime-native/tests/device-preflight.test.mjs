@@ -89,21 +89,19 @@ describe("device preflight parsers", () => {
 describe("assertDeviceReady", () => {
   test("keeps the shared gate reachable from every device caller", () => {
     const callers = [
-      "measure-android-js-engine.mjs",
-      "measure-cold-start.mjs",
-      "verify-android-physics-parity.mjs",
+      ["measure-android-js-engine.mjs", /await\s+assertDeviceReady\s*\(/u],
+      ["measure-cold-start.mjs", /await\s+assertDeviceReady\s*\(/u],
+      ["verify-android-physics-parity.mjs", /await\s+assertDeviceReady\s*\(/u],
     ];
-    for (const caller of callers) {
+    for (const [caller, invocation] of callers) {
       const source = readFileSync(new URL(`../scripts/${caller}`, import.meta.url), "utf8");
-      assert.match(source, /assertDeviceReady/u);
-      assert.match(source, /deviceCondition/u);
-      assert.match(source, /provisional/u);
+      assert.match(source, invocation);
     }
     const engineLoadSource = readFileSync(
       new URL("../../../scripts/engine-load-test/run-android.ts", import.meta.url),
       "utf8",
     );
-    assert.match(engineLoadSource, /assert(?:Shared)?DeviceReady/u);
+    assert.match(engineLoadSource, /await\s+assertSharedDeviceReady\s*\(/u);
   });
 
   test("returns the complete condition block for a healthy physical device", async () => {

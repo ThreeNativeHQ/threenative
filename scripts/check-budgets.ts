@@ -345,7 +345,7 @@ async function nativeCensusErrors(
   root: string,
   measuredNativeRuntimeLoc: number,
 ): Promise<string[]> {
-  const recordPath = path.join(root, "docs", "verification", "PRD-116-native-physics-actuation.md");
+  const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
   if (!existsSync(recordPath)) return [];
 
   const record = await readFile(recordPath, "utf8");

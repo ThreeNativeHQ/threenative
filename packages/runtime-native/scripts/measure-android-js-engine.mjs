@@ -381,9 +381,10 @@ export function validateCandidateComparison(control, candidate, expectedEngine) 
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_COMPARISON_DEVICE_MISMATCH");
   }
   for (const [label, report] of [["CONTROL", control], ["CANDIDATE", candidate]]) {
-    if (Array.isArray(report.provisional) && report.provisional.length > 0) {
-      throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON:${label}`);
-    }
+    const condition = report?.deviceCondition;
+    if (!condition || typeof condition !== "object" || Array.isArray(condition) || typeof condition.batteryPercent !== "number" || typeof condition.charging !== "boolean" || typeof condition.thermalStatus !== "string" || typeof condition.screenOn !== "boolean") throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_DEVICE_CONDITION_MALFORMED:${label}`);
+    if (!Array.isArray(report.provisional) || report.provisional.some((value) => typeof value !== "string")) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON_MALFORMED:${label}`);
+    if (report.provisional.length > 0) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON:${label}`);
   }
   if (control.bundleSha256 !== candidate.bundleSha256) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_TWO_VARIABLES:BUNDLE_SHA_CHANGED");
