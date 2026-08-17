@@ -18,6 +18,16 @@ conventions, React/Tailwind for UI, vanilla `three` on every surface underneath.
 
 Mantra: *build a system that builds itself.* Every piece you build gets playtested against
 the real build before you move on. If it fails, fix it before continuing.
+
+**This repository is MIT, all of it, and that is now literally true** — there is nothing here
+that is not. Studio, the paid editor, and the `hosting/` service that serves it moved to the
+private `jonit-dev/threenative-studio` on 2026-08-16 (PRD-129). Do not add anything to this
+repository that is not MIT, and do not import from Studio: the dependency points one way, from
+Studio inward to `create-threenative`, and the engine knows nothing about Studio. If Studio needs
+something from here, it becomes a public MIT export here and Studio consumes it published. On this
+machine the two sit side by side as `~/projects/threenative/threenative-engine` and
+`~/projects/threenative/threenative-live-studio`; that repository's `CLAUDE.md` has the link
+workflow for iterating on both at once.
 Build systems that build themselves: continuously build harnesses to debug, inspect, and measure performance.
 
 ## How you work
