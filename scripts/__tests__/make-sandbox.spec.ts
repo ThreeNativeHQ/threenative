@@ -11,6 +11,7 @@ import {
   readManifest,
   resolveGenre,
   sealedProofHash,
+  stampTarball,
 } from "../make-sandbox";
 
 const temporaryRoots: string[] = [];
@@ -48,11 +49,67 @@ describe("genre sandbox", () => {
     });
 
     expect(result.out).toBe(path.join(workspace, "sandbox"));
+    // One game per folder: the sandbox root carries the sealed inputs, never the game itself.
+    expect(result.project).toBe(path.join(workspace, "sandbox", "platformer-game"));
+    expect(existsSync(path.join(result.out, "package.json"))).toBe(false);
+    expect(existsSync(path.join(result.out, "src"))).toBe(false);
     expect(existsSync(path.join(result.out, ".packages"))).toBe(true);
     expect(existsSync(path.join(workspace, "sandbox-packages"))).toBe(false);
-    await expect(readFile(path.join(result.out, "package.json"), "utf8")).resolves.toContain(
+    await expect(readFile(path.join(result.project, "package.json"), "utf8")).resolves.toContain(
       path.join(result.out, ".packages", "playtest.tgz"),
     );
+    // sweep:archive finds the game by a src/ beside a sweep.json, so the folder carries its own.
+    await expect(readFile(path.join(result.project, "sweep.json"), "utf8")).resolves.toContain(
+      "platformer",
+    );
+    await expect(readFile(path.join(result.project, "brief.md"), "utf8")).resolves.toBe(
+      "sealed brief\n",
+    );
+  });
+
+  it("names the game folder from --name", async () => {
+    const root = await temporaryRoot("threenative-named-");
+    const result = makeSandbox({
+      arm: "vanilla",
+      genre: "platformer",
+      install: false,
+      name: "fox-game",
+      out: path.join(root, "sandbox"),
+      prepare: false,
+      repo: process.cwd(),
+    });
+    expect(result.project).toBe(path.join(root, "sandbox", "fox-game"));
+    expect(existsSync(path.join(result.project, "src"))).toBe(true);
+  });
+
+  // pnpm pack names by version alone, so two sweeps produced the same path with different bytes
+  // and a package manager could serve the copy it already had. A rebuilt engine must install.
+  it("gives a repacked tarball a new path when its contents change", async () => {
+    const root = await temporaryRoot("threenative-stamp-");
+    const file = path.join(root, "threenative-core-0.1.0.tgz");
+    await writeFile(file, "first build");
+    const first = stampTarball(file);
+    await writeFile(file, "second build");
+    const second = stampTarball(file);
+    expect(first).not.toBe(second);
+    expect(path.basename(first)).toMatch(/^threenative-core-0\.1\.0-[0-9a-f]{12}\.tgz$/);
+    await expect(readFile(second, "utf8")).resolves.toBe("second build");
+  });
+
+  it("refuses a project name that would escape its folder", async () => {
+    const root = await temporaryRoot("threenative-bad-name-");
+    for (const name of ["../escape", "Fox Game", ".packages"])
+      expect(() =>
+        makeSandbox({
+          arm: "vanilla",
+          genre: "platformer",
+          install: false,
+          name,
+          out: path.join(root, "sandbox"),
+          prepare: false,
+          repo: process.cwd(),
+        }),
+      ).toThrow(/Invalid project name/);
   });
 
   it("writes a manifest with the genre and sealed brief hash", async () => {
@@ -75,7 +132,8 @@ describe("genre sandbox", () => {
       template: "platformer",
     });
     expect(manifest.briefHash).toBe(createHash("sha256").update(brief).digest("hex"));
-    expect(scaffold).toContain('cp sweep.json "${1:-game}/sweep.json"');
+    expect(scaffold).toContain('cp sweep.json "${1:-platformer-game}"/sweep.json');
+    expect(scaffold).toContain('"${1:-platformer-game}" --template platformer');
     await expect(readFile(path.join(result.out, "reference.png"))).resolves.toEqual(
       await readFile("docs/benchmark/genres/platformer/reference.png"),
     );
@@ -153,7 +211,7 @@ describe("genre sandbox", () => {
       repo: process.cwd(),
     });
     const packageJson = JSON.parse(
-      await readFile(path.join(result.out, "package.json"), "utf8"),
+      await readFile(path.join(result.project, "package.json"), "utf8"),
     ) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
@@ -161,10 +219,10 @@ describe("genre sandbox", () => {
     const packageText = JSON.stringify(packageJson);
     expect(packageText).toContain("@threenative/playtest");
     expect(packageText).not.toMatch(/@threenative\/(?:core|physics|ui)/);
-    await expect(readFile(path.join(result.out, "index.html"), "utf8")).resolves.toContain(
+    await expect(readFile(path.join(result.project, "index.html"), "utf8")).resolves.toContain(
       "/src/main.ts",
     );
-    const agents = await readFile(path.join(result.out, "AGENTS.md"), "utf8");
+    const agents = await readFile(path.join(result.project, "AGENTS.md"), "utf8");
     expect(agents).toContain(
       "You may install any npm package you choose, including a physics engine.",
     );
@@ -184,9 +242,9 @@ describe("genre sandbox", () => {
     expect(agents).toContain("resources: { read: () => ({ state: { ...state } }) }");
     expect(agents).toContain("all five provider hooks");
     expect(agents).toContain("generic resource id `state`");
-    await expect(readFile(path.join(result.out, "src", "main.ts"))).rejects.toThrow();
+    await expect(readFile(path.join(result.project, "src", "main.ts"))).rejects.toThrow();
     await expect(
-      readFile(path.join(result.out, "node_modules", "@threenative", "core")),
+      readFile(path.join(result.project, "node_modules", "@threenative", "core")),
     ).rejects.toThrow();
   });
 
@@ -229,25 +287,12 @@ describe("genre sandbox", () => {
     expect(() => readManifest(file)).toThrow(/sourceLines must be a non-negative integer/);
   });
 
-  it("refuses to wipe a built sandbox whose manifest is not archived", async () => {
+  // The old layout put the game at the sandbox root, which leaves no folder to scope a wipe to.
+  it("refuses a sandbox root that holds a game directly", async () => {
     const root = await temporaryRoot("threenative-guard-");
     const sandbox = path.join(root, "sandbox");
-    const brief = await readFile("docs/benchmark/genres/platformer/brief.md");
     await mkdir(path.join(sandbox, "src"), { recursive: true });
     await writeFile(path.join(sandbox, "sentinel.txt"), "keep me\n");
-    await writeFile(
-      path.join(sandbox, "sweep.json"),
-      JSON.stringify({
-        genre: "platformer",
-        briefHash: createHash("sha256").update(brief).digest("hex"),
-        proofHash: sealedProofHash(process.cwd(), "platformer"),
-        arm: "framework",
-        template: "platformer",
-        date: "2099-01-01T00:00:00.000Z",
-        frameworkVersion: "0.1.0",
-        sourceLines: 0,
-      }),
-    );
     expect(() =>
       makeSandbox({
         genre: "platformer",
@@ -255,13 +300,12 @@ describe("genre sandbox", () => {
         repo: process.cwd(),
         template: "platformer",
       }),
-    ).toThrow(/pnpm sweep:archive/);
+    ).toThrow(/holds a game directly/);
     await expect(readFile(path.join(sandbox, "sentinel.txt"), "utf8")).resolves.toBe("keep me\n");
   });
 
-  // A sandbox holds one game per folder, so the build is at <sandbox>/<game>/src. An earlier
-  // version of the unbuilt-sandbox escape hatch looked only at <sandbox>/src, which called every
-  // real build "not built" and would have wiped unarchived game data.
+  // A sandbox holds one game per folder, so the build is at <sandbox>/<game>/src. Reusing a name
+  // whose build was never archived would wipe game data that no archive preserves.
   it("refuses to wipe an unarchived build in a game folder", async () => {
     const root = await temporaryRoot("threenative-nested-guard-");
     const sandbox = path.join(root, "sandbox");
@@ -269,7 +313,7 @@ describe("genre sandbox", () => {
     await mkdir(path.join(sandbox, "my-game", "src"), { recursive: true });
     await writeFile(path.join(sandbox, "my-game", "src", "game.ts"), "export default {};\n");
     await writeFile(
-      path.join(sandbox, "sweep.json"),
+      path.join(sandbox, "my-game", "sweep.json"),
       JSON.stringify({
         genre: "platformer",
         briefHash: createHash("sha256").update(brief).digest("hex"),
@@ -285,6 +329,7 @@ describe("genre sandbox", () => {
     expect(() =>
       makeSandbox({
         genre: "platformer",
+        name: "my-game",
         out: sandbox,
         repo: process.cwd(),
         template: "platformer",
@@ -295,17 +340,40 @@ describe("genre sandbox", () => {
     ).resolves.toContain("export default");
   });
 
-  // A sandbox created and never scaffolded used to strand the loop: this guard demanded an
+  // The point of one game per folder: the next sweep is a new folder, not a wipe of the last one.
+  it("leaves earlier game folders alone when the next sweep uses another name", async () => {
+    const root = await temporaryRoot("threenative-sibling-");
+    const sandbox = path.join(root, "sandbox");
+    await mkdir(path.join(sandbox, "fox-game", "src"), { recursive: true });
+    await writeFile(path.join(sandbox, "fox-game", "src", "game.ts"), "export default {};\n");
+
+    const result = makeSandbox({
+      arm: "vanilla",
+      genre: "platformer",
+      install: false,
+      name: "fps-game",
+      out: sandbox,
+      prepare: false,
+      repo: process.cwd(),
+    });
+
+    expect(result.project).toBe(path.join(sandbox, "fps-game"));
+    await expect(
+      readFile(path.join(sandbox, "fox-game", "src", "game.ts"), "utf8"),
+    ).resolves.toContain("export default");
+  });
+
+  // A game folder created and never scaffolded used to strand the loop: this guard demanded an
   // archive, and archiveSandbox refused the same directory for having no src/. Neither command
   // could clear it, so no further sweep could start until someone deleted it by hand.
-  it("wipes an unarchived sandbox that was never scaffolded", async () => {
+  it("wipes an unarchived game folder that was never scaffolded", async () => {
     const root = await temporaryRoot("threenative-unbuilt-");
     const sandbox = path.join(root, "sandbox");
     const brief = await readFile("docs/benchmark/genres/platformer/brief.md");
-    await mkdir(sandbox, { recursive: true });
-    await writeFile(path.join(sandbox, "stale.txt"), "no build here\n");
+    await mkdir(path.join(sandbox, "platformer-game"), { recursive: true });
+    await writeFile(path.join(sandbox, "platformer-game", "stale.txt"), "no build here\n");
     await writeFile(
-      path.join(sandbox, "sweep.json"),
+      path.join(sandbox, "platformer-game", "sweep.json"),
       JSON.stringify({
         genre: "platformer",
         briefHash: createHash("sha256").update(brief).digest("hex"),
@@ -328,7 +396,9 @@ describe("genre sandbox", () => {
     });
 
     expect(readManifest(path.join(result.out, "sweep.json")).genre).toBe("platformer");
-    await expect(readFile(path.join(sandbox, "stale.txt"), "utf8")).rejects.toThrow();
+    await expect(
+      readFile(path.join(sandbox, "platformer-game", "stale.txt"), "utf8"),
+    ).rejects.toThrow();
   }, 30_000);
 
   it("does not treat another arm or proof as the archived run", async () => {

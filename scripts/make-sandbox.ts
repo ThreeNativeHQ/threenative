@@ -52,6 +52,7 @@ export interface SandboxOptions {
   readonly arm?: SandboxArm;
   readonly bare?: boolean;
   readonly genre: string;
+  readonly name?: string;
   readonly out?: string;
   readonly packageTarballs?: Partial<Record<PackageTarball, string>>;
   readonly prepare?: boolean;
@@ -63,6 +64,8 @@ export interface SandboxOptions {
 export interface SandboxResult {
   readonly manifest: SweepManifest;
   readonly out: string;
+  /** The one game folder inside the sandbox. Nothing is ever written to the sandbox root. */
+  readonly project: string;
 }
 
 function run(command: string, args: string[], cwd: string): void {
@@ -88,6 +91,16 @@ function isDirectory(directory: string): boolean {
 function assertGenreName(genre: string): void {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(genre))
     throw new Error(`Invalid genre '${genre}'; use a lowercase genre slug.`);
+}
+
+/**
+ * A sandbox holds one game per folder. The name is a plain slug so it cannot escape the sandbox,
+ * collide with the hidden package staging, or land the project at the sandbox root — a game dumped
+ * at the root leaves no room for the next one and makes `sweep:archive` guess which is which.
+ */
+export function assertProjectName(name: string): void {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))
+    throw new Error(`Invalid project name '${name}'; use a lowercase slug such as fox-game.`);
 }
 
 export function assertSandboxArm(arm: string): asserts arm is SandboxArm {
@@ -223,38 +236,38 @@ export function isArchived(manifest: SweepManifest, repo = REPO): boolean {
   return false;
 }
 
-/** Mirrors `resolveSandbox` in sweep-archive.ts: the sandbox root, or one game per folder. */
-function containsBuiltProject(out: string): boolean {
-  if (isDirectory(path.join(out, "src"))) return true;
-  return fs
-    .readdirSync(out, { withFileTypes: true })
-    .some((entry) => entry.isDirectory() && isDirectory(path.join(out, entry.name, "src")));
-}
-
-function assertCanWipe(out: string, repo: string): void {
+/**
+ * A sandbox holds one game per folder, so only the folder this run will write is wiped; games from
+ * earlier sweeps stay put beside it. A game at the sandbox root is the old layout and blocks that —
+ * there is no folder to scope the wipe to, and the sealed inputs beside it belong to that build.
+ */
+function assertCanWipe(out: string, project: string, repo: string): void {
   if (!fs.existsSync(out)) return;
   if (!isDirectory(out)) throw new Error(`Sandbox target '${out}' is not a directory.`);
-  const manifestFile = path.join(out, "sweep.json");
+  if (isDirectory(path.join(out, "src")))
+    throw new Error(
+      `Sandbox root '${out}' holds a game directly. Move it into its own folder (${path.join(out, "<name>")}) with its brief.md, reference.png and sweep.json, or archive it with pnpm sweep:archive.`,
+    );
+  if (!isDirectory(project)) return;
+  // archiveSandbox refuses a project with no src/ as "not built", so demanding an archive here
+  // would strand a folder that was created and never scaffolded: neither command could clear it
+  // and the next sweep could not start. There is no build to preserve, so nothing is lost.
+  if (!isDirectory(path.join(project, "src"))) return;
+  const manifestFile = isFile(path.join(project, "sweep.json"))
+    ? path.join(project, "sweep.json")
+    : path.join(out, "sweep.json");
   if (!isFile(manifestFile)) return;
-  // archiveSandbox refuses a sandbox with no src/ as "not built", so demanding an archive here
-  // would strand a sandbox that was created and never scaffolded: neither command could clear
-  // it and the next sweep could not start. There is no build to preserve, so nothing is lost.
-  //
-  // "Built" must be decided the same way archiveSandbox decides it. A sandbox holds one game per
-  // folder, so the source is at <sandbox>/<game>/src, not <sandbox>/src. Checking only the root
-  // would call every real build "not built" and wipe unarchived game data.
-  if (!containsBuiltProject(out)) return;
   let manifest: SweepManifest;
   try {
     manifest = readManifest(manifestFile);
   } catch (error) {
     throw new Error(
-      `Refusing to wipe '${out}': it contains an invalid sweep.json. Archive it or remove it manually. ${error instanceof Error ? error.message : String(error)}`,
+      `Refusing to wipe '${project}': it contains an invalid sweep.json. Archive it or remove it manually. ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   if (!isArchived(manifest, repo))
     throw new Error(
-      `Refusing to wipe unarchived sandbox '${out}'. Run pnpm sweep:archive before starting another sweep.`,
+      `Refusing to wipe unarchived build '${project}'. Run pnpm sweep:archive before reusing that name, or pass --name for a new folder.`,
     );
 }
 
@@ -412,6 +425,20 @@ export function sourceLines(root: string): number {
   return total;
 }
 
+/**
+ * Rename a freshly packed tarball to carry a hash of its own bytes. `pnpm pack` names by version
+ * alone, so every sweep produced `threenative-core-0.1.0.tgz` at the same path with different
+ * contents, and a package manager is entitled to serve the copy it already has under that
+ * identity. The content hash makes each build's tarball a distinct package to install, which is
+ * the whole point of re-packing: a sandbox installs the engine as it is now, not as it was.
+ */
+export function stampTarball(file: string): string {
+  const digest = createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 12);
+  const stamped = file.replace(/\.tgz$/, `-${digest}.tgz`);
+  fs.renameSync(file, stamped);
+  return stamped;
+}
+
 export function makeSandbox(options: SandboxOptions): SandboxResult {
   const repo = path.resolve(options.repo ?? REPO);
   const out = path.resolve(repo, options.out ?? "../sandbox");
@@ -420,17 +447,20 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   const genre = options.genre;
   const template = options.template ?? "starter";
   const input = resolveGenre(repo, genre);
+  const name = options.name ?? `${genre}-game`;
+  assertProjectName(name);
+  const project = path.join(out, name);
 
   if (out === repo || out.startsWith(`${repo}${path.sep}`)) {
     throw new Error(
       `Sandbox must live outside the repo, got ${out}. Inside it, the agent inherits every AGENTS.md up to the root plus the pnpm workspace — the bloat this removes.`,
     );
   }
-  assertCanWipe(out, repo);
+  assertCanWipe(out, project, repo);
   // Keep package staging with the sandbox. It is hidden from the builder and disappears with
   // the sandbox, so repeated runs do not scatter sibling folders through the workspace.
   const staging = path.join(out, ".packages");
-  for (const dir of [out, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  for (const dir of [project, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(staging, { recursive: true });
 
   const tarballs: Partial<Record<PackageTarball, string>> = {};
@@ -447,8 +477,8 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     }
     for (const file of fs.readdirSync(staging)) {
       const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
-      if (owner !== undefined) tarballs[owner] = path.join(staging, file);
-      else if (file.startsWith(`${CLI_PACKAGE}-`)) tarballs[CLI_PACKAGE] = path.join(staging, file);
+      const key = owner ?? (file.startsWith(`${CLI_PACKAGE}-`) ? CLI_PACKAGE : undefined);
+      if (key !== undefined) tarballs[key] = stampTarball(path.join(staging, file));
     }
   } else {
     for (const name of requiredPackages) {
@@ -475,45 +505,52 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   // --bare leaves the scaffolding to the agent, so the run starts the way a user's does.
   const bare = options.bare ?? false;
   const install = options.install ?? true;
+  // The sandbox root holds the sealed inputs and nothing else; every game lives one folder deep,
+  // so a second sweep is another folder rather than a collision with the first one's files.
+  fs.mkdirSync(out, { recursive: true });
+  fs.copyFileSync(input.brief, path.join(out, "brief.md"));
+  fs.copyFileSync(input.reference, path.join(out, "reference.png"));
   let next: string;
+  let scaffolded: boolean;
   if (arm === "vanilla") {
-    fs.mkdirSync(out, { recursive: true });
-    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
-    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
-    writeVanillaScaffold(out, tarballs.playtest as string);
+    fs.mkdirSync(project, { recursive: true });
+    writeVanillaScaffold(project, tarballs.playtest as string);
     if (install && !bare)
-      run("pnpm", ["install", "--store-dir", path.join(out, ".pnpm-store")], out);
-    next = bare ? `cd ${out} && pnpm install && pnpm dev` : `cd ${out} && pnpm dev`;
+      run("pnpm", ["install", "--store-dir", path.join(out, ".pnpm-store")], project);
+    next = bare ? `cd ${project} && pnpm install && pnpm dev` : `cd ${project} && pnpm dev`;
+    scaffolded = true;
   } else if (bare) {
-    fs.mkdirSync(out, { recursive: true });
-    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
-    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
     // The scaffold invocation is 400 characters of tarball paths. Nobody types that.
+    const target = `"\${1:-${name}}"`;
     const script = path.join(out, "scaffold.sh");
     fs.writeFileSync(
       script,
       [
         "#!/bin/sh",
         "set -e",
-        scaffold.join(" ").replace("<target>", '"${1:-game}"'),
-        'cp brief.md "${1:-game}/brief.md"',
-        'cp reference.png "${1:-game}/reference.png"',
-        'cp sweep.json "${1:-game}/sweep.json"',
+        scaffold.join(" ").replace("<target>", target),
+        `cp brief.md ${target}/brief.md`,
+        `cp reference.png ${target}/reference.png`,
+        `cp sweep.json ${target}/sweep.json`,
         "",
       ].join("\n"),
     );
     fs.chmodSync(script, 0o755);
-    next = "./scaffold.sh my-game";
+    next = `./scaffold.sh ${name}`;
+    scaffolded = false;
   } else {
-    const scaffoldArgs = [...scaffold.slice(1, 2), out, ...scaffold.slice(3)];
+    const scaffoldArgs = [...scaffold.slice(1, 2), project, ...scaffold.slice(3)];
     if (!install) scaffoldArgs.push("--no-install");
     run(scaffold[0] as string, scaffoldArgs, repo);
-    fs.copyFileSync(input.brief, path.join(out, "brief.md"));
-    fs.copyFileSync(input.reference, path.join(out, "reference.png"));
-    next = `cd ${out} && pnpm dev`;
+    next = `cd ${project} && pnpm dev`;
+    scaffolded = true;
+  }
+  if (scaffolded) {
+    fs.copyFileSync(input.brief, path.join(project, "brief.md"));
+    fs.copyFileSync(input.reference, path.join(project, "reference.png"));
   }
 
-  const leaked = sourceLines(out);
+  const leaked = sourceLines(scaffolded ? project : out);
   const manifest: SweepManifest = {
     arm,
     genre,
@@ -524,11 +561,16 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     frameworkVersion: frameworkVersion(repo),
     sourceLines: leaked,
   };
-  fs.writeFileSync(path.join(out, "sweep.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+  fs.writeFileSync(path.join(out, "sweep.json"), manifestText);
+  // sweep:archive resolves the game folder by looking for src/ beside a sweep.json, so a scaffolded
+  // project needs its own copy. The bare arm's scaffold.sh copies this same file at scaffold time.
+  if (scaffolded) fs.writeFileSync(path.join(project, "sweep.json"), manifestText);
   process.stdout.write(
     [
       "",
       `${bare ? "bare sandbox ready" : "sandbox ready"} (${arm} arm): ${out}`,
+      `  game folder: ${project}${scaffolded ? "" : " (created by ./scaffold.sh)"}`,
       "",
       leaked === 0
         ? "  framework source readable: 0 lines — dist is types plus bundled js"
@@ -545,7 +587,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
       "",
     ].join("\n"),
   );
-  return { manifest, out };
+  return { manifest, out, project };
 }
 
 function main(): void {
@@ -555,6 +597,7 @@ function main(): void {
     arm: readFlag("--arm", "framework") as SandboxArm,
     bare: process.argv.includes("--bare"),
     genre,
+    name: readFlag("--name"),
     out: readFlag("--out", "../sandbox"),
     template: readFlag("--template", "starter"),
   });

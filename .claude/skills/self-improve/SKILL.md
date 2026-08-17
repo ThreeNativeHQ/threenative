@@ -50,13 +50,18 @@ ask for one — an unbounded loop is not a feature.
 context:
 
 ```sh
-pnpm sandbox --bare --arm framework --genre <genre>   # then the build-on-sandbox skill
-pnpm sandbox --bare --arm vanilla   --genre <genre>   # then the build-on-sandbox skill
+pnpm sandbox --bare --arm framework --genre <genre> --name <genre>-framework
+pnpm sandbox --bare --arm vanilla   --genre <genre> --name <genre>-vanilla
 ```
 
 Each build is a fresh `gauntlet-builder` subagent following `build-on-sandbox`.
-Archive each with `pnpm sweep:archive` before starting the next — the sandbox directory is
-wiped, and an unarchived build is evidence you destroyed.
+**One game per folder**: each arm gets its own `../sandbox/<name>/`, and a sweep wipes only
+that folder, so the other arm and every earlier game survive. `--name` defaults to
+`<genre>-game`, which collides across arms — name both arms explicitly.
+Archive each with `pnpm sweep:archive ../sandbox/<name>` before starting the next; an
+unarchived build is evidence you can lose, and reusing a name refuses until it is archived.
+The sandbox is its own git repository (`ThreeNativeHQ/examples`) — commit and push each
+arm's folder when it is built, so the games outlive the archive tooling.
 
 **Run the arms one at a time, never concurrently.** Two builders on one machine share a
 process table, and `ps`/`pgrep` output does not respect the firewall: on 2026-08-15 a routine
@@ -187,7 +192,7 @@ guess**.
 
 | Step | Command | Ships in | Fallback until then |
 |---|---|---|---|
-| Vanilla arm | `pnpm sandbox --arm vanilla` | PRD-019 | none — without it there is no pair. Run a single-armed sweep and say so |
+| Vanilla arm | `pnpm sandbox --arm vanilla --name <genre>-vanilla` | PRD-019 | none — without it there is no pair. Run a single-armed sweep and say so |
 | Sealed proof | `pnpm sweep:proof` | PRD-019 | builder-authored playtests, recorded as self-graded and therefore not a functional verdict |
 | Pair report | `pnpm sweep:pair` | PRD-019 | read two ledgers by hand |
 | Capture | `pnpm sweep:capture` | PRD-020 | drive the real browser yourself; a black frame is a capture failure, not a scene bug |

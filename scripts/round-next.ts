@@ -143,7 +143,7 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
       if (candidates.length === 0)
         candidates.push(
           candidate(
-            `pnpm sandbox --bare --arm ${arm.arm} --genre ${arm.genre}`,
+            `pnpm sandbox --bare --arm ${arm.arm} --genre ${arm.genre} --name ${arm.genre}-${arm.arm}`,
             `Build the pending ${arm.arm} arm for ${arm.genre} after the earlier arm is complete.`,
           ),
         );
@@ -153,7 +153,7 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
     if (resolved === undefined) {
       candidates.push(
         candidate(
-          `pnpm sandbox --bare --arm ${arm.arm} --genre ${arm.genre}`,
+          `pnpm sandbox --bare --arm ${arm.arm} --genre ${arm.genre} --name ${arm.genre}-${arm.arm}`,
           `Build the missing ${arm.arm} arm for ${arm.genre}.`,
         ),
       );

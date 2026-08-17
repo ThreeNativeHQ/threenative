@@ -162,7 +162,7 @@ describe("round:next", () => {
       baseLedger({ vanillaArchive: vanilla, vanillaProof: "2/2", vanillaVisual: "4" }),
     );
     expect(nextRoundAction(root, file)).toEqual({
-      command: "pnpm sandbox --bare --arm framework --genre platformer",
+      command: "pnpm sandbox --bare --arm framework --genre platformer --name platformer-framework",
       reason: "Build the missing framework arm for platformer.",
     });
   });
@@ -308,7 +308,9 @@ describe("round:next", () => {
     // Assert which arm comes first, not merely that a count was printed. The property that makes
     // this safe is "returns the first candidate in arm order and drops none"; a regression that
     // reversed the order, or returned the second candidate, would satisfy the count alone.
-    expect(action.command).toBe("pnpm sandbox --bare --arm framework --genre platformer");
+    expect(action.command).toBe(
+      "pnpm sandbox --bare --arm framework --genre platformer --name platformer-framework",
+    );
     expect(action.reason).toMatch(/^Build the missing framework arm for platformer\./u);
     expect(action.reason).toMatch(/1 further arm action follows it\./u);
   });

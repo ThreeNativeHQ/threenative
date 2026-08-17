@@ -23,31 +23,54 @@ preference; it is the difference between the two outcomes.
 1. **Build the sandbox** from the repo root:
 
    ```sh
-   pnpm sandbox --bare --genre <genre>
+   pnpm sandbox --bare --genre <genre> --name <name>
    ```
 
-   Wipes and recreates `../sandbox` with the sealed `brief.md`, its
-   `reference.png`, `scaffold.sh`, and hidden package staging under `.packages/`. It refuses an unknown genre, a missing brief or
-   reference image, and any `--out` inside this repo. It also refuses to wipe a prior
-   sandbox until `pnpm sweep:archive` has preserved it.
+   `../sandbox` is a **shared, permanent folder holding one game per subfolder** — never a
+   scratch directory to overwrite. The root carries the sealed `brief.md`, `reference.png`,
+   `sweep.json`, `scaffold.sh` and hidden package staging under `.packages/`; the game lives
+   in `../sandbox/<name>/`. `--name` defaults to `<genre>-game`; pass something the game
+   earns, like `fox-game` or `fps-game`. Only that one folder is wiped, so every earlier
+   game stays. It refuses an unknown genre, a missing brief or reference image, a name that
+   is not a lowercase slug, any `--out` inside this repo, a sandbox root that holds a game
+   directly, and reuse of a name whose build `pnpm sweep:archive` has not preserved.
 
-2. **Scaffold**, from the sandbox directory:
+2. **Scaffold**, from the sandbox root:
 
    ```sh
    ./scaffold.sh <name>
    ```
 
+   It writes `../sandbox/<name>/` and copies the brief, the reference and `sweep.json` into
+   it. Everything after this step happens **inside that folder**, never at the sandbox root.
+
 3. **Look at the reference.** Read the image file before writing anything. Name what you
    are matching — palette, light direction, silhouette scale, camera height and angle, prop
    density. You cannot match what you have not described.
 
-4. **Build the game**, then loop until it matches: run `pnpm dev`, drive it in the browser,
-   screenshot, compare against the reference, fix the largest visual gap, repeat.
+4. **Build the game**, then loop until it matches: run `pnpm dev` from `../sandbox/<name>`,
+   drive it in the browser, screenshot, compare against the reference, fix the largest
+   visual gap, repeat.
+
+   **Commit and push after every working increment.** The sandbox is a git repository of its
+   own — `ThreeNativeHQ/examples`, public, one folder per sample game. Commit when the
+   scaffold first runs, and again on every visible improvement; push each time. A sandbox
+   game that only exists on this disk is one `rm -rf` from gone, and these games are the
+   framework's only end-to-end evidence that it builds something a player would look at.
+
+   ```sh
+   git -C ../sandbox add <name> && git -C ../sandbox commit -m "<name>: <what changed>"
+   git -C ../sandbox push
+   ```
+
+   Do not commit `node_modules/`, `dist/`, `.packages/` or `.pnpm-store/`; the repo's
+   `.gitignore` already excludes them. Do commit your screenshots — they are the record of
+   the visual loop.
 
 5. **Archive and measure** the completed build from the repo root:
 
    ```sh
-   pnpm sweep:archive
+   pnpm sweep:archive ../sandbox/<name>
    pnpm sweep:measure docs/benchmark/sweeps/<genre>-<date>
    ```
 
@@ -60,6 +83,9 @@ preference; it is the difference between the two outcomes.
 
 ## Rules
 
+- **Work only inside your game folder.** `../sandbox/<name>/` is yours; the sandbox root and
+  its sibling folders belong to other games. Never write a game at the sandbox root — it
+  leaves no room for the next one and the archive tooling then has to guess which is which.
 - **Work only inside the sandbox.** Do not read `packages/`, `docs/`, `CHARTER.md`, or any
   `AGENTS.md` in the monorepo. Everything you need is the generated `AGENTS.md`, your own
   `src/`, and the `.d.ts` files in `node_modules/@threenative/` — about 1,065 lines of types.

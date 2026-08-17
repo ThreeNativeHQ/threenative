@@ -96,7 +96,7 @@ stops it.
 | 5 | **The visual instrument cannot resolve the change.** PRD-126 found an untouched build moving a full point between raters | **State the noise floor in the result or do not report a visual verdict.** Two raters minimum, or the visual column is recorded as *unresolved* rather than as a win or a loss | Two independent rater outputs, or an explicit "unresolved" |
 | 6 | **Capture asymmetry.** One arm rendered on SwiftShader | Same recipe both arms, headed, under `sh scripts/xvfb.sh`, `--enable-features=Vulkan`. Adapter read by field name — `JSON.stringify` on `GPUAdapterInfo` returns `{}` | `adapter.vendor` and `adapter.architecture` quoted per arm; `swiftshader` voids the run |
 | 7 | **Off-instrument work uncounted.** Round 9: both arms hand-wrote a screenshot harness, 151 lines against 70, counted for neither | Either ship the same harness to both arms in the sandbox, or count both and report them beside the LOC delta. **Do not silently exclude it again** | The harness LOC appears in the ledger for both arms |
-| 8 | **The archive destroys the evidence.** `sweep-archive.ts` `copyAppShell` copies root files plus `public/` and `assets/` only; round 9 lost 27 iteration screenshots including a final hero shot | Verify the archive preserves the builders' own directories **before** either arm starts, or salvage by hand and say so | `ls` the archive against the live sandbox, pasted |
+| 8 | **The archive destroys the evidence.** `sweep-archive.ts` `copyAppShell` copies root files plus `public/` and `assets/` only; round 9 lost 27 iteration screenshots including a final hero shot | Verify the archive preserves the builders' own directories **before** either arm starts, or salvage by hand and say so. Each arm also commits and pushes its own folder to `ThreeNativeHQ/examples` as it builds, so the working tree survives the archive independently | `ls` the archive against the live game folder, pasted, plus the pushed commits |
 | 9 | **n = 1.** One build per arm is an anecdote | Not solvable at this budget. **Report it as n=1 in the result's first line** and never quote the delta as a rate | The sentence is in the evidence file |
 | 10 | **Budget asymmetry.** One arm simply worked longer | Identical tool-call cap, stated in both prompts. An arm that hits the cap is recorded as hitting it, not extended | Final tool-call count per arm |
 
@@ -110,8 +110,12 @@ repository exists downstream of.
 
 | Arm | Scaffold | Gets |
 | --- | --- | --- |
-| framework | `./scaffold.sh <name>` from the bare sandbox | published `@threenative/*`, the generated `AGENTS.md` |
-| vanilla | plain `three` + Vite, no ThreeNative packages except `@threenative/playtest` for the proof | `installThreePlaytestBridge` and nothing else |
+| framework | `./scaffold.sh fps-framework` from the bare sandbox | published `@threenative/*`, the generated `AGENTS.md` |
+| vanilla | `--name fps-vanilla`: plain `three` + Vite, no ThreeNative packages except `@threenative/playtest` for the proof | `installThreePlaytestBridge` and nothing else |
+
+Each arm owns `../sandbox/<name>/` and nothing else. Every `pnpm sandbox` run rebuilds and re-packs
+the framework packages first, so an arm always installs the framework as of that moment rather than
+a stale tarball from the previous run.
 
 The vanilla arm getting the playtest bridge is deliberate and is the existing protocol: it hands
 the control our strongest asset on purpose, so a framework win cannot come from the harness.
@@ -139,7 +143,7 @@ nothing but returns twenty well-evidenced friction rows is a successful run of t
 | --- | --- | --- |
 | 1 | §1 requirements file exists, every constant cited or marked *not found* | pasted section list |
 | 2 | `docs/benchmark/genres/fps/` complete; four hashes recorded | hashes in the evidence file |
-| 3 | `pnpm sandbox --bare --genre fps` | exits `0`; refuses before §2 is complete |
+| 3 | `pnpm sandbox --bare --genre fps --name fps-framework` and `--name fps-vanilla` | each exits `0` and writes only its own `../sandbox/<name>/`; refuses before §2 is complete, and the second run leaves the first arm's folder untouched |
 | 4 | framework arm, cold session, capped budget | ledger written, transcript archived |
 | 5 | vanilla arm, cold session, same cap | ledger written, transcript archived |
 | 6 | `pnpm sweep:proof` on both archives | pass/total recorded per arm, same sealed hash |
