@@ -10,6 +10,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./three": { "types": "./dist/three/index.d.ts", "import": "./dist/three/index.js" },
+    "./capture": { "types": "./dist/capture.d.ts", "import": "./dist/capture.js" },
     "./runner": { "types": "./dist/runner/index.d.ts", "import": "./dist/runner/index.js" },
     "./package.json": "./package.json"
   },

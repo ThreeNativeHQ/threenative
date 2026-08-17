@@ -11,10 +11,14 @@ Record: [`docs/verification/prd-129-phase-3-2026-08-16.md`](../../verification/p
   files, seeded by copying rather than rewriting history. §5.4's bar is met from a **clean clone**:
   `pnpm install && pnpm build` exit 0 with `create-threenative` resolved from the registry
   (`.pnpm/create-threenative@0.2.2`, not a workspace link), plus typecheck, lint and 190 tests green.
-- **§6 is blocked, and §5 is what found the blocker.** `@threenative/playtest@0.2.0` does not export
-  `WEBGPU_BROWSER_ARGS` or the capture module, both of which `scripts/studio-probe.ts` reaches by
-  workspace-relative deep import. §6.1 deletes that file from here, and today this is the only copy
-  that builds. **Fix the engine's export map and republish before running §6.**
+- **§6 is blocked on a release, and §5 is what found the blocker.** `@threenative/playtest@0.2.0`
+  exported neither `WEBGPU_BROWSER_ARGS` nor the capture module, both of which
+  `scripts/studio-probe.ts` reaches by workspace-relative deep import; §6.1 deletes that file from
+  here and it is the only copy that builds. **The export map is now fixed** — `./capture` is a fourth
+  tier and `./runner` re-exports `browser.js`, guarded by `__tests__/export-map.spec.ts` with both
+  controls observed red. **What remains is publishing it.** A tag push to a public registry is the
+  owner's call; once a version carrying `./capture` is on npm, the private repository bumps and §6 is
+  unblocked.
 - **§6.3 is decided with evidence, not yet acted on: the visual gate stays.** `STUDIO_ASSET_ROOT` is
   write-only — `persistTemplateCapture` writes a second copy of each template frame there and nothing
   reads it. Remove that branch; keep the gate.
