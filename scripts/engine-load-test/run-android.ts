@@ -5,13 +5,16 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import {
+  MINIMUM_BATTERY_PERCENT,
+  assertDeviceReady as assertSharedDeviceReady,
+} from "../../packages/runtime-native/scripts/device-preflight.mjs";
+
+export { MINIMUM_BATTERY_PERCENT } from "../../packages/runtime-native/scripts/device-preflight.mjs";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END = "ENGINE_LOAD_TEST_JSON_END";
 const FAILED = "ENGINE_LOAD_TEST_FAILED";
-/** PRD-117 §4.3. Below this Android throttles and the number describes the battery, not the engine. */
-export const MINIMUM_BATTERY_PERCENT = 50;
-
 export interface IAndroidLadder {
   frames: number;
   ladder: string;
@@ -64,12 +67,7 @@ async function adb(args: readonly string[], timeoutMs = 120_000): Promise<string
   });
 }
 
-export interface IDeviceState {
-  batteryPercent: number;
-  serial: string;
-}
-
-export async function readDeviceState(): Promise<IDeviceState> {
+async function readDeviceSerial(): Promise<string> {
   const devices = (await adb(["devices"]))
     .split("\n")
     .slice(1)
@@ -79,25 +77,7 @@ export async function readDeviceState(): Promise<IDeviceState> {
   if (devices.length > 1)
     throw new Error(`TN_BENCH_MANY_DEVICES: ${devices.length} attached; set ANDROID_SERIAL.`);
   const serial = (devices[0] as string).split(/\s+/)[0] as string;
-  const battery = await adb(["shell", "dumpsys", "battery"]);
-  const level = /^\s*level:\s*(\d+)/m.exec(battery);
-  if (level === null) throw new Error("TN_BENCH_NO_BATTERY: could not read the battery level.");
-  return { batteryPercent: Number(level[1]), serial };
-}
-
-/**
- * Refuses a run the PRD would not accept. `--allow-low-battery` exists because a provisional
- * comparison between two arms at the same charge is still useful, but it has to be asked for: a
- * throttled number that reads as a measurement is how this benchmark lies.
- */
-export async function assertDeviceReady(allowLowBattery: boolean): Promise<IDeviceState> {
-  const state = await readDeviceState();
-  if (state.batteryPercent < MINIMUM_BATTERY_PERCENT && !allowLowBattery) {
-    throw new Error(
-      `TN_BENCH_LOW_BATTERY: ${state.batteryPercent}% is below the ${MINIMUM_BATTERY_PERCENT}% PRD-117 requires. Charge the device, or pass --allow-low-battery and mark the result provisional.`,
-    );
-  }
-  return state;
+  return serial;
 }
 
 function parseReport(log: string): unknown {
@@ -127,9 +107,19 @@ export async function runAndroidArm(
 ): Promise<unknown> {
   const definition = ANDROID_ARMS[arm];
   if (definition === undefined) throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
-  const state = await assertDeviceReady(options.allowLowBattery);
+  const serial = await readDeviceSerial();
+  const state = await assertSharedDeviceReady(
+    serial,
+    {
+      allowOverride: options.allowLowBattery,
+      maxThermalStatus: "NONE",
+      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+      requireDischarging: true,
+    },
+    { adb },
+  );
   process.stderr.write(
-    `[${arm}] device ${state.serial}, battery ${state.batteryPercent}%${state.batteryPercent < MINIMUM_BATTERY_PERCENT ? " (PROVISIONAL)" : ""}\n`,
+    `[${arm}] device ${state.serial}, battery ${state.batteryPercent}%${state.provisional.length > 0 ? " (PROVISIONAL)" : ""}\n`,
   );
   await mkdir(path.join(repoRoot, "artifacts/engine-load-test"), { recursive: true });
 
@@ -155,7 +145,15 @@ export async function runAndroidArm(
     const log = await adb(["logcat", "-d"]);
     if (log.includes(END) || log.includes(FAILED)) {
       await adb(["shell", "am", "force-stop", definition.packageName]);
-      return parseReport(log);
+      const report = parseReport(log);
+      if (typeof report !== "object" || report === null || Array.isArray(report)) {
+        throw new Error("TN_BENCH_BAD_REPORT: the Android arm report must be an object.");
+      }
+      return {
+        ...report,
+        deviceCondition: state,
+        provisional: state.provisional,
+      };
     }
   }
   await adb(["shell", "am", "force-stop", definition.packageName]);

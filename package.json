@@ -2,6 +2,7 @@
   "name": "threenative",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.25.0",
   "engines": {
@@ -25,6 +26,7 @@
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
+    "check:docs": "tsx scripts/check-doc-links.ts",
     "budgets": "tsx scripts/check-budgets.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",

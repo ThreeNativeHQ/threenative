@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a focused improvement to ThreeNative
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep proposals small and grounded in an existing project need.
+        Could a competent developer write this in under 20 lines? If yes, it belongs in the user's own project, not the framework.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest change that would address the problem.
+    validations:
+      required: true
+  - type: dropdown
+    id: under-twenty-lines
+    attributes:
+      label: Could a competent developer write this in under 20 lines?
+      options:
+        - "Yes — it belongs in the user's own project, not the framework."
+        - "No"
+    validations:
+      required: true

@@ -130,6 +130,71 @@ describe("engine load test scorer", () => {
     expect(() => parseRunReport(report({ rungs: [] }))).toThrow(/TN_BENCH_NO_RUNGS/);
   });
 
+  it("should require a condition block on Android reports", () => {
+    expect(() => parseRunReport(report({ arm: "tn-android" }))).toThrow(
+      /TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_DEVICE_CONDITION/,
+    );
+    const parsed = parseRunReport(
+      report({
+        arm: "tn-android",
+        deviceCondition: {
+          batteryPercent: 80,
+          charging: false,
+          chargingSource: "NONE",
+          provisional: [],
+          screenOn: true,
+          serial: "37251FDJH0037Z",
+          thermalStatus: "NONE",
+          thermalStatusCode: 0,
+        },
+        provisional: [],
+      }),
+    );
+    expect(parsed.deviceCondition?.thermalStatus).toBe("NONE");
+  });
+
+  it("should require matching nested and top-level provisional arrays", () => {
+    const android = report({
+      arm: "tn-android",
+      deviceCondition: {
+        batteryPercent: 80,
+        charging: false,
+        chargingSource: "NONE",
+        provisional: [],
+        screenOn: true,
+        serial: "37251FDJH0037Z",
+        thermalStatus: "NONE",
+        thermalStatusCode: 0,
+      },
+      provisional: [],
+    });
+    expect(parseRunReport(android).deviceCondition?.provisional).toEqual([]);
+
+    expect(() => parseRunReport({ ...android, provisional: undefined })).toThrow(
+      /TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_DEVICE_CONDITION/,
+    );
+    expect(() =>
+      parseRunReport({
+        ...android,
+        deviceCondition: { ...android.deviceCondition, provisional: undefined },
+      }),
+    ).toThrow(/TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_DEVICE_CONDITION/);
+    expect(() =>
+      parseRunReport({
+        ...android,
+        provisional: [""],
+        deviceCondition: { ...android.deviceCondition, provisional: [""] },
+      }),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/);
+    expect(() =>
+      parseRunReport({
+        ...android,
+        provisional: [],
+        deviceCondition: { ...android.deviceCondition, provisional: ["battery"] },
+      }),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/);
+  });
+
   it("should compute the knee as the largest rung at or below 20 ms p95", () => {
     expect(knee(summarize(ladderReport(24)), "L1")).toBe(4096);
     // Shift the top of the fixture under the line and the knee climbs a rung; shift the rung
@@ -222,6 +287,41 @@ describe("engine load test equivalence gate", () => {
     expect(comparison.leftKnee.L1).toBe(4096);
     expect(comparison.rightKnee.L1).toBe(4096);
     expect(checkEquivalence(ladderReport(24), ladderReport(30, "godot-web"))).toEqual([]);
+  });
+
+  it("should refuse a provisional comparison", () => {
+    const left = ladderReport(24);
+    left.provisional = ["battery"];
+    expect(() => compare(left, ladderReport(30, "godot-web"))).toThrow(
+      /TN_BENCH_PROVISIONAL_COMPARISON/,
+    );
+  });
+
+  it("should fail closed when Android comparison provisional arrays disagree", () => {
+    const left = ladderReport(24, "tn-android");
+    const condition = {
+      batteryPercent: 80,
+      charging: false,
+      chargingSource: "NONE",
+      provisional: [],
+      screenOn: true,
+      serial: "37251FDJH0037Z",
+      thermalStatus: "NONE",
+      thermalStatusCode: 0,
+    };
+    left.deviceCondition = condition;
+    left.provisional = [];
+    const right = ladderReport(30, "godot-android");
+    right.deviceCondition = { ...condition, provisional: ["battery"] };
+    right.provisional = [];
+    expect(() => compare(left, right)).toThrow(/TN_BENCH_BAD_SHAPE/);
+    expect(() => compare({ ...left, provisional: undefined }, right)).toThrow(/TN_BENCH_BAD_SHAPE/);
+    expect(() =>
+      compare(
+        { ...left, provisional: ["battery"] },
+        { ...right, deviceCondition: { ...condition, provisional: [] } },
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/);
   });
 });
 

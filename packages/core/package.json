@@ -1,6 +1,7 @@
 {
   "name": "@threenative/core",
   "version": "0.2.0",
+  "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
   "files": ["dist"],

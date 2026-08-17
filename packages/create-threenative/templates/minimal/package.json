@@ -1,6 +1,7 @@
 {
   "name": "__PROJECT_NAME__",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

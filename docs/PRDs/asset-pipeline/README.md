@@ -29,7 +29,7 @@ pipeline, last re-checked 2026-08-09, with a two-part trigger that **has not fir
 
 1. the five-minute stranger test has closed — defined in
    [`STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md), open as
-   [PRD-080](../alpha-readiness/PRD-080-five-minute-stranger-test.md);
+   [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md);
 2. a reference game fails a device performance budget **for asset reasons**, measured.
 
 **Both are still open, and nothing in this folder may be implemented until both are true.**

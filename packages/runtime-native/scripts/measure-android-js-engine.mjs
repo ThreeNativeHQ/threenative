@@ -23,6 +23,7 @@ import {
   parseArgs as parseFirstProofArgs,
   verifyAndroidFirstProof,
 } from "./verify-android-first-proof.mjs";
+import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_DEVICE = "37251FDJH0037Z";
@@ -379,6 +380,21 @@ export function validateCandidateComparison(control, candidate, expectedEngine) 
   ) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_COMPARISON_DEVICE_MISMATCH");
   }
+  for (const [label, report] of [["CONTROL", control], ["CANDIDATE", candidate]]) {
+    const condition = report?.deviceCondition;
+    if (!condition || typeof condition !== "object" || Array.isArray(condition) || typeof condition.batteryPercent !== "number" || typeof condition.charging !== "boolean" || typeof condition.thermalStatus !== "string" || typeof condition.screenOn !== "boolean") throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_DEVICE_CONDITION_MALFORMED:${label}`);
+    const topLevelProvisional = report.provisional;
+    const nestedProvisional = condition.provisional;
+    if (
+      !Array.isArray(topLevelProvisional) ||
+      topLevelProvisional.some((value) => typeof value !== "string" || value.length === 0) ||
+      !Array.isArray(nestedProvisional) ||
+      nestedProvisional.some((value) => typeof value !== "string" || value.length === 0) ||
+      topLevelProvisional.length !== nestedProvisional.length ||
+      topLevelProvisional.some((value, index) => value !== nestedProvisional[index])
+    ) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON_MALFORMED:${label}`);
+    if (topLevelProvisional.length > 0) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON:${label}`);
+  }
   if (control.bundleSha256 !== candidate.bundleSha256) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_TWO_VARIABLES:BUNDLE_SHA_CHANGED");
   }
@@ -616,6 +632,7 @@ export function analyzeMeasurementLog(log, expected = {}) {
 export function parseArgs(argv) {
   const options = {
     allowEmulatorDevelopment: false,
+    allowLowBattery: false,
     busyLoop: false,
     cleanBuild: false,
     coldStartRuns: 5,
@@ -653,6 +670,7 @@ export function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--allow-emulator-development") options.allowEmulatorDevelopment = true;
+    else if (arg === "--allow-low-battery") options.allowLowBattery = true;
     else if (arg === "--busy-loop-control") options.busyLoop = true;
     else if (arg === "--clean-build") options.cleanBuild = true;
     else if (arg === "--extra-draw-control") options.extraDrawControl = true;
@@ -810,6 +828,12 @@ async function main() {
     ...(options.skipInstall ? ["--skip-install"] : []),
   ]);
   const startedAt = new Date();
+  const deviceCondition = await assertDeviceReady(options.device, {
+    allowOverride: options.allowLowBattery,
+    maxThermalStatus: "NONE",
+    minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+    requireDischarging: true,
+  });
   let log;
   if (options.foxSubject) {
     if (options.skipInstall) {
@@ -861,10 +885,12 @@ async function main() {
     controls: { busyLoop: options.busyLoop, emulatorBlockedForAcceptance: !device.acceptanceEligible },
     cleanBuildWallClockMs,
     device: { ...device, properties },
+    deviceCondition,
     finishedAt: new Date().toISOString(),
     foxSubject: options.foxSubject,
     logcat: logPath,
     peakRssKb,
+    provisional: deviceCondition.provisional,
     schemaVersion: 1,
     startedAt: startedAt.toISOString(),
   };

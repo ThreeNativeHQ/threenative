@@ -29,6 +29,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
 import { readAndroidConfig } from "./package-android.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -204,6 +205,7 @@ export function summarise(samples) {
 
 export function parseArgs(argv) {
   const options = {
+    allowDeviceCondition: false,
     device: undefined,
     launches: 5,
     settleMs: 20_000,
@@ -220,6 +222,9 @@ export function parseArgs(argv) {
       return value;
     };
     if (arg === "--device") options.device = next();
+    else if (arg === "--allow-device-condition" || arg === "--allow-low-battery") {
+      options.allowDeviceCondition = true;
+    }
     else if (arg === "--launches") options.launches = Number(next());
     else if (arg === "--settle-ms") options.settleMs = Number(next());
     else if (arg === "--report") options.report = next();
@@ -256,6 +261,16 @@ async function main() {
   assertPhysicalDevice(options.device);
   const serial = options.device;
   const { appId, activity } = appIdentity(options.config);
+  const deviceCondition = await assertDeviceReady(
+    serial,
+    {
+      allowOverride: options.allowDeviceCondition,
+      maxThermalStatus: "NONE",
+      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+      requireDischarging: true,
+    },
+    { adb: (args) => adb(serial, args) },
+  );
 
   const listing = adb(serial, ["shell", "getprop", "ro.product.model"]).trim();
   const qemu = adb(serial, ["shell", "getprop", "ro.kernel.qemu"]).trim();
@@ -284,8 +299,10 @@ async function main() {
   const report = {
     schemaVersion: 1,
     device: { serial, model: listing, kind: "physical" },
+    deviceCondition,
     nativeBuild: { optimization: options.optimization },
     apkSha256,
+    provisional: deviceCondition.provisional,
     ...summarise(samples),
   };
 

@@ -1,6 +1,6 @@
 # Adopter pilot — building an endless runner in the bare sandbox, 2026-08-14
 
-**This is not the stranger test, and it does not close [PRD-080](../PRDs/alpha-readiness/PRD-080-five-minute-stranger-test.md).**
+**This is not the stranger test, and it does not close [PRD-080](../PRDs/BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md).**
 The subject was an agent that has read this repository, which is the opposite of the external
 person that PRD names. It is a **pilot run of the adopter protocol**: one build, in the bare
 sandbox, recorded while it happened. Its value is the friction list, not a verdict.
