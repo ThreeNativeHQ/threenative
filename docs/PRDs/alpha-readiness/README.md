@@ -134,7 +134,7 @@ Four agent lanes with no file overlap, plus one that is not agent work.
 |---|---|
 | [PRD-064](../PRD-064-tier-1-native-reliability.md), [PRD-065](../PRD-065-ios-evidence-lane.md) | Tier 1 is the *shipping* bar and Tier 2 needs physical hardware. Alpha needs the claims to be honest, not the matrix to be green |
 | [PRD-079](../PRD-079-phase-2-exit-criteria.md) | Rewrites the **beta** exit gate. Its harness half was overtaken by the instrument repairs; reopening the beta gate is not an alpha blocker |
-| [PRD-073](../PRD-073-performance-by-default.md), [PRD-117](../PRD-117-engine-load-test-godot.md), [PRD-118](../PRD-118-android-js-engine.md) | Performance work. A slow alpha is an alpha |
+| [PRD-073](../PRD-073-performance-by-default.md), [PRD-117](../PRD-117-engine-load-test-godot.md), [PRD-118](../done/PRD-118-android-js-engine.md) | Performance work. A slow alpha is an alpha |
 | [`asset-pipeline/`](../asset-pipeline/), [`starter-kits/`](../starter-kits/), [`studio-hosting/`](../studio-hosting/) | Product surface. None of it changes whether an outsider can install and ship |
 | [`production-readiness-26-08-14/`](../production-readiness-26-08-14/README.md) | The night that produced four of these. Kept as that night's record; its two superseded repair lanes now live in `BLOCKED/` with their source PRDs |
 

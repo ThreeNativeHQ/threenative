@@ -20,7 +20,7 @@ the hard half.
 [PRD-074](../native-performance-fixes/PRD-074-scene-collapse-regression-gate.md) Pixel 8 leg, and
 [PRD-066](../native-performance-fixes/PRD-066-android-device-frame-rate.md) Phases 2–5.
 
-**Does not block [PRD-118](../PRD-118-android-js-engine.md).** See §1 — PRD-118's retake needs a
+**Does not block [PRD-118](../done/PRD-118-android-js-engine.md).** See §1 — PRD-118's retake needs a
 charged phone and no code at all.
 
 **Complexity: 4 → MEDIUM mode.** One extraction, three call sites, two new conditions. No package

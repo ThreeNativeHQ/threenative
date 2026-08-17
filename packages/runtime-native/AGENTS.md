@@ -15,6 +15,18 @@ iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns th
 never mirror the `Object3D` tree across threads. Heavy systems use native/GPU/thread
 architectures and batched transfer surfaces.
 
+**Android's engine is a choice, and it is the only platform on an interpreter without a JIT.**
+The default is still QuickJS — smallest to integrate, no special runtime deps — and
+`-PthreenativeJsEngine=v8` builds the same source against `third_party/v8-android` instead.
+Do not read the default as a verdict: on a Pixel 8, 16 384 moving cubes, QuickJS spends
+115.64 ms per frame in script and V8 spends 5.25 ms, and the frame goes from 119.19 ms to
+8.32 ms — inside one 120 Hz interval, against Godot's 39.27 ms on the same scene and device
+(`docs/verification/prd-118-charged-retake-2026-08-16.md`). V8 costs +25.6 MB of arm64
+payload, which is why the default has not moved; that is an owner decision, not a technical
+blocker. Selecting V8 requires the shared STL (`libc++_shared.so`), the external startup
+snapshot in `assets/v8/`, and pointer-compression defines that must match the prebuilt
+library rather than the host's preference.
+
 Priority order: correctness → compatibility → platform stability → threading → native systems
 → DX → profiling → optimization.
 

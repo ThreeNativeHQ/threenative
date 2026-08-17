@@ -16,17 +16,22 @@ need runs, not paperwork.
 
 | PRD | State today | What the phone closes | Cost |
 | --- | --- | --- | --- |
-| [PRD-118](../PRD-118-android-js-engine.md) | `PARTIAL / PROVISIONAL` — V8 is **22× faster** than QuickJS on script time and beats the acceptance bar with room, but the run sat at 21–25% battery against a `≥50%` criterion | one charged retake turns a provisional 22× into an accepted one | **one run, no code** |
+| [PRD-118](../done/PRD-118-android-js-engine.md) | ~~`PARTIAL / PROVISIONAL`~~ → **`ACCEPTED` 2026-08-16, archived to `done/`.** The retake ran at 72%: L3 @ 16 384 reads **8.32 ms** against 8.33 ms provisional. [Record](../../verification/prd-118-charged-retake-2026-08-16.md) | done — and it settled PRD-127 §9's first kill switch: the QuickJS arm, which was free to move, read 20.03 ms charged against 20.02 ms provisional | **done** |
 | [PRD-117](../PRD-117-engine-load-test-godot.md) | `PARTIAL` — web L2 and desktop L2 closed against Godot; phone arm and acceptance open | the third arm of the load test | half a day |
 | [PRD-074](../native-performance-fixes/PRD-074-scene-collapse-regression-gate.md) | `IMPLEMENTED` browser-side; Pixel 8 leg open | the collapse regression gate covers the platform it was written for | half a day |
 | [PRD-066](../native-performance-fixes/PRD-066-android-device-frame-rate.md) | `PARTIAL` — root cause measured on the device, Phase 1 landed, Phases 2–5 open. Its own words: *a device frame-rate gate that does not exist yet* | the gate | one to two days |
 
-**PRD-118 first, and charge the phone tonight.** It is a single run behind a result the
-repository already has in hand, it needs no code from anything in this folder, and it is the
-cheapest item in the batch by an order of magnitude. Its provisional label is not a missing
-check — `scripts/engine-load-test/run-android.ts:93` refused the run and
-`--allow-low-battery` overrode it, which is the escape working as designed. Re-run without
-the flag.
+**PRD-118 ran first and is done.** It was a single run behind a result the repository already had in
+hand, it needed no code from anything in this folder, and it was the cheapest item in the batch by an
+order of magnitude. Its provisional label was not a missing check —
+`scripts/engine-load-test/run-android.ts:93` refused the run and `--allow-low-battery` overrode it,
+which is the escape working as designed. Re-run without the flag at 72%, it read 8.32 ms.
+
+**Its side effect is worth more than the acceptance.** Both arms were retaken, and the QuickJS arm —
+the one at 20 ms, nowhere near the 8.33 ms frame interval, and therefore free to move — read 20.03 ms
+charged against 20.02 ms provisional. On this device the 50% bar changed nothing measurable. That is
+PRD-127 §9's first kill switch firing on evidence. It does not delete the gate; it says the useful
+thing is recording the observed charge with every number, not refusing everything under a threshold.
 
 **PRD-127 lands before PRD-117, PRD-074 and PRD-066 run.** The low-complexity lane writes its code;
 this lane is what verifies it, because only this machine has the phone. Until then, one of

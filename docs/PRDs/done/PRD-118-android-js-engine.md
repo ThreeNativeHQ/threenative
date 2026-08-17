@@ -4,29 +4,37 @@ prd_contract: v1
 
 # PRD-118 — The Android JavaScript engine: why the phone is three times slower, and what replacing QuickJS costs
 
-**Status: PARTIAL / PROVISIONAL, 2026-08-15 — V8 lands and closes the measured gap, but the
-required battery precondition failed.** The numerical result is promising; formal acceptance waits
-for a retake on a charged device.
+**Status: ACCEPTED, 2026-08-16 — the charged retake ran and the numbers did not move.** The run is
+recorded in [`docs/verification/prd-118-charged-retake-2026-08-16.md`](../verification/prd-118-charged-retake-2026-08-16.md):
+Pixel 8 at **72%** battery, `Thermal Status: 0`, no `--allow-low-battery`, and the installed APK
+proved by hash and by symbol table to be the V8 one.
 
 | Pixel 8, 16 384 cubes, collapsed scene | frame p50 | JS per frame |
 |---|---|---|
 | QuickJS | 119.19 ms | 115.64 ms |
-| **V8** | **8.20 ms** | **5.25 ms** |
+| **V8, charged retake** | **8.32 ms** | 5.25 ms (not retaken) |
 | Godot 4.7.1 Android | 39.27 ms | — |
 
 Script time fell **22x**. The acceptance criterion — *L3 @16 384 under 39.27 ms* — is met with room
-to spare, subject to the two caveats below.
+to spare, subject to Caveat 1 below.
 
-**Caveat 1, read the 8.20 ms correctly.** The host presents `fifo vsync=true` and the device runs
-120 Hz, so 8.33 ms is the frame interval and ThreeNative sits on it at every rung across a 4x load
-range. The defensible claim is **its work fits inside one 120 Hz frame** while Godot needs 39.27 ms,
-which is above Godot's own 60 Hz floor and therefore real cost. The arms ran at different refresh
-rates; the scorer would refuse that pairing outright, and the conclusion survives anyway because
-even at 60 Hz ThreeNative would read 16.67 ms.
+**Caveat 1 stands, and the retake did not disturb it.** The host presents `fifo vsync=true` and the
+device runs 120 Hz, so 8.33 ms is the frame interval and ThreeNative sits on it at every rung across
+a 4x load range. The defensible claim is **its work fits inside one 120 Hz frame** while Godot needs
+39.27 ms, which is above Godot's own 60 Hz floor and therefore real cost. The arms ran at different
+refresh rates; the scorer would refuse that pairing outright, and the conclusion survives anyway
+because even at 60 Hz ThreeNative would read 16.67 ms.
 
-**Caveat 2, the battery.** The device was at 21–25% throughout, below the ≥50% this PRD requires.
-These are provisional numbers and the criterion is not formally satisfied until they are retaken on
-a charged phone.
+**Caveat 2 is closed, and the battery turned out not to be the variable.** The provisional run sat
+at 21–25%. At 72% the same rung reads 8.32 ms against 8.33 ms — which proves little by itself, since
+that arm is pinned to vsync. **The QuickJS arm is the one that carries information**: at 20 ms it was
+nowhere near the frame interval and free to move, and it read 20.03 ms charged against 20.02 ms
+provisional. On this device the 50% bar changed nothing measurable. That is a result about the bar,
+not a licence to drop it — see PRD-127 §9, whose first kill switch this fires.
+
+**What is still not claimed.** Android-on-this-device, not mobile-ready; one phone is not mobile. The
+Android default remains QuickJS and `-PthreenativeJsEngine=v8` is what changes it. Whether to pay the
++25.6 MB arm64 payload to make V8 the default is the owner's call, exactly as §6 says.
 
 **Original status: SCOPING, 2026-08-15.** The measurements below ran; the fix has not. Every number
 carries its source. The one thing already proved is that the Android runtime **configures and
@@ -264,19 +272,25 @@ Unmeasured, and each is a bounded experiment rather than an opinion:
 
 Consumer-scoped, and each only satisfiable by something that ran.
 
-- [ ] `pnpm bench:engines --arm tn-android` reports the L3 @ 16 384 rung at **under 39.27 ms**, the
+- [x] `pnpm bench:engines --arm tn-android` reports the L3 @ 16 384 rung at **under 39.27 ms**, the
       figure Godot's Android export produced on the same device on 2026-08-14 — measured with the
-      device at **≥50% battery**, which PRD-117's provisional numbers were not
-- [ ] The APK under test contains the newly built runtime, proved by the packaging path, not by
+      device at **≥50% battery**, which PRD-117's provisional numbers were not.
+      **8.32 ms p50 at 72% battery, 2026-08-16**, `Thermal Status: 0`, no `--allow-low-battery`
+- [x] The APK under test contains the newly built runtime, proved by the packaging path, not by
       assumption — a run that silently shipped the prebuilt QuickJS `.so` is the failure this
-      criterion exists to catch
-- [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` and `pnpm budgets` are green, and the default repo
+      criterion exists to catch. **Three checks: the archive carries `libv8android.so` and
+      `assets/v8/snapshot_blob.bin`; the runtime `.so` has 95 undefined `v8::` symbols and zero
+      QuickJS entry points; the on-device `base.apk` sha256 equals the local archive's**
+- [x] `pnpm test`, `pnpm typecheck`, `pnpm lint` and `pnpm budgets` are green, and the default repo
       gate still requires no NDK
-- [ ] `examples/native-smoke` still asserts one import-free ESM file, and the desktop and iOS
-      arms are unchanged
-- [ ] The APK size change is recorded, whatever it is
-- [ ] `packages/runtime-native/AGENTS.md` is updated to state which engine each platform runs and
-      why — the line "Android QuickJS+wgpu-native" becomes wrong the moment this lands
+- [x] `examples/native-smoke` still asserts one import-free ESM file, and the desktop and iOS
+      arms are unchanged — no C++, CMake or preset file was touched by the retake
+- [x] The APK size change is recorded, whatever it is. **+25.6 MB of arm64 payload
+      (75.8 → 101.4 MB uncompressed); +142.7 MB on the two-ABI benchmark archive**
+- [x] `packages/runtime-native/AGENTS.md` is updated to state which engine each platform runs and
+      why — the line "Android QuickJS+wgpu-native" becomes wrong the moment this lands.
+      **It stays true as a statement of the default, and now says so explicitly, alongside the
+      measured cost of the default and what selecting V8 requires**
 
 Explicitly **not** an acceptance criterion: that ThreeNative beats Godot on every rung. Closing a
 3× gap to parity at 16 384 is the goal; a result showing the engine swap buys less than expected is
