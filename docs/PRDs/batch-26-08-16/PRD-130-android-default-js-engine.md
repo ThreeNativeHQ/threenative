@@ -8,9 +8,18 @@ prd_contract: v1
 second-device claim is made by this file.
 
 **The owner has decided: V8 becomes the Android default.** Recorded 2026-08-16, on the numbers in
-PRD-118 and its charged retake — 119.19 ms → 8.32 ms at 16,384 moving cubes, 22× less script time,
-against +25.6 MB of arm64 payload. That resolves Phase 6's branch in advance and deletes the refusal
-half of this PRD.
+PRD-118 and its charged retake, for +25.6 MB of arm64 payload.
+
+**The load-bearing figure is script time per frame — 115.64 ms under QuickJS against 5.25 ms under
+V8, 22×**, at 16,384 moving cubes on the Pixel 8. The frame-time pair usually quoted beside it,
+119.19 ms → 8.32 ms, is half a measurement and this PRD does not lean on it: QuickJS's 119.19 ms is
+real work, but 8.32 ms is the 120 Hz vsync interval and V8 sits *on* it, so that arm was bounded
+rather than measured. Unpinned, the same rung reads **5.91 ms**
+(`artifacts/engine-load-test/tn-android-novsync.json`). The defensible frame sentence is that V8's
+whole frame fits inside one 120 Hz interval where QuickJS needs fourteen — never that V8 costs
+8.32 ms.
+
+That resolves Phase 6's branch in advance and deletes the refusal half of this PRD.
 
 It does not shorten Phases 1 through 5, and the flip lands after them rather than instead of them.
 Flipping the default today would produce a default that only an operator with an NDK can build, on
@@ -46,6 +55,20 @@ are the cost, and two of them need the phone.
 The last three carry no code and are the ones most likely to be skipped. Android's engine is stated
 in prose in `AGENTS.md` and G3, and a default that changes in the build files while the docs still
 say QuickJS is how the next reader learns the wrong thing with confidence.
+
+**Three gates that fail closed on this blast radius.** All three were hit on the batch that landed
+just before this PRD, so treat them as known rather than as discoveries:
+
+- **The native census is recorded twice and both copies fail closed.** Changing line counts under
+  `packages/runtime-native/` means updating the area rows *and* the total in
+  `docs/verification/PRD-116-native-physics-actuation.md` (`pnpm budgets` fails) and the hardcoded
+  copy in `packages/physics/__tests__/actuation.spec.ts` (`pnpm test` fails). Measure the merged
+  tree; do not compute the delta.
+- **`AGENTS.md` is the source and `CLAUDE.md` is generated.** Edit `AGENTS.md`, run
+  `pnpm sync:agents`, or CI reverts the mirror. Its engine paragraph currently describes the
+  QuickJS-default split and Phase 6 makes it wrong.
+- **`pnpm lint` reports one build-failing error under a few hundred warnings.** Grep for errors;
+  a clean-looking tail is not a green run.
 
 ---
 
