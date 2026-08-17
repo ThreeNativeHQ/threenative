@@ -1,9 +1,25 @@
 # Batch — the phone, the instrument, and the front door, 2026-08-16
 
-**Status: PROPOSED, 2026-08-16. Nothing in this folder has run.** Five new PRDs, PRD-125
-through PRD-129, plus four existing PRDs this batch schedules for execution on hardware. No
-mobile, iOS or performance claim is made anywhere in it — the point of the batch is to make
-three of those claims *measurable*, not to assert them.
+**Status: PARTIALLY EXECUTED, 2026-08-17. Three of seven PRDs are archived; four remain active
+and none is blocked.** Five new PRDs, PRD-125 through PRD-129, plus four existing PRDs this batch
+schedules for execution on hardware. No mobile, iOS or performance claim is made anywhere in it —
+the point of the batch is to make three of those claims *measurable*, not to assert them.
+
+| PRD | State, read off the tree 2026-08-17 | What it needs to reach `done/` |
+| --- | --- | --- |
+| [129](../done/PRD-129-licensing-and-the-studio-split.md) | **DONE**, archived | — |
+| [130](./PRD-130-android-default-js-engine.md) | six phases executed; **`run-conformance.mjs` was never run under V8** | that one run, on the attached Pixel 8 |
+| [131](../done/PRD-131-recover-the-qualification-orchestrator.md) | **DONE 2026-08-17**, archived — last criterion run on the Pixel 8, no signal 6, [evidence](../../verification/prd-131-first-proof-2026-08-17.md) | — |
+| [127](./PRD-127-device-measurement-preflight.md) | code landed on all four lanes; every physical criterion `UNVERIFIED` | the device lanes observed red on the phone |
+| [126](./PRD-126-the-visual-instrument-noise-floor.md) | PARTIAL — `scripts/visual-ab.ts` landed, never run with independent raters | one paired blind run |
+| [128](./PRD-128-android-qualification-split.md) | Phase 0 only; the split itself is not done | Phases 1 onward |
+| [125](../done/PRD-125-docs-and-readme-overhaul.md) | **DONE 2026-08-17**, archived — all ten criteria run, [evidence](../../verification/prd-125-docs-and-readme-2026-08-17.md) | — |
+
+**Nothing here belongs in `BLOCKED/`.** The lifecycle rule reserves that folder for a status that
+is explicitly BLOCKED on a named external dependency; `NOT STARTED`, `PARTIAL` and `PROPOSED` stay
+in their owning batch. The Pixel 8 is attached and every remaining criterion above runs on this
+machine, so these are unfinished, not blocked — and the batch cannot be archived while any of them
+is open.
 
 **This file is a map. The work is indexed in two files, and they do not overlap.**
 
@@ -45,11 +61,11 @@ us.
 
 | PRD | What it closes | Lane |
 | --- | --- | --- |
-| [125](./PRD-125-docs-and-readme-overhaul.md) | A README that opens on VOID, 18 broken links, and 189 MiB of docs in a 199 MiB repository | low |
+| [125](../done/PRD-125-docs-and-readme-overhaul.md) | A README that opens on VOID, 18 broken links, and 189 MiB of docs in a 199 MiB repository | low |
 | [126](./PRD-126-the-visual-instrument-noise-floor.md) | The visual loop cannot tell a change from rater variance, and has already optimised noise once | high |
 | [127](./PRD-127-device-measurement-preflight.md) | One of four device lanes checks the phone's condition; three check nothing | code is **low**, verification is **high** (needs the phone) |
 | [128](./PRD-128-android-qualification-split.md) | PRD-056 is blocked on the *union* of four dependencies; the part a Pixel 8 can run today is held up by an Apple signing identity nobody has | high |
-| [129](./PRD-129-licensing-and-the-studio-split.md) | The engine grants no rights to anyone, and the paid editor's source sits in a public MIT repository | **§3–§4 low, §5–§7 high** |
+| [129](../done/PRD-129-licensing-and-the-studio-split.md) | The engine grants no rights to anyone, and the paid editor's source sits in a public MIT repository | **§3–§4 low, §5–§7 high** |
 
 Ordering across the two lanes: PRD-129 §3 unblocks PRD-125's licence section. PRD-127's code
 must land before PRD-117, PRD-074 and PRD-066 run. Nothing else is ordered.

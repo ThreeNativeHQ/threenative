@@ -4,7 +4,17 @@ prd_contract: v1
 
 # PRD-131 — The physical-qualification orchestrator was built, works, and was never landed
 
-**Status: PHASES 1, 2 and 4 DONE, 2026-08-16. Phase 3 not started.** No hardware qualification,
+**Status: DONE, 2026-08-17.** Phases 1, 2 and 4 executed 2026-08-16; the last open acceptance
+criterion — `examples/native-smoke` reaching `TN_NATIVE_SMOKE_FIRST_FRAME` on the Pixel 8 without a
+signal 6 — was executed on 2026-08-17 and passed, with **0 occurrences of `signal 6`/`SIGABRT`** in
+the captured logcat. Evidence:
+[`prd-131-first-proof-2026-08-17.md`](../../verification/prd-131-first-proof-2026-08-17.md).
+**Phase 3 is not done and is not needed here** — it was written as *"the lifecycle half, if it is
+needed"*, and every acceptance criterion in §6 is now met without it; the lifecycle scenario and
+`window.h`/`window.cpp` remain listed as deliberately left behind, and running the qualification is
+PRD-128's scope, not this PRD's.
+
+**Original status, 2026-08-16:** PHASES 1, 2 and 4 DONE. Phase 3 not started. No hardware qualification,
 signing or mobile-readiness claim is made by this file — nothing was qualified, and every device
 invocation below refused before reading a property from the phone. That is the harness being right.
 
@@ -49,7 +59,7 @@ behind.
 
 **Depends on:** nothing external. The code, the tests and the fixtures already exist.
 
-**Blocks:** [PRD-128](./PRD-128-android-qualification-split.md) Phases 2–3. Everything PRD-128 calls
+**Blocks:** [PRD-128](../batch-26-08-16/PRD-128-android-qualification-split.md) Phases 2–3. Everything PRD-128 calls
 "the runs" needs a runner.
 
 **Complexity: 6 → MEDIUM-HIGH mode.** No new capability and no design. The difficulty is entirely
@@ -193,9 +203,11 @@ incomplete.
       `TN_QUALIFY_SIGNING_TOOL_REQUIRED`, and the control was observed red first.
 - [x] The `runtime.cpp` resize hunk is **not** present, and the commit message says it was dropped
       and why.
-- [ ] `examples/native-smoke` still reaches `TN_NATIVE_SMOKE_FIRST_FRAME` on the Pixel 8 without a
-      signal 6. **Not run** — no C++ was touched, so nothing could have moved it, but that is an
-      argument rather than an observation.
+- [x] `examples/native-smoke` still reaches `TN_NATIVE_SMOKE_FIRST_FRAME` on the Pixel 8 without a
+      signal 6. **Run 2026-08-17**: all four markers in order, 300 frames, process alive 3,000 ms,
+      **0 occurrences of `signal 6`/`SIGABRT`** in the captured logcat, engine read from the process
+      as `V8`. Evidence:
+      [`prd-131-first-proof-2026-08-17.md`](../../verification/prd-131-first-proof-2026-08-17.md).
 - [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` pass, and no native toolchain
       becomes part of the default gate.
 - [x] The recovered spec runs in `pnpm test` and a test fails if the orchestrator stops being

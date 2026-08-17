@@ -39,7 +39,8 @@ binding document.
 
 The repository currently records 88 done PRDs and 16 blocked PRDs. Active batches are
 [`agent-leverage/`](PRDs/agent-leverage/), [`alpha-readiness/`](PRDs/alpha-readiness/),
-[`asset-pipeline/`](PRDs/asset-pipeline/), [`experiments/`](PRDs/experiments/),
+[`asset-pipeline/`](PRDs/asset-pipeline/), [`batch-26-08-16/`](PRDs/batch-26-08-16/README.md),
+[`batch-26-08-17/`](PRDs/batch-26-08-17/README.md), [`experiments/`](PRDs/experiments/),
 [`native/`](PRDs/native/), [`native-performance-fixes/`](PRDs/native-performance-fixes/),
 [`production-readiness-26-08-14/`](PRDs/production-readiness-26-08-14/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).

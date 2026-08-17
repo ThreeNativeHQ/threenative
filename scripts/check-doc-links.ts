@@ -71,6 +71,54 @@ export function stripFencedCodeBlocks(markdown: string, file = "Markdown documen
   return stripped.join("\n");
 }
 
+/**
+ * Blank out inline code spans, keeping every character position and every newline.
+ *
+ * A backtick span is link-free by construction, and prose *about* links puts real `](` inside one
+ * — `docs/PRDs/batch-26-08-16/PRD-125-docs-and-readme-overhaul.md:315` is a sentence describing
+ * this very rule, and it was the first thing this checker choked on. Fenced blocks were already
+ * stripped; inline spans were not, so the checker read documentation about itself as a malformed
+ * link and exited 1 on a clean tree.
+ *
+ * Positions are preserved rather than removed so that error messages keep pointing at the real
+ * offset, and CommonMark's rule is honoured: a run of N backticks is closed by the next run of
+ * exactly N. An unclosed run is not a span — it is a literal backtick — and is left alone rather
+ * than swallowing the rest of the document.
+ */
+export function blankInlineCodeSpans(markdown: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < markdown.length) {
+    const character = markdown[cursor];
+    if (character !== "`") {
+      result += character;
+      cursor += 1;
+      continue;
+    }
+
+    let openLength = 0;
+    while (markdown[cursor + openLength] === "`") openLength += 1;
+
+    const closing = new RegExp(`(?<!\`)\`{${openLength}}(?!\`)`, "u");
+    const rest = markdown.slice(cursor + openLength);
+    const match = closing.exec(rest);
+    if (!match) {
+      result += markdown.slice(cursor, cursor + openLength);
+      cursor += openLength;
+      continue;
+    }
+
+    const body = rest.slice(0, match.index);
+    result += "`".repeat(openLength);
+    result += body.replace(/[^\n]/gu, " ");
+    result += "`".repeat(openLength);
+    cursor += openLength + body.length + openLength;
+  }
+
+  return result;
+}
+
 function findClosingParenthesis(source: string, start: number): number {
   let nestedParentheses = 0;
   let escaped = false;
@@ -105,7 +153,7 @@ function findClosingParenthesis(source: string, start: number): number {
 }
 
 function extractMarkdownLinkTargets(markdown: string, file: string): string[] {
-  const source = stripFencedCodeBlocks(markdown, file);
+  const source = blankInlineCodeSpans(stripFencedCodeBlocks(markdown, file));
   const targets: string[] = [];
   let searchFrom = 0;
 

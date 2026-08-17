@@ -73,6 +73,36 @@ describe("check-doc-links", () => {
     expect(assertDocLinks(root, ["README.md"]).linksChecked).toBe(0);
   });
 
+  it("blanks inline code spans, which is how prose about links stops being read as one", () => {
+    const root = fixture({
+      "README.md": [
+        "A shell snippet inside fences can contain `](` — this very document does.",
+        "Multi-backtick spans hold it too: ``a `](` b``.",
+        "[guide](guide.md)",
+        "",
+      ].join("\n"),
+      "guide.md": "# Guide\n",
+    });
+
+    expect(assertDocLinks(root, ["README.md"]).linksChecked).toBe(1);
+  });
+
+  it("still fails on a broken link outside any code span", () => {
+    const root = fixture({
+      "README.md": "Prose about `](` and then [missing](not-here.md)\n",
+    });
+
+    expect(() => assertDocLinks(root, ["README.md"])).toThrow("README.md -> not-here.md");
+  });
+
+  it("leaves an unclosed backtick run alone instead of swallowing the rest of the file", () => {
+    const root = fixture({
+      "README.md": "An unclosed ` backtick, then [missing](not-here.md)\n",
+    });
+
+    expect(() => assertDocLinks(root, ["README.md"])).toThrow("README.md -> not-here.md");
+  });
+
   it("fails closed for an unterminated or empty link target", () => {
     const root = fixture({ "README.md": "[missing](\n" });
     expect(() => assertDocLinks(root, ["README.md"])).toThrow("Malformed Markdown link");

@@ -4,11 +4,22 @@ prd_contract: v1
 
 # PRD-125 — The README a stranger reads, and the docs tree behind it
 
-**Status: NOT STARTED, 2026-08-16. NOTHING IN THIS PRD IS IMPLEMENTED.** Every number in
-§1 was measured on this working tree today at commit `82268c51`; the commands that produced
-them are pasted beside each claim and reproduce. What is *not* measured: whether a better
-README moves adoption. That is unmeasurable here — no stranger has read this repository yet
-— so §8 keeps the acceptance criteria to things a script can check.
+**Status: DONE, 2026-08-17. All ten criteria in §8 executed, output pasted in
+[`prd-125-docs-and-readme-2026-08-17.md`](../../verification/prd-125-docs-and-readme-2026-08-17.md).**
+Most of the work landed on 2026-08-16 with the batch's low lane while this status line still read
+`NOT STARTED`. What was genuinely open was criterion 1, and the cause was in the checker rather
+than in the docs: `stripFencedCodeBlocks` worked, but **inline backtick spans were never
+stripped**, so §7's own sentence about skipping code — which contains a literal `](` in a span —
+was read as a malformed link. With that fixed the checker found five real broken links, every
+inbound reference to PRD-129, which had been archived to `done/` with nothing repairing them.
+
+What is *not* measured: whether a better README moves adoption. That is unmeasurable here — no
+stranger has read this repository yet — so §8 keeps the acceptance criteria to things a script can
+check.
+
+**Original status, 2026-08-16:** NOT STARTED. Every number in §1 was measured on the working tree
+that day at commit `82268c51`; the commands that produced them are pasted beside each claim and
+reproduce.
 
 The repository went public in commit `b6163787` and publishes seven packages at `0.2.x`. Its
 front door still opens on the word **VOID** and an internal LOC regression table, tells the
@@ -388,7 +399,7 @@ Never record a gate you did not run.**
   separate documents — a follow-up PRD, not this one.
 - **Licensing and the community health files** — `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, `.github/` templates. All owned by
-  [PRD-129](PRD-129-licensing-and-the-studio-split.md), which also removes `packages/studio/`
+  [PRD-129](../done/PRD-129-licensing-and-the-studio-split.md), which also removes `packages/studio/`
   and `hosting/` from this repository. **If PRD-129 lands first, §3.2's package table drops to
   six packages and the §5 docs map loses the studio-hosting series' home** — check which
   landed before writing either.

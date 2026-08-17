@@ -11,8 +11,8 @@ in your report rather than marking them done. Do not look for other work in this
 the rest of the batch needs a physical phone and judgement calls this brief does not cover,
 and starting one is worse than doing nothing.
 
-Read [`PRD-129`](./PRD-129-licensing-and-the-studio-split.md) §3–§4 and
-[`PRD-125`](./PRD-125-docs-and-readme-overhaul.md) in full before you begin. They are the
+Read [`PRD-129`](../done/PRD-129-licensing-and-the-studio-split.md) §3–§4 and
+[`PRD-125`](../done/PRD-125-docs-and-readme-overhaul.md) in full before you begin. They are the
 specification; this file is only the order, the stops, and the traps.
 
 ---
