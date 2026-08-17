@@ -383,8 +383,17 @@ export function validateCandidateComparison(control, candidate, expectedEngine) 
   for (const [label, report] of [["CONTROL", control], ["CANDIDATE", candidate]]) {
     const condition = report?.deviceCondition;
     if (!condition || typeof condition !== "object" || Array.isArray(condition) || typeof condition.batteryPercent !== "number" || typeof condition.charging !== "boolean" || typeof condition.thermalStatus !== "string" || typeof condition.screenOn !== "boolean") throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_DEVICE_CONDITION_MALFORMED:${label}`);
-    if (!Array.isArray(report.provisional) || report.provisional.some((value) => typeof value !== "string")) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON_MALFORMED:${label}`);
-    if (report.provisional.length > 0) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON:${label}`);
+    const topLevelProvisional = report.provisional;
+    const nestedProvisional = condition.provisional;
+    if (
+      !Array.isArray(topLevelProvisional) ||
+      topLevelProvisional.some((value) => typeof value !== "string" || value.length === 0) ||
+      !Array.isArray(nestedProvisional) ||
+      nestedProvisional.some((value) => typeof value !== "string" || value.length === 0) ||
+      topLevelProvisional.length !== nestedProvisional.length ||
+      topLevelProvisional.some((value, index) => value !== nestedProvisional[index])
+    ) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON_MALFORMED:${label}`);
+    if (topLevelProvisional.length > 0) throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_PROVISIONAL_COMPARISON:${label}`);
   }
   if (control.bundleSha256 !== candidate.bundleSha256) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_TWO_VARIABLES:BUNDLE_SHA_CHANGED");
@@ -746,12 +755,6 @@ async function main() {
   };
   const device = requireMeasurementDevice(properties, options.device, options.allowEmulatorDevelopment);
   requireInstallForEvidence(device, options);
-  const deviceCondition = await assertDeviceReady(options.device, {
-    allowOverride: options.allowLowBattery,
-    maxThermalStatus: "NONE",
-    minBatteryPercent: MINIMUM_BATTERY_PERCENT,
-    requireDischarging: true,
-  });
   const defaultRoot = device.acceptanceEligible
     ? join(runtimeRoot, "artifacts", "android", "js-engine")
     : join(runtimeRoot, ".runtime", "android-js-engine-emulator");
@@ -825,6 +828,12 @@ async function main() {
     ...(options.skipInstall ? ["--skip-install"] : []),
   ]);
   const startedAt = new Date();
+  const deviceCondition = await assertDeviceReady(options.device, {
+    allowOverride: options.allowLowBattery,
+    maxThermalStatus: "NONE",
+    minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+    requireDischarging: true,
+  });
   let log;
   if (options.foxSubject) {
     if (options.skipInstall) {

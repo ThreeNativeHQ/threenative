@@ -310,7 +310,16 @@ test("candidate comparison fixes engine, bundle, runtime, device, and denominato
     analysis: { native: { engine: "QuickJS" } },
     bundleSha256: "bundle",
     device: { properties: { abi: "arm64-v8a" }, serial: "37251FDJH0037Z" },
-    deviceCondition: { batteryPercent: 82, charging: false, thermalStatus: "NONE", screenOn: true },
+    deviceCondition: {
+      batteryPercent: 82,
+      charging: false,
+      chargingSource: "NONE",
+      provisional: [],
+      screenOn: true,
+      serial: "37251FDJH0037Z",
+      thermalStatus: "NONE",
+      thermalStatusCode: 0,
+    },
     nativeFootprint: nativeFootprint("arm64-v8a", [controlRuntime]),
     cleanBuildWallClockMs: null,
     coldStart: { p95Ms: 105, runs: 5, samplesMs: [101, 102, 103, 104, 105] },
@@ -330,6 +339,36 @@ test("candidate comparison fixes engine, bundle, runtime, device, and denominato
   assert.throws(() => validateCandidateComparison({ ...control, deviceCondition: undefined }, candidate, "V8"), /DEVICE_CONDITION_MALFORMED/u);
   assert.throws(() => validateCandidateComparison(control, { ...candidate, provisional: undefined }, "V8"), /PROVISIONAL_COMPARISON_MALFORMED/u);
   assert.throws(() => validateCandidateComparison({ ...control, provisional: ["battery"] }, candidate, "V8"), /PROVISIONAL_COMPARISON/u);
+  assert.throws(
+    () => validateCandidateComparison(control, {
+      ...candidate,
+      deviceCondition: { ...candidate.deviceCondition, provisional: undefined },
+    }, "V8"),
+    /PROVISIONAL_COMPARISON_MALFORMED/u,
+  );
+  assert.throws(
+    () => validateCandidateComparison(control, {
+      ...candidate,
+      provisional: [""],
+      deviceCondition: { ...candidate.deviceCondition, provisional: [""] },
+    }, "V8"),
+    /PROVISIONAL_COMPARISON_MALFORMED/u,
+  );
+  assert.throws(
+    () => validateCandidateComparison(control, {
+      ...candidate,
+      provisional: ["battery"],
+      deviceCondition: { ...candidate.deviceCondition, provisional: ["battery"] },
+    }, "V8"),
+    /TN_ANDROID_JS_PROVISIONAL_COMPARISON:CANDIDATE/u,
+  );
+  assert.throws(
+    () => validateCandidateComparison(control, {
+      ...candidate,
+      deviceCondition: { ...candidate.deviceCondition, provisional: ["battery"] },
+    }, "V8"),
+    /PROVISIONAL_COMPARISON_MALFORMED/u,
+  );
   assert.throws(
     () => validateCandidateComparison(control, { ...candidate, bundleSha256: "changed" }, "V8"),
     /TWO_VARIABLES/u,

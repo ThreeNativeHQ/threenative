@@ -235,7 +235,12 @@ export function compareObservations(web, device, options = {}) {
     typeof condition.charging !== "boolean" ||
     typeof condition.thermalStatus !== "string" ||
     typeof condition.screenOn !== "boolean" ||
-    !Array.isArray(device.provisional)
+    !Array.isArray(device.provisional) ||
+    device.provisional.some((entry) => typeof entry !== "string" || entry.length === 0) ||
+    !Array.isArray(condition.provisional) ||
+    condition.provisional.some((entry) => typeof entry !== "string" || entry.length === 0) ||
+    device.provisional.length !== condition.provisional.length ||
+    device.provisional.some((entry, index) => entry !== condition.provisional[index])
   ) {
     throw new ParityError("device condition block is malformed");
   }
@@ -472,16 +477,6 @@ export async function main(argv = process.argv.slice(2)) {
   const scenarioPath = generatedScenario(paths);
   const { adb, sdk } = discoverAdb();
   const device = selectDevice(adb, options.device);
-  const deviceCondition = await assertDeviceReady(
-    device,
-    {
-      allowOverride: options.allowDeviceCondition,
-      maxThermalStatus: "NONE",
-      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
-      requireDischarging: true,
-    },
-    { adb: (args) => run(adb, ["-s", device, ...args]) },
-  );
   const cli = join(workspaceRoot, "packages/playtest/dist/runner/cli.js");
   if (!existsSync(cli))
     throw new ParityError("Playtest CLI is missing; run pnpm --filter @threenative/playtest build.");
@@ -539,6 +534,16 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const apk = join(runtimeRoot, "android/app/build/outputs/apk/debug/app-debug.apk");
   if (!existsSync(apk)) throw new ParityError(`Android APK is missing at ${apk}.`);
+  const deviceCondition = await assertDeviceReady(
+    device,
+    {
+      allowOverride: options.allowDeviceCondition,
+      maxThermalStatus: "NONE",
+      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+      requireDischarging: true,
+    },
+    { adb: (args) => run(adb, ["-s", device, ...args]) },
+  );
   if (!options.skipInstall) run(adb, ["-s", device, "install", "-r", apk]);
   const deviceStdout = run(
     process.execPath,

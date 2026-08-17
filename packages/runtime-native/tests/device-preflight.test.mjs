@@ -104,6 +104,30 @@ describe("assertDeviceReady", () => {
     assert.match(engineLoadSource, /await\s+assertSharedDeviceReady\s*\(/u);
   });
 
+  test("stores the final preflight observation after build preparation", () => {
+    const measurementSource = readFileSync(
+      new URL("../scripts/measure-android-js-engine.mjs", import.meta.url),
+      "utf8",
+    );
+    const measurementBuild = measurementSource.indexOf("const builtApkPath");
+    const measurementExecution = measurementSource.indexOf("if (options.foxSubject)");
+    const measurementPreflight = measurementSource.lastIndexOf("await assertDeviceReady(");
+    assert(measurementPreflight > measurementBuild);
+    assert(measurementPreflight < measurementExecution);
+    assert(measurementSource.indexOf("deviceCondition,", measurementPreflight) > measurementPreflight);
+
+    const physicsSource = readFileSync(
+      new URL("../scripts/verify-android-physics-parity.mjs", import.meta.url),
+      "utf8",
+    );
+    const physicsApk = physicsSource.indexOf("const apk =");
+    const physicsExecution = physicsSource.indexOf("if (!options.skipInstall) run");
+    const physicsPreflight = physicsSource.lastIndexOf("await assertDeviceReady(");
+    assert(physicsPreflight > physicsApk);
+    assert(physicsPreflight < physicsExecution);
+    assert(physicsSource.indexOf("deviceCondition,", physicsPreflight) > physicsPreflight);
+  });
+
   test("returns the complete condition block for a healthy physical device", async () => {
     const fixture = fixtureAdb();
     const state = await assertDeviceReady("37251FDJH0037Z", baseOptions, fixture);
