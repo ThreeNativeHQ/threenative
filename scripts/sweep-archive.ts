@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type SweepManifest, readManifest } from "./make-sandbox.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_SANDBOX = path.resolve(REPO, "../threenative-sandbox");
+const DEFAULT_SANDBOX = path.resolve(REPO, "../sandbox");
 
 function isDirectory(directory: string): boolean {
   return fs.existsSync(directory) && fs.statSync(directory).isDirectory();

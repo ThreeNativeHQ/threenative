@@ -26,8 +26,8 @@ preference; it is the difference between the two outcomes.
    pnpm sandbox --bare --genre <genre>
    ```
 
-   Wipes and recreates `../threenative-sandbox` with the sealed `brief.md`, its
-   `reference.png`, and `scaffold.sh`. It refuses an unknown genre, a missing brief or
+   Wipes and recreates `../sandbox` with the sealed `brief.md`, its
+   `reference.png`, `scaffold.sh`, and hidden package staging under `.packages/`. It refuses an unknown genre, a missing brief or
    reference image, and any `--out` inside this repo. It also refuses to wipe a prior
    sandbox until `pnpm sweep:archive` has preserved it.
 

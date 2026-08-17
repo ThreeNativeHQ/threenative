@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -27,6 +28,33 @@ async function temporaryRoot(prefix: string): Promise<string> {
 }
 
 describe("genre sandbox", () => {
+  it("defaults to the workspace sandbox and keeps package staging inside it", async () => {
+    const workspace = await temporaryRoot("threenative-workspace-");
+    const repo = path.join(workspace, "engine");
+    const genre = path.join(repo, "docs", "benchmark", "genres", "platformer");
+    await mkdir(path.join(genre, "proof"), { recursive: true });
+    await writeFile(path.join(repo, "package.json"), JSON.stringify({ version: "0.1.0" }));
+    await writeFile(path.join(genre, "brief.md"), "sealed brief\n");
+    await writeFile(path.join(genre, "reference.png"), "reference");
+    await writeFile(path.join(genre, "proof", "smoke.playtest.json"), "{}\n");
+
+    const result = makeSandbox({
+      arm: "vanilla",
+      bare: true,
+      genre: "platformer",
+      install: false,
+      prepare: false,
+      repo,
+    });
+
+    expect(result.out).toBe(path.join(workspace, "sandbox"));
+    expect(existsSync(path.join(result.out, ".packages"))).toBe(true);
+    expect(existsSync(path.join(workspace, "sandbox-packages"))).toBe(false);
+    await expect(readFile(path.join(result.out, "package.json"), "utf8")).resolves.toContain(
+      path.join(result.out, ".packages", "playtest.tgz"),
+    );
+  });
+
   it("writes a manifest with the genre and sealed brief hash", async () => {
     const root = await temporaryRoot("threenative-sandbox-");
     const result = makeSandbox({

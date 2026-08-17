@@ -414,7 +414,7 @@ export function sourceLines(root: string): number {
 
 export function makeSandbox(options: SandboxOptions): SandboxResult {
   const repo = path.resolve(options.repo ?? REPO);
-  const out = path.resolve(repo, options.out ?? "../threenative-sandbox");
+  const out = path.resolve(repo, options.out ?? "../sandbox");
   const arm = options.arm ?? "framework";
   assertSandboxArm(arm);
   const genre = options.genre;
@@ -427,8 +427,9 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     );
   }
   assertCanWipe(out, repo);
-  // The scaffolder refuses a non-empty target, so the tarballs stage in a sibling.
-  const staging = `${out}-packages`;
+  // Keep package staging with the sandbox. It is hidden from the builder and disappears with
+  // the sandbox, so repeated runs do not scatter sibling folders through the workspace.
+  const staging = path.join(out, ".packages");
   for (const dir of [out, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(staging, { recursive: true });
 
@@ -554,7 +555,7 @@ function main(): void {
     arm: readFlag("--arm", "framework") as SandboxArm,
     bare: process.argv.includes("--bare"),
     genre,
-    out: readFlag("--out", "../threenative-sandbox"),
+    out: readFlag("--out", "../sandbox"),
     template: readFlag("--template", "starter"),
   });
 }
