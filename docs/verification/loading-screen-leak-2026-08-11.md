@@ -7,7 +7,7 @@ budget, and desktop-native gates are green; the scaffolded-template aggregate is
 
 ## Unfixed device baseline
 
-Subject: the existing `fox-native` APK built against core commit `8c5fc40`, installed on the
+Subject: the existing `fox-native` APK built against core commit `11bf82d`, installed on the
 physical Pixel 8 `shiba` (`37251FDJH0037Z`). The first eight-second attempt ended while the
 loading screen was still present and was rejected as an incomplete observation. The valid run
 covered loading and reveal:

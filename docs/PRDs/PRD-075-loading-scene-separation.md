@@ -14,7 +14,7 @@ browser-DOM concern outside the native framebuffer fix and outside this PRD's ru
 criteria; no mobile-readiness or iOS claim is made here.
 
 **The subject is a single-frame leak that no gate in this repository can see.** In `fox-native`,
-the waterfalls draw through the dark loading backdrop for roughly one frame. `c63f5b3` attacked
+the waterfalls draw through the dark loading backdrop for roughly one frame. `1008634` attacked
 it inside `SceneCollapse` and did not close it. Three things follow, and they set the order of
 the phases:
 
@@ -90,7 +90,7 @@ because the two things share a graph. The fix belongs in `packages/`, and the lo
 
 ## 2. What the code actually does
 
-Proven by reading the tree at `8c5fc40`; each claim carries its location.
+Proven by reading the tree at `11bf82d`; each claim carries its location.
 
 - **One `THREE.Scene` for the whole game.** Created in `Game#boot` (`game.ts:352`), handed to
   every scene as `ctx.scene`, and wiped by `clearScene` on every `goto` (`game.ts:280`). A
@@ -125,7 +125,7 @@ PRD rather than fixed quietly.
 | D2 | `finish()` writes the construction-time snapshot back (`loading.ts:139`), clobbering any `visible` a game set during startup. | PROVEN by code read |
 | D3 | The backdrop must fake transparency to win the sort against a transparent HUD. | PROVEN — the workaround is in the shipped source |
 | D4 | The collapse bakes the three quads, so the screen can only hide itself, never remove itself. | PROVEN — the workaround is in the shipped source |
-| **D5** | **Merged geometry draws through the loading backdrop for about one frame.** `c63f5b3` added an ancestor-visibility walk inside the collapse for this and **did not close it** — `fox-native`'s waterfalls still flash over the dark backdrop. **This is the reported defect and the subject of the PRD.** | **CONFIRMED, RESOLVED.** The committed physical repro failed at frame 7 before Phase 1; the unchanged scenario passes after the world draw is skipped while `CanvasLayer.opaque` is true |
+| **D5** | **Merged geometry draws through the loading backdrop for about one frame.** `1008634` added an ancestor-visibility walk inside the collapse for this and **did not close it** — `fox-native`'s waterfalls still flash over the dark backdrop. **This is the reported defect and the subject of the PRD.** | **CONFIRMED, RESOLVED.** The committed physical repro failed at frame 7 before Phase 1; the unchanged scenario passes after the world draw is skipped while `CanvasLayer.opaque` is true |
 | D6 | Assets download with a blank canvas and a stopped loop; the screen appears only after `enter()` finishes. | MEASURED on Android emulator: Boot texture 0.508 ms; Play texture + GLB 2.738 ms. Not a meaningful player-visible asset-loading window; Phase 2 RECOMMEND-AGAINST |
 | D7 | Bloom and ACES tonemapping run over the loading screen, because `setupPost` builds the pipeline from the one shared scene. | **PROVEN, RESOLVED.** `renderOverlay()` calls the raw renderer with clearing disabled and bypasses the captured output pipeline; the renderer unit asserts the exact scene, camera, and clear state |
 | D8 | Restart (`goto`) rebuilds the screen against a collapse that is already settled, so `whenReady()` resolves immediately and the screen flashes. | **NOT REPRODUCED.** When readiness and compilation are already resolved, the screen is removed within the same microtask turn before another frame; a focused template test locks this down. If compilation is pending, remaining covered is intentional |

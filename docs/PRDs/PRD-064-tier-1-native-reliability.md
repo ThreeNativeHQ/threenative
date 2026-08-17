@@ -219,7 +219,7 @@ failure mode this exists to prevent is a Tier 1 declared green by narrowing what
 merge that landed the night batch moved it from 64,489 to 68,035; the rest is the launch
 inspector added afterwards.
 
-`packages/runtime-native` grew by **4,078 lines against 121 removed** since `f510673`. Where they
+`packages/runtime-native` grew by **4,078 lines against 121 removed** since `553b9d0`. Where they
 went, largest first:
 
 | Lines | File | Why it is not game or framework code |

@@ -592,7 +592,7 @@ working asset tool. Three mechanisms would do it, and each has a control:
 |---|---|
 | `.mcp.json` ships but the dependency is missing, so `args[0]` never resolves and the host silently lists no tools | `scaffold-smoke` spawns the **installed** server and asserts the tool names. A host that lists zero tools fails set-equality; it cannot pass by being empty |
 | The assertion is `tools.length > 0` or `tools.includes("polyhaven_search_assets")` | **Set equality against the sorted recorded surface.** The pinned `0.4.0` surface has 32 names; any other shape is rejected, and the original 8-tool target remains an explicit gap |
-| The new scaffold test passes at the previous commit | The historical pre-Phase-2 parent `21a32c0` of implementation commit `12b3d3d` had no `.mcp.json`; the Phase 2–4 tests were observed red there. The retained tree is intentionally non-empty |
+| The new scaffold test passes at the previous commit | The historical pre-Phase-2 parent `9130566` of implementation commit `9af4cce` had no `.mcp.json`; the Phase 2–4 tests were observed red there. The retained tree is intentionally non-empty |
 | `pnpm sync:agents` never runs and the mirrors drift | existing `--check` in CI |
 | The Phase 5 frame "looks different" because of lighting noise | Compare against the same scaffold's own baseline capture, and have a person look at both |
 

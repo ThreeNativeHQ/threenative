@@ -1,15 +1,15 @@
 # PRD execution review — 2026-08-08
 
 Scope: the five selected PRDs (033, 035, 036, 038, 039), integrated into `main` from
-`docs/opportunity-areas-prds` at `86a11a0`. PRD-043 is deliberately outside this review
+`docs/opportunity-areas-prds` at `894ace4`. PRD-043 is deliberately outside this review
 and is queued for later execution. Every current claim below is backed by a run in this
 working tree; the first failing runs remain as historical diagnosis.
 
 ## Current disposition
 
-- The packed-tarball scaffold fix is committed at `21a32c0`; the licensed-asset MCP scaffold
-  work is committed at `12b3d3d`.
-- The PRD-036 lane is merged at `f3fe02f` (including its replay consumer, oracle, and
+- The packed-tarball scaffold fix is committed at `9130566`; the licensed-asset MCP scaffold
+  work is committed at `9af4cce`.
+- The PRD-036 lane is merged at `bb0ce3e` (including its replay consumer, oracle, and
   pointer/replay follow-up fixes).
 - The review branch is an ancestor of `main` (`git merge-base --is-ancestor` exit 0), and the
   PRD-036 lane is also an ancestor of `main`.
@@ -25,12 +25,12 @@ working tree; the first failing runs remain as historical diagnosis.
 
 ## 1. Historical gate snapshot — superseded by post-merge evidence
 
-At the pre-merge `272b5ea` snapshot, every open PRD said its release evidence was held up by two things: a repository-wide
+At the pre-merge `7024c45` snapshot, every open PRD said its release evidence was held up by two things: a repository-wide
 lint/test red from dirty proof JSON, and port 4173 being held by an unrelated process.
 That snapshot was re-run during the original review and is retained here as historical
 diagnosis; the current post-merge gate results are recorded in §7.
 
-| Gate | What the PRDs record | Re-run result at `272b5ea` |
+| Gate | What the PRDs record | Re-run result at `7024c45` |
 |---|---|---|
 | `pnpm typecheck` | PASS | **PASS** (exit 0) |
 | `pnpm lint` | "BLOCKED — four out-of-scope JSON files fail formatting" (PRD-035, PRD-036) | **PASS** — `Checked 916 files in 308ms. No fixes applied.` (exit 0) |
@@ -43,7 +43,7 @@ diagnosis; the current post-merge gate results are recorded in §7.
 
 Port 4173 was confirmed free (`ss -ltnp` showed nothing listening) before the run.
 
-The WIP commit `272b5ea` is what cleared the lint/test red: it reformatted
+The WIP commit `7024c45` is what cleared the lint/test red: it reformatted
 `docs/verification/*-reveal.json` and repaired the two `topdown-action*.playtest.json`
 proof files that `proof-set.spec.ts` was failing on.
 
@@ -176,14 +176,14 @@ final rerun recorded in §7.
 
 `linchpin/prd-036-save-load-and-deterministic-replay` has **19 commits and 1,454
 insertions that were not on `docs/opportunity-areas-prds`**, plus a committed follow-up
-at `7e61a9f`. The lane and follow-up are now integrated by merge commit `f3fe02f`.
+at `7276e63`. The lane and follow-up are now integrated by merge commit `bb0ce3e`.
 
-Merge base is `248b5d9`; HEAD has 25 commits the lane does not have, so the two have
+Merge base is `50a4a84`; HEAD has 25 commits the lane does not have, so the two have
 genuinely diverged.
 
 What is stranded on the lane:
 
-| Artifact | Status after `f3fe02f` |
+| Artifact | Status after `bb0ce3e` |
 |---|---|
 | `tests/browser-replay/replay.golden.json` (mid-trace + final-position oracle) | **absent** |
 | `packages/playtest/__tests__/evidence-required.spec.ts` | **absent** |
@@ -204,7 +204,7 @@ already been done and observed red. It is now part of the merged consumer proof.
 `packages/create-threenative/templates/starter/src/pick.ts` or `pick.playtest.json`. The merge
 preserved both files.
 
-**The former uncommitted lane follow-up is now committed** at `7e61a9f`:
+**The former uncommitted lane follow-up is now committed** at `7276e63`:
 
 - `packages/core/src/replay.ts` — a genuine pointer bug fix. `pointerType` was
   `previous & ~next ? "pointerup" : "pointerdown"`, which misclassifies chorded button
@@ -319,10 +319,10 @@ it is cited as a reason to keep a PRD open.
 2. ~~Put `runStarterLookScenario` on `--browser-recipe webgpu --headed` and run the browser
    gate~~ — **done**, see §7.
 3. ~~**Merge `linchpin/prd-036-save-load-and-deterministic-replay` into
-   `docs/opportunity-areas-prds`**~~ — **done** in `f3fe02f`; the merge preserved the PRD-038
+   `docs/opportunity-areas-prds`**~~ — **done** in `bb0ce3e`; the merge preserved the PRD-038
    starter transport files and the lane follow-up.
 4. ~~Move PRD-039, PRD-033, PRD-035 and PRD-038 to `docs/PRDs/done/`, updating
-   `OPPORTUNITY-AREAS.md` area #8 while doing it~~ — **done** in `fac7e94` and `cdba3cf`.
+   `OPPORTUNITY-AREAS.md` area #8 while doing it~~ — **done** in `7a42500` and `82c21da`.
    PRD-036 remains live because its source-delta gate is red.
 5. ~~Fix `coyote` and `look` in the starter template~~ — **done**, see §7. A fresh
    `pnpm round:next` now returns `close round 2`; the 163 deletion candidates in 5b remain
@@ -336,7 +336,7 @@ it is cited as a reason to keep a PRD open.
 | Fresh `coyote.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — `jumps: 1`, `coyoteJumps: 1`, `peakRise: 1.04`, zero diagnostics |
 | Fresh `look.playtest.json` with `--browser-recipe webgpu --headed` | **PASS** — movement `7.27`, camera separation `9.451`, zero diagnostics |
 | PRD-036 focused tests | **PASS** — 4 files, 62 tests across replay, constraints, recording, and silent-drop coverage |
-| `pnpm typecheck` | **PASS** — continuation gate at `69aeef8` |
+| `pnpm typecheck` | **PASS** — continuation gate at `3b21b5e` |
 | `pnpm budgets` | **PASS** — 7 packages, 4,254 framework LOC |
 | `pnpm test` | **FAIL outside this review lane** — 1 sync-agent mirror test fails because user-edited template `AGENTS.md` files leave generated `CLAUDE.md` mirrors changed; no generated files were edited |
 | `pnpm lint` | **FAIL outside this review lane** — user-owned `packages/create-threenative/src/index.ts` and PRD-045 worktree `packages/core/src/playtest.ts` formatting errors; no out-of-scope files were edited |

@@ -87,7 +87,7 @@ This is a framework defect, not a template defect. The fix belongs in
 no-flag scaffold produces.** A default is a silent input to every caller that omits it, so the
 census comes before the change, not after.
 
-The planning census at `5a5604e` claimed every existing caller was explicit. The execution
+The planning census at `fd6dc38` claimed every existing caller was explicit. The execution
 rerun found an existing implicit test caller and one omitted explicit production caller:
 
 | Caller | Passes `template`? |

@@ -558,7 +558,7 @@ scenario, and the CLI's subcommand test fails.
       15,000 global cap. The benchmark count is 432 / 473 normalized LOC (91.3%); the current
       framework baseline remains 436 and `count-loc` suggests ratcheting it to 432.
 - [x] Feature-delta gate: the original scoped core/physics diff was **+288/-32 = +256 net
-      lines**; commit `7034246` reduces `packages/core/src/replay.ts` from 231 to 174 lines,
+      lines**; commit `570a634` reduces `packages/core/src/replay.ts` from 231 to 174 lines,
       yielding **+231/-32 = +199 net lines**. This is under the ≤200-line gate and is recorded
       separately from `pnpm budgets`.
 

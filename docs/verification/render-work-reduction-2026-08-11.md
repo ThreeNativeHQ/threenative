@@ -2,7 +2,7 @@
 
 ## Evidence contract
 
-Baseline source: `8c5fc40a3723fe7a78eae05d2f9ed6f373c34264` in isolated worktree `/home/joao/projects/threejs-webgpu-profiling`.
+Baseline source: `11bf82d2152af300e92e8f55c6e7c98a2492a5af` in isolated worktree `/home/joao/projects/threejs-webgpu-profiling`.
 
 The new browser matrix used Chromium WebGPU through Google SwiftShader. It is diagnostic evidence for JS/Three.js CPU scaling and harness behavior only; it is not shipping GPU or mobile frame-rate evidence. Raw artifacts are ignored under `artifacts/native-cpu-profile/`.
 

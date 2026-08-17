@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: DONE, 2026-08-12 — phases 0–5 executed and verified.** Results, controls and gate
 output are in [`studio-wiring-2026-08-12.md`](../../verification/studio-wiring-2026-08-12.md).
-§1 is a code read of `packages/studio/` at commit `4262d82` plus six reproductions run on this
+§1 is a code read of `packages/studio/` at commit `2551b6d` plus six reproductions run on this
 host the same day; every reproduction is quoted with its command. No native, mobile, or device
 claim is made anywhere in this file — Studio has no native source.
 

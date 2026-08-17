@@ -1,6 +1,6 @@
 # Input vector axis contract — 2026-08-12
 
-Status: executed locally against commit `eb3da59` plus the PRD-082 working tree. Web browser
+Status: executed locally against commit `0fe0e02` plus the PRD-082 working tree. Web browser
 and unit evidence ran; no native host or device ran.
 
 ## Result

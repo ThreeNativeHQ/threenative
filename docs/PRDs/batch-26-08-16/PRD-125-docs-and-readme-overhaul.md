@@ -5,12 +5,12 @@ prd_contract: v1
 # PRD-125 — The README a stranger reads, and the docs tree behind it
 
 **Status: NOT STARTED, 2026-08-16. NOTHING IN THIS PRD IS IMPLEMENTED.** Every number in
-§1 was measured on this working tree today at commit `803906c7`; the commands that produced
+§1 was measured on this working tree today at commit `82268c51`; the commands that produced
 them are pasted beside each claim and reproduce. What is *not* measured: whether a better
 README moves adoption. That is unmeasurable here — no stranger has read this repository yet
 — so §8 keeps the acceptance criteria to things a script can check.
 
-The repository went public in commit `ac386b65` and publishes seven packages at `0.2.x`. Its
+The repository went public in commit `b6163787` and publishes seven packages at `0.2.x`. Its
 front door still opens on the word **VOID** and an internal LOC regression table, tells the
 reader to run a `pnpm dev` script that does not exist, and never once mentions
 `pnpm create threenative`. Behind it, `docs/` is **189 MiB of the repository's 199 MiB

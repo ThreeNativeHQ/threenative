@@ -799,5 +799,5 @@ the evidence section below. "Verified" without a pasted run is not.
 - `pnpm sync:agents --check`: `agent docs in sync: 10 CLAUDE.md mirrors`.
 - Full gate status: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm budgets` and
   `pnpm sync:agents --check` pass; the final Vitest summary was 119 files / 810 tests. The
-  three pre-existing critic reports were formatter-only housekeeping in commit `eaa6257`,
+  three pre-existing critic reports were formatter-only housekeeping in commit `0ab8d6f`,
   separate from the navigation implementation.

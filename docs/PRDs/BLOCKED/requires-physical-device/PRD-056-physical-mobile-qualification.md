@@ -47,8 +47,8 @@ continuity, physical multitouch, native physics, or phone resource behavior.
 | Evidence class | Identity | What it can prove | What it cannot prove |
 |---|---|---|---|
 | Dirty worktree | Current checkout on 2026-08-09, with modified and untracked native files | Planning baseline and local observations only | Reproducible release or qualification evidence |
-| Committed HEAD | `cb754d9` | Source identity for the latest committed checkout | Physical execution; the checkout has later dirty changes |
-| Older CI SHA | `e38439c`, hosted run `31313092745` | Historical macOS, Windows, and iOS-simulator execution | Current-HEAD execution or physical-device execution |
+| Committed HEAD | `50f8eb4` | Source identity for the latest committed checkout | Physical execution; the checkout has later dirty changes |
+| Older CI SHA | `2c5f7f0`, hosted run `31313092745` | Historical macOS, Windows, and iOS-simulator execution | Current-HEAD execution or physical-device execution |
 | Android emulator | API-35 x86_64/SwiftShader evidence in the current ledgers | APK plumbing, QuickJS, and emulator-driver behavior | arm64, real Vulkan, touch hardware, thermal, battery, or phone frame behavior |
 | iOS simulator | arm64 simulator evidence on a hosted Apple runner | Simulator build/install/launch and simulator physics | physical Metal, device signing/install, touch hardware, thermal, or battery behavior |
 | Hosted runner | GitHub-hosted macOS/Windows/Linux machine | Host build and simulator execution tied to a SHA | Physical phone/tablet execution unless a named device is attached and recorded |
@@ -266,7 +266,7 @@ and stops for a HIGH-mode checkpoint before the next phase.
 | `evidence-schema` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should reject incomplete or unknown physical evidence fields` | validator returns every missing/unknown path and never coerces absent telemetry to zero | omit `telemetry.memory`; command exits 1 |
 | `android-physical-identity` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should block Android emulator identity when hardware is required` | `status === "blocked"`, code `TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED`, exit 2 | pass `emulator-5554` |
 | `ios-physical-identity` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should block iOS simulator identity when hardware is required` | `status === "blocked"`, same code, exit 2 | pass `booted` simulator selector |
-| `provenance-consistency` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should reject artifact and prerequisite reports from another SHA` | every source/report SHA equals the candidate SHA or validation exits 1 naming the mismatched field | substitute `e38439c` for candidate `cb754d9` |
+| `provenance-consistency` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should reject artifact and prerequisite reports from another SHA` | every source/report SHA equals the candidate SHA or validation exits 1 naming the mismatched field | substitute `2c5f7f0` for candidate `50f8eb4` |
 
 **Revert check:** remove the package command or bypass report validation; the command-surface
 test or stale-SHA control must fail before install.
@@ -457,7 +457,7 @@ physical iOS report tied to the same candidate SHA as Android, or an exact block
 | `qualification-rollup` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should mark DONE only when both physical reports and all prerequisites share one candidate identity` | Android+iOS verdicts pass; required report/control hashes present; clean source/artifact SHA equal; no blocker | remove one prerequisite report; exit 2 |
 | `repository-collection` | `packages/runtime-native/tests/physical-mobile-qualification.test.mjs` | `should be collected by the package and root test runners` | focused test count is nonzero and deliberate sentinel failure makes both runners nonzero | enable sentinel failure; exit 1 |
 
-**Revert check:** point the rollup at `e38439c`, an emulator/simulator report, or a dirty
+**Revert check:** point the rollup at `2c5f7f0`, an emulator/simulator report, or a dirty
 worktree report; DONE must be rejected and support truth must remain OPEN/BLOCKED.
 
 **User Verification:** Action: open the committed summary from a clean candidate checkout and
@@ -475,7 +475,7 @@ must be run, observed red, and copied verbatim into the phase checkpoint before 
 | `evidence-schema` | omit the required memory collector from an otherwise passing fixture | validator names `telemetry.memory` and exits 1 | `command: pnpm native:qualify:physical --validate-fixture packages/runtime-native/tests/fixtures/prd056-missing-memory.json`; result: RED observed: required during Phase 1, missing telemetry.memory; exit: 1 |
 | `android-physical-identity` | pass a known emulator serial to physical mode | blocked before signature/install/device execution, exit 2 | `command: pnpm native:qualify:physical --platform android --device emulator-5554 --android-app "$ANDROID_SIGNED_APK" --control reject-nonphysical`; result: RED observed: required during Phase 1, TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED; exit: 2 |
 | `ios-physical-identity` | pass the simulator selector to physical mode | blocked before signature/install/device execution, exit 2 | `command: pnpm native:qualify:physical --platform ios --device booted --ios-app "$IOS_SIGNED_APP" --control reject-nonphysical`; result: RED observed: required during Phase 1, TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED; exit: 2 |
-| `provenance-consistency` | claim current candidate while substituting older CI SHA `e38439c` in one prerequisite | report names exact mismatched field and exits 1 | `command: pnpm native:qualify:physical --validate-fixture packages/runtime-native/tests/fixtures/prd056-stale-sha.json`; result: RED observed: required during Phase 1, prerequisite candidate SHA mismatch; exit: 1 |
+| `provenance-consistency` | claim current candidate while substituting older CI SHA `2c5f7f0` in one prerequisite | report names exact mismatched field and exits 1 | `command: pnpm native:qualify:physical --validate-fixture packages/runtime-native/tests/fixtures/prd056-stale-sha.json`; result: RED observed: required during Phase 1, prerequisite candidate SHA mismatch; exit: 1 |
 | `lifecycle-continuity` | omit foreground or terminate/relaunch instead of resume | session/frame/state continuity assertion fails, exit 1 | `command: pnpm native:qualify:physical --platform "$MOBILE_PLATFORM" --device "$MOBILE_DEVICE" --app "$MOBILE_SIGNED_APP" --control break-resume`; result: RED observed: required during Phases 2-4, session continuity lost; exit: 1 |
 | `android-signed-install` | provide an unsigned/debuggable APK | blocked before `adb install`, exit 2 | `command: pnpm native:qualify:physical --platform android --device "$ANDROID_SERIAL" --android-app "$ANDROID_UNSIGNED_APK" --control reject-unsigned`; result: RED observed: required during Phase 3, Android signature/production manifest rejected; exit: 2 |
 | `ios-signed-install` | provide an unsigned, expired, or device-mismatched app | blocked before `devicectl install`, exit 2 | `command: pnpm native:qualify:physical --platform ios --device "$IOS_DEVICE_ID" --ios-app "$IOS_UNSIGNED_APP" --control reject-unsigned`; result: RED observed: required during Phase 4, Apple signing/provisioning rejected; exit: 2 |
@@ -561,7 +561,7 @@ owns the Android handoff; Apple device/signing owner owns the Apple handoff; rel
 owner owns support-truth cutover.
 
 **From:** unstructured physical-hardware OPEN rows backed by dirty-worktree observations,
-committed HEAD `cb754d9`, older hosted-runner SHA `e38439c`, Android emulator, and iOS simulator
+committed HEAD `50f8eb4`, older hosted-runner SHA `2c5f7f0`, Android emulator, and iOS simulator
 evidence that cannot qualify hardware.
 
 **To:** two validated `physicalDeviceEvidenceV1` reports for one candidate identity, plus one

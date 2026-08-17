@@ -33,7 +33,7 @@ iOS claim is made.
 
 ---
 
-§1 is a read of the public registry, of `.github/workflows/`, and of the tree at `5df0783f`, taken
+§1 is a read of the public registry, of `.github/workflows/`, and of the tree at `633adcd6`, taken
 2026-08-15. Every number below was produced by a command that is pasted with it. No
 mobile-readiness, physical-device or iOS claim is made.
 

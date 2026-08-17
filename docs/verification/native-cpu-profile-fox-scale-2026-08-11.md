@@ -2,7 +2,7 @@
 
 ## Verdict
 
-Phase 0 fox-scale baseline is verified for the browser profiling harness at source baseline `8c5fc40a3723fe7a78eae05d2f9ed6f373c34264`.
+Phase 0 fox-scale baseline is verified for the browser profiling harness at source baseline `11bf82d2152af300e92e8f55c6e7c98a2492a5af`.
 
 This report measures the dirty harness before the closing commit. It is a browser WebGPU/Xvfb baseline, not a physical-device or native-runtime performance claim.
 

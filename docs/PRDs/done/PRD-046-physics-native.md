@@ -1,7 +1,7 @@
 # PRD-046 — native physics
 
 **Status: DONE 2026-08-09, with two criteria explicitly waived by the product owner.** Phases
-0–3 and 5 are complete; Phase 3 passed on SHA `e38439c` in GitHub run `31313092745`. The local
+0–3 and 5 are complete; Phase 3 passed on SHA `2c5f7f0` in GitHub run `31313092745`. The local
 artifact/install contract is complete, and the sensor contract was repaired and covered on both
 targets before landing.
 
@@ -30,7 +30,7 @@ are in `docs/verification/PRD-046.md`.
 **Execution gate is now open on the Android side.** PRD-045's negative controls passed on
 `emulator-5554` (`docs/verification/PRD-045.md`), which was the hard prerequisite in §0.
 PRD-047's Android runtime rows are also green. Hosted iOS simulator execution passed again on
-current SHA `e38439c` after the device-scenario tick-batching change, so Phase 3 is closed.
+current SHA `2c5f7f0` after the device-scenario tick-batching change, so Phase 3 is closed.
 
 **Complexity: 11 → HIGH mode, top of the scale.** (new language/toolchain — Rust
 cross-compilation +2, host-neutral native ABI +2, binary distribution +2, numerical
@@ -242,7 +242,7 @@ quantify it before this phase can interpret its own numbers.
 ### Phase 3 — iOS native binding — **PASS**
 
 Same, via `xcrun simctl`. The root-linked app, simulator verifier and device transport passed
-on the hosted Apple runner in run `31313092745` at `e38439c`, including normal/masked
+on the hosted Apple runner in run `31313092745` at `2c5f7f0`, including normal/masked
 physics and three deliberate failures. The same run exercised a packed consumer with CMake,
 Xcodebuild and Rust masked from its PATH.
 

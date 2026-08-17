@@ -1,6 +1,6 @@
 # PRD-047 — Native runtime absorption
 
-**Status: DONE — Phases 0–5 complete. Current SHA `e38439c` passed iOS simulator,
+**Status: DONE — Phases 0–5 complete. Current SHA `2c5f7f0` passed iOS simulator,
 macOS, Windows and Linux starter evidence in run `31313092745`. Distribution remains in
 PRD-048. Mobile is not release-ready.**
 
@@ -51,9 +51,9 @@ with transport changed from JSI to a host-neutral native ABI.
 | Android upstream Three.js cube | QuickJS + wgpu-native, both packaged ABIs, emulator launch/log/liveness/screenshot gate | **PASS (emulator)** |
 | Android `@threenative/core` | Catalog Three 0.185.1 import-free bundle completed 300 frames through the bridge on `emulator-5554`; nonblank screenshot recorded | **PASS (emulator)** |
 | Android physics | General native ABI behind normal `@threenative/physics`; scenario and negative controls on x86_64 emulator | **PASS (emulator)** |
-| iOS | Simulator app, verifier, no-Xcode consumer handoff and physics controls executed on current `e38439c` | **PASS** |
+| iOS | Simulator app, verifier, no-Xcode consumer handoff and physics controls executed on current `2c5f7f0` | **PASS** |
 | Physical mobile GPU / performance | No physical hardware evidence | **OPEN** |
-| Windows / macOS desktop | 300-frame lanes executed on current `e38439c` | **PASS** |
+| Windows / macOS desktop | 300-frame lanes executed on current `2c5f7f0` | **PASS** |
 
 This PRD must never be summarized as "mobile works" while any open row remains. The current
 verdict is **Linux and Android-emulator integration proven; release readiness is open**.
@@ -172,9 +172,9 @@ single evidence run proves rather than by milestone number:
 
 | Gate | Milestones | State on arrival |
 |---|---|---|
-| G1 desktop host | M0, M1, M2, M4 | Linux, Windows and macOS PASS on `e38439c` |
+| G1 desktop host | M0, M1, M2, M4 | Linux, Windows and macOS PASS on `2c5f7f0` |
 | G2 conformance | M3 | harness done, **1 pass / 48 planned** |
-| G3 mobile bring-up | M5, M6 | Android emulator PASS; iOS simulator PASS on `e38439c` |
+| G3 mobile bring-up | M5, M6 | Android emulator PASS; iOS simulator PASS on `2c5f7f0` |
 | G4 threading and native systems | M7–M11 | not started |
 | G5 profiling | M15, M16 | not started |
 
@@ -312,7 +312,7 @@ import-free ESM file that every native target consumes. PRD-048 is the delivery 
 that artifact, and it depends on **this** PRD's Phase 2 and Phase 5.
 
 **PRD-047 is done for its declared scope.** Run `31313092745` revalidated Phase 5 on current
-SHA `e38439c`. Published distribution and physical hardware remain owned by PRD-048 and the
+SHA `2c5f7f0`. Published distribution and physical hardware remain owned by PRD-048 and the
 explicit open debt; this PRD proves that the runtime runs our code, not that mobile ships.
 
 ---

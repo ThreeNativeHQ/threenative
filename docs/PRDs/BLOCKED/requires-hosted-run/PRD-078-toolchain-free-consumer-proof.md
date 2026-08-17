@@ -97,7 +97,7 @@ PRD-119 Phase 2, which the owner gated on 2026-08-15. The software Vulkan path t
 unverified and no workflow was triggered. See
 [`consumer-handoff-2026-08-12.md`](../../../verification/consumer-handoff-2026-08-12.md).
 The original evidence below is a read of
-`.github/workflows/native-release.yml` at commit `8c5fc40`, of `gh run`/`gh api` output taken
+`.github/workflows/native-release.yml` at commit `11bf82d`, of `gh run`/`gh api` output taken
 2026-08-11, and of the failure artifact downloaded from run
 [`31360511081`](https://github.com/jonit-dev/threenative/actions/runs/31360511081). No new run
 has been performed. No mobile-readiness, physical-device or iOS claim is made.

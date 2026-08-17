@@ -12,7 +12,7 @@ and ordinary-git checkpoint/restore. See
 [`studio-loop-2026-08-12.md`](../../spikes/studio-loop-2026-08-12.md) and
 [`studio-2026-08-12.md`](../../verification/studio-2026-08-12.md).
 §1–§3 are a read of `~/projects/threejs-to-bevy` at its working tree on 2026-08-12, of this
-repository at commit `5a5604e`, and of `wc -l` output taken the same day. No mobile-readiness,
+repository at commit `fd6dc38`, and of `wc -l` output taken the same day. No mobile-readiness,
 device or iOS claim is made.
 
 **Two things make this PRD different from every other file in the night batch, and both are

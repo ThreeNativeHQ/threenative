@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 and §2 are a read of
 [`round-4-2026-08-10.md`](../verification/round-4-2026-08-10.md) and of the tree at commit
-`8c5fc40`. No round has been run for this document, and none will be — the kill switch
+`11bf82d`. No round has been run for this document, and none will be — the kill switch
 prohibits a fifth genre or an arm rerun. No mobile-readiness, device or iOS claim is made.
 
 **The round-4 ledger records its own next action, and nobody owns it:**

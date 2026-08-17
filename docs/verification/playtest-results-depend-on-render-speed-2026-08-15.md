@@ -138,7 +138,7 @@ The measurement therefore still needs a scaffold generated from the current temp
 `pnpm verify:golden-path` away, and it is the only thing standing between this finding and a
 decision about the committed expectation.
 
-The code landed inside commit `22123b79`, whose subject describes unrelated work — a concurrent
+The code landed inside commit `219ba48d`, whose subject describes unrelated work — a concurrent
 session committed a dirty shared tree. The change is intact; this note is where its reasoning
 lives.
 

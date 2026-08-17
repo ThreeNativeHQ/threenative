@@ -14,7 +14,7 @@ Evidence: [`parity-reconciliation-2026-08-15.md`](../../verification/parity-reco
 for Phase 0, [`tier-1-2026-08-15.md`](../../verification/tier-1-2026-08-15.md) for the rest.
 
 **A third desktop run happened, with provenance, and it adjudicates the disagreement.**
-`66 pass / 0 fail / 1 blocked`, exit `2`, at commit `0358c025` (tree `dirty: true`, recorded not
+`66 pass / 0 fail / 1 blocked`, exit `2`, at commit `5e554485` (tree `dirty: true`, recorded not
 tidied — another agent held uncommitted edits outside the conformance path).
 
 | Claim | Verdict |
@@ -37,7 +37,7 @@ environment-specific — nothing available distinguishes them, and this PRD does
 scoped to the desktop lane alone.
 
 **Phase 2 is executed and the Android lane is green: `67 / 0 / 0`, exit `0`, every row including
-`90-multitouch-input`,** on `rpg_api36_tablet` at commit `a98d2717`.
+`90-multitouch-input`,** on `rpg_api36_tablet` at commit `83668a25`.
 
 | Claim | Verdict |
 |---|---|
@@ -83,7 +83,7 @@ run read with their values hashed); `REPORT_SCHEMA_VERSION` moved `0.2.0` → `0
 `validateReport` requires it and rejects unrecognised fields. `scripts/check-parity-ledger.ts`
 ships as `pnpm parity:ledger` and recomputes every `Exit` cell from `reportExitCode`'s rule
 instead of reading the recorded number. **The r2 desktop exit cell is adjudicated wrong**: a
-`66 / 0 / 1` summary exits `2` under the rule as it stood at `65a8836`, the commit that landed
+`66 / 0 / 1` summary exits `2` under the rule as it stood at `c8cdc18`, the commit that landed
 that ledger, and the surviving `.runtime/parity-desktop3/report.json` confirms the `66 / 0 / 1`
 summary. Four negative controls were observed red with their output pasted.
 `pnpm typecheck && pnpm lint && pnpm test` and `pnpm budgets` are green.
@@ -117,7 +117,7 @@ one is real, and today the project cannot say.
 
 **One number in that table is impossible, and it is checkable without running anything.**
 `reportExitCode` in `packages/runtime-native/conformance/run-conformance.mjs:1258` returns
-`2` whenever `summary.blocked > 0`. It did so at `65a8836`, the commit that landed the r2
+`2` whenever `summary.blocked > 0`. It did so at `c8cdc18`, the commit that landed the r2
 ledger. A desktop report of `66 / 0 / 1` therefore exits `2`, never `0`. The r2 desktop exit
 column records a value the runner at that commit could not emit.
 
@@ -129,7 +129,7 @@ be traced back to the report it came from is that failure wearing a document's c
 
 **This PRD does not assume which ledger is right.** Phase 0 exists to determine it by
 re-execution, not by preferring the later commit — and the later-committed file
-(`c30783a`, 2026-08-11) is the *worse* result, so recency does not settle it either.
+(`b564ab2`, 2026-08-11) is the *worse* result, so recency does not settle it either.
 
 **Complexity: 8 → HIGH mode.** A report schema that does not carry enough provenance to
 adjudicate between two runs; a hand-transcription step between report and ledger that no
@@ -183,10 +183,10 @@ authorised until a run can be traced to a report, and a report to a tree.
 
 ## 2. What the code says, before any run
 
-Read at commit `8c5fc40`. These are code facts, not measurements.
+Read at commit `11bf82d`. These are code facts, not measurements.
 
 - `reportExitCode` (`run-conformance.mjs:1258`): `fail > 0` → `1`; `blocked > 0` → `2`;
-  otherwise `0`. Verified identical at `65a8836` via `git show`.
+  otherwise `0`. Verified identical at `c8cdc18` via `git show`.
 - The desktop `90-multitouch-input` row is excluded by registry entry
   `desktop-multitouch-input`, owner `PRD-064`, reason *"the desktop lane has no native
   multitouch injector"* (`registry.json:42-51`). An excluded row is reported `blocked`, so a

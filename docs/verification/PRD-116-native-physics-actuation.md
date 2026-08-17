@@ -194,7 +194,7 @@ because it counted Rust build output under `native/physics/target/`, which `chec
 excludes. **The native review trigger is crossed and stays crossed at +22,101**; nothing here
 silences it, and the kill-switch pass over what this lane added is the `tools/` row's verdict.
 
-The historical absorbed-runtime comparison is `git diff --numstat edcd349^..HEAD --
+The historical absorbed-runtime comparison is `git diff --numstat cd0e8fd^..HEAD --
 packages/runtime-native`: at the lane base it was `+73,260 / -0` across 285 files; the repair
 delta is `+87 / -0` in two existing native files, so the post-commit history total is
 `+73,347 / -0`. The pre-repair lane measured runtime total was 70,758 and its repair record
@@ -203,8 +203,8 @@ and it reads 71,053 on `main` once the engine-load-test work already on that bra
 `src/` +31, `scripts/` +4 and `android/` +6, from Android export and desktop host changes owned by
 `docs/PRDs/PRD-117-engine-load-test-godot.md`, not by this PRD.
 
-On 2026-08-15 the census moved twice more. First `8430b41a` changed the three desktop verifiers,
-`scripts/` +7 net, and `780d6d08` recorded that as 71,060 — neither is this PRD's work, and both
+On 2026-08-15 the census moved twice more. First `7165db21` changed the three desktop verifiers,
+`scripts/` +7 net, and `59601875` recorded that as 71,060 — neither is this PRD's work, and both
 are named here because this table is the live census and `pnpm budgets` fails closed against it
 whoever moved the number. Then it moved to 71,408: `conformance/` +198 and `tests/` +150, from
 PRD-076 Phase 0 adding the conformance report's `provenance` block and its contract test

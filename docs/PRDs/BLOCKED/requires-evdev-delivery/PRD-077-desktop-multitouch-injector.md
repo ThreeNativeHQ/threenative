@@ -41,7 +41,7 @@ branch therefore does not fire: this PRD is not blocked on host permissions.** T
 question — whether SDL3 receives the events and what window geometry contacts must be aimed at —
 is **unexecuted**, because it needs the opt-in native build and a GPU-backed X11 run. No
 injection has reached a running game, `registry.json` is untouched, and Phase 1 is not
-authorised. §1 and §2 remain a code read of the tree at commit `8c5fc40`. No mobile-readiness
+authorised. §1 and §2 remain a code read of the tree at commit `11bf82d`. No mobile-readiness
 claim and no physical-device claim is made.
 
 **One key decision below is now known to be wrong.** *"Node writes the `input_event` structs

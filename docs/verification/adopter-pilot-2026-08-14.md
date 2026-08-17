@@ -11,7 +11,7 @@ browser-only, on this host, in the user's Chrome.
 - **Sandbox:** `/home/joao/projects/threenative-sandbox` (`pnpm sandbox --bare --genre endless-runner`),
   sealed proof SHA-256 `4e985122c5fdd62a5b8d36c2acc7d1a6c7d0b49aa1583f47dbf721c5c46764db`
 - **Game:** `dashline`, three lanes, jump, obstacles, collectibles, crash-restarts-without-reload
-- **Repo commit the framework tarballs were packed from:** `3603467`
+- **Repo commit the framework tarballs were packed from:** `6ec0317`
 - **Not archived to `docs/benchmark/sweeps/`.** The round-4 kill switch is recorded and holds;
   this is an adopter pilot, not a benchmark arm, and filing it in the sweep corpus would put a
   non-protocol run where the protocol's readers look.

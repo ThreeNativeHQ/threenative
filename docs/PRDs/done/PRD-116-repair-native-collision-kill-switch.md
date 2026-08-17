@@ -42,7 +42,7 @@ current justification and kill-switch verdict. The trigger must remain exactly 5
 - `3568bfe:docs/verification/PRD-116-native-physics-actuation.md`
 - `scripts/check-budgets.ts:20-23,294-305`
 - `docs/verification/native-loc-trigger-2026-08-10.md`
-- absorption commit `edcd349` and its counted runtime areas
+- absorption commit `cd0e8fd` and its counted runtime areas
 
 ## 2. Solution
 
@@ -56,7 +56,7 @@ absolute floor and the excluded body must remain below an absolute noise ceiling
 must go red if the `groups` filter assignment is removed.
 
 Then perform the review-trigger obligation as a real current audit: measure the final runtime LOC,
-attribute the `edcd349` absorbed areas plus post-absorption growth, record a keep/delete verdict and
+attribute the `cd0e8fd` absorbed areas plus post-absorption growth, record a keep/delete verdict and
 live proof owner for each area, and state the residual. If the audit rejects an area, stop and re-scope
 the deletion rather than hiding it or silently expanding this narrow patch.
 
@@ -165,7 +165,7 @@ area without a moved or silenced trigger.
 
 ```sh
 pnpm budgets
-git diff --numstat edcd349^..HEAD -- packages/runtime-native
+git diff --numstat cd0e8fd^..HEAD -- packages/runtime-native
 cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --tests
 pnpm exec vitest run packages/physics/__tests__/actuation.spec.ts \
   packages/physics/__tests__/native-contract.spec.ts

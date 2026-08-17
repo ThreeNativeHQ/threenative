@@ -81,12 +81,12 @@ it. It cannot build a shooter. Not "would find it awkward" — **cannot**, in th
 sense: there is no way to ask the physics world a question.
 
 ```
-$ git grep -n "castRay\|intersectRay\|intersectShape\|intersectPoint" d54cb3b -- packages/physics/src/index.ts
+$ git grep -n "castRay\|intersectRay\|intersectShape\|intersectPoint" f9de41f -- packages/physics/src/index.ts
 $   # no output. The public physics surface has no query of any kind.
 
-$ git grep -n -E "const target = this.#player.mesh.position|const targetDistance = position.distanceTo\(target\)" d54cb3b -- packages/create-threenative/templates/platformer/src/entities/Chaser.ts
-d54cb3b:packages/create-threenative/templates/platformer/src/entities/Chaser.ts:39:    const target = this.#player.mesh.position;
-d54cb3b:packages/create-threenative/templates/platformer/src/entities/Chaser.ts:45:    const targetDistance = position.distanceTo(target);
+$ git grep -n -E "const target = this.#player.mesh.position|const targetDistance = position.distanceTo\(target\)" f9de41f -- packages/create-threenative/templates/platformer/src/entities/Chaser.ts
+f9de41f:packages/create-threenative/templates/platformer/src/entities/Chaser.ts:39:    const target = this.#player.mesh.position;
+f9de41f:packages/create-threenative/templates/platformer/src/entities/Chaser.ts:45:    const targetDistance = position.distanceTo(target);
 ```
 
 `ScenePicker.raycast` (`packages/core/src/picking.ts:62`) is a **Three.js mesh raycast**. It
@@ -338,7 +338,7 @@ A survey cannot be run as a package test, so it is falsifiable instead of hand-w
 populated cell in §3 is a path in a public repository, and the semantic evidence map below adds
 named source anchors for that path. A path that exists but lacks its claimed behavior fails the
 check. The two claims about *this* repo are the ones that carry weight, and both are `grep`s at
-`d54cb3b` reproduced verbatim in §1.
+`f9de41f` reproduced verbatim in §1.
 
 ### Semantic evidence map
 
@@ -375,7 +375,7 @@ must not be cited as if they were.
 ## 8. Acceptance criteria
 
 - [ ] Every external file path cited in §3 resolves in the named repository.
-- [ ] Both `grep` results in §1 reproduce at `d54cb3b`.
+- [ ] Both `grep` results in §1 reproduce at `f9de41f`.
 - [ ] The verdict table names a home for every surveyed capability — no row is left "maybe".
 - [ ] Each reject carries the rule that rejects it **and an address**: a kit file, or an
       explicit "nowhere, and here is why".

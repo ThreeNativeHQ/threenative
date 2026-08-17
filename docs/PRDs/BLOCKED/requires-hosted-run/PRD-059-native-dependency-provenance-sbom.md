@@ -66,8 +66,8 @@ Charter, package/root agent rules, and all three production-readiness audit summ
 | Evidence class | Current fact | What it may prove for this PRD |
 |---|---|---|
 | Dirty worktree | The audit observed many modified/untracked runtime, workflow, parity, and verification files over `main`. | Discovery evidence only. It is not a release candidate and cannot close any criterion. |
-| Committed HEAD | `cb754d994910ec982a024ad8da9dc8f855eaf3cf` (`cb754d9`, tag `runtime-native-v0.1.13`). The downloader and native-release workflow inspected here are committed at that identity. | The implementation baseline; not proof that PRD-059 exists or ran. |
-| Older hosted CI | Native cross-runner evidence at `e38439c` predates committed HEAD and PRD-059. | Historical platform evidence only; it cannot satisfy a PRD-059 gate. |
+| Committed HEAD | `50f8eb491fbfcfdbf678cf24fdbe9db0e3e1665d` (`50f8eb4`, tag `runtime-native-v0.1.13`). The downloader and native-release workflow inspected here are committed at that identity. | The implementation baseline; not proof that PRD-059 exists or ran. |
+| Older hosted CI | Native cross-runner evidence at `2c5f7f0` predates committed HEAD and PRD-059. | Historical platform evidence only; it cannot satisfy a PRD-059 gate. |
 | Emulator | Android x86_64 source/runtime evidence exists under incumbent PRDs. | No supply-chain or physical-hardware claim; an emulator run cannot replace lock/provenance checks. |
 | Simulator | Hosted iOS simulator evidence exists at the older SHA. | No physical-device, signing, or current-SHA provenance claim. |
 | Hosted runner | Prior macOS, Windows, Android, and iOS jobs establish that runner types exist. | PRD-059 requires a fresh run whose reported source SHA equals its candidate SHA. |
@@ -379,7 +379,7 @@ workflow run, source/package-manager lock hashes, and PRD-048's artifact URL.
 
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
-| `release-provenance` | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `should require one same-SHA provenance subject for every released runtime artifact` | Exact set equality with PRD-048 artifact names; each subject SHA matches staged bytes; candidate/receipt SHA equals expected SHA; all lock/SBOM/license/receipt hashes and URLs are present; missing or extra subject rejects. | Supply older `e38439c` receipt for a `cb754d9` candidate or omit one artifact; generator exits nonzero. |
+| `release-provenance` | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `should require one same-SHA provenance subject for every released runtime artifact` | Exact set equality with PRD-048 artifact names; each subject SHA matches staged bytes; candidate/receipt SHA equals expected SHA; all lock/SBOM/license/receipt hashes and URLs are present; missing or extra subject rejects. | Supply older `2c5f7f0` receipt for a `50f8eb4` candidate or omit one artifact; generator exits nonzero. |
 | `release-wiring` | same | `should generate and validate provenance before publishing release assets` | Workflow token order is lock validation → build → receipt upload → aggregate → SBOM/license → provenance → `gh release create`; all upload/download steps fail on missing files. | Remove the generator or receipt upload token; focused workflow test exits nonzero. |
 
 **Revert check:** Remove provenance generation from the workflow while leaving runtime builds green;
@@ -431,7 +431,7 @@ and the PRD moves to `done/` only when every binary criterion is satisfied.
 |---|---|---|---|---|
 | `evidence-truth` | `docs/verification/PRD-059.md` | `same-candidate release evidence audit` | Candidate SHA equals every receipt and workflow SHA; all required artifact URLs/hashes resolve in the recorded prerelease; dirty/local/older SHA evidence is labelled and excluded from PASS. | Feed an older-SHA receipt or cancelled/missing run; audit verdict is BLOCKED/nonzero, never PASS. |
 
-**Revert check:** Remove the hosted-run link or substitute older `e38439c` evidence; acceptance
+**Revert check:** Remove the hosted-run link or substitute older `2c5f7f0` evidence; acceptance
 criterion 9 and the evidence-truth audit fail, and the PRD stays outside `done/`.
 
 **User Verification:** Open the prerelease provenance asset from the recorded workflow run and
@@ -454,7 +454,7 @@ run the green gate. `PASS` without that observed-red packet is `UNVERIFIED`.
 | `reproducible-acquisition` | inject a wall-clock timestamp and unstable file ordering into the receipt | fresh/cached receipt byte comparison fails with nonzero exit | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/dependency-provenance.test.mjs -t "should produce byte-identical receipts for fresh and cached acquisition"`; result: RED observed: acquisition receipts differ for identical locked inputs; exit: 1 |
 | `native-sbom` | delete one real component from a generated SBOM before `--check` | set-equality check names missing component and exits nonzero | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/native-sbom.test.mjs -t "should generate a complete deterministic CycloneDX document from the real lock"`; result: RED observed: incomplete SBOM accepted; exit: 1 |
 | `native-license-inventory` | add an orphan row and remove one locked component's row | exact component/license set check exits nonzero | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/native-sbom.test.mjs -t "should fail when license evidence is absent changed or orphaned"`; result: RED observed: stale license inventory accepted; exit: 1 |
-| `release-provenance` | use an `e38439c` receipt for a candidate at `cb754d9` and omit one subject | generator/test rejects SHA mismatch and missing subject with nonzero exit | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/native-platform-workflow.test.mjs -t "should require one same-SHA provenance subject for every released runtime artifact"`; result: RED observed: stale or incomplete release provenance accepted; exit: 1 |
+| `release-provenance` | use an `2c5f7f0` receipt for a candidate at `50f8eb4` and omit one subject | generator/test rejects SHA mismatch and missing subject with nonzero exit | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/native-platform-workflow.test.mjs -t "should require one same-SHA provenance subject for every released runtime artifact"`; result: RED observed: stale or incomplete release provenance accepted; exit: 1 |
 | `release-wiring` | remove receipt aggregation/provenance generation from the workflow copy while leaving runtime build steps | structural gate reports missing/incorrect ordering and exits nonzero | `command: pnpm --filter @threenative/runtime-native exec vitest run tests/native-platform-workflow.test.mjs -t "should generate and validate provenance before publishing release assets"`; result: RED observed: release can publish without provenance; exit: 1 |
 | `evidence-truth` | point the evidence audit at a cancelled, missing, dirty-only, or older-SHA run | verdict is BLOCKED and command exits nonzero | `command: node packages/runtime-native/scripts/generate-native-release-provenance.mjs --check-evidence docs/verification/PRD-059.md`; result: RED observed: evidence SHA or hosted run is not the candidate; exit: 1 |
 
@@ -486,8 +486,8 @@ credit, and an unchecked box means the PRD is not DONE.
 - [ ] Default repository gates remain toolchain-free and green; source compilation/acquisition
   stays opt-in or hosted-release-only.
 - [ ] A fresh hosted native prerelease run at the final candidate SHA publishes and validates all
-  provenance/compliance artifacts. Dirty-worktree proof, committed baseline `cb754d9`, older CI
-  `e38439c`, emulator, simulator, physical hardware, signed artifact, npm package, or promoted
+  provenance/compliance artifacts. Dirty-worktree proof, committed baseline `50f8eb4`, older CI
+  `2c5f7f0`, emulator, simulator, physical hardware, signed artifact, npm package, or promoted
   consumer is never substituted for that same-candidate run.
 - [ ] Every Integration Ledger row has a final real non-test `file:line`; every gate has recorded
   observed-red evidence; the production-readiness PRD is moved with `git mv` to `docs/PRDs/done/`

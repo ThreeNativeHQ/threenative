@@ -9,7 +9,7 @@ the iOS simulator lane, and that lane runs only on the hosted `macos-15` GitHub 
 operator's machine has no Xcode, `xcrun`, simulator or iOS device, so the lane cannot be
 executed locally at any effort. This is *not* the Tier 2 physical-hardware block — a simulator
 is sufficient for criterion 7 — and it is not a defect block either: **the defect was ours and
-it is fixed.** `playtest({ holdUntilAttached: true })` landed in commit `0e4897a`
+it is fixed.** `playtest({ holdUntilAttached: true })` landed in commit `8d38025`
 (`packages/core/src/playtest.ts:93`, covered by `packages/core/__tests__/playtest.spec.ts:279`).
 Nothing in this PRD is waiting on a design decision, a package change or a device.
 
@@ -297,7 +297,7 @@ State on 2026-08-08, evidence in `docs/verification/PRD-045.md`:
 | 3 | Every pre-existing browser playtest passes unchanged, no baseline edited | **MET** |
 | 4 | Network assertions on a device target fail with an explicit unsupported error; no code path skips an assertion and reports pass | **MET** |
 | 5 | `pnpm budgets` green with **no new package** and no hard invariant violated | **MET** — `runtime-native` is PRD-047's package, not this one's |
-| 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `51af406` serialized the workspace test command |
+| 6 | `pnpm typecheck && pnpm lint && pnpm test` green | **MET** after commit `22d4ace` serialized the workspace test command |
 | 7 | The same scenario file passes on the iOS simulator, with the same three negative controls | **MET, 2026-08-11** — run `31446340434`, `iPhone 17 Pro` / `SimRuntime.iOS-26-2`, unchanged scenario plus four controls at their exact exit codes. An earlier green lane had run on visionOS; PRD-065 Phase 0 pinned the runtime and this is the first post-fix run |
 | 8 | `--target android\|ios\|browser` on the CLI, with device-unsupported assertions and CI exclusion documented | **MET** — Phase 5 |
 

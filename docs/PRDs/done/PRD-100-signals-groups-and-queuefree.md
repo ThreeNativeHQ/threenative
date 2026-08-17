@@ -61,7 +61,7 @@ and events), `runner/runner.ts`; `packages/create-threenative/templates/platform
 
 ---
 
-## §1 — Triage: the Godot 80/20 list against the tree at `f1845e1`
+## §1 — Triage: the Godot 80/20 list against the tree at `c65bcec`
 
 The candidate list is the standard "strip Godot to ~80% of its usefulness" ranking. Three
 outcomes only: **SHIPPED** (exists, cite it), **KILL** (rule 1, rule 2, or a closed

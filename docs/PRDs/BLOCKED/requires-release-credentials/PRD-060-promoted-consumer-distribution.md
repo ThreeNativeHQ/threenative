@@ -48,11 +48,11 @@ native-platform, and native-release workflows.
 | Evidence class | Current fact | Credit allowed by this PRD |
 |---|---|---|
 | Dirty worktree | The 2026-08-09 checkout contains many modified and untracked native/parity/template files. | Discovery and planning only; never a release candidate or reproducible publication result. |
-| Committed HEAD | `cb754d994910ec982a024ad8da9dc8f855eaf3cf` (`cb754d9`), tagged `runtime-native-v0.1.13`. | Baseline source identity only; the corresponding release run was cancelled and did not finalize. |
-| Older CI SHA | `e38439c` passed historical hosted macOS, Windows, and iOS-simulator lanes in run `31313092745`. | Historical runner/simulator evidence only; never exact-candidate CI or release proof. |
+| Committed HEAD | `50f8eb491fbfcfdbf678cf24fdbe9db0e3e1665d` (`50f8eb4`), tagged `runtime-native-v0.1.13`. | Baseline source identity only; the corresponding release run was cancelled and did not finalize. |
+| Older CI SHA | `2c5f7f0` passed historical hosted macOS, Windows, and iOS-simulator lanes in run `31313092745`. | Historical runner/simulator evidence only; never exact-candidate CI or release proof. |
 | Android emulator | x86_64/SwiftShader plumbing exists, while PRD-053 multitouch and PRD-054 visual parity remain red. | Emulator behavior only; never arm64, physical GPU, signing-to-device, or performance proof. |
-| iOS simulator | Historical hosted simulator/no-Xcode-consumer proof exists at `e38439c`. | Simulator packaging/behavior only; never a device-signed export or physical execution claim. |
-| Hosted runner | Failed/cancelled release runs include `31314171195` at `b755168`, `31321017005` at `323a57b`, and `31333583703` at `cb754d9`. | Exact job/SHA/artifact facts only; a failed, cancelled, skipped, or older-SHA run cannot promote. |
+| iOS simulator | Historical hosted simulator/no-Xcode-consumer proof exists at `2c5f7f0`. | Simulator packaging/behavior only; never a device-signed export or physical execution claim. |
+| Hosted runner | Failed/cancelled release runs include `31314171195` at `7c20861`, `31321017005` at `8a6f2aa`, and `31333583703` at `50f8eb4`. | Exact job/SHA/artifact facts only; a failed, cancelled, skipped, or older-SHA run cannot promote. |
 | Physical hardware | No physical result is produced by this PRD. | None; PRD-056 remains the owner and mobile-ready stays unavailable until its criteria pass. |
 | Signed artifact | No current release evidence includes the complete required desktop, Android, and iOS signed/exported set. | Signature/notarization/export validity only after exact artifact verification; signing alone proves no runtime behavior. |
 | Published package | The supplied live facts say `create-threenative` and `@threenative/runtime-native` return npm `E404`; local tarballs exist. | Only public registry package/version/integrity evidence counts; tarballs and workspace links do not. |
@@ -203,7 +203,7 @@ flowchart TD
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/native-release.yml:3-6` is the tag entry and `:19-30` is the existing validation step edited to invoke `scripts/release-candidate-gate.ts` | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, or credential preflight | substitute successful older run `e38439c` for candidate `cb754d9`; preflight exits 1 |
+| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/native-release.yml:3-6` is the tag entry and `:19-30` is the existing validation step edited to invoke `scripts/release-candidate-gate.ts` | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, or credential preflight | substitute successful older run `2c5f7f0` for candidate `50f8eb4`; preflight exits 1 |
 | 2 | Desktop release mode and signed/notarized artifacts | `packages/create-threenative/src/build.ts:177-192` dispatches the existing desktop packager; `.github/workflows/native-release.yml:32-124` executes/stages the desktop matrix | unsigned standalone desktop output as release evidence | local unsigned mode remains; release publication delegates only to validated signed output | omit platform signing/notary input; release build reports BLOCKED and exits 2 before staging |
 | 3 | Android signed APK/AAB and iOS signed archive/IPA | `packages/create-threenative/src/build.ts:143-174` dispatches the existing mobile packagers; `.github/workflows/native-release.yml:126-216` builds current mobile runtime subjects | debug APK and unsigned simulator archive as store-ready evidence | retained for local/emulator/simulator use, but excluded from release/store-ready subject set | unsigned/debuggable APK or simulator-only iOS app fails release validation, exit 1/2 |
 | 4 | npm release cohort and registry-only clean consumers | `.github/workflows/native-release.yml:218-269` is the existing prerelease publication seam and `:271-549` is the consumer seam; both are edited to stage npm then consume without checkout/tarballs | local-tarball clean consumer as public proof | local tarball lane remains PRD-048 evidence but cannot satisfy PRD-060 | inject `file:`/`workspace:` dependency or make runtime npm lookup return `E404`; consumer exits nonzero |
@@ -273,14 +273,14 @@ has at most five declared files, and stops for a HIGH-mode checkpoint before the
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
 | `candidate-schema` | `scripts/__tests__/release-candidate-gate.spec.ts` | `should reject unknown missing or secret-bearing release candidate fields` | exact key set; secrets represented only as booleans; missing subject/dependency/run path named; zero subjects rejected | omit PRD-059 provenance subject; validator exits 1 |
-| `exact-candidate-ci` | same | `should require successful CI parity and provenance evidence from the tag commit` | peeled tag SHA equals CI/native/report SHA; every required conclusion is `success`; cancelled `31333583703` and older `e38439c` are rejected | substitute `e38439c`; gate exits 1 |
+| `exact-candidate-ci` | same | `should require successful CI parity and provenance evidence from the tag commit` | peeled tag SHA equals CI/native/report SHA; every required conclusion is `success`; cancelled `31333583703` and older `2c5f7f0` are rejected | substitute `2c5f7f0`; gate exits 1 |
 | `credential-preflight` | same | `should block before signing or publication when any required credential is absent` | complete missing-credential list, status `BLOCKED`, no build/publish command invocation, exit 2 | unset npm and Apple signing presence flags |
 | `preflight-wiring` | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `should order exact-candidate preflight before every release side effect` | preflight token precedes build, signing, GitHub release, npm publish, dist-tag, and finalize tokens; every side-effect job depends on it | remove one `needs` edge; focused test exits 1 |
 
 **Revert check:** Remove the preflight call while keeping current tag validation; the structural
 gate must fail even though the existing workflow still parses and builds.
 
-**User Verification:** Action: run preflight against `cb754d9` with the cancelled release run and
+**User Verification:** Action: run preflight against `50f8eb4` with the cancelled release run and
 missing credentials. Expected: one structured BLOCKED/FAIL report, no build/publish side effect,
 and nonzero exit.
 
@@ -513,7 +513,7 @@ rehearsed recovery/revocation result that preserves explicit pins.
 - [ ] Revalidate releaseEvidenceV1 from a clean checkout at the promoted candidate SHA. Resolve
       every CI/release job, GitHub asset, checksum/provenance/SBOM subject, signature/notary/export
       report, npm package/integrity/provenance/dist-tag, and consumer/compatibility hash.
-- [ ] Record dirty author baseline, committed baseline `cb754d9`, older `e38439c`, emulator,
+- [ ] Record dirty author baseline, committed baseline `50f8eb4`, older `2c5f7f0`, emulator,
       simulator, hosted runner, signed artifacts, public packages, and promoted consumer separately.
       Record physical hardware as not produced and link PRD-056 without upgrading its status.
 - [ ] Paste one observed-red result per Negative Controls gate, its restored green result, caller
@@ -536,7 +536,7 @@ rehearsed recovery/revocation result that preserves explicit pins.
 
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
-| `release-evidence` | `docs/verification/PRD-060.md` | `same-candidate promoted consumer evidence audit` | exact equality across candidate/tag/runs/assets/provenance/signatures/npm/default consumer; every required URL/hash resolves; hardware remains separately labelled | substitute cancelled `31333583703`, older `e38439c`, or local tarball result; audit is BLOCKED/nonzero |
+| `release-evidence` | `docs/verification/PRD-060.md` | `same-candidate promoted consumer evidence audit` | exact equality across candidate/tag/runs/assets/provenance/signatures/npm/default consumer; every required URL/hash resolves; hardware remains separately labelled | substitute cancelled `31333583703`, older `2c5f7f0`, or local tarball result; audit is BLOCKED/nonzero |
 | `repository-collection` | `scripts/__tests__/release-candidate-gate.spec.ts` | `should be collected by root tests and fail on sentinel` | normal root/focused run collects nonzero named tests; deliberate sentinel produces nonzero exit at assertion | enable sentinel; exit 1 |
 
 **Revert check:** Remove the promoted default-tag consumer evidence or replace any run with an older
@@ -555,7 +555,7 @@ then be restored and rerun green. A green-only result is `UNVERIFIED`.
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
 | `candidate-schema` | omit PRD-059 provenance from the candidate input | schema names the missing subject and exits 1 before side effects | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control missing-provenance`; result: RED observed: release candidate missing PRD-059 provenance subject; exit: 1 |
-| `exact-candidate-ci` | substitute older successful `e38439c` runs for the candidate | SHA equality fails and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control stale-ci`; result: RED observed: required CI evidence head_sha differs from candidate; exit: 1 |
+| `exact-candidate-ci` | substitute older successful `2c5f7f0` runs for the candidate | SHA equality fails and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control stale-ci`; result: RED observed: required CI evidence head_sha differs from candidate; exit: 1 |
 | `credential-preflight` | remove npm and Apple signing-presence inputs | report is BLOCKED before build/publish and exits 2 | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control missing-credentials`; result: RED observed: required release credentials unavailable, BLOCKED; exit: 2 |
 | `preflight-wiring` | remove one release job's dependency on preflight in an in-memory workflow copy | structural test identifies bypass and exits 1 | `command: pnpm exec vitest run packages/runtime-native/tests/native-platform-workflow.test.mjs -t "should order exact-candidate preflight before every release side effect"`; result: RED observed: release side effect bypasses preflight; exit: 1 |
 | `desktop-release-mode` | remove release-mode delegation while leaving local desktop build | focused build test fails and exits 1 | `command: pnpm exec vitest run packages/create-threenative/__tests__/build.spec.ts -t "should preserve local desktop behavior and delegate release mode exactly once"`; result: RED observed: desktop release mode did not reach signed packager; exit: 1 |
@@ -571,7 +571,7 @@ then be restored and rerun green. A green-only result is `UNVERIFIED`.
 | `promotion-transaction` | fail after updating runtime tag but before default consumer | audit rejects partial promotion, then recovery restores prior map; injected run exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts rehearse-promotion --evidence .runtime/prd060/promotion --control fail-after-runtime-tag`; result: RED observed: partial npm promotion detected before recovery; exit: 1 |
 | `failed-prerelease-cleanup` | leave candidate create-threenative on `latest` after forced consumer failure | cleanup audit exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts audit-cleanup --evidence .runtime/prd060/cleanup --control retain-candidate-latest`; result: RED observed: failed candidate remains on default dist-tag; exit: 1 |
 | `promoted-revocation` | leave `latest` on N and delete N assets during revocation input | revocation audit reports both violations and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts audit-revocation --evidence .runtime/prd060/revocation --control delete-pinned-assets`; result: RED observed: revoked default not restored or pinned assets deleted; exit: 1 |
-| `release-evidence` | feed cancelled `31333583703`, older `e38439c`, or local tarball result | evidence verdict is BLOCKED and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts audit-evidence docs/verification/PRD-060.md`; result: RED observed: release evidence is cancelled, stale, or not registry-only; exit: 1 |
+| `release-evidence` | feed cancelled `31333583703`, older `2c5f7f0`, or local tarball result | evidence verdict is BLOCKED and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts audit-evidence docs/verification/PRD-060.md`; result: RED observed: release evidence is cancelled, stale, or not registry-only; exit: 1 |
 | `repository-collection` | enable the deliberate test-collection sentinel | root/focused runner collects the sentinel and exits 1 | `command: TN_PRD060_FORCE_SENTINEL_FAILURE=1 pnpm exec vitest run scripts/__tests__/release-candidate-gate.spec.ts`; result: RED observed: deliberate PRD-060 collection sentinel; exit: 1 |
 
 ## Acceptance Criteria
@@ -616,7 +616,7 @@ Every criterion is binary and consumer-scoped. An unchecked item means this PRD 
       from the clean candidate checkout without adding a native toolchain to default gates; native
       LOC over the review trigger is quantified and justified.
 - [ ] `docs/verification/PRD-060.md` and the native README distinguish dirty worktree, committed
-      HEAD `cb754d9`, older CI `e38439c`, emulator, simulator, hosted runner, physical hardware,
+      HEAD `50f8eb4`, older CI `2c5f7f0`, emulator, simulator, hosted runner, physical hardware,
       signed artifact, published package, and promoted consumer; PRD-056 hardware rows are not
       upgraded by distribution evidence.
 - [ ] All six HIGH-mode checkpoints and named manual approvals pass, every blocker is cleared, and

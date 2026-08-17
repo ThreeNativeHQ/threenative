@@ -6,12 +6,12 @@ pins is absent from its brief, for every one of the six genres"* and *"the audit
 pinned-but-unstated value is re-added"*.
 
 Handed to this session by the session that owns PRD-113 and PRD-114, after round 8 was recorded
-at `4498ea43`. Nothing here touches `docs/verification/round-8-2026-08-15.md`, and no blind
+at `a063187c`. Nothing here touches `docs/verification/round-8-2026-08-15.md`, and no blind
 visual score was produced.
 
 ## 1. What the previous gate missed, and why
 
-`scripts/__tests__/sealed-proof-tokens.spec.ts` landed at `e67a0d2d` and closed the defect it was
+`scripts/__tests__/sealed-proof-tokens.spec.ts` landed at `8e9b213d` and closed the defect it was
 written for: the replay proof no longer demands `replayPhase === "done"` or the bare string
 `"match"`. But it was scoped to **one genre and one assertion kind** — `GENRE_ROOT` was
 `physics-puzzle` and the walk covered `assert.resources` only.

@@ -201,7 +201,7 @@ Hand the bundle to the Gradle and Xcode projects PRD-047 Phase 1 imported.
 
 **Gate:** a scaffolded project builds an APK that launches on the emulator and passes a
 PRD-045 device scenario. **iOS is no longer blocked** — PRD-047 Phase 5 passed on the hosted
-Apple runner in run `31313092745` at `e38439c`, which was the prerequisite. What stays open is
+Apple runner in run `31313092745` at `2c5f7f0`, which was the prerequisite. What stays open is
 iOS *distribution* execution on its own terms: the simulator archive published by the release
 lane, consumed by a packed project with Xcode masked. That is separate evidence from the
 Android result and is not inherited from it.

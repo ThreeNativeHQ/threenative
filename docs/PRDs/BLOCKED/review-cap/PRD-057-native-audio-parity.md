@@ -55,11 +55,11 @@ after every phase and manual evidence for every real-output target.
 | Evidence identity | What actually ran | Audio credit allowed by this PRD |
 |---|---|---|
 | Dirty worktree on 2026-08-09 | Linux V8/Dawn/SDL dummy-driver graph and Android x86_64 emulator graph reached `AudioBus.voices === 0` after `onended` | graph/binding evidence only; it is uncommitted worktree evidence and proves no decoder, speaker, latency, HRTF, arm64, iOS, or physical driver |
-| Committed HEAD `cb754d9` | Repository identity and release tag baseline | no new audio pass may be inferred from dirty files or from a later local marker |
-| Older CI SHA `e38439c` | hosted macOS, Windows, and iOS simulator core/physics execution | historical target execution only; those jobs did not run this audio contract and are not current-HEAD audio evidence |
+| Committed HEAD `50f8eb4` | Repository identity and release tag baseline | no new audio pass may be inferred from dirty files or from a later local marker |
+| Older CI SHA `2c5f7f0` | hosted macOS, Windows, and iOS simulator core/physics execution | historical target execution only; those jobs did not run this audio contract and are not current-HEAD audio evidence |
 | Hosted runner | can prove compile, deterministic render, logs, and virtual audio routing | cannot prove an audible speaker or physical output driver unless a named real output device and captured signal are present |
 | Android emulator | x86_64 callback/graph marker exists in dirty evidence | virtual-device contract only; never arm64, speaker-quality, or phone-latency evidence |
-| iOS simulator | older core/physics execution exists at `e38439c` | no audio execution is recorded; simulator output can close only the simulator contract row |
+| iOS simulator | older core/physics execution exists at `2c5f7f0` | no audio execution is recorded; simulator output can close only the simulator contract row |
 | Physical Android hardware | no qualifying audio run exists | BLOCKED until PRD-056 selects a non-emulator device and supplies a signed install/run envelope plus capture handoff |
 | Physical iOS hardware | no qualifying audio run exists | BLOCKED until PRD-056 supplies a named device, valid signing/provisioning, install/run envelope, and capture handoff |
 | Signed artifact | no signed physical-device audio artifact is evidenced | an ad hoc signed PRD-056 install proves only that device run; it is not a release claim |
@@ -479,7 +479,7 @@ every audible row BLOCKED and PRD-057 cannot become DONE.
   not modify PRD-056's envelope.
 - [ ] Registration: path-filtered hosted jobs retain deterministic logs/reports; manual
   physical evidence is appended only after exact artifact/SHA validation.
-- [ ] Old path: older `e38439c` target runs remain historical and cannot satisfy current
+- [ ] Old path: older `2c5f7f0` target runs remain historical and cannot satisfy current
   audio rows.
 - [ ] Ledger rows filled: #4, #5, and #6.
 
@@ -606,8 +606,8 @@ Each packet records repository SHA, dirty/clean state, source and packaged bundl
 runtime/Three version, target kind, OS/device/runner, CPU ABI, physical versus virtual driver,
 signed/unsigned artifact status, published/local package status, promoted/unpromoted consumer
 status, exact command/exit, deterministic report, capture hash/metrics where required, logs,
-and every observed-red control. A report from `e38439c` stays historical when the candidate is
-`cb754d9` or later.
+and every observed-red control. A report from `2c5f7f0` stays historical when the candidate is
+`50f8eb4` or later.
 
 Contract conformance: prd_contract: v1
 

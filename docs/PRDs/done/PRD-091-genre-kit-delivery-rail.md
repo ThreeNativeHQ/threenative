@@ -17,7 +17,7 @@ readiness is claimed.
 
 ### The registry is six string literals and one of them is a silent gate
 
-At `d54cb3b`, shipping a template means editing all of these:
+At `f9de41f`, shipping a template means editing all of these:
 
 | # | Site | What it controls |
 |---|---|---|

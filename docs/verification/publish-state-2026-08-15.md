@@ -75,7 +75,7 @@ same day, after the day's work landed:
 ```console
 $ git log --oneline --since=2026-08-09T07:32:33Z -- packages/ | wc -l
 144
-$ git diff 131764c3 HEAD -- packages/ --shortstat
+$ git diff 524db742 HEAD -- packages/ --shortstat
  669 files changed, 55605 insertions(+), 3009 deletions(-)
 ```
 

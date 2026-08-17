@@ -1,6 +1,6 @@
 # Physics playtest composition — 2026-08-12
 
-Status: executed locally against repository commit `5c365cf` plus the PRD-081 working tree.
+Status: executed locally against repository commit `f9978b3` plus the PRD-081 working tree.
 The generated platformer proves web behavior. Native evidence is limited to TypeScript ABI
 contracts and the shipping Rust simulation; no desktop, Android, or iOS host was executed.
 

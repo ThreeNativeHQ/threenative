@@ -5,7 +5,7 @@ crate. PRD-032's own Phase 5 kill switch fired.
 
 ## Subject and controls
 
-- Commit under test: `e38439c677a72f8aabd16f4f0ea9b92661ff5831`.
+- Commit under test: `2c5f7f048935d39526b9556d82c7d7d617c20488`.
 - Both arms were fresh starter projects scaffolded from packed local framework tarballs.
 - Brief: “give the crate a real material and a pickup sound.”
 - The positive arm used the generated `.mcp.json`. The control's config was renamed to

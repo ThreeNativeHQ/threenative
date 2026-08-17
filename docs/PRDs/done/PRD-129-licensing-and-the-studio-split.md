@@ -48,7 +48,7 @@ rewritten, so none of the 197 SHAs cited across `docs/` moved.
 - **Nothing was removed from this repository and nothing was published.** `packages/studio/` and
   `hosting/` are still here; the only change is a `LICENSE` and a `license` field asserting no grant.
 
-Every fact in §1 was measured on this working tree at commit `803906c7`; the commands are pasted
+Every fact in §1 was measured on this working tree at commit `82268c51`; the commands are pasted
 beside each claim and reproduce. The licensing *decision* in §1.1 is the product owner's, taken
 2026-08-16, and this PRD implements it — it does not reopen it.
 
@@ -258,7 +258,7 @@ original one.
 
 Keep a Changelog format, newest first. Seed it with what actually happened, reconstructed
 from tags and the release commits — do not invent entries and do not backfill releases you
-cannot verify from git. At minimum: a `0.2.0` entry covering the version bump in `a98d2717`,
+cannot verify from git. At minimum: a `0.2.0` entry covering the version bump in `83668a25`,
 and an `Unreleased` section. If the history does not support a clean set of entries, write
 one `0.2.0` entry and say in a leading note that entries before it were not reconstructed.
 
@@ -291,7 +291,7 @@ one `0.2.0` entry and say in a leading note that entries before it were not reco
    - The Studio-relevant half of `scripts/visual-gate.ts` (`STUDIO_ASSET_ROOT`, line 92) —
      see §6.3, which decides whether the visual gate splits or stays.
 3. An initial commit is acceptable. Studio's history is 40 commits over four days
-   (`c4dd5328` 2026-08-12 → `a98d2717` 2026-08-16) and 32 of them also touch non-Studio
+   (`226669cc` 2026-08-12 → `83668a25` 2026-08-16) and 32 of them also touch non-Studio
    files, so a filtered export produces partial commits with little value. **Preserving that
    history is optional and explicitly not required by this PRD.**
 

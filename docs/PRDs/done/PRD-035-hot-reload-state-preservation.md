@@ -8,7 +8,7 @@ children; the previous current-scene counter could not observe that mutation. Bo
 controls were restored and the ten-reload gate passed again, including the specified 5% fall-
 cadence comparison.
 Roadmap Gate 0 and Phase 1 exited on 2026-08-08. The implementation is on
-`docs/opportunity-areas-prds` in commits `3b27b8a` and `90baf3a`; the implementation
+`docs/opportunity-areas-prds` in commits `0e4ce67` and `7ba964a`; the implementation
 checkpoint gates pass. The real starter HMR gate now passes on an isolated Brave/WebGPU/X11
 runner, including zero console errors, and a manual jump/fall probe shows the edited
 `JUMP_SPEED` taking effect while the player lands cleanly.

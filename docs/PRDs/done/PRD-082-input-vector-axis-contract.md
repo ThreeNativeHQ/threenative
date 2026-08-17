@@ -28,7 +28,7 @@ sanctioned source for node and input vocabulary — returns **−y for up** from
 line is `Vector3(input_dir.x, 0, input_dir.y)` with no negation. **ThreeNative borrowed the
 name and flipped the sign.**
 
-**What that costs, measured by `grep` at `5a5604e`:**
+**What that costs, measured by `grep` at `fd6dc38`:**
 
 | Call site | What it does with `move.y` |
 |---|---|

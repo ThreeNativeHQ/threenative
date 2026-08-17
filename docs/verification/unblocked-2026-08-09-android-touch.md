@@ -2,7 +2,7 @@
 
 Derived from the emulator run recorded in
 [integration-2026-08-09-six-prds.md](integration-2026-08-09-six-prds.md) and landed in
-`fd92899`. This file answers one question: **what can now be worked on that could not be
+`e15aab8`. This file answers one question: **what can now be worked on that could not be
 before, and in what order.**
 
 ## What actually changed

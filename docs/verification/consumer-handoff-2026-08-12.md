@@ -17,7 +17,7 @@ launch.
 
 ## Version-skew diagnosis
 
-Tag `runtime-native-v0.1.14` resolves to commit `5e86c48`. That commit changed
+Tag `runtime-native-v0.1.14` resolves to commit `1967c80`. That commit changed
 `packages/runtime-native/package.json` to `0.1.14` but left the CMake project version and the
 header fallback at `0.1.13`.
 

@@ -7,7 +7,7 @@ say about the two 2026-08-10 parity ledgers, and — separately, and just as imp
 lanes were **not** re-executed. It makes no mobile-readiness claim, no iOS claim and no
 physical-hardware claim. Phases 1, 2 and 3 of PRD-076 have not started.
 
-Tree under test: `abf82ad9` (`main`), in the worktree `worktree-agent-a3d20b1a44c917c0e`.
+Tree under test: `5848aada` (`main`), in the worktree `worktree-agent-a3d20b1a44c917c0e`.
 
 **A Phase 0 that cannot reproduce either ledger is a valid Phase 0 result.** That is the result
 here: **no lane was re-executed**, so neither ledger was reproduced, and that is recorded as
@@ -21,10 +21,10 @@ one machine's disk.
 `66 pass / 0 fail / 1 blocked`, exit **`0`**. The runner cannot emit that exit code, and this is
 checkable without running a lane.
 
-The r2 ledger was added by commit `65a88367`. At that commit:
+The r2 ledger was added by commit `c8cdc18c`. At that commit:
 
 ```console
-$ git show 65a8836:packages/runtime-native/conformance/run-conformance.mjs | grep -A5 "^function reportExitCode"
+$ git show c8cdc18:packages/runtime-native/conformance/run-conformance.mjs | grep -A5 "^function reportExitCode"
 function reportExitCode(report) {
   if (report.summary.fail > 0) return 1;
   if (report.summary.blocked > 0) return 2;
@@ -38,11 +38,11 @@ reportExitCode(report)`, and the desktop lane emits no `supplemental` block, so 
 cannot apply. Executing the rule as it existed at that commit, against each cell of both ledgers:
 
 ```console
-$ git show 65a8836:packages/runtime-native/conformance/run-conformance.mjs \
-    > packages/runtime-native/.runtime/prd076/run-conformance-65a8836.mjs
+$ git show c8cdc18:packages/runtime-native/conformance/run-conformance.mjs \
+    > packages/runtime-native/.runtime/prd076/run-conformance-c8cdc18.mjs
 $ node --input-type=module -e "
 import { readFileSync } from 'node:fs';
-const source = readFileSync('packages/runtime-native/.runtime/prd076/run-conformance-65a8836.mjs','utf8');
+const source = readFileSync('packages/runtime-native/.runtime/prd076/run-conformance-c8cdc18.mjs','utf8');
 const body = source.match(/function reportExitCode\(report\) \{[\s\S]*?\n\}/u)[0];
 const rule = new Function('report', body + '; return reportExitCode(report);');
 for (const [label, summary] of [
@@ -60,7 +60,7 @@ tier-1 android 27/40/0   -> exit 1
 
 **Verdict: the r2 desktop exit cell is wrong.** Every other exit cell in both ledgers is
 consistent with its own pass/fail/blocked numbers; that one is not. The rule is byte-identical at
-`2e53c858` (which landed the tier-1 ledger), at `65a8836` (which landed r2) and at `HEAD`, so no
+`734b2071` (which landed the tier-1 ledger), at `c8cdc18` (which landed r2) and at `HEAD`, so no
 runner either ledger could have been written against would emit `0` for that summary.
 
 **The defect is transcription, not fabrication.** The row's own Outcome column reads *"Executed
@@ -155,7 +155,7 @@ $ node packages/runtime-native/conformance/run-conformance.mjs --dry-run --out /
 $ node -e "const r=require('/tmp/dry.json'); console.log(r.schemaVersion); console.log(JSON.stringify(r.provenance,null,2))"
 0.3.0
 {
-  "commit": "abf82ad9dfdbcbe0ddcb8c15d9522e6d51198525",
+  "commit": "5848aada6cdee3fda56c8bef4381b092bec93556",
   "dirty": true,
   "runtimeSha256": null,
   "referenceSetSha256": null,
@@ -298,12 +298,12 @@ equalling the measured LOC. Kill-switch pass on what was added: the question tho
 answer is whether a parity number can be traced to the run that produced it, and today it cannot
 — that is exactly the defect adjudicated in §1. They stay.
 
-**One `pnpm test` failure on a clean `abf82ad9` is pre-existing and belongs to another lane.**
+**One `pnpm test` failure on a clean `5848aada` is pre-existing and belongs to another lane.**
 `scripts/__tests__/sync-agent-docs.spec.ts > should keep the repository mirrors in sync` reports
 `docs/benchmark/sweeps/physics-puzzle-2026-08-15-6/CLAUDE.md` as drifted, because commit
-`e97cd48d` added that directory's `AGENTS.md` without running `pnpm sync:agents` to generate its
+`b10db823` added that directory's `AGENTS.md` without running `pnpm sync:agents` to generate its
 mirror. It was confirmed pre-existing by stashing every change in this branch and re-running the
-spec against a pristine `abf82ad9`:
+spec against a pristine `5848aada`:
 
 ```console
 $ git stash push -u -m prd076-wip
@@ -338,7 +338,7 @@ Error: Test timed out in 15000ms.
 ```
 
 That test passes in isolation in **10.4s** against its 15s budget. The failure was proved
-environmental rather than attributed by argument: `main` was checked out detached at `abf82ad9`
+environmental rather than attributed by argument: `main` was checked out detached at `5848aada`
 and the full suite re-run under the same load, producing the identical single failure. The load
 average at the time was **52 on 24 cores** — three concurrent Claude sessions, a golden-path
 gate and a full suite on one machine. Re-run at load 14, the same commit reports `pnpm test`

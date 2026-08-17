@@ -191,7 +191,7 @@ than discovering it again.
 | 4 | No value the proof pins is absent from its brief, for every one of the six genres | **yes** — `docs/verification/sealed-token-gate-2026-08-15.md`. Five surviving tokens in four genres, each dispositioned: `won` and `hub` published, `SECURE`, `north.archive` and `"7"` made behavioural |
 | 5 | `scripts/__tests__/sealed-contract.spec.ts` fails when a pinned-but-unstated value is re-added | **yes**, across two gates — that file still covers identifiers, keys, resource ids/paths and seeds with its existing red controls; pinned *values* are covered by `sealed-proof-tokens.spec.ts`, observed red on all five tokens before any proof or brief was edited |
 | 6 | The comparability discontinuity is written into the round ledger and the score docs | **yes** — `docs/verification/round-8-2026-08-15.md` records all four moved hashes, that its own archives are historical and not re-runnable, and that `sweep:proof` refuses the mismatch rather than re-scoring; `docs/verification/sealed-token-gate-2026-08-15.md` carries the same discontinuity from the change side |
-| 7 | `pnpm typecheck && pnpm lint && pnpm test` green | **yes** at `25c3cd75` — typecheck 0 errors, `biome check . --diagnostic-level=error` 0 errors, `pnpm test` exit 0 with 1,280 passed and 32 skipped |
+| 7 | `pnpm typecheck && pnpm lint && pnpm test` green | **yes** at `9f7e28d5` — typecheck 0 errors, `biome check . --diagnostic-level=error` 0 errors, `pnpm test` exit 0 with 1,280 passed and 32 skipped |
 
 Criterion 3 is the one that keeps criterion 2 from being bought with a weaker gate.
 

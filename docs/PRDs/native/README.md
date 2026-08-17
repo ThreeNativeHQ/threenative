@@ -3,9 +3,9 @@
 **Status (2026-08-09):** Linux and Android-emulator starter artifact parity is proven.
 [GitHub run 31313092745](https://github.com/jonit-dev/threenative/actions/runs/31313092745)
 also executed iOS simulator/no-Xcode consumer, macOS and Windows successfully on current SHA
-`e38439c`. Release run `31314171195` then passed all three desktop builders but failed the
+`2c5f7f0`. Release run `31314171195` then passed all three desktop builders but failed the
 Android clean-source build before publication; the missing SDL Java dependency is fixed and
-locally re-proven at `aecd0a5`. Published prebuilt consumer distribution remains open.
+locally re-proven at `d7e5cc5`. Published prebuilt consumer distribution remains open.
 
 Apple simulator evidence now exists through the hosted runner. Physical Apple hardware, real
 mobile GPU/arm64 execution and performance evidence still do not. Do not turn simulator proof
@@ -19,7 +19,7 @@ into a physical-device or release-readiness claim.
 | Normal public native physics API: Android + iOS simulator and negative controls; both Android ABIs compile | Physical arm64 hardware/performance |
 | Web CLI parity plus all 25 packed-template scenarios | — |
 | Scaffolded starter artifact: declared entry, texture + GLB on Linux and Android emulator | — |
-| Current iOS simulator + macOS + Windows run on `e38439c` | — |
+| Current iOS simulator + macOS + Windows run on `2c5f7f0` | — |
 | Native HUD decision: no framework abstraction; game-authored Three.js source only | — |
 | Platformer steering: browser, Linux desktop, and Android emulator | Navmesh pathfinding remains browser-only; no native backend |
 

@@ -10,7 +10,7 @@ prd_contract: v1
 **Manager gate:** 21 declared controls reran with exact observed-red evidence; delivery remains blocked by unavailable physical/current-artifact evidence and the root marker-control collection mismatch.
 **Owner:** Runtime and playtest maintainers
 **Goal:** G5 — profiling  
-**Committed baseline:** `cb754d9`  
+**Committed baseline:** `50f8eb4`  
 **Complexity: 10 → HIGH mode.**  
 **Blast radius: 32 repository files across 4 workspace packages, root command wiring, generated proof source, and native verification documentation.**
 
@@ -116,9 +116,9 @@ flowchart TD
 
 | Evidence class | What it may prove | What it must never claim |
 |---|---|---|
-| Dirty checkout at `cb754d9` | Local implementation/plumbing observations with a recorded diff hash | A committed, signed, published, or promoted result |
-| Committed HEAD `cb754d9` | Exact committed source baseline | That later dirty changes or a different artifact were tested |
-| Older hosted CI SHA `e38439c` | Historical runner result for that SHA and host only | Current HEAD, physical-device, same-hardware parity, or release readiness |
+| Dirty checkout at `50f8eb4` | Local implementation/plumbing observations with a recorded diff hash | A committed, signed, published, or promoted result |
+| Committed HEAD `50f8eb4` | Exact committed source baseline | That later dirty changes or a different artifact were tested |
+| Older hosted CI SHA `2c5f7f0` | Historical runner result for that SHA and host only | Current HEAD, physical-device, same-hardware parity, or release readiness |
 | Android emulator | Install/launch/protocol plumbing on the named emulator/GPU | ARM64 physical performance, thermals, battery, or touch-device readiness |
 | iOS simulator | Simulator build/launch/protocol plumbing | Physical iPhone/iPad performance, thermals, battery, or signing readiness |
 | Hosted runner | The named hosted CPU/GPU/OS result if identity is complete | A local dGPU, physical mobile, or an unspecified consumer machine |
@@ -394,7 +394,7 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control required |
 |---|---|---|---|---|
-| evidence-rollup | `packages/runtime-native/tests/production-profile.test.mjs` | `should generate support truth only from current complete evidence` | Summary SHA/source/artifact/target hashes match raw manifests; all mandatory gates and observed-red entries exist; BLOCKED remains visible; no disallowed data appears | Substitute `e38439c` or a dirty report for current committed evidence and observe exit 2 |
+| evidence-rollup | `packages/runtime-native/tests/production-profile.test.mjs` | `should generate support truth only from current complete evidence` | Summary SHA/source/artifact/target hashes match raw manifests; all mandatory gates and observed-red entries exist; BLOCKED remains visible; no disallowed data appears | Substitute `2c5f7f0` or a dirty report for current committed evidence and observe exit 2 |
 | repository-collection | `packages/runtime-native/tests/production-profile.test.mjs` | `should collect the repository verification summary through the package test` | The normal package test discovers this test and rejects a deliberate failing sentinel; generated summary status matches the target matrix | Enable the test sentinel and observe the ordinary package test exit nonzero |
 
 **Revert check:** Delete the generated verification summary while leaving README/G5 claims; the support-truth test must fail instead of accepting prose alone.
@@ -426,7 +426,7 @@ These are implementation specifications. No row is claimed observed until its ex
 | soak-reliability | Terminate before clean-end | Incomplete soak is BLOCKED | `command: pnpm profile:production -- --target fixture --duration 120 --control early-exit --out .runtime/prd058/nc-soak`; result: RED observed: TN_PROD_MARKER_MISSING before required duration; exit: 2 |
 | physical-resource-evidence | Substitute emulator provenance | Physical acceptance rejects plumbing evidence | `command: pnpm profile:production -- --target android-physical --physical-evidence .runtime/prd056/android/report.json --duration 60 --control substitute-emulator-provenance --out .runtime/prd058/nc-emulator`; result: RED observed: physical provenance required and emulator evidence blocked; exit: 2 |
 | audio-consumption | Claim audio without PRD-057 evidence | Exact-artifact prerequisite blocks | `command: pnpm profile:production -- --target fixture --control claimed-audio-missing-evidence --out .runtime/prd058/nc-audio`; result: RED observed: PRD-057 audio evidence missing for claimed target; exit: 2 |
-| evidence-rollup | Substitute older CI SHA `e38439c` | Current committed result cannot be inferred | `command: pnpm profile:production -- --target fixture --control stale-source-sha --out .runtime/prd058/nc-stale`; result: RED observed: source SHA does not match required cb754d9/current execution baseline; exit: 2 |
+| evidence-rollup | Substitute older CI SHA `2c5f7f0` | Current committed result cannot be inferred | `command: pnpm profile:production -- --target fixture --control stale-source-sha --out .runtime/prd058/nc-stale`; result: RED observed: source SHA does not match required 50f8eb4/current execution baseline; exit: 2 |
 | repository-collection | Enable a deliberate failing sentinel | Ordinary package test must collect the test | `command: TN_PRD058_CONTROL=collection-sentinel pnpm --filter @threenative/runtime-native test`; result: RED observed: production-profile collection sentinel failed in ordinary package test; exit: 1 |
 
 ## Acceptance Criteria
@@ -496,7 +496,7 @@ Android/iOS soak commands add `--audio-evidence .runtime/prd057/<target>/audio-e
 
 **Planning-time evidence only:** Contract conformance: `prd_contract: v1`. The installed contract validator and diff-hygiene check are run against this authored file before handoff. No implementation, benchmark, soak, hardware, signed artifact, publication, release, or consumer-promotion result is claimed by this plan.
 
-At execution time `docs/verification/PRD-058.md` must record each command and result, current source/diff/artifact identity, environment class, raw artifact hashes, caller/revert/incumbent evidence, observed-red controls, restored green gates, manual confirmations, retention owner/date, and every BLOCKED/FAIL condition. Historical `e38439c`, current committed `cb754d9`, and any dirty worktree run remain separate rows.
+At execution time `docs/verification/PRD-058.md` must record each command and result, current source/diff/artifact identity, environment class, raw artifact hashes, caller/revert/incumbent evidence, observed-red controls, restored green gates, manual confirmations, retention owner/date, and every BLOCKED/FAIL condition. Historical `2c5f7f0`, current committed `50f8eb4`, and any dirty worktree run remain separate rows.
 
 ## Rollback and Kill Conditions
 

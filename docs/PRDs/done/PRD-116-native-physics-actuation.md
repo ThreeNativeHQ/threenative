@@ -133,7 +133,7 @@ does not exist here — so an Android claim in this PRD would be a reporting fai
 ## 6. The native LOC obligation, which this PRD inherits
 
 `packages/runtime-native/` is at **69910 lines against a 50000 review trigger**, +19910, and has
-been over since `edcd349` absorbed the Mystral runtime host. `CHARTER.md` §10b is explicit that
+been over since `cd0e8fd` absorbed the Mystral runtime host. `CHARTER.md` §10b is explicit that
 exceeding a review trigger is not a signal to raise it, but a signal to run the kill switch over
 what was added and find out whether it earned its lines — "crossing one is a conversation, not an
 outage." That conversation has never happened; the warning simply prints on every run.

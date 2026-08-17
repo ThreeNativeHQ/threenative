@@ -300,7 +300,7 @@ justification in the owning PRD plus a kill-switch pass over what was added. Nev
 of the work below deliberately lands in templates or scripts, which do not spend it — check the
 column before assuming a PRD is cheap.
 
-**The native runtime is at 69910/50000 and has been over since `edcd349` absorbed the Mystral
+**The native runtime is at 69910/50000 and has been over since `cd0e8fd` absorbed the Mystral
 runtime host. That is an undischarged obligation, and it should be one of the first PRDs cut.**
 The charter is explicit that exceeding a review trigger is not a signal to raise it, but a signal
 to run the kill switch over what was added and find out whether it earned its lines — "crossing one

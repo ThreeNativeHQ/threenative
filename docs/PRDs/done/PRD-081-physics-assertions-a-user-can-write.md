@@ -28,7 +28,7 @@ own game code, or to delete the assertion. The repository's rule forbids the sec
 the first is plumbing every physics game repeats and no game should write. **That is the
 definition of package code, and it is missing.**
 
-**Confirmed still open at `5a5604e`:**
+**Confirmed still open at `fd6dc38`:**
 
 ```
 $ grep -rn "runtime.physics" packages/*/src

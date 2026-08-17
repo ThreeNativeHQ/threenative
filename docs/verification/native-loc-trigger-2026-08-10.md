@@ -5,10 +5,10 @@ not raised, hidden, or converted into a hard failure.
 
 ## Phase 0 — measurement and attribution
 
-The lane is based at `5e86c48` and includes the post-base runtime commits `fd92899`, `0995e01`,
-and `0ea5cd1`, plus `be06ddf`, `c7ff378`, and this fixture repair. The current re-runnable lane
+The lane is based at `1967c80` and includes the post-base runtime commits `e15aab8`, `535b2cf`,
+and `e5cead7`, plus `1f6145b`, `75fa96c`, and this fixture repair. The current re-runnable lane
 measurement is 61,617 lines; the historical pre-fixture measurement was 61,605, the historical
-pre-c7ff378 measurement was 61,589, and the historical pre-be06ddf measurement was 61,554. This
+pre-75fa96c measurement was 61,589, and the historical pre-1f6145b measurement was 61,554. This
 evidence uses the number produced in this lane.
 
 The raw attribution source is:
@@ -33,70 +33,70 @@ result includes the 12-line fixture repair.
 
 | Commit | Budget lines (+/-) | Owning PRD | Area |
 | --- | ---: | --- | --- |
-| `edcd349` | +47,102 / -0 | PRD-047 | absorbed host/package baseline |
-| `d88bdc3` | +1 / -1 | PRD-047 | build script |
-| `7034246` | +0 / -0 | PRD-047 + PRD-048 | excluded generated Android bundle |
-| `fe06d8b` | +686 / -153 | PRD-047 + PRD-048 | host, Android, scripts, tests |
-| `1b0b266` | +11 / -1 | PRD-045 | Android playtest bridge |
-| `1589b25` | +796 / -343 | PRD-047 + PRD-048 + PRD-049 | runtime proofs, physics, distribution |
-| `f1df419` | +1,988 / -373 | PRD-046 + PRD-048 + PRD-049 + PRD-050 | physics, conformance, distribution, tests |
-| `c563cef` | +319 / -6 | PRD-046 | native character physics |
-| `d631001` | +196 / -24 | PRD-046 | native area physics |
-| `baafdeb` | +0 / -0 | PRD-047 | excluded agent documentation |
-| `b2b27f1` | +1,487 / -95 | PRD-048 + PRD-049 | iOS packaging and physics tests |
-| `5750f6c` | +2 / -2 | PRD-048 | CI contract test |
-| `1c3c34b` | +8 / -0 | PRD-048 | packed-consumer release gate |
-| `484ed6d` | +5 / -16 | PRD-048 | distribution extraction |
-| `aa22119` | +3 / -0 | PRD-048 | package manifest |
-| `8154196` | +13 / -1 | PRD-048 | Windows distribution |
-| `55a2041` | +14 / -1 | PRD-048 | iOS simulator distribution |
-| `cfd8fb7` | +532 / -294 | PRD-049 | physics parity verifier |
-| `131764c` | +10 / -4 | PRD-048 + PRD-049 | CI and simulator gates |
-| `664ab78` | +10 / -3 | PRD-049 | Android physics parity gate |
-| `e4dad6e` | +24 / -13 | PRD-048 + PRD-049 | platform dependencies and gates |
-| `26a767e` | +13 / -7 | PRD-048 + PRD-049 | clean platform launch |
-| `675c268` | +7 / -3 | PRD-048 + PRD-049 | runner arguments |
-| `ae1628c` | +279 / -37 | PRD-049 | parity audit evidence |
-| `b842d08` | +20 / -4 | PRD-048 + PRD-049 | native compiler/logging gates |
-| `f23f9d2` | +4 / -1 | PRD-048 | hosted Windows toolchain gate |
-| `ce61f53` | +1 / -0 | PRD-048 | hosted dependency gate |
-| `e43e529` | +58 / -2 | PRD-048 + PRD-050 | Windows surface and build gate |
-| `3bb0063` | +0 / -50 | PRD-048 | CI contract cleanup |
-| `5a4f4d0` | +20 / -0 | PRD-049 | parity physics controls |
-| `baf046f` | +2 / -0 | PRD-049 | simulator parity tolerance |
-| `92ce2d1` | +3 / -0 | PRD-048 + PRD-049 | packed physics fixture |
-| `ba03602` | +830 / -145 | PRD-050 | native entry, assets, and starter proof |
-| `d697420` | +1 / -0 | PRD-050 | Linux desktop dependency gate |
-| `ce731e0` | +1 / -0 | PRD-050 | Linux HTTP dependency gate |
-| `5e1cb2a` | +2 / -0 | PRD-050 | Linux build dependency gate |
-| `73c3d2c` | +18 / -3 | PRD-050 | starter verifier |
-| `c45d4b1` | +1 / -0 | PRD-050 | Linux Vulkan dependency gate |
-| `606b0f9` | +5 / -0 | PRD-048 + PRD-050 | declared consumer entry |
-| `b8efb29` | +5 / -5 | PRD-048 + PRD-050 | portable Android proof source |
-| `27ee376` | +7 / -7 | PRD-048 | Gradle wrapper provenance |
-| `e38439c` | +12 / -4 | PRD-048 | Android Rust release targets |
-| `b755168` | +7 / -5 | PRD-048 | Android SDL AAR extraction |
-| `aecd0a5` | +9 / -7 | PRD-048 | clean Android SDL source |
-| `01ed033` | +67 / -5 | PRD-048 | packed mobile consumer bootstrap |
-| `f150158` | +15 / -4 | PRD-048 | clean Android SDK view |
-| `323a57b` | +19 / -4 | PRD-048 | Android control transport |
-| `886f6f9` | +12 / -5 | PRD-048 | packed playtest CLI |
-| `c7c073e` | +732 / -96 | PRD-047 | native audio host and proof tests |
-| `a2a6c73` | +64 / -15 | PRD-048 | generated Android proof assets |
-| `42f51c6` | +36 / -24 | PRD-047 | positional-audio proof |
-| `9f38687` | +19 / -0 | PRD-048 | deterministic distribution gates |
-| `4ab5955` | +76 / -9 | PRD-054 | Android WGSL/conformance compatibility |
-| `6b2c4e5` | +2,452 / -396 | PRD-054 | parity registry and version matrix |
-| `cb754d9` | +218 / -0 | PRD-053 | native multi-pointer input |
-| `3d1bc40` | +4,512 / -368 | PRD-054 + PRD-055 + PRD-053 | conformance, HUD, and input proofs |
-| `2e247d6` | +960 / -47 | PRD-046 + PRD-048 + PRD-053 + PRD-054 + PRD-055 | landed cross-PRD gates |
-| `351319c` | +0 / -0 | PRD-048 | excluded Android documentation |
-| `5e86c48` | +2 / -2 | PRD-048 | emulator boot/release gate |
-| `fd92899` | +28 / -3 | PRD-053 | Android touch coordinate transport (`include/`, `src/`) |
-| `0995e01` | +148 / -0 | PRD-053 | Android touch parity and proof (`src/`, `tests/`) |
-| `0ea5cd1` | +30 / -0 | PRD-054 | parity runner and contract tests (`conformance/`, `tests/`) |
-| `be06ddf` | +38 / -3 | PRD-054 | Android dependency layout preflight (`conformance/`, `tests/`) |
-| `c7ff378` | +18 / -2 | PRD-054 | Android dependency layout preflight guard and regression test (`conformance/`, `tests/`) |
+| `cd0e8fd` | +47,102 / -0 | PRD-047 | absorbed host/package baseline |
+| `0c12f37` | +1 / -1 | PRD-047 | build script |
+| `570a634` | +0 / -0 | PRD-047 + PRD-048 | excluded generated Android bundle |
+| `4d2c03c` | +686 / -153 | PRD-047 + PRD-048 | host, Android, scripts, tests |
+| `607743b` | +11 / -1 | PRD-045 | Android playtest bridge |
+| `61b04f5` | +796 / -343 | PRD-047 + PRD-048 + PRD-049 | runtime proofs, physics, distribution |
+| `7eb8978` | +1,988 / -373 | PRD-046 + PRD-048 + PRD-049 + PRD-050 | physics, conformance, distribution, tests |
+| `4802c26` | +319 / -6 | PRD-046 | native character physics |
+| `56463d7` | +196 / -24 | PRD-046 | native area physics |
+| `9693cd3` | +0 / -0 | PRD-047 | excluded agent documentation |
+| `d5bb07f` | +1,487 / -95 | PRD-048 + PRD-049 | iOS packaging and physics tests |
+| `18e1ba5` | +2 / -2 | PRD-048 | CI contract test |
+| `c7bec60` | +8 / -0 | PRD-048 | packed-consumer release gate |
+| `fec8396` | +5 / -16 | PRD-048 | distribution extraction |
+| `04b364c` | +3 / -0 | PRD-048 | package manifest |
+| `19e630d` | +13 / -1 | PRD-048 | Windows distribution |
+| `03f7451` | +14 / -1 | PRD-048 | iOS simulator distribution |
+| `1846c4f` | +532 / -294 | PRD-049 | physics parity verifier |
+| `524db74` | +10 / -4 | PRD-048 + PRD-049 | CI and simulator gates |
+| `4a3f757` | +10 / -3 | PRD-049 | Android physics parity gate |
+| `ea6a177` | +24 / -13 | PRD-048 + PRD-049 | platform dependencies and gates |
+| `544e100` | +13 / -7 | PRD-048 + PRD-049 | clean platform launch |
+| `84314b5` | +7 / -3 | PRD-048 + PRD-049 | runner arguments |
+| `d88ae83` | +279 / -37 | PRD-049 | parity audit evidence |
+| `fc22e94` | +20 / -4 | PRD-048 + PRD-049 | native compiler/logging gates |
+| `ccd3dc9` | +4 / -1 | PRD-048 | hosted Windows toolchain gate |
+| `ef411dd` | +1 / -0 | PRD-048 | hosted dependency gate |
+| `d071e37` | +58 / -2 | PRD-048 + PRD-050 | Windows surface and build gate |
+| `5d3fa01` | +0 / -50 | PRD-048 | CI contract cleanup |
+| `c14e1d7` | +20 / -0 | PRD-049 | parity physics controls |
+| `9e4105f` | +2 / -0 | PRD-049 | simulator parity tolerance |
+| `ef4df52` | +3 / -0 | PRD-048 + PRD-049 | packed physics fixture |
+| `1020a96` | +830 / -145 | PRD-050 | native entry, assets, and starter proof |
+| `75c5242` | +1 / -0 | PRD-050 | Linux desktop dependency gate |
+| `612c25a` | +1 / -0 | PRD-050 | Linux HTTP dependency gate |
+| `a66f198` | +2 / -0 | PRD-050 | Linux build dependency gate |
+| `eb89ff4` | +18 / -3 | PRD-050 | starter verifier |
+| `744abd5` | +1 / -0 | PRD-050 | Linux Vulkan dependency gate |
+| `4b221e9` | +5 / -0 | PRD-048 + PRD-050 | declared consumer entry |
+| `1bf68bb` | +5 / -5 | PRD-048 + PRD-050 | portable Android proof source |
+| `eeb0a13` | +7 / -7 | PRD-048 | Gradle wrapper provenance |
+| `2c5f7f0` | +12 / -4 | PRD-048 | Android Rust release targets |
+| `7c20861` | +7 / -5 | PRD-048 | Android SDL AAR extraction |
+| `d7e5cc5` | +9 / -7 | PRD-048 | clean Android SDL source |
+| `d574a8f` | +67 / -5 | PRD-048 | packed mobile consumer bootstrap |
+| `bf1ac54` | +15 / -4 | PRD-048 | clean Android SDK view |
+| `8a6f2aa` | +19 / -4 | PRD-048 | Android control transport |
+| `90d5f47` | +12 / -5 | PRD-048 | packed playtest CLI |
+| `60b06a2` | +732 / -96 | PRD-047 | native audio host and proof tests |
+| `c8fb174` | +64 / -15 | PRD-048 | generated Android proof assets |
+| `1da5834` | +36 / -24 | PRD-047 | positional-audio proof |
+| `69cef74` | +19 / -0 | PRD-048 | deterministic distribution gates |
+| `46a7f12` | +76 / -9 | PRD-054 | Android WGSL/conformance compatibility |
+| `9c2b0de` | +2,452 / -396 | PRD-054 | parity registry and version matrix |
+| `50f8eb4` | +218 / -0 | PRD-053 | native multi-pointer input |
+| `9891415` | +4,512 / -368 | PRD-054 + PRD-055 + PRD-053 | conformance, HUD, and input proofs |
+| `e750583` | +960 / -47 | PRD-046 + PRD-048 + PRD-053 + PRD-054 + PRD-055 | landed cross-PRD gates |
+| `72cd940` | +0 / -0 | PRD-048 | excluded Android documentation |
+| `1967c80` | +2 / -2 | PRD-048 | emulator boot/release gate |
+| `e15aab8` | +28 / -3 | PRD-053 | Android touch coordinate transport (`include/`, `src/`) |
+| `535b2cf` | +148 / -0 | PRD-053 | Android touch parity and proof (`src/`, `tests/`) |
+| `e5cead7` | +30 / -0 | PRD-054 | parity runner and contract tests (`conformance/`, `tests/`) |
+| `1f6145b` | +38 / -3 | PRD-054 | Android dependency layout preflight (`conformance/`, `tests/`) |
+| `75fa96c` | +18 / -2 | PRD-054 | Android dependency layout preflight guard and regression test (`conformance/`, `tests/`) |
 | this fixture repair | +12 / -0 | PRD-054 | source-only Android dependency layout regression test (`tests/`) |
 
 The table sums to **+63,970 / -2,593**, net **61,377**; adding one terminal line for each of the
@@ -173,22 +173,22 @@ budgets trigger: native runtime LOC review trigger: 61605 lines (trigger 50000, 
 budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61605/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The pre-c7ff378 direct-loader baseline was:
+The pre-75fa96c direct-loader baseline was:
 
 ```text
 budgets trigger: native runtime LOC review trigger: 61589 lines (trigger 50000, +11589). Justify in the owning PRD and run the kill switch over what was added.
 budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61589/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The pre-be06ddf direct-loader baseline was:
+The pre-1f6145b direct-loader baseline was:
 
 ```text
 budgets trigger: native runtime LOC review trigger: 61554 lines (trigger 50000, +11554). Justify in the owning PRD and run the kill switch over what was added.
 budgets ok: 6 framework packages, 3 example workspaces, 5975/15000 framework LOC, 61554/50000 native runtime LOC, 4 PRD files, largest template 1395 LOC
 ```
 
-The `be06ddf` repair increased the native number by 35 counted lines for the Android layout
-preflight and its positive/negative tests. `c7ff378` added 16 budget-counted native lines
+The `1f6145b` repair increased the native number by 35 counted lines for the Android layout
+preflight and its positive/negative tests. `75fa96c` added 16 budget-counted native lines
 (`+18 / -2`) for the Android dependency layout guard and regression test. This fixture repair
 adds 12 budget-counted native lines (`+12 / -0`) for the source-only layout regression test. The
 framework number and `LIMITS.nativeRuntimeLoc` are unchanged; the trigger remains visible and

@@ -197,7 +197,7 @@ scaffolded `AGENTS.md` documenting the SwiftShader configuration.
 Five of the six candidates were implemented in the same pass, each with a test that fails when the
 change is reverted. `pnpm typecheck` and `pnpm lint` are clean (215 pre-existing warnings, zero
 errors); `pnpm test` is green apart from two `packages/runtime-native` failures that predate this
-work — `tests/parity-contract.test.mjs` expects `PRD-064` where commit `0358c025` set the registry
+work — `tests/parity-contract.test.mjs` expects `PRD-064` where commit `5e554485` set the registry
 owner to `PRD-077`, reproduced with these changes stashed, and `tests/conformance-runner.test.mjs`
 times out at 60s on a loaded machine.
 

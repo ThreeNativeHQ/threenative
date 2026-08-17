@@ -68,7 +68,7 @@ WebGPU output for this subject, and PRD-080 is not the PRD to do it in.
 **Phase 1 is where it stops today.** It needs a public deploy — an outward-facing action — and
 Phases 3 and 4 need a human stranger, which is not agent work.
 
-§1 below is a read of tracked strategy documents and of the repository tree at commit `8c5fc40`.
+§1 below is a read of tracked strategy documents and of the repository tree at commit `11bf82d`.
 
 **Four tracked documents call this the project's decisive test. None of them agrees with the
 others about what it is.**
