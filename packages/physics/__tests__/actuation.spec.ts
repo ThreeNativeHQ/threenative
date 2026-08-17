@@ -29,8 +29,8 @@ const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
   ["conformance/", 6_176],
-  ["tests/", 8_083],
-  ["scripts/", 9_419],
+  ["tests/", 8_176],
+  ["scripts/", 9_433],
   ["include/", 3_760],
   ["android/", 1_843],
   ["native/", 2_914],
@@ -45,8 +45,8 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 156 files, 1,369 passed, 35 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 46 files, 271 passed, 39 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 156 files, 1,371 passed, 35 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 46 files, 272 passed, 39 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();
