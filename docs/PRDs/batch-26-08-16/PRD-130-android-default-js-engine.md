@@ -2,17 +2,24 @@
 prd_contract: v1
 ---
 
-# PRD-130 — Make the Android engine default payable, then let the owner pay it or refuse it in writing
+# PRD-130 — Make V8 the Android default, and make it reach someone other than its author
 
-**Status:** PROPOSED, 2026-08-16. Nothing below has executed. No mobile-readiness, signing, or
-second-device claim is made by this file. It does not decide that V8 becomes the default; it removes
-the four things that make that decision unpayable today, and it makes a refusal cost the same
-paperwork as an acceptance.
+**Status:** ACCEPTED, 2026-08-16. Nothing below has executed. No mobile-readiness, signing, or
+second-device claim is made by this file.
 
-**Outcome:** `-PthreenativeJsEngine=v8` stops being a flag that works on one operator's machine, on
-one ABI, on the one build path that compiles from source. Afterwards, either the Android default is
-V8 and a scaffolded project gets it without knowing the flag exists, or the default is still QuickJS
-and `docs/verification/` carries the price the owner looked at when refusing.
+**The owner has decided: V8 becomes the Android default.** Recorded 2026-08-16, on the numbers in
+PRD-118 and its charged retake — 119.19 ms → 8.32 ms at 16,384 moving cubes, 22× less script time,
+against +25.6 MB of arm64 payload. That resolves Phase 6's branch in advance and deletes the refusal
+half of this PRD.
+
+It does not shorten Phases 1 through 5, and the flip lands after them rather than instead of them.
+Flipping the default today would produce a default that only an operator with an NDK can build, on
+one ABI, that breaks the x86_64 emulator lane on first launch — which is the exact condition this
+PRD exists to remove. **Phase 5 keeps a veto:** if V8 fails a conformance row QuickJS passes on the
+same device, the flip does not land, this status returns to open, and the failing row is named.
+
+**Outcome:** the Android default is V8, and a project scaffolded by `create-threenative` gets it
+without knowing the flag exists. `-PthreenativeJsEngine=quickjs` becomes the documented rollback.
 
 **Depends on:** [PRD-118](../done/PRD-118-android-js-engine.md), which measured the win and said in
 its own §6 that the flip is the owner's call; the physical Pixel 8 (`shiba`, arm64-v8a) used by
@@ -28,12 +35,17 @@ than solving it.
 correction, a dependency-provisioning gap, a release-artifact addition, and then the runs. The runs
 are the cost, and two of them need the phone.
 
-**Blast radius: ~9 paths.** `packages/runtime-native/android/app/build.gradle.kts`,
+**Blast radius: ~11 paths.** `packages/runtime-native/android/app/build.gradle.kts`,
+`packages/runtime-native/CMakeLists.txt`, `packages/runtime-native/CMakePresets.json`,
 `packages/runtime-native/scripts/download-deps.mjs`,
 `packages/runtime-native/scripts/package-android.mjs`,
 `packages/runtime-native/scripts/install-prebuilt.mjs`, `.github/workflows/native-release.yml`,
 `.github/workflows/native-platforms.yml`, `packages/runtime-native/docs/G3-mobile-bring-up.md`,
 `packages/runtime-native/AGENTS.md`, `docs/verification/`.
+
+The last three carry no code and are the ones most likely to be skipped. Android's engine is stated
+in prose in `AGENTS.md` and G3, and a default that changes in the build files while the docs still
+say QuickJS is how the next reader learns the wrong thing with confidence.
 
 ---
 
@@ -86,17 +98,18 @@ flowchart TD
     A64 --> Corr["correctness: unrun"]
 ```
 
-## 2. What this PRD decides, and what it hands back
+## 2. What this PRD decides
 
-It decides that the four gaps above get closed regardless of the outcome, because each is a defect
-in its own right: a build that ships a wrong-ABI asset, a dependency outside the supported
-provisioning path, a release artifact that cannot express a supported build option, and a cost
-nobody has measured on the artifact users receive.
+The four gaps above get closed first, because each is a defect in its own right: a build that ships
+a wrong-ABI asset, a dependency outside the supported provisioning path, a release artifact that
+cannot express a supported build option, and a cost nobody has measured on the artifact users
+receive. Every one of them would still be a defect if the default had stayed QuickJS, so none of
+them is flip preparation and none is skippable now that the flip is decided.
 
-It does not decide the default. Phase 6 lays the finished cost sheet in front of the owner —
-per-ABI download size, correctness parity, both engines' numbers under PRD-127's condition gate —
-and the owner flips it or refuses it. **Both outcomes are terminal and both are written down.** A
-refusal recorded with the measured price is a finished PRD; a refusal recorded as "not now" is not.
+The default itself is settled — see the status block. What Phase 6 still owes is the flip **and**
+the measurements that make it reviewable afterwards: per-ABI download size (Phase 3), correctness
+parity (Phase 5), and both engines' numbers under PRD-127's condition gate. A decision recorded
+without its price is not a finished record, and that stays true when the answer is yes.
 
 ## 3. Integration Ledger
 
@@ -109,6 +122,7 @@ Filled with real `file:line` during implementation. A `TBD` at phase end means t
 | 3 | V8 entries in `ANDROID_PREBUILT_ASSETS` | `package-android.mjs:26` map, consumed by `prepareAndroidPrebuilts` at line 208 | prebuilt path silently QuickJS-only | prebuilt completeness check widened, not duplicated | populate `android/prebuilt/` from a V8 release, build, assert logcat says V8 |
 | 4 | Per-ABI size record | `docs/verification/android-engine-size-<date>.md`, cited from `G3-mobile-bring-up.md` | the universal-APK figure quoted in PRD-118 §4 | universal figure kept but labelled double-counting | none needed — it is a measurement, and its control is that the two engines' numbers differ |
 | 5 | Engine identity assertion in the device gates | `verify-android-first-proof.mjs` / conformance runner, whichever already parses logcat | assumption that the installed APK is the engine you asked for | n/a | run the assertion against a QuickJS APK while asking for V8 → must fail |
+| 6 | V8 as the Android default | `CMakeLists.txt:129` platform block, `build.gradle.kts:35` property default, `CMakePresets.json` `tn-android` preset | QuickJS default in all three | yes — QuickJS becomes the opt-in, not a second default | build with no flag → logcat says V8; build with `-PthreenativeJsEngine=quickjs` → logcat says QuickJS and still launches |
 
 **Reachability.** Entry point: `pnpm native:build` and `gradlew assemble*` for the source path,
 `create-threenative`-scaffolded `pnpm native:package:android` for the prebuilt path; the observable
@@ -222,37 +236,45 @@ it must fail. A parity gate whose two sides can be the same build measures nothi
 **Acceptance:** conformance rows that pass under QuickJS pass under V8 on the same device, and any
 row that does not is named in the record. A blocked row is reported blocked, never omitted.
 
-### Phase 6 — The owner decides, and the decision is written either way
+### Phase 6 — Flip the default, and record what it cost
 
-**Files:** `CMakeLists.txt` (EDIT, only if flipping), `android/app/build.gradle.kts` (EDIT, only if
-flipping), `packages/runtime-native/AGENTS.md` (EDIT), `docs/verification/` (NEW record),
+**Files:** `CMakeLists.txt` (EDIT), `android/app/build.gradle.kts` (EDIT),
+`packages/runtime-native/AGENTS.md` (EDIT), `packages/runtime-native/CMakePresets.json` (EDIT — the
+`tn-android` preset pins `MYSTRAL_USE_V8=OFF, MYSTRAL_USE_QUICKJS=ON` and would otherwise override
+the platform default it is meant to follow), `docs/verification/` (NEW record),
 `docs/PRDs/done/PRD-118-android-js-engine.md` (EDIT — its §6 open question gets an answer and a
 link).
 
-The cost sheet goes to the owner: per-ABI download delta (Phase 3), correctness parity (Phase 5),
-both engines' frame numbers under PRD-127's condition gate, and the operational cost — a shared STL,
-an external snapshot per ABI, and a 30 MB library in every release.
+- [ ] The Android default becomes V8 in the CMake platform block (`CMakeLists.txt:129`), the Gradle
+      property default (`build.gradle.kts:35`, currently `.orElse("quickjs")`) and the `tn-android`
+      CMake preset. Three places state this default today and all three must agree; a preset that
+      contradicts the platform block is how the flag came to work on one machine only.
+- [ ] `-PthreenativeJsEngine=quickjs` is the documented rollback, and **both directions are exercised
+      in the same commit** — a rollback nobody ran is not a rollback.
+- [ ] AGENTS.md and G3 stop saying "Android QuickJS+wgpu-native". AGENTS.md's V8 paragraph inverts:
+      QuickJS becomes the opt-in, and the +25.6 MB stays stated rather than dropped now that it is
+      the paid-for option.
+- [ ] `docs/verification/` gains a dated record carrying the price the owner accepted: per-ABI
+      download delta (Phase 3), correctness parity (Phase 5), both engines' frame numbers under
+      PRD-127's condition gate, and the operational cost — a shared STL, an external snapshot per
+      ABI, and a 30 MB library in every release.
 
-- **If flipped:** the Android default becomes V8 in the CMake platform block and the Gradle property
-  default, `-PthreenativeJsEngine=quickjs` becomes the documented rollback, and both are exercised in
-  the same commit. AGENTS.md and G3 stop saying "Android QuickJS+wgpu-native".
-- **If refused:** `docs/verification/` gains a dated record naming the number the owner refused to
-  pay and what would change the answer. AGENTS.md keeps its paragraph and gains the link. Phases 1
-  through 5 stay; they are correctness work, not flip preparation.
+**Acceptance (consumer-scoped):** a project scaffolded by `create-threenative` and built for Android
+with **no engine flag** launches on the Pixel 8 and logcat reports `JS engine created: V8`; the same
+project with `-PthreenativeJsEngine=quickjs` reports QuickJS and still launches; and the emulator
+lane launches V8 on x86_64 from Phase 1's staging. The engine is read from logcat in all three,
+never inferred from the flag.
 
-**Acceptance (consumer-scoped, and it branches):**
-
-- Flipped: a project scaffolded by `create-threenative` and built for Android with **no engine flag**
-  launches on the Pixel 8 and logcat reports `JS engine created: V8`; the same project with
-  `-PthreenativeJsEngine=quickjs` reports QuickJS and still launches.
-- Refused: the same no-flag build reports QuickJS, and the dated record states the measured price of
-  the alternative. In both branches the emulator lane launches whichever engine is default, on
-  x86_64, from Phase 1's staging.
+**Revert check:** restore any one of the three default sites to QuickJS while the other two say V8 →
+a gate must catch the disagreement rather than letting the build pick a winner silently.
 
 ## 5. What this PRD will not claim when it closes
 
-- **Not mobile-ready, whichever way it goes.** One Android phone and one x86_64 emulator are not
-  mobile, and iOS has no physical evidence at all.
+- **Not mobile-ready.** One Android phone and one x86_64 emulator are not mobile, and iOS has no
+  physical evidence at all. A faster default engine does not change that by a single row.
+- **Not an iOS change.** iOS is JSC by construction and no third-party engine gets a JIT there, so
+  this decision reaches Android only. The one platform still on a JIT-less interpreter after this
+  PRD is iOS, and nothing here shortens that.
 - **Not a signed-artifact claim.** The release build type still has no `signingConfig`; that is
   PRD-128's row and this PRD does not touch it.
 - **Not a second-device result.** Every device number here comes from `shiba` unless another phone
@@ -269,4 +291,7 @@ an external snapshot per ABI, and a 30 MB library in every release.
 - [ ] Revert checks pass: undoing Phase 1, 2 or 4 breaks a gate that now exists
 - [ ] The engine each gate ran under is read from logcat, never inferred from the build flag
 - [ ] G3 and AGENTS.md describe the default that is actually in the build files
-- [ ] The owner's decision — flip or refusal — exists as a dated record, not as an implication
+- [ ] All three default sites — CMake platform block, Gradle property, `tn-android` preset — say V8,
+      and the rollback flag was exercised in the same commit
+- [ ] The price the owner accepted exists as a dated record in `docs/verification/`, not as an
+      implication that the numbers spoke for themselves
