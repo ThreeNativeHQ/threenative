@@ -64,8 +64,23 @@ export function parseBatteryState(output) {
     return match ? { name, powered: parseBoolean(match[1].toLowerCase(), "charging") } : null;
   });
   const presentSources = poweredBy.filter(Boolean);
-  const statusMatch = /^\s*status:\s*(\d+)\s*$/imu.exec(source);
-  const status = statusMatch ? Number(statusMatch[1]) : null;
+  const statusMatch = /^\s*status:\s*(.*?)\s*$/imu.exec(source);
+  const statusText = statusMatch?.[1] ?? null;
+  const status = statusText === null ? null : Number(statusText);
+  if (statusText !== null && (!Number.isInteger(status) || status < 1 || status > 5)) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
+      `dumpsys battery has unrecognised status: ${statusText}`,
+      { condition: "charging", observed: statusText },
+    );
+  }
+  if (status === 1) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
+      "dumpsys battery status UNKNOWN cannot prove discharging",
+      { condition: "charging", observed: statusText },
+    );
+  }
   if (presentSources.length !== sources.length && status === null) {
     throw new DevicePreflightError(
       "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
@@ -75,11 +90,12 @@ export function parseBatteryState(output) {
   }
 
   const activeSource = poweredBy.find((entry) => entry?.powered === true)?.name;
-  const charging = activeSource !== undefined || status === 2;
+  const chargingByStatus = status === 2 || status === 5;
+  const charging = activeSource !== undefined || chargingByStatus;
   return {
     batteryPercent,
     charging,
-    chargingSource: activeSource ?? (status === 2 ? "STATUS" : "NONE"),
+    chargingSource: activeSource ?? (chargingByStatus ? "STATUS" : "NONE"),
   };
 }
 

@@ -83,6 +83,32 @@ describe("device preflight parsers", () => {
     );
   });
 
+  test("rejects unrecognised and unknown battery statuses", () => {
+    for (const status of [999, 1]) {
+      assert.throws(
+        () => parseBatteryState(healthyBattery.replace("status: 3", `status: ${status}`)),
+        (error) => {
+          assert(error instanceof DevicePreflightError);
+          assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+          return true;
+        },
+      );
+    }
+  });
+
+  test("treats a full battery status as charging", async () => {
+    const fullBattery = healthyBattery.replace("status: 3", "status: 5");
+    assert.deepEqual(parseBatteryState(fullBattery), {
+      batteryPercent: 82,
+      charging: true,
+      chargingSource: "STATUS",
+    });
+    await assert.rejects(
+      () => assertDeviceReady("37251FDJH0037Z", baseOptions, fixtureAdb({ battery: fullBattery })),
+      /charging: expected discharging, observed STATUS/u,
+    );
+  });
+
   test("parses numeric, named, and display-power thermal/screen variants", () => {
     assert.deepEqual(parseThermalState("Current thermal status: MODERATE"), {
       thermalStatus: "MODERATE",
