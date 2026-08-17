@@ -155,7 +155,7 @@ not exist — the fifth blocker, written down above and in the verification reco
 moved. Run from the branch where it does exist, it exits on the signing check exactly as predicted,
 so the split's premise holds. Phase 0 both invalidated the cost and confirmed the direction.
 
-### Phase 0.5 — Recover the orchestrator (**new, and it is now the long pole**)
+### Phase 0.5 — Recover the orchestrator (**new, and it is now the long pole**) — scoped as [PRD-131](./PRD-131-recover-the-qualification-orchestrator.md)
 
 Its own PRD, not a sub-phase of this one. Bring `qualify-physical-mobile.mjs`,
 `physical-device-evidence.mjs`, the fixtures and the tests onto `main` from
