@@ -33,6 +33,7 @@ jobs:
           pnpm --filter @threenative/core build
           pnpm --filter @threenative/physics build
           pnpm --filter @threenative/ui build
+          pnpm --filter create-threenative build
       - run: pnpm typecheck
 
   lint:

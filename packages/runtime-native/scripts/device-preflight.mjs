@@ -64,22 +64,42 @@ export function parseBatteryState(output) {
     return match ? { name, powered: parseBoolean(match[1].toLowerCase(), "charging") } : null;
   });
   const presentSources = poweredBy.filter(Boolean);
-  const statusMatch = /^\s*status:\s*(\d+)\s*$/imu.exec(source);
-  const status = statusMatch ? Number(statusMatch[1]) : null;
-  if (presentSources.length === 0 && status === null) {
+  const statusMatch = /^[ \t]*status:[ \t]*([^\r\n]*?)[ \t]*$/imu.exec(source);
+  const statusText = statusMatch?.[1] ?? null;
+  const statusIsCanonical = statusText !== null && /^(?:0|[1-9][0-9]*)$/u.test(statusText);
+  const status = statusIsCanonical ? Number(statusText) : null;
+  if (
+    statusText !== null &&
+    (!statusIsCanonical || !Number.isInteger(status) || status < 1 || status > 5)
+  ) {
     throw new DevicePreflightError(
       "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
-      "dumpsys battery has no charging source or status",
+      `dumpsys battery has unrecognised status: ${statusText}`,
+      { condition: "charging", observed: statusText },
+    );
+  }
+  if (status === 1) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
+      "dumpsys battery status UNKNOWN cannot prove discharging",
+      { condition: "charging", observed: statusText },
+    );
+  }
+  if (presentSources.length !== sources.length && status === null) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
+      "dumpsys battery has incomplete charging sources and no status",
       { condition: "charging", observed: source },
     );
   }
 
   const activeSource = poweredBy.find((entry) => entry?.powered === true)?.name;
-  const charging = activeSource !== undefined || status === 2;
+  const chargingByStatus = status === 2 || status === 5;
+  const charging = activeSource !== undefined || chargingByStatus;
   return {
     batteryPercent,
     charging,
-    chargingSource: activeSource ?? (status === 2 ? "STATUS" : "NONE"),
+    chargingSource: activeSource ?? (chargingByStatus ? "STATUS" : "NONE"),
   };
 }
 
@@ -168,12 +188,6 @@ function normaliseOptions(options) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "options are required");
   }
   const { minBatteryPercent, requireDischarging, maxThermalStatus, allowOverride } = options;
-  // Opt-in, and only one caller sets it. See the emulator branch in assertDeviceReady for why a
-  // qualification lane must never pass this and a benchmark reasonably may.
-  const allowEmulator = options.allowEmulator ?? false;
-  if (typeof allowEmulator !== "boolean") {
-    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "allowEmulator must be a boolean");
-  }
   if (
     !Number.isFinite(minBatteryPercent) ||
     minBatteryPercent < 0 ||
@@ -186,6 +200,12 @@ function normaliseOptions(options) {
       "TN_DEVICE_PREFLIGHT_OPTIONS",
       "expected minBatteryPercent, requireDischarging, maxThermalStatus and allowOverride",
     );
+  }
+  // Opt-in, and only one caller sets it. See the emulator branch in assertDeviceReady for why a
+  // qualification lane must never pass this and a benchmark reasonably may.
+  const allowEmulator = options.allowEmulator ?? false;
+  if (typeof allowEmulator !== "boolean") {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "allowEmulator must be a boolean");
   }
   const maximumThermal = thermalStatusFromValue(maxThermalStatus);
   return { allowEmulator, minBatteryPercent, requireDischarging, maximumThermal, allowOverride };
@@ -216,6 +236,7 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
       { serial },
     );
   }
+
   const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies.environment));
   const state = String(await execute(["get-state"])).trim();
   if (state !== "device") {

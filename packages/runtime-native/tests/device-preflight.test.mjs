@@ -72,6 +72,57 @@ describe("device preflight parsers", () => {
     );
   });
 
+  test("rejects incomplete battery source output without status", () => {
+    assert.throws(
+      () => parseBatteryState("AC powered: false\nlevel: 82"),
+      (error) => {
+        assert(error instanceof DevicePreflightError);
+        assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+        return true;
+      },
+    );
+  });
+
+  test("rejects unrecognised and unknown battery statuses", () => {
+    for (const status of [999, 1]) {
+      assert.throws(
+        () => parseBatteryState(healthyBattery.replace("status: 3", `status: ${status}`)),
+        (error) => {
+          assert(error instanceof DevicePreflightError);
+          assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+          return true;
+        },
+      );
+    }
+  });
+
+  test("rejects non-canonical battery status tokens", () => {
+    for (const status of ["3e0", "0x3", "3.0", "+3"]) {
+      assert.throws(
+        () => parseBatteryState(healthyBattery.replace("status: 3", `status: ${status}`)),
+        (error) => {
+          assert(error instanceof DevicePreflightError);
+          assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+          assert.equal(error.details.observed, status);
+          return true;
+        },
+      );
+    }
+  });
+
+  test("treats a full battery status as charging", async () => {
+    const fullBattery = healthyBattery.replace("status: 3", "status: 5");
+    assert.deepEqual(parseBatteryState(fullBattery), {
+      batteryPercent: 82,
+      charging: true,
+      chargingSource: "STATUS",
+    });
+    await assert.rejects(
+      () => assertDeviceReady("37251FDJH0037Z", baseOptions, fixtureAdb({ battery: fullBattery })),
+      /charging: expected discharging, observed STATUS/u,
+    );
+  });
+
   test("parses numeric, named, and display-power thermal/screen variants", () => {
     assert.deepEqual(parseThermalState("Current thermal status: MODERATE"), {
       thermalStatus: "MODERATE",
@@ -89,21 +140,43 @@ describe("device preflight parsers", () => {
 describe("assertDeviceReady", () => {
   test("keeps the shared gate reachable from every device caller", () => {
     const callers = [
-      "measure-android-js-engine.mjs",
-      "measure-cold-start.mjs",
-      "verify-android-physics-parity.mjs",
+      ["measure-android-js-engine.mjs", /await\s+assertDeviceReady\s*\(/u],
+      ["measure-cold-start.mjs", /await\s+assertDeviceReady\s*\(/u],
+      ["verify-android-physics-parity.mjs", /await\s+assertDeviceReady\s*\(/u],
     ];
-    for (const caller of callers) {
+    for (const [caller, invocation] of callers) {
       const source = readFileSync(new URL(`../scripts/${caller}`, import.meta.url), "utf8");
-      assert.match(source, /assertDeviceReady/u);
-      assert.match(source, /deviceCondition/u);
-      assert.match(source, /provisional/u);
+      assert.match(source, invocation);
     }
     const engineLoadSource = readFileSync(
       new URL("../../../scripts/engine-load-test/run-android.ts", import.meta.url),
       "utf8",
     );
-    assert.match(engineLoadSource, /assert(?:Shared)?DeviceReady/u);
+    assert.match(engineLoadSource, /await\s+assertSharedDeviceReady\s*\(/u);
+  });
+
+  test("stores the final preflight observation after build preparation", () => {
+    const measurementSource = readFileSync(
+      new URL("../scripts/measure-android-js-engine.mjs", import.meta.url),
+      "utf8",
+    );
+    const measurementBuild = measurementSource.indexOf("const builtApkPath");
+    const measurementExecution = measurementSource.indexOf("if (options.foxSubject)");
+    const measurementPreflight = measurementSource.lastIndexOf("await assertDeviceReady(");
+    assert(measurementPreflight > measurementBuild);
+    assert(measurementPreflight < measurementExecution);
+    assert(measurementSource.indexOf("deviceCondition,", measurementPreflight) > measurementPreflight);
+
+    const physicsSource = readFileSync(
+      new URL("../scripts/verify-android-physics-parity.mjs", import.meta.url),
+      "utf8",
+    );
+    const physicsApk = physicsSource.indexOf("const apk =");
+    const physicsExecution = physicsSource.indexOf("if (!options.skipInstall) run");
+    const physicsPreflight = physicsSource.lastIndexOf("await assertDeviceReady(");
+    assert(physicsPreflight > physicsApk);
+    assert(physicsPreflight < physicsExecution);
+    assert(physicsSource.indexOf("deviceCondition,", physicsPreflight) > physicsPreflight);
   });
 
   test("returns the complete condition block for a healthy physical device", async () => {

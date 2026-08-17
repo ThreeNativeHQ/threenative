@@ -123,6 +123,10 @@ function parseProvisional(value: unknown, path: string, required: boolean): stri
   return value;
 }
 
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
 function parseDeviceCondition(
   value: unknown,
   arm: Arm,
@@ -134,11 +138,28 @@ function parseDeviceCondition(
   if (provisional === undefined) {
     throw new BenchError("TN_BENCH_MISSING_DEVICE_CONDITION", "report.provisional is absent");
   }
+  if (required && condition.provisional === undefined) {
+    throw new BenchError(
+      "TN_BENCH_MISSING_DEVICE_CONDITION",
+      "report.deviceCondition.provisional is absent",
+    );
+  }
+  const conditionProvisional = parseProvisional(
+    condition.provisional,
+    "report.deviceCondition.provisional",
+    required,
+  );
+  if (conditionProvisional !== undefined && !sameStringArray(provisional, conditionProvisional)) {
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      "report.provisional must match report.deviceCondition.provisional",
+    );
+  }
   return {
     batteryPercent: requireNumber(condition, "batteryPercent", "report.deviceCondition"),
     charging: requireBoolean(condition, "charging", "report.deviceCondition"),
     chargingSource: requireString(condition, "chargingSource", "report.deviceCondition"),
-    provisional,
+    provisional: conditionProvisional ?? provisional,
     screenOn: requireBoolean(condition, "screenOn", "report.deviceCondition"),
     serial: requireString(condition, "serial", "report.deviceCondition"),
     thermalStatus: requireString(condition, "thermalStatus", "report.deviceCondition"),
@@ -624,6 +645,26 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
     ["left", left],
     ["right", right],
   ] as const) {
+    if (report.arm.endsWith("-android")) {
+      const nestedProvisional = report.deviceCondition?.provisional;
+      if (
+        !Array.isArray(report.provisional) ||
+        report.provisional.some((entry) => typeof entry !== "string" || entry.length === 0) ||
+        !Array.isArray(nestedProvisional) ||
+        nestedProvisional.some((entry) => typeof entry !== "string" || entry.length === 0)
+      ) {
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${label} Android report must carry both provisional arrays`,
+        );
+      }
+      if (!sameStringArray(report.provisional, nestedProvisional)) {
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${label} Android report provisional arrays disagree`,
+        );
+      }
+    }
     if (report.provisional !== undefined && report.provisional.length > 0) {
       throw new BenchError(
         "TN_BENCH_PROVISIONAL_COMPARISON",

@@ -109,10 +109,40 @@ describe("Android physics parity verifier negative controls", () => {
     );
   });
 
-  it("rejects a provisional device observation before comparison", () => {
-    expect(() => compareObservations(web, { ...device, provisional: ["battery"] })).toThrow(
-      /provisional device condition/u,
-    );
+  it("requires matching nested and top-level provisional arrays before comparison", () => {
+    expect(() => compareObservations(web, device)).not.toThrow();
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        provisional: undefined,
+      }),
+    ).toThrow(/device condition block is malformed/u);
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        deviceCondition: { ...device.deviceCondition, provisional: undefined },
+      }),
+    ).toThrow(/device condition block is malformed/u);
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        provisional: [""],
+        deviceCondition: { ...device.deviceCondition, provisional: [""] },
+      }),
+    ).toThrow(/device condition block is malformed/u);
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        provisional: ["battery"],
+        deviceCondition: { ...device.deviceCondition, provisional: ["battery"] },
+      }),
+    ).toThrow(/provisional device condition/u);
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        deviceCondition: { ...device.deviceCondition, provisional: ["battery"] },
+      }),
+    ).toThrow(/device condition block is malformed/u);
   });
 
   it("fails when one-way, platform, or area coverage is absent", () => {

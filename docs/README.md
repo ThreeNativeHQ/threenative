@@ -96,20 +96,18 @@ reproducible with `pnpm pack`, and sweep tests build their own temporary fixture
 
 ## Architecture
 
-*Every file below was re-checked against the tree on 2026-08-16; where one now describes something
-built, it says so and names the file.*
+- [ENTITY-MODEL](architecture/ENTITY-MODEL.md) — the ECS question and its closed decision
+- [THREEJS-CONSTRAINTS](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps and framework
+  ownership
+- [NATIVE-RUNTIME](architecture/NATIVE-RUNTIME.md) — device path, owned runtime, and physics ABI
+- [AGENT-INTERFACE](architecture/AGENT-INTERFACE.md) — how an agent drives a project
+- [NATIVE-PERF-BOTTLENECKS](architecture/NATIVE-PERF-BOTTLENECKS.md) — performance hypotheses
+- [NATIVE-RENDER-TRANSPORT](architecture/NATIVE-RENDER-TRANSPORT.md) — proposed render-thread
+  layers and why they are not a roadmap
 
-- [architecture/ENTITY-MODEL.md](architecture/ENTITY-MODEL.md) — the ECS question, closed
-- [architecture/THREEJS-CONSTRAINTS.md](architecture/THREEJS-CONSTRAINTS.md) — Three.js gaps, and which ones are ours
-- [architecture/NATIVE-RUNTIME.md](architecture/NATIVE-RUNTIME.md) — device path, the owned runtime, the native physics ABI
-- [architecture/AGENT-INTERFACE.md](architecture/AGENT-INTERFACE.md) — how an AI agent drives a ThreeNative project
-- [architecture/NATIVE-PERF-BOTTLENECKS.md](architecture/NATIVE-PERF-BOTTLENECKS.md) — hypothesis list, superseded in part by the measurements in `PRDs/native-performance-fixes/`
-- [architecture/NATIVE-RENDER-TRANSPORT.md](architecture/NATIVE-RENDER-TRANSPORT.md) — the proposed JS shim / command-stream / render-thread stack, layer by layer. **Declined as a roadmap**: it aims three layers of engineering at a boundary measured at 2% of frame
-The 2026-08-08 course correction is closed and its file deleted: the `@threenative/physics`
-node fork was removed, each public class is one file, and only the `PhysicsSimulation`
-backend swaps on the export condition. Write-once/run-anywhere is now owned as a gate by
-[PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md](PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md), which is
-**open** — blocked at acceptance criterion 1.
+Write-once/run-anywhere is owned as a gate by
+[PRD-054](PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md); it remains
+blocked at acceptance criterion 1.
 
 ## Product
 
