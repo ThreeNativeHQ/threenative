@@ -65,7 +65,7 @@ runtime, where only the Xvfb cleanup failure remained.
 | `pnpm --filter @threenative/runtime-native native:physics:parity` | PASS, exit `0` | Web parity: 1 file, 24 tests. Rust parity: 1 test passed. Position, event, grounding, area-membership, and scenario-coverage deltas were zero; the existing diagnostic field reported 6 validation-outcome mismatches without failing the gate. |
 | `cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --tests` | PASS, exit `0` | 9 Rust unit tests, 7 actuation tests, and 1 parity test passed. |
 | `pnpm exec vitest run scripts/__tests__/budgets.spec.ts` | PASS, exit `0` | 1 file, 24 tests passed. |
-| `pnpm budgets` | PASS, exit `0` | 7 framework packages, 5 example workspaces, 15,274/15,000 framework LOC, 72,120/50,000 native runtime LOC, largest template 1,997 LOC. Both review triggers remained visible. The native figure was 71,053 when this lane ran; it is refreshed here because `pnpm budgets` and `packages/physics/__tests__/actuation.spec.ts` both read this row as the live census and fail closed when it drifts. See the 2026-08-15 note under the census table for the changes that moved it. |
+| `pnpm budgets` | PASS, exit `0` | 7 framework packages, 5 example workspaces, 15,274/15,000 framework LOC, 72,678/50,000 native runtime LOC, largest template 1,997 LOC. Both review triggers remained visible. The native figure was 71,053 when this lane ran; it is refreshed here because `pnpm budgets` and `packages/physics/__tests__/actuation.spec.ts` both read this row as the live census and fail closed when it drifts. See the 2026-08-16 note under the census table for the changes that moved it. |
 | `pnpm native:build` | PASS, exit `0` | Linux CMake/V8/Dawn build completed 380/380 targets. |
 | `packages/runtime-native/.runtime/tools-venv/bin/cmake --build packages/runtime-native/build/tn-linux --target threenative-physics-actuation-bindings-test --parallel && ./packages/runtime-native/build/tn-linux/threenative-physics-actuation-bindings-test` | PASS, exit `0` | The explicit excluded target linked and reported `engine: V8` and `native physics actuation bindings passed`. |
 
@@ -110,8 +110,8 @@ and a KEEP/DELETE verdict.
 | --- | ---: | --- | --- | --- | --- |
 | `src/` | 38,082 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
 | `conformance/` | 6,176 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
-| `tests/` | 7,862 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
-| `scripts/` | 9,082 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116 | `scripts/verify-desktop-physics.mjs:206-228`; build and platform verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
+| `tests/` | 8,083 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
+| `scripts/` | 9,419 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
 | `include/` | 3,760 | PRD-046, PRD-047, PRD-053, PRD-116 | `include/threenative/physics_native.h:131`; C ABI consumed at `src/physics/native_bindings.cpp:586` | Add per-game native headers or remove the C boundary | **KEEP** — the coarse host ABI is the shared boundary. |
 | `android/` | 1,843 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054 | Android host sources and `scripts/verify-android-physics-parity.mjs` | Require each game to rebuild Android lifecycle and transport | **KEEP** — required Android packaging and execution plumbing. |
 | `native/` | 2,914 | PRD-046, PRD-049, PRD-116 | `native/physics/src/lib.rs:463`; `native/physics/tests/actuation.rs:324` | Use the web WASM/Rapier backend on native or move physics into games | **KEEP** — this is the native Rust implementation behind the shared API. |
@@ -122,7 +122,7 @@ and a KEEP/DELETE verdict.
 | `package.json` | 57 | PRD-048, PRD-050, PRD-054, PRD-116 | `native:build`, `native:physics:parity`, and `native:verify:desktop` scripts | Hide opt-in native commands in per-game manifests | **KEEP** — package-level command contract. |
 | `vitest.config.ts` | 10 | PRD-048, PRD-050 | Runtime-native Vitest command and parity producer | Drop native package test collection | **KEEP** — declares the native package test boundary. |
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
-| **Total** | **72,120** |  | `pnpm budgets` post-integration output |  | **No area rejected.** |
+| **Total** | **72,678** |  | `pnpm budgets` post-integration output |  | **No area rejected.** |
 
 **Reconciled 2026-08-15 (PRD-076/077 lane), 71,408 → 72,104.** `tools/` is a new counted area,
 justified in its own row above. `conformance/` +251 and `tests/` +265 are the desktop multitouch
@@ -154,6 +154,11 @@ ledger quotes, and the test that fails closed when any of them is missing — th
 question for them is whether an untraceable ledger is acceptable, and it is not. The trigger stays
 reported, not silenced. The residual review-trigger overage is `+21,408` lines.
 `LIMITS.nativeRuntimeLoc` remains exactly `50_000`, and its warning remains visible.
+
+**Reconciled 2026-08-16 (PRD-127 device preflight), 72,120 → 72,678.** The shared device gate,
+its fail-closed runtime-native fixtures, and the report wiring add 337 counted lines under
+`scripts/` and 221 under `tests/`. The `.d.mts` declaration is outside the budget counter's
+extension list. The native review trigger remains visible; no native source was removed.
 
 ## Acceptance result
 

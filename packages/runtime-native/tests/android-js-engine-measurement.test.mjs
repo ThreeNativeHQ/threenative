@@ -326,6 +326,10 @@ test("candidate comparison fixes engine, bundle, runtime, device, and denominato
   };
   assert.equal(validateCandidateComparison(control, candidate, "V8").candidateEngine, "V8");
   assert.throws(
+    () => validateCandidateComparison({ ...control, provisional: ["battery"] }, candidate, "V8"),
+    /PROVISIONAL_COMPARISON/u,
+  );
+  assert.throws(
     () => validateCandidateComparison(control, { ...candidate, bundleSha256: "changed" }, "V8"),
     /TWO_VARIABLES/u,
   );

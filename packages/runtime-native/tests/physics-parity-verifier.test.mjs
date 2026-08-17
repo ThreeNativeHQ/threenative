@@ -59,7 +59,22 @@ const web = {
   },
   steps: fixture.steps,
 };
-const device = { ...web, rapierVersion: "0.30.0", runtime: "native" };
+const device = {
+  ...web,
+  deviceCondition: {
+    batteryPercent: 78,
+    charging: false,
+    chargingSource: "NONE",
+    provisional: [],
+    screenOn: true,
+    serial: "37251FDJH0037Z",
+    thermalStatus: "NONE",
+    thermalStatusCode: 0,
+  },
+  provisional: [],
+  rapierVersion: "0.30.0",
+  runtime: "native",
+};
 
 describe("Android physics parity verifier negative controls", () => {
   it("fails when a non-zero resting delta is checked with zero tolerance", () => {
@@ -86,6 +101,18 @@ describe("Android physics parity verifier negative controls", () => {
     expect(() =>
       compareObservations(web, { ...device, rapierVersion: web.rapierVersion, runtime: "web" }),
     ).toThrow(/device runtime identity|same Rapier identity/);
+  });
+
+  it("rejects a device observation with a stripped condition block", () => {
+    expect(() => compareObservations(web, { ...device, deviceCondition: undefined })).toThrow(
+      /device\.deviceCondition/u,
+    );
+  });
+
+  it("rejects a provisional device observation before comparison", () => {
+    expect(() => compareObservations(web, { ...device, provisional: ["battery"] })).toThrow(
+      /provisional device condition/u,
+    );
   });
 
   it("fails when one-way, platform, or area coverage is absent", () => {

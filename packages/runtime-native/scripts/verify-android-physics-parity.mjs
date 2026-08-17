@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -228,6 +229,21 @@ function maximumAxisDelta(left, right) {
 export function compareObservations(web, device, options = {}) {
   const fixtureBytes = readFileSync(fixturePath);
   const fixture = JSON.parse(fixtureBytes.toString("utf8"));
+  const condition = requireObject(device.deviceCondition, "device.deviceCondition");
+  if (
+    typeof condition.batteryPercent !== "number" ||
+    typeof condition.charging !== "boolean" ||
+    typeof condition.thermalStatus !== "string" ||
+    typeof condition.screenOn !== "boolean" ||
+    !Array.isArray(device.provisional)
+  ) {
+    throw new ParityError("device condition block is malformed");
+  }
+  if (device.provisional.length > 0) {
+    throw new ParityError(
+      `provisional device condition cannot be compared: ${device.provisional.join(", ")}`,
+    );
+  }
   const scenarioSha256 = createHash("sha256").update(fixtureBytes).digest("hex");
   const restingTolerance = options.restingTolerance ?? 0.02;
   const displacementTolerance = options.displacementTolerance ?? 0.05;
@@ -329,10 +345,18 @@ function run(command, args, options = {}) {
 }
 
 export function parseArgs(argv) {
-  const result = { control: "normal", device: null, skipBuild: false, skipInstall: false };
+  const result = {
+    allowDeviceCondition: false,
+    control: "normal",
+    device: null,
+    skipBuild: false,
+    skipInstall: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--skip-build") result.skipBuild = true;
+    if (arg === "--allow-device-condition" || arg === "--allow-low-battery") {
+      result.allowDeviceCondition = true;
+    } else if (arg === "--skip-build") result.skipBuild = true;
     else if (arg === "--skip-install") result.skipInstall = true;
     else if (arg === "--device" || arg === "--control") {
       const value = argv[index + 1];
@@ -433,7 +457,7 @@ function compareControl(control, paths) {
   }
 }
 
-export function main(argv = process.argv.slice(2)) {
+export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   const paths = artifactPaths(options.control);
   mkdirSync(dirname(paths.comparison), { recursive: true });
@@ -446,6 +470,18 @@ export function main(argv = process.argv.slice(2)) {
     paths.webObservation,
   ]);
   const scenarioPath = generatedScenario(paths);
+  const { adb, sdk } = discoverAdb();
+  const device = selectDevice(adb, options.device);
+  const deviceCondition = await assertDeviceReady(
+    device,
+    {
+      allowOverride: options.allowDeviceCondition,
+      maxThermalStatus: "NONE",
+      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+      requireDischarging: true,
+    },
+    { adb: (args) => run(adb, ["-s", device, ...args]) },
+  );
   const cli = join(workspaceRoot, "packages/playtest/dist/runner/cli.js");
   if (!existsSync(cli))
     throw new ParityError("Playtest CLI is missing; run pnpm --filter @threenative/playtest build.");
@@ -473,8 +509,6 @@ export function main(argv = process.argv.slice(2)) {
   const web = normalizeReport(parsePlaytestStdout(webStdout, "web"), "web");
   writeJson(paths.webObservation, web);
 
-  const { adb, sdk } = discoverAdb();
-  const device = selectDevice(adb, options.device);
   const javaHome = process.env.THREENATIVE_JAVA_HOME ?? process.env.JAVA_HOME ?? "/usr/lib/jvm/java-17-openjdk";
   const androidEnv = {
     ...process.env,
@@ -526,14 +560,19 @@ export function main(argv = process.argv.slice(2)) {
   );
   writeFileSync(paths.rawDevice, deviceStdout);
   const native = normalizeReport(parsePlaytestStdout(deviceStdout, "device"), "device");
-  writeJson(paths.deviceObservation, native);
+  const deviceObservation = {
+    ...native,
+    deviceCondition,
+    provisional: deviceCondition.provisional,
+  };
+  writeJson(paths.deviceObservation, deviceObservation);
   const comparison = compareControl(options.control, paths);
   process.stdout.write(`${JSON.stringify({ comparison, device, pass: true }, null, 2)}\n`);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main();
+    await main();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

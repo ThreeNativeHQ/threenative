@@ -27,13 +27,26 @@ export interface IRunReportRung {
   visibleObjects: number;
 }
 
+export interface IDeviceCondition {
+  batteryPercent: number;
+  charging: boolean;
+  chargingSource: string;
+  provisional: string[];
+  screenOn: boolean;
+  serial: string;
+  thermalStatus: string;
+  thermalStatusCode: number;
+}
+
 export interface IRunReport {
   arm: Arm;
   build: { notes: string; type: BuildType };
   device: { battery: number | null; label: string };
+  deviceCondition?: IDeviceCondition;
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
   engine: { name: "threenative" | "godot"; version: string };
+  provisional?: string[];
   rungs: IRunReportRung[];
 }
 
@@ -99,6 +112,40 @@ function requireBoolean(source: Record<string, unknown>, key: string, path: stri
   return value;
 }
 
+function parseProvisional(value: unknown, path: string, required: boolean): string[] | undefined {
+  if (value === undefined && !required) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => typeof entry !== "string" || entry.length === 0)
+  ) {
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `${path} must be an array of non-empty strings`);
+  }
+  return value;
+}
+
+function parseDeviceCondition(
+  value: unknown,
+  arm: Arm,
+  provisional: string[] | undefined,
+): IDeviceCondition | undefined {
+  const required = arm.endsWith("-android");
+  if (value === undefined && !required) return undefined;
+  const condition = requireObject(value, "report.deviceCondition");
+  if (provisional === undefined) {
+    throw new BenchError("TN_BENCH_MISSING_DEVICE_CONDITION", "report.provisional is absent");
+  }
+  return {
+    batteryPercent: requireNumber(condition, "batteryPercent", "report.deviceCondition"),
+    charging: requireBoolean(condition, "charging", "report.deviceCondition"),
+    chargingSource: requireString(condition, "chargingSource", "report.deviceCondition"),
+    provisional,
+    screenOn: requireBoolean(condition, "screenOn", "report.deviceCondition"),
+    serial: requireString(condition, "serial", "report.deviceCondition"),
+    thermalStatus: requireString(condition, "thermalStatus", "report.deviceCondition"),
+    thermalStatusCode: requireNumber(condition, "thermalStatusCode", "report.deviceCondition"),
+  };
+}
+
 export function percentile(samples: readonly number[], fraction: number): number {
   if (samples.length === 0) throw new BenchError("TN_BENCH_EMPTY_SERIES", "no frame samples");
   const sorted = [...samples].sort((left, right) => left - right);
@@ -119,6 +166,13 @@ export function parseRunReport(value: unknown): IRunReport {
   const arm = requireString(root, "arm", "report");
   if (!(ARMS as readonly string[]).includes(arm))
     throw new BenchError("TN_BENCH_BAD_ARM", `unknown arm ${arm}`);
+  const typedArm = arm as Arm;
+  const provisional = parseProvisional(
+    root.provisional,
+    "report.provisional",
+    typedArm.endsWith("-android"),
+  );
+  const deviceCondition = parseDeviceCondition(root.deviceCondition, typedArm, provisional);
 
   const engine = requireObject(root.engine, "report.engine");
   const engineName = requireString(engine, "name", "report.engine");
@@ -197,7 +251,9 @@ export function parseRunReport(value: unknown): IRunReport {
       width: requireNumber(display, "width", "report.display"),
     },
     driver: { adapter, renderer },
+    ...(deviceCondition === undefined ? {} : { deviceCondition }),
     engine: { name: engineName, version: requireString(engine, "version", "report.engine") },
+    ...(provisional === undefined ? {} : { provisional }),
     rungs,
   };
 }
@@ -431,6 +487,17 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
 }
 
 export function compare(left: IRunReport, right: IRunReport): IComparison {
+  for (const [label, report] of [
+    ["left", left],
+    ["right", right],
+  ] as const) {
+    if (report.provisional !== undefined && report.provisional.length > 0) {
+      throw new BenchError(
+        "TN_BENCH_PROVISIONAL_COMPARISON",
+        `${label} report is provisional: ${report.provisional.join(", ")}`,
+      );
+    }
+  }
   const failures = checkEquivalence(left, right);
   if (failures.length > 0) {
     const detail = failures
@@ -475,6 +542,16 @@ export function renderArmMarkdown(report: IRunReport): string {
     "| mode | N | p50 ms | p95 ms | draws | tris | visible | repeats × samples |",
     "|---|---|---|---|---|---|---|---|",
   ];
+  if (report.deviceCondition !== undefined) {
+    lines.splice(
+      6,
+      0,
+      `- device condition: battery ${report.deviceCondition.batteryPercent}%, ${report.deviceCondition.charging ? "charging" : "discharging"}, thermal ${report.deviceCondition.thermalStatus}, screen ${report.deviceCondition.screenOn ? "on" : "off"}`,
+    );
+  }
+  if (report.provisional !== undefined && report.provisional.length > 0) {
+    lines.splice(7, 0, `- provisional: ${report.provisional.join(", ")}`);
+  }
   for (const summary of summaries) {
     lines.push(
       `| ${summary.mode} | ${summary.objectCount} | ${summary.p50.toFixed(2)} | ${summary.p95.toFixed(2)} | ${summary.drawCalls} | ${summary.triangles} | ${summary.visibleObjects} | ${summary.repeats} × ${summary.sampleCount} |`,
