@@ -383,7 +383,9 @@ export function updateReadme(
   const expected = replaceTable(current, renderLocTable(rows));
   if (check) {
     if (expected !== current)
-      throw new Error("docs/benchmark/LOC.md benchmark table is stale; run pnpm tsx scripts/count-loc.ts.");
+      throw new Error(
+        "docs/benchmark/LOC.md benchmark table is stale; run pnpm tsx scripts/count-loc.ts.",
+      );
     return;
   }
   writeFileSync(readmePath, expected);
