@@ -18,7 +18,8 @@ ADB serial, so this note makes no physical-device claim.
 ## Fixture evidence
 
 `pnpm --dir packages/runtime-native exec vitest run tests/device-preflight.test.mjs tests/android-js-engine-measurement.test.mjs tests/physics-parity-verifier.test.mjs`
-passed 3 files and 35 tests.
+passed 3 files and 36 tests, including rejection of non-canonical status tokens with complete
+battery source output.
 
 The tests observed red for low battery, charging, thermal throttling, screen off, no device,
 emulator serial, and unparseable `dumpsys` input. The preflight failures carry non-zero exit code

@@ -96,6 +96,20 @@ describe("device preflight parsers", () => {
     }
   });
 
+  test("rejects non-canonical battery status tokens", () => {
+    for (const status of ["3e0", "0x3", "3.0", "+3"]) {
+      assert.throws(
+        () => parseBatteryState(healthyBattery.replace("status: 3", `status: ${status}`)),
+        (error) => {
+          assert(error instanceof DevicePreflightError);
+          assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+          assert.equal(error.details.observed, status);
+          return true;
+        },
+      );
+    }
+  });
+
   test("treats a full battery status as charging", async () => {
     const fullBattery = healthyBattery.replace("status: 3", "status: 5");
     assert.deepEqual(parseBatteryState(fullBattery), {

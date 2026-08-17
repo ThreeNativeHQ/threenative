@@ -64,10 +64,14 @@ export function parseBatteryState(output) {
     return match ? { name, powered: parseBoolean(match[1].toLowerCase(), "charging") } : null;
   });
   const presentSources = poweredBy.filter(Boolean);
-  const statusMatch = /^\s*status:\s*(.*?)\s*$/imu.exec(source);
+  const statusMatch = /^[ \t]*status:[ \t]*([^\r\n]*?)[ \t]*$/imu.exec(source);
   const statusText = statusMatch?.[1] ?? null;
-  const status = statusText === null ? null : Number(statusText);
-  if (statusText !== null && (!Number.isInteger(status) || status < 1 || status > 5)) {
+  const statusIsCanonical = statusText !== null && /^(?:0|[1-9][0-9]*)$/u.test(statusText);
+  const status = statusIsCanonical ? Number(statusText) : null;
+  if (
+    statusText !== null &&
+    (!statusIsCanonical || !Number.isInteger(status) || status < 1 || status > 5)
+  ) {
     throw new DevicePreflightError(
       "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
       `dumpsys battery has unrecognised status: ${statusText}`,
