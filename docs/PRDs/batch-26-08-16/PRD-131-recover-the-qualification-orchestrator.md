@@ -4,11 +4,48 @@ prd_contract: v1
 
 # PRD-131 — The physical-qualification orchestrator was built, works, and was never landed
 
-**Status:** PROPOSED, 2026-08-16. Nothing below has executed. No hardware qualification, signing or
-mobile-readiness claim is made by this file. It recovers a branch; it qualifies nothing.
+**Status: PHASES 1, 2 and 4 DONE, 2026-08-16. Phase 3 not started.** No hardware qualification,
+signing or mobile-readiness claim is made by this file — nothing was qualified, and every device
+invocation below refused before reading a property from the phone. That is the harness being right.
+
+`pnpm native:qualify:physical` exists on `main` and reaches the same three refusals, in the same
+order, that it reached from the branch. Phase 4's parity check passed:
+
+| Invocation | From the branch | From `main` |
+| --- | --- | --- |
+| `--platform android --device <serial>` | exit 2, `TN_QUALIFY_SIGNING_REQUIRED` | **exit 2, `TN_QUALIFY_SIGNING_REQUIRED`** |
+| …`--android-app <apk>` | `TN_QUALIFY_SIGNING_TOOL_REQUIRED` | **`TN_QUALIFY_ARTIFACT_PROVENANCE_REQUIRED`** — Phase 2, see below |
+| …with `apksigner` on `PATH` | `TN_QUALIFY_ARTIFACT_PROVENANCE_REQUIRED` | same |
+
+**The middle row moved on purpose.** Phase 2 gave `findExecutable` the Android SDK fallback that
+`scripts/engine-load-test/run-android.ts:39` already gives `adb`, so `apksigner` is no longer
+reported as an unavailable capability while sitting in `~/Android/Sdk/build-tools/`. Control observed
+red: with `HOME`, `ANDROID_HOME` and `PATH` emptied of it, `TN_QUALIFY_SIGNING_TOOL_REQUIRED` fires
+again and names the tool.
+
+**The `runtime.cpp` resize hunk was dropped**, as §3 requires. `main`'s version stands.
+
+**Two drift findings the recovery had to fix, neither of them in §3's list:**
+
+1. **The orchestrator drove a package that no longer exists.** It launched
+   `com.mystral.engine/.MystralActivity` and read `gfxinfo`/`meminfo` for `com.mystral.engine`. The
+   Android identity was renamed while the branch sat unlanded, so it would have launched nothing and
+   then collected empty telemetry from a process that never started — a lane reporting no samples
+   rather than a failure. Now `ANDROID_APPLICATION_ID`/`ANDROID_LAUNCH_ACTIVITY`, verified against
+   the attached Pixel 8: `am start -W -n com.threenative.game/com.threenative.runtime.MystralActivity`
+   returns `Status: ok` with a live pid. `main`'s own `orientation-packaging.test.mjs` guard is what
+   caught it.
+2. **A test assumed the untracked `.runtime/` exists.** `mkdtemp` failed with `ENOENT` on the parent
+   in a checkout that had never created it. Fixed in the helper rather than by creating the directory
+   out of band.
+
+21 tests in the recovered spec, plus two new ones for the SDK fallback and its precedence
+(`PATH` beats the SDK; an explicit override beats both). `typecheck`, `lint`, `test` (1,383) and
+`budgets` all green. The native census is reconciled 72,120 → 74,722 in both places that record it.
 
 **Outcome:** `pnpm native:qualify:physical` exists on `main` and reaches the Pixel 8's device gates.
-Today it does not exist at all, and the only implementation sits on a branch 219 commits behind.
+Before this PRD it did not exist at all, and the only implementation sat on a branch 219 commits
+behind.
 
 **Depends on:** nothing external. The code, the tests and the fixtures already exist.
 
@@ -148,22 +185,25 @@ incomplete.
 
 ## 6. Acceptance criteria
 
-- [ ] `pnpm native:qualify:physical --platform android --device <serial>` exits **2** with
+- [x] `pnpm native:qualify:physical --platform android --device <serial>` exits **2** with
       `TN_QUALIFY_SIGNING_REQUIRED` **from `main`**, not from a worktree.
-- [ ] With an APK and `apksigner` reachable, it reaches `TN_QUALIFY_ARTIFACT_PROVENANCE_REQUIRED` —
+- [x] With an APK and `apksigner` reachable, it reaches `TN_QUALIFY_ARTIFACT_PROVENANCE_REQUIRED` —
       the same code, in the same order, as the branch.
-- [ ] `apksigner` present in the SDK but not on `PATH` no longer produces
+- [x] `apksigner` present in the SDK but not on `PATH` no longer produces
       `TN_QUALIFY_SIGNING_TOOL_REQUIRED`, and the control was observed red first.
-- [ ] The `runtime.cpp` resize hunk is **not** present, and the commit message says it was dropped
+- [x] The `runtime.cpp` resize hunk is **not** present, and the commit message says it was dropped
       and why.
 - [ ] `examples/native-smoke` still reaches `TN_NATIVE_SMOKE_FIRST_FRAME` on the Pixel 8 without a
-      signal 6.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` pass, and no native toolchain
+      signal 6. **Not run** — no C++ was touched, so nothing could have moved it, but that is an
+      argument rather than an observation.
+- [x] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` pass, and no native toolchain
       becomes part of the default gate.
-- [ ] The recovered spec runs in `pnpm test` and a test fails if the orchestrator stops being
+- [x] The recovered spec runs in `pnpm test` and a test fails if the orchestrator stops being
       reachable from either `package.json`.
-- [ ] Anything from the branch deliberately left behind is listed, with the reason.
-- [ ] No file says mobile-ready. One Android phone is not mobile, and nothing here qualifies
+- [x] Anything from the branch deliberately left behind is listed, with the reason: the
+      `runtime.cpp` resize hunk (§3), and Phase 3's lifecycle scenario and `window.h`/`window.cpp`,
+      which are not started.
+- [x] No file says mobile-ready. One Android phone is not mobile, and nothing here qualifies
       anything.
 
 ## 7. Negative controls
@@ -173,9 +213,9 @@ A pass with no observed red is recorded `UNVERIFIED`.
 
 | Control | Change | Expected | Status |
 | --- | --- | --- | --- |
-| `command-absent` | remove the `package.json` entry | a test fails naming the missing command | not built |
+| `command-absent` | remove the `package.json` entry | a test fails naming the missing command | **observed red** — two tests fail |
 | `emulator-serial` | pass `emulator-5554` | `blocked`, `TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED`, exit 2 | exists on the branch; must stay red |
-| `apksigner-unfound` | rename the SDK copy | the tool error fires again and names it | not built |
+| `apksigner-unfound` | rename the SDK copy | the tool error fires again and names it | **observed red** — `TN_QUALIFY_SIGNING_TOOL_REQUIRED` |
 | `resize-hunk` | apply the branch's `runtime.cpp` hunk | signal 6 on the Pixel 8 after first frame | **observed on this device before 2026-08-16**; recorded in `runtime.cpp` |
 | `evidence-schema` | a fixture missing `telemetry.memory` | exit 1 naming the field | exists on the branch; must stay red |
 | `stale-sha` | substitute an older candidate SHA | exit 1 naming the mismatched field | exists on the branch; must stay red |

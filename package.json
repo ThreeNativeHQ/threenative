@@ -29,6 +29,7 @@
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
+    "native:qualify:physical": "pnpm --filter @threenative/runtime-native native:qualify:physical",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
     "parity": "sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs",
     "parity:ledger": "tsx scripts/check-parity-ledger.ts",

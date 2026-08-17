@@ -29,8 +29,8 @@ const PRD_116_VERIFICATION_RECORD = path.resolve(
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
   ["conformance/", 6_176],
-  ["tests/", 7_862],
-  ["scripts/", 9_082],
+  ["tests/", 8_494],
+  ["scripts/", 11_049],
   ["include/", 3_760],
   ["android/", 1_843],
   ["native/", 2_914],
@@ -38,7 +38,7 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   ["cmake/", 280],
   ["CMakePresets.json", 140],
   ["ios/", 104],
-  ["package.json", 57],
+  ["package.json", 60],
   ["vitest.config.ts", 10],
   // The desktop multitouch injector's ioctl helper, PRD-077. A new counted area, so it appears
   // here rather than growing an existing row: the point of this list is that a native area
