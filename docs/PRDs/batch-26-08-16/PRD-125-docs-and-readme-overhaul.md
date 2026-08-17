@@ -206,9 +206,9 @@ in this order:
    README, and `docs/architecture/CHARTER.md` described as the binding document. Move the
    `docs/strategy/CONFLICTS.md` pointer out of the root README — it is an internal
    reconciliation note and it should not be the third thing a stranger is told to read.
-9. **Licence.** One line: MIT, linking `LICENSE`. **PRD-126 §3 creates that file** — if it
+9. **Licence.** One line: MIT, linking `LICENSE`. **PRD-129 §3 creates that file** — if it
    has not landed yet, leave this section out rather than referencing a file that does not
-   exist. Do not describe the licence of anything else; PRD-126 owns that boundary.
+   exist. Do not describe the licence of anything else; PRD-129 owns that boundary.
 
 **The benchmark VOID paragraph leaves the root README entirely.** It is a real result and it
 stays where results live: `docs/benchmark/RESULTS-2026-08-02.md` already records it and
@@ -312,6 +312,9 @@ PNG in this PRD.
 Write `scripts/check-doc-links.ts`, exit 0/1, no dependency beyond what the repo has:
 
 - Walk every tracked `*.md` outside `docs/benchmark/sweeps/`.
+- **Skip fenced code blocks.** A shell snippet inside ``` fences can contain `](` — this very
+  PRD contains one, and the naive version of this checker reports its own example as a broken
+  link. Strip fenced blocks before extracting, and add that case to the spec.
 - Extract relative markdown link targets; skip `http:`, `https:`, `mailto:`, and pure
   anchors; strip `#fragment` before resolving.
 - Resolve each against the containing file's directory. Report `file -> target` for each miss
@@ -385,8 +388,8 @@ Never record a gate you did not run.**
   separate documents — a follow-up PRD, not this one.
 - **Licensing and the community health files** — `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, `.github/` templates. All owned by
-  [PRD-126](PRD-126-licensing-and-the-studio-split.md), which also removes `packages/studio/`
-  and `hosting/` from this repository. **If PRD-126 lands first, §3.2's package table drops to
+  [PRD-129](PRD-129-licensing-and-the-studio-split.md), which also removes `packages/studio/`
+  and `hosting/` from this repository. **If PRD-129 lands first, §3.2's package table drops to
   six packages and the §5 docs map loses the studio-hosting series' home** — check which
   landed before writing either.
 - **Whether any of this works.** The README's job is to make a stranger able to start. Nobody

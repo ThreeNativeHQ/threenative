@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-126 — The engine is MIT, the editor is not, and neither is written down anywhere
+# PRD-129 — The engine is MIT, the editor is not, and neither is written down anywhere
 
 **Status: NOT STARTED, 2026-08-16. NOTHING IN THIS PRD IS IMPLEMENTED.** Every fact in §1
 was measured on this working tree at commit `803906c7`; the commands are pasted beside each
@@ -421,5 +421,5 @@ Paste the output of each. Never record a gate you did not run.
 PRD-125 §3.2 step 9 defers the README's licence section to this document. Once §3 lands, that
 step is unblocked and the new README states MIT plainly.
 
-When every criterion in §9 is met, `git mv docs/PRDs/PRD-126-licensing-and-the-studio-split.md
+When every criterion in §9 is met, `git mv docs/PRDs/PRD-129-licensing-and-the-studio-split.md
 docs/PRDs/done/` in the same commit that finishes it.
