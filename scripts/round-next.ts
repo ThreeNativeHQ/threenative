@@ -255,8 +255,16 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
 }
 
 function main(): void {
-  const action = nextRoundAction();
-  process.stdout.write(`${action.command}\n${action.reason}\n`);
+  // A ledger this refuses is a refusal, not a crash. It used to print a Node stack trace over the
+  // one sentence naming what was wrong with the ledger, which reads as a broken tool rather than a
+  // working guard.
+  try {
+    const action = nextRoundAction();
+    process.stdout.write(`${action.command}\n${action.reason}\n`);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

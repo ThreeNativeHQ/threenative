@@ -41,6 +41,22 @@ export interface RoundGate {
   readonly result: string;
 }
 
+/**
+ * One row of a round's before/after visual comparison, and the verdict the round drew from it.
+ *
+ * Optional: a round that ran no visual comparison has no such section and nothing here applies.
+ * A round that *did* run one must state the resolution the comparison was read against, because
+ * round 10 published seven deltas and only afterwards discovered that four of them were smaller
+ * than the instrument could resolve.
+ */
+export interface RoundVisualDelta {
+  readonly after: number;
+  readonly before: number;
+  readonly delta: number;
+  readonly template: string;
+  readonly verdict: string;
+}
+
 export interface RoundLedger {
   readonly arms: readonly RoundArm[];
   readonly columns: readonly RoundColumnVerdict[];
@@ -53,6 +69,9 @@ export interface RoundLedger {
   readonly path?: string;
   readonly round: number;
   readonly stopCondition: string;
+  /** `null` when the round declares no visual comparison. */
+  readonly visualMde: number | null;
+  readonly visualDeltas: readonly RoundVisualDelta[];
 }
 
 /**
@@ -282,11 +301,51 @@ function parseGates(markdown: string): RoundGate[] {
   }));
 }
 
+/**
+ * The visual deltas a round reports, and the resolution it read them against.
+ *
+ * Absent by default, because most rounds run no visual comparison. Present, it is validated hard:
+ * a delta at or under the stated minimum detectable effect may only be recorded `INDETERMINATE`.
+ * Round 10 is the reason. It reported `+1`, `−1`, `−1` and `−1` as results, spent a day of work
+ * acting on one of them, and its own calibration row — a template nobody touched moving a full
+ * point — says none of the four carried information. Prose said so; the table did not, and the
+ * table is what gets quoted.
+ */
+function parseVisualDeltas(markdown: string): RoundVisualDelta[] {
+  if (!hasSection(markdown, "Visual deltas")) return [];
+  const parsed = table(markdown, "Visual deltas");
+  const template = column(parsed.header, "Template");
+  const before = column(parsed.header, "Before");
+  const after = column(parsed.header, "After");
+  const delta = column(parsed.header, "Δ");
+  const verdict = column(parsed.header, "Verdict");
+  return parsed.rows.map((row) => ({
+    after: Number(rowValue(row, after, "After")),
+    before: Number(rowValue(row, before, "Before")),
+    // `−` U+2212 is what a markdown table gets typed with, and `Number("−1")` is NaN.
+    delta: Number(rowValue(row, delta, "Δ").replaceAll("−", "-").replace(/^\+/u, "")),
+    template: rowValue(row, template, "Template"),
+    verdict: rowValue(row, verdict, "Verdict").toUpperCase(),
+  }));
+}
+
+function parseVisualMde(markdown: string): number | null {
+  const line = markdown.split(/\r?\n/u).find((candidate) => candidate.startsWith("Visual MDE:"));
+  if (line === undefined) return null;
+  const raw = line.slice("Visual MDE:".length).trim().replaceAll("`", "");
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0)
+    throw new Error(`Round ledger field 'Visual MDE' is not a non-negative number: '${raw}'.`);
+  return parsed;
+}
+
 export function parseRoundLedger(markdown: string, ledgerPath?: string): RoundLedger {
   const notes = section(markdown, "Notes").trim();
   const round = Number.parseInt(value(markdown, "Round"), 10);
   if (!Number.isInteger(round)) throw new Error("Round ledger field 'Round' is not an integer.");
   return {
+    visualDeltas: parseVisualDeltas(markdown),
+    visualMde: parseVisualMde(markdown),
     arms: parseArms(markdown),
     columns: parseColumns(markdown),
     date: value(markdown, "Date"),
@@ -398,11 +457,47 @@ export function validateRoundLedger(markdown: string, filename = "round.md"): Ro
     (ledger.notes.length < 10 || PLACEHOLDER.test(ledger.notes))
   )
     throw new Error(`${filename}: unmeasured evidence needs an explanatory Notes section.`);
+
+  assertVisualDeltasResolvable(ledger, filename);
   return ledger;
 }
 
+/**
+ * A visual comparison may not report a delta its own instrument could not resolve.
+ *
+ * Split out of `validateRoundLedger` so `readRoundLedger` can enforce it too. `pnpm round:next`
+ * reads without validating — turning full validation on there would reject historical ledgers for
+ * reasons unrelated to this rule — but a sub-resolution delta recorded as a result is precisely
+ * the thing the loop must not be allowed to act on, and `round:next` is what tells it what to do
+ * next.
+ */
+export function assertVisualDeltasResolvable(ledger: RoundLedger, filename: string): void {
+  // A visual comparison with no stated resolution is round 10 again: seven deltas, four of them
+  // smaller than the instrument could tell apart, and no field in the ledger saying so.
+  if (ledger.visualDeltas.length > 0 && ledger.visualMde === null)
+    throw new Error(
+      `${filename}: a Visual deltas table needs a 'Visual MDE:' field stating the resolution it was read against.`,
+    );
+  for (const row of ledger.visualDeltas) {
+    if (!["WIN", "LOSS", "INDETERMINATE"].includes(row.verdict))
+      throw new Error(
+        `${filename}: visual delta for '${row.template}' has verdict '${row.verdict}'; expected WIN, LOSS or INDETERMINATE.`,
+      );
+    if (!Number.isFinite(row.delta) || row.delta !== row.after - row.before)
+      throw new Error(
+        `${filename}: visual delta for '${row.template}' is ${row.delta}, which is not ${row.after} − ${row.before}.`,
+      );
+    if (Math.abs(row.delta) <= (ledger.visualMde as number) && row.verdict !== "INDETERMINATE")
+      throw new Error(
+        `${filename}: visual delta for '${row.template}' is ${row.delta} against a measured MDE of ${String(ledger.visualMde)}; the instrument cannot resolve it, so it may only be recorded INDETERMINATE, not '${row.verdict}'.`,
+      );
+  }
+}
+
 export function readRoundLedger(file: string): RoundLedger {
-  return parseRoundLedger(fs.readFileSync(file, "utf8"), file);
+  const ledger = parseRoundLedger(fs.readFileSync(file, "utf8"), file);
+  assertVisualDeltasResolvable(ledger, file);
+  return ledger;
 }
 
 export function latestRoundFile(repo: string): string {

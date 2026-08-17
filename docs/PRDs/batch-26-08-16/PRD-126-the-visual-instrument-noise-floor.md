@@ -4,8 +4,26 @@ prd_contract: v1
 
 # PRD-126 — The visual instrument cannot tell a change from noise, and it has already optimised noise once
 
-**Status:** PROPOSED, 2026-08-16. Nothing below has executed. No visual-quality result is claimed
-by this file, and none of round 10's numbers are revised by it.
+**Status: PARTIAL, 2026-08-16 — the instrument is built and enforced; its own measurement is the
+one thing still open.** Record:
+[`docs/verification/prd-126-visual-instrument-2026-08-16.md`](../../verification/prd-126-visual-instrument-2026-08-16.md).
+
+Built, wired as `pnpm visuals:ab`, eight negative controls observed red with exit codes, twelve unit
+tests, and `scripts/round-ledger.ts` now refuses a round ledger that reports a sub-MDE delta as a win
+or a loss. Round 10's seven deltas are re-classified in round 10's own ledger: two carry information,
+five are `INDETERMINATE`, and its *"at floor 2/7 → 1/7, mean 2.86 → 2.57"* headline is withdrawn.
+
+**Phase 0's measurement was not taken, deliberately.** The only rater available had already read
+round 10's score column and the committed critic's verdict before scoring, and reproduced both
+exactly — which would have published `mde = 0`. At zero resolution every one-point move becomes a
+result, so that is round 10's failure with a certificate attached, and it is precisely the
+*confidently wrong rather than visibly noisy* outcome §9 warns about. **Phase 0 needs three critic
+sessions that have not read this one**, which is one command away and was not available here. Until
+then the working resolution stays at round 10's ±1 — the more conservative number, and the only one
+measured between independent raters.
+
+No visual-quality result is claimed by this file, and no round-10 score is revised — only what may
+be concluded from the ones already recorded.
 
 **Outcome:** every visual comparison this repository runs publishes a **minimum detectable
 effect** measured in the same bundle that produced the scores, and refuses to report a delta
@@ -174,13 +192,13 @@ written. A pass with no observed red is recorded `UNVERIFIED`.
 
 | Control | Change | Expected | Status |
 | --- | --- | --- | --- |
-| `one-sided-template` | remove one template's frame from the after directory | exit `2` naming the template; no scores printed | not built |
-| `no-duplicate-pair` | build a bundle with duplicate injection disabled | exit `2`; the run refuses to report scores without a resolution | not built |
-| `rater-shortfall` | request `--raters 3`, supply two verdicts | exit `2` naming the shortfall | not built |
-| `unparseable-verdict` | one rater returns malformed JSON | exit `2`; never silently drop to two raters | not built |
-| `sub-mde-delta` | feed a delta of 1 with a measured MDE of 1 | `INDETERMINATE`, excluded from aggregates | not built |
-| `ledger-overclaim` | hand-edit a round ledger to call a sub-MDE delta a win | `round:next` rejects it | not built |
-| `empty-bundle` | both directories empty | exit `2`, never `0` | not built |
+| `one-sided-template` | remove one template's frame from the after directory | exit `2` naming the template; no scores printed | **observed red, exit 2** |
+| `no-duplicate-pair` | build a bundle with duplicate injection disabled | exit `2`; the run refuses to report scores without a resolution | **observed red, exit 2** |
+| `rater-shortfall` | request `--raters 3`, supply two verdicts | exit `2` naming the shortfall | **observed red, exit 2** |
+| `unparseable-verdict` | one rater returns malformed JSON | exit `2`; never silently drop to two raters | **observed red, exit 2** |
+| `sub-mde-delta` | feed a delta of 1 with a measured MDE of 1 | `INDETERMINATE`, excluded from aggregates | **observed, exit 0, "No aggregate"** |
+| `ledger-overclaim` | hand-edit a round ledger to call a sub-MDE delta a win | `round:next` rejects it | **observed red, exit 1** |
+| `empty-bundle` | both directories empty | exit `2`, never `0` | **observed red, exit 2** |
 
 ## 8. Non-goals
 

@@ -50,6 +50,7 @@
     "profile:production": "node packages/runtime-native/scripts/profile-production.mjs",
     "profile:native-cpu": "tsx scripts/profile-native-cpu.ts",
     "profile:native-cpu:fox": "sh scripts/xvfb.sh pnpm profile:native-cpu -- --visual-evidence fox-scale --allow-software",
+    "visuals:ab": "tsx scripts/visual-ab.ts",
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts"
   },
   "devDependencies": {

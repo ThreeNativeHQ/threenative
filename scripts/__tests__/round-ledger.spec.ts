@@ -334,3 +334,72 @@ describe("a round that declares no genres", () => {
     }
   });
 });
+
+describe("visual deltas and the resolution they are read against", () => {
+  function withDeltas(mde: string, rows: readonly string[]): string {
+    return ledger([
+      "",
+      `Visual MDE: ${mde}`,
+      "",
+      "## Visual deltas",
+      "",
+      "| Template | Before | After | Δ | Verdict |",
+      "| --- | --- | --- | --- | --- |",
+      ...rows,
+    ]);
+  }
+
+  it("accepts a delta that clears the measured resolution", () => {
+    const parsed = validateRoundLedger(withDeltas("1", ["| shooter | 2 | 4 | +2 | WIN |"]));
+    expect(parsed.visualMde).toBe(1);
+    expect(parsed.visualDeltas).toEqual([
+      { after: 4, before: 2, delta: 2, template: "shooter", verdict: "WIN" },
+    ]);
+  });
+
+  it("refuses a sub-resolution delta reported as a win", () => {
+    // Round 10's `defense +1` against a floor of 1. Its prose said the row was unattributable and
+    // its table said `+1`; the table is what a reader quotes.
+    expect(() => validateRoundLedger(withDeltas("1", ["| defense | 2 | 3 | +1 | WIN |"]))).toThrow(
+      /defense.*cannot resolve it.*INDETERMINATE, not 'WIN'/su,
+    );
+  });
+
+  it("refuses a sub-resolution delta reported as a loss, including the minus sign markdown uses", () => {
+    expect(() => validateRoundLedger(withDeltas("1", ["| racing | 3 | 2 | −1 | LOSS |"]))).toThrow(
+      /racing.*INDETERMINATE, not 'LOSS'/su,
+    );
+  });
+
+  it("accepts the same sub-resolution delta once it is recorded INDETERMINATE", () => {
+    const parsed = validateRoundLedger(
+      withDeltas("1", ["| racing | 3 | 2 | −1 | INDETERMINATE |"]),
+    );
+    expect(parsed.visualDeltas[0]?.delta).toBe(-1);
+  });
+
+  it("refuses a delta table with no stated resolution", () => {
+    const noMde = ledger([
+      "",
+      "## Visual deltas",
+      "",
+      "| Template | Before | After | Δ | Verdict |",
+      "| --- | --- | --- | --- | --- |",
+      "| shooter | 2 | 4 | +2 | WIN |",
+    ]);
+    expect(() => validateRoundLedger(noMde)).toThrow(/needs a 'Visual MDE:' field/u);
+  });
+
+  it("refuses a delta that does not equal after minus before", () => {
+    // Arithmetic nobody checks is how a hand-edited table stops describing its own scores.
+    expect(() => validateRoundLedger(withDeltas("0", ["| shooter | 2 | 4 | +1 | WIN |"]))).toThrow(
+      /is 1, which is not 4 − 2/u,
+    );
+  });
+
+  it("leaves a round that ran no visual comparison alone", () => {
+    const parsed = validateRoundLedger(ledger());
+    expect(parsed.visualMde).toBeNull();
+    expect(parsed.visualDeltas).toEqual([]);
+  });
+});
