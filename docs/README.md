@@ -73,6 +73,8 @@ framework and vanilla archives with `pnpm sweep:pair <framework-archive> <vanill
 Proof sets under `benchmark/genres/<genre>/proof/` run with
 `pnpm sweep:proof <sandbox-or-archive>`. The [round-2 delta](benchmark/DELTA-2026-08-05.md)
 and [caller census](verification/arm-census-2026-08-08.md) are the current supporting records.
+Vendored package tarballs under each archive's `vendor/` directory are not archived; they are
+reproducible with `pnpm pack`, and sweep tests build their own temporary fixtures.
 
 ## Strategy
 
