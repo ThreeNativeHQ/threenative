@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible problem with ThreeNative
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: what-ran
+    attributes:
+      label: What did you run?
+      description: Include the exact command and relevant configuration.
+      placeholder: pnpm test:browser
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Browser
+        - Desktop
+        - Android
+        - iOS
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: WebGPU adapter string
+      description: Required for visual reports; write N/A if this is not a visual report.
+      placeholder: e.g. adapter.info or N/A
+    validations:
+      required: true

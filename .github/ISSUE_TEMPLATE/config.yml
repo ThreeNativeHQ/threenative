@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/jonit-dev/threenative/discussions
+    about: Ask questions and discuss ideas with the community.
