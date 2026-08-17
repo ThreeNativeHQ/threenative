@@ -72,6 +72,17 @@ describe("device preflight parsers", () => {
     );
   });
 
+  test("rejects incomplete battery source output without status", () => {
+    assert.throws(
+      () => parseBatteryState("AC powered: false\nlevel: 82"),
+      (error) => {
+        assert(error instanceof DevicePreflightError);
+        assert.equal(error.code, "TN_DEVICE_PREFLIGHT_CHARGING_PARSE");
+        return true;
+      },
+    );
+  });
+
   test("parses numeric, named, and display-power thermal/screen variants", () => {
     assert.deepEqual(parseThermalState("Current thermal status: MODERATE"), {
       thermalStatus: "MODERATE",

@@ -79,9 +79,10 @@ export default game;
 ## Status
 
 This is alpha. Browser WebGPU and desktop native are green; iOS-simulator evidence is produced
-on a hosted `macos-15` runner; the Android emulator is red on the hosted lane. No physical phone
-has run this, and no stranger has played a ThreeNative game for five minutes. This is not
-mobile-ready. The external performance control is
+on a hosted `macos-15` runner; the Android emulator is red on the hosted lane. The external
+performance control records a provisional Pixel 8 measurement; physical-phone framework/device
+evidence remains unverified, and no stranger has played a ThreeNative game for five minutes. This
+is not mobile-ready. The external performance control is
 [`engine-load-test-summary-2026-08-15.md`](docs/verification/engine-load-test-summary-2026-08-15.md).
 
 ## Contributing and development

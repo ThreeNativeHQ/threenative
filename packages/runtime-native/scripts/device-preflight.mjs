@@ -66,10 +66,10 @@ export function parseBatteryState(output) {
   const presentSources = poweredBy.filter(Boolean);
   const statusMatch = /^\s*status:\s*(\d+)\s*$/imu.exec(source);
   const status = statusMatch ? Number(statusMatch[1]) : null;
-  if (presentSources.length === 0 && status === null) {
+  if (presentSources.length !== sources.length && status === null) {
     throw new DevicePreflightError(
       "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
-      "dumpsys battery has no charging source or status",
+      "dumpsys battery has incomplete charging sources and no status",
       { condition: "charging", observed: source },
     );
   }
