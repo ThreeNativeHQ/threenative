@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: IMPLEMENTED; generated browser evidence recorded 2026-08-12.** Desktop execution is
 covered by the batch record; no mobile readiness is claimed.
-**Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
+**Parent:** [PRD-087](../starter-kits/PRD-087-genre-borrow-ledger.md).
 **Depends on:** [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md),
 [PRD-091](./PRD-091-genre-kit-delivery-rail.md).
 **Sequenced after:** [PRD-090](./PRD-090-racing-starter-kit.md) — it consumes 090's measurement.

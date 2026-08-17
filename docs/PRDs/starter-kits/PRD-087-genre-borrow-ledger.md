@@ -22,11 +22,11 @@ re-argues these.
 |---|---|---|
 | PRD-087 | platformer terminal-loop qualification repair | existing platformer template; no child-PRD dependency |
 | [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md) | physics spatial queries — the one accepted package change | — |
-| [PRD-091](./PRD-091-genre-kit-delivery-rail.md) | the kit registry, the fail-closed gate, the Studio picker | — |
-| [PRD-089](./PRD-089-shooter-starter-kit.md) | `shooter` starter kit | 088, 091 |
-| [PRD-090](./PRD-090-racing-starter-kit.md) | `racing` starter kit | 088, 091 |
-| [PRD-092](./PRD-092-strategy-starter-kit.md) | `defense` starter kit; **closes the `PathFollow3D` question** | 088, 091, 090 |
-| [PRD-093](./PRD-093-action-rpg-starter-kit.md) | `action-rpg` starter kit; **homes the two hardest rejects** | 088, 091 |
+| [PRD-091](../done/PRD-091-genre-kit-delivery-rail.md) | the kit registry, the fail-closed gate, the Studio picker | — |
+| [PRD-089](../done/PRD-089-shooter-starter-kit.md) | `shooter` starter kit | 088, 091 |
+| [PRD-090](../done/PRD-090-racing-starter-kit.md) | `racing` starter kit | 088, 091 |
+| [PRD-092](../done/PRD-092-strategy-starter-kit.md) | `defense` starter kit; **closes the `PathFollow3D` question** | 088, 091, 090 |
+| [PRD-093](../done/PRD-093-action-rpg-starter-kit.md) | `action-rpg` starter kit; **homes the two hardest rejects** | 088, 091 |
 
 **Build order: 088 and 091 first, in parallel. Then 089, 090, 092, 093 in that order** — 092
 consumes 090's measurement, and 093 is last because it is the largest.

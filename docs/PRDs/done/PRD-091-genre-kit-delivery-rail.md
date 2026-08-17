@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: IMPLEMENTED; Studio and fail-closed gate evidence recorded 2026-08-12.** No mobile
 readiness is claimed.
-**Parent:** [PRD-087](./PRD-087-genre-borrow-ledger.md).
+**Parent:** [PRD-087](../starter-kits/PRD-087-genre-borrow-ledger.md).
 **Blocks:** [PRD-089](./PRD-089-shooter-starter-kit.md), [PRD-090](./PRD-090-racing-starter-kit.md),
 [PRD-092](./PRD-092-strategy-starter-kit.md), [PRD-093](./PRD-093-action-rpg-starter-kit.md).
 **Build this first.** Four genre kits behind a six-site registry is the same mistake four times.
