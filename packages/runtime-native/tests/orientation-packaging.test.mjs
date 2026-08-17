@@ -113,14 +113,15 @@ test('runtime sources do not retain the former game identity defaults', () => {
     '<string>Mystral</string>',
   ]) {
     const result = spawnSync(
-      'rg',
+      'git',
       [
+        'grep',
         '-n',
         '--fixed-strings',
-        '--glob',
-        '!tests/orientation-packaging.test.mjs',
         formerIdentity,
+        '--',
         '.',
+        ':(exclude)tests/orientation-packaging.test.mjs',
       ],
       { cwd: runtimeRoot, encoding: 'utf8' },
     );

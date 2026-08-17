@@ -29,7 +29,7 @@ const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
 const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_082],
   ["conformance/", 6_176],
-  ["tests/", 8_227],
+  ["tests/", 8_228],
   ["scripts/", 9_453],
   ["include/", 3_760],
   ["android/", 1_843],
