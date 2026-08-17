@@ -123,6 +123,7 @@ async function main(): Promise<void> {
       report = parseRunReport(
         await runAndroidArm(repoRoot, arm, {
           ...options,
+          allowEmulator: process.argv.includes("--allow-emulator"),
           allowLowBattery: process.argv.includes("--allow-low-battery"),
           timeoutMs: timeoutFor(options),
         }),
@@ -179,7 +180,7 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--skip-baseline] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
   );
 }
 

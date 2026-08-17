@@ -21,6 +21,13 @@ export interface IDeviceCondition {
 }
 
 export interface IDeviceReadyOptions {
+  /**
+   * Permit an `emulator-*` serial. Defaults to false, and a qualification lane must leave it that
+   * way: an emulator proves nothing about arm64, a real GPU driver, touch, thermal or battery. Only
+   * the performance-regression canary sets it, and only because the engine cliff it watches for
+   * survives software rendering — see the emulator branch in `assertDeviceReady`.
+   */
+  allowEmulator?: boolean;
   allowOverride: boolean;
   maxThermalStatus: ThermalStatus;
   minBatteryPercent: number;

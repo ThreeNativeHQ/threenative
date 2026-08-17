@@ -30,7 +30,7 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   ["src/", 38_095],
   ["conformance/", 6_176],
   ["tests/", 8_850],
-  ["scripts/", 11_591],
+  ["scripts/", 11_605],
   ["include/", 3_760],
   ["android/", 1_941],
   ["native/", 2_914],

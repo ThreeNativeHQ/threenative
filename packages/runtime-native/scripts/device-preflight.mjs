@@ -168,6 +168,12 @@ function normaliseOptions(options) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "options are required");
   }
   const { minBatteryPercent, requireDischarging, maxThermalStatus, allowOverride } = options;
+  // Opt-in, and only one caller sets it. See the emulator branch in assertDeviceReady for why a
+  // qualification lane must never pass this and a benchmark reasonably may.
+  const allowEmulator = options.allowEmulator ?? false;
+  if (typeof allowEmulator !== "boolean") {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "allowEmulator must be a boolean");
+  }
   if (
     !Number.isFinite(minBatteryPercent) ||
     minBatteryPercent < 0 ||
@@ -182,7 +188,7 @@ function normaliseOptions(options) {
     );
   }
   const maximumThermal = thermalStatusFromValue(maxThermalStatus);
-  return { minBatteryPercent, requireDischarging, maximumThermal, allowOverride };
+  return { allowEmulator, minBatteryPercent, requireDischarging, maximumThermal, allowOverride };
 }
 
 function conditionFailure(condition, threshold, observed) {
@@ -193,15 +199,23 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
   if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
   }
-  if (/^emulator-/u.test(serial)) {
+  const configuration = normaliseOptions(options);
+  // An emulator cannot prove arm64, a real GPU driver, touch hardware, thermal behaviour or battery,
+  // so every *qualification* lane must refuse one — that is PRD-070's rule and it is the default here.
+  //
+  // A *performance regression canary* is a different question, and the answer was measured on
+  // 2026-08-17 rather than assumed: on the x86_64 emulator the V8-against-QuickJS ratio at the top
+  // rung falls from 12.1x to 2.4x, because swiftshader is a CPU rasteriser and software rendering
+  // swamps script time. Still far past any sane tolerance, so an engine revert is catchable there —
+  // but the absolute numbers are not performance evidence and must never be quoted as device figures.
+  // `allowEmulator` is how a caller says it wants the canary and accepts that.
+  if (/^emulator-/u.test(serial) && !configuration.allowEmulator) {
     throw new DevicePreflightError(
       "TN_DEVICE_PREFLIGHT_EMULATOR_BLOCKED",
       `${serial} is an emulator; a physical Android device is required`,
       { serial },
     );
   }
-
-  const configuration = normaliseOptions(options);
   const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies.environment));
   const state = String(await execute(["get-state"])).trim();
   if (state !== "device") {

@@ -413,3 +413,87 @@ describe("the performance baseline gate", () => {
     expect(android?.rungs["L3@16384"]).toBeLessThan(1000 / 120 + 0.5);
   });
 });
+
+describe("the emulator canary", () => {
+  // Measured 2026-08-17 rather than assumed: an emulator CAN catch an engine revert, and its absolute
+  // numbers are worthless as performance figures. Both halves are load-bearing.
+  const EMULATOR_V8 = { "L2@4096": 75.17, "L2@16384": 204.08, "L3@4096": 48.03, "L3@16384": 65.76 };
+  const PHONE_V8 = { "L2@4096": 8.27, "L2@16384": 8.21, "L3@4096": 8.29, "L3@16384": 8.34 };
+
+  function condition(serial: string): NonNullable<IRunReport["deviceCondition"]> {
+    return {
+      batteryPercent: serial.startsWith("emulator-") ? 100 : 80,
+      charging: serial.startsWith("emulator-"),
+      chargingSource: serial.startsWith("emulator-") ? "AC" : "none",
+      provisional: [],
+      screenOn: true,
+      serial,
+      thermalStatus: "NONE",
+      thermalStatusCode: 0,
+    };
+  }
+
+  function androidRun(serial: string, p50s: Record<string, number>): IRunReport {
+    return report({
+      arm: "tn-android",
+      deviceCondition: condition(serial),
+      display: { height: 720, refreshHz: 120, vsync: true, width: 1280 },
+      rungs: Object.entries(p50s).map(([key, ms]) => {
+        const [mode, count] = key.split("@");
+        return rung({
+          frameMs: series(ms),
+          mode: mode as IRunReport["rungs"][number]["mode"],
+          objectCount: Number(count),
+        });
+      }),
+    });
+  }
+
+  it("compares an emulator run against the emulator baseline, not the phone's", () => {
+    // The phone's top rung is 8.34 ms and the emulator's is 65.76 for the same work. Crossing the two
+    // would report a regression on every emulator run and a pass on nothing.
+    const check = checkPerformance(androidRun("emulator-5554", EMULATOR_V8));
+    expect(check?.arm).toBe("tn-android@emulator");
+    expect(check?.regressions).toEqual([]);
+  });
+
+  it("still catches the engine reverting, on three rungs of four", () => {
+    // The QuickJS numbers measured on the same emulator. The ratio at the top rung falls to 2.4x from
+    // the phone's 12.1x, because swiftshader is a CPU rasteriser and software rendering swamps script
+    // time.
+    const check = checkPerformance(
+      androidRun("emulator-5554", {
+        "L2@4096": 87.75,
+        "L2@16384": 299.19,
+        "L3@4096": 70.36,
+        "L3@16384": 158.0,
+      }),
+    );
+    expect(check?.regressions.map((row) => row.rung).sort()).toEqual([
+      "L2@16384",
+      "L3@16384",
+      "L3@4096",
+    ]);
+
+    // **And this is the canary's honest limit, asserted so nobody has to rediscover it.** L2@4096
+    // moves only 75.17 -> 87.75 ms, 1.2x, which fits inside the 25% tolerance and does not trip. On
+    // the phone that rung moves 2.5x and does. So the emulator is a tripwire with three working
+    // strands, not four, and a subtler regression than a whole-engine revert may well cross it
+    // unnoticed. That is the price of a gate that runs without a phone.
+    expect(check?.regressions.map((row) => row.rung)).not.toContain("L2@4096");
+  });
+
+  it("does not let a phone report be judged against the emulator budget", () => {
+    // A phone reading the emulator's numbers is an eight-fold regression and must not pass because the
+    // emulator is allowed to be that slow.
+    const check = checkPerformance(androidRun("37251FDJH0037Z", EMULATOR_V8));
+    expect(check?.arm).toBe("tn-android");
+    expect(check?.regressions.length).toBe(4);
+  });
+
+  it("holds the phone baseline for a phone serial", () => {
+    const check = checkPerformance(androidRun("37251FDJH0037Z", PHONE_V8));
+    expect(check?.arm).toBe("tn-android");
+    expect(check?.regressions).toEqual([]);
+  });
+});

@@ -323,6 +323,16 @@ export function knee(
  * it when a benchmark runs.
  */
 export const PERFORMANCE_BASELINES: Readonly<Record<string, IPerformanceBaseline>> = {
+  // The emulator canary, keyed separately because it measures something else. Its numbers are 8x the
+  // phone's for identical work — swiftshader is a CPU rasteriser, so software rendering dominates the
+  // frame and squeezes the engine ratio from 12.1x to 2.4x. Still catchable, which is the point: this
+  // is the only Android performance gate that can run without a phone attached.
+  //
+  // **Never quote these as performance figures.** They are a tripwire, not a measurement.
+  "tn-android@emulator": {
+    evidence: "docs/verification/prd-130-emulator-canary-2026-08-17.md",
+    rungs: { "L2@4096": 75.17, "L2@16384": 204.08, "L3@4096": 48.03, "L3@16384": 65.76 },
+  },
   "tn-android": {
     // docs/verification/prd-130-phase-6-2026-08-16.md — Pixel 8 `37251FDJH0037Z`, V8, vsync on at
     // 120 Hz. Every rung is at the frame interval, so these are ceilings on V8's real cost.
@@ -376,7 +386,12 @@ export function checkPerformance(
   baselines: Readonly<Record<string, IPerformanceBaseline>> = PERFORMANCE_BASELINES,
   tolerance: number = PERFORMANCE_REGRESSION_TOLERANCE,
 ): IPerformanceCheck | undefined {
-  const baseline = baselines[report.arm];
+  // An emulator run is compared against the emulator baseline, never the phone's: the same arm on
+  // software rendering is 8x slower for identical work, so crossing them would report a regression on
+  // every emulator run and a pass on nothing.
+  const serial = report.deviceCondition?.serial ?? "";
+  const key = /^emulator-/u.test(serial) ? `${report.arm}@emulator` : report.arm;
+  const baseline = baselines[key];
   if (baseline === undefined) return undefined;
   if (report.provisional !== undefined && report.provisional.length > 0) {
     throw new BenchError(
@@ -408,7 +423,7 @@ export function checkPerformance(
     const allowedMs = baselineMs * (1 + tolerance);
     if (measuredMs > allowedMs) regressions.push({ allowedMs, baselineMs, measuredMs, rung });
   }
-  return { arm: report.arm, checked, evidence: baseline.evidence, regressions, tolerance };
+  return { arm: key as Arm, checked, evidence: baseline.evidence, regressions, tolerance };
 }
 
 export function renderPerformanceCheck(check: IPerformanceCheck): string {

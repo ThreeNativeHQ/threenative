@@ -103,7 +103,11 @@ function parseReport(log: string): unknown {
 export async function runAndroidArm(
   repoRoot: string,
   arm: string,
-  options: IAndroidLadder & { allowLowBattery: boolean; timeoutMs: number },
+  options: IAndroidLadder & {
+    allowEmulator?: boolean;
+    allowLowBattery: boolean;
+    timeoutMs: number;
+  },
 ): Promise<unknown> {
   const definition = ANDROID_ARMS[arm];
   if (definition === undefined) throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
@@ -111,10 +115,14 @@ export async function runAndroidArm(
   const state = await assertSharedDeviceReady(
     serial,
     {
-      allowOverride: options.allowLowBattery,
+      // A benchmark may opt into the emulator as a regression canary; a qualification lane may not.
+      // The emulator reports a synthetic battery and no thermal state, so those bars are relaxed
+      // with it rather than pretended to be met.
+      allowEmulator: options.allowEmulator === true,
+      allowOverride: options.allowLowBattery || options.allowEmulator === true,
       maxThermalStatus: "NONE",
-      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
-      requireDischarging: true,
+      minBatteryPercent: options.allowEmulator === true ? 0 : MINIMUM_BATTERY_PERCENT,
+      requireDischarging: options.allowEmulator !== true,
     },
     { adb },
   );
