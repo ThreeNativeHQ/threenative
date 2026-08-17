@@ -1,4 +1,4 @@
-# Delegated lane — everything here is runnable today, on this machine
+# Low-complexity lane — everything here is runnable today, on this machine
 
 **You have been handed this file and nothing else. It is complete.** Do the three tasks
 below, in order, and stop where each says stop. Do not look for other work in this folder;

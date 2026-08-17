@@ -1,9 +1,9 @@
-# Operator lane — the phone, and the three judgement calls
+# High-complexity lane — the phone, and the three judgement calls
 
 Everything in this lane either needs hardware attached to the operator's machine or turns on
 a judgement that is wrong in a way a passing test does not catch. **None of it is delegable
 to a cheap model.** The rest of the batch is indexed in
-[`README-DELEGATED.md`](./README-DELEGATED.md); it does not overlap with anything here.
+[`README-LOW-COMPLEXITY.md`](./README-LOW-COMPLEXITY.md); it does not overlap with anything here.
 
 ## Hardware runs — in this order, cheapest first
 
@@ -25,7 +25,7 @@ check — `scripts/engine-load-test/run-android.ts:93` refused the run and
 `--allow-low-battery` overrode it, which is the escape working as designed. Re-run without
 the flag.
 
-**PRD-127 lands before PRD-117, PRD-074 and PRD-066 run.** The delegated lane writes its code;
+**PRD-127 lands before PRD-117, PRD-074 and PRD-066 run.** The low-complexity lane writes its code;
 this lane is what verifies it, because only this machine has the phone. Until then, one of
 four device lanes checks the phone's condition and three check nothing.
 
@@ -39,7 +39,7 @@ four device lanes checks the phone's condition and three check nothing.
 
 ### PRD-129 §5–§7 — the order that matters
 
-The delegated lane stops at the end of §4, so §3 (the engine's MIT licence) may already be
+The low-complexity lane stops at the end of §4, so §3 (the engine's MIT licence) may already be
 committed when you pick this up. Check before starting.
 
 1. **§5 first, and prove it.** The private repository is not seeded until

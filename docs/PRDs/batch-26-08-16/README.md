@@ -9,11 +9,11 @@ three of those claims *measurable*, not to assert them.
 
 | Index | Who runs it | Contents |
 | --- | --- | --- |
-| [`README-DELEGATED.md`](./README-DELEGATED.md) | a cheap model, today, unattended | PRD-129 §3–§4, PRD-125, PRD-127's code — no hardware, no judgement calls, every criterion a command |
-| [`README-OPERATOR.md`](./README-OPERATOR.md) | the operator, with the phone | PRD-126, PRD-128, PRD-129 §5–§7, and the four hardware runs |
+| [`README-LOW-COMPLEXITY.md`](./README-LOW-COMPLEXITY.md) | a cheap model, today, unattended | PRD-129 §3–§4, PRD-125, PRD-127's code — no hardware, no judgement calls, every criterion a command |
+| [`README-HIGH-COMPLEXITY.md`](./README-HIGH-COMPLEXITY.md) | the operator, with the phone | PRD-126, PRD-128, PRD-129 §5–§7, and the four hardware runs |
 
-Hand the delegated file over on its own. It is self-contained by design, and it never
-mentions the operator lane — a model that cannot read about PRD-128 cannot wander into it.
+Hand the low-complexity file over on its own. It is self-contained by design, and it never
+mentions the high-complexity lane — a model that cannot read about PRD-128 cannot wander into it.
 
 ## Why this batch, today
 
@@ -38,11 +38,11 @@ us.
 
 | PRD | What it closes | Lane |
 | --- | --- | --- |
-| [125](./PRD-125-docs-and-readme-overhaul.md) | A README that opens on VOID, 18 broken links, and 189 MiB of docs in a 199 MiB repository | delegated |
-| [126](./PRD-126-the-visual-instrument-noise-floor.md) | The visual loop cannot tell a change from rater variance, and has already optimised noise once | operator |
-| [127](./PRD-127-device-measurement-preflight.md) | One of four device lanes checks the phone's condition; three check nothing | code delegated, **verified by the operator** |
-| [128](./PRD-128-android-qualification-split.md) | PRD-056 is blocked on the *union* of four dependencies; the part a Pixel 8 can run today is held up by an Apple signing identity nobody has | operator |
-| [129](./PRD-129-licensing-and-the-studio-split.md) | The engine grants no rights to anyone, and the paid editor's source sits in a public MIT repository | **§3–§4 delegated, §5–§7 operator** |
+| [125](./PRD-125-docs-and-readme-overhaul.md) | A README that opens on VOID, 18 broken links, and 189 MiB of docs in a 199 MiB repository | low |
+| [126](./PRD-126-the-visual-instrument-noise-floor.md) | The visual loop cannot tell a change from rater variance, and has already optimised noise once | high |
+| [127](./PRD-127-device-measurement-preflight.md) | One of four device lanes checks the phone's condition; three check nothing | code is **low**, verification is **high** (needs the phone) |
+| [128](./PRD-128-android-qualification-split.md) | PRD-056 is blocked on the *union* of four dependencies; the part a Pixel 8 can run today is held up by an Apple signing identity nobody has | high |
+| [129](./PRD-129-licensing-and-the-studio-split.md) | The engine grants no rights to anyone, and the paid editor's source sits in a public MIT repository | **§3–§4 low, §5–§7 high** |
 
 Ordering across the two lanes: PRD-129 §3 unblocks PRD-125's licence section. PRD-127's code
 must land before PRD-117, PRD-074 and PRD-066 run. Nothing else is ordered.
