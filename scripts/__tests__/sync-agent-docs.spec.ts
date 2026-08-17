@@ -50,5 +50,8 @@ describe("sync-agent-docs", () => {
     const result = await syncAgentDocs(process.cwd(), true);
     expect(result.changed).toEqual([]);
     expect(result.checked.length).toBeGreaterThan(0);
-  });
+    // Reads and compares 37 mirror pairs across the whole repository. Well under a second idle, past
+    // the 5 s default when the machine is busy — which reported a timeout as a mirror drift and sent
+    // me looking for a sync bug that was not there.
+  }, 30_000);
 });

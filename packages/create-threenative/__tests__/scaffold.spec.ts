@@ -441,7 +441,9 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
+    // trips on a loaded machine and reports a timeout where there is no defect.
+  }, 30_000);
 
   it("should throw when .mcp.json omits the sculpt server", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-sculpt-missing-"));
@@ -466,7 +468,9 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
+    // trips on a loaded machine and reports a timeout where there is no defect.
+  }, 30_000);
 
   it("should throw when .mcp.json names a package the project does not depend on", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-undeclared-"));
@@ -495,7 +499,9 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
+    // trips on a loaded machine and reports a timeout where there is no defect.
+  }, 30_000);
 
   it("should throw when .mcp.json launches an unpinned remote package", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-npx-"));
@@ -521,7 +527,9 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
+    // trips on a loaded machine and reports a timeout where there is no defect.
+  }, 30_000);
 
   it("should accept a local playtest package for scaffold smoke tests", () => {
     expect(

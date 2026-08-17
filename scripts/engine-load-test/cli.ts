@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url";
 import { driveBenchmarkPage, serveDirectory, startProcess, waitForUrl } from "./browser.js";
 import {
   type IRunReport,
+  checkPerformance,
   compare,
   parseRunReport,
   renderArmMarkdown,
   renderComparisonMarkdown,
+  renderPerformanceCheck,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
 import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
@@ -141,6 +143,28 @@ async function main(): Promise<void> {
     process.stdout.write(
       `${renderArmMarkdown(report)}\n\nwrote ${path.relative(repoRoot, file)}\n`,
     );
+
+    // A benchmark that measures and never compares is a number nobody acts on. This is where a
+    // regression gets caught: the arm's recorded baseline is checked here, on the run that just
+    // happened, rather than by somebody reading two files a week later. Missing baseline for an arm
+    // is silence, not a pass; a missing *rung* throws inside checkPerformance.
+    //
+    // A provisional report throws rather than passing, which means a run under the condition gate's
+    // override cannot clear a bar. `--skip-baseline` exists for the deliberate diagnostic case — a
+    // floor control, a novsync probe — and says so in the output rather than being invisible.
+    if (process.argv.includes("--skip-baseline")) {
+      process.stderr.write("baseline check skipped by --skip-baseline\n");
+      return;
+    }
+    const check = checkPerformance(report);
+    if (check !== undefined) {
+      process.stdout.write(`\n${renderPerformanceCheck(check)}\n`);
+      if (check.regressions.length > 0) {
+        throw new Error(
+          `TN_BENCH_PERFORMANCE_REGRESSION: ${check.regressions.length} rung(s) slower than the ${check.arm} baseline.`,
+        );
+      }
+    }
     return;
   }
 
@@ -155,7 +179,7 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--skip-baseline] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
   );
 }
 

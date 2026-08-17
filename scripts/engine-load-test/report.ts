@@ -310,6 +310,124 @@ export function knee(
   return best;
 }
 
+/**
+ * The performance a device run is required to keep, per arm.
+ *
+ * Recorded, not computed: each entry is a number some named device actually produced, and the file
+ * that produced it is cited so a reader can check the conditions rather than trust the figure.
+ *
+ * **Why a baseline at all.** The realistic regression here is not drift, it is a *cliff*: the
+ * Android engine default reverting to QuickJS takes the top rung from 8.34 ms to 101.24 ms. That is
+ * 12x, and it is invisible without a comparison because the build still succeeds, the APK still
+ * installs, and the frames still render. `--expect-engine` catches it when a gate asks; this catches
+ * it when a benchmark runs.
+ */
+export const PERFORMANCE_BASELINES: Readonly<Record<string, IPerformanceBaseline>> = {
+  "tn-android": {
+    // docs/verification/prd-130-phase-6-2026-08-16.md — Pixel 8 `37251FDJH0037Z`, V8, vsync on at
+    // 120 Hz. Every rung is at the frame interval, so these are ceilings on V8's real cost.
+    evidence: "docs/verification/prd-130-phase-6-2026-08-16.md",
+    rungs: { "L2@4096": 8.27, "L2@16384": 8.21, "L3@4096": 8.29, "L3@16384": 8.34 },
+  },
+};
+
+export interface IPerformanceBaseline {
+  readonly evidence: string;
+  /** p50 milliseconds, keyed `<mode>@<objectCount>`. */
+  readonly rungs: Readonly<Record<string, number>>;
+}
+
+/**
+ * How much slower than its baseline a rung may read before it is a regression.
+ *
+ * Deliberately loose. Device frame timings swing with thermal state and machine load, and a tight
+ * bound turns this into a false-alarm generator that people learn to ignore — which is worse than no
+ * gate. It is set to catch the cliff described above, not to police a few per cent: at 0.25 a 12x
+ * engine revert trips it forty-odd times over, while an ordinary noisy afternoon does not.
+ */
+export const PERFORMANCE_REGRESSION_TOLERANCE = 0.25;
+
+export interface IPerformanceRegression {
+  readonly allowedMs: number;
+  readonly baselineMs: number;
+  readonly measuredMs: number;
+  readonly rung: string;
+}
+
+export interface IPerformanceCheck {
+  readonly arm: Arm;
+  readonly checked: readonly string[];
+  readonly evidence: string;
+  readonly regressions: readonly IPerformanceRegression[];
+  readonly tolerance: number;
+}
+
+/**
+ * Compares a run against its arm's recorded baseline. Fails closed in every direction.
+ *
+ * A rung the baseline names and the report does not is a **failure**, never a skip: a benchmark that
+ * silently stops measuring the top rung is exactly how a regression hides, and it is the same defect
+ * class as v1's harness reporting pass on a scenario that asserted nothing. A provisional report is
+ * refused for the same reason `compare` refuses one — a number taken outside its declared conditions
+ * cannot clear a bar.
+ */
+export function checkPerformance(
+  report: IRunReport,
+  baselines: Readonly<Record<string, IPerformanceBaseline>> = PERFORMANCE_BASELINES,
+  tolerance: number = PERFORMANCE_REGRESSION_TOLERANCE,
+): IPerformanceCheck | undefined {
+  const baseline = baselines[report.arm];
+  if (baseline === undefined) return undefined;
+  if (report.provisional !== undefined && report.provisional.length > 0) {
+    throw new BenchError(
+      "TN_BENCH_PROVISIONAL_BASELINE",
+      `${report.arm} report is provisional (${report.provisional.join(", ")}); a provisional number cannot clear a performance baseline.`,
+    );
+  }
+  if (!Number.isFinite(tolerance) || tolerance < 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_TOLERANCE",
+      `tolerance must be a non-negative number, received ${String(tolerance)}.`,
+    );
+  }
+
+  const measured = new Map(
+    summarize(report).map((entry) => [rungKey(entry.mode, entry.objectCount), entry.p50]),
+  );
+  const regressions: IPerformanceRegression[] = [];
+  const checked: string[] = [];
+  for (const [rung, baselineMs] of Object.entries(baseline.rungs)) {
+    const measuredMs = measured.get(rung);
+    if (measuredMs === undefined) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_RUNG_MISSING",
+        `${report.arm} baseline names ${rung} and the run did not measure it. A run that stops measuring a rung cannot clear its baseline.`,
+      );
+    }
+    checked.push(rung);
+    const allowedMs = baselineMs * (1 + tolerance);
+    if (measuredMs > allowedMs) regressions.push({ allowedMs, baselineMs, measuredMs, rung });
+  }
+  return { arm: report.arm, checked, evidence: baseline.evidence, regressions, tolerance };
+}
+
+export function renderPerformanceCheck(check: IPerformanceCheck): string {
+  const head = `**Performance baseline** — ${check.arm}, tolerance +${Math.round(check.tolerance * 100)}%, from \`${check.evidence}\`.`;
+  if (check.regressions.length === 0) {
+    return `${head} ${check.checked.length} rung(s) within budget.`;
+  }
+  return [
+    head,
+    "",
+    "| Rung | Baseline p50 | Measured p50 | Allowed |",
+    "| --- | ---: | ---: | ---: |",
+    ...check.regressions.map(
+      (row) =>
+        `| ${row.rung} | ${row.baselineMs.toFixed(2)} ms | **${row.measuredMs.toFixed(2)} ms** | ${row.allowedMs.toFixed(2)} ms |`,
+    ),
+  ].join("\n");
+}
+
 function drawCallFailure(
   mode: RenderMode,
   objectCount: number,

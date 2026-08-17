@@ -6,7 +6,10 @@ import {
 } from "../../examples/engine-load-test/src/workload.js";
 import {
   type IRunReport,
+  PERFORMANCE_BASELINES,
+  PERFORMANCE_REGRESSION_TOLERANCE,
   checkEquivalence,
+  checkPerformance,
   compare,
   knee,
   looksVsyncPinned,
@@ -306,4 +309,107 @@ describe("engine load test desktop capture", () => {
       runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
     ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
+});
+
+describe("the performance baseline gate", () => {
+  // The realistic Android regression is not drift, it is the engine default reverting: 8.34 ms to
+  // 101.24 ms on the same rung. Every case below is shaped around catching that cliff without
+  // becoming a false-alarm generator on ordinary device noise.
+  const BASELINES = {
+    "tn-android": {
+      evidence: "docs/verification/prd-130-phase-6-2026-08-16.md",
+      rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+    },
+  } as const;
+
+  function androidReport(
+    l2Ms: number,
+    l3Ms: number,
+    overrides: Partial<IRunReport> = {},
+  ): IRunReport {
+    return report({
+      arm: "tn-android",
+      display: { height: 720, refreshHz: 120, vsync: true, width: 1280 },
+      rungs: [
+        rung({ frameMs: series(l2Ms), mode: "L2", objectCount: 4096 }),
+        rung({ frameMs: series(l3Ms), mode: "L3", objectCount: 16_384 }),
+      ],
+      ...overrides,
+    });
+  }
+
+  it("passes a run that holds its recorded numbers", () => {
+    const check = checkPerformance(androidReport(8.27, 8.34), BASELINES);
+    expect(check?.regressions).toEqual([]);
+    expect(check?.checked).toEqual(["L2@4096", "L3@16384"]);
+    expect(check?.evidence).toBe("docs/verification/prd-130-phase-6-2026-08-16.md");
+  });
+
+  it("catches the engine reverting to QuickJS, which is what it exists for", () => {
+    // The measured QuickJS numbers from the same device and bundle.
+    const check = checkPerformance(androidReport(20.61, 101.24), BASELINES);
+    expect(check?.regressions.map((row) => row.rung)).toEqual(["L2@4096", "L3@16384"]);
+    const top = check?.regressions.find((row) => row.rung === "L3@16384");
+    expect(top?.measuredMs).toBeCloseTo(101.24, 2);
+    expect(top?.baselineMs).toBeCloseTo(8.34, 2);
+  });
+
+  it("tolerates device noise below the threshold and fails above it", () => {
+    // Set so an ordinary noisy afternoon does not cry wolf: a tight bound produces a gate people
+    // learn to ignore, which is worse than no gate.
+    expect(PERFORMANCE_REGRESSION_TOLERANCE).toBe(0.25);
+    const justUnder = 8.34 * 1.24;
+    const justOver = 8.34 * 1.26;
+    expect(checkPerformance(androidReport(8.27, justUnder), BASELINES)?.regressions).toEqual([]);
+    expect(
+      checkPerformance(androidReport(8.27, justOver), BASELINES)?.regressions.map(
+        (row) => row.rung,
+      ),
+    ).toEqual(["L3@16384"]);
+  });
+
+  it("fails when the run stopped measuring a rung the baseline names", () => {
+    // The quiet way a regression hides: drop the expensive rung and every remaining number looks
+    // fine. Skipping it would be the v1 harness defect -- an assertion set that shrank to nothing
+    // and reported pass.
+    const missingTopRung = report({
+      arm: "tn-android",
+      rungs: [rung({ frameMs: series(8.27), mode: "L2", objectCount: 4096 })],
+    });
+    expect(() => checkPerformance(missingTopRung, BASELINES)).toThrow(
+      /TN_BENCH_BASELINE_RUNG_MISSING.*L3@16384/su,
+    );
+  });
+
+  it("refuses a provisional run rather than letting it clear the bar", () => {
+    // PRD-127's override writes the condition into the report. A number taken outside its declared
+    // conditions cannot satisfy a budget, for the same reason `compare` refuses one.
+    const provisional = androidReport(8.27, 8.34, { provisional: ["charging"] });
+    expect(() => checkPerformance(provisional, BASELINES)).toThrow(
+      /TN_BENCH_PROVISIONAL_BASELINE.*charging/su,
+    );
+  });
+
+  it("says nothing about an arm that has no recorded baseline", () => {
+    // Silence, not a pass: an arm nobody has measured must not appear to have met a budget.
+    expect(checkPerformance(report({ arm: "tn-web" }), BASELINES)).toBeUndefined();
+  });
+
+  it("refuses a negative tolerance instead of inverting the comparison", () => {
+    expect(() => checkPerformance(androidReport(8.27, 8.34), BASELINES, -0.1)).toThrow(
+      /TN_BENCH_BAD_TOLERANCE/u,
+    );
+  });
+
+  it("ships a baseline for the Android arm, citing the run that produced it", () => {
+    // A baseline with no evidence path is a number nobody can check the conditions of.
+    const android = PERFORMANCE_BASELINES["tn-android"];
+    expect(android).toBeDefined();
+    expect(android?.evidence).toMatch(/^docs\/verification\/.+\.md$/u);
+    expect(Object.keys(android?.rungs ?? {})).toContain("L3@16384");
+    // The recorded figure is vsync-bound at 120 Hz, so it is a ceiling on V8's real cost. If this
+    // ever drops materially below the frame interval, the arm stopped being display-bound and the
+    // baseline should be re-derived rather than nudged.
+    expect(android?.rungs["L3@16384"]).toBeLessThan(1000 / 120 + 0.5);
+  });
 });
