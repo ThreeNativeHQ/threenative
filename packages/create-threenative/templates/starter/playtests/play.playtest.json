@@ -11,6 +11,6 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "performance": {},
-    "resources": [{ "id": "GameState", "path": "score", "gte": 1, "changed": true }]
+    "resources": [{ "id": "state", "path": "score", "gte": 1, "changed": true }]
   }
 }

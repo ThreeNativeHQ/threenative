@@ -360,7 +360,7 @@ describe("template contracts", () => {
         { equals: 2, label: "collected" },
         { equals: 3, label: "restarted" },
       ],
-      id: "GameState",
+      id: "state",
       path: "entityCount",
     });
 

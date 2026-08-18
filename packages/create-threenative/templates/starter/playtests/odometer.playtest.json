@@ -1,0 +1,17 @@
+{
+  "name": "starter-deferred-motion-odometer",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "move", "press": "ArrowUp", "holdTicks": 60, "release": true },
+    { "kind": "wait", "label": "solver-applied", "waitTicks": 2, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "state", "path": "odometer", "gte": 1, "changed": true }],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

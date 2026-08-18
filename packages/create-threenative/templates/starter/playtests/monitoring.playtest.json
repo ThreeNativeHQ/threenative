@@ -26,7 +26,7 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "score",
         "equals": 1,
         "changed": true,

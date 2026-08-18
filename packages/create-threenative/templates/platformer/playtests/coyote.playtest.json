@@ -14,8 +14,8 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "coyoteJumps", "gte": 1, "changed": true }
+      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "state", "path": "coyoteJumps", "gte": 1, "changed": true }
     ]
   }
 }

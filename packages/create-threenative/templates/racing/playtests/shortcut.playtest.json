@@ -33,12 +33,12 @@
     ],
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "completedLaps",
         "equals": 0,
         "allowTrivial": true
       },
-      { "id": "GameState", "path": "shortcutRejects", "gte": 1, "changed": true }
+      { "id": "state", "path": "shortcutRejects", "gte": 1, "changed": true }
     ]
   }
 }

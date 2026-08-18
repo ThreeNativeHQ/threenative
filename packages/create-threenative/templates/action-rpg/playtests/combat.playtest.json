@@ -16,22 +16,22 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "lineOfSightBlocked",
         "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "wallEnemyAggro",
         "atSteps": [{ "label": "line-of-sight", "equals": 0 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "visibleEnemyAggro",
         "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "damage",
         "atSteps": [
           { "label": "surge-active", "equals": 18 },
@@ -39,7 +39,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "modifierActive",
         "atSteps": [
           { "label": "surge-active", "equals": 1 },

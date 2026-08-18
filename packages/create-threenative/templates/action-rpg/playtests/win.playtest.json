@@ -20,9 +20,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "gameWon", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "phase", "equals": "won", "changed": true },
-      { "id": "GameState", "path": "enemiesDefeated", "gte": 1, "changed": true }
+      { "id": "state", "path": "gameWon", "equals": 1, "changed": true },
+      { "id": "state", "path": "phase", "equals": "won", "changed": true },
+      { "id": "state", "path": "enemiesDefeated", "gte": 1, "changed": true }
     ],
     "signals": [{ "name": "defeated", "entity": "boss", "minCount": 1, "atStep": "boss-hit-3" }],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]

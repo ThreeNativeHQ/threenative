@@ -26,9 +26,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "jumps", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "coyoteJumps", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "peakRise", "gte": 0.5, "changed": true }
+      { "id": "state", "path": "jumps", "equals": 1, "changed": true },
+      { "id": "state", "path": "coyoteJumps", "equals": 1, "changed": true },
+      { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

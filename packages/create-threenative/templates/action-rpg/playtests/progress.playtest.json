@@ -36,12 +36,12 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "saveCount",
         "atSteps": [{ "label": "checkpoint", "equals": 2 }, { "label": "restored", "equals": 2 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "health",
         "atSteps": [
           { "label": "damage-before-save", "equals": 77 },
@@ -49,17 +49,17 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "equippedItem",
         "atSteps": [{ "label": "restored", "equals": "ember-blade" }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "damage",
         "atSteps": [{ "label": "checkpoint", "equals": 18 }, { "label": "restored", "equals": 18 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "playerX",
         "atSteps": [
           { "label": "checkpoint", "equals": -5.44 },
@@ -67,7 +67,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "playerY",
         "atSteps": [
           { "label": "checkpoint", "equals": 0.78 },
@@ -75,7 +75,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "playerZ",
         "atSteps": [{ "label": "checkpoint", "equals": 0 }, { "label": "restored", "equals": 0 }]
       }

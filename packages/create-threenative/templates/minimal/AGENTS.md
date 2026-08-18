@@ -140,6 +140,20 @@ node explicitly only when removing it during play. **The id is the name a scenar
 and the jump buffer in `src/entities/Player.ts` so the two templates teach the same motion
 API.
 
+`CharacterBody3D.moveAndSlide(dt)` queues motion for the shared bulk physics step rather than
+moving its object immediately. Because `THREE.Vector3` is mutable, use
+`const before = mesh.position.clone()` (or copy its `x`, `y`, and `z` scalars) before the call,
+then compare `mesh.position.distanceTo(before)` on the next update, after the step. Storing
+`mesh.position` itself aliases the live transform and reports zero.
+
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
+
 ## The `ctx` surface — you already have these, do not rebuild them
 
 `ctx` carries six things that get reimplemented by hand in almost every project, because
@@ -332,8 +346,10 @@ Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never 
 ## HUD
 
 This template has no React. `main.ts` subscribes a plugin to the store and writes to a DOM
-node. `ctx.state.set()` coalesces, so write it from `update()` freely — but never rebuild
-the DOM per frame.
+node. The store flushes every 100 ms by default, and `ctx.state.set()` coalesces, so write it from
+`update()` freely — but keep per-frame visual feedback in scene-owned Three.js objects and never
+rebuild the DOM per frame. If an event must appear in the DOM, give it a decay longer than one flush
+interval.
 
 If the UI grows past a few readouts, scaffold with the `starter` template instead, which
 ships React 19 + Tailwind and `@threenative/ui`.

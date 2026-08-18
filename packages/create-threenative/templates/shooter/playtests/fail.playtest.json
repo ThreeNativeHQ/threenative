@@ -20,10 +20,10 @@
       "runtimeReady": true
     },
     "resources": [
-      { "id": "GameState", "path": "deaths", "equals": 3, "changed": true },
-      { "id": "GameState", "path": "lives", "equals": 0, "changed": true },
-      { "id": "GameState", "path": "gameOver", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "phase", "textIncludes": "lost", "changed": true }
+      { "id": "state", "path": "deaths", "equals": 3, "changed": true },
+      { "id": "state", "path": "lives", "equals": 0, "changed": true },
+      { "id": "state", "path": "gameOver", "equals": 1, "changed": true },
+      { "id": "state", "path": "phase", "textIncludes": "lost", "changed": true }
     ],
     "signals": [{ "name": "died", "entity": "player", "minCount": 3 }]
   }

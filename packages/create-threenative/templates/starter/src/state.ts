@@ -3,6 +3,7 @@ export type GameState = {
   entityCount: number;
   jumps: number;
   levelX: number;
+  odometer: number;
   peakRise: number;
   playerX: number;
   respawns: number;

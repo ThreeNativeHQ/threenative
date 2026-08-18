@@ -25,7 +25,7 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "GameState", "path": "topSpeed", "gte": 1, "changed": true }],
+    "resources": [{ "id": "state", "path": "topSpeed", "gte": 1, "changed": true }],
     "components": [{ "entity": "player", "component": "health", "equals": 2, "changed": true }]
   }
 }

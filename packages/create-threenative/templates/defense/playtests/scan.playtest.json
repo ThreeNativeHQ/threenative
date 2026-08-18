@@ -12,9 +12,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "scanWindowFrames", "equals": 300, "changed": true },
-      { "id": "GameState", "path": "scanWindowValid", "equals": true, "changed": true },
-      { "id": "GameState", "path": "scanWindowScans", "gte": 10, "changed": true }
+      { "id": "state", "path": "scanWindowFrames", "equals": 300, "changed": true },
+      { "id": "state", "path": "scanWindowValid", "equals": true, "changed": true },
+      { "id": "state", "path": "scanWindowScans", "gte": 10, "changed": true }
     ]
   }
 }

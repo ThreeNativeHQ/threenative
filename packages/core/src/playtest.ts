@@ -360,8 +360,10 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
       assertJsonSafe(state);
       const value = state as Record<string, JsonValue>;
       return Object.fromEntries([
-        ["GameState", value],
+        // `state` is canonical. Keep `GameState` as a compatibility alias until published
+        // scenarios have migrated, then remove the alias in a future breaking release.
         ["state", value],
+        ["GameState", value],
       ]);
     },
   };

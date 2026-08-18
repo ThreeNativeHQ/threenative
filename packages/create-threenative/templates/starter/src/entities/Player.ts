@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { type Material, Mesh } from "three";
+import { type Material, Mesh, type Vector3 } from "three";
 import { roundedBox } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
@@ -20,6 +20,8 @@ export class Player {
   #jumpBuffer = 0;
   #jumps = 0;
   #coyoteJumps = 0;
+  #odometer = 0;
+  #previousPosition: Vector3 | undefined;
 
   constructor(
     ctx: GameCtx,
@@ -39,6 +41,9 @@ export class Player {
   }
 
   update(ctx: GameCtx, dt: number): void {
+    if (this.#previousPosition !== undefined) {
+      this.#odometer += this.mesh.position.distanceTo(this.#previousPosition);
+    }
     const grounded = this.body.grounded;
     this.#coyoteTime = Math.max(0, this.#coyoteTime - dt);
     this.#jumpBuffer = Math.max(0, this.#jumpBuffer - dt);
@@ -54,7 +59,9 @@ export class Player {
     const move = ctx.input.vector("move");
     this.body.velocity.x = move.x * MOVE_SPEED;
     this.body.velocity.z = -move.y * MOVE_SPEED;
+    const before = this.mesh.position.clone();
     this.body.moveAndSlide(dt);
+    this.#previousPosition = before;
     if (this.body.grounded) this.#coyoteTime = COYOTE_TIME;
   }
 
@@ -62,13 +69,21 @@ export class Player {
     this.body.teleport(SPAWN);
     this.#coyoteTime = 0;
     this.#jumpBuffer = 0;
+    this.#previousPosition = undefined;
   }
 
-  debug(): { coyoteJumps: number; grounded: boolean; jumps: number; position: number[] } {
+  debug(): {
+    coyoteJumps: number;
+    grounded: boolean;
+    jumps: number;
+    odometer: number;
+    position: number[];
+  } {
     return {
       coyoteJumps: this.#coyoteJumps,
       grounded: this.body.grounded,
       jumps: this.#jumps,
+      odometer: this.#odometer,
       position: this.mesh.position.toArray(),
     };
   }

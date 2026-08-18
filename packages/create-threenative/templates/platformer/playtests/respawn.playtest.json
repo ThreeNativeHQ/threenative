@@ -24,8 +24,8 @@
       "reachesPositionWithin": { "position": [14, 0.75, 0], "maxDistance": 2 }
     },
     "resources": [
-      { "id": "GameState", "path": "checkpoint", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "respawns", "gte": 1, "changed": true }
+      { "id": "state", "path": "checkpoint", "equals": 1, "changed": true },
+      { "id": "state", "path": "respawns", "gte": 1, "changed": true }
     ]
   }
 }

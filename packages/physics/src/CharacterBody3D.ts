@@ -144,6 +144,17 @@ export class CharacterBody3D {
     this.#sliding = false;
   }
 
+  /**
+   * Queue velocity-based motion for the shared bulk physics step.
+   *
+   * @remarks
+   * This does not move `object` synchronously. The solver writes the transform after the step, so
+   * reading `object.position` immediately after this call still observes the previous transform.
+   * Three.js `Vector3` instances are mutable, so do not retain `object.position` itself as the
+   * snapshot: use `const before = object.position.clone()` (or copy its `x`, `y`, and `z` scalars).
+   * Compare that snapshot with `object.position` only after the deferred bulk physics step,
+   * typically on the next frame, to measure the motion that the solver applied.
+   */
   moveAndSlide(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");

@@ -22,7 +22,7 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "spent",
         "equals": 40,
         "atSteps": [
@@ -31,10 +31,10 @@
           { "label": "overlap-attempt", "equals": 40 }
         ]
       },
-      { "id": "GameState", "path": "routeRejects", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "overlapRejects", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "placementRejects", "gte": 2, "changed": true },
-      { "id": "GameState", "path": "scanCount", "gte": 1, "changed": true }
+      { "id": "state", "path": "routeRejects", "gte": 1, "changed": true },
+      { "id": "state", "path": "overlapRejects", "gte": 1, "changed": true },
+      { "id": "state", "path": "placementRejects", "gte": 2, "changed": true },
+      { "id": "state", "path": "scanCount", "gte": 1, "changed": true }
     ]
   }
 }

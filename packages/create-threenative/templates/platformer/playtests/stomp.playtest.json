@@ -25,9 +25,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "defeated", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "hearts", "equals": 3, "allowTrivial": true }
+      { "id": "state", "path": "defeated", "gte": 1, "changed": true },
+      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "state", "path": "hearts", "equals": 3, "allowTrivial": true }
     ],
     "tags": [{ "tag": "patrol", "count": 0 }]
   }

@@ -106,6 +106,14 @@ gameplay and state transitions in the portable scene rather than in the React co
 Touch controls are not generated yet: add the small pointer-action mapping after the core
 multitouch surface from PRD-053 lands.
 
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
+
 ## How to write gameplay here
 
 A scene is a class with optional `load`, `enter`, `update`, `exit`, and `render`. That is
@@ -142,8 +150,12 @@ node explicitly only when removing it during play. **The id is the name a scenar
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the player movement code.
 
-`CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity`; the player keeps
-the coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
+`CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity` and queues motion for the
+shared bulk physics step rather than moving its object immediately. Because `THREE.Vector3` is
+mutable, use `const before = mesh.position.clone()` (or copy its `x`, `y`, and `z` scalars) before
+the call, then compare `mesh.position.distanceTo(before)` on the next update, after the step.
+Storing `mesh.position` itself aliases the live transform and reports zero. The player keeps the
+coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
 
 ## The `ctx` surface — you already have these, do not rebuild them
 
@@ -380,14 +392,16 @@ so when you change something visual, actually look at it before reporting it don
 React renders the HUD, menus, and overlays. **React never touches the scene graph** — no
 JSX for meshes, lights, or cameras.
 
-The bridge is a throttled store, not a per-frame render:
+The bridge is a throttled store, not a per-frame render: it flushes every 100 ms by default.
 
 ```ts
 ctx.state.set({ score });        // in update(), at loop rate — it coalesces
 const { score } = useGameState(); // in a component, ~10Hz
 ```
 
-Never subscribe a React component to per-frame data.
+`ctx.state` is for values a human reads, such as score, ammo, and health. Per-frame visual feedback
+belongs in scene-owned Three.js objects. Anything shorter than about 100 ms must not go through
+React; if an event must appear in the HUD, give it a decay longer than one flush interval.
 
 The start scene owns the initial state in `static initialState`; omit a duplicate
 `initialState` literal from `defineGame`. Update only the fields that changed:
@@ -413,11 +427,13 @@ guessing from pixels.
 
 `playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
 starter gameplay: it checks boot, diagnostics, a nonblank frame, and player movement without
-depending on pickups, score, coyote time, or respawns. `playtests/play.playtest.json` and the
-other scenarios are starter-game examples that you may delete or rewrite. Steps count fixed-step
-ticks, not milliseconds — use `holdTicks`, `waitTicks`. The deprecated `holdFrames` and
-`waitFrames` aliases remain accepted for compatibility and are treated as ticks on a fixed-step
-bridge; `warmupFrames` remains a genuine requestAnimationFrame warmup.
+depending on pickups, score, coyote time, or respawns. `playtests/odometer.playtest.json` is the
+deferred-motion example: it asserts `state.odometer`, which only increases when the player compares
+the cloned pre-step position on a later update. `playtests/play.playtest.json` and the other
+scenarios are starter-game examples that you may delete or rewrite. Steps count fixed-step ticks,
+not milliseconds — use `holdTicks`, `waitTicks`. The deprecated `holdFrames` and `waitFrames` aliases
+remain accepted for compatibility and are treated as ticks on a fixed-step bridge;
+`warmupFrames` remains a genuine requestAnimationFrame warmup.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. When you add a feature, add the assertion that

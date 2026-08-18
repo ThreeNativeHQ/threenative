@@ -14,8 +14,8 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "movement": { "entity": "player", "minAxisDelta": { "axis": "+x", "min": 2.5 } },
     "resources": [
-      { "id": "GameState", "path": "dashes", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "topSpeed", "gte": 12, "changed": true }
+      { "id": "state", "path": "dashes", "gte": 1, "changed": true },
+      { "id": "state", "path": "topSpeed", "gte": 12, "changed": true }
     ]
   }
 }

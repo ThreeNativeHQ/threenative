@@ -15,12 +15,12 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "status", "equals": "WON", "changed": true },
-      { "id": "GameState", "path": "wave", "equals": 10, "changed": true },
-      { "id": "GameState", "path": "leaks", "equals": 0, "allowTrivial": true },
-      { "id": "GameState", "path": "defeated", "gte": 10, "changed": true },
-      { "id": "GameState", "path": "spent", "equals": 120, "changed": true },
-      { "id": "GameState", "path": "shots", "gte": 1, "changed": true }
+      { "id": "state", "path": "status", "equals": "WON", "changed": true },
+      { "id": "state", "path": "wave", "equals": 10, "changed": true },
+      { "id": "state", "path": "leaks", "equals": 0, "allowTrivial": true },
+      { "id": "state", "path": "defeated", "gte": 10, "changed": true },
+      { "id": "state", "path": "spent", "equals": 120, "changed": true },
+      { "id": "state", "path": "shots", "gte": 1, "changed": true }
     ]
   }
 }

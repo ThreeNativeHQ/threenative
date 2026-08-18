@@ -63,11 +63,11 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "completedLaps", "gte": 3, "changed": true },
-      { "id": "GameState", "path": "place", "gte": 2, "allowTrivial": true },
-      { "id": "GameState", "path": "rescues", "equals": 0, "allowTrivial": true },
+      { "id": "state", "path": "completedLaps", "gte": 3, "changed": true },
+      { "id": "state", "path": "place", "gte": 2, "allowTrivial": true },
+      { "id": "state", "path": "rescues", "equals": 0, "allowTrivial": true },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "raceStatus",
         "equals": "DNF",
         "changed": true,

@@ -47,9 +47,26 @@ replace those queries with a distance scan or @threenative/physics/navigation.
 action-RPG gameplay; the other `playtests/` scenarios are examples for combat, inventory,
 progress, win, and fail behavior.
 
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
+
 StatBlock.ts and Inventory.ts are deliberately game-owned source. Delete or reshape them
 when changing this game's design; they are not framework APIs. React reads the JSON-safe
 projection in state.ts and never imports entities.
+
+The state bridge flushes every 100 ms by default, so keep values a human reads — health, room, or
+inventory — in `ctx.state`. Per-frame visual feedback belongs in scene-owned Three.js objects;
+anything shorter than about 100 ms must not go through React. If an event must appear in the HUD,
+give it a decay longer than one flush interval. `CharacterBody3D.moveAndSlide(dt)` queues motion
+for the shared bulk physics step rather than moving its object immediately. Because
+`THREE.Vector3` is mutable, use `const before = mesh.position.clone()` (or copy its `x`, `y`, and
+`z` scalars) before the call, then compare `mesh.position.distanceTo(before)` on the next update,
+after the step. Storing `mesh.position` itself aliases the live transform and reports zero.
 
 Interior lighting is intentional: sky.ts provides a dark ambient/fog envelope while the
 key, rim, and fill lights illuminate the dungeon. It is not a visible skybox.

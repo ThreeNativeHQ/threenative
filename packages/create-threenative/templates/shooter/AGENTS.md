@@ -50,7 +50,11 @@ the look in `src/render/`.
 
 Hitscan, radius damage, and target scans use `ctx.physics.directSpaceState` from
 `@threenative/physics`. Do not replace it with `ctx.raycast()`, a mesh raycaster, or a JavaScript
-distance scan. `CharacterBody3D.moveAndSlide()` owns movement and gravity.
+distance scan. `CharacterBody3D.moveAndSlide(dt)` queues motion for the shared bulk physics step
+rather than moving its object immediately. Because `THREE.Vector3` is mutable, use
+`const before = mesh.position.clone()` (or copy its `x`, `y`, and `z` scalars) before the call,
+then compare `mesh.position.distanceTo(before)` on the next update, after the step. Storing
+`mesh.position` itself aliases the live transform and reports zero.
 
 **This template has one HUD, and it is `src/ui/Hud.tsx`.** It previously shipped a
 camera-attached geometry HUD as well, and both drew the same numbers on top of each other: a blind
@@ -59,6 +63,11 @@ interleaved letter by letter. Gameplay and state transitions live in the portabl
 the HUD through `ctx.state.set`, so nothing about that is web-only. **A native build therefore has
 no HUD until you add one** — write it in your own `src/render/` code, in Three.js rather than DOM,
 if your game needs one there.
+
+The state bridge flushes every 100 ms by default, so keep values a human reads — lives, wave, or
+health — in `ctx.state`. Per-frame visual feedback belongs in scene-owned Three.js objects; anything
+shorter than about 100 ms must not go through React. If an event must appear in the HUD, give it a
+decay longer than one flush interval.
 
 ## Layout
 
@@ -80,6 +89,14 @@ quantity or transition produced by the game.
 `playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
 shooter gameplay; `shooter.playtest.json` and `fail.playtest.json` are examples for this arena's
 combat and terminal behavior.
+
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
 
 The asset MCP loop is:
 

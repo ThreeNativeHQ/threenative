@@ -12,9 +12,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "gameOver", "equals": 1, "changed": true },
-      { "id": "GameState", "path": "phase", "equals": "lost", "changed": true },
-      { "id": "GameState", "path": "health", "equals": 0, "changed": true }
+      { "id": "state", "path": "gameOver", "equals": 1, "changed": true },
+      { "id": "state", "path": "phase", "equals": "lost", "changed": true },
+      { "id": "state", "path": "health", "equals": 0, "changed": true }
     ],
     "signals": [{ "name": "died", "entity": "player", "minCount": 1, "atStep": "forced-death" }]
   }

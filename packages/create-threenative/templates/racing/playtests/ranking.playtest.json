@@ -24,14 +24,14 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "sameDistanceRanking",
         "atSteps": [
           { "label": "lap-aware-baseline", "equals": "lap-ahead" },
           { "label": "advance-on-route", "equals": "lap-ahead" }
         ]
       },
-      { "id": "GameState", "path": "trackProgress", "gte": 142, "changed": true }
+      { "id": "state", "path": "trackProgress", "gte": 142, "changed": true }
     ]
   }
 }

@@ -61,6 +61,19 @@ durable movement proof.
 defense gameplay; the other `playtests/` scenarios are examples for placement, scanning,
 survival, and leaks.
 
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
+
+The state bridge flushes every 100 ms by default, so keep values a human reads — wave, health, or
+economy — in `ctx.state`. Per-frame visual feedback belongs in scene-owned Three.js objects;
+anything shorter than about 100 ms must not go through React. If an event must appear in the HUD,
+give it a decay longer than one flush interval.
+
 The normal physics API selects the native backend on desktop and Android. Keep source portable:
 do not import React from `src/game.ts`, do not use dynamic `import()`, and do not read a raw
 physics handle. No physical mobile or performance parity claim is made by this template.

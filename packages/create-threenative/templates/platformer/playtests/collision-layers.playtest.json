@@ -22,14 +22,14 @@
     "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 1.5 } },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "coins",
         "atSteps": [
           { "label": "debris-filtered", "equals": 0 },
           { "label": "player-pickup", "equals": 1 }
         ]
       },
-      { "id": "GameState", "path": "peakRise", "gte": 1.5, "changed": true }
+      { "id": "state", "path": "peakRise", "gte": 1.5, "changed": true }
     ],
     "signals": [{ "name": "collected", "entity": "player", "minCount": 1 }]
   }

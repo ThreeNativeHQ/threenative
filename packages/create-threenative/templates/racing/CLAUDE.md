@@ -57,6 +57,23 @@ does not import React or the UI package.
 gameplay; the other `playtests/` scenarios are examples for shortcuts, reversing, boosts,
 rescues, rankings, and race outcomes.
 
+## Playtest resources
+
+The playtest bridge registers exactly two resource ids for the JSON-safe game state: `state` is the
+canonical id, and `GameState` is a compatibility alias for older scenarios. New scenarios,
+including the ones shipped here, must use `state`; resource paths address fields from `ctx.state`.
+Keep the alias until existing published scenarios have migrated, then remove it in a future
+breaking release.
+
+The state bridge flushes every 100 ms by default, so keep values a human reads — speed, lap, or
+place — in `ctx.state`. Per-frame visual feedback belongs in scene-owned Three.js objects; anything
+shorter than about 100 ms must not go through React. If an event must appear in the HUD, give it a
+decay longer than one flush interval. `CharacterBody3D.moveAndSlide(dt)` queues motion for the
+shared bulk physics step rather than moving its object immediately. Because `THREE.Vector3` is
+mutable, use `const before = mesh.position.clone()` (or copy its `x`, `y`, and `z` scalars) before
+the call, then compare `mesh.position.distanceTo(before)` on the next update, after the step.
+Storing `mesh.position` itself aliases the live transform and reports zero.
+
 The normal physics API selects the native backend on desktop and Android. The optional
 `intersectRay` query is used when the host provides PRD-088's coarse ray probe; the track has
 an ordinary Three.js fallback so the starter remains runnable before that backend is present.

@@ -17,11 +17,11 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "rescues", "gte": 1, "changed": true },
-      { "id": "GameState", "path": "lastOnRoad", "changed": true },
-      { "id": "GameState", "path": "rescueHeading", "changed": true },
-      { "id": "GameState", "path": "rescuePositionError", "equals": 0, "changed": true },
-      { "id": "GameState", "path": "rescueHeadingError", "equals": 0, "changed": true }
+      { "id": "state", "path": "rescues", "gte": 1, "changed": true },
+      { "id": "state", "path": "lastOnRoad", "changed": true },
+      { "id": "state", "path": "rescueHeading", "changed": true },
+      { "id": "state", "path": "rescuePositionError", "equals": 0, "changed": true },
+      { "id": "state", "path": "rescueHeadingError", "equals": 0, "changed": true }
     ],
     "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
   }

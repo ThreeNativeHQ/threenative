@@ -26,12 +26,12 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "completedLaps",
         "equals": 0,
         "allowTrivial": true
       },
-      { "id": "GameState", "path": "reverseRejects", "gte": 1, "changed": true }
+      { "id": "state", "path": "reverseRejects", "gte": 1, "changed": true }
     ]
   }
 }

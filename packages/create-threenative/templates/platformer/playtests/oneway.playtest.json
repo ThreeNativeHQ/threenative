@@ -12,6 +12,6 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 1.5 } },
-    "resources": [{ "id": "GameState", "path": "peakRise", "gte": 1.5, "changed": true }]
+    "resources": [{ "id": "state", "path": "peakRise", "gte": 1.5, "changed": true }]
   }
 }

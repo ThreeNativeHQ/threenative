@@ -39,7 +39,7 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "coins",
         "gte": 3,
         "changed": true,

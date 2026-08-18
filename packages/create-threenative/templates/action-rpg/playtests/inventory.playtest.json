@@ -27,7 +27,7 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "damage",
         "atSteps": [
           { "label": "equipped", "equals": 18 },
@@ -36,7 +36,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "equippedItem",
         "atSteps": [
           { "label": "equipped", "equals": "ember-blade" },
@@ -46,7 +46,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "inventoryFullRefused",
         "atSteps": [
           { "label": "full-refusal", "equals": 1 },
@@ -54,7 +54,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "pendingLootItem",
         "atSteps": [
           { "label": "full-refusal", "equals": "ember-blade" },
@@ -62,7 +62,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "pendingLootQuantity",
         "atSteps": [
           { "label": "full-refusal", "equals": 1 },
@@ -70,7 +70,7 @@
         ]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "inventorySlots",
         "atSteps": [
           {
@@ -86,14 +86,14 @@
           }
         ]
       },
-      { "id": "GameState", "path": "dropProof", "equals": 1, "changed": true },
+      { "id": "state", "path": "dropProof", "equals": 1, "changed": true },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "enemiesDefeated",
         "atSteps": [{ "label": "seeded-drops", "equals": 1 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "lastDrop",
         "atSteps": [{ "label": "seeded-drops", "equals": "potion x1, potion x1" }]
       }

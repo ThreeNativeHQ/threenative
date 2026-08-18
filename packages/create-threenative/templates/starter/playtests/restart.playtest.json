@@ -21,12 +21,12 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       {
-        "id": "GameState",
+        "id": "state",
         "path": "score",
         "atSteps": [{ "label": "collected", "equals": 1 }, { "label": "restarted", "equals": 0 }]
       },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "entityCount",
         "atSteps": [{ "label": "collected", "equals": 2 }, { "label": "restarted", "equals": 3 }]
       }

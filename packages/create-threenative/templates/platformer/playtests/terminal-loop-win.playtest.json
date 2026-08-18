@@ -39,13 +39,13 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "terminal", "equals": 1, "changed": true },
+      { "id": "state", "path": "terminal", "equals": 1, "changed": true },
       {
-        "id": "GameState",
+        "id": "state",
         "path": "grounded",
         "atSteps": [{ "label": "reach-goal", "equals": true }]
       },
-      { "id": "GameState", "path": "playerX", "gte": 21.5, "changed": true }
+      { "id": "state", "path": "playerX", "gte": 21.5, "changed": true }
     ],
     "signals": [{ "entity": "game", "name": "won", "minCount": 1 }]
   }

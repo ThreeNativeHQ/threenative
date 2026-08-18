@@ -23,6 +23,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     entityCount: 0,
     jumps: 0,
     levelX: -99,
+    odometer: 0,
     peakRise: 0,
     playerX: -2,
     respawns: 0,
@@ -155,6 +156,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frameCtx.state.set({
         coyoteJumps: debug.coyoteJumps,
         jumps: debug.jumps,
+        odometer: debug.odometer,
         peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
         playerX: player.mesh.position.x,
         respawns: previous.respawns + (respawned ? 1 : 0),

@@ -9,10 +9,10 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "status", "equals": "LOST", "changed": true },
-      { "id": "GameState", "path": "leaks", "gte": 20, "changed": true },
-      { "id": "GameState", "path": "spent", "equals": 0, "allowTrivial": true },
-      { "id": "GameState", "path": "wave", "gte": 10, "changed": true }
+      { "id": "state", "path": "status", "equals": "LOST", "changed": true },
+      { "id": "state", "path": "leaks", "gte": 20, "changed": true },
+      { "id": "state", "path": "spent", "equals": 0, "allowTrivial": true },
+      { "id": "state", "path": "wave", "gte": 10, "changed": true }
     ]
   }
 }

@@ -20,9 +20,9 @@
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
-      { "id": "GameState", "path": "terminal", "equals": 2, "changed": true },
-      { "id": "GameState", "path": "hearts", "equals": 0, "changed": true },
-      { "id": "GameState", "path": "respawns", "equals": 0, "allowTrivial": true }
+      { "id": "state", "path": "terminal", "equals": 2, "changed": true },
+      { "id": "state", "path": "hearts", "equals": 0, "changed": true },
+      { "id": "state", "path": "respawns", "equals": 0, "allowTrivial": true }
     ],
     "signals": [{ "entity": "game", "name": "lost", "minCount": 1 }]
   }

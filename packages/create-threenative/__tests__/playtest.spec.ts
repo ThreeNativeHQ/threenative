@@ -111,7 +111,7 @@ describe("starter playtest proof", () => {
       runtimeReady: true,
     });
     expect(parsed.assert.resources).toEqual([
-      { id: "GameState", path: "score", gte: 1, changed: true },
+      { id: "state", path: "score", gte: 1, changed: true },
     ]);
     expect(player).toContain('ctx.input.vector("move")');
   });
@@ -196,19 +196,19 @@ describe("starter playtest proof", () => {
     expect(win.assert.resources).toContainEqual({
       changed: true,
       equals: 1,
-      id: "GameState",
+      id: "state",
       path: "terminal",
     });
     expect(win.assert.resources).toContainEqual({
       atSteps: [{ equals: true, label: "reach-goal" }],
-      id: "GameState",
+      id: "state",
       path: "grounded",
     });
     expect(win.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "won" });
     expect(fail.assert.resources).toContainEqual({
       changed: true,
       equals: 2,
-      id: "GameState",
+      id: "state",
       path: "terminal",
     });
     expect(fail.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "lost" });
