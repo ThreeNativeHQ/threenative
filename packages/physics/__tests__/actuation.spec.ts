@@ -22,6 +22,12 @@ import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 type PhysicsCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
 
+function rigidBodyObject(body: RigidBody3D) {
+  const object = body.object;
+  if (object === undefined) throw new Error("TEST_RIGID_BODY_OBJECT_MISSING");
+  return object;
+}
+
 const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
   process.cwd(),
   "docs/verification/native-runtime-census-2026-08-16.md",
@@ -106,7 +112,7 @@ describe("dynamic body actuation", () => {
     body.applyImpulse({ x: 6, y: 0, z: 0 });
     step(30);
 
-    expect(body.object.position.x).toBeGreaterThan(0.5);
+    expect(rigidBodyObject(body).position.x).toBeGreaterThan(0.5);
   });
 
   it("reports and accepts linear velocity", async () => {
@@ -117,7 +123,7 @@ describe("dynamic body actuation", () => {
     step(1);
 
     expect(body.linearVelocity.x).toBeGreaterThan(0);
-    expect(body.object.position.x).toBeGreaterThan(0);
+    expect(rigidBodyObject(body).position.x).toBeGreaterThan(0);
   });
 
   it("accumulates a continuous force into motion", async () => {
@@ -129,7 +135,7 @@ describe("dynamic body actuation", () => {
       step(1);
     }
 
-    expect(body.object.position.x).toBeGreaterThan(0.5);
+    expect(rigidBodyObject(body).position.x).toBeGreaterThan(0.5);
   });
 
   // Rapier discards actuation on a sleeping body, which is the same silent no-op class as the
@@ -138,12 +144,12 @@ describe("dynamic body actuation", () => {
     const { ctx, step } = await world();
     const body = crate(ctx);
     step(240);
-    const settled = body.object.position.x;
+    const settled = rigidBodyObject(body).position.x;
 
     body.applyImpulse({ x: 8, y: 0, z: 0 });
     step(30);
 
-    expect(body.object.position.x).toBeGreaterThan(settled + 0.1);
+    expect(rigidBodyObject(body).position.x).toBeGreaterThan(settled + 0.1);
   });
 
   it("refuses actuation on a body type the backend would silently ignore", async () => {
@@ -194,14 +200,14 @@ describe("character push", () => {
         pushesDynamicBodies,
         shape: CollisionShape3D.capsule(0.3, 0.3),
       });
-      const startX = box.object.position.x;
+      const startX = rigidBodyObject(box).position.x;
       for (let frame = 0; frame < 90; frame += 1) {
         // moveAndSlide derives its motion from `velocity`; it overwrites anything move() set.
         character.velocity.x = 2.4;
         character.moveAndSlide(1 / 60);
         step(1);
       }
-      return box.object.position.x - startX;
+      return rigidBodyObject(box).position.x - startX;
     };
 
     const pushed = await displacement(true);
@@ -227,8 +233,8 @@ describe("character push", () => {
       pushesDynamicBodies: true,
       shape: CollisionShape3D.capsule(0.3, 0.3),
     });
-    const includedStart = included.object.position.x;
-    const excludedStart = excluded.object.position.x;
+    const includedStart = rigidBodyObject(included).position.x;
+    const excludedStart = rigidBodyObject(excluded).position.x;
 
     for (let frame = 0; frame < 90; frame += 1) {
       character.velocity.x = 2.4;
@@ -236,8 +242,8 @@ describe("character push", () => {
       step(1);
     }
 
-    expect(included.object.position.x - includedStart).toBeGreaterThan(0.1);
-    expect(Math.abs(excluded.object.position.x - excludedStart)).toBeLessThan(0.01);
+    expect(rigidBodyObject(included).position.x - includedStart).toBeGreaterThan(0.1);
+    expect(Math.abs(rigidBodyObject(excluded).position.x - excludedStart)).toBeLessThan(0.01);
   });
 });
 

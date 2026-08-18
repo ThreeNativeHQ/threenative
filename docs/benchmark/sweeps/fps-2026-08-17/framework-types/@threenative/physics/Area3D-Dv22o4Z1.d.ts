@@ -335,7 +335,10 @@ declare class PhysicsDirectSpaceState3D {
 
 type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 interface IRigidBody3DOptions {
-    readonly object: Object3D;
+    /** The transform this body drives. Omit for a fixed collider with no visual; supply `position`. */
+    readonly object?: Object3D;
+    /** Initial world position. Only for a fixed body with no `object`. */
+    readonly position?: Pick<Vector3, "x" | "y" | "z">;
     readonly entity?: string;
     readonly physics?: IPhysicsContext;
     /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
@@ -352,7 +355,8 @@ declare class RigidBody3D {
     #private;
     readonly body: IPhysicsBodyHandle;
     readonly collider: IPhysicsColliderHandle;
-    readonly object: Object3D;
+    /** The supplied transform; position-only fixed bodies have no runtime object. */
+    readonly object: Object3D | undefined;
     readonly type: RigidBodyType;
     constructor(options: IRigidBody3DOptions);
     /** Called by the shared plugin before a bulk step. */

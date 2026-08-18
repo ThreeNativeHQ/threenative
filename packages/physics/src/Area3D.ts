@@ -1,4 +1,4 @@
-import type { Vector3 } from "three";
+import type { Object3D, Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
@@ -27,6 +27,39 @@ export interface IArea3DOptions {
   readonly collisionLayer?: number;
   /** Godot's collision_mask — which layers this area scans. Default 0xffff. */
   readonly collisionMask?: number;
+}
+
+type InitialPosition = Pick<Vector3, "x" | "y" | "z">;
+type InitialTransformSource = {
+  readonly object?: Pick<Object3D, "position" | "quaternion">;
+  readonly position?: InitialPosition;
+};
+type InitialTransform = {
+  readonly position: InitialPosition;
+  readonly rotation: {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly w: number;
+  };
+};
+
+const IDENTITY_ROTATION = { w: 1, x: 0, y: 0, z: 0 };
+
+/** Resolve the shared object-or-position placement contract for physics nodes. */
+export function resolveInitialTransform(
+  source: InitialTransformSource,
+  fallbackPosition?: InitialPosition,
+): InitialTransform {
+  if (source.object !== undefined && source.position !== undefined)
+    throw new Error("A physics node accepts either object or position, not both.");
+  if (source.object !== undefined)
+    return { position: source.object.position, rotation: source.object.quaternion };
+  if (source.position !== undefined)
+    return { position: source.position, rotation: IDENTITY_ROTATION };
+  if (fallbackPosition !== undefined)
+    return { position: fallbackPosition, rotation: IDENTITY_ROTATION };
+  throw new Error("A physics node requires either object or position.");
 }
 
 type TransformRecord = [number, number, number, number, number, number, number, number];
@@ -58,7 +91,7 @@ export class Area3D {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.entity = options.entity;
-    Object.assign(this.#position, options.position ?? { x: 0, y: 0, z: 0 });
+    Object.assign(this.#position, resolveInitialTransform(options, { x: 0, y: 0, z: 0 }).position);
     const shape = options.shape.setSensor(true).descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       const layer = options.collisionLayer ?? shape.collisionLayer;

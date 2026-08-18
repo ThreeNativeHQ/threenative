@@ -1,11 +1,17 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
+import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import "../src/index.js";
+import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
+import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 const worlds: RAPIER.World[] = [];
+const plugins: Array<ReturnType<typeof rapier>> = [];
+
+type PhysicsCtx = ICtx<Record<string, unknown>, IPhysicsContext>;
 
 function world(): RAPIER.World {
   const instance = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -13,7 +19,18 @@ function world(): RAPIER.World {
   return instance;
 }
 
+async function setup(): Promise<{ ctx: PhysicsCtx; plugin: ReturnType<typeof rapier> }> {
+  await RAPIER.init();
+  const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+  const ctx = { physics: undefined } as unknown as PhysicsCtx;
+  await plugin.setup?.(ctx);
+  plugins.push(plugin);
+  return { ctx, plugin };
+}
+
 afterEach(() => {
+  for (const plugin of plugins.splice(0))
+    plugin.dispose?.({} as ICtx<Record<string, unknown>, IPhysicsContext>);
   for (const instance of worlds.splice(0)) instance.free();
 });
 
@@ -65,5 +82,74 @@ describe("RigidBody3D", () => {
     expect(crateMesh.position.y).toBeCloseTo(2.1, 1);
     floor.dispose();
     crate.dispose();
+  });
+
+  it("should place a fixed collider from position and stop a character", async () => {
+    const { ctx, plugin } = await setup();
+    const wall = new RigidBody3D({
+      physics: ctx.physics,
+      position: { x: 2, y: 0.5, z: 0 },
+      shape: CollisionShape3D.box(1, 1, 1),
+      type: "fixed",
+    });
+    const characterMesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    characterMesh.position.set(0, 0.5, 0);
+    const character = new CharacterBody3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object: characterMesh,
+      gravity: 0,
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      character.move({ x: 2 / 60, y: 0, z: 0 });
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(wall.object).toBeUndefined();
+    expect((wall.body.raw as RAPIER.RigidBody).translation()).toEqual({ x: 2, y: 0.5, z: 0 });
+    expect(characterMesh.position.x).toBeGreaterThan(0.9);
+    expect(characterMesh.position.x).toBeLessThan(1.6);
+    character.dispose();
+    wall.dispose();
+  });
+
+  it("should throw when both or neither placement source is supplied", async () => {
+    await RAPIER.init();
+    const instance = world();
+    const object = new Mesh(new BoxGeometry(1, 1, 1));
+
+    expect(
+      () =>
+        new RigidBody3D({
+          object,
+          position: { x: 1, y: 2, z: 3 },
+          shape: CollisionShape3D.box(1, 1, 1),
+          type: "fixed",
+          world: instance,
+        }),
+    ).toThrow(/either object or position/);
+    expect(
+      () =>
+        new RigidBody3D({
+          shape: CollisionShape3D.box(1, 1, 1),
+          type: "fixed",
+          world: instance,
+        }),
+    ).toThrow(/requires either object or position/);
+  });
+
+  it("should reject an invisible non-fixed body", async () => {
+    await RAPIER.init();
+    const instance = world();
+
+    expect(
+      () =>
+        new RigidBody3D({
+          position: { x: 1, y: 2, z: 3 },
+          shape: CollisionShape3D.box(1, 1, 1),
+          world: instance,
+        }),
+    ).toThrow("position-only bodies must be fixed");
   });
 });

@@ -400,15 +400,19 @@ function physicsEntityId(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   body: PhysicsBody3D,
 ): string {
+  const object = body.object;
+  const stableId = body.body.entity ?? `physics.body.${body.body.id}`;
   for (const id of Object.keys(ctx.entities.snapshot())) {
     const entity = ctx.entities.get(id);
-    if (entity === body || entity === body.object) return id;
+    if (entity === body || (object !== undefined && entity === object)) return id;
     if (
       entity !== undefined &&
-      Object.values(entity).some((value) => value === body || value === body.object)
+      Object.values(entity).some(
+        (value) => value === body || (object !== undefined && value === object),
+      )
     ) {
       return id;
     }
   }
-  return `physics.body.${body.body.id}`;
+  return stableId;
 }

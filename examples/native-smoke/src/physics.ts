@@ -140,8 +140,15 @@ function logicalPair(left: number, right: number, started: number): string {
   return `${[logicalName(left), logicalName(right)].sort().join("-")}-${started}`;
 }
 
+function rigidBodyObject(body: PhysicsBody3D) {
+  const object = body.object;
+  if (object === undefined) throw new Error("TN_PHYSICS_OBJECT_MISSING");
+  return object;
+}
+
 function position(body: PhysicsBody3D): VectorTuple {
-  return [body.object.position.x, body.object.position.y, body.object.position.z];
+  const object = rigidBodyObject(body);
+  return [object.position.x, object.position.y, object.position.z];
 }
 
 const spatialQueryShape = CollisionShape3D.sphere(0.1);
@@ -473,9 +480,10 @@ class NativePhysicsParity extends Scene<IPhysicsState, IPhysicsContext> {
         if (body instanceof CharacterBody3D) {
           body.move({ x: motion.delta[0], y: motion.delta[1], z: motion.delta[2] });
         } else if (body instanceof RigidBody3D) {
-          body.object.position.x += motion.delta[0];
-          body.object.position.y += motion.delta[1];
-          body.object.position.z += motion.delta[2];
+          const object = rigidBodyObject(body);
+          object.position.x += motion.delta[0];
+          object.position.y += motion.delta[1];
+          object.position.z += motion.delta[2];
         }
       }
       if (step === 0) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");

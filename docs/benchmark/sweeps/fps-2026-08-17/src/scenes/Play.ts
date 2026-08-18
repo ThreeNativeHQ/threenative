@@ -5,7 +5,6 @@ import {
   AdditiveBlending,
   Mesh as MeshClass,
   MeshBasicMaterial,
-  Object3D as Object3DClass,
   PlaneGeometry,
   Raycaster,
   Vector3,
@@ -93,8 +92,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(range.group);
 
     // One fixed body per solid so the player slides along the yard properly.
-    // `RigidBody3D` has no `position` option — unlike `Area3D` — so each static
-    // body needs a carrier Object3D holding the transform.
     const staticBody = (
       centreX: number,
       centreY: number,
@@ -103,11 +100,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       sy: number,
       sz: number,
     ): void => {
-      const carrier = new Object3DClass();
-      carrier.position.set(centreX, centreY, centreZ);
       new RigidBody3D({
-        object: carrier,
         physics: ctx.physics,
+        position: { x: centreX, y: centreY, z: centreZ },
         shape: CollisionShape3D.box(sx, sy, sz),
         type: "fixed",
       });

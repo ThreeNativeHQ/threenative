@@ -1,4 +1,5 @@
-import type { Object3D } from "three";
+import type { Object3D, Vector3 } from "three";
+import { resolveInitialTransform } from "./Area3D.js";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
@@ -8,7 +9,10 @@ import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
 export interface IRigidBody3DOptions {
-  readonly object: Object3D;
+  /** The transform this body drives. Omit for a fixed collider with no visual; supply `position`. */
+  readonly object?: Object3D;
+  /** Initial world position. Only for a fixed body with no `object`. */
+  readonly position?: Pick<Vector3, "x" | "y" | "z">;
   readonly entity?: string;
   readonly physics?: IPhysicsContext;
   /** @deprecated Prefer `physics`; a raw web world is backend-specific. */
@@ -34,18 +38,25 @@ function finiteTransform(values: Readonly<Float32Array>, offset: number): Transf
 export class RigidBody3D {
   readonly body: IPhysicsBodyHandle;
   readonly collider: IPhysicsColliderHandle;
-  readonly object: Object3D;
+  /** The supplied transform; position-only fixed bodies have no runtime object. */
+  readonly object: Object3D | undefined;
   readonly type: RigidBodyType;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
+  readonly #object: Object3D | undefined;
   #lastPosition: { x: number; y: number; z: number };
   #disposed = false;
 
   constructor(options: IRigidBody3DOptions) {
+    const initial = resolveInitialTransform(options);
+    const type = options.type ?? "dynamic";
+    if (options.object === undefined && type !== "fixed")
+      throw new Error("RigidBody3D position-only bodies must be fixed.");
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.object = options.object;
-    this.type = options.type ?? "dynamic";
+    this.#object = options.object;
+    this.type = type;
     const shape = options.shape.descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       const layer = options.collisionLayer ?? shape.collisionLayer;
@@ -55,8 +66,8 @@ export class RigidBody3D {
     const registration = this.#simulation.createBody({
       entity: options.entity,
       mass: options.mass ?? 0,
-      position: this.object.position,
-      rotation: this.object.quaternion,
+      position: initial.position,
+      rotation: initial.rotation,
       sensor: shape.sensor,
       shape,
       type: this.type,
@@ -65,26 +76,27 @@ export class RigidBody3D {
     this.body = registration.body;
     this.collider = registration.collider;
     this.#lastPosition = {
-      x: this.object.position.x,
-      y: this.object.position.y,
-      z: this.object.position.z,
+      x: initial.position.x,
+      y: initial.position.y,
+      z: initial.position.z,
     };
     this.#physics?.add(this);
   }
 
   /** Called by the shared plugin before a bulk step. */
   writeKinematic(buffer: Float32Array, offset: number): void {
-    if (this.#disposed) return;
+    const object = this.#object;
+    if (this.#disposed || object === undefined) return;
     buffer.set(
       [
         this.body.id,
-        this.object.position.x,
-        this.object.position.y,
-        this.object.position.z,
-        this.object.quaternion.x,
-        this.object.quaternion.y,
-        this.object.quaternion.z,
-        this.object.quaternion.w,
+        object.position.x,
+        object.position.y,
+        object.position.z,
+        object.quaternion.x,
+        object.quaternion.y,
+        object.quaternion.z,
+        object.quaternion.w,
       ],
       offset,
     );
@@ -92,10 +104,12 @@ export class RigidBody3D {
 
   /** Displacement since the last backend transform, used for moving-platform carry. */
   kinematicMotion(): { readonly x: number; readonly y: number; readonly z: number } {
+    const object = this.#object;
+    if (object === undefined) return { x: 0, y: 0, z: 0 };
     return {
-      x: this.object.position.x - this.#lastPosition.x,
-      y: this.object.position.y - this.#lastPosition.y,
-      z: this.object.position.z - this.#lastPosition.z,
+      x: object.position.x - this.#lastPosition.x,
+      y: object.position.y - this.#lastPosition.y,
+      z: object.position.z - this.#lastPosition.z,
     };
   }
 
@@ -138,9 +152,10 @@ export class RigidBody3D {
 
   syncFromPhysics(): void {
     const transform = this.#simulation.readBodyTransform?.(this.body.id);
-    if (transform === undefined) return;
-    this.object.position.set(transform.position.x, transform.position.y, transform.position.z);
-    this.object.quaternion.set(
+    const object = this.#object;
+    if (transform === undefined || object === undefined) return;
+    object.position.set(transform.position.x, transform.position.y, transform.position.z);
+    object.quaternion.set(
       transform.rotation.x,
       transform.rotation.y,
       transform.rotation.z,
@@ -151,8 +166,10 @@ export class RigidBody3D {
 
   applyTransform(values: Readonly<Float32Array>, offset: number): void {
     const [, x, y, z, qx, qy, qz, qw] = finiteTransform(values, offset);
-    this.object.position.set(x, y, z);
-    this.object.quaternion.set(qx, qy, qz, qw);
+    const object = this.#object;
+    if (object === undefined) return;
+    object.position.set(x, y, z);
+    object.quaternion.set(qx, qy, qz, qw);
     this.#lastPosition = { x, y, z };
   }
 

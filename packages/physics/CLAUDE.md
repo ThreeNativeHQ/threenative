@@ -15,7 +15,8 @@ another package.
 ## These are bindings, not a simulation
 
 `RigidBody3D` owns a backend handle and syncs its transform onto the `THREE.Object3D` you
-handed it. They are not entities, components, or systems. The Godot names —
+handed it; a fixed collider with no visual can instead take an initial `position`. They are
+not entities, components, or systems. The Godot names —
 `RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D` — are fixed: a fifth node type
 needs a PRD, and a name Godot does not use is rejected.
 

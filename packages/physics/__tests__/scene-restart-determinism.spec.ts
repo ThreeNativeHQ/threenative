@@ -8,6 +8,12 @@ import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
+function rigidBodyObject(body: RigidBody3D) {
+  const object = body.object;
+  if (object === undefined) throw new Error("TEST_RIGID_BODY_OBJECT_MISSING");
+  return object;
+}
+
 // A sandbox build needed the brief's "run the same input twice with a fixed seed and fixed step
 // and report whether the final state matched". It could not get a match, and had no API to fix
 // it: rapier() exposes only { gravity }. Measured there: settle hashes a2f87bad vs 658eb6f8 at
@@ -26,7 +32,7 @@ beforeAll(async () => {
 function poseHash(bodies: readonly RigidBody3D[]): string {
   let hash = 0x811c9dc5;
   for (const body of bodies) {
-    const { x, y, z } = body.object.position;
+    const { x, y, z } = rigidBodyObject(body).position;
     for (const component of [x, y, z]) {
       const quantised = Math.round(component * 1000);
       for (let byte = 0; byte < 4; byte += 1) {

@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@threenative/core": "file:./vendor/threenative-core/threenative-core-0.2.0-6d9da1a8e970.tgz",
-    "@threenative/physics": "file:./vendor/threenative-physics/threenative-physics-0.2.1-d45cd51ee589.tgz",
+    "@threenative/physics": "file:./vendor/threenative-physics/threenative-physics-0.2.1-8f04ed514acf.tgz",
     "@threenative/ui": "file:./vendor/threenative-ui/threenative-ui-0.2.1-d78476c56f7a.tgz",
     "react": "19.2.0",
     "react-dom": "19.2.0",

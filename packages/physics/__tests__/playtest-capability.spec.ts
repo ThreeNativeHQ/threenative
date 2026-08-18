@@ -115,6 +115,50 @@ describe("rapier playtest capability", () => {
     });
   });
 
+  it("should keep position-only body observations stable", async () => {
+    const { contribution, ctx, plugin, setTick } = await physicsHarness();
+    const anonymous = new RigidBody3D({
+      physics: ctx.physics,
+      position: { x: 0, y: 0, z: 0 },
+      shape: CollisionShape3D.box(1, 1, 1),
+      type: "fixed",
+    });
+    const named = new RigidBody3D({
+      entity: "wall",
+      physics: ctx.physics,
+      position: { x: 2, y: 0, z: 0 },
+      shape: CollisionShape3D.box(1, 1, 1),
+      type: "fixed",
+    });
+    ctx.entities.add("unrelated", { object: undefined });
+
+    setTick(1);
+    plugin.update?.(ctx, 1 / 60);
+    const observations = contribution().sample({
+      include: ["physicsDebugSeries"],
+      label: "position-only",
+    }) as {
+      physicsDebugSeries: Array<{
+        snapshot: { artifact: { primitives: Array<Record<string, unknown>> } };
+      }>;
+    };
+    const primitives = observations.physicsDebugSeries[0]?.snapshot.artifact.primitives;
+
+    expect(primitives).toContainEqual({
+      category: "sleep",
+      entity: `physics.body.${anonymous.body.id}`,
+      id: `sleep:physics.body.${anonymous.body.id}`,
+      value: 0,
+    });
+    expect(primitives).toContainEqual({
+      category: "sleep",
+      entity: "wall",
+      id: "sleep:wall",
+      value: 0,
+    });
+    expect(primitives).not.toContainEqual(expect.objectContaining({ entity: "unrelated" }));
+  });
+
   it("should report rather than silently truncate beyond the body bound", async () => {
     const { contribution, ctx, plugin, setTick } = await physicsHarness();
     for (let index = 0; index < 101; index += 1) {
