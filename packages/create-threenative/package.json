@@ -28,6 +28,9 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build && publint --strict"
   },
+  "dependencies": {
+    "three": "catalog:"
+  },
   "devDependencies": {
     "@threenative/core": "workspace:*",
     "@threenative/physics": "workspace:*",
@@ -35,7 +38,6 @@
     "@types/three": "0.185.3",
     "esbuild": "catalog:",
     "publint": "0.3.22",
-    "three": "catalog:",
     "tsup": "8.5.1",
     "typescript": "catalog:"
   }

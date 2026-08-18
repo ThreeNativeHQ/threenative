@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspectCommand, inspectHelp } from "./inspect.js";
 
 export type ScaffoldTemplate = string;
 
@@ -124,6 +125,10 @@ export function cliHelp(): string {
   const manifests = discoverKitManifests();
   return `${[
     "Usage: npx create-threenative <directory> [options]",
+    "       npx create-threenative inspect <file.glb> [--json]",
+    "",
+    "Commands:",
+    "  inspect <file>      Report the facts in a glTF asset.",
     "",
     "Options:",
     "  --template <name>  Choose a template.",
@@ -356,6 +361,14 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  if (argv[0] === "inspect") {
+    if (argv.includes("--help") || argv.includes("-h")) {
+      process.stdout.write(inspectHelp());
+      return;
+    }
+    await inspectCommand(argv.slice(1));
+    return;
+  }
   if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(cliHelp());
     return;

@@ -224,6 +224,16 @@ player.body.teleport({ x: loaded.playerX, y: player.mesh.position.y, z: player.m
 and update the `AnimationPlayer` beside the entity that owns the loaded model. This starter
 does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
 
+Before placing an unfamiliar model, inspect what the file already contains:
+
+```sh
+npx create-threenative inspect public/assets/hero.glb
+npx create-threenative inspect --json public/assets/hero.glb
+```
+
+The report is observational: it does not rescale, convert, or rewrite the asset. Treat its
+units and forward-axis lines as labelled heuristics, then choose the game-owned placement.
+
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.
 

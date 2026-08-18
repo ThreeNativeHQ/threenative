@@ -280,6 +280,10 @@ importers:
         version: 5.9.3
 
   packages/create-threenative:
+    dependencies:
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1
     devDependencies:
       '@threenative/core':
         specifier: workspace:*
@@ -299,9 +303,6 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
-      three:
-        specifier: 'catalog:'
-        version: 0.185.1
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)

@@ -36,6 +36,21 @@ test("writes console.json when the run captured a console error", async () => {
   expect(body[0].text).toContain("Cannot read properties of undefined");
 });
 
+test("keeps informational console output in console.json", async () => {
+  const directory = await artifactDirectory();
+
+  await writeObservationArtifacts(directory, undefined, {
+    console: [{ source: "browser-console", text: "asset bounds 1.000", type: "info" }],
+    network: [],
+    runtimeTrace: { recentRuntimeErrors: [] },
+  });
+
+  const body = JSON.parse(await readFile(join(directory, "console.json"), "utf8"));
+  expect(body).toEqual([
+    { source: "browser-console", text: "asset bounds 1.000", type: "info" },
+  ]);
+});
+
 test("writes runtime-trace.json when a runtime error was published", async () => {
   const directory = await artifactDirectory();
 
