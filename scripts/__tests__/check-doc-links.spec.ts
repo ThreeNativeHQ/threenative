@@ -104,11 +104,42 @@ describe("check-doc-links", () => {
     expect(() => assertDocLinks(root, ["README.md"])).toThrow("README.md -> not-here.md");
   });
 
+  it("strips tilde fences and inline code spans but fails for malformed prose", () => {
+    const root = fixture({
+      "README.md": [
+        "~~~md",
+        "[tilde](missing-tilde.md)",
+        "~~~",
+        "`[inline](missing-inline.md)`",
+        "[guide](guide.md)",
+        "",
+      ].join("\n"),
+      "guide.md": "# Guide\n",
+    });
+
+    expect(assertDocLinks(root, ["README.md"]).linksChecked).toBe(1);
+
+    writeFileSync(join(root, "README.md"), "~~~\n[ignored](missing.md)\n~~~\n[broken](\n");
+    expect(() => assertDocLinks(root, ["README.md"])).toThrow("Malformed Markdown link");
+  });
+
   it("fails closed for an unterminated or empty link target", () => {
     const root = fixture({ "README.md": "[missing](\n" });
     expect(() => assertDocLinks(root, ["README.md"])).toThrow("Malformed Markdown link");
 
     writeFileSync(join(root, "README.md"), "[empty]()\n");
     expect(() => checkDocLinks(root, ["README.md"])).toThrow("empty target");
+  });
+
+  it("checks links wrapped in escaped backticks as prose", () => {
+    const root = fixture({ "README.md": "\\`[missing](not-here.md)\\`\n" });
+
+    expect(() => assertDocLinks(root, ["README.md"])).toThrow("README.md -> not-here.md");
+  });
+
+  it("treats backslashes literally while finding an inline code closing run", () => {
+    const root = fixture({ "README.md": "`[missing](not-here.md)\\`\n" });
+
+    expect(assertDocLinks(root, ["README.md"])).toMatchObject({ linksChecked: 0, missing: [] });
   });
 });

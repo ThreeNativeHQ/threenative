@@ -71,6 +71,44 @@ export function stripFencedCodeBlocks(markdown: string, file = "Markdown documen
   return stripped.join("\n");
 }
 
+function backtickRunLength(source: string, start: number): number {
+  let length = 0;
+  while (source[start + length] === "`") {
+    length += 1;
+  }
+  return length;
+}
+
+function isEscaped(source: string, index: number): boolean {
+  let precedingBackslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === "\\"; cursor -= 1) {
+    precedingBackslashes += 1;
+  }
+  return precedingBackslashes % 2 === 1;
+}
+
+function findClosingBacktickRun(source: string, start: number, length: number): number {
+  let cursor = start;
+  while (cursor < source.length) {
+    const nextBacktick = source.indexOf("`", cursor);
+    if (nextBacktick === -1) {
+      return -1;
+    }
+
+    const runLength = backtickRunLength(source, nextBacktick);
+    if (runLength === length) {
+      return nextBacktick;
+    }
+    cursor = nextBacktick + runLength;
+  }
+
+  return -1;
+}
+
+function blankInlineCode(source: string): string {
+  return source.replace(/[^\r\n]/g, " ");
+}
+
 /**
  * Blank out inline code spans, keeping every character position and every newline.
  *
@@ -81,42 +119,35 @@ export function stripFencedCodeBlocks(markdown: string, file = "Markdown documen
  * link and exited 1 on a clean tree.
  *
  * Positions are preserved rather than removed so that error messages keep pointing at the real
- * offset, and CommonMark's rule is honoured: a run of N backticks is closed by the next run of
- * exactly N. An unclosed run is not a span — it is a literal backtick — and is left alone rather
- * than swallowing the rest of the document.
+ * offset, and CommonMark's rules are honoured: a run of N backticks is closed by the next run of
+ * exactly N, a backslash-escaped backtick opens nothing, and an unclosed run is a literal
+ * backtick left alone rather than swallowing the rest of the document.
  */
 export function blankInlineCodeSpans(markdown: string): string {
-  let result = "";
+  let stripped = "";
   let cursor = 0;
 
   while (cursor < markdown.length) {
-    const character = markdown[cursor];
-    if (character !== "`") {
-      result += character;
+    if (markdown[cursor] !== "`" || isEscaped(markdown, cursor)) {
+      stripped += markdown[cursor];
       cursor += 1;
       continue;
     }
 
-    let openLength = 0;
-    while (markdown[cursor + openLength] === "`") openLength += 1;
-
-    const closing = new RegExp(`(?<!\`)\`{${openLength}}(?!\`)`, "u");
-    const rest = markdown.slice(cursor + openLength);
-    const match = closing.exec(rest);
-    if (!match) {
-      result += markdown.slice(cursor, cursor + openLength);
-      cursor += openLength;
+    const runLength = backtickRunLength(markdown, cursor);
+    const closingRun = findClosingBacktickRun(markdown, cursor + runLength, runLength);
+    if (closingRun === -1) {
+      stripped += markdown.slice(cursor, cursor + runLength);
+      cursor += runLength;
       continue;
     }
 
-    const body = rest.slice(0, match.index);
-    result += "`".repeat(openLength);
-    result += body.replace(/[^\n]/gu, " ");
-    result += "`".repeat(openLength);
-    cursor += openLength + body.length + openLength;
+    const spanEnd = closingRun + runLength;
+    stripped += blankInlineCode(markdown.slice(cursor, spanEnd));
+    cursor = spanEnd;
   }
 
-  return result;
+  return stripped;
 }
 
 function findClosingParenthesis(source: string, start: number): number {
@@ -291,7 +322,10 @@ export function assertDocLinks(
 
 function run(): void {
   try {
-    assertDocLinks();
+    const result = assertDocLinks();
+    console.log(
+      `Checked ${result.linksChecked} relative documentation links across ${result.filesChecked} Markdown files.`,
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
