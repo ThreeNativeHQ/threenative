@@ -46,10 +46,12 @@
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",
-    "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity"
+    "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity && publint --strict"
   },
   "devDependencies": {
+    "@threenative/playtest": "workspace:*",
     "esbuild": "catalog:",
+    "publint": "catalog:",
     "three": "catalog:",
     "vitest": "catalog:"
   },

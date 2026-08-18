@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build && pnpm --dir ../.. exec vitest run --config vitest.config.ts && bash __tests__/orphan-cleanup.sh"
+    "test": "pnpm run build && pnpm --dir ../.. exec vitest run --config vitest.config.ts && bash __tests__/orphan-cleanup.sh && publint --strict"
   },
   "dependencies": {
     "pngjs": "catalog:"

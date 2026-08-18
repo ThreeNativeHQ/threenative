@@ -42,6 +42,9 @@ catalogs:
     pngjs:
       specifier: 7.0.0
       version: 7.0.0
+    publint:
+      specifier: 0.3.22
+      version: 0.3.22
     react:
       specifier: 19.2.0
       version: 19.2.0
@@ -349,9 +352,15 @@ importers:
         specifier: 'catalog:'
         version: 7.0.0
     devDependencies:
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../playtest
       esbuild:
         specifier: 'catalog:'
         version: 0.27.0
+      publint:
+        specifier: 'catalog:'
+        version: 0.3.22
       three:
         specifier: 'catalog:'
         version: 0.185.1
