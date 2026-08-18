@@ -2,6 +2,7 @@ import { physicsBodyHandle, physicsColliderHandle, physicsHandle } from "../hand
 import type {
   IPhysicsBodyCreateOptions,
   IPhysicsInputSnapshot,
+  IPhysicsJointCreateOptions,
   IPhysicsPointQuery,
   IPhysicsQueryHit,
   IPhysicsRayHit,
@@ -16,6 +17,7 @@ import {
   requireFiniteVector,
   requirePhysicsBodySensor,
   requirePhysicsEventBuffer,
+  requirePhysicsJointCreateOptions,
   requirePhysicsPointQuery,
   requirePhysicsRayQuery,
   requirePhysicsRenderBuffer,
@@ -50,6 +52,8 @@ export interface INativeBodyOptions {
   readonly shape: INativeShapeDescriptor;
   readonly type: "character" | "dynamic" | "fixed" | "kinematic";
 }
+
+export type INativeJointOptions = IPhysicsJointCreateOptions;
 
 export interface INativeRayHit {
   readonly bodyId: number;
@@ -95,9 +99,11 @@ export interface INativeSimulation {
     options: Parameters<IPhysicsSimulation["configureCharacter"]>[1],
   ): void;
   createBody(options: INativeBodyOptions): number;
+  createJoint?(options: INativeJointOptions): number;
   dispose(): void;
   drainCollisionEvents(buffer: Uint32Array): number;
   removeBody(id: number): void;
+  removeJoint?(id: number): void;
   setBodyTransform?(
     id: number,
     position: { readonly x: number; readonly y: number; readonly z: number },
@@ -203,6 +209,7 @@ export function createNativePhysicsSimulation(
 ): IPhysicsRuntimeSimulation {
   const bodyIds = new Set<number>();
   const bodyHandles = new Map<number, ReturnType<typeof physicsBodyHandle>>();
+  const jointBodies = new Map<number, readonly [number, number]>();
   const areaIds = new Set<number>();
   const characterIds = new Set<number>();
   const characterState = new Map<
@@ -326,6 +333,21 @@ export function createNativePhysicsSimulation(
         rawShape: opaqueNativeShape(shape),
       };
     },
+    createJoint: (jointOptions) => {
+      requireLive();
+      const normalized = requirePhysicsJointCreateOptions(jointOptions);
+      if (!bodyIds.has(normalized.bodyA) || !bodyIds.has(normalized.bodyB))
+        throw new Error("TN_PHYSICS_UNKNOWN_BODY: joint references an unknown body.");
+      if (raw.createJoint === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_JOINTS_MISSING: runtime ABI is too old");
+      const id = raw.createJoint(normalized);
+      if (!Number.isSafeInteger(id) || id < 0)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid joint id");
+      if (jointBodies.has(id))
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned a duplicate joint id");
+      jointBodies.set(id, [normalized.bodyA, normalized.bodyB]);
+      return id;
+    },
     configureCharacter: (id, options) => {
       raw.configureCharacter(id, options);
       invalidateObservations();
@@ -334,10 +356,20 @@ export function createNativePhysicsSimulation(
       raw.removeBody(id);
       bodyIds.delete(id);
       bodyHandles.delete(id);
+      for (const [jointId, bodies] of jointBodies) {
+        if (bodies[0] === id || bodies[1] === id) jointBodies.delete(jointId);
+      }
       areaIds.delete(id);
       characterIds.delete(id);
       characterState.delete(id);
       invalidateObservations();
+    },
+    removeJoint: (id) => {
+      if (disposed || !jointBodies.has(id)) return;
+      if (raw.removeJoint === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_JOINTS_MISSING: runtime ABI is too old");
+      raw.removeJoint(id);
+      jointBodies.delete(id);
     },
     setBodyTransform: (id, position) => {
       if (raw.setBodyTransform === undefined)
@@ -468,6 +500,7 @@ export function createNativePhysicsSimulation(
       raw.dispose();
       bodyIds.clear();
       bodyHandles.clear();
+      jointBodies.clear();
       areaIds.clear();
       characterIds.clear();
       characterState.clear();

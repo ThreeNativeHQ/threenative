@@ -19,6 +19,21 @@ export const PHYSICS_SLEEP_STATE_STRIDE = 2;
 /** Caps native query buffers while remaining exactly representable by the native ABI. */
 export const MAX_PHYSICS_QUERY_RESULTS = 1024;
 
+/** Matches the f32::EPSILON boundary used by the native Rapier seam. */
+const F32_EPSILON = Math.fround(2 ** -23);
+/** Native nalgebra's UnitVector::try_new compares the squared norm with this value. */
+const F32_EPSILON_SQUARED = Math.fround(F32_EPSILON * F32_EPSILON);
+
+/** Mirrors the native seam's f32 conversion and left-to-right f32 length-squared arithmetic. */
+function f32LengthSquared(values: readonly number[]): number {
+  let lengthSquared = 0;
+  for (const value of values) {
+    const component = Math.fround(value);
+    lengthSquared = Math.fround(lengthSquared + Math.fround(component * component));
+  }
+  return lengthSquared;
+}
+
 export type PhysicsShapeKind =
   | "box"
   | "sphere"
@@ -74,6 +89,26 @@ export interface IPhysicsRotation {
   readonly y: number;
   readonly z: number;
   readonly w: number;
+}
+
+export type PhysicsJointKind = "pin" | "hinge" | "fixed";
+
+export interface IPhysicsJointLimit {
+  readonly lower: number;
+  readonly upper: number;
+}
+
+/** Backend-neutral data for a cold-path joint creation call. Anchors and frames are local-space. */
+export interface IPhysicsJointCreateOptions {
+  readonly type: PhysicsJointKind;
+  readonly bodyA: number;
+  readonly bodyB: number;
+  readonly anchorA: IPhysicsVector3;
+  readonly anchorB: IPhysicsVector3;
+  readonly axis?: IPhysicsVector3;
+  readonly limit?: IPhysicsJointLimit;
+  readonly frameA?: IPhysicsRotation;
+  readonly frameB?: IPhysicsRotation;
 }
 
 export interface IPhysicsRayQuery {
@@ -143,8 +178,10 @@ export interface IPhysicsInputSnapshot {
 /** The backend seam used by all shared physics nodes. */
 export interface IPhysicsSimulation {
   createBody(options: IPhysicsBodyCreateOptions): IPhysicsBodyRegistration;
+  createJoint(options: IPhysicsJointCreateOptions): number;
   configureCharacter(id: number, options: IPhysicsCharacterOptions): void;
   removeBody(id: number): void;
+  removeJoint(id: number): void;
   /** Cold-path repositioning for teleport/setup. Per-frame kinematics use `step()` input. */
   setBodyTransform(
     id: number,
@@ -197,6 +234,64 @@ export function requireFiniteVector(vector: IPhysicsVector3, label: string): voi
     !Number.isFinite(vector.z)
   )
     throw new Error(`TN_PHYSICS_NON_FINITE: ${label} must be a finite { x, y, z }.`);
+}
+
+export function requireFiniteRotation(rotation: IPhysicsRotation, label: string): void {
+  if (
+    typeof rotation?.x !== "number" ||
+    typeof rotation.y !== "number" ||
+    typeof rotation.z !== "number" ||
+    typeof rotation.w !== "number" ||
+    !Number.isFinite(rotation.x) ||
+    !Number.isFinite(rotation.y) ||
+    !Number.isFinite(rotation.z) ||
+    !Number.isFinite(rotation.w)
+  )
+    throw new Error(`TN_PHYSICS_NON_FINITE: ${label} must be a finite { x, y, z, w }.`);
+  if (f32LengthSquared([rotation.x, rotation.y, rotation.z, rotation.w]) <= F32_EPSILON)
+    throw new Error(`TN_PHYSICS_INVALID: ${label} must not have zero length.`);
+}
+
+export function requirePhysicsJointCreateOptions(
+  options: IPhysicsJointCreateOptions,
+): IPhysicsJointCreateOptions {
+  if (typeof options !== "object" || options === null)
+    throw new Error("IPhysicsSimulation joint options must be an object.");
+  if (options.type !== "pin" && options.type !== "hinge" && options.type !== "fixed")
+    throw new Error("IPhysicsSimulation joint options have an unknown type.");
+  if (
+    !Number.isSafeInteger(options.bodyA) ||
+    options.bodyA < 0 ||
+    !Number.isSafeInteger(options.bodyB) ||
+    options.bodyB < 0 ||
+    options.bodyA === options.bodyB
+  )
+    throw new Error("IPhysicsSimulation joint options must reference two distinct body ids.");
+  requireFiniteVector(options.anchorA, "joint anchorA");
+  requireFiniteVector(options.anchorB, "joint anchorB");
+  if (options.type === "hinge") {
+    if (options.axis === undefined) throw new Error("IPhysicsSimulation hinge requires an axis.");
+    requireFiniteVector(options.axis, "joint axis");
+    if (f32LengthSquared([options.axis.x, options.axis.y, options.axis.z]) <= F32_EPSILON_SQUARED)
+      throw new Error("IPhysicsSimulation hinge axis must not have zero length.");
+    if (options.limit !== undefined) {
+      if (typeof options.limit !== "object" || options.limit === null)
+        throw new Error("IPhysicsSimulation hinge limit must contain ordered finite bounds.");
+      if (
+        !Number.isFinite(options.limit.lower) ||
+        !Number.isFinite(options.limit.upper) ||
+        options.limit.lower > options.limit.upper
+      )
+        throw new Error("IPhysicsSimulation hinge limit must contain ordered finite bounds.");
+    }
+  } else if (options.axis !== undefined || options.limit !== undefined) {
+    throw new Error("IPhysicsSimulation joint limits and axes are only valid for a hinge.");
+  }
+  if (options.type !== "fixed" && (options.frameA !== undefined || options.frameB !== undefined))
+    throw new Error("IPhysicsSimulation joint frames are only valid for a fixed joint.");
+  if (options.frameA !== undefined) requireFiniteRotation(options.frameA, "joint frameA");
+  if (options.frameB !== undefined) requireFiniteRotation(options.frameB, "joint frameB");
+  return options;
 }
 
 /** Runtime metadata needed to expose backend-specific escape hatches without leaking them. */
@@ -498,6 +593,27 @@ function bodyDescription(
   return description;
 }
 
+function jointDescription(
+  rapier: typeof import("@dimforge/rapier3d-compat"),
+  jointOptions: IPhysicsJointCreateOptions,
+): rapier.JointData {
+  if (jointOptions.type === "pin")
+    return rapier.JointData.spherical(jointOptions.anchorA, jointOptions.anchorB);
+  if (jointOptions.type === "hinge") {
+    return rapier.JointData.revolute(
+      jointOptions.anchorA,
+      jointOptions.anchorB,
+      jointOptions.axis as IPhysicsVector3,
+    );
+  }
+  return rapier.JointData.fixed(
+    jointOptions.anchorA,
+    jointOptions.frameA ?? { x: 0, y: 0, z: 0, w: 1 },
+    jointOptions.anchorB,
+    jointOptions.frameB ?? { x: 0, y: 0, z: 0, w: 1 },
+  );
+}
+
 function characterState(
   simulationBody: ISimulationBody,
   byCollider: ReadonlyMap<number, ISimulationBody>,
@@ -525,9 +641,14 @@ export function createWebPhysicsSimulation(
 ): IPhysicsRuntimeSimulation {
   const bodies = new Map<number, ISimulationBody>();
   const byCollider = new Map<number, ISimulationBody>();
+  const joints = new Map<
+    number,
+    { readonly handle: number; readonly bodyA: number; readonly bodyB: number }
+  >();
   const dirtyBodies = new Set<ISimulationBody>();
   const pendingCollisionEvents: number[][] = [];
   let nextId = 0;
+  let nextJointId = 0;
   let disposed = false;
 
   const requireLive = () => {
@@ -580,6 +701,14 @@ export function createWebPhysicsSimulation(
     };
   };
 
+  const removeJointRecord = (id: number): void => {
+    const record = joints.get(id);
+    if (record === undefined) return;
+    joints.delete(id);
+    const joint = options.world.impulseJoints.get(record.handle);
+    if (joint !== null) options.world.removeImpulseJoint(joint, true);
+  };
+
   const simulation: IPhysicsRuntimeSimulation = {
     version: options.version,
     rawWorld: options.world,
@@ -623,6 +752,36 @@ export function createWebPhysicsSimulation(
         rawShape,
       };
     },
+    createJoint: (jointOptions) => {
+      requireLive();
+      const normalized = requirePhysicsJointCreateOptions(jointOptions);
+      const bodyA = bodies.get(normalized.bodyA);
+      const bodyB = bodies.get(normalized.bodyB);
+      if (bodyA === undefined || bodyB === undefined)
+        throw new Error("TN_PHYSICS_UNKNOWN_BODY: joint references an unknown body.");
+      if (!bodyA.body.isValid() || !bodyB.body.isValid())
+        throw new Error("TN_PHYSICS_INVALID_BODY: joint references an invalid body.");
+      const joint = options.world.createImpulseJoint(
+        jointDescription(options.rapier, normalized),
+        bodyA.body,
+        bodyB.body,
+        true,
+      );
+      if (normalized.limit !== undefined) {
+        const revoluteJoint = joint as rapier.UnitImpulseJoint;
+        if (typeof revoluteJoint.setLimits !== "function") {
+          options.world.removeImpulseJoint(joint, true);
+          throw new Error(
+            "TN_PHYSICS_JOINT_LIMIT_UNSUPPORTED: web backend cannot set hinge limits.",
+          );
+        }
+        revoluteJoint.setLimits(normalized.limit.lower, normalized.limit.upper);
+      }
+      const id = nextJointId;
+      nextJointId += 1;
+      joints.set(id, { bodyA: normalized.bodyA, bodyB: normalized.bodyB, handle: joint.handle });
+      return id;
+    },
     configureCharacter: (id, characterOptions) => {
       requireLive();
       const entry = bodies.get(id);
@@ -654,11 +813,18 @@ export function createWebPhysicsSimulation(
       requireLive();
       const entry = bodies.get(id);
       if (entry === undefined) return;
+      for (const [jointId, joint] of joints) {
+        if (joint.bodyA === id || joint.bodyB === id) removeJointRecord(jointId);
+      }
       bodies.delete(id);
       byCollider.delete(entry.collider.handle);
       dirtyBodies.delete(entry);
       if (entry.controller !== undefined) options.world.removeCharacterController(entry.controller);
       if (entry.body.isValid()) options.world.removeRigidBody(entry.body);
+    },
+    removeJoint: (id) => {
+      if (disposed) return;
+      removeJointRecord(id);
     },
     setBodyTransform: (id, position) => {
       requireLive();
@@ -971,6 +1137,7 @@ export function createWebPhysicsSimulation(
       }
       bodies.clear();
       byCollider.clear();
+      joints.clear();
       dirtyBodies.clear();
       pendingCollisionEvents.length = 0;
       options.eventQueue.free();

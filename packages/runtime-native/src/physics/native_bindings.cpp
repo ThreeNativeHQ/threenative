@@ -18,6 +18,7 @@ constexpr uint32_t kMaxExactFloatId = 16'777'215;
 struct SimulationOwner {
   TnPhysicsSimulation *simulation = nullptr;
   uint32_t nextId = 0;
+  uint32_t nextJointId = 0;
 
   ~SimulationOwner() { dispose(); }
 
@@ -387,6 +388,96 @@ bool parseBodyIdArgument(js::Engine *engine,
   return true;
 }
 
+bool readBodyIdProperty(js::Engine *engine, js::JSValueHandle object,
+                        const char *name, uint32_t &id) {
+  const auto value = engine->getProperty(object, name);
+  if (!engine->isNumber(value))
+    return false;
+  const double idValue = engine->toNumber(value);
+  if (!std::isfinite(idValue) || idValue < 0 || idValue > kMaxExactFloatId ||
+      std::floor(idValue) != idValue)
+    return false;
+  id = static_cast<uint32_t>(idValue);
+  return true;
+}
+
+bool readOptionalVector(js::Engine *engine, js::JSValueHandle object,
+                        const char *name, float &x, float &y, float &z) {
+  const auto value = engine->getProperty(object, name);
+  if (engine->isUndefined(value))
+    return true;
+  return engine->isObject(value) && readFiniteNumber(engine, value, "x", x) &&
+         readFiniteNumber(engine, value, "y", y) &&
+         readFiniteNumber(engine, value, "z", z);
+}
+
+bool readOptionalQuaternion(js::Engine *engine, js::JSValueHandle object,
+                            const char *name, float &x, float &y, float &z,
+                            float &w) {
+  const auto value = engine->getProperty(object, name);
+  if (engine->isUndefined(value))
+    return true;
+  return engine->isObject(value) && readFiniteNumber(engine, value, "x", x) &&
+         readFiniteNumber(engine, value, "y", y) &&
+         readFiniteNumber(engine, value, "z", z) &&
+         readFiniteNumber(engine, value, "w", w);
+}
+
+bool parseJointOptions(js::Engine *engine, js::JSValueHandle value,
+                       uint32_t id, TnPhysicsJointOptions &options) {
+  if (!engine->isObject(value))
+    return false;
+  options = {};
+  options.id = id;
+  options.axis_x = 1.0f;
+  options.frame_a_w = 1.0f;
+  options.frame_b_w = 1.0f;
+
+  const auto type = engine->getProperty(value, "type");
+  if (!engine->isString(type))
+    return false;
+  const std::string typeName = engine->toString(type);
+  if (typeName == "pin")
+    options.joint_type = 0;
+  else if (typeName == "hinge")
+    options.joint_type = 1;
+  else if (typeName == "fixed")
+    options.joint_type = 2;
+  else
+    return false;
+
+  if (!readBodyIdProperty(engine, value, "bodyA", options.body_a) ||
+      !readBodyIdProperty(engine, value, "bodyB", options.body_b) ||
+      !readVector(engine, value, "anchorA", options.anchor_a_x,
+                  options.anchor_a_y, options.anchor_a_z) ||
+      !readVector(engine, value, "anchorB", options.anchor_b_x,
+                  options.anchor_b_y, options.anchor_b_z) ||
+      !readOptionalVector(engine, value, "axis", options.axis_x,
+                          options.axis_y, options.axis_z))
+    return false;
+
+  const auto limit = engine->getProperty(value, "limit");
+  if (!engine->isUndefined(limit)) {
+    if (options.joint_type != 1 || !engine->isObject(limit) ||
+        !readFiniteNumber(engine, limit, "lower", options.limit_lower) ||
+        !readFiniteNumber(engine, limit, "upper", options.limit_upper))
+      return false;
+    options.limit_enabled = true;
+  }
+
+  const auto frameA = engine->getProperty(value, "frameA");
+  const auto frameB = engine->getProperty(value, "frameB");
+  if (options.joint_type != 2 &&
+      (!engine->isUndefined(frameA) || !engine->isUndefined(frameB)))
+    return false;
+  return readOptionalQuaternion(engine, value, "frameA", options.frame_a_x,
+                                options.frame_a_y, options.frame_a_z,
+                                options.frame_a_w) &&
+         readOptionalQuaternion(engine, value, "frameB", options.frame_b_x,
+                                options.frame_b_y, options.frame_b_z,
+                                options.frame_b_w);
+}
+
 js::JSValueHandle makeSimulationObject(
     js::Engine *engine, const std::shared_ptr<SimulationOwner> &owner) {
   auto simulation = engine->newObject();
@@ -408,6 +499,25 @@ js::JSValueHandle makeSimulationObject(
             return engine->newNumber(id);
           }));
   engine->setProperty(
+      simulation, "createJoint",
+      engine->newFunction(
+          "createJoint",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() || owner->nextJointId > kMaxExactFloatId)
+              return fail(engine, "createJoint requires options and an available id");
+            TnPhysicsJointOptions options{};
+            if (!parseJointOptions(engine, args[0], owner->nextJointId, options))
+              return fail(engine, "physics joint options are invalid");
+            const int32_t result =
+                tn_physics_create_joint(owner->simulation, &options);
+            if (result < 0)
+              return fail(engine, "physics joint options were rejected");
+            owner->nextJointId += 1;
+            return engine->newNumber(result);
+          }));
+  engine->setProperty(
       simulation, "removeBody",
       engine->newFunction(
           "removeBody",
@@ -422,6 +532,19 @@ js::JSValueHandle makeSimulationObject(
               return fail(engine, "removeBody received an invalid id");
             tn_physics_remove_body(owner->simulation,
                                    static_cast<uint32_t>(id));
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "removeJoint",
+      engine->newFunction(
+          "removeJoint",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            if (!parseBodyIdArgument(engine, args, id))
+              return fail(engine, "removeJoint received an invalid id");
+            tn_physics_remove_joint(owner->simulation, id);
             return engine->newUndefined();
           }));
   engine->setProperty(

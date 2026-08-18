@@ -6,6 +6,14 @@ export { CharacterBody3D } from "../CharacterBody3D.js";
 export type { ICharacterBody3DOptions } from "../CharacterBody3D.js";
 export { CollisionShape3D } from "../CollisionShape3D.js";
 export type { CollisionShapeKind } from "../CollisionShape3D.js";
+export { Joint3D } from "../Joint3D.js";
+export type {
+  IFixedJoint3DOptions,
+  IHingeJoint3DOptions,
+  IJoint3DOptions,
+  IPinJoint3DOptions,
+  PhysicsJointBody,
+} from "../Joint3D.js";
 export { PhysicsDirectSpaceState3D } from "../PhysicsDirectSpaceState3D.js";
 export type {
   IIntersectPointOptions,
@@ -36,6 +44,8 @@ export type {
   IPhysicsBodyCreateOptions,
   IPhysicsCharacterOptions,
   IPhysicsInputSnapshot,
+  IPhysicsJointCreateOptions,
+  IPhysicsJointLimit,
   IPhysicsRuntimeSimulation,
   IPhysicsShapeDescriptor,
   PhysicsShapeKind,
@@ -47,4 +57,5 @@ export type {
   IPhysicsRotation,
   IPhysicsShapeQuery,
   IPhysicsVector3,
+  PhysicsJointKind,
 } from "../simulation.js";

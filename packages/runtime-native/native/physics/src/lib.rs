@@ -37,6 +37,34 @@ pub struct TnPhysicsBodyOptions {
 }
 
 #[repr(C)]
+pub struct TnPhysicsJointOptions {
+    pub id: u32,
+    pub joint_type: u32,
+    pub body_a: u32,
+    pub body_b: u32,
+    pub anchor_a_x: f32,
+    pub anchor_a_y: f32,
+    pub anchor_a_z: f32,
+    pub anchor_b_x: f32,
+    pub anchor_b_y: f32,
+    pub anchor_b_z: f32,
+    pub axis_x: f32,
+    pub axis_y: f32,
+    pub axis_z: f32,
+    pub limit_enabled: bool,
+    pub limit_lower: f32,
+    pub limit_upper: f32,
+    pub frame_a_x: f32,
+    pub frame_a_y: f32,
+    pub frame_a_z: f32,
+    pub frame_a_w: f32,
+    pub frame_b_x: f32,
+    pub frame_b_y: f32,
+    pub frame_b_z: f32,
+    pub frame_b_w: f32,
+}
+
+#[repr(C)]
 pub struct TnPhysicsCharacterOptions {
     pub id: u32,
     pub offset: f32,
@@ -155,6 +183,7 @@ pub struct Simulation {
     multibody_joints: MultibodyJointSet,
     ccd: CCDSolver,
     entries: BTreeMap<u32, BodyEntry>,
+    joints: BTreeMap<u32, ImpulseJointHandle>,
     characters: BTreeMap<u32, CharacterEntry>,
     colliding: BTreeSet<(u32, u32)>,
     events: VecDeque<[u32; EVENT_WIDTH]>,
@@ -182,6 +211,7 @@ impl Simulation {
             multibody_joints: MultibodyJointSet::new(),
             ccd: CCDSolver::new(),
             entries: BTreeMap::new(),
+            joints: BTreeMap::new(),
             characters: BTreeMap::new(),
             colliding: BTreeSet::new(),
             events: VecDeque::new(),
@@ -348,8 +378,123 @@ impl Simulation {
         self.colliding
             .retain(|(left, right)| *left != id && *right != id);
         self.characters.remove(&id);
+        self.joints
+            .retain(|_, handle| self.impulse_joints.contains(*handle));
         self.query_dirty = true;
         true
+    }
+
+    fn create_joint(&mut self, options: TnPhysicsJointOptions) -> bool {
+        if self.joints.contains_key(&options.id)
+            || options.body_a == options.body_b
+            || !self.entries.contains_key(&options.body_a)
+            || !self.entries.contains_key(&options.body_b)
+        {
+            return false;
+        }
+        let finite = [
+            options.anchor_a_x,
+            options.anchor_a_y,
+            options.anchor_a_z,
+            options.anchor_b_x,
+            options.anchor_b_y,
+            options.anchor_b_z,
+            options.axis_x,
+            options.axis_y,
+            options.axis_z,
+            options.limit_lower,
+            options.limit_upper,
+            options.frame_a_x,
+            options.frame_a_y,
+            options.frame_a_z,
+            options.frame_a_w,
+            options.frame_b_x,
+            options.frame_b_y,
+            options.frame_b_z,
+            options.frame_b_w,
+        ]
+        .into_iter()
+        .all(f32::is_finite);
+        if !finite
+            || (options.limit_enabled && options.limit_lower > options.limit_upper)
+        {
+            return false;
+        }
+        if options.joint_type == 2 {
+            let frame_a_length = options.frame_a_x * options.frame_a_x
+                + options.frame_a_y * options.frame_a_y
+                + options.frame_a_z * options.frame_a_z
+                + options.frame_a_w * options.frame_a_w;
+            let frame_b_length = options.frame_b_x * options.frame_b_x
+                + options.frame_b_y * options.frame_b_y
+                + options.frame_b_z * options.frame_b_z
+                + options.frame_b_w * options.frame_b_w;
+            if frame_a_length <= f32::EPSILON || frame_b_length <= f32::EPSILON {
+                return false;
+            }
+        }
+        let anchor_a = point![options.anchor_a_x, options.anchor_a_y, options.anchor_a_z];
+        let anchor_b = point![options.anchor_b_x, options.anchor_b_y, options.anchor_b_z];
+        let data: GenericJoint = match options.joint_type {
+            0 => SphericalJointBuilder::new()
+                .local_anchor1(anchor_a)
+                .local_anchor2(anchor_b)
+                .build()
+                .into(),
+            1 => {
+                let Some(axis) = UnitVector::try_new(
+                    vector![options.axis_x, options.axis_y, options.axis_z],
+                    f32::EPSILON,
+                ) else {
+                    return false;
+                };
+                let mut builder = RevoluteJointBuilder::new(axis)
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b);
+                if options.limit_enabled {
+                    builder = builder.limits([options.limit_lower, options.limit_upper]);
+                }
+                builder.build().into()
+            }
+            2 => {
+                let frame_a = Isometry::from_parts(
+                    Translation::from(anchor_a.coords),
+                    UnitQuaternion::new_normalize(Quaternion::new(
+                        options.frame_a_w,
+                        options.frame_a_x,
+                        options.frame_a_y,
+                        options.frame_a_z,
+                    )),
+                );
+                let frame_b = Isometry::from_parts(
+                    Translation::from(anchor_b.coords),
+                    UnitQuaternion::new_normalize(Quaternion::new(
+                        options.frame_b_w,
+                        options.frame_b_x,
+                        options.frame_b_y,
+                        options.frame_b_z,
+                    )),
+                );
+                FixedJointBuilder::new()
+                    .local_frame1(frame_a)
+                    .local_frame2(frame_b)
+                    .build()
+                    .into()
+            }
+            _ => return false,
+        };
+        let body_a = self.entries[&options.body_a].body;
+        let body_b = self.entries[&options.body_b].body;
+        let handle = self.impulse_joints.insert(body_a, body_b, data, true);
+        self.joints.insert(options.id, handle);
+        true
+    }
+
+    fn remove_joint(&mut self, id: u32) -> bool {
+        let Some(handle) = self.joints.remove(&id) else {
+            return false;
+        };
+        self.impulse_joints.remove(handle, true).is_some()
     }
 
     fn set_body_transform(&mut self, id: u32, x: f32, y: f32, z: f32) -> bool {
@@ -938,6 +1083,28 @@ pub extern "C" fn tn_physics_add_body(
         return false;
     };
     simulation.add_body(unsafe { ptr::read(options) })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_create_joint(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsJointOptions,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return -1;
+    };
+    let options = unsafe { ptr::read(options) };
+    let id = options.id;
+    if simulation.create_joint(options) {
+        id as i32
+    } else {
+        -1
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_remove_joint(simulation: *mut Simulation, id: u32) -> bool {
+    unsafe { simulation.as_mut() }.is_some_and(|simulation| simulation.remove_joint(id))
 }
 
 #[unsafe(no_mangle)]

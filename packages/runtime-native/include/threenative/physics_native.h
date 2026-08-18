@@ -36,6 +36,33 @@ typedef struct TnPhysicsBodyOptions {
   bool sensor;
 } TnPhysicsBodyOptions;
 
+typedef struct TnPhysicsJointOptions {
+  uint32_t id;
+  uint32_t joint_type;
+  uint32_t body_a;
+  uint32_t body_b;
+  float anchor_a_x;
+  float anchor_a_y;
+  float anchor_a_z;
+  float anchor_b_x;
+  float anchor_b_y;
+  float anchor_b_z;
+  float axis_x;
+  float axis_y;
+  float axis_z;
+  bool limit_enabled;
+  float limit_lower;
+  float limit_upper;
+  float frame_a_x;
+  float frame_a_y;
+  float frame_a_z;
+  float frame_a_w;
+  float frame_b_x;
+  float frame_b_y;
+  float frame_b_z;
+  float frame_b_w;
+} TnPhysicsJointOptions;
+
 typedef struct TnPhysicsCharacterOptions {
   uint32_t id;
   float offset;
@@ -114,6 +141,9 @@ TnPhysicsSimulation *
 tn_physics_create(const TnPhysicsWorldOptions *options);
 bool tn_physics_add_body(TnPhysicsSimulation *simulation,
                          const TnPhysicsBodyOptions *options);
+int32_t tn_physics_create_joint(TnPhysicsSimulation *simulation,
+                                 const TnPhysicsJointOptions *options);
+bool tn_physics_remove_joint(TnPhysicsSimulation *simulation, uint32_t id);
 bool tn_physics_configure_character(
     TnPhysicsSimulation *simulation,
     const TnPhysicsCharacterOptions *options);
