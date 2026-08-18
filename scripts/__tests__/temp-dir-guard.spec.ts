@@ -12,6 +12,10 @@ const allowedProductionCreators = new Map<string, string>([
     "packages/playtest/src/runner/videoAnalysis.ts",
     "Video frames are removed by the analysis finally.",
   ],
+  [
+    "packages/playtest/src/runner/desktopRunner.ts",
+    "The production desktop runner removes its owned mailbox root in finally.",
+  ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],

@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-143 — `@threenative/physics` has no joints, so nothing can be hinged, pinned or chained
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** COMPLETE, 2026-08-18. The shared web/native joint seam and the required desktop
+hinged-door scenario passed.
 
 **Outcome:** two bodies can be constrained to each other — pin, hinge, fixed — through one class
 that works on both backends, and a game that needs a door, a rope, a chain, a vehicle axle or a
@@ -12,7 +13,8 @@ ragdoll is no longer told to write its own solver.
 
 **Depends on:** nothing.
 
-**Blocks:** [PRD-144](./PRD-144-ragdoll.md) is unbuildable without this.
+**Blocks:** [PRD-144](./PRD-144-ragdoll.md) was unbuildable without this and was withdrawn
+after the dependency landed.
 
 **Complexity: 7 → HIGH mode.** It crosses the JS→C++ ABI, which is the seam this repository is
 most careful about.
@@ -105,7 +107,8 @@ gameplay bug on one platform only.
 Read the batch README's shape rules first. The specific risks here:
 
 - **SRP.** `Joint3D` constrains two bodies. It does not own the bodies, does not create them, does
-  not know about skeletons — [PRD-144](./PRD-144-ragdoll.md) composes joints, it is not a mode of
+  not know about skeletons — [PRD-144](./PRD-144-ragdoll.md) would have composed joints, it is
+  not a mode of
   this class.
 - **DRY.** One `Joint3D.ts`, one ABI call pair, one validation path. The NaN rejection at the seam
   (`simulation.ts:186-189`) already exists and joint anchors go through it rather than growing a
@@ -140,3 +143,18 @@ nobody has measured 200 joints on a Pixel 8. Not that the native backend's solve
 numerically: the two are different implementations and a scenario asserting an exact position on
 both will be flaky. Assert behaviour — "the door opened", "the bodies stayed together" — not
 coordinates.
+
+## 6. Completion record
+
+The public `Joint3D` surface, web backend, native Rust backend and C++ bulk ABI are implemented;
+the class is shared across targets and no game-facing node fork was added. The seven focused joint
+tests pass, including lifetime, disposal, fixed-frame, hinge-axis and malformed-input rows.
+
+The web hinged-door scenario passed at the hinge limit. The same packaged scenario passed through
+the desktop target after 120 fixed ticks with final angle `0.1594762887` radians, off-axis rotation
+`0`, zero diagnostics and `pass: true`. The integrated command was:
+
+`sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/native-smoke/.tmp-prd143-hinged-door.playtest.json --project . --target desktop --executable /tmp/tn-prd143-desktop.moGy0d/joint-game --artifacts /tmp/tn-prd143-desktop.moGy0d/artifacts-r7`
+
+Repository proof is recorded in
+[`docs/verification/prd-143-physics-joints-2026-08-18.md`](../../verification/prd-143-physics-joints-2026-08-18.md).

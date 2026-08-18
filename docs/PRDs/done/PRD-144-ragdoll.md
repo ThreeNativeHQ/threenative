@@ -4,15 +4,16 @@ prd_contract: v1
 
 # PRD-144 — A death is a frozen animation frame, because there is no ragdoll
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** WITHDRAWN, 2026-08-18. The row-6 kill switch fired: the class-shaped usage is not
+smaller than the hand-rolled `Joint3D` + `RigidBody3D` version.
 
 **Outcome:** a character can hand its pose over to physics at the moment it dies, fall against the
 world it was standing in, and settle — without the game hard-coding a clip length and stopping a
 mixer.
 
-**Depends on:** [PRD-143](./PRD-143-physics-joints.md) — unbuildable without joints.
-[PRD-142](./PRD-142-bone-sockets-and-attachment.md) — reuses its bone resolution rather than
-growing a second one. [PRD-141](./PRD-141-animation-one-shot-clips.md) is not a dependency but
+**Depends on:** [PRD-143](./PRD-143-physics-joints.md) — unbuildable without
+joints. [PRD-142](../fps-friction-26-08-17/PRD-142-bone-sockets-and-attachment.md) — reuses its
+bone resolution rather than growing a second one. [PRD-141](../fps-friction-26-08-17/PRD-141-animation-one-shot-clips.md) is not a dependency but
 overlaps: 141 makes the *fake* correct, this makes the fake unnecessary.
 
 **Blocks:** nothing.
@@ -123,7 +124,7 @@ most likely to grow a second job:
   character dies, does not apply death impulses, does not blend animation with simulation, does
   not respawn anything. Every one of those is gameplay and stays in `Enemy.ts`.
 - **DRY.** Bone names resolve through `skeletonBones`/`attachToBone` from
-  [PRD-142](./PRD-142-bone-sockets-and-attachment.md). Joints are `Joint3D` from
+  [PRD-142](../fps-friction-26-08-17/PRD-142-bone-sockets-and-attachment.md). Joints are `Joint3D` from
   [PRD-143](./PRD-143-physics-joints.md), composed, not re-implemented. Transforms come back
   through `readVisibleTransforms`. **If this PRD adds a traversal, a joint type or a transform
   path that already exists, the layering is wrong and the review should reject it.**
@@ -178,3 +179,19 @@ getting up from a ragdoll works — animation blending back from a settled pose 
 harder problem and is explicitly out of scope. Not that the two backends agree: they are different
 solvers and a scenario asserting exact bone positions on both will be flaky, so assert behaviour
 and rest state, never coordinates.
+
+## 7. Withdrawal record
+
+PRD-143 was first landed and proved through the integrated desktop target. The required five-bone
+comparison was then formatted with the repository's LOC instrument:
+
+| Version | Raw non-empty lines | Normalised lines |
+|---|---:|---:|
+| hand-rolled `Joint3D` + `RigidBody3D` chain | 39 | 43 |
+| proposed `PhysicalBone3D` + `PhysicalBoneSimulator3D` usage | 18 | 46 |
+
+The class-shaped version is three normalised lines larger. `pnpm tsx scripts/count-loc.ts` also
+completed successfully and reported the existing platformer template total of 1,559 LOC. Because
+the proposed abstraction does not beat the code the game can write from the shipped physics
+primitives, no ragdoll classes, playtest, or new framework package are added. The hand-rolled
+version remains the correct application-level path if a game later needs a ragdoll.

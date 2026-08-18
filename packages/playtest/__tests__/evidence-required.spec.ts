@@ -1,6 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
@@ -312,7 +311,7 @@ test("a finished animation assertion requires exact runtime completion evidence"
 });
 
 test("a finished animation assertion rejects a wrong-typed scenario field", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-evidence-animation-"));
+  const directory = await makeTempDir("playtest-evidence-animation-");
   await writeFile(
     join(directory, "scenario.json"),
     JSON.stringify({

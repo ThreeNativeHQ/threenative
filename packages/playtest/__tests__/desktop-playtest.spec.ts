@@ -1,9 +1,9 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { expect, test } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import {
   PLAYTEST_PROTOCOL_LIMITS,
@@ -50,7 +50,7 @@ test("desktop CLI routing selects the shared desktop runner", async () => {
 });
 
 test.skipIf(process.platform === "win32")("desktop process and mailbox lifecycle leaves no child behind", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-desktop-driver-"));
+  const root = await makeTempDir("playtest-desktop-driver-");
   const executable = join(root, "native-test.mjs");
   const response = join(root, "tn-playtest-response.json");
   await writeFile(executable, `#!/usr/bin/env node
@@ -77,7 +77,7 @@ setInterval(() => {}, 1000);
 });
 
 test.skipIf(process.platform === "win32")("desktop runner drives a real local mailbox process through shared evaluation", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-desktop-mailbox-"));
+  const projectPath = await makeTempDir("playtest-desktop-mailbox-");
   const mailboxRoot = join(projectPath, "mailbox");
   const artifactDirectory = join(projectPath, "artifacts");
   const executable = join(projectPath, "native-mailbox.mjs");
@@ -126,7 +126,7 @@ test.skipIf(process.platform === "win32")("desktop runner drives a real local ma
 });
 
 test.skipIf(process.platform === "win32")("desktop screenshot clears stale and served mailbox requests", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-desktop-screenshot-"));
+  const root = await makeTempDir("playtest-desktop-screenshot-");
   const executable = join(root, "native-screenshot.mjs");
   const screenshotPath = join(root, "capture.png");
   const requestPath = join(root, "tn-playtest-screenshot-request.txt");
@@ -152,7 +152,7 @@ test.skipIf(process.platform === "win32")("desktop screenshot clears stale and s
 });
 
 test.skipIf(process.platform === "win32")("desktop prepare surfaces stale screenshot cleanup failures", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-desktop-cleanup-"));
+  const root = await makeTempDir("playtest-desktop-cleanup-");
   await mkdir(join(root, "tn-playtest-screenshot-request.txt"));
   const driver = new DesktopPlaytestDriver({ executable: process.execPath, mailboxRoot: root });
   try {
@@ -212,7 +212,7 @@ test("desktop signal during preparation stops before bridge evaluation continues
 });
 
 test.skipIf(process.platform === "win32")("desktop screenshot timeout fails closed", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-desktop-screenshot-"));
+  const root = await makeTempDir("playtest-desktop-screenshot-");
   const executable = join(root, "native-test.mjs");
   await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n");
   await chmod(executable, 0o755);
@@ -236,7 +236,7 @@ interface IDesktopScenarioOptions {
 }
 
 async function runDesktopScenario(minDistance: number, options: IDesktopScenarioOptions = {}) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-desktop-scenario-"));
+  const projectPath = await makeTempDir("playtest-desktop-scenario-");
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: false },

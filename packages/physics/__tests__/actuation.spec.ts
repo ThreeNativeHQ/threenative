@@ -33,26 +33,26 @@ const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
   "docs/verification/native-runtime-census-2026-08-16.md",
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
-  ["src/", 38_082],
-  ["conformance/", 6_176],
-  ["tests/", 8_228],
-  ["scripts/", 9_453],
-  ["include/", 3_760],
-  ["android/", 1_843],
-  ["native/", 2_914],
-  ["Root CMakeLists.txt", 1_665],
+  ["src/", 38_455],
+  ["conformance/", 6_331],
+  ["tests/", 9_192],
+  ["scripts/", 11_641],
+  ["include/", 3_798],
+  ["android/", 1_941],
+  ["native/", 3_276],
+  ["Root CMakeLists.txt", 1_673],
   ["cmake/", 280],
   ["CMakePresets.json", 140],
   ["ios/", 104],
-  ["package.json", 57],
+  ["package.json", 63],
   ["vitest.config.ts", 10],
   // The desktop multitouch injector's ioctl helper, PRD-077. A new counted area, so it appears
   // here rather than growing an existing row: the point of this list is that a native area
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 156 files, 1,371 passed, 35 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 46 files, 276 passed, 39 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 144 files, 1,306 passed, 0 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 319 passed, 30 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();

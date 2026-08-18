@@ -13,7 +13,8 @@ names a bone, and the framework — not the game — undoes the skeleton's world
 [PRD-150](./PRD-150-asset-introspection.md) — neither the loader nor the tooling tells a game
 anything about the model it just loaded.
 
-**Blocks:** [PRD-144](./PRD-144-ragdoll.md) reuses whatever bone-resolution rule this settles.
+**Blocks:** [PRD-144](../done/PRD-144-ragdoll.md) would have reused whatever bone-resolution rule
+this settles.
 
 **Complexity: 4 → LOW-MEDIUM mode.** One resolver, one attach helper, one spec.
 
@@ -104,7 +105,7 @@ Read the batch README's shape rules first. The specific risks here:
 
 - **SRP.** Two free functions, one job each: *list bones*, *attach with scale cancelled*. No
   `BoneAttachment3D` class holding state, no per-frame sync — Three.js parenting already syncs.
-- **DRY.** The bone-name resolution rule appears **once** and [PRD-144](./PRD-144-ragdoll.md)
+- **DRY.** The bone-name resolution rule appears **once** and [PRD-144](../done/PRD-144-ragdoll.md)
   imports it rather than growing a second traversal. If the ragdoll work re-implements
   `skeletonBones`, the split is wrong.
 - **KISS.** No offset/rotation parameters. The caller sets `child.position` and `child.rotation`

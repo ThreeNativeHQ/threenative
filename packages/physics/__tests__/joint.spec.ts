@@ -45,6 +45,11 @@ function step(instance: RAPIER.World, bodies: readonly RigidBody3D[], count = 12
   }
 }
 
+function objectOf(body: RigidBody3D): Object3D {
+  if (body.object === undefined) throw new Error("Joint test body object is missing.");
+  return body.object;
+}
+
 function nextFloat32(value: number): number {
   const buffer = new ArrayBuffer(4);
   const view = new DataView(buffer);
@@ -69,7 +74,7 @@ describe("Joint3D", () => {
 
     step(instance, [anchor, child]);
 
-    expect(child.object.position.distanceTo(anchor.object.position)).toBeCloseTo(2, 2);
+    expect(objectOf(child).position.distanceTo(objectOf(anchor).position)).toBeCloseTo(2, 2);
     joint.dispose();
   });
 
@@ -90,10 +95,11 @@ describe("Joint3D", () => {
 
     step(instance, [anchor, door]);
 
-    expect(Math.abs(door.object.quaternion.x) + Math.abs(door.object.quaternion.z)).toBeLessThan(
-      0.05,
-    );
-    const angle = 2 * Math.atan2(Math.abs(door.object.quaternion.y), door.object.quaternion.w);
+    expect(
+      Math.abs(objectOf(door).quaternion.x) + Math.abs(objectOf(door).quaternion.z),
+    ).toBeLessThan(0.05);
+    const angle =
+      2 * Math.atan2(Math.abs(objectOf(door).quaternion.y), objectOf(door).quaternion.w);
     expect(angle).toBeGreaterThan(0.3);
     expect(angle).toBeLessThan(0.55);
     joint.dispose();
@@ -114,10 +120,10 @@ describe("Joint3D", () => {
 
     step(instance, [anchor, child]);
 
-    expect(child.object.position.x - anchor.object.position.x).toBeCloseTo(2, 2);
-    expect(child.object.position.y - anchor.object.position.y).toBeCloseTo(0, 2);
-    expect(child.object.position.z - anchor.object.position.z).toBeCloseTo(0, 2);
-    expect(child.object.quaternion.angleTo(anchor.object.quaternion)).toBeCloseTo(0, 2);
+    expect(objectOf(child).position.x - objectOf(anchor).position.x).toBeCloseTo(2, 2);
+    expect(objectOf(child).position.y - objectOf(anchor).position.y).toBeCloseTo(0, 2);
+    expect(objectOf(child).position.z - objectOf(anchor).position.z).toBeCloseTo(0, 2);
+    expect(objectOf(child).quaternion.angleTo(objectOf(anchor).quaternion)).toBeCloseTo(0, 2);
     joint.dispose();
   });
 
@@ -137,7 +143,7 @@ describe("Joint3D", () => {
     joint.dispose();
     child.applyImpulse({ x: 4, y: 0, z: 0 });
     step(instance, [anchor, child], 30);
-    expect(child.object.position.x).toBeGreaterThan(2.5);
+    expect(objectOf(child).position.x).toBeGreaterThan(2.5);
 
     const second = body(instance, 2);
     const secondJoint = Joint3D.pin({

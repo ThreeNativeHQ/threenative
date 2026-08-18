@@ -1,6 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -16,7 +15,7 @@ import { PLAYTEST_SETUP_REGISTRY } from "../src/assertions.js";
 import type { IPlaytestResourceAssertion } from "../src/scenario.js";
 
 async function loadScenarioWithAssertions(assertions: unknown) {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-numeric-bound-"));
+  const directory = await makeTempDir("playtest-numeric-bound-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: assertions,
     name: "numeric-bound",

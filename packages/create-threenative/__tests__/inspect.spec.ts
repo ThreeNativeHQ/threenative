@@ -1,7 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   formatAssetInspection,
   inspectAsset,
@@ -137,7 +137,7 @@ function inspectionFixture(): Uint8Array {
 }
 
 async function temporaryAsset(name: string, contents: Uint8Array | string): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "threenative-inspect-"));
+  const directory = await makeTempDir("threenative-inspect-");
   temporaryDirectories.push(directory);
   const file = path.join(directory, name);
   await writeFile(file, contents);
@@ -145,7 +145,7 @@ async function temporaryAsset(name: string, contents: Uint8Array | string): Prom
 }
 
 async function temporaryExternalGltf(resourceUri = "external-fixture.bin"): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "threenative-inspect-external-"));
+  const directory = await makeTempDir("threenative-inspect-external-");
   temporaryDirectories.push(directory);
   const file = path.join(directory, "external-fixture.gltf");
   const binary = new Float32Array([0, 0, 0, 2, 0, 0, 0, 0, 3]);
@@ -257,7 +257,7 @@ describe("asset inspection", () => {
   ])("throws and names the file for %s", async (name, contents, expectedName) => {
     let file: string;
     if (contents === undefined) {
-      const directory = await mkdtemp(path.join(tmpdir(), "threenative-inspect-missing-"));
+      const directory = await makeTempDir("threenative-inspect-missing-");
       temporaryDirectories.push(directory);
       file = path.join(directory, name);
     } else {
