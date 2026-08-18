@@ -421,6 +421,11 @@ public:
                JSObjectIsFunction(context_, (JSObjectRef)value.ptr);
     }
 
+    bool isSameValue(JSValueHandle left, JSValueHandle right) override {
+        if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
+        return JSValueIsStrictEqual(context_, (JSValueRef)left.ptr, (JSValueRef)right.ptr);
+    }
+
     // ========================================================================
     // Object Operations
     // ========================================================================

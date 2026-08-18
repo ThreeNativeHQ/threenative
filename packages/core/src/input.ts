@@ -38,6 +38,8 @@ export interface IInputAction {
   readonly left?: readonly string[];
   /** Any active pointer or touch presses this action. */
   readonly pointer?: boolean;
+  /** Add raw mouse movement since the last input tick to `vector(name)`. */
+  readonly pointerRelative?: boolean;
   /** The +x direction of `vector(name)`. */
   readonly right?: readonly string[];
   /** The +y direction of `vector(name)`. */
@@ -81,8 +83,11 @@ export interface IRawInputState {
   readonly keys: ReadonlySet<string>;
   readonly pointer: {
     buttons: number;
+    captured: boolean;
     down: boolean;
     readonly position: Vector2;
+    /** Accumulated relative mouse motion since the last `tick`, in canvas pixels. */
+    readonly relative: Vector2;
   };
   readonly pointers: ReadonlyMap<number, IRawInputPointer>;
   readonly gamepad: {
@@ -105,6 +110,25 @@ function eventCode(event: Event): string | undefined {
   return candidate.code ?? candidate.key;
 }
 
+type PointerLockTarget = EventTarget & {
+  exitPointerLock?: () => void | Promise<void>;
+  requestPointerLock?: () => void | Promise<void>;
+};
+
+type PointerLockDocument = EventTarget & {
+  exitPointerLock?: () => void | Promise<void>;
+  pointerLockElement?: unknown;
+};
+
+function pointerLockDocument(): PointerLockDocument | undefined {
+  const candidate = (globalThis as typeof globalThis & { document?: unknown }).document;
+  if (candidate === null || typeof candidate !== "object") return undefined;
+  if (typeof (candidate as { addEventListener?: unknown }).addEventListener !== "function") {
+    return undefined;
+  }
+  return candidate as PointerLockDocument;
+}
+
 const browserGamepads: InputPlatformSource = () =>
   (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
 
@@ -114,6 +138,8 @@ export class InputMap {
   #target: EventTarget;
   #heldKeys = new Set<string>();
   #pointerPosition = new Vector2();
+  #pointerRelative = new Vector2();
+  #relativeSample = new Vector2();
   #pointerButtons = 0;
   #pointers = new Map<number, IRawInputPointer>();
   #gamepadAxes: number[] = [];
@@ -152,8 +178,10 @@ export class InputMap {
       keys: this.#heldKeys,
       pointer: {
         buttons: this.#pointerButtons,
+        captured: false,
         down: false,
         position: this.#pointerPosition,
+        relative: this.#pointerRelative,
       },
       pointers: this.#pointers,
     };
@@ -168,6 +196,7 @@ export class InputMap {
       const code = eventCode(event);
       if (code !== undefined) this.#heldKeys.delete(code);
     });
+    this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, true));
     this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, false));
@@ -179,6 +208,12 @@ export class InputMap {
     // for the rare case that does.
     if (contextMenu !== "allow") {
       this.#listen(this.#pointerTarget, "contextmenu", (event) => event.preventDefault());
+    }
+    const lockDocument = pointerLockDocument();
+    const lockTargets = new Set<EventTarget>([this.#target, this.#pointerTarget]);
+    if (lockDocument !== undefined) lockTargets.add(lockDocument);
+    for (const target of lockTargets) {
+      this.#listen(target, "pointerlockchange", () => this.#syncCaptured());
     }
   }
 
@@ -200,7 +235,50 @@ export class InputMap {
       vector.x += this.#gamepadAxes[0] ?? 0;
       vector.y += -(this.#gamepadAxes[1] ?? 0);
     }
-    return vector.clampLength(0, 1);
+    if (binding.pointerRelative === true) vector.add(this.#relativeSample);
+    return binding.pointerRelative === true ? vector : vector.clampLength(0, 1);
+  }
+
+  /** Request pointer capture. Call this from a user gesture on the game surface. */
+  captureMouse(): void {
+    if (this.raw.pointer.captured) return;
+    const target = this.#pointerTarget as PointerLockTarget;
+    if (typeof target.requestPointerLock !== "function") {
+      throw new Error("Pointer capture is unavailable on the input target.");
+    }
+    const result = target.requestPointerLock();
+    if (result === undefined) {
+      this.#syncCaptured(true);
+      return;
+    }
+    void result.then(
+      () => this.#syncCaptured(true),
+      (error: unknown) => {
+        this.raw.pointer.captured = false;
+        throw error;
+      },
+    );
+  }
+
+  /** Release pointer capture. A browser refusal remains an unhandled rejection. */
+  releaseMouse(): void {
+    const document = pointerLockDocument();
+    const target = (document ?? this.#pointerTarget) as PointerLockTarget;
+    const exit = target.exitPointerLock;
+    if (typeof exit !== "function") {
+      throw new Error("Pointer capture release is unavailable on the input target.");
+    }
+    const result = exit.call(target);
+    if (result === undefined) {
+      this.#syncCaptured(false);
+      return;
+    }
+    void result.then(
+      () => this.#syncCaptured(false),
+      (error: unknown) => {
+        throw error;
+      },
+    );
   }
 
   pressed(name: string): boolean {
@@ -230,6 +308,8 @@ export class InputMap {
   }
 
   tick(): void {
+    this.#relativeSample.copy(this.#pointerRelative);
+    this.#pointerRelative.set(0, 0);
     const gamepad = this.#source().find((item) => item !== null);
     this.#gamepadAxes = gamepad?.axes ? Array.from(gamepad.axes) : [];
     this.#gamepadButtons = gamepad?.buttons.map((button) => button.pressed) ?? [];
@@ -260,6 +340,8 @@ export class InputMap {
     this.#pointers.clear();
     this.#pointerButtons = 0;
     this.#pointerPosition.set(0, 0);
+    this.#pointerRelative.set(0, 0);
+    this.#relativeSample.set(0, 0);
     this.raw.pointer.buttons = 0;
     this.raw.pointer.down = false;
     this.#previousPressed.clear();
@@ -268,6 +350,13 @@ export class InputMap {
   }
 
   dispose(): void {
+    if (this.raw.pointer.captured) {
+      try {
+        this.releaseMouse();
+      } catch {
+        this.raw.pointer.captured = false;
+      }
+    }
     for (const [target, type, listener] of this.#listeners)
       target.removeEventListener(type, listener);
     this.#listeners = [];
@@ -301,6 +390,21 @@ export class InputMap {
   #listen(target: EventTarget, type: string, listener: EventListener): void {
     target.addEventListener(type, listener);
     this.#listeners.push([target, type, listener]);
+  }
+
+  #mouseEvent(event: Event): void {
+    const mouse = event as MouseEvent;
+    if (Number.isFinite(mouse.movementX)) this.#pointerRelative.x += mouse.movementX;
+    if (Number.isFinite(mouse.movementY)) this.#pointerRelative.y += mouse.movementY;
+  }
+
+  #syncCaptured(fallback?: boolean): void {
+    const document = pointerLockDocument();
+    if (document?.pointerLockElement !== undefined) {
+      this.raw.pointer.captured = document.pointerLockElement === this.#pointerTarget;
+    } else if (fallback !== undefined) {
+      this.raw.pointer.captured = fallback;
+    }
   }
 
   #pointerEvent(event: Event, down?: boolean): void {
@@ -343,8 +447,13 @@ export class InputMap {
     // rejects pointer capture for those events because no physical pointer is active.
     // Real browser input remains captured; native hosts may omit isTrusted and keep their stub.
     if (pointer.isTrusted !== false) {
-      if (down === true) capture.setPointerCapture?.(id);
-      if (down === false) capture.releasePointerCapture?.(id);
+      try {
+        if (down === true) capture.setPointerCapture?.(id);
+        if (down === false) capture.releasePointerCapture?.(id);
+      } catch (error) {
+        // A pointer-lock transition can make a trusted event temporarily uncapturable.
+        if (!(error instanceof Error && error.name === "InvalidStateError")) throw error;
+      }
     }
   }
 }

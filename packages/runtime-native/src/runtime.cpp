@@ -3508,6 +3508,18 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
 
     // Cached canvas element (created once, returned by getElementById)
     js::JSValueHandle canvasElement_;
+    double playtestPointerX_ = 0;
+    double playtestPointerY_ = 0;
+
+    bool eventListenerCaptureFromArgs(const std::vector<js::JSValueHandle>& args) {
+        if (args.size() < 3) return false;
+
+        const auto options = args[2];
+        if (jsEngine_->isBoolean(options)) return jsEngine_->toBoolean(options);
+        if (!jsEngine_->isObject(options)) return false;
+
+        return jsEngine_->toBoolean(jsEngine_->getProperty(options, "capture"));
+    }
 
     // Hot reload state
     std::string scriptPath_;  // Path to the currently loaded script
@@ -3537,10 +3549,18 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
 
                 std::string eventType = jsEngine_->toString(args[0]);
                 js::JSValueHandle callback = args[1];
-                bool useCapture = args.size() > 2 ? jsEngine_->toBoolean(args[2]) : false;
+                const bool useCapture = eventListenerCaptureFromArgs(args);
+
+                auto& listeners = eventListeners_["canvas"][eventType];
+                for (const auto& listener : listeners) {
+                    if (listener.useCapture == useCapture &&
+                        jsEngine_->isSameValue(listener.callback, callback)) {
+                        return jsEngine_->newUndefined();
+                    }
+                }
 
                 jsEngine_->protect(callback);
-                eventListeners_["canvas"][eventType].push_back({callback, useCapture});
+                listeners.push_back({callback, useCapture});
 
                 // std::cout << "[DOM] canvas.addEventListener('" << eventType << "')" << std::endl;
 
@@ -3551,6 +3571,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // canvas.removeEventListener
         jsEngine_->setProperty(canvas, "removeEventListener",
             jsEngine_->newFunction("removeEventListener", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                removeEventListenerFromTarget("canvas", args);
                 return jsEngine_->newUndefined();
             })
         );
@@ -3558,6 +3579,26 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         jsEngine_->setProperty(canvas, "dispatchEvent",
             jsEngine_->newFunction("dispatchEvent", [this, canvas](void*, const std::vector<js::JSValueHandle>& args) {
                 return dispatchConstructedEvent("canvas", canvas, args);
+            })
+        );
+
+        // Pointer capture is the native equivalent of browser pointer lock. SDL relative mode
+        // supplies the xrel/yrel values already forwarded by platform/input.cpp.
+        jsEngine_->setProperty(canvas, "requestPointerLock",
+            jsEngine_->newFunction("requestPointerLock", [this, canvas](void*, const std::vector<js::JSValueHandle>&) {
+                SDL_Window* window = platform::getSDLWindow();
+                if (window == nullptr || !SDL_SetWindowRelativeMouseMode(window, true)) {
+                    std::string message = "Pointer capture failed";
+                    const char* error = SDL_GetError();
+                    if (error != nullptr && error[0] != '\0') {
+                        message += ": ";
+                        message += error;
+                    }
+                    jsEngine_->throwException(message.c_str());
+                    return jsEngine_->newUndefined();
+                }
+                setPointerLockElement(canvas);
+                return jsEngine_->newUndefined();
             })
         );
 
@@ -3644,6 +3685,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // Create document object
         // ========================================================================
         auto document = jsEngine_->newObject();
+        jsEngine_->setProperty(document, "pointerLockElement", jsEngine_->newNull());
 
         // document.addEventListener
         jsEngine_->setProperty(document, "addEventListener",
@@ -3682,6 +3724,24 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         jsEngine_->setProperty(document, "dispatchEvent",
             jsEngine_->newFunction("dispatchEvent", [this, document](void*, const std::vector<js::JSValueHandle>& args) {
                 return dispatchConstructedEvent("document", document, args);
+            })
+        );
+
+        jsEngine_->setProperty(document, "exitPointerLock",
+            jsEngine_->newFunction("exitPointerLock", [this](void*, const std::vector<js::JSValueHandle>&) {
+                SDL_Window* window = platform::getSDLWindow();
+                if (window == nullptr || !SDL_SetWindowRelativeMouseMode(window, false)) {
+                    std::string message = "Pointer capture release failed";
+                    const char* error = SDL_GetError();
+                    if (error != nullptr && error[0] != '\0') {
+                        message += ": ";
+                        message += error;
+                    }
+                    jsEngine_->throwException(message.c_str());
+                    return jsEngine_->newUndefined();
+                }
+                setPointerLockElement(jsEngine_->newNull());
+                return jsEngine_->newUndefined();
             })
         );
 
@@ -4032,6 +4092,21 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                 event.clientY = jsEngine_->toNumber(args[2]);
                 event.buttons = static_cast<int>(jsEngine_->toNumber(args[3]));
                 event.button = event.buttons == 0 ? 0 : event.buttons - 1;
+                if (event.type == "pointermove") {
+                    event.movementX = event.clientX - playtestPointerX_;
+                    event.movementY = event.clientY - playtestPointerY_;
+                    platform::MouseEventData mouse{};
+                    mouse.type = "mousemove";
+                    mouse.clientX = event.clientX;
+                    mouse.clientY = event.clientY;
+                    mouse.movementX = event.movementX;
+                    mouse.movementY = event.movementY;
+                    mouse.button = event.button;
+                    mouse.buttons = event.buttons;
+                    dispatchMouseEvent(mouse);
+                }
+                playtestPointerX_ = event.clientX;
+                playtestPointerY_ = event.clientY;
                 event.pointerId = 1;
                 event.pointerType = "mouse";
                 event.isPrimary = true;
@@ -4373,6 +4448,32 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         );
     }
 
+    void removeEventListenerFromTarget(
+        const std::string& target,
+        const std::vector<js::JSValueHandle>& args
+    ) {
+        if (args.size() < 2) return;
+
+        const std::string eventType = jsEngine_->toString(args[0]);
+        const js::JSValueHandle callback = args[1];
+        const bool useCapture = eventListenerCaptureFromArgs(args);
+        const auto targetIt = eventListeners_.find(target);
+        if (targetIt == eventListeners_.end()) return;
+
+        const auto typeIt = targetIt->second.find(eventType);
+        if (typeIt == targetIt->second.end()) return;
+
+        auto& listeners = typeIt->second;
+        for (auto it = listeners.begin(); it != listeners.end(); ++it) {
+            if (it->useCapture != useCapture || !jsEngine_->isSameValue(it->callback, callback)) {
+                continue;
+            }
+            jsEngine_->unprotect(it->callback);
+            listeners.erase(it);
+            return;
+        }
+    }
+
     void dispatchToListeners(const std::string& target, const std::string& eventType, js::JSValueHandle event) {
         auto targetIt = eventListeners_.find(target);
         if (targetIt == eventListeners_.end()) {
@@ -4393,6 +4494,17 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
             std::vector<js::JSValueHandle> args = {event};
             jsEngine_->call(listener.callback, jsEngine_->newUndefined(), args);
         }
+    }
+
+    void setPointerLockElement(js::JSValueHandle element) {
+        auto document = jsEngine_->getGlobalProperty("document");
+        if (jsEngine_->isUndefined(document) || jsEngine_->isNull(document)) return;
+        jsEngine_->setProperty(document, "pointerLockElement", element);
+        auto event = jsEngine_->newObject();
+        jsEngine_->setProperty(event, "type", jsEngine_->newString("pointerlockchange"));
+        dispatchToListeners("document", "pointerlockchange", event);
+        dispatchToListeners("window", "pointerlockchange", event);
+        dispatchToListeners("canvas", "pointerlockchange", event);
     }
 
     // Test function to send a mock pointer event - call this after script evaluation

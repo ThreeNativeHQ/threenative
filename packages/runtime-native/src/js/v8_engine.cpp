@@ -722,6 +722,15 @@ public:
         return persistent->Get(isolate_)->IsFunction();
     }
 
+    bool isSameValue(JSValueHandle left, JSValueHandle right) override {
+        if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        auto* leftPersistent = (v8::Persistent<v8::Value>*)left.ptr;
+        auto* rightPersistent = (v8::Persistent<v8::Value>*)right.ptr;
+        return leftPersistent->Get(isolate_)->StrictEquals(rightPersistent->Get(isolate_));
+    }
+
     // ========================================================================
     // Object Operations
     // ========================================================================

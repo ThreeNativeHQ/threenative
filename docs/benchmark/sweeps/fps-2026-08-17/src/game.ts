@@ -16,6 +16,7 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    look: { pointerRelative: true },
     // The sealed proof drives the keyboard only: Space fires, KeyR reloads, Enter retries.
     fire: { buttons: [0], keys: ["Space"] },
     reload: { keys: ["KeyR"] },

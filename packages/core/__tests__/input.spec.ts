@@ -92,6 +92,24 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("keeps input alive when pointer capture is refused during pointer lock", () => {
+    const target = new EventTarget() as EventTarget & {
+      setPointerCapture: (id: number) => void;
+    };
+    target.setPointerCapture = () => {
+      const error = new Error("pointer is no longer capturable");
+      error.name = "InvalidStateError";
+      throw error;
+    };
+    const input = new InputMap(undefined, target);
+    const event = pointerEvent("pointerdown", 7, 10, 20);
+    Object.defineProperty(event, "isTrusted", { value: true });
+
+    expect(() => target.dispatchEvent(event)).not.toThrow();
+    expect(input.raw.pointers.size).toBe(1);
+    input.dispose();
+  });
+
   it("releases one pointer without disturbing the other and promotes the next primary", () => {
     const target = new EventTarget();
     const input = new InputMap({ fire: { pointer: true } }, target);

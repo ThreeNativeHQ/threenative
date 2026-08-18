@@ -1207,6 +1207,43 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
             // Special handling for canvas elements - add Canvas 2D support
             if (tagName == "canvas" || tagName == "CANVAS") {
+                // Three's renderer creates its surface through document.createElement('canvas'),
+                // while the runtime's SDL input dispatches to the main canvas exposed by
+                // document.getElementById('canvas'). Forward the event surface so a renderer
+                // canvas receives the same pointer and pointer-lock events on native.
+                const auto mainCanvas = g_engine->getGlobalProperty("canvas");
+                g_engine->setProperty(element, "addEventListener",
+                    g_engine->newFunction("addEventListener", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
+                        const auto add = g_engine->getProperty(mainCanvas, "addEventListener");
+                        return g_engine->call(add, mainCanvas, args);
+                    })
+                );
+                g_engine->setProperty(element, "removeEventListener",
+                    g_engine->newFunction("removeEventListener", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
+                        const auto remove = g_engine->getProperty(mainCanvas, "removeEventListener");
+                        return g_engine->call(remove, mainCanvas, args);
+                    })
+                );
+                g_engine->setProperty(element, "dispatchEvent",
+                    g_engine->newFunction("dispatchEvent", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
+                        const auto dispatch = g_engine->getProperty(mainCanvas, "dispatchEvent");
+                        return g_engine->call(dispatch, mainCanvas, args);
+                    })
+                );
+                g_engine->setProperty(element, "requestPointerLock",
+                    g_engine->newFunction("requestPointerLock", [mainCanvas, element](void*, const std::vector<js::JSValueHandle>& args) {
+                        const auto request = g_engine->getProperty(mainCanvas, "requestPointerLock");
+                        const auto result = g_engine->call(request, mainCanvas, args);
+                        const auto document = g_engine->getGlobalProperty("document");
+                        g_engine->setProperty(document, "pointerLockElement", element);
+                        const auto event = g_engine->newObject();
+                        g_engine->setProperty(event, "type", g_engine->newString("pointerlockchange"));
+                        const auto dispatch = g_engine->getProperty(document, "dispatchEvent");
+                        g_engine->call(dispatch, document, {event});
+                        return result;
+                    })
+                );
+
                 // Create OffscreenCanvas struct to store state
                 int canvasId = g_nextOffscreenCanvasId++;
                 auto offscreenCanvas = std::make_unique<OffscreenCanvas>();

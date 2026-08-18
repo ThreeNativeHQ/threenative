@@ -133,6 +133,40 @@ test("buttonless native pointer movement drives anonymous evidence", async () =>
   }
 });
 
+test("buttoned native pointer movement presses before moving and releases", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const pointerEvents: string[] = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type) => {
+        pointerEvents.push(type);
+        moving.setHeld(type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { holdFrames: 1, pointerPosition: { buttons: 1, x: 0.25, y: 0.5 }, release: false },
+        { holdFrames: 3, pointerPosition: { buttons: 1, x: 0.75, y: 0.5 }, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(pointerEvents).toEqual(["pointerdown", "pointermove", "pointerup"]);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
 test("one device scenario reaches the same semantic evaluator and passes", async () => {
   const { bridge, setHeld } = movingBridge();
   const host = globalThis as typeof globalThis & INativeHost;

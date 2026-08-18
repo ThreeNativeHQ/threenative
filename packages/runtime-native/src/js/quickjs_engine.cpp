@@ -588,6 +588,11 @@ public:
         return JS_IsFunction(context_, *val);
     }
 
+    bool isSameValue(JSValueHandle left, JSValueHandle right) override {
+        if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
+        return JS_IsSameValue(context_, *(JSValue*)left.ptr, *(JSValue*)right.ptr);
+    }
+
     // ========================================================================
     // Object Operations
     // ========================================================================

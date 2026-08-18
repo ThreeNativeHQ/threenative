@@ -195,10 +195,11 @@ export async function runDevicePlaytest(
         }
       }
       if (step.pointerPosition !== undefined) {
+        const previousPointerButtons = pointerButtons;
         pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
         await transport.call("input.pointer", {
           buttons: pointerButtons,
-          type: pointerButtons === 0 ? "move" : "down",
+          type: pointerButtons === 0 ? "move" : previousPointerButtons === 0 ? "down" : "move",
           x: step.pointerPosition.x * scenario.viewport.width,
           y: step.pointerPosition.y * scenario.viewport.height,
         });

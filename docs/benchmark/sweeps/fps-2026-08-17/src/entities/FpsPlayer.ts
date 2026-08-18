@@ -19,62 +19,10 @@ const CAPSULE_HALF = 0.49;
 const BODY_Y = CAPSULE_RADIUS + CAPSULE_HALF;
 const SPAWN = { x: 0.2, y: BODY_Y, z: FIRING_LINE_Z } as const;
 
-/**
- * Relative mouse look. `ctx.input` exposes absolute pointer position only, and
- * there is no pointer-lock helper anywhere in `@threenative/core`, so the delta
- * has to come off the DOM directly. Web-only by contract; guarded so the native
- * bundle simply never looks around with a mouse.
- */
-class MouseLook {
-  yaw = 0;
-  pitch = 0;
-  #dx = 0;
-  #dy = 0;
-  #detach: (() => void) | undefined;
-
-  attach(): void {
-    if (typeof document === "undefined") return;
-    const onMove = (event: MouseEvent): void => {
-      if (document.pointerLockElement === null) return;
-      this.#dx += event.movementX;
-      this.#dy += event.movementY;
-    };
-    const onClick = (): void => {
-      const canvas = document.querySelector("canvas");
-      if (canvas !== null && document.pointerLockElement === null) void canvas.requestPointerLock();
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("click", onClick);
-    this.#detach = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("click", onClick);
-    };
-  }
-
-  get locked(): boolean {
-    return typeof document !== "undefined" && document.pointerLockElement !== null;
-  }
-
-  consume(scale: number): void {
-    this.yaw -= this.#dx * LOOK_SENSITIVITY * scale;
-    this.pitch = MathUtils.clamp(
-      this.pitch - this.#dy * LOOK_SENSITIVITY * scale,
-      PITCH_MIN,
-      PITCH_MAX,
-    );
-    this.#dx = 0;
-    this.#dy = 0;
-  }
-
-  dispose(): void {
-    this.#detach?.();
-  }
-}
-
 export class FpsPlayer {
   readonly mesh: Mesh;
   readonly body: CharacterBody3D;
-  readonly look = new MouseLook();
+  readonly look = { pitch: 0, yaw: 0 };
   health = 100;
   distanceMoved = 0;
   aiming = false;
@@ -84,6 +32,7 @@ export class FpsPlayer {
   #lastZ: number = SPAWN.z;
   #shake = 0;
   #shakePhase = 0;
+  #detachPointerCapture: (() => void) | undefined;
 
   constructor(ctx: GameCtx, camera: PerspectiveCamera) {
     this.#camera = camera;
@@ -103,7 +52,12 @@ export class FpsPlayer {
     // Face down range with the nearest centre-lane plate on the crosshair.
     this.look.yaw = 0;
     this.look.pitch = 0;
-    this.look.attach();
+    const captureLook = (): void => {
+      if (!ctx.input.raw.pointer.captured) ctx.input.captureMouse();
+    };
+    ctx.renderer.domElement.addEventListener("pointerdown", captureLook);
+    this.#detachPointerCapture = () =>
+      ctx.renderer.domElement.removeEventListener("pointerdown", captureLook);
     camera.fov = FOV_HIP;
     camera.near = 0.02;
     camera.far = 240;
@@ -145,8 +99,16 @@ export class FpsPlayer {
 
   update(ctx: GameCtx, dt: number, canAim: boolean): void {
     this.aiming = canAim && ctx.input.pressed("aim");
-    // Mouse look is half as sensitive down the sights.
-    this.look.consume(this.aiming ? 0.5 : 1);
+    if (ctx.input.raw.pointer.captured) {
+      const look = ctx.input.vector("look");
+      const lookScale = this.aiming ? 0.5 : 1;
+      this.look.yaw -= look.x * LOOK_SENSITIVITY * lookScale;
+      this.look.pitch = MathUtils.clamp(
+        this.look.pitch - look.y * LOOK_SENSITIVITY * lookScale,
+        PITCH_MIN,
+        PITCH_MAX,
+      );
+    }
 
     const move = ctx.input.vector("move");
     const sprinting = ctx.input.pressed("sprint") && !this.aiming;
@@ -205,7 +167,7 @@ export class FpsPlayer {
   }
 
   dispose(): void {
-    this.look.dispose();
+    this.#detachPointerCapture?.();
     this.body.dispose();
     this.mesh.removeFromParent();
   }

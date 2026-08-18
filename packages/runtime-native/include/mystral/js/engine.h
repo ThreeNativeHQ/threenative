@@ -199,6 +199,14 @@ public:
     virtual bool isArray(JSValueHandle value) = 0;
     virtual bool isFunction(JSValueHandle value) = 0;
 
+    /**
+     * Compare two values using the engine's identity semantics.
+     *
+     * Native DOM shims use this for browser-style callback identity, where two
+     * handles for the same JavaScript function must compare equal.
+     */
+    virtual bool isSameValue(JSValueHandle left, JSValueHandle right) = 0;
+
     // ========================================================================
     // Object Operations
     // ========================================================================
