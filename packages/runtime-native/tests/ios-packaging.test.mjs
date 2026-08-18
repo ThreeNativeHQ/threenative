@@ -1,8 +1,9 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+
 import { afterEach, test } from 'vitest';
 
 import {
@@ -28,7 +29,7 @@ afterEach(() => {
 });
 
 test('staging replaces the bundle and records every packaged game asset checksum', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-stage-'));
+  const root = makeTempDirSync('threenative-ios-stage-');
   roots.push(root);
   const templateApp = join(root, 'template.app');
   const output = join(root, 'dist', 'game.app');
@@ -81,7 +82,7 @@ test('staging replaces the bundle and records every packaged game asset checksum
 });
 
 test('iOS no-config staging preserves the compatibility version in the artifact', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-defaults-'));
+  const root = makeTempDirSync('threenative-ios-defaults-');
   roots.push(root);
   const templateApp = join(root, 'template.app');
   const output = join(root, 'game.app');
@@ -99,7 +100,7 @@ test('iOS no-config staging preserves the compatibility version in the artifact'
 });
 
 test('iOS staging allows missing assets, clears stale files, and rejects a file path', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-assets-missing-'));
+  const root = makeTempDirSync('threenative-ios-assets-missing-');
   roots.push(root);
   const templateApp = join(root, 'template.app');
   const output = join(root, 'game.app');
@@ -130,7 +131,7 @@ test('iOS staging allows missing assets, clears stale files, and rejects a file 
 });
 
 test('iOS staging maps configured app fields and compiles a declared icon into the app artifact', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-icon-'));
+  const root = makeTempDirSync('threenative-ios-icon-');
   roots.push(root);
   const templateApp = join(root, 'template.app');
   const output = join(root, 'game.app');
@@ -213,7 +214,7 @@ test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', 
     /requires a darwin-arm64 host.*linux-x64.*Device signing remains OPEN/u,
   );
 
-  const root = mkdtempSync(join(tmpdir(), 'threenative-ios-checksum-'));
+  const root = makeTempDirSync('threenative-ios-checksum-');
   roots.push(root);
   const archive = join(root, 'host.zip');
   writeFileSync(archive, 'corrupt');

@@ -1,6 +1,6 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer } from "node:http";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 
@@ -508,7 +508,7 @@ test("buttonless pointer movement drives anonymous movement through the browser 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Pointer fixture has no port.");
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-runner-pointer-"));
+  const projectPath = await makeTempDir("playtest-runner-pointer-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({
@@ -686,7 +686,7 @@ test("an empty assertion set remains a failed report", () => {
 });
 
 test("the legacy TypeScript scenario is rejected by the JSON loader", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-legacy-scenario-"));
+  const directory = await makeTempDir("playtest-legacy-scenario-");
   await writeFile(join(directory, "play.playtest.ts"), "export const playScenario = {};\n");
 
   await expect(loadPlaytestScenario(directory, "play.playtest.ts")).rejects.toMatchObject({

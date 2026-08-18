@@ -1,7 +1,7 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   GOLDEN_PATH_STEPS,
   type TemplateStep,
@@ -46,7 +46,7 @@ describe("golden path matrix", () => {
   });
 
   it("runs the generated adopter scaffold script from the packed command path", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-script-"));
+    const root = await makeTempDir("threenative-golden-path-script-");
     try {
       const cli = path.join(root, "create-threenative-0.1.0.tgz");
       const core = path.join(root, "threenative-core-0.1.0.tgz");
@@ -65,7 +65,7 @@ describe("golden path matrix", () => {
   });
 
   it("reports the failing layer, project, search location, and corrective command", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-command-"));
+    const root = await makeTempDir("threenative-golden-path-command-");
     try {
       await expect(
         runCommand("test", process.execPath, ["-e", "process.exit(7)"], root),
@@ -81,7 +81,7 @@ describe("golden path matrix", () => {
   });
 
   it("executes project corrective commands from their recorded cwd", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-corrective-"));
+    const root = await makeTempDir("threenative-golden-path-corrective-");
     try {
       const project = path.join(root, "game");
       await mkdir(project, { recursive: true });
@@ -118,9 +118,7 @@ describe("golden path matrix", () => {
   }, 30_000);
 
   it("creates and executes the scaffold recovery command before reporting a missing dependency", async () => {
-    const root = await mkdtemp(
-      path.join(os.tmpdir(), "threenative-golden-path-scaffold-recovery-"),
-    );
+    const root = await makeTempDir("threenative-golden-path-scaffold-recovery-");
     const originalPath = process.env.PATH;
     try {
       const templatesRoot = path.join(root, "templates");
@@ -176,7 +174,7 @@ describe("golden path matrix", () => {
   });
 
   it("discovers every template directory instead of carrying a list", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-templates-"));
+    const root = await makeTempDir("threenative-golden-path-templates-");
     try {
       for (const [name, genre] of [
         ["alpha", "arcade"],
@@ -202,7 +200,7 @@ describe("golden path matrix", () => {
   });
 
   it("fails closed when the template directory is empty", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-empty-"));
+    const root = await makeTempDir("threenative-golden-path-empty-");
     try {
       expect(() => discoverGoldenPathTemplates(root)).toThrow(/TN_GOLDEN_PATH_TEMPLATES_EMPTY/u);
     } finally {
@@ -211,7 +209,7 @@ describe("golden path matrix", () => {
   });
 
   it("launches an MCP server and checks tools plus sculpt resources over stdio", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-mcp-"));
+    const root = await makeTempDir("threenative-golden-path-mcp-");
     try {
       const server = path.join(root, "server.mjs");
       await writeFile(
@@ -254,7 +252,7 @@ input.on("line", (line) => {
   });
 
   it("packs and scaffolds the mutated CLI before observing its broken dependency", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-packed-control-"));
+    const root = await makeTempDir("threenative-golden-path-packed-control-");
     try {
       const staging = path.join(root, "packages");
       await mkdir(staging, { recursive: true });

@@ -1,5 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
+
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -56,7 +57,7 @@ describe("count-loc", () => {
   });
 
   it("fails closed when a counted fixture imports an uncounted sibling", () => {
-    const root = mkdtempSync(join(tmpdir(), "count-loc-closure-"));
+    const root = makeTempDirSync("count-loc-closure-");
     try {
       writeFileSync(join(root, "main.ts"), 'import "./helper.js";\n');
       writeFileSync(join(root, "helper.ts"), "export const helper = true;\n");
@@ -67,7 +68,7 @@ describe("count-loc", () => {
   });
 
   it("ratchets down and rejects growth", () => {
-    const root = mkdtempSync(join(tmpdir(), "count-loc-ratchet-"));
+    const root = makeTempDirSync("count-loc-ratchet-");
     try {
       mkdirSync(join(root, "benchmark"));
       writeFileSync(

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   collectQualityFindings,
   loadQualityBaseline,
@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-quality-"));
+  const root = await makeTempDir("threenative-quality-");
   temporaryRoots.push(root);
   await writeFile(path.join(root, "biome.json"), JSON.stringify({ files: { ignore: [] } }));
   await mkdir(path.join(root, "packages", "core", "src"), { recursive: true });

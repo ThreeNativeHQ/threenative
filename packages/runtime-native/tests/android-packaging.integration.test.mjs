@@ -1,15 +1,8 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import {
-  chmodSync,
-  copyFileSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync,  } from 'node:fs';
+
 import { dirname, join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
@@ -32,7 +25,7 @@ function copyRuntimeFile(runtime, relative) {
 }
 
 function createFakeAndroidRuntime() {
-  const runtime = mkdtempSync(join(tmpdir(), 'threenative-android-package-'));
+  const runtime = makeTempDirSync('threenative-android-package-');
   roots.push(runtime);
   for (const relative of [
     'android/app/build.gradle.kts',
@@ -73,7 +66,7 @@ function artifactEntry(apk, entry) {
 }
 
 function runActivityMetadataProbe() {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-android-metadata-'));
+  const root = makeTempDirSync('threenative-android-metadata-');
   roots.push(root);
   const sources = {
     'android/os/Bundle.java': `package android.os;
@@ -238,7 +231,7 @@ test('Android activity retrieves config metadata through PackageManager', () => 
 });
 
 test('real Android packaging emits configured and no-config artifacts through the default path', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-android-package-project-'));
+  const root = makeTempDirSync('threenative-android-package-project-');
   roots.push(root);
   const runtime = createFakeAndroidRuntime();
   const bundle = join(root, 'game.js');

@@ -1,5 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
+
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { assertDocLinks, checkDocLinks } from "../check-doc-links.js";
@@ -7,7 +8,7 @@ import { assertDocLinks, checkDocLinks } from "../check-doc-links.js";
 const temporaryRoots: string[] = [];
 
 function fixture(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "check-doc-links-"));
+  const root = makeTempDirSync("check-doc-links-");
   temporaryRoots.push(root);
   for (const [file, contents] of Object.entries(files)) {
     const absoluteFile = join(root, file);

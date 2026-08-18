@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -14,7 +14,7 @@ import { PLAYTEST_SETUP_REGISTRY } from "../src/assertions.js";
 import type { IPlaytestResourceAssertion } from "../src/scenario.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   const scenario = {
     artifacts: { screenshots: "before-after" },
     assert: {
@@ -38,7 +38,7 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
 });
 
 test("scenario parser preserves complete held-pointer sets in arrival order", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-pointers-"));
+  const directory = await makeTempDir("playtest-pointers-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { diagnostics: { runtimeReady: true } },
     name: "two-pointers",
@@ -68,7 +68,7 @@ test.each([
   ["zero buttons", { pointers: [{ buttons: 0, id: 1, x: 0.2, y: 0.8 }] }],
   ["out-of-range coordinate", { pointers: [{ id: 1, x: 1.1, y: 0.8 }] }],
 ])("scenario parser rejects malformed multi-pointer input: %s", async (_label, step) => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-pointers-invalid-"));
+  const directory = await makeTempDir("playtest-pointers-invalid-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     name: "invalid-pointers",
     schemaVersion: 1,
@@ -81,7 +81,7 @@ test.each([
 });
 
 test("world assertions preserve and validate a deterministic runtime fingerprint", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-"));
+  const directory = await makeTempDir("playtest-world-runtime-");
   const scenario = {
     assert: {
       world: {
@@ -116,7 +116,7 @@ test("resource assertions preserve an inclusive upper numeric bound", async () =
 });
 
 test("world assertions reject unknown runtime fingerprint keys", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-invalid-"));
+  const directory = await makeTempDir("playtest-world-runtime-invalid-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { world: { runtime: { agent: "browser", core: "0.1.0", randomState: 1, rapier: null, step: 1 / 60, extra: true }, seed: 1 } },
     name: "invalid-world-runtime",
@@ -134,7 +134,7 @@ test("scenario loading rejects mixed frame and fixed timing", async () => {
     { holdTicks: 5, press: "KeyW", release: true, waitFrames: 5 },
     { holdFrames: 5, press: "KeyW", release: true, waitTicks: 5 },
   ].entries()) {
-    const directory = await mkdtemp(join(tmpdir(), `playtest-mixed-timing-${index}-`));
+    const directory = await makeTempDir(`playtest-mixed-timing-${index}-`);
     await writeFile(
       join(directory, "scenario.json"),
       JSON.stringify({ name: "mixed-timing", schemaVersion: 1, steps: [step] }),
@@ -147,7 +147,7 @@ test("scenario loading rejects mixed frame and fixed timing", async () => {
 });
 
 test("scenario loading rejects duplicate step labels", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-duplicate-label-"));
+  const directory = await makeTempDir("playtest-duplicate-label-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     name: "duplicate-label",
     schemaVersion: 1,
@@ -163,7 +163,7 @@ test("scenario loading rejects duplicate step labels", async () => {
 });
 
 test("scenario loading rejects a wrong-typed step label", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-wrong-label-"));
+  const directory = await makeTempDir("playtest-wrong-label-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     name: "wrong-label",
     schemaVersion: 1,
@@ -176,7 +176,7 @@ test("scenario loading rejects a wrong-typed step label", async () => {
 });
 
 test("scenario loading rejects an atSteps label that was never sampled", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-missing-label-"));
+  const directory = await makeTempDir("playtest-missing-label-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { resources: [{ atSteps: [{ equals: 1, label: "missing" }], id: "GameState", path: "coins" }] },
     name: "missing-label",
@@ -190,7 +190,7 @@ test("scenario loading rejects an atSteps label that was never sampled", async (
 });
 
 test("scenario loading preserves the framebuffer coverage contract", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-coverage-"));
+  const directory = await makeTempDir("playtest-framebuffer-coverage-");
   const framebufferCoverage = {
     backdrop: [5, 7, 11],
     grid: { columns: 32, rows: 18 },
@@ -225,7 +225,7 @@ test.each([
   ["wrong window type", { backdrop: [5, 7, 11], tolerance: 8, window: "loading" }],
   ["wrong window label type", { backdrop: [5, 7, 11], tolerance: 8, window: { startStep: 1, endStep: "loading" } }],
 ])("scenario loading rejects framebuffer coverage with %s", async (_label, framebufferCoverage) => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-invalid-"));
+  const directory = await makeTempDir("playtest-framebuffer-invalid-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { framebufferCoverage },
     name: "framebuffer-invalid",
@@ -239,7 +239,7 @@ test.each([
 });
 
 test("scenario loading rejects a reversed framebuffer coverage window", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-framebuffer-reversed-"));
+  const directory = await makeTempDir("playtest-framebuffer-reversed-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: {
       framebufferCoverage: {
@@ -262,7 +262,7 @@ test("scenario loading rejects a reversed framebuffer coverage window", async ()
 });
 
 test("schema version 1 parser keeps stable diagnostics", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     name: "invalid",
     schemaVersion: 2,
@@ -285,7 +285,7 @@ test("schema version 1 parser keeps stable diagnostics", async () => {
 });
 
 test("scenario loading rejects unknown assertion kinds instead of ignoring them", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { unknownKind: [] },
     name: "unknown-assertion",
@@ -307,7 +307,7 @@ test("scenario loading rejects unknown assertion kinds instead of ignoring them"
 });
 
 test("scenario loading preserves a resource anyOf contract", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-"));
+  const directory = await makeTempDir("playtest-resource-anyof-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { resources: [{ id: "state", anyOf: [{ path: "jumps", gte: 1, changed: true }, { path: "peakRise", gte: 0.5, changed: true }] }] },
     name: "resource-anyof",
@@ -347,7 +347,7 @@ test.each([
   ["empty", []],
   ["malformed", [{ path: "jumps" }]],
 ])("scenario loading rejects a %s resource anyOf", async (_label, anyOf) => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-anyof-invalid-"));
+  const directory = await makeTempDir("playtest-resource-anyof-invalid-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { resources: [{ id: "state", anyOf }] },
     name: "invalid-resource-anyof",

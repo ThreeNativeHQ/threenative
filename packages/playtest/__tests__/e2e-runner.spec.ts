@@ -1,7 +1,7 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -58,7 +58,7 @@ async function run(
     { holdFrames: 30, press: "KeyW", release: true },
   ],
 ): Promise<IStandalonePlaytestReport> {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-"));
+  const projectPath = await makeTempDir("playtest-e2e-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({
@@ -188,7 +188,7 @@ test("managed server mode rejects an already occupied URL", async () => {
 }, 60_000);
 
 test("managed server teardown releases the URL before the next run", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-managed-server-"));
+  const projectPath = await makeTempDir("playtest-managed-server-");
   const port = await unusedPort();
   const scenario = {
     artifacts: { screenshots: false },
@@ -278,7 +278,7 @@ test("browser args reach the launched chromium", async () => {
   // A WebGPU target needs --enable-unsafe-webgpu to start at all, and there was no
   // way to reach chromium.launch from the config. Asserted through a flag with an
   // observable effect, since WebGPU itself is unavailable in this environment.
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-args-"));
+  const projectPath = await makeTempDir("playtest-e2e-args-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({
@@ -311,7 +311,7 @@ test("browser args reach the launched chromium", async () => {
 }, 60_000);
 
 test("normalized pointer coordinates reach the declared viewport position", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-pointer-"));
+  const projectPath = await makeTempDir("playtest-e2e-pointer-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({
@@ -342,7 +342,7 @@ test("normalized pointer coordinates reach the declared viewport position", asyn
 }, 60_000);
 
 test("setup positions the entity before the run so movement is measured from it", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-e2e-setup-"));
+  const projectPath = await makeTempDir("playtest-e2e-setup-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({

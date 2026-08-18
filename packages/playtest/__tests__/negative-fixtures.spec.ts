@@ -1,7 +1,6 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, beforeAll, afterAll, test } from "vitest";
@@ -31,7 +30,7 @@ afterAll(async () => {
 });
 
 async function runFixture(mode: string, scenarioPath: string) {
-  const artifactRoot = await mkdtemp(join(tmpdir(), `playtest-negative-${mode}-`));
+  const artifactRoot = await makeTempDir(`playtest-negative-${mode}-`);
   return runStandalonePlaytest({
     artifactDirectory: artifactRoot,
     headless: true,

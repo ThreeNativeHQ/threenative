@@ -1,7 +1,8 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, test } from 'vitest';
 
@@ -24,7 +25,7 @@ afterEach(() => {
 });
 
 function fixture(version = DEFAULT_WGPU_VERSION) {
-  const root = mkdtempSync(join(tmpdir(), 'tn-wgpu-version-'));
+  const root = makeTempDirSync('tn-wgpu-version-');
   temporary.push(root);
   const tag = join(root, 'wgpu-native-meta', 'wgpu-native-git-tag');
   const library = join(root, 'lib', process.platform === 'win32' ? 'wgpu_native.lib' : 'libwgpu_native.a');
@@ -70,7 +71,7 @@ test('installed release metadata and library digest are recorded fail closed', (
     () => inspectWgpuInstallation('wgpu', files.root, DEFAULT_WGPU_VERSION),
     /version mismatch/,
   );
-  const incomplete = mkdtempSync(join(tmpdir(), 'tn-wgpu-incomplete-'));
+  const incomplete = makeTempDirSync('tn-wgpu-incomplete-');
   temporary.push(incomplete);
   mkdirSync(join(incomplete, 'lib'), { recursive: true });
   writeFileSync(join(incomplete, 'lib', 'libwgpu_native.a'), 'untagged');

@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { sealedProofHash } from "../make-sandbox";
 import { pairSweeps } from "../sweep-pair";
 
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-pair-"));
+  const root = await makeTempDir("threenative-pair-");
   temporaryRoots.push(root);
   await mkdir(path.join(root, "docs/benchmark/genres/fixture/proof"), { recursive: true });
   await writeFile(

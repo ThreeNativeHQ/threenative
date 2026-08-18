@@ -1,6 +1,7 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -128,7 +129,7 @@ test("provenance hashes environment values and never records them", () => {
 });
 
 test("the reference capture set is hashed as a set, and an empty or missing set is null", () => {
-  const directory = mkdtempSync(join(tmpdir(), "threenative-reference-"));
+  const directory = makeTempDirSync("threenative-reference-");
   try {
     assert.equal(captureSetSha256(join(directory, "absent")), null);
     assert.equal(captureSetSha256(directory), null);

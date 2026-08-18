@@ -1,7 +1,7 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   DEFAULT_DUPLICATE_PAIRS,
   type VisualAbError,
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 async function fixture(templates: readonly string[], onlyBefore: readonly string[] = []) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-ab-"));
+  const root = await makeTempDir("threenative-visual-ab-");
   temporaryRoots.push(root);
   const before = path.join(root, "before");
   const after = path.join(root, "after");
@@ -101,7 +101,7 @@ it("refuses an unpaired set rather than scoring it lopsided", async () => {
 });
 
 it("refuses an empty set", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-ab-"));
+  const root = await makeTempDir("threenative-visual-ab-");
   temporaryRoots.push(root);
   await mkdir(path.join(root, "before"), { recursive: true });
   await mkdir(path.join(root, "after"), { recursive: true });

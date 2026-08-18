@@ -1,6 +1,7 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, writeFileSync } from "node:fs";
+
 import { join } from "node:path";
 import { test } from "vitest";
 
@@ -195,7 +196,7 @@ test("cold-start p95 uses five first-frame samples and fails closed", () => {
 });
 
 test("packaged runtime size is measured after llvm-strip", () => {
-  const workingDirectory = mkdtempSync(join(tmpdir(), "tn-js-engine-size-"));
+  const workingDirectory = makeTempDirSync("tn-js-engine-size-");
   const commands = [];
   try {
     const result = inspectPackagedRuntime("fixture.apk", "arm64-v8a", workingDirectory, {
@@ -247,7 +248,7 @@ test("packaged bundle hash is read from the archived APK", () => {
 });
 
 test("native footprint includes every packaged shared library", () => {
-  const workingDirectory = mkdtempSync(join(tmpdir(), "tn-js-engine-footprint-"));
+  const workingDirectory = makeTempDirSync("tn-js-engine-footprint-");
   try {
     const result = inspectPackagedNativeFootprint("fixture.apk", "arm64-v8a", workingDirectory, {
       run(command, args) {

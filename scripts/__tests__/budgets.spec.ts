@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { budgetErrors, budgetTriggers, collectBudgets, enforceBudgets } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-budget-"));
+  const root = await makeTempDir("threenative-budget-");
   temporaryRoots.push(root);
   return root;
 }

@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 
 const temporaryRoots: string[] = [];
 
@@ -14,7 +14,7 @@ afterEach(async () => {
 
 describe("Biome interface naming gate", () => {
   it("should reject an unprefixed interface added to playtest source", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-biome-naming-"));
+    const root = await makeTempDir("threenative-biome-naming-");
     temporaryRoots.push(root);
     await writeFile(path.join(root, "biome.json"), await readFile(path.resolve("biome.json")));
     const fixture = path.join(root, "packages/playtest/src/fixture.ts");

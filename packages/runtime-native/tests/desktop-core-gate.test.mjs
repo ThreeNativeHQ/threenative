@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+
 import { PNG } from 'pngjs';
 import { afterEach, expect, test } from 'vitest';
 import {
@@ -30,7 +31,7 @@ test('desktop log requires both markers, exact frame completion, and clean error
 });
 
 test('desktop screenshot rejects a single-color image and accepts visible pixels', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-desktop-gate-'));
+  const root = makeTempDirSync('threenative-desktop-gate-');
   roots.push(root);
   const path = join(root, 'frame.png');
   const png = new PNG({ height: 1, width: 2 });

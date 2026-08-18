@@ -1,7 +1,8 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+
 import { afterEach, test } from 'vitest';
 
 import { stageAndroidAssets } from '../scripts/package-android.mjs';
@@ -13,7 +14,7 @@ afterEach(() => {
 });
 
 test('Android staging replaces stale game assets with every public file', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-android-assets-'));
+  const root = makeTempDirSync('threenative-android-assets-');
   roots.push(root);
   const assets = join(root, 'public');
   const destination = join(root, 'apk-assets', 'game');
@@ -31,7 +32,7 @@ test('Android staging replaces stale game assets with every public file', () => 
 });
 
 test('Android staging allows a missing public directory and rejects a file', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-android-assets-missing-'));
+  const root = makeTempDirSync('threenative-android-assets-missing-');
   roots.push(root);
   const destination = join(root, 'apk-assets', 'game');
   mkdirSync(destination, { recursive: true });

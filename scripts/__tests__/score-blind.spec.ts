@@ -1,5 +1,6 @@
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
+
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
@@ -66,7 +67,7 @@ describe("score-blind", () => {
   });
 
   it("writes metadata-free blind image samples and an external reveal", () => {
-    const root = mkdtempSync(join(tmpdir(), "score-blind-images-"));
+    const root = makeTempDirSync("score-blind-images-");
     const bundleDirectory = join(root, "bundle");
     const revealPath = join(root, "reveal.json");
     const bundle = createImageBlindBundle(
@@ -93,7 +94,7 @@ describe("score-blind", () => {
   });
 
   it("voids image bundles with a missing arm or an in-bundle reveal", () => {
-    const root = mkdtempSync(join(tmpdir(), "score-blind-images-invalid-"));
+    const root = makeTempDirSync("score-blind-images-invalid-");
     const png = pngFixture();
     expect(() =>
       createImageBlindBundle(

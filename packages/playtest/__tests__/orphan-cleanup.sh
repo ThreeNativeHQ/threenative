@@ -5,6 +5,42 @@ script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "$script_directory/../../.." && pwd)"
 cd "$repository_root"
 
+count_temp_directories() {
+  ls -d /tmp/threenative-* 2>/dev/null | wc -l || true
+}
+
+case "${1:-}" in
+  --suite-start)
+    if [[ "$#" -ne 2 ]]; then
+      echo "usage: $0 --suite-start MARKER" >&2
+      exit 2
+    fi
+    count_temp_directories >"$2"
+    echo "suite temporary directory baseline recorded: $(<"$2")"
+    exit 0
+    ;;
+  --suite-finish)
+    if [[ "$#" -ne 2 || ! -f "$2" ]]; then
+      echo "usage: $0 --suite-finish MARKER" >&2
+      exit 2
+    fi
+    before_temp_directories="$(<"$2")"
+    after_temp_directories="$(count_temp_directories)"
+    if [[ "$after_temp_directories" != "$before_temp_directories" ]]; then
+      echo "temporary directory count changed across the full test suite: before $before_temp_directories, after $after_temp_directories" >&2
+      exit 1
+    fi
+    echo "suite temporary directory count unchanged: $before_temp_directories"
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    echo "usage: $0 [--suite-start MARKER|--suite-finish MARKER]" >&2
+    exit 2
+    ;;
+esac
+
 if ! browser_path="$(cd -- "$script_directory/.." && node --input-type=module -e 'import { chromium } from "playwright"; process.stdout.write(chromium.executablePath());')"; then
   echo "unverified: Playwright Chromium is not available" >&2
   exit 2
@@ -13,6 +49,8 @@ if [[ ! -x "$browser_path" ]]; then
   echo "unverified: Chromium executable is not installed at $browser_path" >&2
   exit 2
 fi
+
+before_temp_directories="$(count_temp_directories)"
 
 set +e
 run_log="$(mktemp)"
@@ -63,6 +101,12 @@ orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="p
 if [[ -n "$orphans" ]]; then
   echo "orphan processes remain:" >&2
   echo "$orphans" >&2
+  exit 1
+fi
+
+after_temp_directories="$(count_temp_directories)"
+if [[ "$after_temp_directories" -ne "$before_temp_directories" ]]; then
+  echo "temporary directory count changed: before $before_temp_directories, after $after_temp_directories" >&2
   exit 1
 fi
 

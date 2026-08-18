@@ -1,13 +1,14 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
 import { join } from 'node:path';
 import { test } from 'vitest';
 import { stageDesktopFiles } from '../scripts/package-desktop.mjs';
 
 test('desktop public assets are staged at web-root paths', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-desktop-assets-'));
+  const root = makeTempDirSync('threenative-desktop-assets-');
   try {
     const bundle = join(root, 'bundle.js');
     const assets = join(root, 'public');
@@ -29,7 +30,7 @@ test('desktop public assets are staged at web-root paths', () => {
 });
 
 test('desktop staging rejects the reserved internal asset path', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-desktop-assets-'));
+  const root = makeTempDirSync('threenative-desktop-assets-');
   try {
     const bundle = join(root, 'bundle.js');
     const assets = join(root, 'public');
@@ -45,7 +46,7 @@ test('desktop staging rejects the reserved internal asset path', () => {
 });
 
 test('desktop staging embeds the resolved window contract for the native host', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-desktop-config-'));
+  const root = makeTempDirSync('threenative-desktop-config-');
   try {
     const bundle = join(root, 'bundle.js');
     const staging = join(root, 'staging');
@@ -74,7 +75,7 @@ test('desktop staging embeds the resolved window contract for the native host', 
 });
 
 test('desktop native config parser preserves escaped JSON window titles', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-desktop-json-'));
+  const root = makeTempDirSync('threenative-desktop-json-');
   try {
     const host = readFileSync(new URL('../src/cli/main.cpp', import.meta.url), 'utf8');
     const parserStart = host.indexOf('static std::string extractJsonString');

@@ -1,6 +1,7 @@
+import { makeTempDirSync, makeTempDirSyncAt } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -98,7 +99,7 @@ function withPrerequisiteReports(callback, overrides = {}) {
   // `.runtime/` is untracked by design, so a fresh checkout does not have it and `mkdtemp` fails
   // with ENOENT on the parent rather than on anything about this test.
   mkdirSync(join(workspaceRoot, ".runtime"), { recursive: true });
-  const directory = mkdtempSync(join(workspaceRoot, ".runtime/prd056-prerequisites-"));
+  const directory = makeTempDirSyncAt(join(workspaceRoot, ".runtime/prd056-prerequisites-"));
   const paths = {};
   try {
     for (const name of ["prd053", "prd054", "prd046", "prd048"]) {
@@ -362,7 +363,7 @@ test("preflight consumes the complete exact-candidate prerequisite set", () => {
 });
 
 test("artifact provenance is derived from the supplied artifact bytes and rejects a wrong artifact", () => {
-  const directory = mkdtempSync(join(tmpdir(), "prd056-artifact-"));
+  const directory = makeTempDirSync("prd056-artifact-");
   try {
     const artifactPath = join(directory, "candidate.apk");
     writeFileSync(artifactPath, "signed artifact bytes");
@@ -425,7 +426,7 @@ test("iOS signed-device telemetry has a guarded unavailable path and a valid bri
   const blocked = collectIosTelemetry({ durationMs: 200, cadenceMs: 100 });
   assert.equal(blocked.frame.available, false);
   assert.match(blocked.frame.error, /signed-device collector/iu);
-  const directory = mkdtempSync(join(tmpdir(), "prd056-ios-telemetry-"));
+  const directory = makeTempDirSync("prd056-ios-telemetry-");
   try {
     const path = join(directory, "telemetry.json");
     const telemetry = {
@@ -463,7 +464,7 @@ test("lifecycle, unsigned-artifact, and missing-prerequisite controls execute th
 });
 
 test("unsigned and missing-prerequisite controls are not hardcoded outcomes", () => {
-  const directory = mkdtempSync(join(tmpdir(), "prd056-controls-"));
+  const directory = makeTempDirSync("prd056-controls-");
   try {
     const artifactPath = join(directory, "candidate.apk");
     writeFileSync(artifactPath, "candidate bytes");
@@ -572,7 +573,7 @@ test("findExecutable falls back to the Android SDK when PATH has nothing", () =>
   // An SDK installed by Android Studio puts nothing on PATH. Before this fallback the
   // qualification refused with TN_QUALIFY_SIGNING_TOOL_REQUIRED -- a missing-capability error for a
   // tool that was installed -- and "blocked, tool unavailable" reads the same either way.
-  const root = mkdtempSync(join(tmpdir(), "tn-sdk-"));
+  const root = makeTempDirSync("tn-sdk-");
   try {
     mkdirSync(join(root, "build-tools", "9.0.0"), { recursive: true });
     mkdirSync(join(root, "build-tools", "36.0.0"), { recursive: true });
@@ -592,7 +593,7 @@ test("findExecutable falls back to the Android SDK when PATH has nothing", () =>
 });
 
 test("PATH still wins over the SDK, and an explicit override wins over both", () => {
-  const root = mkdtempSync(join(tmpdir(), "tn-sdk-"));
+  const root = makeTempDirSync("tn-sdk-");
   try {
     mkdirSync(join(root, "build-tools", "36.0.0"), { recursive: true });
     mkdirSync(join(root, "bin"), { recursive: true });

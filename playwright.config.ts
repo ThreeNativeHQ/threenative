@@ -1,11 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, defineConfig } from "@playwright/test";
 import { PNG } from "pngjs";
 import { createProject } from "./packages/create-threenative/src/index.js";
+import { makeTempDir } from "./test-support/temp-dir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const starterLookServer = process.argv.includes("--starter-look-server");
@@ -33,7 +34,7 @@ const localPackageSources = await packLocalPackages();
 
 async function packLocalPackages(): Promise<Record<string, string>> {
   const existing = process.env.THREENATIVE_PACKED_PACKAGES;
-  const staging = existing ?? (await mkdtemp(path.join(tmpdir(), "threenative-packed-")));
+  const staging = existing ?? (await makeTempDir("threenative-packed-"));
   if (existing === undefined) {
     for (const [directory] of localPackages) {
       await run("pnpm", ["--filter", `./packages/${directory}`, "run", "build"]);
@@ -79,7 +80,7 @@ if (hotReloadProject !== undefined) process.env.THREENATIVE_HOT_RELOAD_PROJECT =
 async function prepareHotReloadProject(): Promise<string> {
   const existing = await readSharedHotReloadProject();
   if (existing !== undefined) return existing;
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-hot-reload-"));
+  const temporaryRoot = await makeTempDir("threenative-hot-reload-");
   const target = path.join(temporaryRoot, "starter");
   await createProject(
     { install: true, packageSources: localPackageSources, target, template: "starter" },
@@ -137,7 +138,7 @@ async function readSharedHotReloadProject(): Promise<string | undefined> {
 }
 
 async function runStarterLookServer(): Promise<void> {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "threenative-starter-look-"));
+  const temporaryRoot = await makeTempDir("threenative-starter-look-");
   const target = path.join(temporaryRoot, "starter");
   const artifacts = path.join(temporaryRoot, "artifacts");
   await createProject(

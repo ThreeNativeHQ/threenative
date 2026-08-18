@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { readManifest } from "../make-sandbox";
 import { measureSandbox } from "../measure-sandbox";
 
@@ -283,7 +283,7 @@ describe("sweep ledgers", () => {
   });
 
   it("should reject a live ledger with arbitrary proof fields", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-ledger-"));
+    const root = await makeTempDir("threenative-ledger-");
     temporaryRoots.push(root);
     await mkdir(root, { recursive: true });
     await writeFile(
@@ -314,7 +314,7 @@ describe("sweep ledgers", () => {
   });
 
   it("should reject a live ledger whose proof.json is missing", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-ledger-"));
+    const root = await makeTempDir("threenative-ledger-");
     temporaryRoots.push(root);
     await writeFile(
       path.join(root, "sweep.json"),
@@ -340,7 +340,7 @@ describe("sweep ledgers", () => {
   });
 
   it("should reject a live ledger whose proof count disagrees with scenario verdicts", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-ledger-"));
+    const root = await makeTempDir("threenative-ledger-");
     temporaryRoots.push(root);
     await writeFile(
       path.join(root, "proof.json"),

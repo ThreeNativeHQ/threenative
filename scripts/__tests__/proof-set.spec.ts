@@ -1,7 +1,7 @@
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { copyFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { hashProofFiles, resolveGenre, sealedProofFiles, sealedProofHash } from "../make-sandbox";
 
 const GENRES = [
@@ -44,7 +44,7 @@ describe("sealed genre proof set", () => {
     const first = sealedProofHash(process.cwd(), "platformer");
     expect(sealedProofHash(process.cwd(), "platformer")).toBe(first);
     const files = sealedProofFiles(process.cwd(), "platformer");
-    const renamed = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-hash-"));
+    const renamed = await makeTempDir("threenative-proof-hash-");
     try {
       const source = files[0];
       if (source === undefined) throw new Error("The platformer proof set is empty.");

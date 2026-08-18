@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertTemplateSourcesCovered,
   isArchived,
@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 async function temporaryRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const root = await makeTempDir(prefix);
   temporaryRoots.push(root);
   return root;
 }

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 
 const roots: string[] = [];
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function project(name = "fox-game"): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-config-"));
+  const root = await makeTempDir("threenative-config-");
   roots.push(root);
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");

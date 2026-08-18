@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { releaseOrder } from "../release.js";
 
 const roots: string[] = [];
@@ -14,7 +14,7 @@ afterEach(async () => {
 async function manifests(
   entries: readonly { deps?: readonly string[]; name: string }[],
 ): Promise<{ manifest: string; name: string }[]> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-release-order-"));
+  const root = await makeTempDir("threenative-release-order-");
   roots.push(root);
   return entries.map((entry) => {
     const manifest = path.join(root, `${entry.name.replace("/", "-")}.json`);

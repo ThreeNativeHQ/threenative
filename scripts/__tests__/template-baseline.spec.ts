@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { runTemplateBaseline } from "../template-baseline";
 import { TEMPLATE_NAMES } from "../visual-gate";
 
@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-baseline-spec-"));
+  const root = await makeTempDir("threenative-baseline-spec-");
   temporaryRoots.push(root);
   return root;
 }

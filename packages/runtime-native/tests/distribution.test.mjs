@@ -1,9 +1,10 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+
 import { promisify } from 'node:util';
 import { afterEach, test } from 'vitest';
 
@@ -48,7 +49,7 @@ test('unsupported platforms fail closed with the platform-arch string', () => {
 });
 
 test('a missing release lock and a missing platform asset both fail closed', () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-prebuilt-'));
+  const root = makeTempDirSync('threenative-prebuilt-');
   roots.push(root);
   assert.throws(() => readRelease(join(root, 'missing.json'), 'linux-x64'), /linux-x64.*OPEN/);
   const manifest = join(root, 'lock.json');
@@ -73,7 +74,7 @@ test('the default checksum lock URL is tied to the installed package version', (
 });
 
 test('the installer can bootstrap a remote checksum lock before fetching the runtime', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-prebuilt-bootstrap-'));
+  const root = makeTempDirSync('threenative-prebuilt-bootstrap-');
   roots.push(root);
   const runtime = Buffer.from('#!/bin/sh\nexit 0\n');
   let runtimeUrl = '';
@@ -109,7 +110,7 @@ test('the installer can bootstrap a remote checksum lock before fetching the run
 });
 
 test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload before writing', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-android-prebuilt-'));
+  const root = makeTempDirSync('threenative-android-prebuilt-');
   roots.push(root);
   const contents = Object.fromEntries(
     Object.keys(ANDROID_PREBUILT_ASSETS).map((key) => [key, Buffer.from(`payload:${key}`)]),
@@ -159,7 +160,7 @@ test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload befo
 });
 
 test('a packed Android build reconstructs only a checksum-verified Gradle wrapper', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-gradle-wrapper-'));
+  const root = makeTempDirSync('threenative-gradle-wrapper-');
   roots.push(root);
   const wrapper = Buffer.from('verified Gradle wrapper');
   const server = createServer((_request, response) => response.end(wrapper));
@@ -189,7 +190,7 @@ test('a packed Android build reconstructs only a checksum-verified Gradle wrappe
 });
 
 test('corrupted downloads fail checksum verification and are never installed', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-prebuilt-'));
+  const root = makeTempDirSync('threenative-prebuilt-');
   roots.push(root);
   const expected = Buffer.from('verified runtime');
   const corrupted = Buffer.from('corrupted runtime');
@@ -220,7 +221,7 @@ test('corrupted downloads fail checksum verification and are never installed', a
 });
 
 test('a packed consumer runs the allowlisted install hook and verifies its download', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-consumer-'));
+  const root = makeTempDirSync('threenative-consumer-');
   roots.push(root);
   const runtime = Buffer.from('#!/bin/sh\nexit 0\n');
   const server = createServer((_request, response) => response.end(runtime));
@@ -272,7 +273,7 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
 });
 
 test('a corrupted download fails the packed consumer install lifecycle', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-consumer-corrupt-'));
+  const root = makeTempDirSync('threenative-consumer-corrupt-');
   roots.push(root);
   const expected = Buffer.from('verified runtime');
   const server = createServer((_request, response) => response.end('corrupted runtime'));
@@ -320,7 +321,7 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
 });
 
 test('the actual packed archive excludes C++ runtime source', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-pack-'));
+  const root = makeTempDirSync('threenative-pack-');
   roots.push(root);
   const packed = await packRuntime(root);
   const files = packed.files.join('\n');
@@ -334,7 +335,7 @@ test('the actual packed archive excludes C++ runtime source', async () => {
 });
 
 test('the packed archive reaches the production profile command and evaluator', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-profile-pack-'));
+  const root = makeTempDirSync('threenative-profile-pack-');
   roots.push(root);
   const packed = await packRuntime(root);
   const manifest = JSON.parse(

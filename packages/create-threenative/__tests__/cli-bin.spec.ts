@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -22,7 +22,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 test.skipIf(process.platform === "win32")(
   "the installed CLI runs when its entry path traverses a package-manager symlink",
   async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "threenative-create-bin-"));
+    const directory = await makeTempDir("threenative-create-bin-");
     const linkedPackage = path.join(directory, "create-threenative");
     try {
       await symlink(packageRoot, linkedPackage, "dir");

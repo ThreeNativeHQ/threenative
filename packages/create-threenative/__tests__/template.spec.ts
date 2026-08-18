@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createProject } from "../src/index.js";
 
 const templates = ["starter", "minimal"] as const;
@@ -484,7 +484,7 @@ describe("template contracts", () => {
   });
 
   it("should typecheck a minimal scaffold without manual installs", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-typecheck-"));
+    const root = await makeTempDir("threenative-minimal-typecheck-");
     try {
       const result = await createProject(
         { install: false, target: "minimal", template: "minimal" },

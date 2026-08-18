@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { chromium, type Browser, type Page } from "playwright";
@@ -45,7 +45,7 @@ async function solidCanvas(page: Page, color: string): Promise<void> {
 test("captures every render frame in the declared window without a default readback", async () => {
   const page = await browser.newPage();
   await solidCanvas(page, "rgb(5, 7, 11)");
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "framebuffer-coverage-pass-"));
+  const artifactDirectory = await makeTempDir("framebuffer-coverage-pass-");
   await mkdir(artifactDirectory, { recursive: true });
 
   await startFramebufferCoverageProbe(page, {
@@ -70,7 +70,7 @@ test("captures every render frame in the declared window without a default readb
 test("retains the first violating grid and its exact full-frame PNG", async () => {
   const page = await browser.newPage();
   await solidCanvas(page, "rgb(255, 0, 0)");
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "framebuffer-coverage-fail-"));
+  const artifactDirectory = await makeTempDir("framebuffer-coverage-fail-");
 
   await startFramebufferCoverageProbe(page, {
     backdrop: [5, 7, 11],
@@ -97,7 +97,7 @@ test("retains the first violating grid and its exact full-frame PNG", async () =
 test("reports an unreadable framebuffer instead of silently observing zero frames", async () => {
   const page = await browser.newPage();
   await page.setContent("<main>no canvas</main>");
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "framebuffer-coverage-unreadable-"));
+  const artifactDirectory = await makeTempDir("framebuffer-coverage-unreadable-");
 
   await startFramebufferCoverageProbe(page, {
     backdrop: [0, 0, 0],

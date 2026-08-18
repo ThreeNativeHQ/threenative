@@ -1,7 +1,7 @@
-import { cp, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { cp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   RENDER_LAYER_FILES,
@@ -34,7 +34,7 @@ describe("visual gate", () => {
   });
 
   it("discovers an unregistered broken template and reports its missing render file", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-discovery-"));
+    const root = await makeTempDir("threenative-visual-discovery-");
     const broken = path.join(root, "unregistered-broken");
     try {
       await cp(path.resolve("packages/create-threenative/templates/platformer"), broken, {
@@ -59,7 +59,7 @@ describe("visual gate", () => {
   });
 
   it("persists every template capture through the production orchestration", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-visual-capture-sync-"));
+    const root = await makeTempDir("threenative-visual-capture-sync-");
     const visualRoot = path.join(root, "visuals");
     try {
       const captures = await captureAllTemplates(

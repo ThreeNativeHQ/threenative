@@ -1,6 +1,7 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
+
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -155,7 +156,7 @@ describe("Android physics parity verifier negative controls", () => {
   });
 
   it("deletes stale observations and fails when fresh device stdout is missing", () => {
-    const directory = mkdtempSync(join(tmpdir(), "tn-physics-parity-"));
+    const directory = makeTempDirSync("tn-physics-parity-");
     const path = join(directory, "device-observation.json");
     writeFileSync(path, "stale");
     clearOutputs([path]);

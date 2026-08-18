@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assertNativeBundleCompatible,
   build,
@@ -66,7 +66,7 @@ describe("threenative build", () => {
 
   it("delegates byte-identically to the same Vite binary for every template", async () => {
     for (const template of ["minimal", "starter", "platformer"] as const) {
-      const root = await mkdtemp(path.join(os.tmpdir(), `threenative-web-${template}-`));
+      const root = await makeTempDir(`threenative-web-${template}-`);
       roots.push(root);
       const { target } = await createProject({ install: false, target: "game", template }, root);
       const vite = await installDeterministicVite(target);
@@ -127,7 +127,7 @@ describe("threenative build", () => {
   });
 
   it("parses every orientation and defaults missing orientation to landscape", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-orientation-"));
+    const root = await makeTempDir("threenative-orientation-");
     roots.push(root);
     const manifest = path.join(root, "package.json");
     const config = path.join(root, "threenative.config.ts");
@@ -141,7 +141,7 @@ describe("threenative build", () => {
   });
 
   it("fails the native build with a named code for an unrecognised orientation", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-invalid-orientation-"));
+    const root = await makeTempDir("threenative-invalid-orientation-");
     roots.push(root);
     await mkdir(path.join(root, "src"), { recursive: true });
     await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
@@ -160,7 +160,7 @@ describe("threenative build", () => {
   });
 
   it("guards web-only UI on every native target and WASM on mobile only", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mobile-bundle-"));
+    const root = await makeTempDir("threenative-mobile-bundle-");
     roots.push(root);
     const native = path.join(root, "native.js");
     const wasm = path.join(root, "wasm.js");
@@ -183,7 +183,7 @@ describe("threenative build", () => {
   });
 
   it("fails closed when the declared native entry is missing", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-missing-entry-"));
+    const root = await makeTempDir("threenative-missing-entry-");
     roots.push(root);
     await writeFile(
       path.join(root, "package.json"),

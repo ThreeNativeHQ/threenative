@@ -1,19 +1,9 @@
 import { execFile } from "node:child_process";
-import {
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import os from "node:os";
+import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
   cliHelp,
@@ -42,7 +32,7 @@ async function withBrokenTemplateFile<T>(
   content: string | undefined,
   body: (root: string) => Promise<T>,
 ): Promise<T> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-broken-template-"));
+  const root = await makeTempDir("threenative-broken-template-");
   try {
     await cp(TEMPLATE_ROOT, root, { recursive: true });
     const file = path.join(root, relativePath);
@@ -175,7 +165,7 @@ describe("create-threenative", () => {
   });
 
   it("should generate the starter tree without catalog protocols", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-scaffold-"));
+    const root = await makeTempDir("threenative-scaffold-");
     try {
       const result = await createProject(
         { install: false, target: "my-game", template: "starter" },
@@ -216,7 +206,7 @@ describe("create-threenative", () => {
   });
 
   it("should generate loader-valid identifiers at the leading-digit boundary", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-scaffold-identifiers-"));
+    const root = await makeTempDir("threenative-scaffold-identifiers-");
     try {
       for (const [target, expectedId] of [
         ["123-game", "com.threenative.game123game"],
@@ -233,7 +223,7 @@ describe("create-threenative", () => {
   });
 
   it("should scaffold the minimal six-file render layer", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-render-"));
+    const root = await makeTempDir("threenative-minimal-render-");
     try {
       const result = await createProject(
         { install: false, target: "minimal-look", template: "minimal" },
@@ -253,7 +243,7 @@ describe("create-threenative", () => {
   });
 
   it("should not ship recast in a build that never imports the navigation entry", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-minimal-bundle-"));
+    const root = await makeTempDir("threenative-minimal-bundle-");
     try {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
@@ -328,7 +318,7 @@ describe("create-threenative", () => {
   });
 
   it("should scaffold the platformer template with no catalog protocols", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-platformer-"));
+    const root = await makeTempDir("threenative-platformer-");
     try {
       const result = await createProject(
         { install: false, target: "fox-run", template: "platformer" },
@@ -354,7 +344,7 @@ describe("create-threenative", () => {
   });
 
   it("should launch both MCP servers from the project's own node_modules", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-"));
+    const root = await makeTempDir("threenative-mcp-");
     try {
       const result = await createProject(
         { install: false, target: "my-game", template: "starter" },
@@ -427,7 +417,7 @@ describe("create-threenative", () => {
   });
 
   it("should throw when .mcp.json is missing from the template", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-missing-"));
+    const root = await makeTempDir("threenative-mcp-missing-");
     try {
       await withBrokenTemplateFile("starter/.mcp.json", undefined, async (templates) => {
         await expect(
@@ -446,7 +436,7 @@ describe("create-threenative", () => {
   }, 30_000);
 
   it("should throw when .mcp.json omits the sculpt server", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-sculpt-missing-"));
+    const root = await makeTempDir("threenative-mcp-sculpt-missing-");
     try {
       const broken = JSON.stringify({
         mcpServers: {
@@ -473,7 +463,7 @@ describe("create-threenative", () => {
   }, 30_000);
 
   it("should throw when .mcp.json names a package the project does not depend on", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-undeclared-"));
+    const root = await makeTempDir("threenative-mcp-undeclared-");
     try {
       const broken = JSON.stringify({
         mcpServers: {
@@ -504,7 +494,7 @@ describe("create-threenative", () => {
   }, 30_000);
 
   it("should throw when .mcp.json launches an unpinned remote package", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-mcp-npx-"));
+    const root = await makeTempDir("threenative-mcp-npx-");
     try {
       const broken = JSON.stringify({
         mcpServers: {
@@ -542,7 +532,7 @@ describe("create-threenative", () => {
   });
 
   it("should keep a local native runtime optional", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-local-runtime-"));
+    const root = await makeTempDir("threenative-local-runtime-");
     try {
       const result = await createProject(
         {

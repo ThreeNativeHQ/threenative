@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { rmSync, writeFileSync, chmodSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,7 +31,7 @@ const GEOMETRY = { height: 720, screenHeight: 1080, screenWidth: 1920, width: 12
 const roots = [];
 
 function fakeHelper(script) {
-  const root = mkdtempSync(path.join(os.tmpdir(), "threenative-uinput-fake-"));
+  const root = makeTempDirSync("threenative-uinput-fake-");
   roots.push(root);
   const file = path.join(root, "threenative-uinput-touch");
   writeFileSync(file, script);
@@ -148,7 +149,7 @@ describe("desktop multitouch injector", () => {
   it("should release the virtual device on every exit path", async () => {
     // Closing stdin is what issues UI_DEV_DESTROY. A helper left running after a thrown
     // injection is a stale touchscreen the next run aims at by mistake.
-    const marker = path.join(mkdtempSync(path.join(os.tmpdir(), "threenative-uinput-exit-")), "gone");
+    const marker = path.join(makeTempDirSync("threenative-uinput-exit-"), "gone");
     roots.push(path.dirname(marker));
     const helper = fakeHelper(`#!/bin/sh\necho ready\ncat > /dev/null\ntouch ${marker}\n`);
     const device = await openVirtualTouchDevice({ helper });
@@ -163,7 +164,7 @@ describe("desktop multitouch injector", () => {
 
   it("writes both frames and tears down on the happy path", async () => {
     const captured = path.join(
-      mkdtempSync(path.join(os.tmpdir(), "threenative-uinput-capture-")),
+      makeTempDirSync("threenative-uinput-capture-"),
       "stream.bin",
     );
     roots.push(path.dirname(captured));

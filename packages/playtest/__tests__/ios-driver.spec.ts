@@ -1,12 +1,12 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { parseLaunchedPid, XcrunIosDriver } from "../src/runner/ios.js";
 
 test("simctl installs, launches with mailbox environment, and uses the app data container", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-ios-driver-"));
+  const root = await makeTempDir("playtest-ios-driver-");
   const appPath = join(root, "ThreeNative.app");
   const container = join(root, "data-container");
   await mkdir(appPath);
@@ -40,7 +40,7 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
 });
 
 test("simulator mailbox paths are remapped after simctl resolves the container", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-ios-mailbox-"));
+  const root = await makeTempDir("playtest-ios-mailbox-");
   const appPath = join(root, "ThreeNative.app");
   const container = join(root, "container");
   await mkdir(appPath);
@@ -61,7 +61,7 @@ test("simulator mailbox paths are remapped after simctl resolves the container",
 });
 
 test("devicectl mode requires an explicit physical device and uses install plus process launch", async () => {
-  const root = await mkdtemp(join(tmpdir(), "playtest-ios-device-"));
+  const root = await makeTempDir("playtest-ios-device-");
   const appPath = join(root, "ThreeNative.app");
   await mkdir(appPath);
   const calls: readonly string[][] = [];

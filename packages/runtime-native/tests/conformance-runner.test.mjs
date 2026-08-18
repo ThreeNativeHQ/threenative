@@ -1,8 +1,9 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
@@ -77,7 +78,7 @@ test("Android supplemental proof forwards the device without a literal option se
 });
 
 test("dry run validates and bundles implemented rows without a browser or native runtime", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-conformance-"));
+  const dir = makeTempDirSync("threenative-conformance-");
   try {
     const out = join(dir, "dry-report.json");
     const proc = run(["--dry-run", "--out", out], {
@@ -111,7 +112,7 @@ test("dry run validates and bundles implemented rows without a browser or native
 }, 60_000);
 
 test("project mode resolves the configured native entry and dry-bundles only that project", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-parity-project-"));
+  const dir = makeTempDirSync("threenative-parity-project-");
   try {
     mkdirSync(join(dir, "src"));
     writeFileSync(
@@ -145,7 +146,7 @@ test("project mode resolves the configured native entry and dry-bundles only tha
 });
 
 test("project mode fails closed for a missing or escaping native entry", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-parity-project-"));
+  const dir = makeTempDirSync("threenative-parity-project-");
   try {
     writeFileSync(
       join(dir, "package.json"),
@@ -191,7 +192,7 @@ test("browser capture resolves scaffold public assets from the server root", () 
 test("physical Android target distinguishes emulators and requires an explicit device", () => {
   assert.equal(androidDeviceKind({ qemu: "1", hardware: "ranchu" }), "emulator");
   assert.equal(androidDeviceKind({ qemu: "0", hardware: "qcom" }), "physical");
-  const dir = mkdtempSync(join(tmpdir(), "threenative-physical-report-"));
+  const dir = makeTempDirSync("threenative-physical-report-");
   try {
     const out = join(dir, "report.json");
     const proc = run(["--target", "android-hardware", "--out", out]);
@@ -333,7 +334,7 @@ test("Android reports fail closed when multitouch supplemental evidence is missi
 });
 
 test("report validation rejects a pass with null metrics or incomplete browser execution", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-conformance-"));
+  const dir = makeTempDirSync("threenative-conformance-");
   try {
     const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
     const results = registry.tests.map((entry) => ({
@@ -406,7 +407,7 @@ test("help exits without starting any parity lane", () => {
 });
 
 test("execution reports use only pass, fail, or blocked and blocked exits 2", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-conformance-"));
+  const dir = makeTempDirSync("threenative-conformance-");
   try {
     const out = join(dir, "desktop-report.json");
     const proc = run(
@@ -483,7 +484,7 @@ test("screen-space glyph raster fails closed on missing pixels and drifting boun
 });
 
 test("Android conformance override requires an explicit matching bundle hash", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-android-conformance-"));
+  const dir = makeTempDirSync("threenative-android-conformance-");
   try {
     const bundle = join(dir, "row.js");
     const output = join(dir, "assets/scripts/main.js");
@@ -503,7 +504,7 @@ test("Android conformance override requires an explicit matching bundle hash", (
 });
 
 test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-android-deps-"));
+  const dir = makeTempDirSync("threenative-android-deps-");
   try {
     const reason = androidDependencyBlocker(dir);
     assert.match(reason ?? "", /^TN_PARITY_ANDROID_DEPS_BLOCKED:/u);
@@ -517,7 +518,7 @@ test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", (
 });
 
 test("Android parity blocks a partial packaged layout even when the source AAR exists", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-android-partial-prebuilt-"));
+  const dir = makeTempDirSync("threenative-android-partial-prebuilt-");
   try {
     mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
     writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
@@ -531,7 +532,7 @@ test("Android parity blocks a partial packaged layout even when the source AAR e
 });
 
 test("Android parity accepts a source-only SDL3 dependency layout", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-android-source-only-"));
+  const dir = makeTempDirSync("threenative-android-source-only-");
   try {
     mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
     writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
@@ -543,7 +544,7 @@ test("Android parity accepts a source-only SDL3 dependency layout", () => {
 });
 
 test("Android parity accepts a complete packaged dependency layout", () => {
-  const dir = mkdtempSync(join(tmpdir(), "threenative-android-prebuilt-"));
+  const dir = makeTempDirSync("threenative-android-prebuilt-");
   try {
     const files = [
       "android/prebuilt/SDL3-3.2.8.aar",

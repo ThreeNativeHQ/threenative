@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxGeometry, Mesh, MeshBasicMaterial, type Scene as ThreeScene, type Vector2 } from "three";
 import { expect, test } from "vitest";
@@ -41,7 +41,7 @@ const DECLARED_MAX_DRAW_CALLS = 8;
 const DECLARED_MAX_TRIANGLES = 96;
 
 async function scenario(assertion: unknown): Promise<IPlaytestScenario> {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-performance-"));
+  const directory = await makeTempDir("playtest-performance-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { performance: assertion },
     name: "performance-proof",

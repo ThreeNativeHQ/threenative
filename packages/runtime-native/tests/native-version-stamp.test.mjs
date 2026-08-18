@@ -1,8 +1,9 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -35,7 +36,7 @@ afterEach(() => {
 
 /** Configures CMake far enough to evaluate `project()`, without building anything. */
 function projectVersion(packageVersion) {
-  const root = mkdtempSync(join(tmpdir(), "threenative-version-stamp-"));
+  const root = makeTempDirSync("threenative-version-stamp-");
   roots.push(root);
   writeFileSync(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
   // Only the version preamble is exercised: the real CMakeLists pulls in SDL3, Dawn and the

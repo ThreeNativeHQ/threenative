@@ -1,5 +1,6 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
+
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
@@ -19,7 +20,7 @@ function frame(): Buffer {
 }
 
 function bundleRoot(): { bundle: string; critic: string; root: string } {
-  const root = mkdtempSync(join(tmpdir(), "sweep-judge-"));
+  const root = makeTempDirSync("sweep-judge-");
   const bundle = join(root, "bundle");
   const critic = join(root, "critic.json");
   createImageBlindBundle(

@@ -1,6 +1,7 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'vitest';
@@ -217,7 +218,7 @@ test('accepted profile controls are parsed and execution receives every value', 
 });
 
 test('native profile entry replaces a config entry without creating a package conflict', async () => {
-  const project = mkdtempSync(join(tmpdir(), 'tn-profile-entry-'));
+  const project = makeTempDirSync('tn-profile-entry-');
   temporary.push(project);
   mkdirSync(join(project, 'src'));
   writeFileSync(join(project, 'package.json'), JSON.stringify({
@@ -272,7 +273,7 @@ test('startup aggregation rejects failed reports and blank first frames', () => 
 });
 
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {
-  const project = mkdtempSync(join(tmpdir(), 'tn-prd064-scenario-'));
+  const project = makeTempDirSync('tn-prd064-scenario-');
   temporary.push(project);
   mkdirSync(join(project, 'playtests'));
   const assertion = { performance: { maxDrawCalls: 180, maxFrameMsP95: 15, maxTriangles: 100_000 } };
@@ -469,7 +470,7 @@ test('post-warmup frame metrics exclude warmup samples from mean and percentiles
 });
 
 test('slow-path control is bounded and returns the intended exit-1 budget failure', async () => {
-  const output = mkdtempSync(join(tmpdir(), 'tn-prd064-slow-path-'));
+  const output = makeTempDirSync('tn-prd064-slow-path-');
   temporary.push(output);
   assert.match(nativeFrameInstrumentation('slow-native', 3_600), /tnProductionSlowFramesRemaining = 60/u);
   assert.match(nativeFrameInstrumentation('slow-native', 3_600), /tnProductionSlowFramesRemaining -= 1/u);
@@ -534,7 +535,7 @@ test('playtest assertion failure cannot become a clean production run', () => {
 });
 
 test('redaction rejects secrets before creating an output directory', async () => {
-  const output = mkdtempSync(join(tmpdir(), 'tn-prd058-redaction-'));
+  const output = makeTempDirSync('tn-prd058-redaction-');
   temporary.push(output);
   const target = join(output, 'report');
   await assert.rejects(
@@ -545,7 +546,7 @@ test('redaction rejects secrets before creating an output directory', async () =
 });
 
 test('profile control retains an immutable fixture artifact and returns FAIL', async () => {
-  const output = mkdtempSync(join(tmpdir(), 'tn-prd058-profile-'));
+  const output = makeTempDirSync('tn-prd058-profile-');
   temporary.push(output);
   const result = await runProductionProfile({ control: 'slow-path', duration: 60, out: join(output, 'run'), repetitions: 1, target: 'fixture', warmup: 1 });
   assert.equal(result.status, 'FAIL');
@@ -558,7 +559,7 @@ test('profile control retains an immutable fixture artifact and returns FAIL', a
 });
 
 test('slow-startup delays the live fixture launch beyond the five-second budget', async () => {
-  const output = mkdtempSync(join(tmpdir(), 'tn-prd064-startup-'));
+  const output = makeTempDirSync('tn-prd064-startup-');
   temporary.push(output);
   const result = await runProductionProfile({
     control: 'slow-startup',

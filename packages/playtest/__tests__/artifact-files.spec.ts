@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 
@@ -12,7 +12,7 @@ import { writeObservationArtifacts } from "../src/runner/runner.js";
 const directories: string[] = [];
 
 async function artifactDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "tn-playtest-artifacts-"));
+  const directory = await makeTempDir("tn-playtest-artifacts-");
   directories.push(directory);
   return directory;
 }

@@ -1,7 +1,6 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer, type Server } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, beforeAll, afterAll } from "vitest";
@@ -32,7 +31,7 @@ afterAll(async () => {
 });
 
 async function run(mode: string, assert: unknown) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-fails-closed-"));
+  const projectPath = await makeTempDir("playtest-fails-closed-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     artifacts: { screenshots: false },
     assert,
@@ -56,7 +55,7 @@ async function run(mode: string, assert: unknown) {
 }
 
 async function runFixture(mode: string, scenarioPath: string) {
-  const artifactDirectory = await mkdtemp(join(tmpdir(), `playtest-fails-closed-fixture-${mode}-`));
+  const artifactDirectory = await makeTempDir(`playtest-fails-closed-fixture-${mode}-`);
   return runStandalonePlaytest({
     artifactDirectory,
     headless: true,
@@ -89,7 +88,7 @@ test("should fail when network errors are captured and the scenario is silent", 
 });
 
 test("should reject noConsoleErrors:false without a reason", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-invalid-diagnostics-"));
+  const projectPath = await makeTempDir("playtest-invalid-diagnostics-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     assert: { diagnostics: { noConsoleErrors: false } },
     name: "invalid-console-opt-out",
@@ -106,7 +105,7 @@ test("should reject noConsoleErrors:false without a reason", async () => {
 });
 
 test("should reject noNetworkErrors:false without a reason", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-invalid-network-opt-out-"));
+  const projectPath = await makeTempDir("playtest-invalid-network-opt-out-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     assert: { diagnostics: { noNetworkErrors: false } },
     name: "invalid-network-opt-out",

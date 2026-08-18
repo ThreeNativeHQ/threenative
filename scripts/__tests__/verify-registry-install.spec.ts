@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type CommandRunner,
   assertNoLocalSpecifiers,
@@ -13,7 +13,7 @@ import {
 const roots: string[] = [];
 
 async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-registry-spec-"));
+  const root = await makeTempDir("threenative-registry-spec-");
   roots.push(root);
   return root;
 }

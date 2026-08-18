@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
@@ -410,7 +410,7 @@ async function runDevice(
   steps: unknown[] = [{ holdFrames: 3, press: "KeyW", release: true }],
   subject: string | null = "player",
 ) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-device-"));
+  const projectPath = await makeTempDir("playtest-device-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     artifacts: { screenshots: false },
     assert,
@@ -444,7 +444,7 @@ async function runDeviceScenario(
   driver: FakeAndroidDriver,
   timeoutMs = 1_000,
 ) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-device-fixture-"));
+  const projectPath = await makeTempDir("playtest-device-fixture-");
   const fixturePath = join(dirname(fileURLToPath(import.meta.url)), "../../../examples/native-smoke/playtests", scenarioFile);
   await writeFile(join(projectPath, "scenario.json"), await readFile(fixturePath));
   const port = await availablePort();

@@ -1,13 +1,13 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { findPersistentUnusedExports, renderDeletionTable } from "../round-deletions.js";
 
 const roots: string[] = [];
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-round-deletions-"));
+  const root = await makeTempDir("threenative-round-deletions-");
   roots.push(root);
   return root;
 }

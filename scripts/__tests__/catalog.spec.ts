@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { catalogViolations } from "../catalog";
 
 const temporaryRoots: string[] = [];
@@ -18,7 +18,7 @@ describe("workspace catalog", () => {
   });
 
   it("should reject a literal three version", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-catalog-"));
+    const root = await makeTempDir("threenative-catalog-");
     temporaryRoots.push(root);
     await mkdir(path.join(root, "packages", "bad"), { recursive: true });
     await writeFile(
@@ -29,7 +29,7 @@ describe("workspace catalog", () => {
   });
 
   it("should allow a peer range for a host-provided three dependency", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-peer-"));
+    const root = await makeTempDir("threenative-peer-");
     temporaryRoots.push(root);
     await mkdir(path.join(root, "packages", "peer-tool"), { recursive: true });
     await writeFile(

@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { assertNativeBundleCompatible, build } from "../src/build.js";
 
 const run = promisify(execFile);
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function projectRoot(prefix: string): Promise<string> {
-  const project = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const project = await makeTempDir(prefix);
   roots.push(project);
   await mkdir(path.join(project, "src"), { recursive: true });
   await mkdir(path.join(project, "node_modules"), { recursive: true });

@@ -1,6 +1,6 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -14,7 +14,7 @@ import {
 import { PLAYTEST_SETUP_REGISTRY } from "./assertions.js";
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   const scenario = {
     artifacts: { screenshots: "before-after" },
     assert: {
@@ -38,7 +38,7 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
 });
 
 test("schema version 1 parser keeps stable diagnostics", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     name: "invalid",
     schemaVersion: 2,
@@ -58,7 +58,7 @@ test("schema version 1 parser keeps stable diagnostics", async () => {
 });
 
 test("scenario loading rejects unknown assertion kinds instead of ignoring them", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-core-"));
+  const directory = await makeTempDir("playtest-core-");
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
     assert: { unknownKind: [] },
     name: "unknown-assertion",

@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
@@ -139,7 +139,7 @@ async function runIos(
   timeoutMs = 1_000,
   steps: unknown[] = [{ waitFrames: 1 }],
 ) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-ios-"));
+  const projectPath = await makeTempDir("playtest-ios-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
     artifacts: { screenshots: false },
     assert,
@@ -172,7 +172,7 @@ async function runIosScenario(
   driver: FakeIosDriver,
   timeoutMs = 1_000,
 ) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-ios-fixture-"));
+  const projectPath = await makeTempDir("playtest-ios-fixture-");
   const fixturePath = join(dirname(fileURLToPath(import.meta.url)), "../../../examples/native-smoke/playtests", scenarioFile);
   await writeFile(join(projectPath, "scenario.json"), await readFile(fixturePath));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;

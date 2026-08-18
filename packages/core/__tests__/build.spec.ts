@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 const run = promisify(execFile);
 
@@ -33,7 +33,7 @@ describe("core package build", () => {
     const hotDeclaration = await readFile(path.join(dist, "hot.d.ts"), "utf8");
     expect(hotDeclaration).toContain("interface IImportMeta");
 
-    const consumer = await mkdtemp(path.join(os.tmpdir(), "threenative-core-hot-"));
+    const consumer = await makeTempDir("threenative-core-hot-");
     try {
       await writeFile(
         path.join(consumer, "tsconfig.json"),

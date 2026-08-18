@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { agentsFiles, syncAgentDocs } from "../sync-agent-docs.js";
 
 async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-agent-docs-"));
+  const root = await makeTempDir("threenative-agent-docs-");
   await writeFile(path.join(root, "AGENTS.md"), "# root rules\n");
   await mkdir(path.join(root, "packages", "core"), { recursive: true });
   await writeFile(path.join(root, "packages", "core", "AGENTS.md"), "# core rules\n");

@@ -1,12 +1,12 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
 import { evaluateRichPlaytestAssertions, loadPlaytestScenario } from "../src/index.js";
 
 test("reachability loads the measured artifact and evaluates every consecutive hop", async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-reachability-"));
+  const projectPath = await makeTempDir("playtest-reachability-");
   await mkdir(join(projectPath, "artifacts"));
   await writeFile(join(projectPath, "artifacts", "player.json"), JSON.stringify({ jump: { fallDistanceToGround: 4, forwardReach: 4, maxRise: 2.9 } }));
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({

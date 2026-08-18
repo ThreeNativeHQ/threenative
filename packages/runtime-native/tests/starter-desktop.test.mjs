@@ -1,7 +1,8 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -21,7 +22,7 @@ test('starter desktop log fails closed without asset and frame markers', () => {
 });
 
 test('starter desktop screenshot requires the rendered cyan proof asset', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'starter-desktop-test-'));
+  const directory = makeTempDirSync('starter-desktop-test-');
   const path = join(directory, 'frame.png');
   const png = new PNG({ height: 16, width: 16 });
   png.data.fill(255);
@@ -46,7 +47,7 @@ test('native workflow verifies a freshly scaffolded starter on Linux', () => {
 });
 
 test('starter verifier executes through a pnpm-style symlink', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'starter-desktop-cli-'));
+  const directory = makeTempDirSync('starter-desktop-cli-');
   const entrypoint = join(directory, 'verify-starter-desktop.mjs');
   symlinkSync(
     fileURLToPath(new URL('../scripts/verify-starter-desktop.mjs', import.meta.url)),

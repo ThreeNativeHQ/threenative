@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
@@ -27,7 +27,7 @@ async function evaluate(
   report: Partial<Parameters<typeof evaluateRichPlaytestAssertions>[0]["report"]> = {},
   steps: IPlaytestScenario["steps"] = [{ release: true, waitFrames: 1 }],
 ) {
-  const projectPath = await mkdtemp(join(tmpdir(), "playtest-evidence-"));
+  const projectPath = await makeTempDir("playtest-evidence-");
   await writeFile(
     join(projectPath, "scenario.json"),
     JSON.stringify({
@@ -283,7 +283,7 @@ test("an animation assertion reads the runtime animation channel", async () => {
 test("a tag assertion must declare a count or a floor to be worth running", async () => {
   // `tags: [{ tag: "coin" }]` degenerated to "a numeric count exists", so it
   // passed on a count of zero — the exact opposite of what the author meant.
-  const directory = await mkdtemp(join(tmpdir(), "playtest-evidence-tag-"));
+  const directory = await makeTempDir("playtest-evidence-tag-");
   await writeFile(
     join(directory, "scenario.json"),
     JSON.stringify({

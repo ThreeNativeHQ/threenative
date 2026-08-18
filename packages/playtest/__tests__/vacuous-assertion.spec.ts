@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
@@ -16,7 +16,7 @@ import { PLAYTEST_ASSERTION_REGISTRY, PlaytestScenarioError, loadPlaytestScenari
 // throwing, and case-by-case the parsed assertion came back missing the key.
 
 async function load(assert: unknown): Promise<unknown> {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-vacuous-"));
+  const directory = await makeTempDir("playtest-vacuous-");
   await writeFile(
     join(directory, "scenario.json"),
     JSON.stringify({

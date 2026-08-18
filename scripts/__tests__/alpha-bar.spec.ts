@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type RegistryProbe,
   alphaBar,
@@ -144,7 +144,7 @@ function parityLedgers(root: string): void {
 }
 
 async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-alpha-bar-"));
+  const root = await makeTempDir("threenative-alpha-bar-");
   roots.push(root);
   for (const item of PACKAGES)
     write(

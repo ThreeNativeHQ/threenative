@@ -1,8 +1,8 @@
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, readFile, unlink } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 import { expect, test, beforeAll, afterAll } from "vitest";
 
 import { exitCodeForReport } from "../src/runner/cli.js";
@@ -38,7 +38,7 @@ test("browser arguments are copied into capture provenance without mutation", ()
 });
 
 test("the screenshot runner writes and regenerates capture provenance", { timeout: 20_000 }, async () => {
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "playtest-provenance-"));
+  const artifactDirectory = await makeTempDir("playtest-provenance-");
 
   const firstReport = await runVisualPlaytest(artifactDirectory, "rendered");
   expect(exitCodeForReport(firstReport)).toBe(0);
@@ -62,7 +62,7 @@ test("the screenshot runner writes and regenerates capture provenance", { timeou
 });
 
 test("missing adapter and renderer metadata fails without writing unknown provenance", async () => {
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "playtest-provenance-missing-"));
+  const artifactDirectory = await makeTempDir("playtest-provenance-missing-");
   const report = await runVisualPlaytest(artifactDirectory, "good", ["--disable-gpu", "--disable-software-rasterizer"]);
 
   expect(exitCodeForReport(report)).toBe(2);
@@ -72,7 +72,7 @@ test("missing adapter and renderer metadata fails without writing unknown proven
 });
 
 test("generic WebGPU features and limits do not count as adapter identity", async () => {
-  const artifactDirectory = await mkdtemp(join(tmpdir(), "playtest-provenance-generic-"));
+  const artifactDirectory = await makeTempDir("playtest-provenance-generic-");
   const report = await runVisualPlaytest(artifactDirectory, "generic-adapter", ["--disable-gpu"]);
 
   expect(exitCodeForReport(report)).toBe(2);

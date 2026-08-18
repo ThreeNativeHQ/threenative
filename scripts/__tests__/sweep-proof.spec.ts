@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { sealedProofHash } from "../make-sandbox";
 import {
   SWEEP_PROOF_REPORT_MAX_BYTES,
@@ -23,7 +23,7 @@ afterEach(async () => {
 async function manifestRoot(
   proofHash = sealedProofHash(process.cwd(), "platformer"),
 ): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-manifest-"));
+  const root = await makeTempDir("threenative-proof-manifest-");
   temporaryRoots.push(root);
   await writeFile(
     path.join(root, "sweep.json"),
@@ -47,14 +47,14 @@ async function manifestRoot(
 
 describe("sealed proof runner", () => {
   it("keeps proof artifacts under the source with one directory per scenario", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-artifacts-"));
+    const root = await makeTempDir("threenative-proof-artifacts-");
     temporaryRoots.push(root);
     expect(proofArtifactDirectory(root)).toBe(path.join(root, "proof-artifacts"));
     expect(proofArtifactDirectory(root, 2)).toBe(path.join(root, "proof-artifacts", "2"));
   });
 
   it("adds an index entry for archived main.tsx without changing an existing index", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-entry-"));
+    const root = await makeTempDir("threenative-proof-entry-");
     temporaryRoots.push(root);
     await mkdir(path.join(root, "src"), { recursive: true });
     await writeFile(path.join(root, "src", "main.tsx"), "export {}\n");
@@ -188,7 +188,7 @@ describe("sealed proof runner", () => {
   });
 
   it("keeps runner reports larger than Node's default one MiB child-process buffer parseable", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-buffer-"));
+    const root = await makeTempDir("threenative-proof-buffer-");
     temporaryRoots.push(root);
     const fixture = path.join(root, "large-report.mjs");
     await writeFile(
@@ -207,7 +207,7 @@ describe("sealed proof runner", () => {
   });
 
   it("fails closed and retains the artifact when runner output exceeds the explicit limit", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-proof-limit-"));
+    const root = await makeTempDir("threenative-proof-limit-");
     temporaryRoots.push(root);
     const fixture = path.join(root, "oversize-report.mjs");
     await writeFile(

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { nextRoundAction } from "../round-next.js";
 
 const roots: string[] = [];
@@ -96,7 +96,7 @@ function baseLedger(
 }
 
 async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-round-next-"));
+  const root = await makeTempDir("threenative-round-next-");
   roots.push(root);
   await mkdir(path.join(root, "docs/verification"), { recursive: true });
   return root;

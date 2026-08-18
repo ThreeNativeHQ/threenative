@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Page } from "playwright";
@@ -22,7 +22,7 @@ import { connectPlaytestBridge, PlaytestBridgeError } from "../src/runner/bridge
 // resolved instead of throwing for the first three.
 
 async function writeScenario(assert: unknown, steps: IPlaytestStep[] = [{ release: true, waitFrames: 1 }]): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-silent-drop-"));
+  const directory = await makeTempDir("playtest-silent-drop-");
   await writeFile(
     join(directory, "scenario.json"),
     JSON.stringify({
