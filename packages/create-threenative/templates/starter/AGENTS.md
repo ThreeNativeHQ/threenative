@@ -168,6 +168,11 @@ query needs every hit; results are sorted nearest first. `{ screen }` tests a po
 the pointer. Skinned, instanced and morphed meshes fall back to the stock Three.js path
 automatically, so the result always matches `Raycaster.intersectObject`.
 
+When scene collapse runs on a large static scene, a mesh with non-empty `userData` stays as the
+original object in the live graph. Put the target or entity metadata you already use for picking on
+the mesh; `ctx.raycast()` then still returns that mesh and its metadata. Meshes without `userData`
+may be merged into fewer draws.
+
 **`ctx.goto(name)` restarts the current scene.** Calling `ctx.goto("play")` from inside
 `Play` tears the scene down and rebuilds it: `exit()` runs, scheduled callbacks are cleared,
 registered entities are cleared, the Three scene is emptied, then a fresh instance runs

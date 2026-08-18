@@ -22,9 +22,9 @@ import { StorageBufferAttribute } from "three/webgpu";
  * gives each moving part one `mat4` in a storage buffer that the vertex shader looks up. Three.js
  * then walks one object per material instead of one per mesh.
  *
- * It is deliberately invisible to the game: nothing here reads a `userData` flag, and a game that
- * does nothing gets the same picture it had before. Where the picture cannot be preserved the pass
- * declines and says why — it never collapses anyway.
+ * It is deliberately invisible to the game: it reads `userData` only to leave annotated meshes in
+ * the live graph, and a game that does nothing gets the same picture it had before. Where the
+ * picture cannot be preserved the pass declines and says why — it never collapses anyway.
  */
 
 interface IMaterialLike {
@@ -49,6 +49,7 @@ interface IObjectLike {
    * renders, so motion has to be read from here or a moving object reads as still.
    */
   position?: { x: number; y: number; z: number };
+  userData?: Record<string, unknown>;
   quaternion?: { w: number; x: number; y: number; z: number };
   scale?: { x: number; y: number; z: number };
   isCamera?: boolean;
@@ -68,6 +69,10 @@ interface IObjectLike {
   remove(child: IObjectLike): void;
   traverse(callback: (object: IObjectLike) => void): void;
   updateMatrixWorld(force?: boolean): void;
+}
+
+function hasNonEmptyUserData(object: IObjectLike): boolean {
+  return object.userData !== undefined && Object.keys(object.userData).length > 0;
 }
 
 interface IGeometryLike {
@@ -106,7 +111,8 @@ export type SceneCollapseSkipReason =
   | "points"
   | "missingPosition"
   | "missingGeometry"
-  | "missingMaterial";
+  | "missingMaterial"
+  | "userData";
 
 export interface ISceneCollapseSkippedCounts extends Record<SceneCollapseSkipReason, number> {}
 
@@ -265,6 +271,7 @@ function emptySkippedCounts(): ISceneCollapseSkippedCounts {
     missingPosition: 0,
     missingGeometry: 0,
     missingMaterial: 0,
+    userData: 0,
   };
 }
 
@@ -540,6 +547,12 @@ function materialOf(object: IObjectLike): IMaterialLike | undefined {
   const material = object.material;
   if (material === undefined) return undefined;
   return Array.isArray(material) ? material[0] : material;
+}
+
+function cloneMaterialAssignment(
+  material: IMaterialLike | IMaterialLike[],
+): IMaterialLike | IMaterialLike[] {
+  return Array.isArray(material) ? material.map((entry) => entry.clone()) : material.clone();
 }
 
 /**
@@ -896,6 +909,7 @@ export class SceneCollapse {
   }
 
   #skipReason(object: IObjectLike): SceneCollapseSkipReason | undefined {
+    if (hasNonEmptyUserData(object)) return "userData";
     if (this.#excluded(object)) return "cameraOverlay";
     if (object.layers !== undefined && object.layers.mask !== 1) return "layers";
     if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
@@ -1011,6 +1025,7 @@ export class SceneCollapse {
     });
     for (const camera of cameras) {
       const meshes: IObjectLike[] = [];
+      const cameraMeshes: IObjectLike[] = [];
       camera.traverse((object) => {
         if (object === camera) return;
         if (object.isSprite === true) {
@@ -1022,6 +1037,10 @@ export class SceneCollapse {
           return;
         }
         if (object.isMesh !== true) return;
+        cameraMeshes.push(object);
+        // A camera-parented mesh with authored metadata is still part of the game's pick surface.
+        // Keep it on its original layer; the merged overlay below parks consumed sources on layer 0.
+        if (hasNonEmptyUserData(object)) return;
         if (object.geometry?.getAttribute("position") === undefined) {
           addSkipped(skipped, "missingPosition");
           return;
@@ -1094,6 +1113,26 @@ export class SceneCollapse {
 
       const added: IObjectLike[] = [];
       const patched: { material: IMaterialLike; position: unknown; normal: unknown }[] = [];
+      const partsSet = new Set(parts.map((part) => part.object));
+      const overlayMaterials = new Set([...groups.values()].map((group) => group.material));
+      const materialRestores: {
+        object: IObjectLike;
+        original: IMaterialLike | IMaterialLike[];
+        replacement: IMaterialLike | IMaterialLike[];
+      }[] = [];
+      // The merged draw indexes tnOwnerId, so a preserved mesh sharing its material would be
+      // compiled with the overlay node against geometry that has no such attribute. Isolate that
+      // authored mesh before patching the overlay; restore() puts the original sharing back.
+      for (const object of cameraMeshes) {
+        if (partsSet.has(object)) continue;
+        const material = materialOf(object);
+        const original = object.material;
+        if (material === undefined || original === undefined || !overlayMaterials.has(material))
+          continue;
+        const replacement = cloneMaterialAssignment(original);
+        object.material = replacement;
+        materialRestores.push({ object, original, replacement });
+      }
       let failed = false;
       for (const group of groups.values()) {
         const shared = sharedAttributeNames(group.chunks);
@@ -1141,6 +1180,7 @@ export class SceneCollapse {
           entry.material.positionNode = entry.position;
           entry.material.normalNode = entry.normal;
         }
+        for (const entry of materialRestores) entry.object.material = entry.original;
         for (const mesh of added) camera.remove(mesh);
         overlayDraws -= added.length;
         continue;
@@ -1191,6 +1231,9 @@ export class SceneCollapse {
         }
         for (const [object, mask] of masks) {
           if (object.layers !== undefined) object.layers.mask = mask;
+        }
+        for (const entry of materialRestores) {
+          if (entry.object.material === entry.replacement) entry.object.material = entry.original;
         }
         previousRestore?.();
       };

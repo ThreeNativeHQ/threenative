@@ -1,0 +1,29 @@
+{
+  "name": "prd140-picking-250-meshes",
+  "schemaVersion": 1,
+  "subject": "Scene collapse preserves a picked mesh carrying userData",
+  "target": "web",
+  "artifacts": { "screenshots": false },
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "label": "after-collapse",
+      "pointerPosition": { "buttons": 1, "x": 0.5, "y": 0.5 },
+      "release": true,
+      "waitFrames": 30
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "meshCount", "equals": 250, "changed": true },
+      { "id": "GameState", "path": "pickedTarget", "equals": 1, "changed": true }
+    ]
+  }
+}
