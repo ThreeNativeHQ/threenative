@@ -237,6 +237,41 @@ describe("starter playtest proof", () => {
     expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
   });
 
+  it("should assert the seeded level range instead of a generator draw", async () => {
+    const seed = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        resources: Array<{
+          changed?: boolean;
+          equals?: unknown;
+          gte?: number;
+          id: string;
+          lte?: number;
+          path?: string;
+        }>;
+      };
+    };
+    const level = seed.assert.resources.find(
+      ({ id, path: resourcePath }) => id === "GameState" && resourcePath === "levelX",
+    );
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/starter/src/scenes/Play.ts"),
+      "utf8",
+    );
+
+    expect(level).toEqual({ changed: true, gte: -1, id: "GameState", lte: 1, path: "levelX" });
+    expect(level).not.toHaveProperty("equals");
+    expect(play).toContain("const randomStateBeforeLevel = ctx.random.state");
+    expect(play).toContain(
+      "const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX",
+    );
+    expect(play).toContain("ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }))");
+  });
+
   it("should load the packaged texture and GLB through the starter scene", async () => {
     const play = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/scenes/Play.ts"),

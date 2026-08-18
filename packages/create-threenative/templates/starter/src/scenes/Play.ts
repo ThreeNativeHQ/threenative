@@ -64,7 +64,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     sculptureMesh.name = "sculpture";
     sculptureMesh.position.set(-2, 2.6, -1.5);
     ctx.add(sculptureMesh);
+    // Keep the initial -99 sentinel until seed.playtest samples it. If this draw is replaced with
+    // Math.random, the unchanged seeded state reports an out-of-range value and seed.playtest
+    // identifies the bypass instead of silently accepting an unseeded level.
+    const randomStateBeforeLevel = ctx.random.state;
     const levelX = ctx.random.range(-1, 1);
+    const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX;
     const pickupX = 1.2 + makeRandom(Math.round((levelX + 1) * 1000))() * 0.8;
     const floorMesh = new Mesh(roundedBox(10, 0.2, 4, 0.08), materials.floor);
     floorMesh.position.y = -0.1;
@@ -99,7 +104,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("pickup", pickupVisual);
     void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
     springArm.snap(player.mesh.position);
-    ctx.state.set({ levelX });
     ctx.entities.add("player", player);
     ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
     const pickup = new Area3D({
@@ -129,6 +133,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       pickupVisual.visible = false;
     }
 
+    ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }));
     return (frameCtx, dt) => {
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {

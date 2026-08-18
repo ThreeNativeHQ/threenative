@@ -152,6 +152,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Optional dot path inside the component snapshot.", name: "path", type: "string" },
       { description: "Exact expected value.", name: "equals", type: "json" },
       { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Maximum numeric value.", name: "lte", type: "number" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals: json }>" },
       { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
@@ -165,19 +166,20 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "reject-initial-value",
   },
   {
-    description: "Proves resource state after the scenario through equals, gte, textIncludes, or changed checks.",
+    description: "Proves resource state after the scenario through equals, gte, lte, textIncludes, or changed checks.",
     example: { resources: [{ id: "GameState", path: "score", gte: 1, changed: true }] },
     fields: [
       { description: "Resource id.", name: "id", required: true, type: "string" },
       { description: "Optional dot path inside the resource snapshot.", name: "path", type: "string" },
       { description: "Exact expected value.", name: "equals", type: "json" },
       { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Maximum numeric value.", name: "lte", type: "number" },
       { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
       { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
-      { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, textIncludes?: string, changed?: boolean }>" },
+      { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>" },
     ],
     cardinality: "array",
     kind: "resources",
@@ -244,6 +246,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Optional dot path inside the UI snapshot.", name: "path", type: "string" },
       { description: "Exact expected value.", name: "equals", type: "json" },
       { description: "Minimum numeric value.", name: "gte", type: "number" },
+      { description: "Maximum numeric value.", name: "lte", type: "number" },
       { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
@@ -852,6 +855,7 @@ export function evaluateRichPlaytestAssertions(input: {
       const valueChecks = [
         ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(after, assertion.equals)] : []),
         ...(assertion.gte === undefined ? [] : [typeof after === "number" && after >= assertion.gte]),
+        ...(assertion.lte === undefined ? [] : [typeof after === "number" && after <= assertion.lte]),
       ];
       const checks = [
         ...valueChecks,
@@ -1907,6 +1911,10 @@ function evaluatePathAssertion(
     valueChecksBefore.push(typeof before === "number" && before >= assertion.gte);
     valueChecksAfter.push(typeof after === "number" && after >= assertion.gte);
   }
+  if (assertion.lte !== undefined) {
+    valueChecksBefore.push(typeof before === "number" && before <= assertion.lte);
+    valueChecksAfter.push(typeof after === "number" && after <= assertion.lte);
+  }
   if (assertion.textIncludes !== undefined) {
     valueChecksBefore.push(String(textValue(before)).includes(assertion.textIncludes));
     valueChecksAfter.push(String(textValue(after)).includes(assertion.textIncludes));
@@ -1993,6 +2001,7 @@ function componentValueChecks(assertion: IPlaytestComponentAssertion, value: unk
   return [
     ...(Object.hasOwn(assertion, "equals") ? [jsonEqual(resolved, assertion.equals)] : []),
     ...(assertion.gte === undefined ? [] : [typeof resolved === "number" && resolved >= assertion.gte]),
+    ...(assertion.lte === undefined ? [] : [typeof resolved === "number" && resolved <= assertion.lte]),
   ];
 }
 
@@ -2021,6 +2030,7 @@ function trivialAssertionDiagnostic(id: string, path: string | undefined, before
 function hasFinalPathExpectation(assertion: IPlaytestPathAssertion): boolean {
   return Object.hasOwn(assertion, "equals")
     || assertion.gte !== undefined
+    || assertion.lte !== undefined
     || assertion.textIncludes !== undefined
     || assertion.changed !== undefined;
 }
@@ -2028,6 +2038,7 @@ function hasFinalPathExpectation(assertion: IPlaytestPathAssertion): boolean {
 function hasFinalComponentExpectation(assertion: IPlaytestComponentAssertion): boolean {
   return Object.hasOwn(assertion, "equals")
     || assertion.gte !== undefined
+    || assertion.lte !== undefined
     || assertion.changed !== undefined;
 }
 
@@ -2045,6 +2056,7 @@ function pathValuePass(assertion: IPlaytestPathAssertion, value: unknown): boole
   const checks: boolean[] = [];
   if (Object.hasOwn(assertion, "equals")) checks.push(jsonEqual(value, assertion.equals));
   if (assertion.gte !== undefined) checks.push(typeof value === "number" && value >= assertion.gte);
+  if (assertion.lte !== undefined) checks.push(typeof value === "number" && value <= assertion.lte);
   if (assertion.textIncludes !== undefined) checks.push(String(textValue(value)).includes(assertion.textIncludes));
   return checks.length > 0 && checks.every(Boolean);
 }
@@ -2120,6 +2132,7 @@ function expectedPathAssertion(assertion: IPlaytestPathAssertion): Record<string
     ...(assertion.atSteps === undefined ? {} : { atSteps: assertion.atSteps }),
     ...(Object.hasOwn(assertion, "equals") ? { equals: assertion.equals } : {}),
     ...(assertion.gte === undefined ? {} : { gte: assertion.gte }),
+    ...(assertion.lte === undefined ? {} : { lte: assertion.lte }),
     ...(assertion.textIncludes === undefined ? {} : { textIncludes: assertion.textIncludes }),
     ...(assertion.throughoutSteps === undefined ? {} : { throughoutSteps: assertion.throughoutSteps }),
     ...(assertion.changed === undefined ? {} : { changed: assertion.changed }),

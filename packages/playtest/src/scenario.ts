@@ -93,6 +93,7 @@ export interface IPlaytestPathAssertion {
   equals?: unknown;
   gte?: number;
   id: string;
+  lte?: number;
   allowTrivial?: boolean;
   path?: string;
   textIncludes?: string;
@@ -103,6 +104,7 @@ export interface IPlaytestResourcePathAlternative {
   changed?: boolean;
   equals?: unknown;
   gte?: number;
+  lte?: number;
   path: string;
   textIncludes?: string;
 }
@@ -1066,7 +1068,7 @@ function validateOverlayNodeAssertion(value: unknown, scenarioPath: string, obje
 
 function validateComponentAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestComponentAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["allowTrivial", "atSteps", "changed", "component", "entity", "equals", "gte", "path"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "atSteps", "changed", "component", "entity", "equals", "gte", "lte", "path"], scenarioPath, objectPath);
   return {
     ...(record.atSteps === undefined
       ? {}
@@ -1088,6 +1090,7 @@ function validateComponentAssertion(value: unknown, scenarioPath: string, object
     // As above: any JSON value is a legal comparison target.
     ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
     ...present("gte", optionalNumber(record, "gte", scenarioPath, objectPath)),
+    ...present("lte", optionalNumber(record, "lte", scenarioPath, objectPath)),
     ...present("path", optionalString(record, "path", scenarioPath, objectPath)),
   };
 }
@@ -1468,6 +1471,7 @@ function validatePathAssertion(value: unknown): IPlaytestPathAssertion | undefin
     ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
     ...(typeof value.gte === "number" && Number.isFinite(value.gte) ? { gte: value.gte } : {}),
     id: value.id,
+    ...(typeof value.lte === "number" && Number.isFinite(value.lte) ? { lte: value.lte } : {}),
     ...(typeof value.path === "string" ? { path: value.path } : {}),
     ...(typeof value.textIncludes === "string" ? { textIncludes: value.textIncludes } : {}),
     ...(typeof value.throughoutSteps === "boolean" ? { throughoutSteps: value.throughoutSteps } : {}),
@@ -1504,17 +1508,19 @@ function validateResourcePathAlternative(
   objectPath: string,
 ): IPlaytestResourcePathAlternative {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["changed", "equals", "gte", "path", "textIncludes"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["changed", "equals", "gte", "lte", "path", "textIncludes"], scenarioPath, objectPath);
   const changed = optionalBoolean(record, "changed", scenarioPath, objectPath);
   const gte = optionalNumber(record, "gte", scenarioPath, objectPath);
+  const lte = optionalNumber(record, "lte", scenarioPath, objectPath);
   const textIncludes = optionalString(record, "textIncludes", scenarioPath, objectPath);
-  if (!hasKey(record, "equals") && changed === undefined && gte === undefined && textIncludes === undefined) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must declare equals, gte, textIncludes, or changed.`);
+  if (!hasKey(record, "equals") && changed === undefined && gte === undefined && lte === undefined && textIncludes === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must declare equals, gte, lte, textIncludes, or changed.`);
   }
   return {
     ...present("changed", changed),
     ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
     ...present("gte", gte),
+    ...present("lte", lte),
     path: requireString(record, "path", scenarioPath, objectPath),
     ...present("textIncludes", textIncludes),
   };

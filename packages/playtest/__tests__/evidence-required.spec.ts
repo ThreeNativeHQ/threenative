@@ -86,6 +86,30 @@ test("a resource anyOf passes one observed alternative under the same resource i
   expect(evaluated.diagnostics).toEqual([]);
 });
 
+test("a resource range requires both inclusive bounds", async () => {
+  const evaluated = await evaluate(
+    { resources: [{ changed: true, gte: -1, id: "GameState", lte: 1, path: "levelX" }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        resources: { GameState: { before: { levelX: -99 }, after: { levelX: 0.5 } } },
+      },
+    },
+  );
+  const outside = await evaluate(
+    { resources: [{ changed: true, gte: -1, id: "GameState", lte: 1, path: "levelX" }] },
+    {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        resources: { GameState: { before: { levelX: -99 }, after: { levelX: 1.5 } } },
+      },
+    },
+  );
+
+  expect(evaluated.assertions.find(({ id }) => id === "resource.GameState.levelX")?.pass).toBe(true);
+  expect(outside.assertions.find(({ id }) => id === "resource.GameState.levelX")?.pass).toBe(false);
+});
+
 test("a resource anyOf fails closed when no alternative passes", async () => {
   const evaluated = await evaluate(
     { resources: [{ id: "state", anyOf: [{ path: "jumps", gte: 1, changed: true }] }] },

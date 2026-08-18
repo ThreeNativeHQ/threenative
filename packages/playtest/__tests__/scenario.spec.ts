@@ -100,6 +100,21 @@ test("world assertions preserve and validate a deterministic runtime fingerprint
   expect(parsed.assert?.world).toEqual(scenario.assert.world);
 });
 
+test("resource assertions preserve an inclusive upper numeric bound", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-lte-"));
+  const scenario = {
+    assert: { resources: [{ changed: true, gte: -1, id: "state", lte: 1, path: "levelX" }] },
+    name: "resource-lte",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  };
+  await writeFile(join(directory, "scenario.json"), JSON.stringify(scenario));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.resources).toEqual(scenario.assert.resources);
+});
+
 test("world assertions reject unknown runtime fingerprint keys", async () => {
   const directory = await mkdtemp(join(tmpdir(), "playtest-world-runtime-invalid-"));
   await writeFile(join(directory, "scenario.json"), JSON.stringify({
