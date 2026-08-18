@@ -196,6 +196,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Entity tag to count.", name: "tag", required: true, type: "string" },
       { description: "Exact expected entity count.", name: "count", type: "non-negative integer" },
       { description: "Minimum expected entity count.", name: "gte", type: "non-negative integer" },
+      { description: "Maximum expected entity count.", name: "lte", type: "non-negative integer" },
     ],
     cardinality: "array",
     kind: "tags",
@@ -1608,7 +1609,8 @@ function evaluateTagCountAssertion(
   const count = typeof summary?.count === "number" ? summary.count : tags === undefined ? undefined : 0;
   const pass = count !== undefined
     && (assertion.count === undefined || count === assertion.count)
-    && (assertion.gte === undefined || count >= assertion.gte);
+    && (assertion.gte === undefined || count >= assertion.gte)
+    && (assertion.lte === undefined || count <= assertion.lte);
   const result = { details: { count: count ?? null, expected: assertion, tag: assertion.tag }, id: `tags.${assertion.tag}`, pass };
   return pass
     ? { assertion: result }

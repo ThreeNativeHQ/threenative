@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { PLAYTEST_ASSERTION_REGISTRY } from "./assertions.js";
 
+const NUMERIC_COMPARISON_KEYS = ["gte", "lte"] as const;
+
 export type PlaytestTarget = "web" | "desktop" | "bevy";
 export type PlaytestInputDelivery = "deterministic" | "focused-dom";
 
@@ -122,6 +124,7 @@ export interface IPlaytestResourceAnyOfAssertion {
   equals?: never;
   gte?: never;
   id: string;
+  lte?: never;
   allowTrivial?: never;
   path?: never;
   textIncludes?: never;
@@ -188,6 +191,7 @@ export interface IPlaytestAnimationAssertion {
 export interface IPlaytestTagCountAssertion {
   count?: number;
   gte?: number;
+  lte?: number;
   tag: string;
 }
 
@@ -911,7 +915,13 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
             ...(typeof diagnostics.runtimeReady === "boolean" ? { runtimeReady: diagnostics.runtimeReady } : {}),
           },
         }),
-    ...(Array.isArray(value.hud) ? { hud: value.hud.map(validatePathAssertion).filter((item): item is IPlaytestPathAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.hud)
+      ? {
+          hud: value.hud
+            .map((entry, index) => validatePathAssertion(entry, scenarioPath, `assert.hud[${index}]`))
+            .filter((item): item is IPlaytestPathAssertion => item !== undefined),
+        }
+      : {}),
     ...(performance === undefined ? {} : { performance }),
     ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
     ...(movement === undefined
@@ -1070,7 +1080,7 @@ function validateOverlayNodeAssertion(value: unknown, scenarioPath: string, obje
 
 function validateComponentAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestComponentAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["allowTrivial", "atSteps", "changed", "component", "entity", "equals", "gte", "lte", "path"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "atSteps", "changed", "component", "entity", "equals", ...NUMERIC_COMPARISON_KEYS, "path"], scenarioPath, objectPath);
   return {
     ...(record.atSteps === undefined
       ? {}
@@ -1390,21 +1400,23 @@ function validateStateAssertion(value: unknown, scenarioPath: string, objectPath
 
 function validateTagCountAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestTagCountAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["count", "gte", "tag"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["count", ...NUMERIC_COMPARISON_KEYS, "tag"], scenarioPath, objectPath);
   const count = optionalNonNegativeInteger(record, "count", scenarioPath, objectPath);
   const gte = optionalNonNegativeInteger(record, "gte", scenarioPath, objectPath);
+  const lte = optionalNonNegativeInteger(record, "lte", scenarioPath, objectPath);
   // Without a bound the evaluator degrades to "a numeric count exists", which is
   // satisfied by a count of zero — the opposite of what `tags: [{ tag: "coin" }]`
   // was written to prove. Reject it at load time, where the author sees it.
-  if (count === undefined && gte === undefined) {
+  if (count === undefined && gte === undefined && lte === undefined) {
     throw invalidScenario(
       scenarioPath,
-      `'${objectPath}' must declare 'count' or 'gte'; a tag assertion with neither passes on a count of zero.`,
+      `'${objectPath}' must declare 'count', 'gte', or 'lte'; a tag assertion with none passes on a count of zero.`,
     );
   }
   return {
     ...present("count", count),
     ...present("gte", gte),
+    ...present("lte", lte),
     tag: requireString(record, "tag", scenarioPath, objectPath),
   };
 }
@@ -1460,10 +1472,12 @@ function validateVisibilityAssertion(value: unknown): IPlaytestVisibilityAsserti
   };
 }
 
-function validatePathAssertion(value: unknown): IPlaytestPathAssertion | undefined {
+function validatePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPathAssertion | undefined {
   if (!isRecord(value) || typeof value.id !== "string") {
     return undefined;
   }
+  const gte = optionalNumber(value, "gte", scenarioPath, objectPath);
+  const lte = optionalNumber(value, "lte", scenarioPath, objectPath);
   return {
     ...(Array.isArray(value.atSteps) ? { atSteps: value.atSteps.flatMap((step) => isRecord(step) && typeof step.label === "string"
       ? [{ ...(hasKey(step, "equals") ? { equals: step.equals } : {}), label: step.label, ...(typeof step.textIncludes === "string" ? { textIncludes: step.textIncludes } : {}) }]
@@ -1471,9 +1485,9 @@ function validatePathAssertion(value: unknown): IPlaytestPathAssertion | undefin
     ...(typeof value.changed === "boolean" ? { changed: value.changed } : {}),
     ...(typeof value.allowTrivial === "boolean" ? { allowTrivial: value.allowTrivial } : {}),
     ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
-    ...(typeof value.gte === "number" && Number.isFinite(value.gte) ? { gte: value.gte } : {}),
+    ...present("gte", gte),
     id: value.id,
-    ...(typeof value.lte === "number" && Number.isFinite(value.lte) ? { lte: value.lte } : {}),
+    ...present("lte", lte),
     ...(typeof value.path === "string" ? { path: value.path } : {}),
     ...(typeof value.textIncludes === "string" ? { textIncludes: value.textIncludes } : {}),
     ...(typeof value.throughoutSteps === "boolean" ? { throughoutSteps: value.throughoutSteps } : {}),
@@ -1497,7 +1511,7 @@ function validateResourcePathAssertion(value: unknown, scenarioPath: string, obj
       id: requireString(record, "id", scenarioPath, objectPath),
     };
   }
-  const assertion = validatePathAssertion(record);
+  const assertion = validatePathAssertion(record, scenarioPath, objectPath);
   if (assertion === undefined) {
     throw invalidScenario(scenarioPath, `'${objectPath}' must name a resource id.`);
   }
@@ -1510,7 +1524,7 @@ function validateResourcePathAlternative(
   objectPath: string,
 ): IPlaytestResourcePathAlternative {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["changed", "equals", "gte", "lte", "path", "textIncludes"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["changed", "equals", ...NUMERIC_COMPARISON_KEYS, "path", "textIncludes"], scenarioPath, objectPath);
   const changed = optionalBoolean(record, "changed", scenarioPath, objectPath);
   const gte = optionalNumber(record, "gte", scenarioPath, objectPath);
   const lte = optionalNumber(record, "lte", scenarioPath, objectPath);
@@ -1676,7 +1690,11 @@ function validateAssertionKeys(value: Record<string, unknown>, scenarioPath: str
       }
       const suffix = Array.isArray(assertionValue) ? `[${index}]` : "";
       rejectUnknownKeys(item, entry.fields.map((field) => field.name), scenarioPath, `assert.${entry.kind}${suffix}`);
-      rejectWrongTypedFields(entry.fields, item, scenarioPath, `assert.${entry.kind}${suffix}`);
+      const pathAssertionWithId = (entry.kind === "hud" || entry.kind === "resources") && typeof item.id === "string";
+      const fields = pathAssertionWithId
+        ? entry.fields.filter((field) => !NUMERIC_COMPARISON_KEYS.includes(field.name as (typeof NUMERIC_COMPARISON_KEYS)[number]))
+        : entry.fields;
+      rejectWrongTypedFields(fields, item, scenarioPath, `assert.${entry.kind}${suffix}`);
       validateNestedAssertionKeys(entry.kind, item, scenarioPath, suffix);
     });
   }

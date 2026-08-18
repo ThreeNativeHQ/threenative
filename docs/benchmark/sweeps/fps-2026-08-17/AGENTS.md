@@ -379,6 +379,9 @@ other scenarios are starter-game examples that you may delete or rewrite. Steps 
 not milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
 instead of racing it.
 
+Numeric path assertions use inclusive `gte`/`lte` bounds; combine them when a scenario needs a
+closed interval.
+
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. When you add a feature, add the assertion that
 would catch its absence, and run the scenario before reporting the feature works.

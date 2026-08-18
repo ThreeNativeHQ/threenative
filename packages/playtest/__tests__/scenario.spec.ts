@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test, expect } from "vitest";
 
 import {
+  evaluateRichPlaytestAssertions,
   PLAYTEST_ASSERTION_REGISTRY,
   PLAYTEST_CAPABILITY_REGISTRY,
   PlaytestScenarioError,
@@ -12,6 +13,17 @@ import {
 } from "../src/index.js";
 import { PLAYTEST_SETUP_REGISTRY } from "../src/assertions.js";
 import type { IPlaytestResourceAssertion } from "../src/scenario.js";
+
+async function loadScenarioWithAssertions(assertions: unknown) {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-numeric-bound-"));
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: assertions,
+    name: "numeric-bound",
+    schemaVersion: 1,
+    steps: [{ release: true, waitFrames: 1 }],
+  }));
+  return loadPlaytestScenario(directory, "scenario.json");
+}
 
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await makeTempDir("playtest-core-");
@@ -113,6 +125,71 @@ test("resource assertions preserve an inclusive upper numeric bound", async () =
   const parsed = await loadPlaytestScenario(directory, "scenario.json");
 
   expect(parsed.assert?.resources).toEqual(scenario.assert.resources);
+});
+
+test("numeric upper bounds parse at every gte assertion site", async () => {
+  const assertions = {
+    components: [{ component: "Vitals", entity: "player", gte: 0, lte: 100, path: "health" }],
+    hud: [{ gte: 0, id: "timer", lte: 59.9, path: "timeRemaining" }],
+    resources: [
+      { gte: 0, id: "GameState", lte: 59.9, path: "timeRemaining" },
+      { anyOf: [{ gte: -1, lte: 1, path: "levelX" }], id: "state" },
+    ],
+    tags: [{ gte: 0, lte: 3, tag: "coin" }],
+  };
+
+  const parsed = await loadScenarioWithAssertions(assertions);
+
+  expect(parsed.assert).toEqual(assertions);
+});
+
+test("ordinary path assertions reject a wrong-typed lte", async () => {
+  for (const [kind, id] of [["hud", "timer"], ["resources", "GameState"]] as const) {
+    await expect(loadScenarioWithAssertions({
+      [kind]: [{ changed: true, id, lte: "59.9", path: "timeRemaining" }],
+    })).rejects.toMatchObject({
+      diagnostic: {
+        code: "TN_PLAYTEST_SCENARIO_INVALID",
+        message: expect.stringMatching(new RegExp(`assert\\.${kind}\\[0\\]\\.lte.*finite number`, "u")),
+      },
+    });
+  }
+});
+
+test("numeric upper bounds enforce an interval and keep the triviality guard", async () => {
+  const assertions = { resources: [{ changed: true, gte: 0, id: "GameState", lte: 59.9, path: "timeRemaining" }] };
+  const scenario = await loadScenarioWithAssertions(assertions);
+  const evaluate = (scenarioToEvaluate: typeof scenario, before: number, after: number) => evaluateRichPlaytestAssertions({
+    report: {
+      diagnostics: [],
+      distance: 0,
+      entity: "player",
+      expectMoved: false,
+      frames: 1,
+      observations: {
+        console: [],
+        hud: {},
+        network: [],
+        resources: { GameState: { after: { timeRemaining: after }, before: { timeRemaining: before } } },
+      },
+    },
+    scenario: scenarioToEvaluate,
+  });
+
+  const inRange = evaluate(scenario, 60, 59.5);
+  const aboveUpperBound = evaluate(scenario, 60, 60.5);
+  const alreadySatisfied = evaluate(scenario, 30, 29);
+  const lteOnlyScenario = await loadScenarioWithAssertions({
+    resources: [{ changed: true, id: "GameState", lte: 59.9, path: "timeRemaining" }],
+  });
+  const lteOnlyAlreadySatisfied = evaluate(lteOnlyScenario, 30, 29);
+
+  expect(inRange.assertions.find(({ id }) => id === "resource.GameState.timeRemaining")?.pass).toBe(true);
+  expect(aboveUpperBound.assertions.find(({ id }) => id === "resource.GameState.timeRemaining")?.pass).toBe(false);
+  expect(alreadySatisfied.assertions.find(({ id }) => id === "resource.GameState.timeRemaining")?.pass).toBe(false);
+  expect(alreadySatisfied.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_ASSERTION_TRIVIAL");
+  expect(lteOnlyAlreadySatisfied.assertions.find(({ id }) => id === "resource.GameState.timeRemaining")?.pass).toBe(false);
+  expect(lteOnlyAlreadySatisfied.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_ASSERTION_TRIVIAL");
 });
 
 test("world assertions reject unknown runtime fingerprint keys", async () => {
