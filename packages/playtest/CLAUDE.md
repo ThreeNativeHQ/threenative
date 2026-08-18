@@ -43,9 +43,11 @@ or observation code.
 
 ## Determinism
 
-Scenario steps count frames, not milliseconds — `holdFrames`, `waitFrames`. The harness
-drives the fixed-step clock instead of racing it. Never introduce a wall-clock sleep or a
-millisecond-based step into scenario semantics.
+Scenario steps count fixed-step ticks, not milliseconds — use `holdTicks`, `waitTicks`. The
+deprecated `holdFrames` and `waitFrames` aliases remain accepted for compatibility and are
+treated as ticks when the bridge exposes `runtime.fixedStep`; `warmupFrames` remains a genuine
+requestAnimationFrame warmup. Never introduce a wall-clock sleep or a millisecond-based step
+into scenario semantics.
 
 ## This is salvaged code
 

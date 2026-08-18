@@ -38,7 +38,7 @@ same idea pointed at the game:
 {
   "name": "level 1 holds its frame budget",
   "schemaVersion": 1,
-  "steps": [{ "kind": "input", "press": "ArrowRight", "holdFrames": 600, "release": true }],
+  "steps": [{ "kind": "input", "press": "ArrowRight", "holdTicks": 600, "release": true }],
   "assert": {
     "diagnostics": { "noConsoleErrors": true },
     "performance": { "maxFrameMsP95": 16.7, "maxDrawCalls": 180, "maxTriangles": 10000 }

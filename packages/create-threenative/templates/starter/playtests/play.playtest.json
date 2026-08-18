@@ -5,8 +5,8 @@
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 10,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdFrames": 120, "release": true },
-    { "kind": "wait", "waitFrames": 30, "release": true }
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 120, "release": true },
+    { "kind": "wait", "waitTicks": 30, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },

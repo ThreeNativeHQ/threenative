@@ -194,7 +194,7 @@
       }
 
       requestAnimationFrame(function frame() {
-        step();
+        if (mode !== "physics") step();
         requestAnimationFrame(frame);
       });
 

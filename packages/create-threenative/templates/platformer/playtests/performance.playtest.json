@@ -11,8 +11,8 @@
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdFrames": 60, "release": true },
-    { "kind": "wait", "waitFrames": 600, "release": true }
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 60, "release": true },
+    { "kind": "wait", "waitTicks": 600, "release": true }
   ],
   "subject": "player",
   "target": "web",

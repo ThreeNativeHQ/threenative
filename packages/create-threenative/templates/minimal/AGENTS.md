@@ -360,8 +360,9 @@ assertions. That is how a scenario checks game state instead of guessing from pi
 `playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
 minimal gameplay: it checks boot, diagnostics, a nonblank canvas, and player movement without
 depending on the pickup or score. `playtests/play.playtest.json` is the minimal-game example.
-Steps count frames, not milliseconds — `holdFrames`, `waitFrames` — because the harness drives
-the fixed-step clock instead of racing it.
+Steps count fixed-step ticks, not milliseconds — use `holdTicks`, `waitTicks`. The deprecated
+`holdFrames` and `waitFrames` aliases remain accepted for compatibility and are treated as ticks
+on a fixed-step bridge; `warmupFrames` remains a genuine requestAnimationFrame warmup.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. Add the assertion that would catch a feature's

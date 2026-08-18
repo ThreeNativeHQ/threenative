@@ -734,7 +734,7 @@ test("runtimeReady fails when the page never exposes a canvas", () => {
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_RUNTIME_DIAGNOSTIC");
 });
 
-test("frame-timed steps stay on the live browser loop", () => {
+test("legacy frame aliases stay separate from canonical tick helpers", () => {
   expect(playtestStepHoldTicks({ holdFrames: 5, press: "KeyW", release: true }, 0)).toBe(0);
   expect(playtestStepWaitTicks({ release: true, waitFrames: 5 })).toBe(0);
   expect(playtestStepHoldTicks({ holdTicks: 5, press: "KeyW", release: true }, 0)).toBe(5);

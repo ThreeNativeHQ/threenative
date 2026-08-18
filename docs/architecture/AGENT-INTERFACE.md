@@ -100,8 +100,8 @@ export const playScenario = {
   target: "web",
   schemaVersion: 1,
   steps: [
-    { kind: "input", press: "ArrowRight", holdFrames: 120, release: true },
-    { kind: "wait", waitFrames: 30, release: true },
+    { kind: "input", press: "ArrowRight", holdTicks: 120, release: true },
+    { kind: "wait", waitTicks: 30, release: true },
   ],
   assert: {
     diagnostics: { noConsoleErrors: true, runtimeReady: true },
@@ -110,8 +110,9 @@ export const playScenario = {
 } as const;
 ```
 
-`holdFrames` rather than milliseconds is what makes it deterministic: the harness drives
-the fixed-step clock instead of racing it.
+`holdTicks` rather than milliseconds is what makes it deterministic: the harness drives the
+fixed-step clock instead of racing it. The deprecated `holdFrames` and `waitFrames` aliases are
+still accepted for compatibility on fixed-step bridges.
 
 Questions worth answering automatically, in rough order of value:
 

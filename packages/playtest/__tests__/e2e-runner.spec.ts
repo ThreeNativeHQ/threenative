@@ -100,6 +100,40 @@ test("labelled physics samples reach settled assertion evaluation", async () => 
   expect(report.pass).toBe(true);
 }, 60_000);
 
+test("legacy frame aliases advance a fixed-step bridge", async () => {
+  const report = await run(
+    "physics",
+    { diagnostics: { noRuntimeDiagnostics: true } },
+    undefined,
+    [{ holdFrames: 8, press: "KeyW", release: true }],
+  );
+
+  expect(report.pass).toBe(true);
+  const beforeTick = report.before?.tick;
+  const afterTick = report.after?.tick;
+  if (beforeTick === undefined || afterTick === undefined) {
+    throw new Error("Fixed-step hold report did not include before/after bridge ticks.");
+  }
+  expect(afterTick - beforeTick).toBe(8);
+}, 60_000);
+
+test("legacy wait frame alias advances a fixed-step bridge", async () => {
+  const report = await run(
+    "physics",
+    { diagnostics: { noRuntimeDiagnostics: true } },
+    undefined,
+    [{ waitFrames: 8, release: true }],
+  );
+
+  expect(report.pass).toBe(true);
+  const beforeTick = report.before?.tick;
+  const afterTick = report.after?.tick;
+  if (beforeTick === undefined || afterTick === undefined) {
+    throw new Error("Fixed-step wait report did not include before/after bridge ticks.");
+  }
+  expect(afterTick - beforeTick).toBe(8);
+}, 60_000);
+
 const MOVES = { movement: { entity: "player", minDistance: 0.5 } };
 
 test("true negative: a working application passes and reports the distance it measured", async () => {

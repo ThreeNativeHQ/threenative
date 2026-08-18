@@ -20,6 +20,7 @@ export interface IPlaytestPointer {
 
 export interface IPlaytestStep {
   kind?: "input" | "wait";
+  /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
   holdFrames?: number;
   holdTicks?: number;
   label?: string;
@@ -39,6 +40,7 @@ export interface IPlaytestStep {
   press?: string | readonly string[];
   release: boolean;
   screenshot?: string;
+  /** @deprecated Use waitTicks. Fixed-step bridges treat this as a tick alias. */
   waitFrames?: number;
   waitTicks?: number;
   window?: {
@@ -1554,12 +1556,12 @@ function invalidStep(scenarioPath: string, message: string): PlaytestScenarioErr
     code: "TN_PLAYTEST_SCENARIO_STEP_INVALID",
     fix: {
       docs: "docs/workflows/playtest-proof.md",
-      instruction: "Give each step either a press with positive holdTicks/holdFrames or a positive waitTicks/waitFrames value; use kind: wait for an explicit no-input interval.",
+      instruction: "Give each step either a press with positive holdTicks or a positive waitTicks value; holdFrames and waitFrames are deprecated aliases; use kind: wait for an explicit no-input interval.",
       snippet: '{ "kind": "input", "press": "KeyW", "holdTicks": 30, "release": true }',
     },
     message: `Playtest scenario '${scenarioPath}' has an invalid step: ${message}`,
     severity: "error",
-    suggestion: "Each step must define press or waitTicks/waitFrames; holdTicks/holdFrames and waitTicks/waitFrames must be positive integers.",
+    suggestion: "Each step must define press or waitTicks; holdTicks is canonical, and holdFrames/waitFrames are deprecated aliases.",
   });
 }
 

@@ -24,7 +24,7 @@ test("schema version 1 parser preserves a valid semantic scenario", async () => 
     name: "standalone-movement",
     schemaVersion: 1,
     setup: { entities: [{ entity: "player", position: [0, 0, 0] }] },
-    steps: [{ holdFrames: 5, press: "KeyW", release: true }],
+    steps: [{ holdTicks: 5, press: "KeyW", release: true }],
     subject: "player",
     target: "web",
     viewport: { height: 720, width: 1280 },
@@ -63,7 +63,7 @@ test("scenario loading rejects unknown assertion kinds instead of ignoring them"
     assert: { unknownKind: [] },
     name: "unknown-assertion",
     schemaVersion: 1,
-    steps: [{ release: true, waitFrames: 1 }],
+    steps: [{ release: true, waitTicks: 1 }],
   }));
 
   await assert.rejects(

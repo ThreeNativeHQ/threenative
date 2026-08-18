@@ -404,9 +404,10 @@ guessing from pixels.
 `playtests/survives.playtest.json` is the durable smoke proof. Keep it when replacing the
 starter gameplay: it checks boot, diagnostics, a nonblank frame, and player movement without
 depending on pickups, score, coyote time, or respawns. `playtests/play.playtest.json` and the
-other scenarios are starter-game examples that you may delete or rewrite. Steps count frames,
-not milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
-instead of racing it.
+other scenarios are starter-game examples that you may delete or rewrite. Steps count fixed-step
+ticks, not milliseconds — use `holdTicks`, `waitTicks`. The deprecated `holdFrames` and
+`waitFrames` aliases remain accepted for compatibility and are treated as ticks on a fixed-step
+bridge; `warmupFrames` remains a genuine requestAnimationFrame warmup.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. When you add a feature, add the assertion that

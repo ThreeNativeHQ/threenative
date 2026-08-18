@@ -37,7 +37,7 @@ describe("starter playtest proof", () => {
         ),
       ) as {
         assert?: { movement?: { entity?: string; minDistance?: number } };
-        steps?: Array<{ holdFrames?: number; holdTicks?: number; kind?: string; press?: string }>;
+        steps?: Array<{ holdTicks?: number; kind?: string; press?: string }>;
         subject?: string;
       };
 
@@ -48,7 +48,7 @@ describe("starter playtest proof", () => {
       expect(scenario.assert?.movement?.entity).toBe("player");
       expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
       expect(inputStep).toMatchObject({ kind: "input", press: "ArrowUp" });
-      expect(inputStep?.holdTicks ?? inputStep?.holdFrames).toBeGreaterThan(0);
+      expect(inputStep?.holdTicks).toBeGreaterThan(0);
     },
   );
 

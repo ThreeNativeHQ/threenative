@@ -21,7 +21,7 @@ installThreePlaytestBridge({
       assert: { movement: { entity: "player", minDistance: 0.1 } },
       name: "smoke",
       schemaVersion: 1,
-      steps: [{ holdFrames: 8, press: "KeyW", release: true }],
+      steps: [{ holdTicks: 8, press: "KeyW", release: true }],
       subject: "player",
       target: "web",
       viewport: { height: 720, width: 1280 },

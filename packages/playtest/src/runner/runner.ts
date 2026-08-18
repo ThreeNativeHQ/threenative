@@ -841,9 +841,10 @@ async function runStep(
     }
   }
   const inputDriven = playtestStepDrivesMovement(step, inputActive(inputState));
-  const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
-  if (ticks > 0 && bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
+  const fixedStep = bridge?.description.capabilities.includes("runtime.fixedStep") === true;
+  const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step) + (fixedStep ? frames : 0);
+  if (ticks > 0 && fixedStep) {
     // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
     // path sample cadence. One browser round-trip per tick lets live frames race the
     // deterministic clock on loaded runners and makes long recordings nondeterministic.

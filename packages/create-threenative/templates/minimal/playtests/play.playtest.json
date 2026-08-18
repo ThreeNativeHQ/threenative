@@ -11,7 +11,7 @@
     {
       "kind": "input",
       "press": "ArrowRight",
-      "holdFrames": 120,
+      "holdTicks": 120,
       "release": true
     }
   ],
