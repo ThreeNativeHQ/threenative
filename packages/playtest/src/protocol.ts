@@ -53,6 +53,7 @@ export interface IPlaytestEntityObservation {
 export interface IPlaytestAnimationObservation {
   advancedFrames: number;
   clip: string;
+  finished?: boolean;
 }
 
 export interface IPlaytestContactObservation {

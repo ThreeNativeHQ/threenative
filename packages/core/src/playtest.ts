@@ -244,10 +244,12 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
   for (const id of Object.keys(snapshot)) {
     const entity = ctx.entities.get(id) as
       | {
-          animation?: { advancedFrames?: unknown; current?: unknown };
+          animation?: { advancedFrames?: unknown; current?: unknown; finished?: unknown };
           state?: unknown;
         }
       | undefined;
+    const finished =
+      typeof entity?.animation?.finished === "boolean" ? entity.animation.finished : undefined;
     if (
       typeof entity?.animation?.current === "string" &&
       typeof entity.animation.advancedFrames === "number"
@@ -255,6 +257,7 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
       animation[id] = {
         advancedFrames: entity.animation.advancedFrames,
         clip: entity.animation.current,
+        ...(finished === undefined ? {} : { finished }),
       };
     }
     if (typeof entity?.state === "string") states[id] = entity.state;

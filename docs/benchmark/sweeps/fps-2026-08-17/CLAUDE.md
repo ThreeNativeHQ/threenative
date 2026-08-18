@@ -196,8 +196,10 @@ player.body.teleport({ x: loaded.playerX, y: player.mesh.position.y, z: player.m
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
 `.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
-and update the `AnimationPlayer` beside the entity that owns the loaded model. This starter
-does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
+and update the `AnimationPlayer` beside the entity that owns the loaded model. Use
+`player.play("Death", { mode: "once" })` for a clip that holds its last frame; `player.finished`
+reports when it ends. Omit `mode` for the default looping behaviour. This starter does not ship
+a rigged asset; adding one belongs in `public/`, not in the framework.
 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.

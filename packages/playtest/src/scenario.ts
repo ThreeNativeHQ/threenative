@@ -186,6 +186,7 @@ export interface IPlaytestAnimationAssertion {
   clip?: string;
   entered?: boolean;
   entity?: string;
+  finished?: boolean;
 }
 
 export interface IPlaytestTagCountAssertion {
@@ -1457,6 +1458,7 @@ function validateAnimationAssertion(value: unknown): IPlaytestAnimationAssertion
     ...(typeof value.clip === "string" ? { clip: value.clip } : {}),
     ...(typeof value.entered === "boolean" ? { entered: value.entered } : {}),
     ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
+    ...(typeof value.finished === "boolean" ? { finished: value.finished } : {}),
   };
 }
 

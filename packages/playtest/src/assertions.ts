@@ -402,13 +402,14 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "not-applicable",
   },
   {
-    description: "Proves animation evidence appeared in the effect log.",
-    example: { animation: [{ entity: "player", clip: "run", entered: true, advancedFrames: 5 }] },
+    description: "Proves animation evidence appeared in the effect log or runtime observation.",
+    example: { animation: [{ entity: "player", clip: "run", entered: true, advancedFrames: 5, finished: false }] },
     fields: [
       { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
       { description: "Animation clip id or name.", name: "clip", type: "string" },
       { description: "Require entering the animation state.", name: "entered", type: "boolean" },
       { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
+      { description: "Require the observed clip to report its completion state.", name: "finished", type: "boolean" },
     ],
     cardinality: "array",
     kind: "animation",
@@ -1386,11 +1387,13 @@ export function evaluateRichPlaytestAssertions(input: {
       const observed = isRecord(runtime[entity]) ? runtime[entity] : undefined;
       const clip = typeof observed?.clip === "string" ? observed.clip : undefined;
       const advancedFrames = typeof observed?.advancedFrames === "number" ? observed.advancedFrames : undefined;
+      const finished = typeof observed?.finished === "boolean" ? observed.finished : undefined;
       const pass = observed !== undefined
         && (assertion.clip === undefined || clip === assertion.clip)
         && (assertion.entered !== true || clip !== undefined)
+        && (assertion.finished === undefined || (finished !== undefined && finished === assertion.finished))
         && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
-      assertions.push({ details: { advancedFrames, clip, entity, expected: assertion }, id: `animation.${entity}`, pass });
+      assertions.push({ details: { advancedFrames, clip, entity, expected: assertion, finished }, id: `animation.${entity}`, pass });
       if (!pass) {
         diagnostics.push({
           code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
@@ -1401,11 +1404,21 @@ export function evaluateRichPlaytestAssertions(input: {
       }
       continue;
     }
+    if (assertion.finished !== undefined) {
+      assertions.push({ details: { entity, expected: assertion, finished: undefined }, id: `animation.${entity}`, pass: false });
+      diagnostics.push({
+        code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+        message: `Expected runtime completion evidence for animation '${entity}', but the runtime animation channel was unavailable.`,
+        severity: "error",
+        suggestion: "Install the runtime animation observer and inspect runtimeObservations.gameplay.animation.",
+      });
+      continue;
+    }
     const tokens = [entity, assertion.clip].filter((item): item is string => item !== undefined);
     const count = countMatchingEntries(input.report.effectLog, tokens);
     const minCount = Math.max(1, assertion.advancedFrames ?? 1);
     const pass = count >= minCount;
-    assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames }, id: `animation.${entity}`, pass });
+    assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames, finished: assertion.finished }, id: `animation.${entity}`, pass });
     if (!pass) {
       diagnostics.push({
         code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",

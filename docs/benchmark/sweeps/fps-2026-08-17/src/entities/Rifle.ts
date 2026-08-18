@@ -45,7 +45,6 @@ export class Rifle {
 
   #animation: AnimationPlayer | undefined;
   #clips: ReadonlySet<string>;
-  #shootFor = 0;
 
   constructor(camera: PerspectiveCamera, viewmodel: Object3D, clips: readonly AnimationClip[] = []) {
     viewmodel.traverse((object) => {
@@ -56,9 +55,7 @@ export class Rifle {
       const mesh = object as Mesh;
       if (mesh.isMesh === true) mesh.renderOrder = 20;
     });
-    // The shipped viewmodel arrives at an unknown scale and orientation, so it is
-    // measured and normalised: longest axis 0.9 m, lying down -z, origin at the
-    // rear of the receiver where a held rifle pivots.
+    // Normalise the shipped viewmodel: longest axis 0.9 m, lying down -z, origin at the receiver.
     const fit = new Group();
     fit.rotation.y = Math.PI;
     fit.add(viewmodel);
@@ -96,8 +93,7 @@ export class Rifle {
     this.ammo -= 1;
     this.shots += 1;
     this.#kick = 1;
-    this.#shootFor = 0.12;
-    this.#play("Shoot", 0.02);
+    this.#play("Shoot", 0.02, "once");
     this.#flashLife = 0.05;
     this.#flash.visible = true;
     this.#flash.rotation.z = this.shots * 1.7;
@@ -117,16 +113,17 @@ export class Rifle {
     });
   }
 
-  #play(name: string, fade = 0.14): void {
+  #play(name: string, fade = 0.14, mode: "loop" | "once" = "loop"): void {
     if (this.#animation === undefined || !this.#clips.has(name)) return;
-    if (this.#animation.current === name) return;
-    this.#animation.play(name, { fade });
+    if (this.#animation.current === name && !this.#animation.finished) return;
+    this.#animation.play(name, { fade, mode });
   }
 
   update(dt: number, aiming: boolean, moving: number): void {
-    this.#shootFor = Math.max(0, this.#shootFor - dt);
     if (this.reloading) this.#play("Reload");
-    else if (this.#shootFor > 0) this.#play("Shoot", 0.02);
+    else if (this.#animation?.current === "Shoot" && !this.#animation.finished) {
+      // Keep the one-shot clip active until AnimationPlayer reports its end.
+    }
     else if (moving > 0.6) this.#play("Run");
     else if (moving > 0.05) this.#play("Walk");
     else this.#play("Idle");

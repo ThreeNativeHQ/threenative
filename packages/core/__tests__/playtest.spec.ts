@@ -3,8 +3,16 @@ import {
   type IPlaytestSampleRequest,
   PLAYTEST_BRIDGE_GLOBAL,
 } from "@threenative/playtest";
-import { BoxGeometry, Mesh, MeshBasicMaterial, type Vector2 } from "three";
+import {
+  AnimationClip,
+  BoxGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  NumberKeyframeTrack,
+  type Vector2,
+} from "three";
 import { describe, expect, it } from "vitest";
+import { AnimationPlayer } from "../src/animation.js";
 import { type IGamePluginHooks, defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
 import { type ICtx, Scene } from "../src/scene.js";
@@ -212,7 +220,15 @@ describe("playtest plugin", () => {
       override enter(ctx: ICtx<{ score: number }>): void {
         const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(player);
-        ctx.entities.add("player", { mesh: player });
+        const animation = new AnimationPlayer({
+          clips: [
+            new AnimationClip("once", 1, [new NumberKeyframeTrack(".position[x]", [0, 1], [0, 1])]),
+          ],
+          root: player,
+        });
+        animation.play("once", { mode: "once" });
+        animation.update(2);
+        ctx.entities.add("player", { animation, mesh: player });
       }
     }
     const game = defineGame<{ score: number }>({
@@ -261,7 +277,7 @@ describe("playtest plugin", () => {
       expect(snapshot.entities?.map(({ id }) => id)).toEqual(["camera.main", "player"]);
       expect(snapshot.entities?.find(({ id }) => id === "camera.main")?.transform).toBeDefined();
       expect(snapshot.gameplay).toEqual({
-        animation: {},
+        animation: { player: { advancedFrames: 1, clip: "once", finished: true } },
         audio: { queued: 0, voices: 0 },
         contacts: [],
         states: {},

@@ -280,6 +280,51 @@ test("an animation assertion reads the runtime animation channel", async () => {
   expect(evaluated.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
 });
 
+test("a finished animation assertion requires exact runtime completion evidence", async () => {
+  const assertion = { animation: [{ entity: "player", clip: "run", advancedFrames: 5, finished: true }] };
+  const effectLog = {
+    entries: Array.from({ length: 5 }, () => ({ entity: "player", service: "animation.play", value: { clip: "run" } })),
+  };
+
+  const missing = await evaluate(assertion, { effectLog });
+  expect(missing.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(false);
+
+  const complete = await evaluate(assertion, {
+    observations: {
+      ...EMPTY_OBSERVATIONS,
+      runtimeObservations: {
+        gameplay: { animation: { player: { advancedFrames: 8, clip: "run", finished: true } }, states: {} },
+      },
+    } as IPlaytestObservations,
+  });
+  expect(complete.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
+
+  const stillPlaying = await evaluate(assertion, {
+    observations: {
+      ...EMPTY_OBSERVATIONS,
+      runtimeObservations: {
+        gameplay: { animation: { player: { advancedFrames: 8, clip: "run", finished: false } }, states: {} },
+      },
+    } as IPlaytestObservations,
+  });
+  expect(stillPlaying.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(false);
+});
+
+test("a finished animation assertion rejects a wrong-typed scenario field", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "playtest-evidence-animation-"));
+  await writeFile(
+    join(directory, "scenario.json"),
+    JSON.stringify({
+      assert: { animation: [{ entity: "player", finished: "true" }] },
+      name: "evidence",
+      schemaVersion: 1,
+      steps: [{ release: true, waitFrames: 1 }],
+    }),
+  );
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toThrow(/finished.*boolean/u);
+});
+
 test("a tag assertion must declare a count or a floor to be worth running", async () => {
   // `tags: [{ tag: "coin" }]` degenerated to "a numeric count exists", so it
   // passed on a count of zero — the exact opposite of what the author meant.

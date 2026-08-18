@@ -65,7 +65,6 @@ export class Enemy {
   #strafe = 1;
   #strafeTimer = 0;
   #deadFor = 0;
-  #frozen = false;
   #colliders: readonly BoxCollider[];
 
   constructor(model: Object3D, clips: readonly AnimationClip[], colliders: readonly BoxCollider[]) {
@@ -108,6 +107,14 @@ export class Enemy {
     return this.phase !== "dead";
   }
 
+  get state(): string {
+    return this.#animation?.finished === true ? "dead-finished" : this.phase;
+  }
+
+  get animation(): AnimationPlayer | undefined {
+    return this.#animation;
+  }
+
   /** Chest height, used as the eye and muzzle origin. */
   get chest(): Vector3 {
     return new Vector3(this.group.position.x, this.group.position.y + 1.42, this.group.position.z);
@@ -121,10 +128,10 @@ export class Enemy {
     return BODY_HEIGHT;
   }
 
-  #play(name: string, fade = 0.18): void {
+  #play(name: string, fade = 0.18, mode: "loop" | "once" = "loop"): void {
     if (this.#animation === undefined || !this.#clips.has(name)) return;
     if (this.#animation.current === name) return;
-    this.#animation.play(name, { fade });
+    this.#animation.play(name, { fade, mode });
   }
 
   #blocked(x: number, z: number): boolean {
@@ -198,13 +205,7 @@ export class Enemy {
       this.health = 0;
       this.phase = "dead";
       this.#deadFor = 0;
-      this.#frozen = false;
-      this.#play("DeathFront", 0.06);
-      // Nothing in `AnimationPlayer` clamps a one-shot clip at its last frame, so
-      // the ragdoll is held by stopping the mixer updates once it has played out.
-      ctx.after(1.1, () => {
-        this.#frozen = true;
-      });
+      this.#play("DeathFront", 0.06, "once");
       ctx.after(RESPAWN_SECONDS, () => this.#respawn());
       return earned + 300;
     }
@@ -217,7 +218,6 @@ export class Enemy {
     this.health = MAX_HEALTH;
     this.wounded = false;
     this.phase = "patrol";
-    this.#frozen = false;
     this.#routeIndex = 0;
     this.group.position.copy(ROUTE[0] as Vector3);
     this.#target.copy(ROUTE[1] as Vector3);
@@ -233,7 +233,7 @@ export class Enemy {
   update(ctx: GameCtx, dt: number, playerEye: Vector3, hooks: EnemyHooks): void {
     if (this.phase === "dead") {
       this.#deadFor += dt;
-      if (!this.#frozen) this.#animation?.update(dt);
+      if (this.#animation?.finished !== true) this.#animation?.update(dt);
       return;
     }
     const sees = this.#canSee(playerEye, hooks);
