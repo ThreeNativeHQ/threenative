@@ -430,6 +430,24 @@ describe("template contracts", () => {
     }
   });
 
+  // A generated project's agent cannot fix a framework bug: the packages arrive as bundled JS
+  // with no sourcemaps. Left without an instruction it either stalls on the gap or contorts the
+  // game around it, and both outcomes are worse than a plain Three.js patch plus a report of what
+  // blocked it. Every template says so, because the agent reads only the one it was scaffolded
+  // with.
+  it("should tell the agent to drop to plain Three.js when the framework blocks it", async () => {
+    const names = (await readdir(templateRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    expect(names.length).toBeGreaterThan(3);
+    for (const template of names) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, template).toContain("## When the framework blocks you, write plain Three.js");
+      expect(agents, template).toMatch(/broken, missing, or does not do what you need/);
+      expect(agents, template).toMatch(/Report what blocked you/);
+    }
+  });
+
   it("should keep external MCPs out of every workspace package", async () => {
     const packagesRoot = path.resolve("packages");
     for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
