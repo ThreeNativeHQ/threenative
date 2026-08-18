@@ -1,6 +1,10 @@
 import { expect, test } from "vitest";
 
-import { reconcileBrowserPointers, WEBGPU_BROWSER_ARGS } from "../src/runner/browser.js";
+import {
+  PERFORMANCE_BROWSER_ARGS,
+  reconcileBrowserPointers,
+  WEBGPU_BROWSER_ARGS,
+} from "../src/runner/browser.js";
 
 test("multi-pointer browser input reconciles a complete held set without reinserting moves", () => {
   const previous = new Map([
@@ -41,4 +45,11 @@ test("the webgpu recipe asks for Vulkan so the run does not land on SwiftShader"
   // it produces a software renderer's results. Measured under Xvfb on an RTX 2080:
   // `swiftshader / google` without this flag, `turing / nvidia` with it.
   expect(WEBGPU_BROWSER_ARGS).toContain("--enable-features=Vulkan");
+});
+
+test("performance probes can bypass the virtual display compositor cadence", () => {
+  expect(PERFORMANCE_BROWSER_ARGS).toEqual([
+    "--disable-frame-rate-limit",
+    "--disable-gpu-vsync",
+  ]);
 });

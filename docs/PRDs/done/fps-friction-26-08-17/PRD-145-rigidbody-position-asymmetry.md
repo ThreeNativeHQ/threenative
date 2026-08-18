@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-145 — `RigidBody3D` takes no `position` while `Area3D` does, so every static collider allocates a throwaway `Object3D`
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** Position-only fixed bodies and ambiguity failures are covered, and
+the FPS desktop scenario passes. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** a static collider that has no mesh of its own is one call, and the two classes in the
 same package stop disagreeing about how a body is placed.

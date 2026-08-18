@@ -15,7 +15,11 @@
     { "kind": "input", "press": "ArrowLeft", "holdTicks": 80, "release": true },
     { "kind": "wait", "waitTicks": 80, "release": true },
     { "kind": "input", "press": "ArrowRight", "holdTicks": 80, "release": true },
-    { "kind": "wait", "label": "fail-settled", "waitTicks": 80, "release": true }
+    { "kind": "wait", "waitTicks": 80, "release": true },
+    { "kind": "input", "press": "ArrowLeft", "holdTicks": 30, "release": true },
+    { "kind": "wait", "waitTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 40, "release": true },
+    { "kind": "wait", "label": "fail-settled", "waitTicks": 120, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },

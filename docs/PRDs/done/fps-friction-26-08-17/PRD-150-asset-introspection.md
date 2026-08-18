@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-150 — Nothing reports what a loaded model actually is, so placing it is guesswork
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** The inspect command reports bounds, clips, bones and likely units;
+failure cases and the playtest console artifact pass. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** one command tells you a `.glb`'s bounds, units, forward axis, clip names and bone
 names, before you write the line that places it — instead of after two wrong screenshots.

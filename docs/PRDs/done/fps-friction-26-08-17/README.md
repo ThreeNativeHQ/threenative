@@ -1,12 +1,15 @@
 # Batch — what the FPS build could not write, 2026-08-17
 
-**Status: PROPOSED, 2026-08-17. Nothing in this folder has run.** Thirteen PRDs, PRD-138 through
-PRD-150.
+**Status: DONE, 2026-08-18.** Eleven active PRDs were executed; ten are done and PRD-142 is
+withdrawn as not applicable to the current benchmark source. PRD-143 and PRD-144 were already
+archived separately.
+
+See the [batch verification record](../../../verification/fps-friction-batch-2026-08-18.md).
 
 Every item comes from one source: the friction ledger a cold agent kept while building a
 first-person shooter against a real game's reference, archived at
-[`docs/verification/sweep-fps-2026-08-17.md`](../../verification/sweep-fps-2026-08-17.md) and closed
-as [PRD-137](../done/PRD-137-the-agent-test-on-a-real-game.md). Nineteen rows. This folder is those
+[`docs/verification/sweep-fps-2026-08-17.md`](../../../verification/sweep-fps-2026-08-17.md) and closed
+as [PRD-137](../PRD-137-the-agent-test-on-a-real-game.md). Nineteen rows. This folder is those
 rows read as engineering work, plus three defects found by reading the source those rows pointed at
 that the builder never hit.
 
@@ -28,7 +31,7 @@ was read for this batch:
 | Found by reading, not by building | Where |
 | --- | --- |
 | The collapse pass **removes** the meshes a game picks against, and no test covers a raycast after a collapse | [140](./PRD-140-scene-collapse-breaks-picking.md) |
-| `@threenative/physics` has **no joints of any kind**, so nothing can be hinged, pinned or chained | [143](../done/PRD-143-physics-joints.md) |
+| `@threenative/physics` has **no joints of any kind**, so nothing can be hinged, pinned or chained | [143](../PRD-143-physics-joints.md) |
 | A passing unit test asserts the broken step spelling is **valid**, which is how it survived a year | [146](./PRD-146-playtest-frames-vs-ticks.md) §3 row 1 |
 
 ## Shape rules — these bind every PRD in this folder
@@ -41,9 +44,9 @@ rules those sections apply, stated once so they are not restated thirteen times.
    not own sensitivity. `AnimationPlayer` blends clips and does not become a state machine.
    `PhysicalBoneSimulator3D` moves bones and does not decide when a character dies. The second job
    is always the one that turns 300 lines into 3,000.
-2. **DRY — compose what exists, never a parallel path.** [144](../done/PRD-144-ragdoll.md) is withdrawn
+2. **DRY — compose what exists, never a parallel path.** [144](../PRD-144-ragdoll.md) is withdrawn
    by its own line-count gate; if a game later needs one, it composes
-   [143](../done/PRD-143-physics-joints.md)'s joints and [142](./PRD-142-bone-sockets-and-attachment.md)'s
+   [143](../PRD-143-physics-joints.md)'s joints and [142](./PRD-142-bone-sockets-and-attachment.md)'s
    bone resolution; if it grows its own, the layering is wrong and review rejects it.
    [147](./PRD-147-assertion-upper-bound.md) is one key missing from three duplicated lists — the
    fix is deduplicating the list, not adding the key three times.
@@ -53,12 +56,12 @@ rules those sections apply, stated once so they are not restated thirteen times.
 4. **Borrowed vocabulary.** Godot for nodes, Three.js for rendering, Rapier for physics.
    `PinJoint3D`, `HingeJoint3D`, `PhysicalBone3D`, `BoneAttachment3D` are Godot's names.
    `Intersection` stays Three.js's shape and is not re-wrapped.
-5. **Never own the look.** [144](../done/PRD-144-ragdoll.md) was the one at risk and refused a humanoid
+5. **Never own the look.** [144](../PRD-144-ragdoll.md) was the one at risk and refused a humanoid
    preset in advance — a preset system is on the closed list and passing the two questions does not
    reopen it.
 6. **The kill switch is executable.** Four PRDs — [139](./PRD-139-raycast-world-ray-or-delete.md),
    [141](./PRD-141-animation-one-shot-clips.md),
-   [142](./PRD-142-bone-sockets-and-attachment.md), [144](../done/PRD-144-ragdoll.md) — have an
+   [142](./PRD-142-bone-sockets-and-attachment.md), [144](../PRD-144-ragdoll.md) — have an
    acceptance row that runs `count-loc.ts` against the hand-rolled equivalent and **withdraws the
    PRD if the abstraction is not smaller**. That is not a formality: 139 and 144 are genuine
    coin-flips.
@@ -100,8 +103,8 @@ scenarios are honest wastes the verification.
 
 | PRD | What it closes | Complexity |
 | --- | --- | --- |
-| [143](../done/PRD-143-physics-joints.md) | No joints at all: no door, rope, chain, axle or articulated anything on either backend | 7 |
-| [144](../done/PRD-144-ragdoll.md) | Withdrawn by the line-count kill switch: the proposed class-shaped usage was larger than bare joints and bodies | 8 |
+| [143](../PRD-143-physics-joints.md) | No joints at all: no door, rope, chain, axle or articulated anything on either backend | 7 |
+| [144](../PRD-144-ragdoll.md) | Withdrawn by the line-count kill switch: the proposed class-shaped usage was larger than bare joints and bodies | 8 |
 
 **[144] was not started until [143] had landed and passed on `--target desktop`, and until a
 hand-rolled ragdoll has been built in a game and measured.** That ordering is a requirement, stated
@@ -159,7 +162,7 @@ Recorded so the next round does not rediscover them, and so their absence is a d
 3. **`model.bounds` on `ctx.assets`.** Refused in [150 §2](./PRD-150-asset-introspection.md):
    `new Box3().setFromObject()` is portable plain Three.js and the game already does it. The gap is
    at the terminal, before code is written, so the fix is a CLI.
-4. **`SliderJoint3D` and `Generic6DOFJoint3D`.** Out of [143 §2](../done/PRD-143-physics-joints.md). No
+4. **`SliderJoint3D` and `Generic6DOFJoint3D`.** Out of [143 §2](../PRD-143-physics-joints.md). No
    game here needs them and a generic 6-DOF joint is a configuration surface, not a constraint.
 5. **The `mixamorig`/`RightHand`/`hand_r` naming guess.** Out of
    [142 §2](./PRD-142-bone-sockets-and-attachment.md). A framework mapping "right hand" onto an

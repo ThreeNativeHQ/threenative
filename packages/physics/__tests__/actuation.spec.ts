@@ -33,7 +33,7 @@ const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
   "docs/verification/native-runtime-census-2026-08-16.md",
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
-  ["src/", 38_455],
+  ["src/", 38_459],
   ["conformance/", 6_331],
   ["tests/", 9_192],
   ["scripts/", 11_641],
@@ -51,7 +51,7 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 144 files, 1,306 passed, 0 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 144 files, 1,307 passed, 0 skipped.";
 const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 319 passed, 30 skipped.";
 
 beforeAll(async () => {

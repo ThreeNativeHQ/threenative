@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-146 — `holdFrames` and `waitFrames` are accepted, documented, and do nothing
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** Deprecated frame aliases execute fixed ticks, canonical init output
+uses ticks, and the runner/template gates pass. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** a scenario written the way the generated documentation tells you to write it either
 works or is rejected. It never runs, passes schema validation, and advances the game by 5% of what

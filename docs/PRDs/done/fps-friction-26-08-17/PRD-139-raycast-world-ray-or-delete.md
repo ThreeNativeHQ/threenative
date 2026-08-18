@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-139 — `ctx.raycast` cannot express a hitscan shot, so every shooter reimplements it in plain Three.js
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** The FPS call sites use `ctx.raycast` and `ctx.raycastAll`, the
+line-count gate is favorable, and the web and desktop fire scenarios pass. See [batch
+verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** `ctx.raycast` either covers the ray queries games actually make — arbitrary world
 rays, an exclusion, more than the nearest hit — or it is deleted and the docs say "use

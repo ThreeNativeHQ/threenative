@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-149 — The generated `AGENTS.md` describes a project that does not behave the way it says
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** The documented resource contract, flush interval, canonical `state`
+id and generated mirrors are verified. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** every factual claim in the generated `AGENTS.md` is either true or has a test that
 makes it true, and the three places it is currently wrong stop costing every new builder an
@@ -149,7 +150,7 @@ Row 2 is the one that matters. A guard nobody has seen fail is a guard nobody ha
 
 Not that the generated `AGENTS.md` is correct everywhere — this PRD fixes three claims a real build
 tripped over and does not audit the document. A full audit against a cold build is
-[PRD-137](../done/PRD-137-the-agent-test-on-a-real-game.md)'s instrument, and running it again is a
+[PRD-137](../PRD-137-the-agent-test-on-a-real-game.md)'s instrument, and running it again is a
 round, not a day. Not that `lastMotion` ships; §1.2 makes it conditional on being free. Not that
 the HUD story is complete — §1.3 documents the existing design and refuses to widen it, which is a
 decision that could be revisited if a second game hits the same wall differently.

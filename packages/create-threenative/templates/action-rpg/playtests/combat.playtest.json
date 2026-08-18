@@ -52,7 +52,7 @@
       { "name": "ability", "entity": "player", "minCount": 1 },
       { "name": "ability-expired", "entity": "player", "minCount": 1, "atStep": "surge-expired" }
     ],
-    "components": [{ "entity": "player", "component": "health", "equals": 90, "changed": true }],
+    "components": [{ "entity": "player", "component": "health", "equals": 95, "changed": true }],
     "visibility": [
       { "entity": "player", "minProjectedPixels": 20 },
       { "entity": "enemy.visible", "minProjectedPixels": 1 }

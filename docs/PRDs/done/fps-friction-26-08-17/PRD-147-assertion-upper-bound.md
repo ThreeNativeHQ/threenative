@@ -4,14 +4,15 @@ prd_contract: v1
 
 # PRD-147 — No resource assertion can express an upper bound, so a countdown cannot be asserted to count down
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** `lte` is parsed through the shared numeric-key definition and the
+generated template countdown bound passes. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** `lte` exists beside `gte`, and a scenario can state that a timer went down, health
 dropped, or ammunition was spent — instead of stating only that the number moved.
 
 **Depends on:** nothing.
 
-**Blocks:** nothing. [PRD-136](../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md) §3
+**Blocks:** nothing. [PRD-136](../../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md) §3
 already flagged this gap from the other direction, and its replacement assertion is weaker because
 of it. Landing this first lets 136 ship the bounded version.
 

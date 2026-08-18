@@ -20,6 +20,13 @@
       "holdTicks": 3,
       "release": false
     },
+    {
+      "kind": "input",
+      "label": "airborne",
+      "press": "ArrowLeft",
+      "holdTicks": 5,
+      "release": false
+    },
     { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },
     { "kind": "wait", "label": "jump-arc", "waitTicks": 18, "release": true }
   ],

@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-142 — Attaching anything to a bone is 50 lines of regex, scale-undo and guessed units
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: WITHDRAWN, 2026-08-18.** The current FPS source has no `Enemy.#equip` path: the enemy
+asset already contains its rifle, so the required game rewrite and visibility playtest do not
+exist to execute. The reusable skeleton helpers remain tested independently. See [batch
+verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** putting a rifle in a hand, a hat on a head or a trail on a blade is one call that
 names a bone, and the framework — not the game — undoes the skeleton's world scale.
@@ -13,7 +16,7 @@ names a bone, and the framework — not the game — undoes the skeleton's world
 [PRD-150](./PRD-150-asset-introspection.md) — neither the loader nor the tooling tells a game
 anything about the model it just loaded.
 
-**Blocks:** [PRD-144](../done/PRD-144-ragdoll.md) would have reused whatever bone-resolution rule
+**Blocks:** [PRD-144](../PRD-144-ragdoll.md) would have reused whatever bone-resolution rule
 this settles.
 
 **Complexity: 4 → LOW-MEDIUM mode.** One resolver, one attach helper, one spec.
@@ -105,7 +108,7 @@ Read the batch README's shape rules first. The specific risks here:
 
 - **SRP.** Two free functions, one job each: *list bones*, *attach with scale cancelled*. No
   `BoneAttachment3D` class holding state, no per-frame sync — Three.js parenting already syncs.
-- **DRY.** The bone-name resolution rule appears **once** and [PRD-144](../done/PRD-144-ragdoll.md)
+- **DRY.** The bone-name resolution rule appears **once** and [PRD-144](../PRD-144-ragdoll.md)
   imports it rather than growing a second traversal. If the ragdoll work re-implements
   `skeletonBones`, the split is wrong.
 - **KISS.** No offset/rotation parameters. The caller sets `child.position` and `child.rotation`

@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-148 — A scaffolded project's `pnpm test` is a 16-clause shell string on a hard-coded port, and it cannot pass as generated
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** Repeatable/glob scenarios, port selection, artifact isolation and
+fail-closed empty suites are covered; all seven generated template gates pass. See [batch
+verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** `pnpm test` in a new project is one command that runs every scenario in
 `playtests/`, picks a free port, uses the right browser flags, and survives the user deleting a
@@ -153,7 +155,7 @@ Rows 5 and 6 are the pair. Row 5 alone is satisfied by making the suite vacuous.
 ## 4. What this does not claim
 
 Not that the scenarios themselves are right — nine of the starter's ten assert platformer
-behaviour and that is [PRD-136](../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md)'s
+behaviour and that is [PRD-136](../../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md)'s
 open §5 question, not this one. Not that `--headed` is correct in CI; §2.3 flags it as
 unverified. Not that parallel scenario execution is addressed — this makes one server serve many
 scenarios sequentially, which is a wall-clock win, not concurrency.

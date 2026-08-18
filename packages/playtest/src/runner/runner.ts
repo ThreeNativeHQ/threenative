@@ -30,7 +30,12 @@ import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
-import { reconcileBrowserPointers, resolveBrowserArguments, softwareAdapterName } from "./browser.js";
+import {
+  PERFORMANCE_BROWSER_ARGS,
+  reconcileBrowserPointers,
+  resolveBrowserArguments,
+  softwareAdapterName,
+} from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   finishFramebufferCoverageProbe,
@@ -159,6 +164,15 @@ export async function runStandalonePlaytest(
   const usesFreePort = config.server !== undefined && config.port === 0;
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenario = await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath);
+  const browserConfig = scenario.assert?.performance === undefined
+    ? activeConfig
+    : {
+        ...activeConfig,
+        browserArgs: [
+          ...(activeConfig.browserArgs ?? []),
+          ...PERFORMANCE_BROWSER_ARGS.filter((argument) => !activeConfig.browserArgs?.includes(argument)),
+        ],
+      };
   await mkdir(activeConfig.artifactDirectory, { recursive: true });
   let server: ChildProcess | undefined;
   const ownsServer = options.managedServer === undefined && activeConfig.server !== undefined;
@@ -205,7 +219,7 @@ export async function runStandalonePlaytest(
       server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
     }
     browser = await chromium.launch({
-      ...(activeConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(activeConfig.browserArgs) }),
+      ...(browserConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(browserConfig.browserArgs) }),
       headless: activeConfig.headless,
     });
     if (server !== undefined && options.managedServer === undefined) {
@@ -258,7 +272,7 @@ export async function runStandalonePlaytest(
       pageLifecycle.closed = true;
     });
     const activePage = page;
-    const bridge = await openPageAndConnectBridge(page, activeConfig, scenario);
+    const bridge = await openPageAndConnectBridge(page, browserConfig, scenario);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     if (bridge !== undefined && scenario.setup !== undefined) {
@@ -294,7 +308,7 @@ export async function runStandalonePlaytest(
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
     const captureProvenance = needsCapture
-      ? await readCaptureProvenance(page, activeConfig, scenario)
+      ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {
       await writeCaptureProvenance(activeConfig.artifactDirectory, captureProvenance);
@@ -446,7 +460,7 @@ export async function runStandalonePlaytest(
       await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }
     const report = buildReport(
-      activeConfig,
+      browserConfig,
       scenario,
       beforeSnapshot,
       afterSnapshot,

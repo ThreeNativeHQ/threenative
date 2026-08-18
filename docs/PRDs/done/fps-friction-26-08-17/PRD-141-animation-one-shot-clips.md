@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-141 — `AnimationPlayer` hides the one-shot playback `AnimationMixer` already has
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** The FPS death path uses `mode: "once"` and `finished`; web and
+desktop death playtests pass. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** a death animation stops on its last frame and a fire clip returns to idle, without the
 game owning a mixer-stopping timer.
@@ -124,4 +125,4 @@ package reads it. Not that retargeting or clip-name conventions are solved: the 
 `findBone(model, /right.*hand|hand.*r$|hand_r/i)` (`Enemy.ts:65-71`) is a separate gap, in
 [PRD-142](./PRD-142-bone-sockets-and-attachment.md). **Not that a corpse holding its last frame is
 a ragdoll** — it is a frozen pose, and the real thing needs joints; see
-[PRD-144](../done/PRD-144-ragdoll.md).
+[PRD-144](../PRD-144-ragdoll.md).

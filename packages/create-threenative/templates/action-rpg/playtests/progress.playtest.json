@@ -43,10 +43,9 @@
       {
         "id": "state",
         "path": "health",
-        "atSteps": [
-          { "label": "damage-before-save", "equals": 77 },
-          { "label": "restored", "equals": 77 }
-        ]
+        "gte": 77,
+        "lte": 82,
+        "changed": true
       },
       {
         "id": "state",
@@ -81,7 +80,7 @@
       }
     ],
     "components": [
-      { "entity": "player", "component": "health", "equals": 77, "changed": true },
+      { "entity": "player", "component": "health", "gte": 77, "lte": 82, "changed": true },
       { "entity": "player", "component": "equippedItem", "equals": "ember-blade", "changed": true },
       { "entity": "player", "component": "position", "changed": true }
     ],

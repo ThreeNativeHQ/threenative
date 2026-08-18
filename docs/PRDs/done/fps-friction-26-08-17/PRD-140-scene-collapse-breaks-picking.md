@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-140 — Scene collapse removes the meshes a game picks against, and nothing tells the game
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** Collapse regression tests and the 250-mesh picking scenario pass
+on web and desktop. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** a game whose scoring is picking either keeps working when the collapse pass fires, or
 is told in a way it cannot miss that it will not. Today it silently stops scoring at the 200th

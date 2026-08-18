@@ -3535,6 +3535,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     js::JSValueHandle canvasElement_;
     double playtestPointerX_ = 0;
     double playtestPointerY_ = 0;
+    bool playtestPointerInitialized_ = false;
 
     bool eventListenerCaptureFromArgs(const std::vector<js::JSValueHandle>& args) {
         if (args.size() < 3) return false;
@@ -4118,8 +4119,8 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                 event.buttons = static_cast<int>(jsEngine_->toNumber(args[3]));
                 event.button = event.buttons == 0 ? 0 : event.buttons - 1;
                 if (event.type == "pointermove") {
-                    event.movementX = event.clientX - playtestPointerX_;
-                    event.movementY = event.clientY - playtestPointerY_;
+                    event.movementX = playtestPointerInitialized_ ? event.clientX - playtestPointerX_ : 0;
+                    event.movementY = playtestPointerInitialized_ ? event.clientY - playtestPointerY_ : 0;
                     platform::MouseEventData mouse{};
                     mouse.type = "mousemove";
                     mouse.clientX = event.clientX;
@@ -4130,8 +4131,11 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                     mouse.buttons = event.buttons;
                     dispatchMouseEvent(mouse);
                 }
-                playtestPointerX_ = event.clientX;
-                playtestPointerY_ = event.clientY;
+                if (event.type != "pointerup" && event.type != "pointercancel") {
+                    playtestPointerX_ = event.clientX;
+                    playtestPointerY_ = event.clientY;
+                    playtestPointerInitialized_ = true;
+                }
                 event.pointerId = 1;
                 event.pointerType = "mouse";
                 event.isPrimary = true;

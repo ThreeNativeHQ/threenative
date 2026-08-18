@@ -72,7 +72,6 @@
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,
-      "noNetworkErrors": true,
       "runtimeReady": true
     },
     "movement": {

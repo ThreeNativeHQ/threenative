@@ -6,7 +6,6 @@ import {
   Mesh as MeshClass,
   MeshBasicMaterial,
   PlaneGeometry,
-  Raycaster,
   Vector3,
 } from "three";
 import { Enemy } from "../entities/Enemy.js";
@@ -136,18 +135,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // proxy. Raycasting the whole scene would also hit the viewmodel welded to
     // the camera and score every shot as a miss at 0.4 m.
     const hittable: Object3D[] = [...range.hittable, enemy.hitbox];
-    const raycaster = new Raycaster();
-    raycaster.far = RANGE_METRES;
-    const losCaster = new Raycaster();
     const occluders: Object3D[] = [...range.hittable];
 
     const lineOfSight = (from: Vector3, to: Vector3): boolean => {
       const direction = new Vector3().subVectors(to, from);
       const distance = direction.length();
       if (distance < 0.001) return true;
-      losCaster.set(from, direction.multiplyScalar(1 / distance));
-      losCaster.far = distance - 0.2;
-      for (const hit of losCaster.intersectObjects(occluders, false)) {
+      for (const hit of ctx.raycastAll({
+        direction: direction.normalize(), far: distance - 0.2, origin: from, targets: occluders,
+      })) {
         // Plates and the paint are thin dressing; only solids block sight.
         if (hit.object.userData.target !== undefined) continue;
         return false;
@@ -190,11 +186,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (!rifle.fire()) return;
       const forward = player.forward;
       eye.set(player.eye.x, player.eye.y, player.eye.z);
-      raycaster.set(eye, new Vector3(forward.x, forward.y, forward.z).normalize());
-      raycaster.far = RANGE_METRES;
-      const hits = raycaster.intersectObjects(hittable, false);
+      const direction = new Vector3(forward.x, forward.y, forward.z).normalize();
+      const hit = frameCtx.raycast({
+        direction, far: RANGE_METRES, origin: eye, targets: hittable,
+      });
       enemy.hearShot(eye.clone());
-      const hit = hits[0];
       if (hit === undefined) return;
 
       const target = hit.object.userData.target as Target | undefined;

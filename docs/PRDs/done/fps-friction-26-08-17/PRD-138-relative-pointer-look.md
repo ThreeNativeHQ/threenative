@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-138 — `InputMap` has no relative pointer delta, so a first-person camera cannot be written portably
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status: DONE, 2026-08-18.** Web and desktop playtests, focused input tests, native build and
+the no-browser-global source check pass. See [batch verification](../../../verification/fps-friction-batch-2026-08-18.md).
 
 **Outcome:** a game reads mouse look through `ctx.input`, on web and on native, and the
 `document`-reaching `MouseLook` class every first-person build has to write disappears.

@@ -13,6 +13,12 @@ export const WEBGPU_BROWSER_ARGS = [
   "--enable-features=Vulkan",
 ] as const;
 
+/** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
+export const PERFORMANCE_BROWSER_ARGS = [
+  "--disable-frame-rate-limit",
+  "--disable-gpu-vsync",
+] as const;
+
 export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] {
   return [...(browserArgs ?? [])];
 }
