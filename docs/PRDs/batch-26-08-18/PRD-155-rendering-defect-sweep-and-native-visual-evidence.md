@@ -16,9 +16,13 @@ Phase 5 did not run. Results, evidence and what is still open:
   are named as worth re-running first; none has been.
 - **Phase 3 — D1 NOT REPRODUCED** on web, desktop native, or the Pixel 8. Roof and sails are present
   in all three.
-- **Phase 4 — D2 NOT REPRODUCED** (the blades rotate on device). **D3 REPRODUCED** and localized:
-  the waterfalls animate on web and desktop native and are frozen on Android only. Engine bug in the
-  wgpu-native backend; **not fixed**.
+- **Phase 4 — D2 and D3 REPRODUCED, and both FIXED.** They are one defect and it is a **game bug**,
+  on every platform, not Android-only: the level lives in a `BundleGroup`, upstream three.js defaults
+  `BundleGroup.static` to `true`, and a recorded render bundle replays frozen draws. Two smaller
+  defects sat on top — `mergeLevelMeshes` detached the animated subtrees, and `waterfall()`
+  overwrote one of its two streak groups. Fixed in `sandbox/fox-native`; on the Pixel 8 the windmill
+  region now changes 12.3–12.6 % between frames where it changed 0 %, and the waterfalls 19–23 %
+  where they changed 0.00 %. Nothing in `packages/` was changed, and nothing needed to be.
 - **Phase 5 — NOT RUN.** The device was charging, at 24% battery, thermal status 1; all three of the
   PRD's own preconditions fail.
 
