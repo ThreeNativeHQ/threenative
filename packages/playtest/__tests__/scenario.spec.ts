@@ -101,7 +101,7 @@ test("world assertions preserve and validate a deterministic runtime fingerprint
 });
 
 test("resource assertions preserve an inclusive upper numeric bound", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "playtest-resource-lte-"));
+  const directory = await makeTempDir("playtest-resource-lte-");
   const scenario = {
     assert: { resources: [{ changed: true, gte: -1, id: "state", lte: 1, path: "levelX" }] },
     name: "resource-lte",
