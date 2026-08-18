@@ -1,5 +1,11 @@
 # PRD-055 Phase 0 / candidate G verification — 2026-08-09
 
+> **Relabelled 2026-08-18 by PRD-155 Phase 2.** The desktop half of this document's capture proof
+> came from the runtime's own screenshot path, which copied the surface mid-frame until `473f9f3`.
+> The candidate-G scaffold that produced it has been retired, so the desktop row **cannot be
+> re-run**. The browser and emulator halves are unaffected — an emulator capture reads the
+> composited display. See `docs/verification/prd-155-2026-08-18.md` §2.
+
 **Result: candidate G renders on all three targets; PRD-055 remains blocked by touch
 playability and row 25.** No package gained a widget, layout system, style, React dependency,
 or browser-only rendering path.

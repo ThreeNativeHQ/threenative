@@ -4,16 +4,18 @@ prd_contract: v1
 
 # PRD-155 — Rendering defect sweep, and native visual evidence that can fail
 
-**Status:** PARTIAL, 2026-08-18. Phases 1, 3 and 4 executed; Phase 2 is enumerated but not re-run;
-Phase 5 did not run. Results, evidence and what is still open:
-`docs/verification/prd-155-2026-08-18.md`.
+**Status:** BLOCKED, 2026-08-18, on device conditions and nothing else. Phases 1–4 are complete;
+Phase 5 cannot run until the Pixel 8 is charged to 50%, cool, and off USB. Every result and its
+evidence: `docs/verification/prd-155-2026-08-18.md`.
 
 - **Phase 1 — DONE.** The overlay and one-present-per-frame gate runs on the Pixel 8 and goes red on
   the pre-fix runtime (`presented 120 times in 60 frames`) and green on the fixed one (960/960,
   4,096 overlay pixels). The iOS half is implemented and **unexecuted** — no Apple machine here.
-- **Phase 2 — OUTSTANDING.** Enumerated, and narrowed: playtest `visual` assertions are never
-  evaluated on `--target android|ios`, so no device `visual` result exists to retract. Three results
-  are named as worth re-running first; none has been.
+- **Phase 2 — DONE.** Narrowed first: playtest `visual` assertions are never evaluated on
+  `--target android|ios`, so no device `visual` result exists to retract, and OS-level device
+  captures were never affected. `25-camera-parented-overlay` was re-run on a real RTX 2080 and the
+  camera-parented overlay is on screen. The two that cannot be re-run — PRD-051 and PRD-055 Phase 0,
+  whose harnesses are gone — were relabelled in place, not deleted and not quietly kept.
 - **Phase 3 — D1 NOT REPRODUCED** on web, desktop native, or the Pixel 8. Roof and sails are present
   in all three.
 - **Phase 4 — D2 and D3 REPRODUCED, and both FIXED.** They are one defect and it is a **game bug**,
@@ -23,8 +25,10 @@ Phase 5 did not run. Results, evidence and what is still open:
   overwrote one of its two streak groups. Fixed in `sandbox/fox-native`; on the Pixel 8 the windmill
   region now changes 12.3–12.6 % between frames where it changed 0 %, and the waterfalls 19–23 %
   where they changed 0.00 %. Nothing in `packages/` was changed, and nothing needed to be.
-- **Phase 5 — NOT RUN.** The device was charging, at 24% battery, thermal status 1; all three of the
-  PRD's own preconditions fail.
+- **Phase 5 — BLOCKED.** The device was on USB at 24% battery with thermal status 1; all three of
+  this PRD's own preconditions fail. Rechecked forty minutes later: 22%. Running this game draws more
+  than the USB port supplies, so waiting does not converge — the phone must be charged while idle and
+  then run on battery. No code change is waiting on this.
 
 **Two corrections to §1 below, established by this work.** The present-once-per-frame fix landed in
 `fc2eb93`, not `473f9f3` — `473f9f3` fixed the *screenshot capture* timing and added the present
