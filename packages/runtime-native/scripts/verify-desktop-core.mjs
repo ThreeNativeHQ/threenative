@@ -21,6 +21,17 @@ export function analyzeDesktopLog(log, frames = 300) {
   if (!new RegExp(`Rendered ${frames} frames in \\d+ms`).test(log)) {
     failures.push(`missing exact ${frames}-frame completion`);
   }
+  // One present per frame. The host used to present inside every `queue.submit`, so a frame that
+  // rendered a canvas-layer overlay presented twice and only the first image reached the display —
+  // the overlay was dropped on native while working on web. A pixel check alone cannot see this:
+  // it reads a screenshot, and a screenshot can be right while the display is wrong.
+  const presents = log.match(/^TN_PRESENTS:(\d+)$/mu);
+  if (!presents) failures.push('missing TN_PRESENTS count');
+  else if (Number(presents[1]) !== frames) {
+    failures.push(
+      `presented ${presents[1]} times for ${frames} frames; expected exactly one present per frame`,
+    );
+  }
   for (const line of log.split(/\r?\n/)) {
     if (FAILURE_PATTERN.test(line)) failures.push(line.trim());
   }
@@ -39,6 +50,36 @@ export function inspectScreenshot(path) {
   }
   if (opaque === 0 || colors.size < 2) throw new Error('desktop screenshot is blank');
   return { height: png.height, width: png.width };
+}
+
+/**
+ * Asserts the canvas-layer overlay reached the screen.
+ *
+ * The overlay is a second `renderer.render()` in the same frame. The native host used to present
+ * inside every `queue.submit`, so that second pass acquired its own swapchain image and only the
+ * first present of the frame was displayed — every overlay was silently dropped on native while
+ * working on web. A blank-screenshot check cannot see that: the world still renders. This looks
+ * for the overlay's own colour, which nothing in the world draws.
+ */
+export function inspectOverlay(path, { color = 0xff00ff, minPixels = 256 } = {}) {
+  const png = PNG.sync.read(readFileSync(path));
+  const red = (color >> 16) & 0xff;
+  const green = (color >> 8) & 0xff;
+  const blue = color & 0xff;
+  let matched = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    // Exact match: the overlay is unlit MeshBasicMaterial, so the host must reproduce it exactly.
+    if (png.data[index] === red && png.data[index + 1] === green && png.data[index + 2] === blue) {
+      matched += 1;
+    }
+  }
+  if (matched < minPixels) {
+    throw new Error(
+      `canvas-layer overlay missing from ${path}: found ${matched} pixels of #${color.toString(16).padStart(6, '0')}, expected at least ${minPixels}. ` +
+      'The overlay pass rendered but never reached the display.',
+    );
+  }
+  return { overlayPixels: matched };
 }
 
 export function verifyDesktopCore({ frames = 300 } = {}) {
@@ -90,6 +131,7 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   const failures = analyzeDesktopLog(log, frames);
   if (failures.length > 0) throw new Error(`desktop core gate failed:\n${failures.join('\n')}`);
   const image = inspectScreenshot(screenshot);
+  const overlay = inspectOverlay(screenshot);
   const report = {
     completedAt: new Date().toISOString(),
     frames,
@@ -100,13 +142,14 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     preset,
     screenshot: {
       ...image,
+      ...overlay,
       path: relative(workspace, screenshot),
       sha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
     },
   };
   writeFileSync(logPath, log);
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  return { ...image, frames, host: process.platform, log, preset, reportPath, screenshot };
+  return { ...image, ...overlay, frames, host: process.platform, log, preset, reportPath, screenshot };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

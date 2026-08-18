@@ -395,6 +395,10 @@ static bool extractJsonBool(const std::string& json, const std::string& key, boo
 #else
 #include <unistd.h>   // POSIX: _exit(), getpid()
 #include <signal.h>   // POSIX: kill(), SIGKILL
+
+// Defined in src/webgpu/bindings.cpp. Reported after a screenshot run so the desktop gate can
+// assert one present per frame -- the invariant the canvas-layer overlay pass depends on.
+namespace mystral { namespace webgpu { uint64_t presentCount(); } }
 #endif
 
 void printVersion() {
@@ -1537,6 +1541,11 @@ int runScript(const CLIOptions& opts) {
             if (success) {
                 std::cout << "Screenshot saved: " << opts.screenshotPath << std::endl;
                 std::cout << "Rendered " << opts.frames << " frames in " << duration.count() << "ms" << std::endl;
+                // One present per frame is what lets a second pass -- the canvas-layer overlay --
+                // composite onto the world instead of taking a swapchain image of its own. The
+                // host used to present inside every queue.submit, so a frame that rendered an
+                // overlay presented twice and only the first reached the display.
+                std::cout << "TN_PRESENTS:" << mystral::webgpu::presentCount() << std::endl;
             } else {
                 std::cerr << "Error: Failed to save screenshot!" << std::endl;
             }

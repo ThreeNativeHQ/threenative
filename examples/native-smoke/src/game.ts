@@ -1,6 +1,14 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { BoxGeometry, Matrix4, Mesh, MeshBasicMaterial, Quaternion, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Quaternion,
+  Vector3,
+} from "three";
 
 interface ISmokeState extends Record<string, unknown> {
   airborne: boolean;
@@ -32,6 +40,11 @@ declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   visibility: 0 | 0.25 | 0.5 | 1;
   warmupFrames: number;
 }>;
+
+/** Pure magenta, inset from the top-left. Shared with `verify-desktop-core.mjs`. */
+export const OVERLAY_COLOR = 0xff00ff;
+export const OVERLAY_SIZE = 64;
+export const OVERLAY_INSET = 16;
 
 export const status: ISmokeStatus = { frames: 0, ready: false };
 
@@ -110,6 +123,29 @@ class NativeSmoke extends Scene<ISmokeState> {
 
   override enter(ctx: ICtx<ISmokeState>) {
     ctx.camera.position.z = 3;
+    // The canvas-layer overlay is part of the native contract, so the bundle that proves the
+    // contract has to draw one. The framework renders `ctx.canvasLayer` in a second pass after
+    // the world, and on the native host that second pass used to be thrown away: it acquired its
+    // own swapchain image and only the first present of the frame reached the display, so every
+    // overlay -- the framework's loading screen included -- drew nothing while working on web.
+    // Nothing else in this scene is magenta, and the world never reaches the top-left corner, so
+    // a magenta pixel there means the overlay pass survived. `verify-desktop-core.mjs` asserts it.
+    const overlay = new Mesh(
+      new PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE),
+      new MeshBasicMaterial({ color: OVERLAY_COLOR, depthTest: false, depthWrite: false }),
+    );
+    overlay.frustumCulled = false;
+    ctx.canvasLayer.scene.add(overlay);
+    // The layer's camera is pixel-sized and centred, so this parks the quad in the top-left.
+    const place = ({ height, width }: { height: number; width: number }): void => {
+      overlay.position.set(
+        -width / 2 + OVERLAY_SIZE / 2 + OVERLAY_INSET,
+        height / 2 - OVERLAY_SIZE / 2 - OVERLAY_INSET,
+        0,
+      );
+    };
+    place(ctx.viewport.size);
+    ctx.viewport.onResize(place);
     const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
     ctx.entities.add("cube", cube);
     const player = ctx.add(

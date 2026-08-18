@@ -265,6 +265,8 @@ static bool g_surfaceRenderPassEnded = false;
 // display. See presentPendingSurface().
 static bool g_framePresentPending = false;
 static uint64_t g_lastPresentNs = 0;
+// One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
+static uint64_t g_presentCount = 0;
 static WGPUCommandEncoder g_surfaceRenderEncoder = nullptr;
 static bool g_screenshotPending = false;
 static bool g_screenshotReady = false;
@@ -1708,80 +1710,6 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 if (g_verboseLogging) std::cout << "[WebGPU] Submit #" << submitCount << ": EMPTY (length=" << length << "), g_currentTexture=" << (void*)g_currentTexture << std::endl;
                             }
 
-                            // Copy texture to screenshot buffer ONLY when about to present
-                            // This prevents capturing intermediate render passes (e.g., Three.js post-processing)
-                            // Only capture when the surface render pass has ended, matching the present condition
-                            // Also ensure we only capture once per frame (Three.js does multiple queue.submit() per frame)
-                            WGPUTexture screenshotTexture = g_currentViewSourceTexture ? g_currentViewSourceTexture : g_currentTexture;
-                            if (g_surfaceRenderPassEnded && !g_screenshotCapturedThisFrame && screenshotTexture && g_device && g_queue) {
-                                // Calculate buffer requirements
-                                uint32_t bytesPerPixel = 4;  // BGRA8
-                                uint32_t unalignedBytesPerRow = g_canvasWidth * bytesPerPixel;
-                                uint32_t bytesPerRow = (unalignedBytesPerRow + 255) & ~255;  // Align to 256
-                                size_t requiredSize = bytesPerRow * g_canvasHeight;
-
-                                // Create or resize screenshot buffer if needed
-                                if (!g_screenshotBuffer || g_screenshotBufferSize < requiredSize) {
-                                    if (g_screenshotBuffer) {
-                                        wgpuBufferDestroy(g_screenshotBuffer);
-                                        wgpuBufferRelease(g_screenshotBuffer);
-                                    }
-
-                                    WGPUBufferDescriptor bufferDesc = {};
-                                    bufferDesc.size = requiredSize;
-                                    bufferDesc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
-                                    bufferDesc.mappedAtCreation = false;
-
-                                    g_screenshotBuffer = wgpuDeviceCreateBuffer(g_device, &bufferDesc);
-                                    g_screenshotBufferSize = requiredSize;
-                                }
-                                g_screenshotBytesPerRow = bytesPerRow;
-
-                                // Create encoder to copy texture to buffer
-                                WGPUCommandEncoderDescriptor encDesc = {};
-                                WGPUCommandEncoder copyEncoder = wgpuDeviceCreateCommandEncoder(g_device, &encDesc);
-
-                                WGPUImageCopyTexture_Compat srcCopy = {};
-                                srcCopy.texture = screenshotTexture;
-                                srcCopy.mipLevel = 0;
-                                srcCopy.origin = {0, 0, 0};
-                                srcCopy.aspect = WGPUTextureAspect_All;
-
-                                WGPUImageCopyBuffer_Compat dstCopy = {};
-                                dstCopy.buffer = g_screenshotBuffer;
-                                dstCopy.layout.offset = 0;
-                                dstCopy.layout.bytesPerRow = bytesPerRow;
-                                dstCopy.layout.rowsPerImage = g_canvasHeight;
-
-                                WGPUExtent3D copySize = {g_canvasWidth, g_canvasHeight, 1};
-                                wgpuCommandEncoderCopyTextureToBuffer(copyEncoder, &srcCopy, &dstCopy, &copySize);
-
-                                if (g_verboseLogging) std::cout << "[Screenshot] Copying from texture " << (void*)screenshotTexture
-                                          << " (format=" << g_surfaceFormat << ", size=" << g_canvasWidth << "x" << g_canvasHeight << ")" << std::endl;
-
-                                WGPUCommandBufferDescriptor cmdDesc = {};
-                                WGPUCommandBuffer copyCmd = wgpuCommandEncoderFinish(copyEncoder, &cmdDesc);
-                                wgpuQueueSubmit(g_queue, 1, &copyCmd);
-
-                                wgpuCommandBufferRelease(copyCmd);
-                                wgpuCommandEncoderRelease(copyEncoder);
-
-                                // Wait for GPU work to complete before present
-                                // This ensures the screenshot copy finishes before the texture is released
-                                for (int syncIter = 0; syncIter < 100; syncIter++) {
-#if defined(MYSTRAL_WEBGPU_DAWN)
-                                    wgpuDeviceTick(g_device);
-#elif defined(MYSTRAL_WEBGPU_WGPU)
-                                    wgpuDevicePoll(g_device, false, nullptr);
-#endif
-                                    if (g_instance) {
-                                        wgpuInstanceProcessEvents(g_instance);
-                                    }
-                                }
-
-                                g_screenshotReady = true;
-                                g_screenshotCapturedThisFrame = true;
-                            }
 
                             // Mark the frame ready to present rather than presenting here.
                             //
@@ -5701,6 +5629,10 @@ uint32_t getScreenshotFormat() {
     return static_cast<uint32_t>(g_surfaceFormat);
 }
 
+uint64_t presentCount() {
+    return g_presentCount;
+}
+
 bool isScreenshotReady() {
     return g_screenshotReady;
 }
@@ -6054,6 +5986,91 @@ void invokeVideoCaptureCallback(WGPUTexture texture, uint32_t width, uint32_t he
 }
 
 /**
+ * Copies the finished frame into the screenshot buffer.
+ *
+ * This used to run inside `queue.submit`, on the first submit whose surface pass had ended. A
+ * frame that renders an overlay submits twice, so the capture happened after the world pass and
+ * before the overlay — every native screenshot was of a half-finished frame, and any gate reading
+ * one could not see an overlay at all. It now runs at the frame boundary, with everything drawn.
+ */
+static void captureFrameScreenshot() {
+    // Copy texture to screenshot buffer ONLY when about to present
+    // This prevents capturing intermediate render passes (e.g., Three.js post-processing)
+    // Only capture when the surface render pass has ended, matching the present condition
+    // Also ensure we only capture once per frame (Three.js does multiple queue.submit() per frame)
+    WGPUTexture screenshotTexture = g_currentViewSourceTexture ? g_currentViewSourceTexture : g_currentTexture;
+    if (g_surfaceRenderPassEnded && !g_screenshotCapturedThisFrame && screenshotTexture && g_device && g_queue) {
+        // Calculate buffer requirements
+        uint32_t bytesPerPixel = 4;  // BGRA8
+        uint32_t unalignedBytesPerRow = g_canvasWidth * bytesPerPixel;
+        uint32_t bytesPerRow = (unalignedBytesPerRow + 255) & ~255;  // Align to 256
+        size_t requiredSize = bytesPerRow * g_canvasHeight;
+
+        // Create or resize screenshot buffer if needed
+        if (!g_screenshotBuffer || g_screenshotBufferSize < requiredSize) {
+            if (g_screenshotBuffer) {
+                wgpuBufferDestroy(g_screenshotBuffer);
+                wgpuBufferRelease(g_screenshotBuffer);
+            }
+
+            WGPUBufferDescriptor bufferDesc = {};
+            bufferDesc.size = requiredSize;
+            bufferDesc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
+            bufferDesc.mappedAtCreation = false;
+
+            g_screenshotBuffer = wgpuDeviceCreateBuffer(g_device, &bufferDesc);
+            g_screenshotBufferSize = requiredSize;
+        }
+        g_screenshotBytesPerRow = bytesPerRow;
+
+        // Create encoder to copy texture to buffer
+        WGPUCommandEncoderDescriptor encDesc = {};
+        WGPUCommandEncoder copyEncoder = wgpuDeviceCreateCommandEncoder(g_device, &encDesc);
+
+        WGPUImageCopyTexture_Compat srcCopy = {};
+        srcCopy.texture = screenshotTexture;
+        srcCopy.mipLevel = 0;
+        srcCopy.origin = {0, 0, 0};
+        srcCopy.aspect = WGPUTextureAspect_All;
+
+        WGPUImageCopyBuffer_Compat dstCopy = {};
+        dstCopy.buffer = g_screenshotBuffer;
+        dstCopy.layout.offset = 0;
+        dstCopy.layout.bytesPerRow = bytesPerRow;
+        dstCopy.layout.rowsPerImage = g_canvasHeight;
+
+        WGPUExtent3D copySize = {g_canvasWidth, g_canvasHeight, 1};
+        wgpuCommandEncoderCopyTextureToBuffer(copyEncoder, &srcCopy, &dstCopy, &copySize);
+
+        if (g_verboseLogging) std::cout << "[Screenshot] Copying from texture " << (void*)screenshotTexture
+                  << " (format=" << g_surfaceFormat << ", size=" << g_canvasWidth << "x" << g_canvasHeight << ")" << std::endl;
+
+        WGPUCommandBufferDescriptor cmdDesc = {};
+        WGPUCommandBuffer copyCmd = wgpuCommandEncoderFinish(copyEncoder, &cmdDesc);
+        wgpuQueueSubmit(g_queue, 1, &copyCmd);
+
+        wgpuCommandBufferRelease(copyCmd);
+        wgpuCommandEncoderRelease(copyEncoder);
+
+        // Wait for GPU work to complete before present
+        // This ensures the screenshot copy finishes before the texture is released
+        for (int syncIter = 0; syncIter < 100; syncIter++) {
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            wgpuDeviceTick(g_device);
+#elif defined(MYSTRAL_WEBGPU_WGPU)
+            wgpuDevicePoll(g_device, false, nullptr);
+#endif
+            if (g_instance) {
+                wgpuInstanceProcessEvents(g_instance);
+            }
+        }
+
+        g_screenshotReady = true;
+        g_screenshotCapturedThisFrame = true;
+    }
+}
+
+/**
  * Presents the frame, once, after every rAF callback has returned.
  *
  * The surface used to be presented from inside `queue.submit`. That is wrong for any frame that
@@ -6064,10 +6081,18 @@ void invokeVideoCaptureCallback(WGPUTexture texture, uint32_t width, uint32_t he
  * happens here, so both passes land on one image and that image is presented once.
  */
 static void presentPendingSurface() {
-    if (!g_framePresentPending) return;
+    // Exactly one acquire and one release per frame, whether or not anything was presented.
+    // Returning early without releasing would strand the acquired swapchain image, and because
+    // acquisition is idempotent within a frame every later frame would reuse that stranded image
+    // and never present again — a black screen from the first frame that renders nothing.
+    // Capture before presenting: the surface texture is still alive and now carries every pass.
+    captureFrameScreenshot();
+    const bool pending = g_framePresentPending;
     g_framePresentPending = false;
-    if (!g_surface || !g_currentTexture) return;
+    if (!g_currentTexture) return;
 
+    if (pending && g_surface) {
+    g_presentCount += 1;
     if (g_verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
     const auto presentStart = std::chrono::steady_clock::now();
     const bool presented = g_requiresSrgbPresentationBridge
@@ -6091,6 +6116,7 @@ static void presentPendingSurface() {
         mystral::frameHitches().record();
     } else {
         std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+    }
     }
 
     // Reset surface render tracking for the next frame.
