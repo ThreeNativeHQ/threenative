@@ -23,10 +23,22 @@ npx @threenative/playtest playtests/movement.playtest.json \
   --browser-arg --enable-features=Vulkan
 ```
 
-## Device targets
+## Native targets
 
-The same scenario format runs through `--target browser`, `--target android`, or
-`--target ios`. An iOS simulator run installs a built app, launches it with `simctl`, and
+The same scenario format runs through `--target browser`, `--target android`, `--target desktop`,
+or `--target ios`. A desktop run launches a caller-supplied packaged native game executable,
+creates a temporary local mailbox, and removes it with the child process when the run ends:
+
+```bash
+npx @threenative/playtest playtests/device-smoke.playtest.json \
+  --target desktop --executable .threenative/build/ThreeNative
+```
+
+The native host receives the mailbox root through `TN_PLAYTEST_MAILBOX_ROOT` and injects the
+shared `TN_PLAYTEST_MAILBOX` global before evaluating the game entry, so the game source is
+unchanged. On Linux without a display, prefix the command with `sh scripts/xvfb.sh`.
+
+An iOS simulator run installs a built app, launches it with `simctl`, and
 uses the app data-container mailbox:
 
 ```bash

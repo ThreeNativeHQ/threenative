@@ -20,6 +20,7 @@ export default defineConfig({
   ],
   format: ["esm"],
   target: "es2022",
+  banner: { js: "#!/usr/bin/env node" },
   dts: true,
   sourcemap: false,
   clean: true,

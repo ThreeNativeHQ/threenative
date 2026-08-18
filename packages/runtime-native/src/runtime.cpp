@@ -78,6 +78,7 @@
 #endif
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 // External functions from bindings.cpp for async video capture
 namespace mystral { namespace webgpu {
@@ -735,6 +736,26 @@ private:
         nextTimerId_ = 1;
     }
 
+    void processPlaytestScreenshotRequest() {
+        const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
+        if (configuredRoot == nullptr || configuredRoot[0] == '\0') return;
+
+        const std::filesystem::path requestPath =
+            std::filesystem::path(configuredRoot) / "tn-playtest-screenshot-request.txt";
+        std::ifstream request(requestPath, std::ios::binary);
+        if (!request.is_open()) return;
+        std::stringstream contents;
+        contents << request.rdbuf();
+        request.close();
+        std::remove(requestPath.string().c_str());
+
+        const std::string screenshotPath = contents.str();
+        if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
+        if (!saveScreenshot(screenshotPath)) {
+            std::cerr << "[Playtest] Native screenshot request failed: " << screenshotPath << std::endl;
+        }
+    }
+
 public:
 
     // ========================================================================
@@ -873,6 +894,10 @@ public:
         // Free non-protected handles, per-frame native allocations, and Dawn resources
         jsEngine_->clearFrameHandles();
         webgpu::endDawnFrame();
+
+        // Desktop screenshot requests are serviced by the host after the frame has presented. This
+        // is file polling only; the game does not receive a per-frame JS/C++ callback.
+        processPlaytestScreenshotRequest();
 
         // TODO: Translate to Web events via InputShim
         // TODO: Dispatch to JS

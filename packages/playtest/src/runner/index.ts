@@ -6,6 +6,8 @@ export * from "./browser.js";
 export * from "./android.js";
 export * from "./androidRunner.js";
 export * from "./config.js";
+export * from "./desktop.js";
+export * from "./desktopRunner.js";
 export * from "./init.js";
 export * from "./ios.js";
 export * from "./iosRunner.js";

@@ -21,6 +21,7 @@ export interface IStandalonePlaytestConfig {
   artifactDirectory: string;
   browserArgs?: readonly string[];
   device?: string;
+  desktop?: { executable: string };
   endpoint?: string;
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
@@ -29,7 +30,7 @@ export interface IStandalonePlaytestConfig {
   scenarioPath: string;
   server?: IPlaytestServerConfig;
   timeoutMs: number;
-  target?: "android" | "browser" | "ios";
+  target?: "android" | "browser" | "desktop" | "ios";
   trace: boolean;
   url: string;
   xcrunPath?: string;
@@ -53,6 +54,7 @@ export const PLAYTEST_FLAGS = {
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu)", takesValue: true },
   "--bundle-id": { default: "dev.threenative.runtime", summary: "iOS application bundle identifier", takesValue: true },
   "--device": { default: "platform default", summary: "Android serial or iOS device identifier", takesValue: true },
+  "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
   "--mailbox-root": { default: "Android external files directory", summary: "native device mailbox directory", takesValue: true },
@@ -63,7 +65,7 @@ export const PLAYTEST_FLAGS = {
   "--server-command": { default: "none", summary: "command for a managed app server", takesValue: true },
   "--server-timeout": { default: "15000", summary: "managed server readiness timeout in ms", takesValue: true },
   "--timeout": { default: "15000", summary: "page operation timeout in ms", takesValue: true },
-  "--target": { default: "browser", summary: "execution target (browser, android, or ios)", takesValue: true },
+  "--target": { default: "browser", summary: "execution target (browser, android, desktop, or ios)", takesValue: true },
   "--trace": { default: "false", summary: "write a Playwright trace", takesValue: false },
   "--url": { default: "http://127.0.0.1:5173", summary: "application URL", takesValue: true },
   "--xcrun": { default: "auto-discover", summary: "absolute xcrun executable path", takesValue: true },
@@ -109,12 +111,16 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   }
   const url = flags.get("--url")?.[0] ?? "http://127.0.0.1:5173";
   const target = flags.get("--target")?.[0] ?? "browser";
-  if (target !== "browser" && target !== "android" && target !== "ios") {
-    throw new PlaytestCliUsageError(`Unknown target '${target}'. Expected 'browser', 'android', or 'ios'.`);
+  if (target !== "browser" && target !== "android" && target !== "desktop" && target !== "ios") {
+    throw new PlaytestCliUsageError(`Unknown target '${target}'. Expected 'browser', 'android', 'desktop', or 'ios'.`);
   }
   const projectPath = resolve(cwd, flags.get("--project")?.[0] ?? ".");
   const serverCommand = flags.get("--server-command")?.[0];
   const appPath = flags.get("--app")?.[0];
+  const executable = flags.get("--executable")?.[0];
+  if (target === "desktop" && executable === undefined) {
+    throw new PlaytestCliUsageError("Desktop playtest requires --executable <native-game-executable>.");
+  }
   const iosTransport = flags.get("--ios-transport")?.[0] ?? "simulator";
   if (iosTransport !== "simulator" && iosTransport !== "device") {
     throw new PlaytestCliUsageError(`Unknown iOS transport '${iosTransport}'. Expected 'simulator' or 'device'.`);
@@ -143,6 +149,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
     ...(flags.get("--device")?.[0] === undefined ? {} : { device: flags.get("--device")![0] }),
+    ...(executable === undefined ? {} : { desktop: { executable: resolve(projectPath, executable) } }),
     endpoint: flags.get("--endpoint")?.[0] ?? "http://127.0.0.1:41777/playtest",
     headless: !argv.includes("--headed"),
     ios: {

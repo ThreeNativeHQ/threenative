@@ -169,6 +169,42 @@ test('Android default gate is generated from the public core native smoke at cat
   assert.match(androidMain, /TN_PLAYTEST_MAILBOX_ROOT|tn-playtest-request\.json/, 'Android native entry must configure the mailbox bridge');
 });
 
+test('desktop playtests inject the shared mailbox before game evaluation and service screenshot artifacts in the host', () => {
+  const cli = read('src/cli/main.cpp');
+  const mailboxSetupStart = cli.indexOf('const char* configuredMailboxRoot');
+  const gameLoadStart = cli.indexOf('if (!runtime->loadScript(opts.scriptPath))', mailboxSetupStart);
+  assert.notEqual(mailboxSetupStart, -1, 'desktop mailbox setup call site is missing');
+  assert.notEqual(gameLoadStart, -1, 'desktop game load call site is missing');
+  assert.ok(gameLoadStart > mailboxSetupStart, 'desktop game load must follow mailbox setup');
+  const mailboxSetup = cli.slice(mailboxSetupStart, gameLoadStart);
+  assert.match(mailboxSetup, /runtime->evalScript\(mailbox,\s*"threenative-playtest-mailbox\.js"\)/u);
+  assert.match(mailboxSetup, /globalThis\.TN_PLAYTEST_ENDPOINT/u);
+  assert.match(mailboxSetup, /globalThis\.TN_PLAYTEST_MAILBOX/u);
+  assert.match(mailboxSetup, /tn-playtest-request\.json/u);
+  assert.match(mailboxSetup, /tn-playtest-response\.json/u);
+
+  const runtime = read('src/runtime.cpp');
+  const screenshotServiceStart = runtime.indexOf('void processPlaytestScreenshotRequest()');
+  const frameLoopStart = runtime.indexOf('bool pollEvents() override');
+  const frameLoopEnd = runtime.indexOf('void quit() override', frameLoopStart);
+  assert.notEqual(screenshotServiceStart, -1, 'screenshot service definition is missing');
+  assert.notEqual(frameLoopStart, -1, 'runtime frame loop is missing');
+  assert.notEqual(frameLoopEnd, -1, 'runtime frame loop boundary is missing');
+  const screenshotService = runtime.slice(screenshotServiceStart, frameLoopStart);
+  const frameLoop = runtime.slice(frameLoopStart, frameLoopEnd);
+  assert.match(screenshotService, /tn-playtest-screenshot-request\.txt/u);
+  assert.match(screenshotService, /saveScreenshot\(screenshotPath\)/u);
+  const renderedFrame = frameLoop.indexOf('executeAnimationFrameCallbacks();');
+  const screenshotRequest = frameLoop.indexOf('processPlaytestScreenshotRequest();');
+  assert.ok(renderedFrame >= 0, 'frame loop must execute animation callbacks');
+  assert.ok(screenshotRequest > renderedFrame, 'frame loop must service screenshots after rendering');
+  assert.equal(
+    (frameLoop.match(/processPlaytestScreenshotRequest\(\);/gu) ?? []).length,
+    1,
+    'frame loop must invoke the screenshot service at its call site',
+  );
+});
+
 const generatedAndroidBundle = 'android/app/build/generated/threenative/assets/scripts/main.js';
 const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
 test.skipIf(

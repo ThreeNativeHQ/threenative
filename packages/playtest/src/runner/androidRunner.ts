@@ -57,11 +57,17 @@ export interface IDevicePlaytestDriver {
 }
 
 export interface IDevicePlaytestTarget {
+  abortCleanup?: () => Promise<void>;
+  abortSignal?: AbortSignal;
   driver: IDevicePlaytestDriver;
   mailboxPaths: ReturnType<typeof androidMailboxPaths>;
-  name: "android" | "ios";
+  name: "android" | "desktop" | "ios";
   processName: string;
   transport?: IDevicePlaytestTransport;
+}
+
+interface IDevicePlaytestCleanupState {
+  error?: Error;
 }
 
 export async function runAndroidPlaytest(
@@ -92,8 +98,27 @@ export async function runDevicePlaytest(
   config: IStandalonePlaytestConfig,
   target: IDevicePlaytestTarget,
 ): Promise<IStandalonePlaytestReport> {
+  const cleanupState: IDevicePlaytestCleanupState = {};
+  let report: IStandalonePlaytestReport;
+  try {
+    report = await runDevicePlaytestInternal(config, target, cleanupState);
+  } catch (error) {
+    if (cleanupState.error === undefined) throw error;
+    throw cleanupFailure([error, cleanupState.error]);
+  }
+  if (cleanupState.error !== undefined) throw cleanupState.error;
+  return report;
+}
+
+async function runDevicePlaytestInternal(
+  config: IStandalonePlaytestConfig,
+  target: IDevicePlaytestTarget,
+  cleanupState: IDevicePlaytestCleanupState,
+): Promise<IStandalonePlaytestReport> {
   const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
+  await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
+  await throwIfAborted(target);
   const unsupported = unsupportedAssertion(scenario, target.name);
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
   if (
@@ -126,9 +151,13 @@ export async function runDevicePlaytest(
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
   try {
+    await throwIfAborted(target);
     await transport.start();
+    await throwIfAborted(target);
     await target.driver.prepare(endpoint, config.mailboxRoot);
+    await throwIfAborted(target);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
+    await throwIfAborted(target);
     if (bridge === undefined) {
       return failureReport(config, scenario, playtestDiagnostic(
         "TN_PLAYTEST_BRIDGE_MISSING",
@@ -143,8 +172,11 @@ export async function runDevicePlaytest(
         target.name,
       ), target.name);
     }
+    await throwIfAborted(target);
     if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
+    await throwIfAborted(target);
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
+    await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);
     const sampleRequest = {
@@ -178,6 +210,7 @@ export async function runDevicePlaytest(
     let pointerButtons = 0;
     let pointerCount = 0;
     for (const [index, step] of scenario.steps.entries()) {
+      await throwIfAborted(target);
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (
         target.name === "android"
@@ -349,20 +382,52 @@ export async function runDevicePlaytest(
       network: [],
       runtimeTrace: undefined,
     });
-    return { ...report, runtime: "native", target: target.name, url: endpoint };
+    return {
+      ...report,
+      runtime: "native",
+      target: target.name,
+      url: target.name === "desktop" ? config.desktop?.executable ?? target.processName : endpoint,
+    };
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       return failureReport(config, scenario, error.diagnostic, target.name);
     }
     throw error;
   } finally {
+    const cleanupErrors: unknown[] = [];
+    const attemptCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    };
     if (target.name === "android" && scenario.steps.some((step) => step.pointers !== undefined)) {
-      await target.driver.setPointers?.([]).catch(() => undefined);
+      await attemptCleanup(async () => {
+        await target.driver.setPointers?.([]);
+      });
     }
-    await target.driver.stop().catch(() => undefined);
-    await bridge?.close().catch(() => undefined);
-    await transport.close().catch(() => undefined);
+    await attemptCleanup(() => target.driver.stop());
+    await attemptCleanup(async () => {
+      await bridge?.close();
+    });
+    await attemptCleanup(() => transport.close());
+    if (cleanupErrors.length > 0) cleanupState.error = cleanupFailure(cleanupErrors);
   }
+}
+
+async function throwIfAborted(target: IDevicePlaytestTarget): Promise<void> {
+  if (!target.abortSignal?.aborted) return;
+  await target.abortCleanup?.();
+  throw new Error("Desktop playtest interrupted by signal.");
+}
+
+function cleanupFailure(errors: readonly unknown[]): Error {
+  if (errors.length === 1) {
+    const error = errors[0];
+    return error instanceof Error ? error : new Error(String(error));
+  }
+  return new AggregateError(errors, "Device playtest cleanup failed.");
 }
 
 function createDeviceTransport(
@@ -391,13 +456,20 @@ function isMailboxDriver(
 
 function unsupportedAssertion(
   scenario: IPlaytestScenario,
-  target: "android" | "ios",
+  target: "android" | "desktop" | "ios",
 ): IPlaytestProtocolDiagnostic | undefined {
   const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
   if (hasMultiPointerInput && target === "ios") {
     return unsupportedDiagnostic(
       "complete held-pointer input",
       "Run this scenario on --target browser or --target android; iOS multi-pointer injection is not implemented.",
+      target,
+    );
+  }
+  if (hasMultiPointerInput && target === "desktop") {
+    return unsupportedDiagnostic(
+      "complete held-pointer input",
+      "Run this scenario on --target browser or --target android; the desktop mailbox host exposes one pointer.",
       target,
     );
   }
@@ -429,17 +501,24 @@ function unsupportedAssertion(
       target,
     );
   }
+  if (scenario.assert?.framebufferCoverage !== undefined && target === "desktop") {
+    return unsupportedDiagnostic(
+      "framebuffer coverage recording",
+      "Run this assertion on --target browser or --target android; the desktop mailbox exposes screenshots, not a per-frame recorder observer.",
+      target,
+    );
+  }
   return undefined;
 }
 
 function unsupportedDiagnostic(
   subject: string,
   fix: string,
-  target: "android" | "ios",
+  target: "android" | "desktop" | "ios",
 ): IPlaytestProtocolDiagnostic {
   return playtestDiagnostic(
     "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
-    `${targetLabel(target)} device target does not support ${subject}.`,
+    `${targetLabel(target)} ${target === "desktop" ? "desktop" : "device"} target does not support ${subject}.`,
     fix,
   );
 }
@@ -448,7 +527,7 @@ function failureReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
   diagnostic: IPlaytestProtocolDiagnostic,
-  target: "android" | "ios",
+  target: "android" | "desktop" | "ios",
 ): IStandalonePlaytestReport {
   const item: IPlaytestDiagnostic = { ...diagnostic, suggestion: diagnostic.fix.instruction };
   const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
@@ -465,12 +544,16 @@ function failureReport(
     runtime: "native",
     scenario: scenario.name,
     target,
-    url: config.endpoint ?? "http://127.0.0.1:41777/playtest",
+    url: target === "desktop"
+      ? config.desktop?.executable ?? "desktop"
+      : config.endpoint ?? "http://127.0.0.1:41777/playtest",
   } as IStandalonePlaytestReport;
 }
 
-function targetLabel(target: "android" | "ios"): string {
-  return target === "android" ? "Android" : "iOS";
+function targetLabel(target: "android" | "desktop" | "ios"): string {
+  if (target === "android") return "Android";
+  if (target === "ios") return "iOS";
+  return "Desktop";
 }
 
 function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {

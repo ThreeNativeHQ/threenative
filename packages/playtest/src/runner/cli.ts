@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -13,6 +12,7 @@ import {
 } from "./config.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
+import { runDesktopPlaytest } from "./desktopRunner.js";
 import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest } from "./runner.js";
@@ -22,6 +22,31 @@ export interface IRunnerDiagnostic {
   fix: { instruction: string };
   message: string;
   severity: "error";
+}
+
+export type IConfiguredPlaytestRunner = (
+  config: IStandalonePlaytestConfig,
+) => Promise<import("./runner.js").IStandalonePlaytestReport>;
+
+export interface IPlaytestTargetRunners {
+  android: IConfiguredPlaytestRunner;
+  browser: IConfiguredPlaytestRunner;
+  desktop: IConfiguredPlaytestRunner;
+  ios: IConfiguredPlaytestRunner;
+}
+
+const DEFAULT_TARGET_RUNNERS: IPlaytestTargetRunners = {
+  android: runAndroidPlaytest,
+  browser: runStandalonePlaytest,
+  desktop: runDesktopPlaytest,
+  ios: runIosPlaytest,
+};
+
+export function runConfiguredPlaytest(
+  config: IStandalonePlaytestConfig,
+  runners: IPlaytestTargetRunners = DEFAULT_TARGET_RUNNERS,
+): Promise<import("./runner.js").IStandalonePlaytestReport> {
+  return runners[config.target ?? "browser"](config);
 }
 
 export function exitCodeForReport(report: {
@@ -101,11 +126,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return await recordToScenarioCommand(argv.slice(1));
     }
     config = parseStandalonePlaytestArgs(argv);
-    const report = config.target === "android"
-      ? await runAndroidPlaytest(config)
-      : config.target === "ios"
-        ? await runIosPlaytest(config)
-        : await runStandalonePlaytest(config);
+    const report = await runConfiguredPlaytest(config);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     const exitCode = exitCodeForReport(report);
     process.exitCode = exitCode;

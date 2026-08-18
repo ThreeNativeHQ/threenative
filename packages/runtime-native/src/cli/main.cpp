@@ -65,6 +65,31 @@ static std::string base64Encode(const uint8_t* data, size_t len) {
     return result;
 }
 
+static std::string javascriptString(const std::string& value) {
+    static const char hex[] = "0123456789abcdef";
+    std::string result = "\"";
+    for (unsigned char character : value) {
+        switch (character) {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (character < 0x20) {
+                    result += "\\u00";
+                    result.push_back(hex[(character >> 4) & 0x0f]);
+                    result.push_back(hex[character & 0x0f]);
+                } else {
+                    result.push_back(static_cast<char>(character));
+                }
+                break;
+        }
+    }
+    result += "\"";
+    return result;
+}
+
 // PNG write callback for stbi_write_png_to_func
 static void pngWriteCallback(void* context, void* data, int size) {
     auto* buffer = static_cast<std::vector<uint8_t>*>(context);
@@ -1459,6 +1484,25 @@ int runScript(const CLIOptions& opts) {
     if (!runtime) {
         std::cerr << "Error: Failed to create runtime!" << std::endl;
         return 1;
+    }
+
+    // Desktop playtests use the same native mailbox bridge as Android and iOS. The runner passes
+    // the temporary root through the process environment so packaged game entries do not need a
+    // playtest-specific source wrapper or a platform branch.
+    namespace fs = std::filesystem;
+    const char* configuredMailboxRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
+    if (configuredMailboxRoot != nullptr && configuredMailboxRoot[0] != '\0') {
+        const fs::path root(configuredMailboxRoot);
+        const std::string request = (root / "tn-playtest-request.json").string();
+        const std::string response = (root / "tn-playtest-response.json").string();
+        const std::string mailbox = "globalThis.TN_PLAYTEST_ENDPOINT='native://desktop-mailbox';"
+            "globalThis.TN_PLAYTEST_MAILBOX={request:" + javascriptString(request)
+            + ",response:" + javascriptString(response) + "};";
+        if (!runtime->evalScript(mailbox, "threenative-playtest-mailbox.js")) {
+            std::cerr << "Error: Failed to configure the desktop playtest mailbox." << std::endl;
+            return 1;
+        }
+        std::cout << "[Mystral] Desktop playtest mailbox configured" << std::endl;
     }
 
     // Load and execute the script

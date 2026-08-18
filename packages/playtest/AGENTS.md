@@ -25,11 +25,14 @@ Concretely, when you touch this package:
   holds the shape: `vacuous-assertion.spec.ts`, `silent-drop.spec.ts`,
   `evidence-required.spec.ts`. Add to those rather than starting a new pattern.
 
-## One scenario, three targets
+## One scenario, four targets
 
-`--target browser|android|ios` runs the same scenario file against a browser, an Android
-device or emulator, and an iOS simulator or device (`runner/androidRunner.ts`,
-`runner/iosRunner.ts`, `runner/deviceTransport.ts`). Keep it that way: an assertion that only
+`--target browser|android|desktop|ios` runs the same scenario file against a browser, an Android
+device or emulator, a native desktop executable, and an iOS simulator or device
+(`runner/androidRunner.ts`, `runner/desktopRunner.ts`, `runner/iosRunner.ts`,
+`runner/deviceTransport.ts`). Desktop requires `--executable`; the runner owns a temporary local
+mailbox and passes its root to the native host through `TN_PLAYTEST_MAILBOX_ROOT`. Keep it that way:
+an assertion that only
 means something on one target is a fork of the harness.
 
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
