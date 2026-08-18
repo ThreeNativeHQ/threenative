@@ -21,6 +21,27 @@ test("standalone args support existing-server and managed-server flows", () => {
   expect(managed.server?.timeoutMs).toBe(20_000);
 });
 
+test("a managed server without an explicit URL or port requests a free port", () => {
+  const config = parseStandalonePlaytestArgs([
+    "--scenario", "playtests/move.playtest.json",
+    "--server-command", "pnpm dev --port $PORT",
+  ], "/project");
+
+  expect(config.port).toBe(0);
+});
+
+test("an explicit port is applied when the URL omits its port", () => {
+  const config = parseStandalonePlaytestArgs([
+    "--scenario", "playtests/move.playtest.json",
+    "--port", "4321",
+    "--url", "http://127.0.0.1",
+    "--server-command", "pnpm dev --port $PORT",
+  ], "/project");
+
+  expect(config.port).toBe(4_321);
+  expect(config.url).toBe("http://127.0.0.1:4321");
+});
+
 test("device args select Android and preserve an explicit endpoint", () => {
   const config = parseStandalonePlaytestArgs([
     "playtests/move.json",

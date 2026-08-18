@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { readdirSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 
 export interface IPlaytestServerConfig {
@@ -26,8 +27,10 @@ export interface IStandalonePlaytestConfig {
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
   mailboxRoot?: string;
+  port?: number;
   projectPath: string;
   scenarioPath: string;
+  scenarioPaths?: readonly string[];
   server?: IPlaytestServerConfig;
   timeoutMs: number;
   target?: "android" | "browser" | "desktop" | "ios";
@@ -61,13 +64,14 @@ export const PLAYTEST_FLAGS = {
   "--ios-transport": { default: "simulator", summary: "iOS transport (simulator or device)", takesValue: true },
   "--project": { default: ".", summary: "project root used to resolve paths", takesValue: true },
   "--package": { default: "com.mystral.engine", summary: "Android application id", takesValue: true },
-  "--scenario": { default: "required (or positional)", summary: "scenario JSON path", takesValue: true },
+  "--scenario": { default: "required (or positional; repeatable)", repeatable: true, summary: "scenario JSON path or glob", takesValue: true },
   "--server-command": { default: "none", summary: "command for a managed app server", takesValue: true },
   "--server-timeout": { default: "15000", summary: "managed server readiness timeout in ms", takesValue: true },
   "--timeout": { default: "15000", summary: "page operation timeout in ms", takesValue: true },
   "--target": { default: "browser", summary: "execution target (browser, android, desktop, or ios)", takesValue: true },
   "--trace": { default: "false", summary: "write a Playwright trace", takesValue: false },
-  "--url": { default: "http://127.0.0.1:5173", summary: "application URL", takesValue: true },
+  "--url": { default: "http://127.0.0.1:5173 (or a free managed port)", summary: "application URL", takesValue: true },
+  "--port": { default: "free when managing a server", summary: "managed server port (0 chooses a free port)", takesValue: true },
   "--xcrun": { default: "auto-discover", summary: "absolute xcrun executable path", takesValue: true },
 } as const satisfies Record<string, IPlaytestFlagHelp>;
 
@@ -105,17 +109,28 @@ export function formatUsage(): string {
 
 export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = process.cwd()): IStandalonePlaytestConfig {
   const flags = parseFlags(argv);
-  const scenarioPath = flags.get("--scenario")?.[0] ?? positional(argv);
-  if (scenarioPath === undefined) {
+  const scenarioPatterns = flags.get("--scenario") ?? [positional(argv)].filter((value): value is string => value !== undefined);
+  if (scenarioPatterns.length === 0) {
     throw new PlaytestCliUsageError("Missing scenario path. Run: threenative-playtest --scenario playtests/movement.playtest.json --url http://127.0.0.1:5173");
   }
-  const url = flags.get("--url")?.[0] ?? "http://127.0.0.1:5173";
+  const urlFlag = flags.get("--url")?.[0];
+  const url = urlFlag ?? "http://127.0.0.1:5173";
   const target = flags.get("--target")?.[0] ?? "browser";
   if (target !== "browser" && target !== "android" && target !== "desktop" && target !== "ios") {
     throw new PlaytestCliUsageError(`Unknown target '${target}'. Expected 'browser', 'android', 'desktop', or 'ios'.`);
   }
   const projectPath = resolve(cwd, flags.get("--project")?.[0] ?? ".");
   const serverCommand = flags.get("--server-command")?.[0];
+  const requestedPort = readPort(flags.get("--port")?.[0]);
+  const urlPort = portFromUrl(url);
+  const effectivePort = requestedPort ?? (serverCommand === undefined || urlFlag !== undefined ? urlPort : undefined);
+  if (requestedPort !== undefined && requestedPort > 0 && urlFlag !== undefined && urlPort !== undefined && requestedPort !== urlPort) {
+    throw new PlaytestCliUsageError(`--port ${requestedPort} conflicts with the port in --url (${urlPort}).`);
+  }
+  const scenarioPaths = scenarioPatterns.flatMap((pattern) => expandScenarioPattern(projectPath, pattern));
+  if (scenarioPaths.length === 0) {
+    throw new PlaytestCliUsageError("No scenario files matched the requested patterns.");
+  }
   const appPath = flags.get("--app")?.[0];
   const executable = flags.get("--executable")?.[0];
   if (target === "desktop" && executable === undefined) {
@@ -158,17 +173,106 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       transport: iosTransport,
     },
     ...(flags.get("--mailbox-root")?.[0] === undefined ? {} : { mailboxRoot: flags.get("--mailbox-root")![0] }),
+    ...(serverCommand === undefined
+      ? effectivePort === undefined ? {} : { port: effectivePort }
+      : { port: effectivePort ?? 0 }),
     projectPath,
-    scenarioPath,
+    scenarioPath: scenarioPaths[0]!,
+    scenarioPaths,
     ...(serverCommand === undefined
       ? {}
       : { server: { command: serverCommand, cwd: projectPath, timeoutMs: readPositiveInteger(flags.get("--server-timeout")?.[0], 15_000) } }),
     timeoutMs: readPositiveInteger(flags.get("--timeout")?.[0], 15_000),
     target,
     trace: argv.includes("--trace"),
-    url,
+    url: requestedPort !== undefined && requestedPort > 0 && (urlFlag === undefined || urlPort === undefined)
+      ? withPort(url, requestedPort)
+      : url,
     ...(flags.get("--xcrun")?.[0] === undefined ? {} : { xcrunPath: flags.get("--xcrun")![0] }),
   };
+}
+
+const SCENARIO_GLOB = /[*?[]/u;
+
+function expandScenarioPattern(projectPath: string, pattern: string): string[] {
+  if (!SCENARIO_GLOB.test(pattern)) return [pattern];
+  const normalizedPattern = pattern.replaceAll("\\", "/");
+  const matches: string[] = [];
+  collectScenarioFiles(projectPath, projectPath, matches);
+  const matching = matches
+    .filter((file) => globMatches(normalizedPattern, file))
+    .sort((left, right) => left.localeCompare(right));
+  if (matching.length === 0) {
+    throw new PlaytestCliUsageError(`Scenario glob '${pattern}' matched no files under '${projectPath}'.`);
+  }
+  return matching;
+}
+
+function collectScenarioFiles(directory: string, root: string, files: string[]): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "dist") continue;
+      collectScenarioFiles(resolve(directory, entry.name), root, files);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    files.push(relative(root, resolve(directory, entry.name)).replaceAll("\\", "/"));
+  }
+}
+
+function globMatches(pattern: string, file: string): boolean {
+  const patternParts = pattern.split("/");
+  const fileParts = file.split("/");
+  return matchGlobParts(patternParts, fileParts);
+}
+
+function matchGlobParts(pattern: readonly string[], file: readonly string[]): boolean {
+  if (pattern.length === 0) return file.length === 0;
+  const [head, ...tail] = pattern;
+  if (head === "**") {
+    return matchGlobParts(tail, file) || (file.length > 0 && matchGlobParts(pattern, file.slice(1)));
+  }
+  return file.length > 0 && segmentMatches(head ?? "", file[0]!) && matchGlobParts(tail, file.slice(1));
+}
+
+function segmentMatches(pattern: string, value: string): boolean {
+  let expression = "^";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index]!;
+    if (character === "*") expression += "[^/]*";
+    else if (character === "?") expression += "[^/]";
+    else expression += escapeRegExp(character);
+  }
+  return new RegExp(`${expression}$`, "u").test(value);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[|\\{}()[\]^$+?.]/gu, "\\$&");
+}
+
+function portFromUrl(url: string): number | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.port === "" ? undefined : Number(parsed.port);
+  } catch {
+    return undefined;
+  }
+}
+
+function withPort(url: string, port: number): string {
+  const parsed = new URL(url);
+  parsed.port = String(port);
+  const result = parsed.toString();
+  return url.endsWith("/") ? result : result.replace(/\/$/u, "");
+}
+
+function readPort(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65_535) {
+    throw new PlaytestCliUsageError(`Expected a TCP port from 0 to 65535, received '${value}'.`);
+  }
+  return parsed;
 }
 
 function parseFlags(argv: readonly string[]): Map<string, string[]> {

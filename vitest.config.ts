@@ -6,6 +6,7 @@ export default defineConfig({
     include: [
       "scripts/**/*.spec.ts",
       "hosting/**/*.spec.ts",
+      "packages/playtest/src/runner/**/*.test.ts",
       "packages/**/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.tsx",
     ],

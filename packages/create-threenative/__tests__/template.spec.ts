@@ -236,7 +236,7 @@ describe("template contracts", () => {
 
     const root = path.join(templateRoot, "minimal");
     const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-    expect(manifest.scripts?.test ?? "").toContain("playtests/play.playtest.json");
+    expect(manifest.scripts?.test ?? "").toContain('--scenario "playtests/*.playtest.json"');
     // Without the bridge the scenario fails closed on TN_PLAYTEST_BRIDGE_MISSING.
     expect(await readFile(path.join(root, "src/game.ts"), "utf8")).toContain("playtest(");
 

@@ -1,8 +1,9 @@
 import { makeTempDir } from "../../../../test-support/temp-dir.js";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 
 import { parseStandalonePlaytestArgs } from "./config.js";
 import { initStandalonePlaytest } from "./init.js";
@@ -20,6 +21,49 @@ test("standalone args support existing-server and managed-server flows", () => {
   ], "/project");
   assert.equal(managed.server?.command, "pnpm dev");
   assert.equal(managed.server?.timeoutMs, 20_000);
+});
+
+test("scenario flags accumulate and expand a project glob in sorted order", async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-scenarios-"));
+  try {
+    await mkdir(join(projectPath, "playtests"));
+    await writeFile(join(projectPath, "playtests/b.playtest.json"), "{}");
+    await writeFile(join(projectPath, "playtests/a.playtest.json"), "{}");
+    await writeFile(join(projectPath, "playtests/terminal-menu.playtest.json"), "{}");
+
+    const repeated = parseStandalonePlaytestArgs([
+      "--scenario", "first.playtest.json",
+      "--scenario", "second.playtest.json",
+    ], projectPath);
+    assert.deepEqual(repeated.scenarioPaths, ["first.playtest.json", "second.playtest.json"]);
+
+    const glob = parseStandalonePlaytestArgs(["--scenario", "playtests/*.playtest.json"], projectPath);
+    assert.deepEqual(glob.scenarioPaths, [
+      "playtests/a.playtest.json",
+      "playtests/b.playtest.json",
+      "playtests/terminal-menu.playtest.json",
+    ]);
+
+    const hyphenatedGlob = parseStandalonePlaytestArgs(
+      ["--scenario", "playtests/terminal-*.playtest.json"],
+      projectPath,
+    );
+    assert.deepEqual(hyphenatedGlob.scenarioPaths, ["playtests/terminal-menu.playtest.json"]);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
+test("a scenario glob that matches nothing fails closed", async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), "playtest-empty-glob-"));
+  try {
+    assert.throws(
+      () => parseStandalonePlaytestArgs(["--scenario", "playtests/*.playtest.json"], projectPath),
+      /matched no files/u,
+    );
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
 });
 
 test("standalone args fail with a concrete first command", () => {

@@ -11,8 +11,7 @@
     "build:android": "threenative build --target android",
     "build:ios": "threenative build --target ios",
     "pretest": "playwright install chromium",
-    "test": "vite build && pnpm run test:playtest",
-    "test:playtest": "threenative-playtest --scenario playtests/survives.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu --headed && threenative-playtest --scenario playtests/placement.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu --headed && threenative-playtest --scenario playtests/scan.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu --headed && threenative-playtest --scenario playtests/survive.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu --headed && threenative-playtest --scenario playtests/leak.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" --browser-recipe webgpu --headed",
+    "test": "vite build && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

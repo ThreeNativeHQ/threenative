@@ -4,5 +4,10 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { watch: { usePolling: true } },
+  server: {
+    watch: {
+      ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],
+      usePolling: true,
+    },
+  },
 });

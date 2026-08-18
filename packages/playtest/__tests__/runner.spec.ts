@@ -12,11 +12,14 @@ import {
   boundedTeardownStep,
   buildReport,
   captureVisualSurface,
+  handlePlaytestSignal,
   openPageAndConnectBridge,
   pageLifecycleDiagnostic,
   playtestStepDrivesMovement,
+  resolveManagedServerCommand,
   runStandalonePlaytest,
   STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
+  substituteManagedPort,
 } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 import type { Page } from "playwright";
@@ -1266,4 +1269,45 @@ test("a browser that never closes does not hold the process open", async () => {
   await expect(boundedTeardownStep(new Promise(() => undefined), 50)).resolves.toBe(false);
 
   expect(Date.now() - started).toBeLessThan(1_000);
+});
+
+test("managed server commands replace selected explicit and dynamic ports before the shell runs", () => {
+  const command = "pnpm dev --host 127.0.0.1 --port $PORT --strictPort --inspect=${PORT}";
+  const explicit = {
+    ...CONFIG,
+    port: 4_321,
+    server: { command, cwd: ".", timeoutMs: 1_000 },
+    url: "http://127.0.0.1:4321",
+  } satisfies IStandalonePlaytestConfig;
+  const dynamic = {
+    ...CONFIG,
+    port: 0,
+    server: { command, cwd: ".", timeoutMs: 1_000 },
+  } satisfies IStandalonePlaytestConfig;
+
+  expect(resolveManagedServerCommand(explicit)).toBe(
+    "pnpm dev --host 127.0.0.1 --port 4321 --strictPort --inspect=4321",
+  );
+  expect(resolveManagedServerCommand(dynamic, 49_876)).toBe(
+    "pnpm dev --host 127.0.0.1 --port 49876 --strictPort --inspect=49876",
+  );
+  expect(substituteManagedPort("pnpm dev --port --strictPort", 4_321)).toBe(
+    "pnpm dev --port 4321 --strictPort",
+  );
+});
+
+test("a signal requests shared managed-server cleanup before exiting", async () => {
+  const events: string[] = [];
+  const teardown = vi.fn(async (stopManagedServer: boolean) => {
+    events.push(`teardown:${stopManagedServer}`);
+    await Promise.resolve();
+    events.push("teardown-settled");
+  });
+  const setExitCode = vi.fn((code: number) => events.push(`exit-code:${code}`));
+  const exit = vi.fn((code: number) => events.push(`exit:${code}`));
+
+  await handlePlaytestSignal(teardown, setExitCode, exit);
+
+  expect(teardown).toHaveBeenCalledWith(true);
+  expect(events).toEqual(["teardown:true", "teardown-settled", "exit-code:2", "exit:2"]);
 });

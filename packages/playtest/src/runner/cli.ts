@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PlaytestScenarioError } from "../scenario.js";
@@ -15,7 +15,7 @@ import { runAndroidPlaytest } from "./androidRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
 import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
-import { runStandalonePlaytest } from "./runner.js";
+import { runStandalonePlaytest, runStandalonePlaytests, type IStandalonePlaytestReport } from "./runner.js";
 
 export interface IRunnerDiagnostic {
   code: string;
@@ -126,9 +126,18 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return await recordToScenarioCommand(argv.slice(1));
     }
     config = parseStandalonePlaytestArgs(argv);
-    const report = await runConfiguredPlaytest(config);
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    const exitCode = exitCodeForReport(report);
+    const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
+    const reports = config.target === "browser"
+      ? await runStandalonePlaytests(config)
+      : await runDevicePlaytests(config, scenarioPaths);
+    const output = reports.length === 1
+      ? reports[0]
+      : { pass: reports.every(({ pass }) => pass), reports };
+    process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+    const exitCode = reports.reduce<0 | 1 | 2>((worst, report) => {
+      const code = exitCodeForReport(report);
+      return code > worst ? code : worst;
+    }, 0);
     process.exitCode = exitCode;
     return exitCode;
   } catch (error) {
@@ -140,6 +149,34 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     process.exitCode = 2;
     return 2;
   }
+}
+
+async function runDevicePlaytests(
+  config: IStandalonePlaytestConfig,
+  scenarioPaths: readonly string[],
+): Promise<readonly IStandalonePlaytestReport[]> {
+  const runner = config.target === "android"
+    ? runAndroidPlaytest
+    : config.target === "desktop"
+      ? runDesktopPlaytest
+      : runIosPlaytest;
+  const reports: IStandalonePlaytestReport[] = [];
+  for (const [index, scenarioPath] of scenarioPaths.entries()) {
+    const artifactDirectory = scenarioPaths.length === 1
+      ? config.artifactDirectory
+      : join(config.artifactDirectory, `${String(index + 1).padStart(2, "0")}-${safePart(scenarioPath)}`);
+    reports.push(await runner({
+      ...config,
+      artifactDirectory,
+      scenarioPath,
+      scenarioPaths: undefined,
+    }));
+  }
+  return reports;
+}
+
+function safePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/gu, "-");
 }
 
 async function recordToScenarioCommand(argv: readonly string[]): Promise<number> {

@@ -12,7 +12,7 @@
     "build:android": "threenative build --target android",
     "build:ios": "threenative build --target ios",
     "pretest": "playwright install chromium",
-    "test": "vite build && threenative-playtest --scenario playtests/survives.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\" && threenative-playtest --scenario playtests/play.playtest.json --url http://127.0.0.1:4173 --server-command \"pnpm dev --host 127.0.0.1 --port 4173 --strictPort\"",
+    "test": "vite build && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { PNG } from "pngjs";
 import {
@@ -52,6 +53,20 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   scenario: string;
   target: string;
   url: string;
+}
+
+export async function handlePlaytestSignal(
+  teardown: (stopManagedServer: boolean) => Promise<void>,
+  setExitCode: (code: number) => void = (code) => {
+    process.exitCode = code;
+  },
+  exit: (code: number) => void = (code) => {
+    process.exit(code);
+  },
+): Promise<void> {
+  await teardown(true).catch(() => undefined);
+  setExitCode(2);
+  exit(2);
 }
 
 export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): IPlaytestAssertionResult {
@@ -133,13 +148,25 @@ interface IRunStepSamples {
   inputDriven: boolean;
 }
 
-export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): Promise<IStandalonePlaytestReport> {
-  const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
-  await mkdir(config.artifactDirectory, { recursive: true });
+interface IStandalonePlaytestRunOptions {
+  managedServer?: ChildProcess;
+}
+
+export async function runStandalonePlaytest(
+  config: IStandalonePlaytestConfig,
+  options: IStandalonePlaytestRunOptions = {},
+): Promise<IStandalonePlaytestReport> {
+  const usesFreePort = config.server !== undefined && config.port === 0;
+  const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
+  const scenario = await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath);
+  await mkdir(activeConfig.artifactDirectory, { recursive: true });
   let server: ChildProcess | undefined;
+  const ownsServer = options.managedServer === undefined && activeConfig.server !== undefined;
+  server = options.managedServer;
   let browser: Browser | undefined;
   let page: Page | undefined;
   let teardownPromise: Promise<void> | undefined;
+  let serverTeardownPromise: Promise<void> | undefined;
   const pageLifecycle: IPageLifecycle = {
     closed: false,
     crashed: false,
@@ -148,44 +175,44 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     settled: false,
     tail: [],
   };
-  const teardown = async (): Promise<void> => {
-    if (teardownPromise !== undefined) return teardownPromise;
-    teardownPromise = (async () => {
+  const stopServer = async (): Promise<void> => {
+    serverTeardownPromise ??= stopManagedServer(server);
+    await serverTeardownPromise;
+  };
+  const teardown = async (stopManagedServerOnTeardown = ownsServer): Promise<void> => {
+    teardownPromise ??= (async () => {
       await boundedTeardownStep(page?.context().close(), 5_000);
       // Chromium does not always exit when asked — under a virtual display with a live GPU
       // process it can sit in close() forever. The report is already written by this point, so
       // teardown gives up rather than holding the run open; the CLI then exits explicitly.
       await boundedTeardownStep(browser?.close(), 10_000);
-      await stopManagedServer(server);
     })();
-    return teardownPromise;
+    await teardownPromise.catch(() => undefined);
+    if (stopManagedServerOnTeardown) await stopServer();
   };
   const handleSignal = (): void => {
-    void teardown().catch(() => undefined).finally(() => {
-      process.exitCode = 2;
-      process.exit(2);
-    });
+    void handlePlaytestSignal((stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal));
   };
   process.once("SIGINT", handleSignal);
   process.once("SIGTERM", handleSignal);
-  const preflight = preflightDisplay(config, scenario);
+  const preflight = preflightDisplay(activeConfig, scenario);
   if (preflight !== undefined) {
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
   }
   try {
-    if (config.server !== undefined) {
-      await assertManagedUrlAvailable(config.url);
-      server = startManagedServer(config);
+    if (activeConfig.server !== undefined && server === undefined) {
+      if (!usesFreePort) await assertManagedUrlAvailable(activeConfig.url);
+      server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
     }
     browser = await chromium.launch({
-      ...(config.browserArgs === undefined ? {} : { args: resolveBrowserArguments(config.browserArgs) }),
-      headless: config.headless,
+      ...(activeConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(activeConfig.browserArgs) }),
+      headless: activeConfig.headless,
     });
-    if (server !== undefined) {
-      await waitForUrl(config.url, config.server?.timeoutMs ?? config.timeoutMs, server);
+    if (server !== undefined && options.managedServer === undefined) {
+      await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
     const context = await browser.newContext({ viewport: scenario.viewport });
-    if (config.trace) {
+    if (activeConfig.trace) {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
     page = await context.newPage();
@@ -231,7 +258,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       pageLifecycle.closed = true;
     });
     const activePage = page;
-    const bridge = await openPageAndConnectBridge(page, config, scenario);
+    const bridge = await openPageAndConnectBridge(page, activeConfig, scenario);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     if (bridge !== undefined && scenario.setup !== undefined) {
@@ -267,10 +294,10 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
     const captureProvenance = needsCapture
-      ? await readCaptureProvenance(page, config, scenario)
+      ? await readCaptureProvenance(page, activeConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {
-      await writeCaptureProvenance(config.artifactDirectory, captureProvenance);
+      await writeCaptureProvenance(activeConfig.artifactDirectory, captureProvenance);
     }
     let captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined;
     const capturePage = async (
@@ -339,11 +366,11 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         ? await captureVisualPage(
             "before.png",
             scenario.artifacts?.screenshots === "before-after"
-              ? join(config.artifactDirectory, "before.png")
+              ? join(activeConfig.artifactDirectory, "before.png")
               : undefined,
           )
         : await capturePage("before.png", scenario.artifacts?.screenshots === "before-after"
-          ? { path: join(config.artifactDirectory, "before.png") }
+          ? { path: join(activeConfig.artifactDirectory, "before.png") }
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
@@ -383,7 +410,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         movementCursor = stepSamples.afterStep;
       }
       if (step.label === scenario.assert?.framebufferCoverage?.window.endStep) {
-        framebufferCoverage = await finishFramebufferCoverageProbe(page, config.artifactDirectory);
+        framebufferCoverage = await finishFramebufferCoverageProbe(page, activeConfig.artifactDirectory);
       }
       if (step.label !== undefined && bridge !== undefined) {
         const snapshot = await bridge.sample({ ...sampleRequest, label: step.label });
@@ -393,7 +420,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
       if (step.screenshot !== undefined) {
-        await capturePage(`${safePart(step.screenshot)}.png`, { path: join(config.artifactDirectory, `${safePart(step.screenshot)}.png`) });
+        await capturePage(`${safePart(step.screenshot)}.png`, { path: join(activeConfig.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
     const afterSnapshot = await bridge?.sample(sampleRequest);
@@ -408,18 +435,18 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
             "after.png",
             scenario.artifacts?.screenshots === false
               ? undefined
-              : join(config.artifactDirectory, "after.png"),
+              : join(activeConfig.artifactDirectory, "after.png"),
           )
         : await capturePage("after.png", scenario.artifacts?.screenshots === false
           ? {}
-          : { path: join(config.artifactDirectory, "after.png") })
+          : { path: join(activeConfig.artifactDirectory, "after.png") })
       : undefined;
     const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario, captureFailure);
-    if (config.trace) {
-      await context.tracing.stop({ path: join(config.artifactDirectory, "trace.zip") });
+    if (activeConfig.trace) {
+      await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }
     const report = buildReport(
-      config,
+      activeConfig,
       scenario,
       beforeSnapshot,
       afterSnapshot,
@@ -435,7 +462,7 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
       captureFailure,
       movementSamples,
     );
-    await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {
+    await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
@@ -444,11 +471,11 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
-      return addPreflightDiagnostic(failureReport(config, scenario, error.diagnostic), preflight);
+      return addPreflightDiagnostic(failureReport(activeConfig, scenario, error.diagnostic), preflight);
     }
-    const lifecycleDiagnostic = pageLifecycleDiagnostic(error, pageLifecycle, config.url);
+    const lifecycleDiagnostic = pageLifecycleDiagnostic(error, pageLifecycle, activeConfig.url);
     if (lifecycleDiagnostic !== undefined) {
-      return addPreflightDiagnostic(failureReport(config, scenario, lifecycleDiagnostic), preflight);
+      return addPreflightDiagnostic(failureReport(activeConfig, scenario, lifecycleDiagnostic), preflight);
     }
     throw error;
   } finally {
@@ -456,6 +483,72 @@ export async function runStandalonePlaytest(config: IStandalonePlaytestConfig): 
     process.off("SIGTERM", handleSignal);
     await teardown();
   }
+}
+
+export async function runStandalonePlaytests(
+  config: IStandalonePlaytestConfig,
+): Promise<readonly IStandalonePlaytestReport[]> {
+  const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
+  if (scenarioPaths.length <= 1) {
+    return [await runStandalonePlaytest({ ...config, scenarioPath: scenarioPaths[0]! })];
+  }
+  if (config.server === undefined) {
+    const reports: IStandalonePlaytestReport[] = [];
+    for (const [index, scenarioPath] of scenarioPaths.entries()) {
+      reports.push(await runStandalonePlaytest({
+        ...config,
+        artifactDirectory: batchArtifactDirectory(config.artifactDirectory, scenarioPath, index),
+        scenarioPath,
+        scenarioPaths: undefined,
+      }));
+    }
+    return reports;
+  }
+
+  const usesFreePort = config.port === 0;
+  const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
+  const scenarios = [] as IPlaytestScenario[];
+  for (const scenarioPath of scenarioPaths) {
+    scenarios.push(await loadPlaytestScenario(activeConfig.projectPath, scenarioPath));
+  }
+  let server: ChildProcess | undefined;
+  try {
+    if (!usesFreePort) await assertManagedUrlAvailable(activeConfig.url);
+    server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
+    await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
+    const reports: IStandalonePlaytestReport[] = [];
+    for (const [index, scenarioPath] of scenarioPaths.entries()) {
+      reports.push(await runStandalonePlaytest({
+        ...activeConfig,
+        artifactDirectory: batchArtifactDirectory(activeConfig.artifactDirectory, scenarioPath, index),
+        scenarioPath,
+        scenarioPaths: undefined,
+      }, { managedServer: server }));
+    }
+    return reports;
+  } catch (error) {
+    if (!(error instanceof ManagedServerError)) throw error;
+    return scenarios.map((scenario, index) => failureReport({
+      ...activeConfig,
+      artifactDirectory: batchArtifactDirectory(activeConfig.artifactDirectory, scenarioPaths[index]!, index),
+      scenarioPath: scenarioPaths[index]!,
+      scenarioPaths: undefined,
+    }, scenario, error.diagnostic));
+  } finally {
+    await stopManagedServer(server);
+  }
+}
+
+function batchArtifactDirectory(base: string, scenarioPath: string, index: number): string {
+  return join(base, `${String(index + 1).padStart(2, "0")}-${safePart(scenarioPath)}`);
+}
+
+async function resolveManagedServerConfig(
+  config: IStandalonePlaytestConfig,
+): Promise<IStandalonePlaytestConfig> {
+  if (config.server === undefined || config.port !== 0) return config;
+  const port = await findFreePort();
+  return { ...config, port, url: withPort(config.url, port) };
 }
 
 export function preflightDisplay(
@@ -1370,14 +1463,72 @@ function safePart(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
-function startManagedServer(config: IStandalonePlaytestConfig): ChildProcess {
-  const server = spawn(config.server!.command, {
+function startManagedServer(config: IStandalonePlaytestConfig, dynamicPort?: number): ChildProcess {
+  const port = dynamicPort ?? managedPort(config);
+  const server = spawn(resolveManagedServerCommand(config, dynamicPort), {
     cwd: resolve(config.server!.cwd ?? config.projectPath),
     detached: process.platform !== "win32",
+    env: {
+      ...process.env,
+      ...(port === undefined ? {} : { PORT: String(port) }),
+    },
     shell: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
   return server;
+}
+
+export function resolveManagedServerCommand(
+  config: IStandalonePlaytestConfig,
+  dynamicPort?: number,
+): string {
+  const port = dynamicPort ?? managedPort(config);
+  return port === undefined ? config.server!.command : substituteManagedPort(config.server!.command, port);
+}
+
+export function substituteManagedPort(command: string, port: number): string {
+  return command
+    .replace(/(?:\$\{PORT\}|\$PORT\b)/gu, String(port))
+    .replace(/(--port(?:=|\s+))(?=--|$)/u, `$1${port} `);
+}
+
+async function findFreePort(): Promise<number> {
+  const probe = createServer();
+  return new Promise<number>((resolvePort, reject) => {
+    const rejectProbe = (error: Error): void => {
+      probe.close();
+      reject(error);
+    };
+    probe.once("error", rejectProbe);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      if (address === null || typeof address === "string") {
+        rejectProbe(new Error("Could not determine the free managed server port."));
+        return;
+      }
+      probe.close((error) => {
+        if (error !== undefined) reject(error);
+        else resolvePort(address.port);
+      });
+    });
+  });
+}
+
+function managedPort(config: IStandalonePlaytestConfig): number | undefined {
+  if (config.port !== undefined && config.port > 0) return config.port;
+  try {
+    const parsed = new URL(config.url);
+    return parsed.port === "" ? undefined : Number(parsed.port);
+  } catch {
+    return undefined;
+  }
+}
+
+function withPort(url: string, port: number): string {
+  const parsed = new URL(url);
+  parsed.port = String(port);
+  const result = parsed.toString();
+  return url.endsWith("/") ? result : result.replace(/\/$/u, "");
 }
 
 /**

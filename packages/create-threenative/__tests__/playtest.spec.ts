@@ -72,21 +72,22 @@ describe("starter playtest proof", () => {
     expect(game).toContain("move: {");
   });
 
-  it("should run survives first", async () => {
-    const packageJson = JSON.parse(
-      await readFile(
-        path.resolve("packages/create-threenative/templates/starter/package.json"),
-        "utf8",
-      ),
-    ) as { scripts: { test: string } };
+  it.each(DURABLE_PLAYTEST_TEMPLATES)(
+    "should run the scenario directory through one configured gate in the %s template",
+    async (template) => {
+      const packageJson = JSON.parse(
+        await readFile(
+          path.resolve(`packages/create-threenative/templates/${template}/package.json`),
+          "utf8",
+        ),
+      ) as { scripts: { test: string } };
 
-    const survivesIndex = packageJson.scripts.test.indexOf("playtests/survives.playtest.json");
-    const playIndex = packageJson.scripts.test.indexOf("playtests/play.playtest.json");
-
-    expect(survivesIndex).toBeGreaterThanOrEqual(0);
-    expect(playIndex).toBeGreaterThanOrEqual(0);
-    expect(survivesIndex).toBeLessThan(playIndex);
-  });
+      expect(packageJson.scripts.test).toContain('--scenario "playtests/*.playtest.json"');
+      expect(packageJson.scripts.test).toContain("--browser-recipe webgpu");
+      expect(packageJson.scripts.test).toContain("--headed");
+      expect(packageJson.scripts.test).not.toContain("4173");
+    },
+  );
 
   it("should contain a loadable movement and score scenario", async () => {
     const scenario = await readFile(
@@ -117,12 +118,6 @@ describe("starter playtest proof", () => {
   });
 
   it("should run the chase scenario in the platformer test chain", async () => {
-    const packageJson = JSON.parse(
-      await readFile(
-        path.resolve("packages/create-threenative/templates/platformer/package.json"),
-        "utf8",
-      ),
-    ) as { scripts: { "test:playtest": string; "test:terminal-loop": string } };
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -149,9 +144,6 @@ describe("starter playtest proof", () => {
       ),
     ) as { warmupFrames: number };
 
-    expect(packageJson.scripts["test:playtest"]).toContain("chase.playtest.json");
-    expect(packageJson.scripts["test:terminal-loop"]).toContain("terminal-loop-win.playtest.json");
-    expect(packageJson.scripts["test:terminal-loop"]).toContain("terminal-loop-fail.playtest.json");
     expect([scenario.warmupFrames, avoidance.warmupFrames]).toEqual([0, 0]);
     expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
     expect(scenario.assert.movement).toMatchObject({
@@ -161,12 +153,6 @@ describe("starter playtest proof", () => {
   });
 
   it("should run a load-bearing platformer physics assertion", async () => {
-    const packageJson = JSON.parse(
-      await readFile(
-        path.resolve("packages/create-threenative/templates/platformer/package.json"),
-        "utf8",
-      ),
-    ) as { scripts: { "test:playtest": string } };
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -179,7 +165,6 @@ describe("starter playtest proof", () => {
       steps: Array<{ label: string }>;
     };
 
-    expect(packageJson.scripts["test:playtest"]).toContain("physics.playtest.json");
     expect(scenario.steps).toContainEqual(expect.objectContaining({ label: "settled" }));
     expect(scenario.assert.settled).toEqual([{ atStep: "settled", entity: "crate", minBodies: 1 }]);
   });
@@ -256,14 +241,14 @@ describe("starter playtest proof", () => {
       };
     };
     const level = seed.assert.resources.find(
-      ({ id, path: resourcePath }) => id === "GameState" && resourcePath === "levelX",
+      ({ id, path: resourcePath }) => id === "state" && resourcePath === "levelX",
     );
     const play = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/scenes/Play.ts"),
       "utf8",
     );
 
-    expect(level).toEqual({ changed: true, gte: -1, id: "GameState", lte: 1, path: "levelX" });
+    expect(level).toEqual({ changed: true, gte: -1, id: "state", lte: 1, path: "levelX" });
     expect(level).not.toHaveProperty("equals");
     expect(play).toContain("const randomStateBeforeLevel = ctx.random.state");
     expect(play).toContain(
