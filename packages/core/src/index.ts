@@ -39,4 +39,5 @@ export { Scheduler } from "./schedule.js";
 export type { ScheduleHandle } from "./schedule.js";
 export { Scene } from "./scene.js";
 export type { ICtx, SceneFrame } from "./scene.js";
+export { attachToBone, skeletonBones } from "./skeleton.js";
 export type { ContextMenuPolicy, IInputAction, IRawInputPointer } from "./input.js";
