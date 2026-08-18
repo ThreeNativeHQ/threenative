@@ -4,6 +4,13 @@
 not current completion states. `CHARTER.md` wins on any conflict.
 **Companion to:** `ROADMAP.md` (which phase), this doc (which area, and why).
 
+**Re-score pending, 2026-08-17.** Every score below was computed while the 20-line rule was
+binding. That rule is retired; the test is now the two questions — *could the game write this
+portably, and does it decide how anything looks* — with size deciding nothing. Any row whose
+score rests on a line count rather than on portability or appearance is stale, and rows
+rejected *only* for being small deserve a re-score before they are cited as settled. The two
+premises in the next section are unaffected: they are about ceilings and 0→1, not about size.
+
 ## The rule this whole document applies
 
 Two measured results define the shape of every score below.

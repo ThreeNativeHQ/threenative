@@ -178,12 +178,26 @@ of its PRDs are complete.
 
 Binding, and learned from the 790k-line v1 that died of ignoring them.
 
-1. **The 20-line rule.** If a competent developer could write it in under 20 lines, it does
-   not go in the framework. Write it in the example or the template.
+1. **The two questions.** Both must pass. **(a) Could the game write this portably itself?**
+   If no — it needs a browser global, a platform seam, or a backend the game must not know it
+   got — the framework owns it, **at any size**. **(b) Does it decide how anything looks?** If
+   yes, it ships as generated source in `src/render/`, at any size. Something that passes both
+   becomes framework code once one game writes it more than twice. Question (b) is a veto:
+   passing (a) never licenses owning an appearance.
+   *This replaced the 20-line rule on 2026-08-17. Size decides nothing — 15 lines of
+   pointer-lock plumbing the game cannot write portably belongs here; a 15-line preset system
+   never will. See CHARTER.md §11.1 for the four things it does not loosen.*
 2. **The kill switch.** Any abstraction that costs more code than plain Three.js is deleted,
-   however much work it took. `scripts/count-loc.ts` scores this in CI.
-3. **Never own the look.** Anything a screenshot shows ships as generated source in the
-   user's `src/render/` — never as package code, never as a `defineGame` option.
+   however much work it took. `scripts/count-loc.ts` scores this in CI. **Count every
+   repetition, not one site**: a mechanism one game writes more than twice is scored against
+   the game's total across every copy.
+3. **Never own the look.** Anything that *decides how* a screenshot looks ships as generated
+   source in the user's `src/render/` — never as package code, never as a `defineGame` option.
+   The framework may own **mechanism** — pooling, lifetime, billboarding, instancing, dispatch,
+   culling — provided geometry, material, colour, texture, curve and timing all come from the
+   game. `GPUParticles3D` is the shape: it owns buffers and dispatch and takes `material`,
+   `start` and `process` from you. The test: can the game change the appearance completely
+   without editing package code? Any no, and the whole thing is generated source.
 4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering,
    Rapier for physics, Tailwind for UI. **Godot is the only node source — not Unity, not
    Unreal.** Copy its class names, method names (`move_and_slide` → `moveAndSlide`),
@@ -193,7 +207,15 @@ Binding, and learned from the 790k-line v1 that died of ignoring them.
    rule governs package count; there is no number to argue with.
 
 These are closed with evidence and do not get reopened in a feature: an IR, a scene format,
-an editor, a preset system, a code-first ECS, a bespoke CLI vocabulary.
+an editor, a preset system, a code-first ECS, a bespoke CLI vocabulary. **The closed list
+outranks rule 1** — however cleanly a thing passes the two questions, if it is on this list the
+answer is still no. Rule 1 got looser; this list did not move.
+
+**A helper admitted for being unportable ships with proof it runs on native** — a conformance
+case or a `--target` playtest, in the same commit. Claiming the framework must own something
+because the game cannot write it portably, then shipping it web-only, is the silent
+one-platform fork with the rules' blessing. It is the regression rule 1 is most likely to
+cause, so it is the gate that is not optional.
 
 ## Budgets
 
@@ -204,7 +226,7 @@ file under `packages/runtime-native/third_party/`, a vendored asset MCP, and any
 `packages/*/package.json` claiming `threenative-asset-mcp`.
 
 Template LOC is **reported, never capped** — retired by owner decision 2026-08-09. Templates
-are generated user source, so a line there is the user's to keep or delete; the 20-line rule
+are generated user source, so a line there is the user's to keep or delete; the two questions
 and the kill switch still bound what the *framework* spends.
 
 **Review triggers — reported, never fatal:** 15,000 framework LOC (`packages/*/src`,

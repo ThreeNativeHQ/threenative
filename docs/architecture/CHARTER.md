@@ -1,6 +1,9 @@
 # ThreeNative — Charter
 
 **Status:** binding, 2026-08-02. §7 is resolved; everything here holds until amended here.
+**Amended 2026-08-17:** §3, §5, §5b and §11.1 — the 20-line rule is replaced by the two
+questions in §11.1, and §5b splits mechanism from appearance. The kill switch (§11.2) and the
+closed list (§2) are unchanged.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -142,6 +145,18 @@ an engine.
 non-negotiable — it is the one control v1 had that worked, and the one it stopped
 obeying.
 
+**Count every repetition, not one site.** A mechanism a single game writes more than twice
+is plumbing, and the comparison is the framework's lines against the game's *total* across
+every copy of it. The sandbox FPS build writes the same pooled-billboard-and-decay loop three
+times — muzzle smoke, enemy smoke, impact puffs — for about 120 lines. Scored per site that
+reads as break-even and the helper is rejected; scored honestly the vanilla column loses.
+**Per-site scoring is how the kill switch turns into a rule against having a framework at
+all**, which is the opposite of what it is for.
+
+The switch stays prospectively permissive and retroactively ruthless. It is a delete
+mechanism, not a gate on adding: that asymmetry is exactly what makes §11.1's two questions
+safe to answer generously.
+
 ---
 
 ## 4. Substrate: vanilla Three.js core
@@ -186,8 +201,13 @@ trigger.on('bodyEntered', (other) => score(other));
 `THREE.Object3D` you handed it. **~80 lines.** Not a simulation, not an entity, not a
 component.
 
-> **The 20-line rule:** if a competent developer could write it in under 20 lines, it
-> does not go in the framework.
+> **The two questions (§11.1):** could the game write this portably itself, and does it
+> decide how anything looks? The framework owns what the game cannot write portably; the
+> game owns everything that has an appearance. Size decides nothing either way.
+
+`RigidBody3D` qualifies not because it is short but because a game cannot reach a Rapier
+handle portably — the web arm is WASM and the native arm is a typed-array ABI, and §7
+forbids the game from knowing which it got.
 
 ### The escape hatch is not an escape hatch
 
@@ -225,9 +245,31 @@ framework's vocabulary.
 | Scene lifecycle, plugin wiring | Lighting, tonemapping, exposure |
 | Input mapping, asset loading | Post-processing composition |
 | Physics binding, platform adapters | Camera framing, composition |
-| Test harness, UI state bridge | **Anything a screenshot shows** |
+| Test harness, UI state bridge | **Anything that decides how a screenshot looks** |
 
 The visual layer is exactly where the model is strongest. Stay out of it entirely.
+
+### Mechanism is not appearance
+
+That right-hand column used to read *anything a screenshot shows*, and taken literally it
+banned code this framework already ships and should ship. `GPUParticles3D`
+(`packages/core/src/particles.ts`) owns storage buffers, compute dispatch and lifetime, and
+takes `material`, `start` and `process` from the game. A screenshot shows its output. It owns
+none of the look.
+
+> **The framework may own the mechanism that puts something on screen** — pooling, lifetime,
+> billboarding, instancing, dispatch, culling — **provided every parameter that decides how it
+> looks comes from the game**: geometry, material, colour, texture, curve, timing constants.
+
+**The test, and it is a hard veto:** can the game change the appearance completely without
+editing framework code? If any answer is no, the whole thing ships as generated source in
+`src/render/`. There is no partial credit and no "sensible default" that a game reaches through
+a config option — `postprocessing: ['bloom']` is still the v1 mistake, and it is still removed.
+
+This is a narrowing of what the framework may own by *kind*, not a widening by *degree*. The
+failure it guards against is unchanged: v1's output looked bad because the model could only
+express what the schema allowed. A mechanism with every appearance parameter supplied by the
+game truncates nothing, because there is no vocabulary to be truncated to.
 
 ### "Looks good by default" and "never owns the look" are the same rule
 
@@ -256,9 +298,19 @@ framework would leave that code working.
 
 ---
 
-## 6. The whole API
+## 6. The API you have to know
 
-Fits on one page on purpose. When it stops fitting, something has gone wrong.
+**The entry point fits on one page on purpose, and that is the part that is bounded.**
+`defineGame`, a scene with three optional methods, `ctx`, four CLI commands — a model that
+reads only this page can write a working game, and if *that* stops fitting, something has
+gone wrong.
+
+The total exported surface is not bounded by page count. It is bounded by §11.1's two
+questions and deleted by §11.2's kill switch, which are tests of kind. A page count is a size
+proxy, and a size proxy rejects portable plumbing for being long while admitting a preset
+system for being short. **What must never grow is the amount a model has to discover before
+it can start** — that is v1's 178 command forms and 2,477-word root help, and it is a
+property of the entry point, not of the export list.
 
 ```ts
 // src/main.ts
@@ -672,14 +724,58 @@ by §11.1 and §11.4, with evidence, or they are not bounded at all.
 
 ## 11. Rules
 
-1. **The 20-line rule.** If a dev could write it in under 20 lines, it isn't in the framework.
-2. **The kill switch.** Any abstraction costing more code than vanilla is deleted.
-3. **Never own the look.** §5b. Visual defaults ship as generated source, never as package config.
-4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering, Rapier for physics, Tailwind for UI.
+1. **The two questions.** Both must pass, and they replace the 20-line rule — see below.
+2. **The kill switch.** Any abstraction costing more code than vanilla is deleted, counted
+   across every repetition in one game (§3).
+3. **Never own the look.** §5b. The framework may own mechanism; every appearance parameter
+   comes from the game. Visual defaults ship as generated source, never as package config.
+4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering,
+   Rapier for physics, Tailwind for UI. Where none of them has a name, borrowing is
+   exhausted before inventing, and the invention is recorded as the discovery cost it is.
 5. **A package exists only when it carries a dependency the others must not inherit.**
 6. **CI green means something or it means nothing.** No merge while red. (v1: 0 passing in 100.)
 7. **Write once, run everywhere.** §7. One implementation per public class. A backend swaps
    beneath the API, never a node the user writes against; what a backend cannot honour throws.
+
+### 11.1 — the two questions, and what they do not open
+
+The 20-line rule is retired as of 2026-08-17. It was a size ceiling standing in for a kind
+test, and it failed in both directions: it rejected 15 lines of pointer-lock plumbing the game
+**cannot write portably at any length**, while a preset system that would end the project fits
+in the same 15 lines. Size was never the variable.
+
+> **1. Could the game write this portably itself?** If no — it needs a browser global, a
+> platform seam, or a backend the game must not know it got — the framework owns it, at any
+> size.
+>
+> **2. Does it decide how anything looks?** If yes, it ships as generated source in
+> `src/render/`, at any size.
+>
+> Something that passes both becomes framework code once one game writes it more than twice.
+
+**These are ANDed, and question 2 is a veto.** Passing question 1 does not license owning an
+appearance; the mechanism ships and the look stays in `src/render/`.
+
+**Four things this does not loosen, and the fourth is new:**
+
+1. **§2's closed list outranks both questions.** An IR, a scene format, an editor, a
+   preset/genre/recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed
+   however cleanly they pass. That list is what killed v1; the 20-line rule was only ever a
+   blunt proxy for it, and retiring the proxy does not retire the list.
+2. **§11.2 applies retroactively to everything admitted here.** Generous on the way in is only
+   safe because the way out is automatic and unsentimental.
+3. **§10b's 15,000-line review trigger still bites.** Crossing it obliges a justification in
+   the owning PRD and a kill-switch pass. A rule that admits more code does not raise the
+   number it is measured against.
+4. **Question 1 is settled by execution, not by intent.** Anything admitted for being
+   unportable lands with proof it runs on the native arm — a conformance case or a playtest
+   with `--target` — in the same commit. Admitting a helper *because* the game cannot write it
+   portably, and then shipping it web-only, produces exactly the silent one-platform fork §7
+   forbids, and does it with the charter's blessing. **That is the regression this amendment is
+   most likely to cause, so it is the one gate that is not optional.**
+
+The honest summary: this makes the framework's *boundary* clearer and its *ceiling* higher,
+and leaves every mechanism that stops it becoming v1 exactly where it was.
 
 ---
 
