@@ -6,15 +6,24 @@ import {
   type Object3D,
   Raycaster,
   Vector2,
+  type Vector3,
 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import type { Viewport } from "./viewport.js";
 
 export interface IRaycastOptions {
-  /** Screen point in canvas pixels. Defaults to the current pointer position. */
+  /** Screen point in canvas pixels. Mutually exclusive with `origin` and `direction`. */
   readonly screen?: Vector2;
+  /** World-space ray origin. Requires `direction`. */
+  readonly origin?: Vector3;
+  /** World-space ray direction. The caller must provide a normalised vector. */
+  readonly direction?: Vector3;
+  /** Maximum distance. Defaults to unbounded. */
+  readonly far?: number;
   /** What to test. Defaults to the whole scene. */
   readonly targets?: Object3D | readonly Object3D[];
+  /** Subtrees never hit, whatever `targets` says. */
+  readonly exclude?: Object3D | readonly Object3D[];
 }
 
 export interface IScenePickerOptions {
@@ -55,29 +64,31 @@ export class ScenePicker {
     this.#pointer = options.pointer;
     this.#scene = options.scene;
     this.#viewport = options.viewport;
-    this.#raycaster.firstHitOnly = true;
+    this.#raycaster.firstHitOnly = false;
   }
 
-  /** The closest hit under the screen point, or `undefined` when the ray hits nothing. */
+  /** The closest hit, or `undefined` when the ray hits nothing. */
   raycast(options: IRaycastOptions = {}): Intersection | undefined {
-    const screen = options.screen ?? this.#pointer();
-    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y))
-      throw new Error("ICtx.raycast screen point must be finite.");
-    const { height, width } = this.#viewport.size;
-    if (width <= 0 || height <= 0) throw new Error("ICtx.raycast needs a sized viewport.");
-    this.#ndc.set((screen.x / width) * 2 - 1, -(screen.y / height) * 2 + 1);
-    this.#raycaster.setFromCamera(this.#ndc, this.#camera);
+    return this.raycastAll(options)[0];
+  }
 
+  /** Every hit, sorted from the nearest to the farthest. */
+  raycastAll(options: IRaycastOptions = {}): readonly Intersection[] {
+    this.#setRay(options);
+    this.#raycaster.far = options.far ?? Number.POSITIVE_INFINITY;
     const targets = options.targets ?? this.#scene;
     const roots = Array.isArray(targets) ? targets : [targets as Object3D];
+    const excluded =
+      options.exclude === undefined
+        ? new Set<Object3D>()
+        : new Set(Array.isArray(options.exclude) ? options.exclude : [options.exclude]);
     this.#hits.length = 0;
     for (const root of roots) {
       root.updateMatrixWorld();
-      this.#collect(root);
+      this.#collect(root, excluded);
     }
-    if (this.#hits.length === 0) return undefined;
     this.#hits.sort((first, second) => first.distance - second.distance);
-    return this.#hits[0];
+    return this.#hits.slice();
   }
 
   /** Drops every cached hierarchy. The next `raycast` rebuilds what it needs. */
@@ -86,13 +97,46 @@ export class ScenePicker {
     this.#hits.length = 0;
   }
 
-  #collect(object: Object3D): void {
+  #setRay(options: IRaycastOptions): void {
+    const hasScreen = options.screen !== undefined;
+    const hasOrigin = options.origin !== undefined;
+    const hasDirection = options.direction !== undefined;
+    if (hasScreen && (hasOrigin || hasDirection))
+      throw new Error("ICtx.raycast screen cannot be combined with origin or direction.");
+    if (hasDirection && !hasOrigin) throw new Error("ICtx.raycast direction requires origin.");
+    if (hasOrigin && !hasDirection) throw new Error("ICtx.raycast origin requires direction.");
+    if (hasOrigin) {
+      this.#raycaster.camera = this.#camera;
+      this.#raycaster.set(options.origin as Vector3, options.direction as Vector3);
+      return;
+    }
+
+    const screen = options.screen ?? this.#pointer();
+    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y))
+      throw new Error("ICtx.raycast screen point must be finite.");
+    const { height, width } = this.#viewport.size;
+    if (width <= 0 || height <= 0) throw new Error("ICtx.raycast needs a sized viewport.");
+    this.#ndc.set((screen.x / width) * 2 - 1, -(screen.y / height) * 2 + 1);
+    this.#raycaster.setFromCamera(this.#ndc, this.#camera);
+  }
+
+  #collect(object: Object3D, excluded: ReadonlySet<Object3D>): void {
+    if (this.#isExcluded(object, excluded)) return;
     if (object.layers.test(this.#raycaster.layers)) {
       const tree = this.#treeFor(object);
       if (tree === undefined) object.raycast(this.#raycaster, this.#hits);
       else tree.raycastObject3D(object, this.#raycaster, this.#hits);
     }
-    for (const child of object.children) this.#collect(child);
+    for (const child of object.children) this.#collect(child, excluded);
+  }
+
+  #isExcluded(object: Object3D, excluded: ReadonlySet<Object3D>): boolean {
+    let current: Object3D | null = object;
+    while (current !== null) {
+      if (excluded.has(current)) return true;
+      current = current.parent;
+    }
+    return false;
   }
 
   #treeFor(object: Object3D): MeshBVH | undefined {

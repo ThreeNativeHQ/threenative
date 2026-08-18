@@ -156,16 +156,17 @@ never surface them. This table is the complete list.
 | `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
 | `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
 | `ctx.random.range(-1, 1)` | `Math.random()` | seeded — a replay produces identical results |
-| `ctx.raycast()` | `new Raycaster()` + `intersectObject` | `(options?: { screen?, targets? }) => Intersection \| undefined` |
+| `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` + `intersectObject(s)` | `(options?: { screen?, origin?, direction?, far?, targets?, exclude? }) => Intersection \| undefined` / `readonly Intersection[]` |
 
 **`ctx.raycast()` is how you pick geometry under the pointer.** It defaults to the current
 pointer position and the whole scene, returns the nearest `THREE.Intersection`, and stays
 under a millisecond on meshes large enough that a plain `Raycaster` visibly stutters — it
 keeps an acceleration structure per geometry and rebuilds it when that geometry's positions
-change. Pass `{ targets }` to narrow it, `{ screen }` to test a point that is not the
-pointer. Skinned, instanced and morphed meshes fall back
-to the stock Three.js path automatically, so the result always matches
-`Raycaster.intersectObject`.
+change. Pass `{ origin, direction }` for a world ray, `{ far }` to cap its distance, `{ exclude }`
+to remove subtrees, and `{ targets }` to narrow it. Use `raycastAll` when occlusion or another
+query needs every hit; results are sorted nearest first. `{ screen }` tests a point that is not
+the pointer. Skinned, instanced and morphed meshes fall back to the stock Three.js path
+automatically, so the result always matches `Raycaster.intersectObject`.
 
 **`ctx.goto(name)` restarts the current scene.** Calling `ctx.goto("play")` from inside
 `Play` tears the scene down and rebuilds it: `exit()` runs, scheduled callbacks are cleared,

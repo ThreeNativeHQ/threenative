@@ -1,4 +1,15 @@
-import { type BufferAttribute, Mesh, PerspectiveCamera, PlaneGeometry, Vector2 } from "three";
+import {
+  BoxGeometry,
+  type BufferAttribute,
+  Mesh,
+  Object3D,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Sprite,
+  SpriteMaterial,
+  Vector2,
+  Vector3,
+} from "three";
 import { acceleratedRaycast } from "three-mesh-bvh";
 import { describe, expect, it, vi } from "vitest";
 import { ScenePicker } from "../src/picking.js";
@@ -30,7 +41,7 @@ function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: IVi
   return canvas;
 }
 
-function scenePicker(...contents: Mesh[]) {
+function scenePicker(...contents: Object3D[]) {
   const camera = new PerspectiveCamera(60, 1, 0.1, 100);
   camera.position.z = 5;
   camera.lookAt(0, 0, 0);
@@ -49,6 +60,13 @@ function scenePicker(...contents: Mesh[]) {
 /** Subdivided so the hierarchy is more than a single leaf, which is what makes stale bounds observable. */
 function plane(name: string, z: number): Mesh {
   const mesh = new Mesh(new PlaneGeometry(2, 2, 32, 32));
+  mesh.name = name;
+  mesh.position.z = z;
+  return mesh;
+}
+
+function box(name: string, z: number): Mesh {
+  const mesh = new Mesh(new BoxGeometry(2, 2, 2));
   mesh.name = name;
   mesh.position.z = z;
   return mesh;
@@ -115,5 +133,90 @@ describe("ScenePicker", () => {
   it("rejects a screen point that is not finite", () => {
     const { picker } = scenePicker(plane("target", 0));
     expect(() => picker.raycast({ screen: new Vector2(Number.NaN, 0) })).toThrow(/must be finite/u);
+  });
+
+  it("casts a world ray, respects far, and returns all hits near to far", () => {
+    const far = box("far", -3);
+    const near = box("near", 0);
+    far.position.x = 3;
+    near.position.x = 3;
+    const { picker } = scenePicker(far, near);
+    const origin = new Vector3(3, 0, 5);
+    const direction = new Vector3(0, 0, -1);
+
+    expect(picker.raycast({ screen: new Vector2(640, 360) })).toBeUndefined();
+    expect(picker.raycast({ origin, direction })?.object.name).toBe("near");
+    expect(picker.raycast({ origin, direction })?.distance).toBeCloseTo(4, 5);
+    expect(picker.raycast({ origin, direction, far: 3.5 })).toBeUndefined();
+
+    const hits = picker.raycastAll({ origin, direction });
+    expect(hits.length).toBeGreaterThan(2);
+    expect(hits[0]?.object.name).toBe("near");
+    expect(hits.at(-1)?.object.name).toBe("far");
+    const distances = hits.map((hit) => hit.distance);
+    expect(distances).toEqual([...distances].sort((first, second) => first - second));
+  });
+
+  it("sets the camera before a world ray reaches a sprite", () => {
+    const sprite = new Sprite(new SpriteMaterial());
+    sprite.name = "sprite";
+    sprite.position.set(2, 0, 0);
+    const target = box("target", -3);
+    target.position.x = 2;
+    const { picker } = scenePicker(sprite, target);
+
+    expect(
+      picker.raycast({
+        direction: new Vector3(0, 0, -1),
+        origin: new Vector3(2, 0, 5),
+      })?.object.name,
+    ).toBe("sprite");
+  });
+
+  it("keeps a previous raycastAll result unchanged after another query", () => {
+    const far = box("far", -3);
+    const near = box("near", 0);
+    const { picker } = scenePicker(far, near);
+    const origin = new Vector3(0, 0, 5);
+    const direction = new Vector3(0, 0, -1);
+
+    const firstHits = picker.raycastAll({ origin, direction });
+    const firstHitNames = firstHits.map((hit) => hit.object.name);
+
+    picker.raycastAll({ origin, direction, targets: near });
+
+    expect(firstHits.map((hit) => hit.object.name)).toEqual(firstHitNames);
+  });
+
+  it("excludes a parent and its whole subtree", () => {
+    const excludedParent = new Object3D();
+    const excludedChild = box("excluded", 0);
+    excludedParent.add(excludedChild);
+    const included = box("included", -3);
+    const { picker } = scenePicker(excludedParent, included);
+
+    const hit = picker.raycast({
+      direction: new Vector3(0, 0, -1),
+      exclude: excludedParent,
+      origin: new Vector3(0, 0, 5),
+      targets: excludedChild,
+    });
+    expect(hit).toBeUndefined();
+    expect(
+      picker.raycast({
+        direction: new Vector3(0, 0, -1),
+        exclude: excludedParent,
+        origin: new Vector3(0, 0, 5),
+        targets: [excludedParent, included],
+      })?.object.name,
+    ).toBe("included");
+  });
+
+  it("rejects ambiguous ray descriptions", () => {
+    const { picker } = scenePicker(plane("target", 0));
+    expect(() => picker.raycast({ origin: new Vector3(), screen: new Vector2(640, 360) })).toThrow(
+      /cannot be combined/u,
+    );
+    expect(() => picker.raycast({ direction: new Vector3(0, 0, -1) })).toThrow(/requires origin/u);
   });
 });

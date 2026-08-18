@@ -473,6 +473,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       physics: undefined as TPhysics,
       random,
       raycast: (options) => picker.raycast(options),
+      raycastAll: (options) => picker.raycastAll(options),
       startup: {
         get phase() {
           // `collapsing` is reported for the whole window's tail rather than only the one frame
