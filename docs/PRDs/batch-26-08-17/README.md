@@ -1,8 +1,9 @@
 # Batch — the gates that assert nothing, 2026-08-17
 
-**Status: PROPOSED, 2026-08-17. Nothing in this folder has run.** Five new PRDs, PRD-132 through
-PRD-136. No mobile, iOS, performance or visual-quality claim is made anywhere in it. Nothing here
-needs a phone, a Mac, a rater, or a network — it is a batch that fits in one day on this machine.
+**Status: PARTIAL, 2026-08-18.** PRD-132, PRD-134, PRD-135 and PRD-136 are complete and archived
+individually in [`../done/`](../done/). PRD-133 remains active because its required
+`pnpm publish:check` still exits 1 on five stale published-version findings. No mobile, iOS,
+performance or visual-quality claim is made anywhere in this batch.
 
 ## The one thing they have in common
 
@@ -28,24 +29,21 @@ Two lanes. They do not block each other and can be done in either order.
 
 | PRD | What it closes | Complexity |
 | --- | --- | --- |
-| [136](./PRD-136-scaffolded-gate-survives-first-edit.md) | `seed.playtest.json` pins `levelX` to `-0.6056551518850029`, so a user's first edit to their own level turns their own `pnpm test` red | 3 |
-| [133](./PRD-133-published-packages-have-readmes.md) | `@threenative/core`, `ui` and `runtime-native` render as blank pages on npm — and `core`/`ui` ship `files: ["dist"]`, so writing the README alone would change nothing | 3 |
+| [136](../done/PRD-136-scaffolded-gate-survives-first-edit.md) | **DONE, 2026-08-18.** `seed.playtest.json` no longer pins an internal RNG float, so a user's first level edit does not turn their own `pnpm test` red | 3 |
+| [133](./PRD-133-published-packages-have-readmes.md) | **PARTIAL, 2026-08-18.** The three READMEs, tarball inclusion and README guard are complete; the publish preflight still reports stale package versions | 3 |
 
 ### Lane B — gates that do not gate
 
 | PRD | What it closes | Complexity |
 | --- | --- | --- |
-| [132](./PRD-132-publint-in-every-package-gate.md) | No package runs `publint`, so a broken export map ships and npm will not let the version be republished | 2 |
-| [134](./PRD-134-doc-link-gate.md) | ~~The link checker reads fenced code as prose~~ **fixed 2026-08-17 while closing [PRD-125](../done/PRD-125-docs-and-readme-overhaul.md)** — what remains is that nothing runs the checker | 1 |
-| [135](./PRD-135-temp-directory-leak.md) | The suite leaks temp directories and the failure that eventually causes has been misdiagnosed as machine contention twice | 4 |
+| [132](../done/PRD-132-publint-in-every-package-gate.md) | **DONE, 2026-08-18.** Every publishable package test runs strict `publint`, with a fails-closed manifest guard | 2 |
+| [134](../done/PRD-134-doc-link-gate.md) | **DONE, 2026-08-18.** The checker skips code spans and `check:docs` runs inside `pnpm test` | 1 |
+| [135](../done/PRD-135-temp-directory-leak.md) | **DONE, 2026-08-18.** Test-owned temp directories register failure-safe cleanup and the guard rejects bare `mkdtemp` | 4 |
 
 ## Order
 
-1. **PRD-134 first.** Every other item in this batch adds documentation, and the link gate is red
-   right now — landing it first means the rest is checked as it goes in.
-2. **PRD-132, PRD-133, PRD-136 in any order.** They touch disjoint files.
-3. **PRD-135 last, in its own commit.** It is a ~70-file mechanical diff and it will collide with
-   anything else open in the test tree.
+The historical execution order was PRD-134, PRD-132/133/136, then PRD-135. Four items are now
+archived; PRD-133 stays in this active folder until its publish preflight is green.
 
 Every PRD carries executable acceptance criteria and names the evidence file its output goes into.
 **Four of them require watching a guard fail** — PRD-132 step 3, PRD-134 step 3, PRD-135 step 3,

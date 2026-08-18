@@ -4,16 +4,10 @@ prd_contract: v1
 
 # PRD-134 — `pnpm check:docs` is red on a sentence describing its own bug, and no gate runs it
 
-**Status: REDUCED TO ITS SECOND HALF, 2026-08-17.** Defect 1 below — the parser reading code as
-prose — was fixed while closing
-[PRD-125](../done/PRD-125-docs-and-readme-overhaul.md), whose criterion 1 required it. `pnpm
-check:docs` now exits 0, the fixed checker found and repaired five real broken links, and three
-tests cover inline spans. Evidence:
-[`prd-125-docs-and-readme-2026-08-17.md`](../../verification/prd-125-docs-and-readme-2026-08-17.md).
-
-**What remains is defect 2, and it is the one with the longer half-life: nothing runs the
-checker.** `check:docs` is still a hand-run root script, absent from `pnpm test` and from the CI
-chain. §3 items 3 and 4 are the live scope; §3 items 1 and 2 are done.
+**Status: COMPLETE, 2026-08-18.** The parser now skips fenced and inline code, the five real
+broken links it exposed were repaired, and `check:docs` runs inside `pnpm test`. Evidence:
+[`prd-125-docs-and-readme-2026-08-17.md`](../done/PRD-125-docs-and-readme-overhaul.md) and
+[`prd-134-doc-links-2026-08-17.md`](../../verification/prd-134-doc-links-2026-08-17.md).
 
 **Outcome:** the documentation link checker stops reading fenced code as prose, the repository's
 links are green, and `check:docs` runs inside a gate that blocks — so the next broken link is

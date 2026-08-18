@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-135 — The test suite leaks temp directories, and the failure it eventually causes looks like something else
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** COMPLETE, 2026-08-18. Acceptance is recorded in
+`docs/verification/prd-135-temp-leak-2026-08-17.md`; the suite-level count stayed unchanged and
+the guard and failure-path cleanup controls passed.
 
 **Outcome:** a suite run leaves no `/tmp/threenative-*` directory behind, and a spec that creates
 one without registering its cleanup fails the guard rather than the disk.

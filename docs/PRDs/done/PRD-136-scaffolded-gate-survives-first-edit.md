@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-136 — A scaffolded project's own `pnpm test` breaks on the user's first level edit
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** COMPLETE, 2026-08-18. The seed assertion and edit pair are proven in
+`docs/verification/prd-136-seed-scenario-2026-08-17.md`; the later scaffold-runner fix also makes
+the generated template test scripts self-running with the documented WebGPU recipe.
 
 **Outcome:** the ten playtests a scaffolded project ships assert what the *game* does, not what the
 framework's random number generator happened to return on the day the template was written — so a

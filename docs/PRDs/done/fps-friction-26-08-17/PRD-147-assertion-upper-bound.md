@@ -12,7 +12,7 @@ dropped, or ammunition was spent — instead of stating only that the number mov
 
 **Depends on:** nothing.
 
-**Blocks:** nothing. [PRD-136](../../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md) §3
+**Blocks:** nothing. [PRD-136](../PRD-136-scaffolded-gate-survives-first-edit.md) §3
 already flagged this gap from the other direction, and its replacement assertion is weaker because
 of it. Landing this first lets 136 ship the bounded version.
 

@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-133 — Three published packages render as blank pages on npm
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** PARTIAL, 2026-08-18. The three package READMEs, tarball inclusion and README guard are
+complete. Acceptance criterion 1 remains red because `pnpm publish:check` reports five stale
+published-version findings unrelated to README packaging; the evidence is recorded in
+`docs/verification/prd-133-package-readmes-2026-08-17.md`.
 
 **Outcome:** every package this repository publishes arrives on npm with a README that says what
 it is, what it depends on, and one runnable example — and `pnpm publish:check` refuses a tree

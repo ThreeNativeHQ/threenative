@@ -155,7 +155,7 @@ Rows 5 and 6 are the pair. Row 5 alone is satisfied by making the suite vacuous.
 ## 4. What this does not claim
 
 Not that the scenarios themselves are right — nine of the starter's ten assert platformer
-behaviour and that is [PRD-136](../../batch-26-08-17/PRD-136-scaffolded-gate-survives-first-edit.md)'s
+behaviour and that is [PRD-136](../PRD-136-scaffolded-gate-survives-first-edit.md)'s
 open §5 question, not this one. Not that `--headed` is correct in CI; §2.3 flags it as
 unverified. Not that parallel scenario execution is addressed — this makes one server serve many
 scenarios sequentially, which is a wall-clock win, not concurrency.

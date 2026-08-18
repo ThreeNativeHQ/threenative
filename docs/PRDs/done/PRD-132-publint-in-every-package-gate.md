@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-132 — No package runs `publint`, and `AGENTS.md` says every one of them does
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed. No package is claimed to have a
-broken export map; the claim is that nothing would report it if one did.
+**Status:** COMPLETE, 2026-08-18. Acceptance is recorded in
+`docs/verification/prd-132-publint-2026-08-17.md`; all six publishable package tests run strict
+`publint`, and the manifest guard has a passing negative control.
 
 **Outcome:** `pnpm test` fails when any publishable package's export map, `files` list, or
 `types` resolution is broken, on every package rather than on none — and a guard fails when a

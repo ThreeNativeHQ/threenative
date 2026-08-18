@@ -111,3 +111,10 @@ pnpm typecheck  — exit 0
 pnpm test       — exit 0; 134 test files, 1,195 tests passed
 pnpm lint       — exit 1; existing complexity diagnostics outside this lane
 ```
+
+## 6. Follow-up after the scaffold-runner fix
+
+Commit `dfa62f7` made generated template test scripts include the WebGPU browser recipe and use
+managed ports. On 2026-08-18, `pnpm test:templates` scaffolded and ran all seven templates —
+action-rpg, defense, minimal, platformer, racing, shooter and starter — with exit `0`. This
+supersedes the host-setup failure recorded in §4 and re-proves the generated starter test gate.
