@@ -120,6 +120,27 @@ describe("createRenderer", () => {
     renderer.dispose();
   });
 
+  it("forwards the requested antialias setting to renderer backends", async () => {
+    const canvas = testCanvas();
+    const received: boolean[] = [];
+    const renderer = await createRenderer({
+      antialias: false,
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: (_canvas, options) => {
+        received.push(options.antialias);
+        return {
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        };
+      },
+    });
+
+    expect(received).toEqual([false]);
+    renderer.dispose();
+  });
+
   it("should reject an invalid resolution scale at construction", async () => {
     await expect(createRenderer({ resolutionScale: 0 })).rejects.toThrow(
       "renderer.resolutionScale must be finite and positive.",

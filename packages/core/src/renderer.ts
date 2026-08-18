@@ -36,13 +36,18 @@ export interface IRendererPlatformSource {
 }
 
 export interface IRendererOptions {
+  /** Requests multisample antialiasing from the renderer. Defaults to true. */
+  antialias?: boolean;
   canvas?: HTMLCanvasElement;
   preferWebGPU?: boolean;
   /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
   resolutionScale?: number;
   source?: IRendererPlatformSource;
-  webgpuFactory?: (canvas: HTMLCanvasElement) => Promise<unknown> | unknown;
-  webgl2Factory?: (canvas: HTMLCanvasElement) => unknown;
+  webgpuFactory?: (
+    canvas: HTMLCanvasElement,
+    options: Readonly<{ antialias: boolean }>,
+  ) => Promise<unknown> | unknown;
+  webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
 }
 
 type RendererInstance = {
@@ -154,13 +159,14 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
   const preferWebGPU = options.preferWebGPU ?? true;
+  const rendererParameters = { antialias: options.antialias ?? true } as const;
   let renderer: IRendererLike | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
       const raw = options.webgpuFactory
-        ? await options.webgpuFactory(canvas)
-        : new (await import("three/webgpu")).WebGPURenderer({ canvas, antialias: true });
+        ? await options.webgpuFactory(canvas, rendererParameters)
+        : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
       const instance = raw as RendererInstance;
       await instance.init?.();
       renderer = wrapRenderer(instance, "webgpu");
@@ -171,8 +177,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
 
   if (renderer === undefined) {
     const raw = options.webgl2Factory
-      ? options.webgl2Factory(canvas)
-      : new (await import("three")).WebGLRenderer({ canvas, antialias: true });
+      ? options.webgl2Factory(canvas, rendererParameters)
+      : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters });
     renderer = wrapRenderer(raw as RendererInstance, "webgl2");
   }
 

@@ -259,6 +259,12 @@ static std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> g_encoderC
 // Track whether the current frame's surface render pass has been ended
 // This prevents presenting the surface before its render commands are submitted
 static bool g_surfaceRenderPassEnded = false;
+// Set when a submit has put surface-targeted commands in flight; consumed once per frame by
+// presentPendingSurface(). Presenting inside submit meant a frame that submits twice — three.js
+// renders the world and then an overlay pass — presented twice, and only the first reached the
+// display. See presentPendingSurface().
+static bool g_framePresentPending = false;
+static uint64_t g_lastPresentNs = 0;
 static WGPUCommandEncoder g_surfaceRenderEncoder = nullptr;
 static bool g_screenshotPending = false;
 static bool g_screenshotReady = false;
@@ -1098,23 +1104,37 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                         return g_engine->newUndefined();
                     }
 
-                    // Get current swapchain texture
-                    WGPUTexture texture = getCurrentSwapchainTexture();
-                    if (!texture) {
-                        g_engine->throwException("Failed to get current texture");
-                        return g_engine->newUndefined();
-                    }
+                    // One image per frame, however many times the frame asks for it.
+                    //
+                    // three.js calls this once per `renderer.render()`, and a frame that draws an
+                    // overlay renders twice. Acquiring a second swapchain image would put the
+                    // overlay somewhere the world was never drawn, and only one of the two could
+                    // reach the display. Handing back the image already in flight is what lets the
+                    // overlay's `loadOp: "load"` composite onto the world it is meant to sit on.
+                    // presentPendingSurface() clears these at the frame boundary.
+                    WGPUTexture texture;
+                    uint64_t textureId;
+                    if (g_currentTexture && g_currentSurfaceTextureId != 0) {
+                        texture = g_currentTexture;
+                        textureId = g_currentSurfaceTextureId;
+                    } else {
+                        texture = getCurrentSwapchainTexture();
+                        if (!texture) {
+                            g_engine->throwException("Failed to get current texture");
+                            return g_engine->newUndefined();
+                        }
 
-                    g_currentTexture = texture;
-                    static int frameCount = 0;
-                    if (frameCount++ < 3) {
-                        if (g_verboseLogging) std::cout << "[Canvas] Got texture: " << texture << std::endl;
-                    }
+                        g_currentTexture = texture;
+                        static int frameCount = 0;
+                        if (frameCount++ < 3) {
+                            if (g_verboseLogging) std::cout << "[Canvas] Got texture: " << texture << std::endl;
+                        }
 
-                    // Register in texture registry so createView can find it
-                    uint64_t textureId = g_nextTextureId++;
-                    g_textureRegistry[textureId] = {texture, g_surfaceFormat, g_canvasWidth, g_canvasHeight, 1, 1, WGPUTextureDimension_2D};
-                    g_currentSurfaceTextureId = textureId;
+                        // Register in texture registry so createView can find it
+                        textureId = g_nextTextureId++;
+                        g_textureRegistry[textureId] = {texture, g_surfaceFormat, g_canvasWidth, g_canvasHeight, 1, 1, WGPUTextureDimension_2D};
+                        g_currentSurfaceTextureId = textureId;
+                    }
 
                     // Create JS wrapper for texture
                     auto jsTexture = g_engine->newObject();
@@ -1763,65 +1783,25 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 g_screenshotCapturedThisFrame = true;
                             }
 
-                            // Present the surface only if:
-                            // 1. We have a current texture
-                            // 2. The surface render pass has been ended (commands submitted)
-                            // This prevents presenting before the render commands are in this submit
+                            // Mark the frame ready to present rather than presenting here.
+                            //
+                            // A frame can submit more than once: three.js renders the world, then
+                            // the framework renders `ctx.canvasLayer` as an overlay pass, and each
+                            // `renderer.render()` ends in its own submit. Presenting per submit gave
+                            // each of those its own swapchain image, so only the first reached the
+                            // display and every overlay was silently dropped — the framework's own
+                            // loading screen and any game HUD on the canvas layer drew nothing on
+                            // native while working on web. presentPendingSurface() runs once per
+                            // frame from endDawnFrame(), after every rAF callback has returned.
                             if (g_surface && g_currentTexture && g_surfaceRenderPassEnded) {
-                                if (g_verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
-#if TN_ANDROID_JS_PROFILE
-                                const auto presentStart = std::chrono::steady_clock::now();
-#endif
-                                const bool presented = g_requiresSrgbPresentationBridge
-                                    ? presentLinearTextureToSrgbSurface(g_currentTextureView)
-                                    : (wgpuSurfacePresent(g_surface), true);
-#if TN_ANDROID_JS_PROFILE
-                                presentNs = static_cast<uint64_t>(
-                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                        std::chrono::steady_clock::now() - presentStart
-                                    ).count()
-                                );
-#endif
-                                if (presented) {
-                                    // The last cold-start segment. Emitted from the present that
-                                    // actually reached the display, so "first frame" means the
-                                    // player saw something rather than the loop merely ran.
-                                    static bool firstPresentReported = false;
-                                    if (!firstPresentReported) {
-                                        firstPresentReported = true;
-                                        mystral::coldStartMark("first_frame");
-                                    }
-                                    // Hitches are what the player feels after launch, and they
-                                    // are invisible to a mean. This window reports its own max.
-                                    mystral::frameHitches().record();
-                                }
-                                if (!presented) {
-                                    std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
-                                    g_engine->throwException("sRGB presentation bridge failed");
-                                }
-
-                                // Reset surface render tracking for next frame
-                                g_surfaceRenderEncoder = nullptr;
-                                g_surfaceRenderPassEnded = false;
-                                g_screenshotCapturedThisFrame = false;
-
-                                // Release the texture view if we created one
-                                if (g_currentTextureView) {
-                                    wgpuTextureViewRelease(g_currentTextureView);
-                                    g_currentTextureView = nullptr;
-                                }
-
-                                // Drop every alias so screenshot capture cannot dereference the
-                                // just-presented surface texture or the consumed linear bridge
-                                // texture.
-                                if (g_currentSurfaceTextureId != 0) {
-                                    g_textureRegistry.erase(g_currentSurfaceTextureId);
-                                    g_currentSurfaceTextureId = 0;
-                                }
-                                wgpuTextureRelease(g_currentTexture);
-                                g_currentTexture = nullptr;
-                                g_currentViewSourceTexture = nullptr;
+                                g_framePresentPending = true;
                             }
+
+#if TN_ANDROID_JS_PROFILE
+                            // The present now happens after this submit returns, so this reports the
+                            // previous frame's present rather than one this call performed.
+                            presentNs = g_lastPresentNs;
+#endif
 
 #if TN_ANDROID_JS_PROFILE
                             emitAndroidJsNativeProfile(submitPollNs, presentNs);
@@ -6073,9 +6053,73 @@ void invokeVideoCaptureCallback(WGPUTexture texture, uint32_t width, uint32_t he
     }
 }
 
+/**
+ * Presents the frame, once, after every rAF callback has returned.
+ *
+ * The surface used to be presented from inside `queue.submit`. That is wrong for any frame that
+ * submits more than once — three.js renders the world and then the framework renders the canvas
+ * layer as a second pass — because each submit acquired and presented its own swapchain image.
+ * Only the first reached the display, so overlays drew into an image nobody ever saw. Acquisition
+ * is idempotent within a frame (see the canvas `getCurrentTexture` binding) and the present
+ * happens here, so both passes land on one image and that image is presented once.
+ */
+static void presentPendingSurface() {
+    if (!g_framePresentPending) return;
+    g_framePresentPending = false;
+    if (!g_surface || !g_currentTexture) return;
+
+    if (g_verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
+    const auto presentStart = std::chrono::steady_clock::now();
+    const bool presented = g_requiresSrgbPresentationBridge
+        ? presentLinearTextureToSrgbSurface(g_currentTextureView)
+        : (wgpuSurfacePresent(g_surface), true);
+    g_lastPresentNs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - presentStart
+        ).count()
+    );
+
+    if (presented) {
+        // The last cold-start segment. Emitted from the present that actually reached the
+        // display, so "first frame" means the player saw something rather than the loop merely ran.
+        static bool firstPresentReported = false;
+        if (!firstPresentReported) {
+            firstPresentReported = true;
+            mystral::coldStartMark("first_frame");
+        }
+        // Hitches are what the player feels after launch, and they are invisible to a mean.
+        mystral::frameHitches().record();
+    } else {
+        std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+    }
+
+    // Reset surface render tracking for the next frame.
+    g_surfaceRenderEncoder = nullptr;
+    g_surfaceRenderPassEnded = false;
+    g_screenshotCapturedThisFrame = false;
+
+    if (g_currentTextureView) {
+        wgpuTextureViewRelease(g_currentTextureView);
+        g_currentTextureView = nullptr;
+    }
+
+    // Drop every alias so screenshot capture cannot dereference the just-presented surface
+    // texture or the consumed linear bridge texture.
+    if (g_currentSurfaceTextureId != 0) {
+        g_textureRegistry.erase(g_currentSurfaceTextureId);
+        g_currentSurfaceTextureId = 0;
+    }
+    wgpuTextureRelease(g_currentTexture);
+    g_currentTexture = nullptr;
+    g_currentViewSourceTexture = nullptr;
+}
+
 void endDawnFrame() {
     // Composite Canvas 2D content to WebGPU if the main canvas uses 2D context
     compositeCanvas2DToWebGPU();
+
+    // Every pass this frame has been submitted; put the one image on screen.
+    presentPendingSurface();
 
     // Tick the WebGPU device to process completed GPU work and free internal
     // resources (staging buffers, command encoder state, etc.). Without this,
