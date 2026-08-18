@@ -7,10 +7,11 @@
  * republishing a version that exists — so the only way that ends well is a check that refuses the
  * tree before anybody runs `pnpm publish`.
  *
- * It answers three questions, and fails closed on each:
+ * It answers four questions, and fails closed on each:
  *  - is every publishable workspace package in the publish set, or is one silently missing?
  *  - has any package's `src/` moved since the version it still carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
+ *  - does every publishable package carry a README that its own `files` list would include?
  *
  * A registry it cannot reach is not a pass. It exits `2` — `pnpm alpha:bar` uses the same rank,
  * where `2` means the question was never answered.
@@ -151,6 +152,40 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
             severity: "fail",
           });
     }
+  }
+  return findings;
+}
+
+/**
+ * A package page is only useful when its README exists and the package's own `files` list carries
+ * it. Packages without an explicit list use npm's default inclusion rules, so existence is enough
+ * for them. This stays manifest-based and offline: the tarball gate proves the same contract later.
+ */
+export function missingPackageReadmes(
+  packages: readonly IPublishPackage[],
+): readonly IPublishFinding[] {
+  const findings: IPublishFinding[] = [];
+  for (const item of packages) {
+    const readme = path.join(item.directory, "README.md");
+    if (!fs.existsSync(readme)) {
+      findings.push({
+        detail: `${item.name} is missing README.md, so its npm page would have no package documentation.`,
+        package: item.name,
+        severity: "fail",
+      });
+      continue;
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as { files?: unknown };
+    if (parsed.files === undefined) continue;
+    if (!Array.isArray(parsed.files) || !parsed.files.every((entry) => typeof entry === "string"))
+      throw new Error(`TN_PUBLISH_FILES_MALFORMED: ${item.manifest} has a non-string files list.`);
+    if (parsed.files.includes("README.md")) continue;
+    findings.push({
+      detail: `${item.name} has a files list ${JSON.stringify(parsed.files)} that does not include README.md, so npm would omit it.`,
+      package: item.name,
+      severity: "fail",
+    });
   }
   return findings;
 }
@@ -318,6 +353,7 @@ export function checkPublishState(options: ICheckPublishOptions = {}): IPublishR
     const finding = versionFinding(item, lookup(item.name), commits);
     if (finding !== undefined) findings.push(finding);
   }
+  findings.push(...missingPackageReadmes(packages));
   findings.push(...staleInternalPeerRanges(packages));
   findings.push(...missingFromReleaseWorkflow(repo, packages));
   findings.push(...unresolvedTemplateSpecifiers(repo));

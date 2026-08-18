@@ -8,6 +8,7 @@ import {
   RELEASE_WORKFLOW,
   type RegistryLookup,
   checkPublishState,
+  missingPackageReadmes,
   publishSet,
   satisfiesRange,
   staleInternalPeerRanges,
@@ -36,8 +37,13 @@ async function fixture(): Promise<string> {
     write(
       root,
       `packages/${item.dir}/package.json`,
-      JSON.stringify({ name: item.name, version: item.version }),
+      JSON.stringify({
+        files: item.dir === "core" ? ["dist", "README.md"] : undefined,
+        name: item.name,
+        version: item.version,
+      }),
     );
+    write(root, `packages/${item.dir}/README.md`, `# ${item.name}\n`);
     write(root, `packages/${item.dir}/src/index.ts`, "export const x = 1;\n");
   }
   write(
@@ -124,6 +130,33 @@ describe("pnpm publish:check", () => {
     expect(report.findings[0]?.detail).toMatch(
       /create-threenative is publishable but is not named/u,
     );
+  });
+
+  it("fails when a publishable package has no README", async () => {
+    const root = await fixture();
+    await rm(path.join(root, "packages/core/README.md"));
+    const findings = missingPackageReadmes(publishSet(root));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ package: "@threenative/core", severity: "fail" });
+    expect(findings[0]?.detail).toMatch(/missing README\.md/u);
+  });
+
+  it("fails when a package's explicit files list excludes its README", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({ files: ["dist"], name: "@threenative/core", version: "0.1.0" }),
+    );
+    const findings = missingPackageReadmes(publishSet(root));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ package: "@threenative/core", severity: "fail" });
+    expect(findings[0]?.detail).toMatch(/files list.*dist.*README\.md/u);
+  });
+
+  it("accepts an existing README with no files list or an explicit README entry", async () => {
+    const root = await fixture();
+    expect(missingPackageReadmes(publishSet(root))).toEqual([]);
   });
 
   it("blocks, never passes, when the release workflow does not exist", async () => {

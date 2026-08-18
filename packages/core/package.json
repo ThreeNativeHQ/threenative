@@ -4,7 +4,7 @@
   "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

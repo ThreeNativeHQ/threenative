@@ -4,7 +4,7 @@
   "license": "MIT",
   "description": "React bindings for mounting a ThreeNative game and reading throttled state.",
   "type": "module",
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
