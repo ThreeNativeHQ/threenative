@@ -216,4 +216,161 @@ describe("InputMap", () => {
     expect(input.pressed("jump")).toBe(true);
     input.dispose();
   });
+
+  // A cold build of an FPS bound `fire: { buttons: [0] }` meaning the left mouse button, because
+  // that is what `[0]` reads like. `buttons` is the gamepad, so on a machine with no gamepad the
+  // binding was accepted and silently never fired: the game's own HUD advertised "Mouse 1 Fire"
+  // and clicking did nothing. Every assertion still passed, because the sealed proof only ever
+  // pressed keys.
+  it("should press an action bound to the left mouse button", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 1));
+
+    expect(input.pressed("fire")).toBe(true);
+    input.dispose();
+  });
+
+  it("should distinguish the right mouse button from the left", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ aim: { mouseButtons: [2] }, fire: { mouseButtons: [0] } }, target);
+
+    // PointerEvent.buttons numbers the right button 2, while MouseEvent.button numbers it 2 and
+    // the middle one 1 — the two schemes disagree, so this is the case that catches a naive shift.
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 2));
+
+    expect(input.pressed("aim")).toBe(true);
+    expect(input.pressed("fire")).toBe(false);
+    input.dispose();
+  });
+
+  it("should press an action bound to the middle mouse button", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ melee: { mouseButtons: [1] } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 4));
+
+    expect(input.pressed("melee")).toBe(true);
+    input.dispose();
+  });
+
+  it("should not press a mouse binding from a gamepad button, or the reverse", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target, target, () => [
+      { axes: [0, 0], buttons: [{ pressed: true }] },
+    ]);
+
+    input.tick();
+
+    expect(input.pressed("fire")).toBe(false);
+    input.dispose();
+  });
+
+  it("should release a mouse binding when the button goes up", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 1));
+    target.dispatchEvent(pointerEvent("pointerup", 1, 10, 10, 0));
+
+    expect(input.pressed("fire")).toBe(false);
+    input.dispose();
+  });
+
+  // Right-click over a game canvas is a binding, not a menu. Suppressing it is the default
+  // rather than something each game remembers to do, because forgetting it makes a right-click
+  // binding silently unusable and every game here would have had to write the same three lines.
+  it("should suppress the browser context menu on the game surface by default", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    const event = new Event("contextmenu", { cancelable: true });
+    target.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    input.dispose();
+  });
+
+  it("should restore the browser context menu when a game asks for it", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target, target, undefined, "allow");
+
+    const event = new Event("contextmenu", { cancelable: true });
+    target.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    input.dispose();
+  });
+
+  it("should stop suppressing the context menu once disposed", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    input.dispose();
+
+    const event = new Event("contextmenu", { cancelable: true });
+    target.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+  // A mouse click is normally shorter than one frame at 60Hz. Sampling device state once per
+  // tick therefore dropped it entirely: down and up both landed between two ticks, `pressed`
+  // was false at both samples, and `justPressed` never fired. In the FPS build that read as
+  // "clicking does nothing", intermittently, while holding the button worked.
+  it("should report justPressed for a click that starts and ends inside one frame", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target);
+    input.tick();
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 1));
+    target.dispatchEvent(pointerEvent("pointerup", 1, 10, 10, 0));
+    input.tick();
+
+    expect(input.justPressed("fire")).toBe(true);
+    expect(input.pressed("fire")).toBe(false);
+    input.dispose();
+  });
+
+  it("should report justPressed for a keypress that starts and ends inside one frame", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ jump: { keys: ["Space"] } }, target);
+    input.tick();
+
+    target.dispatchEvent(keyEvent("keydown", "Space"));
+    target.dispatchEvent(keyEvent("keyup", "Space"));
+    input.tick();
+
+    expect(input.justPressed("jump")).toBe(true);
+    input.dispose();
+  });
+
+  it("should release a latched tap on the following frame rather than sticking down", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target);
+    input.tick();
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 1));
+    target.dispatchEvent(pointerEvent("pointerup", 1, 10, 10, 0));
+    input.tick();
+    input.tick();
+
+    expect(input.justPressed("fire")).toBe(false);
+    expect(input.justReleased("fire")).toBe(true);
+    input.tick();
+    expect(input.justReleased("fire")).toBe(false);
+    input.dispose();
+  });
+
+  it("should fire justPressed once per tap, not once per frame while held", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ fire: { mouseButtons: [0] } }, target);
+    input.tick();
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 1));
+    input.tick();
+    expect(input.justPressed("fire")).toBe(true);
+    input.tick();
+    expect(input.justPressed("fire")).toBe(false);
+    input.dispose();
+  });
 });

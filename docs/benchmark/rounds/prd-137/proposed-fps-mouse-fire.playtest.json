@@ -1,0 +1,53 @@
+{
+  "name": "fps-mouse-fire-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "warmupFrames": 12,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "aim-at-centre",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "waitTicks": 4
+    },
+    {
+      "kind": "input",
+      "label": "press-primary-button",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5,
+        "buttons": 1
+      },
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 1,
+        "changed": true
+      }
+    ]
+  }
+}

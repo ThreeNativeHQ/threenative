@@ -3,7 +3,7 @@ import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "
 import { CanvasLayer } from "./canvas-layer.js";
 import { SceneCollapse } from "./collapse.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
-import { type InputBindings, InputMap } from "./input.js";
+import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
   type IRenderPerformanceMetrics,
@@ -125,6 +125,12 @@ export interface IGameConfig<
   readonly canvas?: HTMLCanvasElement;
   readonly container?: HTMLElement;
   readonly input?: InputBindings;
+  /**
+   * Browser context menu over the game surface. Defaults to `"suppress"`, which is what a game
+   * wants: right-click is a binding, not a menu. Set `"allow"` only if your game genuinely needs
+   * the browser menu over its canvas.
+   */
+  readonly contextMenu?: ContextMenuPolicy;
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
   /**
@@ -411,7 +417,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           ? canvas
           : window
         : (platform.inputTarget ?? canvas));
-    this.#input = new InputMap(this.#config.input, inputTarget, canvas, platform?.input);
+    this.#input = new InputMap(
+      this.#config.input,
+      inputTarget,
+      canvas,
+      platform?.input,
+      this.#config.contextMenu,
+    );
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = createCamera(this.#config.camera);

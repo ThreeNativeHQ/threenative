@@ -13,6 +13,18 @@ artifacts
 benchmark/godot-load-test/.godot/
 hosting/.data/
 docs/benchmark/sweeps/*/vendor/
+# Third-party models a sweep was handed as source material. The FPS kit's first-person
+# viewmodel records "user-provided; verify upstream pack terms before redistribution" and its
+# enemy is CC-BY-4.0 carrying retargeted Mixamo clips, so neither is ours to redistribute from
+# an MIT repository. The archive keeps them on disk; git does not carry them.
+# Builder session transcripts. They are the archived evidence a cold run actually happened and
+# they stay on disk in the sweep archive, but they are ~8 MB of gzipped JSONL each and carry
+# absolute paths from the machine that ran them. Commit one deliberately if a result is
+# disputed; do not carry every run's transcript in history by default.
+docs/benchmark/sweeps/*/transcript.jsonl.gz
+docs/benchmark/sweeps/*/assets/models/
+docs/benchmark/sweeps/*/assets/imported/
+docs/benchmark/sweeps/*/assets/generated/
 .linchpin/
 .gauntlet/
 

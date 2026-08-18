@@ -4,7 +4,15 @@ prd_contract: v1
 
 # PRD-137 — The agent test, run once on a game that already shipped
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed.
+**Status:** DONE, 2026-08-17. Both arms ran; all ten acceptance rows are answered in
+[`docs/verification/agent-test-fps-2026-08-17.md`](../../verification/agent-test-fps-2026-08-17.md).
+
+Result in one line: **19 friction rows for the framework arm against 13 for the control, sealed
+proof 2/2 for both, +149 authored LOC against the framework, and the visual column recorded
+unresolved** because the +0.18 blind delta is inside the instrument's measured 1-point noise
+floor. n=1 per arm. Per-arm ledgers:
+[framework](../../verification/sweep-fps-2026-08-17.md),
+[vanilla](../../verification/sweep-fps-2026-08-17-vanilla.md).
 
 **Outcome:** the first paired build in this repository whose reference is a real game rather than a
 generated brief, run by two agents that have never read this repository, scored on the number that
@@ -14,7 +22,7 @@ now sits at the top of `METRICS.md` — **friction rows per cold-agent build**.
 `fps-legacy-requirements.md` (§1), which must be complete before §2 seals anything.
 
 **Blocks:** nothing. It supersedes nothing. It does, however, settle what
-[PRD-080](./BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is for — see §8.
+[PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is for — see §8.
 
 **Complexity: 7 → HIGH mode, operator-run.** Two cold builds, a sealed corpus addition, a blind
 judging pass, and a set of validity controls that are the actual subject of the PRD.
@@ -167,7 +175,7 @@ a claim about the legacy framework, which is quoted for scale and never scored.
 
 ## 8. What happens to PRD-080
 
-[PRD-080](./BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is the
+[PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is the
 five-minute stranger test, parked under `requires-external-person/`. It stays there and it stays
 open. What changes is what it grades: **the game, which means the templates — not the framework.**
 `METRICS.md` no longer routes any framework result through it.

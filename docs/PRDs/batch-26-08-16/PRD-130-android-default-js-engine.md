@@ -39,6 +39,13 @@ within 0.03%.
    discharging retake is owed.
 3. **`conformance/run-conformance.mjs` was not run under V8.** Phase 5 proved the first-proof gate
    and multitouch. A conformance row that was not run is not a passing row.
+   **Attempted 2026-08-17 on the Pixel 8 and still not obtained** — the Android parity lane could
+   not photograph the app. Two defects in that lane were found and fixed instead: it left the
+   device's display overridden to `1280x720` and then "restored" that leak onto the phone on every
+   later row, and it detected exactly two system-dialog strings, so an *"app which is currently
+   being tested"* prompt let it capture the home screen 67 times and report 67 rows of
+   `pixelMismatchRatio: 1.000` as a rendering failure. Record:
+   [`prd-130-conformance-attempt-2026-08-17.md`](../../verification/prd-130-conformance-attempt-2026-08-17.md).
 
 **One correction published the same day.** Phase 5 and Phase 6 first reported the V8 APK as *smaller*
 than the QuickJS one. That was incremental packaging leaving the previous engine's library in the

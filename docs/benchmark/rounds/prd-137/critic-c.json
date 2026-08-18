@@ -1,0 +1,81 @@
+{
+  "samples": [
+    {
+      "label": "sample-01",
+      "playability": 4,
+      "visuals": 4,
+      "screenshotWorthy": "no",
+      "evidence": "SCORE 0100 / TIME 57 / 30 / 89 together prove scoring, timer and a completed reload all ran; nine red rectangles sit at genuinely different depths (two large ones over the round barrier at left, small ones behind the concrete block, one on the raised walkway rail at right) and a fully modelled soldier in a brown jacket stands holding a rifle beside a mid-range target.",
+      "biggestGap": "No muzzle flash, bullet holes or impact debris anywhere despite the non-zero score, and the far targets float with no visible steel stands under them unlike the reference's stand legs.",
+      "polish": { "behavior": 4, "visuals": 4, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-02",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "SCORE 0150 with 29 / 90 shows a round spent and hits registered; every target here sits on a clearly drawn two-leg steel stand, and the canopy/ramp cluster plus the round segmented barrier at left are all distinct.",
+      "biggestGap": "Field of view is much wider than the reference, so the targets shrink to postage stamps and the bottom half of the frame is empty grey tile with no barricades near the firing line.",
+      "polish": { "behavior": 4, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-03",
+      "playability": 3,
+      "visuals": 4,
+      "screenshotWorthy": "no",
+      "evidence": "Composition matches the reference closely: round barrier and paired large targets left, grey barricade wall centre, dark lockers and the grey ramp right, with a target on the walkway rail; but SCORE 0000, TIME 60 and 30 / 90 are all at their start values.",
+      "biggestGap": "Nothing has happened yet — untouched score, full timer and full magazine — and the patrolling soldier is only a sliver of brown visible behind the left-centre target.",
+      "polish": { "behavior": 3, "visuals": 4, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-04",
+      "playability": 3,
+      "visuals": 4,
+      "screenshotWorthy": "no",
+      "evidence": "Same layout strength as the reference — round barrier, stepped concrete barricades, lockers, ramp, walkway target above the white rail — rendered with clean soft shadows pooling left of the round barrier, but the HUD reads SCORE 0000 / TIME 60 / 30 / 90.",
+      "biggestGap": "The enemy soldier is completely hidden behind a target so nothing shows the patrol works, and no shot has been fired anywhere in the frame.",
+      "polish": { "behavior": 3, "visuals": 4, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-05",
+      "playability": 4,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "SCORE 0100 with 29 / 90 and TIME 58 shows firing, hits and the clock all live, and the soldier in a green vest with a slung weapon reads clearly against the dark wall at left-centre.",
+      "biggestGap": "The camera has drifted so the leftmost large target is sliced by the frame edge and another target is half cut off at the right edge, leaving a sparser mid-field than the reference.",
+      "polish": { "behavior": 4, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-06",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "Eight small targets on visible thin steel posts spread across the yard with the canopy, dark angled ramp and round segmented barrier all present, but SCORE 0000, 30 / 90 and no soldier anywhere in frame.",
+      "biggestGap": "Zoomed-out framing plus untouched HUD counters means the frame shows only static geometry — no enemy, no shot fired, no target at reference scale.",
+      "polish": { "behavior": 2, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-07",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "Essentially the same wide shot as sample-06 — same eight stand-mounted targets, same canopy and ramp silhouette, SCORE 0000 / TIME 59 / 30 / 90 — with the gloved hand and holographic sight rendered cleanly at bottom right.",
+      "biggestGap": "No enemy soldier visible and every HUD counter still at its opening value, so nothing in the pixels demonstrates the shooting loop running.",
+      "polish": { "behavior": 2, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    },
+    {
+      "label": "sample-08",
+      "playability": 3,
+      "visuals": 3,
+      "screenshotWorthy": "no",
+      "evidence": "SCORE 0150 / TIME 56 / 30 / 89 proves hits, timer and a reload, and a tiny brown soldier figure is visible beside the concrete block at centre-right.",
+      "biggestGap": "The weapon has slid down and right so the receiver is cropped by the frame edge and the gloved arm is almost entirely off-screen, breaking the reference's centred rifle-and-hands composition.",
+      "polish": { "behavior": 4, "visuals": 3, "effects": 2, "particles": 1, "audio": "na", "ux": 4 }
+    }
+  ],
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "low",
+    "rationale": "sample-01 pairs the reference-matching close framing (large red targets at staggered depth, round barrier, lockers, ramp) with the only clearly readable armed soldier plus a HUD showing score, spent reserve and a running clock, though it is only marginally ahead of sample-03/04/05 which share its layout."
+  }
+}

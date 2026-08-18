@@ -1,0 +1,227 @@
+{
+  "name": "debug-clear",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "shot-1",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-1",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-2",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-2",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-3",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-3",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-4",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-4",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-5",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-5",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-6",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-6",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-7",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-7",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-8",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-8",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-9",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-9",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-10",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-10",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-11",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-11",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-12",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-12",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-13",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-13",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-14",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-14",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-15",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-15",
+      "waitTicks": 100,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "targetsHit",
+        "gte": 12
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "equals": "complete"
+      }
+    ]
+  }
+}

@@ -121,7 +121,12 @@ function assertArchiveResolves(archive: string): void {
       for (const match of source.matchAll(/(?:\bimport\s+|\bfrom\s+)["'](\.\.\/[^"']+)["']/gu)) {
         const specifier = match[1];
         if (specifier === undefined) continue;
-        const resolved = path.resolve(path.dirname(full), specifier);
+        // Vite resource imports carry a query or fragment — `../assets/sky.jpg?url`,
+        // `?raw`, `?worker`. The file on disk is the part before it, so resolving the whole
+        // specifier looks for a filename ending in "?url" and never finds one. This guard
+        // then rejects a build whose assets were archived correctly, and because the archiver
+        // deletes its destination on failure, the build cannot be measured at all.
+        const resolved = path.resolve(path.dirname(full), specifier.split(/[?#]/u)[0] as string);
         if (path.relative(archive, resolved).startsWith("..")) continue;
         const candidates = [
           resolved,

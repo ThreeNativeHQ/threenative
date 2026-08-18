@@ -153,6 +153,44 @@ describe("sweep archive", () => {
     ).rejects.toThrow();
   });
 
+  it("archives a project whose src imports assets through a Vite query suffix", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await mkdir(path.join(sandbox, "assets", "models"), { recursive: true });
+    await writeFile(path.join(sandbox, "assets", "models", "rifle.glb"), "glb\n");
+    await writeFile(path.join(sandbox, "assets", "sky.jpg"), "jpg\n");
+    // `?url`, `?raw` and `?worker` are Vite resource imports: the file on disk is the part
+    // before the query, so resolving the whole specifier hunts for a file literally named
+    // "rifle.glb?url". A build that archived its assets correctly was rejected as unbootable.
+    await writeFile(
+      path.join(sandbox, "src", "game.ts"),
+      [
+        'import rifle from "../assets/models/rifle.glb?url";',
+        'import sky from "../assets/sky.jpg?url";',
+        "export default [rifle, sky];",
+        "",
+      ].join("\n"),
+    );
+
+    const archive = archiveSandbox(sandbox, root);
+
+    await expect(
+      access(path.join(archive, "assets", "models", "rifle.glb")),
+    ).resolves.toBeUndefined();
+    await expect(access(path.join(archive, "assets", "sky.jpg"))).resolves.toBeUndefined();
+  });
+
+  it("still refuses a Vite query import whose file the archive does not carry", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await writeFile(
+      path.join(sandbox, "src", "game.ts"),
+      'import gone from "../assets/absent.glb?url";\nexport default gone;\n',
+    );
+
+    expect(() => archiveSandbox(sandbox, root)).toThrow(/unbootable project/u);
+  });
+
   it("bundles local file dependencies and rewrites them relative to the archive", async () => {
     const root = await fixtureRoot();
     const sandbox = await writeSandbox(root);

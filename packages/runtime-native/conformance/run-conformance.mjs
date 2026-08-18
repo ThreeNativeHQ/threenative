@@ -835,6 +835,35 @@ export function androidSystemDialog(windowDump) {
   return match?.[0]?.trim() || null;
 }
 
+/**
+ * The window that currently owns focus, which is not the same question as which app is running.
+ *
+ * `androidSystemDialog` above matches two strings — "Application Not Responding" and "Application
+ * Error" — and every other system window is invisible to it. On 2026-08-17 a physical Pixel 8 sat
+ * behind Android's *"…app which is currently being tested"* prompt, raised by installing a debug
+ * APK with `adb install -t`, and a notification shade above that. The lane captured the home
+ * screen 67 times, compared it against the browser reference, and reported 67 rows of
+ * `pixelMismatchRatio: 1.000` — every pixel different, on every scene, which is what a screenshot
+ * of the wrong surface looks like and not what a renderer regression looks like.
+ *
+ * Enumerating dialog titles cannot work: the next one will have a title nobody listed. Asserting
+ * the *positive* condition does — the focused window must belong to this app, and anything else
+ * fails closed and names what had focus instead.
+ */
+export function androidFocusedWindowOwner(windowDump) {
+  return /^\s*mCurrentFocus=Window\{[^}]*?\s(\S+)\}/mu.exec(String(windowDump))?.[1] || null;
+}
+
+export function androidForegroundBlocker(windowDump, appId = APP_ID) {
+  const dialog = androidSystemDialog(windowDump);
+  if (dialog) return `TN_ANDROID_SYSTEM_DIALOG: ${dialog}`;
+  const focused = androidFocusedWindowOwner(windowDump);
+  if (focused === null) return "TN_ANDROID_FOCUS_UNKNOWN: no mCurrentFocus in the window dump.";
+  if (!focused.startsWith(appId))
+    return `TN_ANDROID_FOREGROUND_WINDOW: '${focused}' owns focus, not ${appId}; a capture now photographs that window, not the scene.`;
+  return null;
+}
+
 /** The landscape size the Android lane pins so its captures compare against the web reference. */
 export const ANDROID_CAPTURE_SIZE = "1280x720";
 
@@ -856,6 +885,56 @@ async function waitForAndroidDisplaySize(common, expected) {
   throw new Error(
     `TN_ANDROID_DISPLAY_ORIENTATION: display reported ${observed ?? "no size"} instead of ${expected} before capture.`,
   );
+}
+
+/**
+ * Decide what a row must restore the display to, given what it observed before overriding.
+ *
+ * **An observed override equal to this lane's own capture size is not the operator's setting — it
+ * is this lane's leak from an earlier run, and echoing it back makes the leak permanent.** That is
+ * what happened on 2026-08-17: a run left `Override size: 1280x720` on a physical Pixel 8, every
+ * subsequent row read it as the pre-existing state, "restored" it faithfully, and reported success
+ * while the operator's phone stayed squeezed into a 1280x720 letterbox on a 1080x2400 panel. No
+ * restore ever failed; each one was told the wrong target.
+ *
+ * A genuine operator override that happens to equal the capture size is indistinguishable from the
+ * leak, and gets reset. That is the right way round: resetting a deliberate override costs one
+ * command to redo, and perpetuating a leaked one silently mangles a physical device.
+ */
+export function androidDisplayRestoreTarget(sizeDump, captureSize = ANDROID_CAPTURE_SIZE) {
+  const override = /^Override size:\s*(\d+x\d+)$/mu.exec(String(sizeDump))?.[1];
+  return override === undefined || override === captureSize ? "reset" : override;
+}
+
+/**
+ * Reset the display on the way out, including the ways that skip every `finally` in this file.
+ *
+ * A per-row `try/finally` cannot survive `SIGINT`, `SIGTERM`, or a crash, and this lane mutates
+ * global state on hardware somebody is holding. The guard is armed once per process, resets size
+ * and density, and tolerates its own failure — an exit handler that throws would replace the real
+ * exit reason with its own.
+ */
+let androidDisplayGuardArmed = false;
+
+export function armAndroidDisplayGuard(adb, serial) {
+  if (androidDisplayGuardArmed) return;
+  androidDisplayGuardArmed = true;
+  const reset = () => {
+    for (const property of ["size", "density"]) {
+      try {
+        spawnSync(adb, androidArgs(serial, "shell", "wm", property, "reset"), { timeout: 10_000 });
+      } catch {
+        // An exit path is the wrong place to raise. The next run's own reset is the backstop.
+      }
+    }
+  };
+  process.once("exit", reset);
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      reset();
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    });
+  }
 }
 
 function wait(milliseconds) {
@@ -995,7 +1074,8 @@ async function runAndroid(
     // override alone is what makes the display landscape, so the rotation only fought it.
     common("shell", "settings", "put", "system", "user_rotation", "0");
     const originalSize = String(common("shell", "wm", "size").stdout || "");
-    displayRestore = /^Override size:\s*(\d+x\d+)$/mu.exec(originalSize)?.[1] || "reset";
+    displayRestore = androidDisplayRestoreTarget(originalSize);
+    armAndroidDisplayGuard(tools.adb, serial);
     common("shell", "wm", "size", ANDROID_CAPTURE_SIZE);
     common("shell", "am", "force-stop", APP_ID);
     common("logcat", "-c");
@@ -1068,11 +1148,11 @@ async function runAndroid(
     if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
     if (!androidPid(tools.adb, serial))
       throw new Error(`Android process died during the ${settleMs} ms settle window.`);
-    const beforeCaptureDialog = androidSystemDialog(
+    const beforeCaptureBlocker = androidForegroundBlocker(
       common("shell", "dumpsys", "window", "windows").stdout,
     );
-    if (beforeCaptureDialog) {
-      throw new Error(`TN_ANDROID_SYSTEM_DIALOG: ${beforeCaptureDialog}`);
+    if (beforeCaptureBlocker) {
+      throw new Error(beforeCaptureBlocker);
     }
     // The activity requests its own orientation as it starts, so the display can still be
     // rotating when the settle window ends. Capturing then yields a 720x1280 frame that is
@@ -1092,11 +1172,11 @@ async function runAndroid(
         `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
       );
     }
-    const afterCaptureDialog = androidSystemDialog(
+    const afterCaptureBlocker = androidForegroundBlocker(
       common("shell", "dumpsys", "window", "windows").stdout,
     );
-    if (afterCaptureDialog) {
-      throw new Error(`TN_ANDROID_SYSTEM_DIALOG: ${afterCaptureDialog}`);
+    if (afterCaptureBlocker) {
+      throw new Error(afterCaptureBlocker);
     }
     const screenshot = join(captureRoot, `${test.id}.png`);
     writeFileSync(screenshot, png);
@@ -1152,6 +1232,23 @@ async function runAndroid(
           error: `Android display-size restore failed: ${restored.stderr || restored.stdout || "unknown error"}`,
         };
       }
+      // Read it back. A restore that reports success and leaves the panel overridden is exactly
+      // the failure that reached a physical device on 2026-08-17, and it reported success every
+      // time. Exit status is what the command claims; this is what the device is.
+      const readBack = runCommand(tools.adb, androidArgs(serial, "shell", "wm", "size"), {
+        allowFailure: true,
+        timeout: 10_000,
+      });
+      const leaked = /^Override size:\s*(\d+x\d+)$/mu.exec(String(readBack.stdout || ""))?.[1];
+      if (leaked === ANDROID_CAPTURE_SIZE) {
+        result.status = "fail";
+        result.native = {
+          completed: false,
+          ...(result.native || {}),
+          error: `TN_ANDROID_DISPLAY_LEAKED: the display is still overridden to ${leaked} after restore; the device was left mutated.`,
+        };
+      }
+      displayRestore = null;
     }
   }
 }

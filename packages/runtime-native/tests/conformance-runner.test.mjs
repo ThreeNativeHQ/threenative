@@ -28,7 +28,10 @@ import {
   androidDeviceKind,
   androidDependencyBlocker,
   ANDROID_CAPTURE_SIZE,
+  androidDisplayRestoreTarget,
   androidDisplaySize,
+  androidForegroundBlocker,
+  androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
   validateRegistry,
@@ -233,6 +236,57 @@ test("Android capture waits for the pinned landscape size instead of reporting a
   const source = readFileSync(runner, "utf8");
   assert.match(source, /await waitForAndroidDisplaySize\(common, ANDROID_CAPTURE_SIZE\)/u);
   assert.match(source, /TN_ANDROID_DISPLAY_ORIENTATION: captured \$\{capture\.width\}/u);
+});
+
+test("a capture is refused when any window but the app owns focus", () => {
+  // 2026-08-17: a physical Pixel 8 sat behind Android's "app which is currently being tested"
+  // prompt with the notification shade above it. That dialog is neither an ANR nor an Application
+  // Error, so the old check saw nothing, and the lane photographed the home screen 67 times and
+  // reported 67 rows of pixelMismatchRatio 1.000.
+  const blocked = "  mCurrentFocus=Window{f453d09 u0 android}";
+  assert.match(androidForegroundBlocker(blocked), /TN_ANDROID_FOREGROUND_WINDOW: 'android' owns focus/u);
+  assert.equal(androidFocusedWindowOwner(blocked), "android");
+
+  const ours = "  mCurrentFocus=Window{a1 u0 com.threenative.game/com.threenative.runtime.MystralActivity}";
+  assert.equal(androidForegroundBlocker(ours), null);
+
+  // A dump with no focus line is not a pass. Fail closed.
+  assert.match(androidForegroundBlocker("nothing here"), /TN_ANDROID_FOCUS_UNKNOWN/u);
+
+  // The two strings the old check knew about still fail, by their own code.
+  assert.match(
+    androidForegroundBlocker("Window{1 u0 Application Error: com.threenative.game}"),
+    /TN_ANDROID_SYSTEM_DIALOG/u,
+  );
+
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /const beforeCaptureBlocker = androidForegroundBlocker\(/u);
+  assert.match(source, /const afterCaptureBlocker = androidForegroundBlocker\(/u);
+});
+
+test("a leaked capture-size override is reset rather than restored back onto the device", () => {
+  // The 2026-08-17 defect, as a unit. A previous run left `Override size: 1280x720` on a physical
+  // Pixel 8; every later row read that as the operator's setting and put it back, so the phone
+  // stayed letterboxed while every restore reported success.
+  assert.equal(
+    androidDisplayRestoreTarget("Physical size: 1080x2400\nOverride size: 1280x720"),
+    "reset",
+  );
+  // No override to begin with is the ordinary case and still resets.
+  assert.equal(androidDisplayRestoreTarget("Physical size: 1080x2400"), "reset");
+  // An override the operator set for their own reasons is preserved.
+  assert.equal(
+    androidDisplayRestoreTarget("Physical size: 1080x2400\nOverride size: 800x600"),
+    "800x600",
+  );
+
+  const source = readFileSync(runner, "utf8");
+  // The restore is read back, because exit status is what the command claims and this is what the
+  // device is.
+  assert.match(source, /TN_ANDROID_DISPLAY_LEAKED/u);
+  // A per-row finally cannot survive a signal, and this lane mutates hardware.
+  assert.match(source, /armAndroidDisplayGuard\(tools\.adb, serial\)/u);
+  assert.match(source, /process\.once\("exit", reset\)/u);
 });
 
 test("Android rows uninstall the test package before each large debug APK install", () => {
@@ -591,7 +645,10 @@ test("Android screenshot capture preserves PNG bytes", () => {
 test("Android capture uses reference dimensions and restores the prior display override", () => {
   const source = readFileSync(runner, "utf8");
   assert.match(source, /common\("shell", "wm", "size", ANDROID_CAPTURE_SIZE\)/u);
-  assert.match(source, /displayRestore = \/\^Override size:/u);
+  // Was `displayRestore = /^Override size:` inline, which echoed a leaked override straight back
+  // onto the device. The decision now lives in `androidDisplayRestoreTarget`, which is tested
+  // against the leak case directly rather than by matching the source line that caused it.
+  assert.match(source, /displayRestore = androidDisplayRestoreTarget\(originalSize\)/u);
   assert.match(source, /finally \{[\s\S]*?displayRestore/u);
   assert.match(
     source,

@@ -1,0 +1,71 @@
+{
+  "name": "fps-fire-and-reload-proof",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1536,
+    "height": 1024
+  },
+  "warmupFrames": 12,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "fire-burst",
+      "press": "Space",
+      "holdTicks": 24,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 6
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reload-completes",
+      "waitTicks": 120
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "reloads",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "reserve",
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.001
+        }
+      }
+    ]
+  }
+}

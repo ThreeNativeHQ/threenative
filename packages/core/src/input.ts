@@ -6,17 +6,27 @@ import { Vector2 } from "three";
  * makes bindings confusing to read:
  *
  * ```ts
- * jump: { keys: ["Space"], buttons: [0] }                 // a button
+ * jump: { keys: ["Space"], buttons: [0] }                 // a button: key or *gamepad* button 0
+ * fire: { keys: ["Space"], mouseButtons: [0] }            // a button: key or *left mouse*
  * move: { up: ["KeyW"], down: ["KeyS"], left: [...], right: [...] }  // an axis
  * ```
+ *
+ * **`buttons` is the gamepad, `mouseButtons` is the mouse.** They are separate devices and
+ * `buttons: [0]` on a machine with no gamepad plugged in silently never fires.
  *
  * `up`/`down`/`left`/`right` are **directions of an axis**, not "the keys that press this".
  * They are named after the vector they build, so `pressed("move")` is true whenever any
  * direction is held — including `ArrowDown`. For a button, use `keys`.
  */
 export interface IInputAction {
-  /** Gamepad button indices that press this action. */
+  /** **Gamepad** button indices that press this action. For the mouse, see `mouseButtons`. */
   readonly buttons?: readonly number[];
+  /**
+   * **Mouse** button indices that press this action, numbered as `MouseEvent.button`:
+   * `0` left, `1` middle, `2` right. Binding `2` also suppresses the browser context menu on
+   * the pointer target, because a right-click binding is unusable while the menu eats it.
+   */
+  readonly mouseButtons?: readonly number[];
   /**
    * Keyboard codes that press this action. Use this for a button — `jump`, `restart`, `fire`.
    * A key listed here never contributes to `vector`.
@@ -35,6 +45,24 @@ export interface IInputAction {
 }
 
 export type InputBindings = Record<string, IInputAction>;
+
+/**
+ * What the browser context menu does over the game surface. `"suppress"` is the default: a
+ * right-click binding cannot work while the menu opens on the same press, and a context menu
+ * over a game canvas is almost never what anyone wants. `"allow"` restores the browser default.
+ */
+export type ContextMenuPolicy = "allow" | "suppress";
+
+/**
+ * `MouseEvent.button` (0 left, 1 middle, 2 right) to the `PointerEvent.buttons` bit that is set
+ * while it is held (1 left, 4 middle, 2 right). The two numbering schemes disagree for the
+ * middle and right buttons, which is why this is a table rather than a shift.
+ */
+const MOUSE_BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16];
+
+function mouseButtonMask(button: number): number {
+  return MOUSE_BUTTON_BITS[button] ?? 0;
+}
 
 export interface IInputGamepad {
   readonly axes: ArrayLike<number>;
@@ -93,6 +121,17 @@ export class InputMap {
   #previousPressed = new Map<string, boolean>();
   #justPressed = new Set<string>();
   #justReleased = new Set<string>();
+  /**
+   * Presses seen since the last `tick`, kept even if the input was already released.
+   *
+   * Device state alone is sampled once a frame, so a press that starts and ends between two
+   * ticks is simply not there when the frame looks — and a mouse click is normally shorter than
+   * a frame at 60Hz. Without this latch a quick click does nothing at all, intermittently,
+   * which reads as a broken game rather than a dropped edge.
+   */
+  #latchedKeys = new Set<string>();
+  #latchedPointerButtons = 0;
+  #latchedPointer = false;
   #pointerTarget: EventTarget;
   #source: InputPlatformSource;
   #listeners: Array<[EventTarget, string, EventListener]> = [];
@@ -102,6 +141,7 @@ export class InputMap {
     target: EventTarget = globalThis,
     pointerTarget: EventTarget = target,
     source: InputPlatformSource = browserGamepads,
+    contextMenu: ContextMenuPolicy = "suppress",
   ) {
     this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
     this.#target = target;
@@ -119,7 +159,10 @@ export class InputMap {
     };
     this.#listen(this.#target, "keydown", (event) => {
       const code = eventCode(event);
-      if (code !== undefined) this.#heldKeys.add(code);
+      if (code !== undefined) {
+        this.#heldKeys.add(code);
+        this.#latchedKeys.add(code);
+      }
     });
     this.#listen(this.#target, "keyup", (event) => {
       const code = eventCode(event);
@@ -130,6 +173,13 @@ export class InputMap {
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, false));
     this.#listen(this.#pointerTarget, "pointercancel", (event) => this.#pointerEvent(event, false));
     this.#listen(this.#target, "blur", () => this.clear());
+    // The browser context menu is suppressed on the game surface by default. A right-click
+    // binding is simply unusable while the menu eats the press, and no game yet built here has
+    // wanted the menu over its own canvas. `contextMenu: "allow"` restores the browser default
+    // for the rare case that does.
+    if (contextMenu !== "allow") {
+      this.#listen(this.#pointerTarget, "contextmenu", (event) => event.preventDefault());
+    }
   }
 
   /**
@@ -163,6 +213,10 @@ export class InputMap {
       this.#isHeld(binding.right) ||
       this.#isHeld(binding.up) ||
       (binding.pointer === true && this.#pointers.size > 0) ||
+      (binding.mouseButtons?.some(
+        (button) => (this.#pointerButtons & mouseButtonMask(button)) !== 0,
+      ) ??
+        false) ||
       (binding.buttons?.some((button) => this.#gamepadButtons[button] === true) ?? false)
     );
   }
@@ -184,16 +238,25 @@ export class InputMap {
     this.#justPressed.clear();
     this.#justReleased.clear();
     for (const name of Object.keys(this.#bindings)) {
-      const current = this.pressed(name);
+      // A press that came and went inside this frame still counts as a press. `pressed()` stays
+      // instantaneous — it answers "is it down right now" — while the edge is latched, so a tap
+      // reports justPressed on this frame and justReleased on the next one.
+      const current = this.pressed(name) || this.#latchedPressed(name);
       const previous = this.#previousPressed.get(name) ?? false;
       if (current && !previous) this.#justPressed.add(name);
       if (!current && previous) this.#justReleased.add(name);
       this.#previousPressed.set(name, current);
     }
+    this.#latchedKeys.clear();
+    this.#latchedPointerButtons = 0;
+    this.#latchedPointer = false;
   }
 
   clear(): void {
     this.#heldKeys.clear();
+    this.#latchedKeys.clear();
+    this.#latchedPointerButtons = 0;
+    this.#latchedPointer = false;
     this.#pointers.clear();
     this.#pointerButtons = 0;
     this.#pointerPosition.set(0, 0);
@@ -211,6 +274,26 @@ export class InputMap {
     this.clear();
   }
 
+  /** Was this action pressed at any point since the last tick, even if already released? */
+  #latchedPressed(name: string): boolean {
+    const binding = this.#bindings[name];
+    if (binding === undefined) return false;
+    const latched = (codes: readonly string[] | undefined): boolean =>
+      codes?.some((code) => this.#latchedKeys.has(code)) ?? false;
+    return (
+      latched(binding.keys) ||
+      latched(binding.down) ||
+      latched(binding.left) ||
+      latched(binding.right) ||
+      latched(binding.up) ||
+      (binding.pointer === true && this.#latchedPointer) ||
+      (binding.mouseButtons?.some(
+        (button) => (this.#latchedPointerButtons & mouseButtonMask(button)) !== 0,
+      ) ??
+        false)
+    );
+  }
+
   #isHeld(codes: readonly string[] | undefined): boolean {
     return codes?.some((code) => this.#heldKeys.has(code)) ?? false;
   }
@@ -226,6 +309,8 @@ export class InputMap {
     const buttons = pointer.buttons ?? 0;
     const x = pointer.clientX ?? 0;
     const y = pointer.clientY ?? 0;
+    if (buttons !== 0) this.#latchedPointerButtons |= buttons;
+    if (down === true) this.#latchedPointer = true;
     const tracked = this.#pointers.get(id);
     if (down === true) {
       if (tracked === undefined) {

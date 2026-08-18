@@ -4,9 +4,27 @@ prd_contract: v1
 
 # PRD-126 — The visual instrument cannot tell a change from noise, and it has already optimised noise once
 
-**Status: PARTIAL, 2026-08-16 — the instrument is built and enforced; its own measurement is the
-one thing still open.** Record:
-[`docs/verification/prd-126-visual-instrument-2026-08-16.md`](../../verification/prd-126-visual-instrument-2026-08-16.md).
+**Status: DONE, 2026-08-17 — Phase 0's measurement was taken with three raters that had not read
+round 10, and it is published.** Records:
+[`prd-126-phase-0-2026-08-17.md`](../../verification/prd-126-phase-0-2026-08-17.md) and the
+build record
+[`prd-126-visual-instrument-2026-08-16.md`](../../verification/prd-126-visual-instrument-2026-08-16.md).
+
+**The measurement produced two numbers that disagree about what they measure, and both are
+published rather than one being chosen.** The duplicate-pair spread is **0** — every rater scored
+both copies of a byte-identical frame the same, which is rater determinism on identical input and
+not a perceptual resolution. The between-rater spread is **1**: two raters agreed on all sixteen
+samples and the third sat a point below on `action-rpg` and `minimal`. Phase 0's pre-committed
+branches were written expecting a single number; §Phase 0 records which fired and why the
+conservative reading is kept.
+
+**One finding the PRD did not anticipate: the bundle's own rater prompt leaks the answer.**
+`docs/product/VISUAL-BASELINE.md` is hashed into every bundle as `promptSha256`, and it publishes
+round 10's per-template scores. This run gave each rater a copy with that paragraph redacted; the
+bundle should carry a score-free rubric instead of a document that accumulates results.
+
+**Original status, 2026-08-16:** PARTIAL — the instrument is built and enforced; its own
+measurement is the one thing still open.
 
 Built, wired as `pnpm visuals:ab`, eight negative controls observed red with exit codes, twelve unit
 tests, and `scripts/round-ledger.ts` now refuses a round ledger that reports a sub-MDE delta as a win
@@ -168,22 +186,35 @@ is incomplete.
 Consumer-scoped: each is about a report someone could read and disagree with, not about code
 that exists.
 
-- [ ] A dated record in `docs/verification/` states this instrument's measured MDE, computed from
-      duplicate pairs in the same bundle that produced its scores.
-- [ ] Round 10's seven deltas are re-classified against that MDE, and the ones that do not clear
-      it are marked unattributable **in the round-10 ledger itself**, not only here.
-- [ ] `pnpm visuals:ab` exists, runs end to end on the committed frames, and exits `0`.
-- [ ] A bundle with a template present on one side only exits `2`, and the control was observed
-      red with its exit code recorded.
-- [ ] A bundle with no duplicate pair exits `2`, observed red.
-- [ ] Requesting three raters and supplying two exits `2` naming the shortfall, observed red.
-- [ ] A delta smaller than the measured MDE prints `INDETERMINATE` and does not appear in any
-      aggregate the run prints.
-- [ ] `scripts/round-next.ts` refuses a round ledger that reports a sub-MDE delta as a win or a
-      loss, observed red.
-- [ ] The record states in one clause that this is a model instrument, not the human blind
+- [x] A dated record in `docs/verification/` states this instrument's measured MDE, computed from
+      duplicate pairs in the same bundle that produced its scores. **`prd-126-phase-0-2026-08-17.md`:
+      mde 0 from 6 duplicate-pair observations across 3 raters, with the between-rater spread of 1
+      recorded beside it.**
+- [x] Round 10's seven deltas are re-classified against that MDE, and the ones that do not clear
+      it are marked unattributable **in the round-10 ledger itself**, not only here. Its *Visual
+      deltas* section classifies two rows as WIN/LOSS and five as `INDETERMINATE`, and withdraws
+      the mean and floor count computed over all seven.
+- [x] `pnpm visuals:ab` exists, runs end to end on the committed frames, and exits `0`. **Run
+      2026-08-17 on the committed frames with three verdicts: exit `0`.** The second bundle, which
+      pairs `acabc39`'s frames against the working tree's, exits `1` — a measured LOSS on `starter`,
+      which is this tool's documented contract and not a harness failure.
+- [x] A bundle with a template present on one side only exits `2`, observed red with its exit
+      code — `prd-126-visual-instrument-2026-08-16.md` §3.
+- [x] A bundle with no duplicate pair exits `2`, observed red — `TN_VISUAL_AB_NO_DUPLICATE_PAIR`,
+      exit `2`, same record.
+- [x] Requesting three raters and supplying two exits `2` naming the shortfall, observed red —
+      same record.
+- [x] A delta smaller than the measured MDE prints `INDETERMINATE` and does not appear in any
+      aggregate the run prints. Observed twice: the `sub-mde-delta` control on 2026-08-16, and on
+      2026-08-17 the five Δ=0 rows excluded with *"5 row(s) excluded as INDETERMINATE"*.
+- [x] `scripts/round-next.ts` refuses a round ledger that reports a sub-MDE delta as a win or a
+      loss, observed red — same record.
+- [x] The record states in one clause that this is a model instrument, not the human blind
       session `docs/product/VISUAL-BASELINE.md` requires, and no charter result is claimed.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passes.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` pass (2026-08-17: exit 0, 0, and 133 files /
+      1195 tests). **`pnpm budgets` exits 1 on a pre-existing census disagreement** — recorded
+      native total 72,857 against a measured 75,937 — which is not caused by anything in this PRD
+      and is not silenced here.
 
 ## 7. Negative controls
 

@@ -1,0 +1,146 @@
+{
+  "comparisonVerdict": {
+    "betterSample": "sample-01",
+    "confidence": "medium",
+    "rationale": "Sample-01 is the only frame that combines a fully readable armed soldier, the densest layered target field with lockers, ramp and railed walkway at reference scale, and HUD state (SCORE 0100, 30 / 89, 11 targets left) proving the shoot-score-reload loop ran."
+  },
+  "samples": [
+    {
+      "biggestGap": "The reference's targets sit on visible steel stands and are fewer and larger; here several red rectangles float unsupported against the wall and the target count is padded, so the range reads as decals rather than physical props.",
+      "evidence": "Nine red targets staggered from the near barricade back to the wall, a fully modelled soldier in dark fatigues holding a rifle standing left of centre, black locker cubes and a grey ramp with white-railed walkway on the right, and HUD state that shows the loop running: SCORE 0100, TIME 57, 30 / 89 reserve and objective counted down to 'HIT 11 TARGETS'.",
+      "label": "sample-01",
+      "playability": 4,
+      "screenshotWorthy": "no",
+      "visuals": 4,
+      "polish": {
+        "behavior": 4,
+        "visuals": 4,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 3
+    },
+    {
+      "biggestGap": "Camera sits far back with the whole range compressed into a thin band: the targets are a fraction of the reference's size and the lower half of the frame is empty tile, losing the reference's near-barricade depth layering.",
+      "evidence": "Seven small red targets on thin two-leg steel stands spread across a flat mid-ground, a curved segmented barrier bottom-left with a cast ground shadow, canopy and ramp at right, and HUD showing SCORE 0150 / TIME 57 / 29 / 90 with the objective at 'HIT 11 TARGETS'.",
+      "label": "sample-02",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "No evidence of the loop having run — score zero, full magazine, timer at 60 — and the patrolling soldier is almost entirely hidden behind a target, unlike the reference where the figure is clearly silhouetted against the wall.",
+      "evidence": "Dense mid-ground: eight red targets at four depth bands, grey stepped barricade across centre, curved wall left with a soft elliptical shadow, black lockers plus grey ramp and railed walkway right, SCAR with EOTech and camo sleeve bottom right; HUD reads SCORE 0000 / TIME 60 / 30 / 90, an untouched opening frame.",
+      "label": "sample-03",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 4,
+      "polish": {
+        "behavior": 3,
+        "visuals": 4,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "Pristine start state (zero score, 30 / 90, timer 60) gives no proof shooting, scoring or reloading work, and the enemy is occluded to a thin colour fragment.",
+      "evidence": "Same rich layout as sample-03 — staggered red targets, stepped concrete barricade, curved barrier and its ground shadow, lockers, ramp and white-railed walkway — with only a sliver of the soldier's red-brown torso poking past the centre-left target; HUD SCORE 0000 / TIME 60 / 30 / 90.",
+      "label": "sample-04",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 4,
+      "polish": {
+        "behavior": 3,
+        "visuals": 4,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "The camera is pushed low and forward so the leftmost target is sliced by the frame edge and the ramp is cropped at the right border; the reference keeps the whole yard and its far wall inside the frame.",
+      "evidence": "A clearly readable soldier in camo with a slung rifle stands at the wall left of centre, six red targets sit on visible thin stands atop the concrete barricades, and the HUD shows SCORE 0100 / TIME 58 / 29 / 90 with 'HIT 11 TARGETS' — one round fired and one target down.",
+      "label": "sample-05",
+      "playability": 4,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    },
+    {
+      "biggestGap": "The range reads as a distant diorama — targets are only ~30 px tall against the reference's near-half-screen ones — and no patrolling soldier is visible anywhere in the yard.",
+      "evidence": "Seven small red targets on slender steel stands, a stepped grey barricade dead centre under the crosshair, curved barrier with cast shadow left, canopy and dark ramp right; HUD complete with SCORE 0000, green HEALTH 100, orange TIME 59, 30 / 90 and the bottom legend bar.",
+      "label": "sample-06",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.6
+    },
+    {
+      "biggestGap": "Flat, far-back composition with no enemy and no fired-shot state; the reference's foreground occlusion and large near targets are absent, leaving the bottom 40% of the frame as bare tile.",
+      "evidence": "Identical framing to sample-06: same seven stand-mounted targets, same centre barricade, curved barrier and ramp, same untouched HUD (SCORE 0000, TIME 59, 30 / 90, 'HIT 12 TARGETS'), rifle and camo sleeve anchored bottom-right.",
+      "label": "sample-07",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 3,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.6
+    },
+    {
+      "biggestGap": "The weapon has drifted off the viewport — the rifle body is clipped at the right and bottom edges with the gloved hand and forearm almost entirely gone, whereas the reference shows a full arm, glove and receiver anchoring the lower right third.",
+      "evidence": "HUD shows SCORE 0150 / TIME 56 / 30 / 89 and 'HIT 11 TARGETS', so firing, scoring and reload all registered, and a tiny dark enemy figure sits by the canopy at mid-right; scene is the same stand-mounted target layout with curved barrier and ramp.",
+      "label": "sample-08",
+      "playability": 3,
+      "screenshotWorthy": "no",
+      "visuals": 3,
+      "polish": {
+        "behavior": 4,
+        "visuals": 3,
+        "effects": 2,
+        "particles": 1,
+        "audio": "na",
+        "ux": 4
+      },
+      "polishAverage": 2.8
+    }
+  ],
+  "verdict": "ready"
+}

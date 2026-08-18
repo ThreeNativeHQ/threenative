@@ -1,6 +1,6 @@
 # PRD-126 — the visual instrument now measures its own resolution, and has not yet been given raters that can
 
-2026-08-16. [PRD-126](../PRDs/batch-26-08-16/PRD-126-the-visual-instrument-noise-floor.md) asks for
+2026-08-16. [PRD-126](../PRDs/done/PRD-126-the-visual-instrument-noise-floor.md) asks for
 two things: an instrument that publishes a minimum detectable effect and refuses to report a delta
 smaller than it, and a Phase 0 run that measures what that number actually is.
 
