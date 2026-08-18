@@ -207,22 +207,46 @@ export async function runGoldenPathTemplate(
   return executed;
 }
 
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function readManifest(file: string): Promise<IPackageManifest> {
   return JSON.parse(await readFile(file, "utf8")) as IPackageManifest;
 }
 
-async function workspacePackages(): Promise<readonly IWorkspacePackage[]> {
-  const packagesRoot = path.join(REPO_ROOT, "packages");
+export async function workspacePackages(
+  packagesRoot = path.join(REPO_ROOT, "packages"),
+): Promise<readonly IWorkspacePackage[]> {
   const entries = await readdir(packagesRoot, { withFileTypes: true });
   const packages: IWorkspacePackage[] = [];
+  const skipped: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const directory = path.join(packagesRoot, entry.name);
-    const manifest = await readManifest(path.join(directory, PACKAGE_FILE));
+    const manifestPath = path.join(directory, PACKAGE_FILE);
+    // A directory under packages/ with no manifest is not a workspace package. Anyone with a
+    // leftover build directory from another branch has one, and this used to fail the whole gate
+    // with a raw ENOENT naming a file rather than the directory that caused it.
+    if (!(await pathExists(manifestPath))) {
+      skipped.push(entry.name);
+      continue;
+    }
+    const manifest = await readManifest(manifestPath);
     if (typeof manifest.name !== "string" || manifest.name.length === 0) {
       throw new Error(`TN_GOLDEN_PATH_PACKAGE_INVALID: ${directory} has no package name.`);
     }
     packages.push({ directory, manifest: { ...manifest, name: manifest.name } });
+  }
+  if (skipped.length > 0) {
+    process.stdout.write(
+      `TN_GOLDEN_PATH_PACKAGE_SKIPPED: no ${PACKAGE_FILE} under packages/${skipped.join(", packages/")}; not a workspace package, skipping.\n`,
+    );
   }
   if (packages.length === 0) {
     throw new Error("TN_GOLDEN_PATH_PACKAGES_EMPTY: no packages found.");

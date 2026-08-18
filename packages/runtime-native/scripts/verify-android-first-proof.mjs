@@ -15,6 +15,9 @@ import {
   THREE_VERSION_MARKER,
   sourceTreeSha256,
 } from './build-android-first-proof.mjs';
+// Shared with the desktop gate on purpose. Two device-lane copies of "is the overlay there" would
+// drift, and the weaker one would be the device's, which is the lane that had never asserted it.
+import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
 
 export { FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
@@ -324,7 +327,15 @@ export function assertEngine(log, expected) {
   return { engine, expected, matched: true };
 }
 
-export function analyzeAppLog(log) {
+/**
+ * @param log captured app log
+ * @param requireTicks whether a missing present tick is itself a failure. False while the gate is
+ *   still waiting for the app's markers -- the runtime emits a tick every 60 frames, so a log read
+ *   one second into launch legitimately has none yet, and failing on that would reject every run.
+ *   True once the app has reported its frames, where a log with no tick means nothing measured the
+ *   invariant.
+ */
+export function analyzeAppLog(log, { requireTicks = false } = {}) {
   const failures = [];
   for (const matcher of failureMatchers) {
     const match = log.match(matcher.pattern);
@@ -341,6 +352,13 @@ export function analyzeAppLog(log) {
       line: 1,
       excerpt: `Expected marker order: ${REQUIRED_MARKERS.join(' -> ')}`,
     });
+  }
+  // One present per frame, read from the running process. The desktop CLI prints its count once
+  // at the end of a fixed-frame run; a device app never ends, so the runtime emits the pair
+  // periodically and this reads it. Without it the device lane asserts a screenshot and nothing
+  // about what actually reached the display.
+  for (const failure of analyzePresentTicks(log, { minTicks: requireTicks ? 1 : 0 }).failures) {
+    failures.push({ kind: 'present-invariant', line: 1, excerpt: failure });
   }
   return {
     markerFound: missingMarkers.length === 0,
@@ -555,7 +573,10 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   if (options.settleMs > 0) await wait(options.settleMs);
   rawLog = captureLog(tools.adb, serial);
   appLog = filterAppLog(rawLog, pid);
-  analysis = analyzeAppLog(appLog);
+  // The app has reported 300 frames by now, so it has emitted five present ticks. A log with none
+  // is a gate that measured nothing, which is the failure this repository treats as the dangerous
+  // one -- green while asserting something other than what it claims.
+  analysis = analyzeAppLog(appLog, { requireTicks: true });
   writeText(options.logPath, appLog.endsWith('\n') ? appLog : `${appLog}\n`);
   if (analysis.failures.length) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
   // Before the screenshot, so a mismatched engine fails on the engine rather than on whatever the
@@ -570,6 +591,10 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   const dimensions = inspectScreenshot(png);
   mkdirSync(dirname(options.screenshotPath), { recursive: true });
   writeFileSync(options.screenshotPath, png);
+  // The blank check above passes on a half-drawn frame, which is how the overlay defect survived
+  // every native gate. Nothing in the smoke world is magenta and nothing else draws into the
+  // canvas layer, so these pixels exist only if the second render pass reached the display.
+  const overlay = inspectOverlayBuffer(png, { label: options.screenshotPath });
   const displaySize = String(common('shell', 'wm', 'size').stdout).trim();
   const displayDensity = String(common('shell', 'wm', 'density').stdout).trim();
   const screenshot = {
@@ -577,9 +602,11 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     bytes: png.length,
     sha256: sha256(png),
     ...dimensions,
+    ...overlay,
     displaySize,
     displayDensity,
   };
+  const presentTicks = analyzePresentTicks(appLog).ticks;
 
   const finishedAt = now();
   const report = {
@@ -604,6 +631,11 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     apk: options.apk,
     apkBytes: statSync(options.apk).size,
     logcat: options.logPath,
+    presents: {
+      lastFrames: presentTicks.at(-1)?.frames ?? null,
+      lastPresents: presentTicks.at(-1)?.presents ?? null,
+      ticks: presentTicks.length,
+    },
     screenshot,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
@@ -616,6 +648,8 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
       marker: 'passed',
       processAlive: 'passed',
       logScan: 'passed',
+      overlay: 'passed',
+      presentInvariant: 'passed',
       screenshot: 'captured',
     },
     tools: {

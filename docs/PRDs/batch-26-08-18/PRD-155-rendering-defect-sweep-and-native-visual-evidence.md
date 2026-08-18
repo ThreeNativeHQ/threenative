@@ -4,10 +4,29 @@ prd_contract: v1
 
 # PRD-155 — Rendering defect sweep, and native visual evidence that can fail
 
-**Status:** PROPOSED, 2026-08-18. Nothing below has executed. The two engine defects that motivated
-it are already fixed and landed in `473f9f3`; this document is the work that fix exposed and did
-not finish. Every defect in §2 is either unreproduced or has a hypothesis with no measurement
-behind it, and each says which.
+**Status:** PARTIAL, 2026-08-18. Phases 1, 3 and 4 executed; Phase 2 is enumerated but not re-run;
+Phase 5 did not run. Results, evidence and what is still open:
+`docs/verification/prd-155-2026-08-18.md`.
+
+- **Phase 1 — DONE.** The overlay and one-present-per-frame gate runs on the Pixel 8 and goes red on
+  the pre-fix runtime (`presented 120 times in 60 frames`) and green on the fixed one (960/960,
+  4,096 overlay pixels). The iOS half is implemented and **unexecuted** — no Apple machine here.
+- **Phase 2 — OUTSTANDING.** Enumerated, and narrowed: playtest `visual` assertions are never
+  evaluated on `--target android|ios`, so no device `visual` result exists to retract. Three results
+  are named as worth re-running first; none has been.
+- **Phase 3 — D1 NOT REPRODUCED** on web, desktop native, or the Pixel 8. Roof and sails are present
+  in all three.
+- **Phase 4 — D2 NOT REPRODUCED** (the blades rotate on device). **D3 REPRODUCED** and localized:
+  the waterfalls animate on web and desktop native and are frozen on Android only. Engine bug in the
+  wgpu-native backend; **not fixed**.
+- **Phase 5 — NOT RUN.** The device was charging, at 24% battery, thermal status 1; all three of the
+  PRD's own preconditions fail.
+
+**Two corrections to §1 below, established by this work.** The present-once-per-frame fix landed in
+`fc2eb93`, not `473f9f3` — `473f9f3` fixed the *screenshot capture* timing and added the present
+counter. And a device screenshot (`adb screencap`, `simctl io`) reads the composited display and was
+never affected by the mid-frame capture bug, so §3's "every native screenshot-based result is
+suspect" holds only for the runtime's own `--screenshot` capture.
 
 **Outcome:** the rendering defects a player can see in a real game on a real device are either
 fixed or written down with a named layer and a failing test; and native visual evidence is

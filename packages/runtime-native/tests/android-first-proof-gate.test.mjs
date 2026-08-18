@@ -104,11 +104,29 @@ test('clean log requires ordered catalog, ready, first-frame, and 300-frame mark
 08-08 12:00:00.100 123 124 I Mystral: ${THREE_VERSION_MARKER}
 08-08 12:00:00.200 123 124 I Mystral: ${READY_MARKER}
 08-08 12:00:00.300 123 124 I Mystral: ${FIRST_FRAME_MARKER}
+08-08 12:00:01.000 123 124 I MystralRuntime: TN_PRESENTS_TICK:{"frames":60,"presents":60}
 08-08 12:00:05.300 123 124 I Mystral: ${FRAME_MARKER}
 `;
   assert.deepEqual(analyzeAppLog(log), { markerFound: true, missingMarkers: [], failures: [] });
   assert.deepEqual(analyzeAppLog(SUCCESS_MARKER).missingMarkers, REQUIRED_MARKERS.slice(0, 3));
   assert.equal(analyzeAppLog([...REQUIRED_MARKERS].reverse().join('\n')).failures[0]?.kind, 'marker-order');
+});
+
+test('the device lane rejects a log whose presents outrun its frames, and one with no tick', () => {
+  const base = REQUIRED_MARKERS.join('\n');
+  // The defect: the world pass and the overlay pass each acquiring and presenting an image of
+  // their own, so only one of the two reached the display.
+  const doubled = analyzeAppLog(`${base}\nTN_PRESENTS_TICK:{"frames":60,"presents":120}`);
+  assert.equal(doubled.failures[0]?.kind, 'present-invariant');
+  assert.match(doubled.failures[0].excerpt, /presented 120 times in 60 frames/u);
+  // A device log carrying no tick at all is a failure, not a pass. Before this the device lane
+  // asserted nothing about presents and reported green through the entire defect.
+  const silent = analyzeAppLog(base, { requireTicks: true });
+  assert.equal(silent.failures[0]?.kind, 'present-invariant');
+  assert.match(silent.failures[0].excerpt, /expected at least 1 TN_PRESENTS_TICK/u);
+  // While the gate is still waiting for markers the app may not have reached frame 60 yet, so a
+  // log with no tick is not yet evidence of anything. Failing there rejects every healthy run.
+  assert.deepEqual(analyzeAppLog(base).failures, []);
 });
 
 test('fatal signals, RangeError, and WebGPU failures reject an otherwise ready log', () => {

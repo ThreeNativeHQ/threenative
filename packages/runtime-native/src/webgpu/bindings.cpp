@@ -33,6 +33,10 @@
 #include <limits>
 #include <sstream>
 
+#if defined(__APPLE__)
+#include <os/log.h>
+#endif
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
@@ -267,6 +271,9 @@ static bool g_framePresentPending = false;
 static uint64_t g_lastPresentNs = 0;
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
 static uint64_t g_presentCount = 0;
+// Completed frames, counted where the frame ends. Paired with g_presentCount so the device gates
+// can assert the ratio rather than a bare count. See reportPresentTick().
+static uint64_t g_frameEndCount = 0;
 static WGPUCommandEncoder g_surfaceRenderEncoder = nullptr;
 static bool g_screenshotPending = false;
 static bool g_screenshotReady = false;
@@ -6140,12 +6147,42 @@ static void presentPendingSurface() {
     g_currentViewSourceTexture = nullptr;
 }
 
+/**
+ * Reports frames and presents together, periodically, on every platform.
+ *
+ * The desktop CLI prints `TN_PRESENTS:<n>` once, at the end of a fixed-frame screenshot run. A
+ * device run has no end: the app launches and keeps rendering, so a gate on Android or iOS has
+ * nothing to read. Frames and presents are emitted as a pair because the number alone proves
+ * nothing — the defect this guards was presents outrunning frames, and only the ratio shows it.
+ * On Android `std::cout` goes nowhere, so this also writes to logcat.
+ */
+static void reportPresentTick(uint64_t frames) {
+    std::ostringstream output;
+    output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << g_presentCount << "}";
+    const std::string marker = output.str();
+    std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
+#endif
+#if defined(__APPLE__)
+    // The iOS gate reads the unified log, which `std::cout` does not reach -- the JSC console
+    // calls NSLog beside its cout for the same reason. os_log is the C entry point to the same
+    // place, so this stays in a .cpp.
+    os_log(OS_LOG_DEFAULT, "%{public}s", marker.c_str());
+#endif
+}
+
 void endDawnFrame() {
     // Composite Canvas 2D content to WebGPU if the main canvas uses 2D context
     compositeCanvas2DToWebGPU();
 
     // Every pass this frame has been submitted; put the one image on screen.
     presentPendingSurface();
+
+    // One line a second at 60Hz. Cheap enough to leave on in every build, and a gate that has to
+    // ask for the invariant is a gate nobody turns on.
+    g_frameEndCount += 1;
+    if (g_frameEndCount % 60 == 0) reportPresentTick(g_frameEndCount);
 
     // Tick the WebGPU device to process completed GPU work and free internal
     // resources (staging buffers, command encoder state, etc.). Without this,

@@ -23,16 +23,23 @@ function assertResizeAttachmentContract(source) {
     source.indexOf("// Create GPUCanvasContext"),
     source.indexOf("// Set global canvas"),
   );
+  // Acquisition became idempotent within a frame, so the texture is declared first and assigned
+  // in the branch that actually acquires. The invariant is unchanged and still the point: the
+  // surface is reconfigured to the canvas size before anything acquires an image from it.
   assert.match(
     mainCanvasContext,
-    /syncSurfaceSizeToCanvas\(g_engine->getGlobalProperty\("canvas"\)\)[\s\S]*?WGPUTexture texture = getCurrentSwapchainTexture\(\)/u,
+    /syncSurfaceSizeToCanvas\(g_engine->getGlobalProperty\("canvas"\)\)[\s\S]*?texture = getCurrentSwapchainTexture\(\)/u,
     "the main canvas must synchronize before it obtains the color attachment",
   );
 
-  const screenshotCapture = source.slice(
-    source.indexOf("// Copy texture to screenshot buffer ONLY"),
-    source.indexOf("// Present the surface only if:"),
-  );
+  // Bounded by the capture function's own end. This slice used to end at a comment that no longer
+  // exists, so indexOf returned -1 and it silently searched the rest of the file -- the assertion
+  // still passed while scoping nothing.
+  const captureStart = source.indexOf("static void captureFrameScreenshot()");
+  assert.notEqual(captureStart, -1, "screenshot capture must live in captureFrameScreenshot()");
+  const captureEnd = source.indexOf("static void presentPendingSurface()", captureStart);
+  assert.notEqual(captureEnd, -1, "captureFrameScreenshot() must precede presentPendingSurface()");
+  const screenshotCapture = source.slice(captureStart, captureEnd);
   assert.match(
     screenshotCapture,
     /g_screenshotBufferSize = requiredSize;[\s\S]*?\}\s*g_screenshotBytesPerRow = bytesPerRow;/u,

@@ -32,6 +32,8 @@ export function analyzeDesktopLog(log, frames = 300) {
       `presented ${presents[1]} times for ${frames} frames; expected exactly one present per frame`,
     );
   }
+  // The same invariant the device gates read, asserted here too so one analyzer covers both lanes.
+  failures.push(...analyzePresentTicks(log).failures);
   for (const line of log.split(/\r?\n/)) {
     if (FAILURE_PATTERN.test(line)) failures.push(line.trim());
   }
@@ -61,8 +63,22 @@ export function inspectScreenshot(path) {
  * working on web. A blank-screenshot check cannot see that: the world still renders. This looks
  * for the overlay's own colour, which nothing in the world draws.
  */
-export function inspectOverlay(path, { color = 0xff00ff, minPixels = 256 } = {}) {
-  const png = PNG.sync.read(readFileSync(path));
+export function inspectOverlay(path, options = {}) {
+  return inspectOverlayBuffer(readFileSync(path), { ...options, label: path });
+}
+
+/**
+ * The same assertion against PNG bytes rather than a path.
+ *
+ * The device lane never has a file: `adb exec-out screencap -p` hands back a buffer, and the
+ * android and desktop gates must be asserting the identical thing or the device lane is a
+ * different, weaker check wearing the same name.
+ */
+export function inspectOverlayBuffer(
+  buffer,
+  { color = 0xff00ff, label = 'screenshot', minPixels = 256 } = {},
+) {
+  const png = PNG.sync.read(buffer);
   const red = (color >> 16) & 0xff;
   const green = (color >> 8) & 0xff;
   const blue = color & 0xff;
@@ -75,11 +91,49 @@ export function inspectOverlay(path, { color = 0xff00ff, minPixels = 256 } = {})
   }
   if (matched < minPixels) {
     throw new Error(
-      `canvas-layer overlay missing from ${path}: found ${matched} pixels of #${color.toString(16).padStart(6, '0')}, expected at least ${minPixels}. ` +
+      `canvas-layer overlay missing from ${label}: found ${matched} pixels of #${color.toString(16).padStart(6, '0')}, expected at least ${minPixels}. ` +
       'The overlay pass rendered but never reached the display.',
     );
   }
   return { overlayPixels: matched };
+}
+
+/**
+ * Reads the periodic `TN_PRESENTS_TICK` lines and asserts one present per frame.
+ *
+ * Shared with the device gates. The desktop CLI's end-of-run `TN_PRESENTS` line only exists in
+ * fixed-frame screenshot mode; a device app runs until it is killed, so the invariant has to be
+ * readable from a running process. `presents` may lag `frames` by a frame that submitted nothing,
+ * but it must never exceed them — that is exactly the defect, the overlay pass taking a swapchain
+ * image of its own.
+ */
+export function analyzePresentTicks(log, { minTicks = 1 } = {}) {
+  const failures = [];
+  const ticks = [];
+  for (const match of log.matchAll(/TN_PRESENTS_TICK:(\{[^}]*\})/gu)) {
+    let tick;
+    try {
+      tick = JSON.parse(match[1]);
+    } catch {
+      failures.push(`malformed TN_PRESENTS_TICK payload: ${match[1]}`);
+      continue;
+    }
+    if (typeof tick.frames !== 'number' || typeof tick.presents !== 'number') {
+      failures.push(`TN_PRESENTS_TICK missing frames/presents: ${match[1]}`);
+      continue;
+    }
+    ticks.push(tick);
+    if (tick.presents > tick.frames) {
+      failures.push(
+        `presented ${tick.presents} times in ${tick.frames} frames; expected at most one present per frame. ` +
+        'A second render pass is acquiring a swapchain image of its own and only one present reaches the display.',
+      );
+    }
+  }
+  if (ticks.length < minTicks) {
+    failures.push(`expected at least ${minTicks} TN_PRESENTS_TICK line(s), found ${ticks.length}`);
+  }
+  return { failures: [...new Set(failures)], ticks };
 }
 
 export function verifyDesktopCore({ frames = 300 } = {}) {

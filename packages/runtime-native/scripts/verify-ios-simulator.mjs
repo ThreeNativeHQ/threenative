@@ -7,6 +7,9 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { assertIosRuntime, selectIosSimulator } from './select-ios-simulator.mjs';
+// The same two assertions the desktop and Android gates run, from one source. A third copy would
+// drift, and the copy that drifts is always the lane nobody runs by hand.
+import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
 
 const runtimeRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = join(runtimeRoot, '..', '..');
@@ -217,10 +220,19 @@ if (missingMarkers.length > 0) throw new Error(`iOS proof missed markers: ${miss
 if (/GPUValidationError|Validation Error|TN_IOS_PROOF_FAILED|TypeError|ReferenceError|FATAL/u.test(logs)) {
   throw new Error('iOS unified logs contain a native, JavaScript, or WebGPU failure.');
 }
+// One present per frame. The app has reported 300 frames by now, so the runtime has emitted five
+// ticks; a log with none means nothing measured the invariant, which is a failure and not a pass.
+const presentTicks = analyzePresentTicks(logs, { minTicks: 1 });
+if (presentTicks.failures.length > 0) {
+  throw new Error(`iOS present invariant failed:\n${presentTicks.failures.join('\n')}`);
+}
 
 const screenshot = join(artifactRoot, 'simulator-core.png');
 run('xcrun', ['simctl', 'io', simulator.udid, 'screenshot', screenshot]);
 const image = validateScreenshot(screenshot);
+// The blank/luminance check above passes on a half-drawn frame. This looks for the canvas-layer
+// overlay's own colour, which nothing in the smoke world draws.
+const overlay = inspectOverlayBuffer(readFileSync(screenshot), { label: screenshot });
 writeFileSync(join(artifactRoot, 'simulator.log'), logs);
 const playtestCli = join(workspaceRoot, 'packages', 'playtest', 'dist', 'runner', 'cli.js');
 const scenarioRoot = join(workspaceRoot, 'examples', 'native-smoke', 'playtests');
@@ -306,8 +318,14 @@ const report = {
   pass: true,
   nativePhysics,
   threeVersion,
+  presents: {
+    lastFrames: presentTicks.ticks.at(-1)?.frames ?? null,
+    lastPresents: presentTicks.ticks.at(-1)?.presents ?? null,
+    ticks: presentTicks.ticks.length,
+  },
   screenshot: {
     ...image,
+    ...overlay,
     path: relative(workspaceRoot, screenshot),
     sha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
   },
