@@ -4,9 +4,8 @@ prd_contract: v1
 
 # PRD-155 — Rendering defect sweep, and native visual evidence that can fail
 
-**Status:** BLOCKED, 2026-08-18, on device conditions and nothing else. Phases 1–4 are complete;
-Phase 5 cannot run until the Pixel 8 is charged to 50%, cool, and off USB. Every result and its
-evidence: `docs/verification/prd-155-2026-08-18.md`.
+**Status:** DONE, 2026-08-18. All five phases executed. Every result and its evidence:
+`docs/verification/prd-155-2026-08-18.md`.
 
 - **Phase 1 — DONE.** The overlay and one-present-per-frame gate runs on the Pixel 8 and goes red on
   the pre-fix runtime (`presented 120 times in 60 frames`) and green on the fixed one (960/960,
@@ -25,10 +24,18 @@ evidence: `docs/verification/prd-155-2026-08-18.md`.
   overwrote one of its two streak groups. Fixed in `sandbox/fox-native`; on the Pixel 8 the windmill
   region now changes 12.3–12.6 % between frames where it changed 0 %, and the waterfalls 19–23 %
   where they changed 0.00 %. Nothing in `packages/` was changed, and nothing needed to be.
-- **Phase 5 — BLOCKED.** The device was on USB at 24% battery with thermal status 1; all three of
-  this PRD's own preconditions fail. Rechecked forty minutes later: 22%. Running this game draws more
-  than the USB port supplies, so waiting does not converge — the phone must be charged while idle and
-  then run on battery. No code change is waiting on this.
+- **Phase 5 — RUN, hypothesis NOT SUPPORTED.** Six runs, three switch settings, twice each,
+  interleaved. Median fps 38.8 baseline, 42.2 with the sun-follow off, 34.9 with shadows off — and
+  shadows-off being *slower* than baseline is impossible as a causal effect, so the noise floor
+  exceeds the effect. The sun following the player is not shown to be the cost.
+  **This PRD's preconditions were waived by owner decision**: the device was on USB at 21–22 %
+  battery with thermal status 1, not discharging at ≥50 % and `NONE`, so these numbers are not
+  comparable with the soak in §2 and no comparison with it is drawn. What Phase 5 did establish is
+  that the game's own counters cannot see a shadow pass at all, which is the framework follow-up
+  §2 anticipated when it said the framework owes the game a way to see this cost.
+
+**Follow-up this PRD opens and does not close:** a framework-level way to see per-pass GPU cost, and
+whether a `BundleGroup` should silently freeze animated children.
 
 **Two corrections to §1 below, established by this work.** The present-once-per-frame fix landed in
 `fc2eb93`, not `473f9f3` — `473f9f3` fixed the *screenshot capture* timing and added the present
