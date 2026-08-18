@@ -58,9 +58,14 @@ function declarationFiles(directory: string): string[] {
 }
 
 function frameworkDeclarations(root: string): Map<string, Set<string>> {
+  // The archived snapshot wins. `sweep-archive.ts` copies the installed declarations into
+  // `framework-types/`, so once it exists it is the record the ledger was measured against;
+  // a `node_modules/` left behind in the sandbox is live workspace state that drifts with
+  // every rebuild and would make an archived measurement unreproducible. `node_modules/` is
+  // the fallback for a sandbox that has not been archived yet.
   const candidates = [
-    path.join(root, "node_modules", "@threenative"),
     path.join(root, "framework-types", "@threenative"),
+    path.join(root, "node_modules", "@threenative"),
   ];
   for (const candidate of candidates) {
     if (!isDirectory(candidate)) continue;

@@ -1,7 +1,6 @@
 import { type Camera, OrthographicCamera, PerspectiveCamera, Scene as ThreeScene } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
-import { SceneCollapse } from "./collapse.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
@@ -12,6 +11,7 @@ import {
 import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
 import { type IRandom, createRandom } from "./random.js";
+import { SceneRenderProjection } from "./renderProjection.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
@@ -278,7 +278,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #state: GameStore<TState>;
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
-  #collapse: SceneCollapse | undefined;
+  #projection: SceneRenderProjection | undefined;
   #cleanup: Array<() => void> = [];
   #particles = new Set<GPUParticles3D>();
   #entities: Registry | undefined;
@@ -342,9 +342,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     for (const plugin of this.#config.plugins ?? []) {
       if (typeof plugin !== "function") plugin.sceneExit?.(ctx);
     }
-    // A settled collapse keeps a per-frame updater for the detached moving parts it baked.
-    // Restore before clearing so a scene change cannot keep walking the previous scene forever.
-    this.#collapse?.restore();
+    // The projection holds batches built from the outgoing scene's geometry. Released before the
+    // scene is cleared, so a scene change cannot leave the next level drawing the last one's
+    // props — and released rather than rebuilt, because every source it referenced is about to go.
+    this.#projection?.dispose();
     clearScene(ctx.scene, this.#particles);
     const scene = new SceneType();
     this.#scene = scene;
@@ -445,8 +446,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const loopState: { current?: FixedStepLoop } = {};
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
-    const collapse = new SceneCollapse(threeScene as never);
-    this.#collapse = collapse;
+    const projection = new SceneRenderProjection(threeScene);
+    this.#projection = projection;
+    let projectionSettled = false;
+    let markProjectionSettled: () => void = () => undefined;
+    const projectionReady = new Promise<void>((resolve) => {
+      markProjectionSettled = resolve;
+    });
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
@@ -476,15 +482,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       raycastAll: (options) => picker.raycastAll(options),
       startup: {
         get phase() {
-          // `collapsing` is reported for the whole window's tail rather than only the one frame
-          // the bake occupies, because that frame does not yield and nothing could read it.
-          if (collapse.settled) return "ready" as const;
-          return collapse.progress >= 1 ? ("collapsing" as const) : ("observing" as const);
+          // The projection reaches its verdict on the first frame it reconciles rather than after
+          // an observation window, so there is no longer a span where the framework is watching
+          // the scene to decide. A loading screen still waits on `whenReady`; what it waits for is
+          // now the first projection build rather than a guess about what will move.
+          if (projectionSettled) return "ready" as const;
+          return "collapsing" as const;
         },
         get progress() {
-          return collapse.progress;
+          return projectionSettled ? 1 : 0;
         },
-        whenReady: () => collapse.whenSettled(),
+        whenReady: () => projectionReady,
       },
       renderer: this.#renderer,
       viewport,
@@ -515,12 +523,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             particle.process(this.#renderer);
           }
         }
-        // Runs on web as well as native, so the two stay one behaviour rather than diverging
-        // into a fast path nobody tests. Scenes under its mesh floor are left alone entirely.
-        this.#collapse?.frame();
+        // Runs on web as well as native, so the two stay one behaviour rather than diverging into
+        // a fast path nobody tests. Reconciling here — before the render, inside the same frame —
+        // is what lets a change the game made this tick reach the screen this tick instead of the
+        // next one. Scenes under its mesh floor get their own graph back and pay nothing.
+        this.#projection?.reconcile();
+        if (!projectionSettled) {
+          projectionSettled = true;
+          markProjectionSettled();
+        }
         let worldMetrics: IRenderPerformanceMetrics | undefined;
         if (!canvasLayer.opaque) {
-          renderer.render(threeScene, camera);
+          // The projection's own scene when it is faithful, the game's when it is not. Nothing
+          // here branches on which: `root` is the single render input either way, so there is no
+          // second optional render path to leave untested.
+          renderer.render(this.#projection?.root ?? threeScene, camera);
           this.#scene?.render(ctx);
           worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }

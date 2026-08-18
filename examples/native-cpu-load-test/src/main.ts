@@ -22,6 +22,10 @@ import {
 } from "three/webgpu";
 import { type ISceneCollapseReport, SceneCollapse } from "../../../packages/core/src/collapse.js";
 import {
+  type IRenderProjectionReport,
+  SceneRenderProjection,
+} from "../../../packages/core/src/renderProjection.js";
+import {
   type IRenderAdvisorObservedPass,
   type IRenderAdvisorReport,
   adviseThreeRenderWorkload,
@@ -34,7 +38,20 @@ import {
 
 type Hierarchy = "deep" | "flat";
 type Visibility = "all-visible" | "mostly-culled";
-type RenderMode = "distinct-materials" | "independent" | "instanced" | "merged" | "scene-collapse";
+/**
+ * PRD-152. `legacy-scene-collapse` is the frozen incumbent, kept only so this PRD's differential
+ * evidence has something to compare against; `scene-projection` is the candidate, and it runs the
+ * same shipping implementation `defineGame` does rather than a benchmark-local copy of it. Aliasing
+ * the two names to one implementation would make every comparison below vacuous, which is why the
+ * profiler asserts they resolve differently.
+ */
+type RenderMode =
+  | "distinct-materials"
+  | "independent"
+  | "instanced"
+  | "merged"
+  | "legacy-scene-collapse"
+  | "scene-projection";
 type ScenarioPreset = "fox-scale";
 
 interface IScenario {
@@ -81,6 +98,26 @@ interface IProfileResult {
     settleFrames: number;
     stabilityDrawCalls: number[];
   };
+  /** PRD-152's candidate arm. Shaped like `sceneCollapse` so a report can print them side by side. */
+  sceneProjection?: {
+    beforeSamples: ITimingSamples;
+    report: IRenderProjectionReport;
+    settleFrames: number;
+    stabilityDrawCalls: number[];
+    /**
+     * §4.2's late-mutation pass. After 600 settled frames the workload moves hidden and static
+     * objects, toggles visibility, recolours a material, adds, removes and reparents meshes and
+     * mutates a signalled geometry attribute — then checks the very next frame reflects all of it
+     * and that the draw count returns for the groups nothing touched.
+     */
+    lateMutation: {
+      appliedOnNextFrame: boolean;
+      drawCallsAfter: number;
+      drawCallsBefore: number;
+      observed: Record<string, boolean>;
+      recoveredDrawCalls: number[];
+    };
+  };
 }
 
 declare global {
@@ -122,9 +159,14 @@ function scenarioFromLocation(): IScenario {
     throw new Error("visibility is invalid");
   if (![0, 10, 100].includes(dirtyPercent)) throw new Error("dirty is invalid");
   if (
-    !["independent", "distinct-materials", "instanced", "merged", "scene-collapse"].includes(
-      renderMode,
-    )
+    ![
+      "independent",
+      "distinct-materials",
+      "instanced",
+      "merged",
+      "legacy-scene-collapse",
+      "scene-projection",
+    ].includes(renderMode)
   )
     throw new Error("renderMode is invalid");
   if (preset !== null && preset !== "fox-scale") throw new Error("scenario is invalid");
@@ -196,7 +238,9 @@ function renderAdvisorReport(
     scene,
     sceneCollapse: sceneCollapseAggregate(collapseReport),
     transformSafety:
-      scenario.renderMode === "scene-collapse" || scenario.renderMode === "merged"
+      scenario.renderMode === "legacy-scene-collapse" ||
+      scenario.renderMode === "scene-projection" ||
+      scenario.renderMode === "merged"
         ? "caller-declared-static"
         : "unknown",
     verifiedExamplePaths: VERIFIED_ADVISOR_EXAMPLES,
@@ -460,8 +504,9 @@ if (scenario.scenario === "fox-scale") {
     mesh.rotation.set(unit(scenario.seed, id, 3) * 0.4, unit(scenario.seed, id, 4) * Math.PI, 0);
     if (
       scenario.renderMode === "independent" ||
+      scenario.renderMode === "scene-projection" ||
       scenario.renderMode === "distinct-materials" ||
-      scenario.renderMode === "scene-collapse"
+      scenario.renderMode === "legacy-scene-collapse"
     ) {
       if (scenario.hierarchy === "deep" && id % 64 !== 0) {
         meshes[id - 1]?.add(mesh);
@@ -530,7 +575,12 @@ function createSamples(): ITimingSamples {
   };
 }
 
-function oneFrame(record: boolean, samples?: ITimingSamples, collapse?: SceneCollapse): void {
+function oneFrame(
+  record: boolean,
+  samples?: ITimingSamples,
+  collapse?: SceneCollapse,
+  projection?: SceneRenderProjection,
+): void {
   const frameStart = performance.now();
   const mutationStart = frameStart;
   tick += 1;
@@ -549,7 +599,12 @@ function oneFrame(record: boolean, samples?: ITimingSamples, collapse?: SceneCol
   const mutationEnd = performance.now();
 
   const matrixStart = mutationEnd;
-  scene.updateMatrixWorld(true);
+  // The projection refreshes the authored scene's world matrices itself, because it is not what
+  // the renderer is handed and nothing else would. Doing it here as well would charge the
+  // candidate for two full matrix passes where it ships with one, so this arm records its matrix
+  // cost inside `reconcile` instead — which lands in `frameMs` either way, and `frameMs` is what
+  // §4.3's thresholds are applied to.
+  if (projection === undefined) scene.updateMatrixWorld(true);
   const matrixEnd = performance.now();
   // Keep `renderer.render()` from repeating the matrix pass we time explicitly above.
   scene.matrixWorldAutoUpdate = false;
@@ -568,11 +623,18 @@ function oneFrame(record: boolean, samples?: ITimingSamples, collapse?: SceneCol
   const cullEnd = performance.now();
 
   collapse?.frame();
+  // Reconciled inside the measured frame, before the draw, exactly where `defineGame` does it.
+  // Moving it outside the timed window would be the "hide the cost somewhere else" failure §4.3
+  // item 6 exists to catch.
+  projection?.reconcile();
 
   const renderStart = cullEnd;
   renderer.info.reset();
+  // Whatever the projection resolves to — its mirror when it is faithful, the authored scene when
+  // it is not. The arm draws the shipping path's own render input rather than a fixture-local one.
+  const renderInput = projection?.root ?? scene;
   for (let pass = 0; pass < scenario.passes; pass += 1) {
-    renderer.render(scene, camera);
+    renderer.render(renderInput, camera);
   }
   const renderEnd = performance.now();
 
@@ -595,7 +657,7 @@ function oneFrame(record: boolean, samples?: ITimingSamples, collapse?: SceneCol
 async function run(): Promise<IProfileResult> {
   for (let frame = 0; frame < scenario.warmupFrames; frame += 1) await oneFrame(false);
   rendererStageHooks?.reset();
-  if (scenario.renderMode === "scene-collapse") {
+  if (scenario.renderMode === "legacy-scene-collapse") {
     const beforeSamples = createSamples();
     for (let frame = 0; frame < scenario.samples; frame += 1) await oneFrame(true, beforeSamples);
     let report: ISceneCollapseReport | undefined;
@@ -637,6 +699,121 @@ async function run(): Promise<IProfileResult> {
         report,
         settleFrames,
         stabilityDrawCalls,
+      },
+    };
+  }
+  if (scenario.renderMode === "scene-projection") {
+    // Measured before the projection exists, so this arm carries its own unbatched control on the
+    // identical workload rather than relying on a separate `independent` run to have drawn the
+    // same scene.
+    const beforeSamples = createSamples();
+    for (let frame = 0; frame < scenario.samples; frame += 1) await oneFrame(true, beforeSamples);
+
+    // The shipping implementation with shipping defaults, constructed exactly as `defineGame`
+    // constructs it. A benchmark-local batcher or a tuned option here would make every number
+    // below describe something the user never runs.
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    let settleFrames = 0;
+    for (; settleFrames < 5_000 && projection.deoptimized; settleFrames += 1) {
+      oneFrame(false, undefined, undefined, projection);
+    }
+    if (projection.deoptimized) throw new Error("SceneRenderProjection did not project in fixture");
+    const report = projection.report;
+
+    const samples = createSamples();
+    for (let frame = 0; frame < scenario.samples; frame += 1)
+      await oneFrame(true, samples, undefined, projection);
+
+    const stabilityDrawCalls: number[] = [];
+    for (let frame = 0; frame < 300; frame += 1) {
+      oneFrame(false, undefined, undefined, projection);
+      renderer.info.reset();
+      renderer.render(projection.root, camera);
+      stabilityDrawCalls.push(renderer.info.render.drawCalls);
+    }
+
+    // ── §4.2's late-mutation pass, run long past any settling.
+    for (let frame = 0; frame < 600; frame += 1) {
+      oneFrame(false, undefined, undefined, projection);
+    }
+    renderer.info.reset();
+    renderer.render(projection.root, camera);
+    const drawCallsBefore = renderer.info.render.drawCalls;
+
+    const moved = meshes[0] as Mesh;
+    const hiddenMesh = meshes[1] as Mesh;
+    const removed = meshes[2] as Mesh;
+    const reparented = meshes[3] as Mesh;
+    const removedParent = removed.parent;
+    const reparentHome = reparented.parent;
+    const relocated = new Group();
+    relocated.position.set(0, 500, 0);
+    scene.add(relocated);
+
+    moved.position.set(0, 900, 0);
+    moved.updateMatrix();
+    hiddenMesh.visible = false;
+    removedParent?.remove(removed);
+    relocated.add(reparented);
+    // A material the game recolours, and a geometry attribute it streams into with the signal
+    // three.js itself requires. Raw writes without `needsUpdate` are deliberately not covered:
+    // the stock renderer does not upload those either.
+    const recoloured = (meshes[4] as Mesh).material as MeshStandardMaterial;
+    recoloured.color.setRGB(1, 0, 0);
+    const streamed = (meshes[5] as Mesh).geometry.getAttribute("position");
+    streamed.setXYZ(0, 3, 3, 3);
+    streamed.needsUpdate = true;
+    const added = new Mesh((meshes[6] as Mesh).geometry, (meshes[6] as Mesh).material);
+    added.position.set(0, -900, 0);
+    scene.add(added);
+
+    // Exactly one frame later. "Next frame" is the contract; catching up two frames later is a
+    // stale frame the player saw.
+    oneFrame(false, undefined, undefined, projection);
+    renderer.info.reset();
+    renderer.render(projection.root, camera);
+    const drawCallsAfter = renderer.info.render.drawCalls;
+    const after = projection.report;
+    const observed = {
+      movedFollowed: projection.inspect(moved)?.matrixWorld.elements[13] === 900,
+      hiddenDropped: projection.inspect(hiddenMesh)?.visible === false,
+      removedGone: projection.inspect(removed) === undefined,
+      reparentedFollowed: projection.inspect(reparented)?.matrixWorld.elements[13] === 500,
+      addedDrawn: projection.inspect(added) !== undefined,
+      // The game's own material instance still drives a draw, so recolouring it recolours what is
+      // on screen without the mirror being told anything.
+      recolouredLive: projection.drawsWith(recoloured),
+      // Nothing was abandoned: the object count did not collapse because one geometry streamed.
+      streamedUploaded: after.projectedObjects >= report.projectedObjects - 1,
+      stillProjecting: !projection.deoptimized,
+    };
+
+    const recoveredDrawCalls: number[] = [];
+    for (let frame = 0; frame < 60; frame += 1) {
+      oneFrame(false, undefined, undefined, projection);
+      renderer.info.reset();
+      renderer.render(projection.root, camera);
+      recoveredDrawCalls.push(renderer.info.render.drawCalls);
+    }
+
+    statusElement.textContent = `complete\n${scenario.scenario ?? "matrix"}\nobjects ${meshes.length}\nscene-projection\nmaterials ${materialIdentities.size}\nvisible ${samples.visibleCount.at(-1)?.toFixed(0) ?? "n/a"}`;
+    rendererStageHooks?.dispose();
+    return {
+      adapter: adapterInfo,
+      samples,
+      scenario,
+      sceneProjection: {
+        beforeSamples,
+        report: after,
+        settleFrames,
+        stabilityDrawCalls,
+        lateMutation: {
+          appliedOnNextFrame: Object.values(observed).every(Boolean),
+          drawCallsAfter,
+          drawCallsBefore,
+          observed,
+          recoveredDrawCalls,
+        },
       },
     };
   }

@@ -1,0 +1,50 @@
+{
+  "name": "fps-friction-animation-death",
+  "schemaVersion": 1,
+  "subject": "enemy",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "kill",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hold-last-frame",
+      "waitTicks": 200,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "animation": [
+      {
+        "entity": "enemy",
+        "clip": "DeathFront",
+        "entered": true,
+        "advancedFrames": 60,
+        "finished": true
+      }
+    ],
+    "states": [
+      {
+        "entity": "enemy",
+        "equals": "dead-finished"
+      }
+    ]
+  }
+}

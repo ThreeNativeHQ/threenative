@@ -14,7 +14,10 @@ import {
   Scene,
   WebGPURenderer,
 } from "three/webgpu";
-import { type ISceneCollapseReport, SceneCollapse } from "../../../packages/core/src/collapse.js";
+import {
+  type IRenderProjectionReport,
+  SceneRenderProjection,
+} from "../../../packages/core/src/renderProjection.js";
 import {
   type ICubePlacement,
   type RenderMode,
@@ -57,7 +60,7 @@ export interface ILoadTestHarness {
 }
 
 interface IRungState {
-  collapse: SceneCollapse | undefined;
+  collapse: SceneRenderProjection | undefined;
   cubes: Mesh[];
   instanced: InstancedMesh | undefined;
   placements: ICubePlacement[];
@@ -98,10 +101,10 @@ export async function createLoadTestHarness(
 
   const clearRung = (): void => {
     if (state === undefined) return;
-    // Restore first, remove second. `restore()` puts the collapsed pass's source meshes back into
-    // the scene, so undoing it after the removal loop re-inserts every cube and the next rung
-    // renders the previous rung's leftovers on top of its own.
-    state.collapse?.restore();
+    // Released before the cubes are removed. The projection holds instanced draws built from this
+    // rung's geometry; leaving them alive across a rung change would draw the previous rung's
+    // objects on top of the next one's.
+    state.collapse?.dispose();
     for (const cube of state.cubes) scene.remove(cube);
     if (state.instanced !== undefined) {
       scene.remove(state.instanced);
@@ -138,15 +141,15 @@ export async function createLoadTestHarness(
   // Driven by the ladder before the measured window opens: the pass watches, bakes across frames,
   // and only then starts refreshing moving parts. A rung that begins measuring mid-bake would time
   // the bake, not the collapsed scene.
-  let collapseReport: ISceneCollapseReport | undefined;
+  let collapseReport: IRenderProjectionReport | undefined;
 
   const beginCollapse = (): void => {
     if (state === undefined || state.rung.mode !== "L3") return;
     collapseReport = undefined;
-    // No tuning: `defineGame` constructs `new SceneCollapse(scene)` with defaults and calls
-    // `frame()` every frame, so L3 must use the same defaults or it measures a hand-tuned pass
-    // rather than what a ThreeNative game actually gets.
-    state.collapse = new SceneCollapse(scene as never, {
+    // No tuning: `defineGame` constructs `new SceneRenderProjection(scene)` with defaults and
+    // reconciles it every frame, so L3 must use the same defaults or it measures a hand-tuned
+    // optimizer rather than what a ThreeNative game actually gets.
+    state.collapse = new SceneRenderProjection(scene, {
       onReport: (value) => {
         collapseReport = value;
       },
@@ -154,12 +157,12 @@ export async function createLoadTestHarness(
   };
 
   const collapseStatus = (): string =>
-    collapseReport === undefined ? "pending" : collapseReport.status;
+    collapseReport === undefined ? "pending" : collapseReport.reasonCode;
 
   // Integrity check, not a statistic: a collapse that baked every cube as static would render a
   // frozen scene while the animation loop still burned its whole cost, and the rung would publish a
   // fast number for a picture that is not the one L1 drew.
-  const collapseMovingParts = (): number => collapseReport?.movingParts ?? -1;
+  const collapseMovingParts = (): number => state?.collapse?.report.projectedObjects ?? -1;
 
   // The game-side half of a frame, timed separately from the renderer's half: without the split
   // an L1 regression cannot be told apart from a scene-graph one. `collapseMs` splits it once more,
@@ -191,7 +194,7 @@ export async function createLoadTestHarness(
       // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
       // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
       const collapseStartedAt = performance.now();
-      state.collapse?.frame();
+      state.collapse?.reconcile();
       collapseMs = performance.now() - collapseStartedAt;
       stepMs = performance.now() - startedAt;
       return;
@@ -226,7 +229,9 @@ export async function createLoadTestHarness(
       // `info.reset()` is only automatic inside three's own animation loop; this harness drives
       // its own rAF, so the per-frame counters are ours to clear.
       renderer.info.reset();
-      await renderer.render(scene, camera);
+      // The projection's own render input when L3 has one, the authored scene otherwise. Same
+      // resolution `defineGame` performs, so this rung draws what a shipped game draws.
+      await renderer.render(state?.collapse?.root ?? scene, camera);
     },
     beginCollapse,
     collapseStatus,

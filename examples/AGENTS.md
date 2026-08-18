@@ -35,6 +35,19 @@ It depends on `@threenative/core`, `@threenative/physics` and `three`, and never
 controls (`-misspelled`, `-wrong-value`) that prove the device path fails closed. Run
 `pnpm --filter threenative-native-smoke test` after any change to core or physics.
 
+## `fps-friction/` is a fixture, not a game
+
+The live call site for the four APIs the FPS sweep could not write portably: relative pointer
+look, world-ray `raycast`/`raycastAll`, `RigidBody3D` from a bare `position`, and a one-shot
+`AnimationPlayer` clip. It exists because a sweep archive is a frozen record — the call sites
+cannot live there and be kept working against the current framework at the same time.
+
+Its geometry is boxes and its death clip is built in code on purpose: no third-party asset, so
+nothing here is redistributed. `look`, `fire` and `animation-death` run on web and
+`--target desktop`; `renders` is web-only because `visual` needs a browser screenshot, and it is
+the one scenario whose capture names the adapter. Evidence lives in
+`docs/verification/fps-friction-batch-2026-08-18.md`.
+
 ## `REFERENCE.png` is a scoring target, not a spec
 
 A look-and-feel bar to build *some* game against and score honestly. It is not the framework's

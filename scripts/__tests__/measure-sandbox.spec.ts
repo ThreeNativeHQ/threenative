@@ -180,6 +180,35 @@ describe("sandbox measurement", () => {
     expect(measurement.unusedExports).toContain("PhysicsOnly");
   });
 
+  it("measures the archived declarations, not a node_modules left in the sandbox", async () => {
+    // An archived sweep is a historical measurement. If a live `node_modules/` in the sandbox
+    // won, every rebuild of the workspace would silently rewrite what the ledger measures and
+    // `sweep-ledger.spec.ts` would go red on whichever machine happened to install there.
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await installDeclarations(root);
+    const archived = path.join(root, "framework-types", "@threenative", "core");
+    await mkdir(archived, { recursive: true });
+    await writeFile(
+      path.join(archived, "index.d.ts"),
+      [
+        "export declare const UsedExport: number;",
+        "export declare const ArchivedOnly: number;",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(root, "src", "main.ts"),
+      'import { UsedExport } from "@threenative/core";\nvoid UsedExport;\n',
+    );
+
+    const measurement = measureSandbox(root);
+
+    expect(measurement.usedExports).toEqual(["UsedExport"]);
+    expect(measurement.unusedExports).toEqual(["ArchivedOnly"]);
+    expect(measurement.unusedExports).not.toContain("AlsoUnused");
+  });
+
   it("throws when framework declarations are absent", async () => {
     const root = await fixtureRoot();
     await mkdir(path.join(root, "src"), { recursive: true });

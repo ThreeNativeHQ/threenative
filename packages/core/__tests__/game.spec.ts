@@ -1,5 +1,6 @@
 import {
   Group,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
@@ -623,6 +624,161 @@ describe("IGame", () => {
     advance(1);
     expect(scheduled).toBe(2);
     game.stop();
+  });
+
+  /**
+   * PRD-152 Phase 2. The projection is only worth anything if `defineGame` is what routes through
+   * it. These drive the real frame loop and assert on the scene the renderer was handed, because a
+   * projection that works in isolation and is not wired in is a module, not an optimization.
+   */
+  it("hands the renderer the projection, not the authored scene, and draws far fewer objects", async () => {
+    let renderFrame: ((time: number) => void) | undefined;
+    const drawn: { candidates: number; scene: unknown }[] = [];
+    const canvas = testCanvas();
+    let authored: unknown;
+
+    class Level extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        authored = ctx.scene;
+        const geometry = new SphereGeometry(0.1, 3, 2);
+        const material = new MeshBasicMaterial();
+        for (let index = 0; index < 400; index += 1) {
+          const mesh = new Mesh(geometry, material);
+          mesh.position.set(index % 20, Math.floor(index / 20), 0);
+          ctx.add(mesh);
+        }
+      }
+    }
+
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        renderFrame = callback;
+        return 1;
+      },
+    });
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: (scene: { traverse(cb: (o: { isMesh?: boolean }) => void): void }) => {
+            let candidates = 0;
+            scene.traverse((object) => {
+              if (object.isMesh === true) candidates += 1;
+            });
+            drawn.push({ candidates, scene });
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Level },
+      start: "play",
+    });
+
+    try {
+      await game.start();
+      if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+      renderFrame(17);
+
+      const last = drawn.at(-1);
+      expect(last).toBeDefined();
+      // The renderer was handed something other than the game's own scene...
+      expect(last?.scene).not.toBe(authored);
+      // ...and what it was handed draws a fraction of the objects the game authored.
+      expect(last?.candidates).toBe(1);
+      // The authored scene still holds every one of them, untouched.
+      let sourceMeshes = 0;
+      (authored as { traverse(cb: (o: { isMesh?: boolean }) => void): void }).traverse((object) => {
+        if (object.isMesh === true) sourceMeshes += 1;
+      });
+      expect(sourceMeshes).toBe(400);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("stops projecting the previous scene's objects after goto disposes them", async () => {
+    let renderFrame: ((time: number) => void) | undefined;
+    const drawn: number[] = [];
+    const canvas = testCanvas();
+    // Counted through the prototype because the projection is private to the game, which is the
+    // point — a game has no optimizer handle to call, so the proof has to be observable from the
+    // outside like this.
+    let disposals = 0;
+    const batchedDispose = InstancedMesh.prototype.dispose;
+    InstancedMesh.prototype.dispose = function disposeCounted(this: InstancedMesh) {
+      disposals += 1;
+      return batchedDispose.call(this);
+    };
+
+    class Level extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        const geometry = new SphereGeometry(0.1, 3, 2);
+        const material = new MeshBasicMaterial();
+        for (let index = 0; index < 300; index += 1) ctx.add(new Mesh(geometry, material));
+      }
+    }
+
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        renderFrame = callback;
+        return 1;
+      },
+    });
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: (scene: { traverse(cb: (o: { isMesh?: boolean }) => void): void }) => {
+            let candidates = 0;
+            scene.traverse((object) => {
+              if (object.isMesh === true) candidates += 1;
+            });
+            drawn.push(candidates);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { empty: EmptyScene, play: Level },
+      start: "play",
+    });
+
+    try {
+      await game.start();
+      if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+      renderFrame(17);
+      expect(drawn.at(-1)).toBe(1);
+
+      // Released by `goto` itself, before another frame is drawn. Waiting for the next reconcile
+      // to notice the scene emptied would hold a level's worth of GPU buffers across the whole
+      // load of the next one, which on a phone is where a scene change runs out of memory.
+      await game.goto("empty");
+      expect(disposals).toBeGreaterThan(0);
+
+      renderFrame(34);
+      // And the batch built from the previous level's geometry is not still drawing it.
+      expect(drawn.at(-1)).toBe(0);
+    } finally {
+      InstancedMesh.prototype.dispose = batchedDispose;
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
   });
 
   it("stops updating detached collapse parts when goto clears the previous scene", async () => {

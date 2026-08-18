@@ -12,7 +12,7 @@ considered, and a KEEP/DELETE verdict.
 
 | Counted area | Lines | Owner | Live proof or caller | Alternative considered | Verdict |
 | --- | ---: | --- | --- | --- | --- |
-| `src/` | 38,459 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
+| `src/` | 38,513 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
 | `conformance/` | 6,331 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
 | `tests/` | 9,192 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127, PRD-143 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
 | `scripts/` | 11,641 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
@@ -26,21 +26,30 @@ considered, and a KEEP/DELETE verdict.
 | `package.json` | 63 | PRD-048, PRD-050, PRD-054, PRD-116 | `native:build`, `native:physics:parity`, and `native:verify:desktop` scripts | Hide opt-in native commands in per-game manifests | **KEEP** — package-level command contract. |
 | `vitest.config.ts` | 10 | PRD-048, PRD-050 | Runtime-native Vitest command and parity producer | Drop native package test collection | **KEEP** — declares the native package test boundary. |
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
-| **Total** | **77,053** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
+| **Total** | **77,107** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
 
 The 2026-08-16 device-preflight and Android report-condition repairs account for the current
 `tests/` and `scripts/` rows; PRD-143 adds the shared native joint ABI and constraint backend.
-The desktop pointer-baseline parity fix adds four lines to `src/`; the native review trigger remains
-visible at 77,053 / 50,000. Physical
+
+PRD-152 adds 54 lines to `src/`, all of them in `src/webgpu/bindings.cpp`: the WebGPU texture-format
+tables gained the integer, snorm and packed formats in both directions. They were absent, so a format
+three.js named — `r32uint`, which is where `BatchedMesh` keeps its per-draw indirection — fell through
+to a `BGRA8Unorm` default, every bind group built against it failed validation, and the draw using it
+silently did not happen. There is no smaller form: a format table is one line per format, and the
+alternative is a host that cannot render what the renderer asks for.
+PRD-152 adds 54 lines to `src/`: the WebGPU texture-format tables in `src/webgpu/bindings.cpp` gained
+the integer, snorm and packed formats, without which `r32uint` fell through to a BGRA8Unorm default
+and every bind group built against it failed validation on the native host. The native review trigger
+remains visible at 77,107 / 50,000. Physical
 Android, iOS, and hardware evidence remains unverified.
 
 ## Current gate summaries
 
 | Command | Result | Evidence |
 | --- | --- | --- |
-| `pnpm budgets` | PASS, exit `0` | 6 framework packages, 6 example workspaces, 11,747/15,000 framework LOC, 77,053/50,000 native runtime LOC, 12 PRD files, largest template 2,002 LOC; the native review trigger remains visible. |
+| `pnpm budgets` | PASS, exit `0` | 6 framework packages, 7 example workspaces, 13,077/15,000 framework LOC, 77,107/50,000 native runtime LOC, 12 PRD files, largest template 2,002 LOC; the native review trigger remains visible. |
 
-- Root Vitest: 144 files, 1,307 passed, 0 skipped.
-- Runtime-native Vitest: 48 files, 319 passed, 30 skipped.
+- Root Vitest: 146 files, 1,359 passed, 0 skipped.
+- Runtime-native Vitest: 48 files, 312 passed, 37 skipped.
 - The focused device-preflight, Android JS-engine, and physics-parity fixture tests are current
   evidence; no physical-device result is claimed.

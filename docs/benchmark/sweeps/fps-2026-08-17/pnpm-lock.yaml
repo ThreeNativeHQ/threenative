@@ -15,8 +15,8 @@ importers:
         specifier: file:/home/joao/projects/threenative/sandbox/.packages/threenative-core-0.2.0-6d9da1a8e970.tgz
         version: file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0)
       '@threenative/physics':
-        specifier: file:/home/joao/projects/threenative/sandbox/.packages/threenative-physics-0.2.1-8f04ed514acf.tgz
-        version: file:../.packages/threenative-physics-0.2.1-8f04ed514acf.tgz(@threenative/core@file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0))
+        specifier: file:/home/joao/projects/threenative/sandbox/.packages/threenative-physics-0.2.1-d45cd51ee589.tgz
+        version: file:../.packages/threenative-physics-0.2.1-d45cd51ee589.tgz(@threenative/core@file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0))
       '@threenative/ui':
         specifier: file:/home/joao/projects/threenative/sandbox/.packages/threenative-ui-0.2.1-d78476c56f7a.tgz
         version: file:../.packages/threenative-ui-0.2.1-d78476c56f7a.tgz(@threenative/core@file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -626,8 +626,8 @@ packages:
     resolution: {integrity: sha512-0frup4eCJ/FHxxaEvtuk8YuJ6sutM3WlfOM9RQoFuJrYbB9AvJTSz2wnLmZGCNK8CUBv7oUKKvrI40wMMu2Z7w==, tarball: file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz}
     version: 0.2.0
 
-  '@threenative/physics@file:../.packages/threenative-physics-0.2.1-8f04ed514acf.tgz':
-    resolution: {integrity: sha512-8rHnrmOBeH8pJ0bCafdUKmd/p8k3h/OMaDKKDWiAyLgcSWZEdF471VBHBzBzD2NZMJax5nHhYQYOX/ja3r8mDQ==, tarball: file:../.packages/threenative-physics-0.2.1-8f04ed514acf.tgz}
+  '@threenative/physics@file:../.packages/threenative-physics-0.2.1-d45cd51ee589.tgz':
+    resolution: {integrity: sha512-oZbT1BhIWJKefu6S5b1iSwsk1luBfkUEz9zTcX14GObm6ParBP/WzGcvnca0XIYHgjnpPrAnCiSwVCPl4K9Nnw==, tarball: file:../.packages/threenative-physics-0.2.1-d45cd51ee589.tgz}
     version: 0.2.1
     peerDependencies:
       '@threenative/core': '>=0.2.0 <0.3.0'
@@ -1814,7 +1814,7 @@ snapshots:
       - react
       - use-sync-external-store
 
-  '@threenative/physics@file:../.packages/threenative-physics-0.2.1-8f04ed514acf.tgz(@threenative/core@file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0))':
+  '@threenative/physics@file:../.packages/threenative-physics-0.2.1-d45cd51ee589.tgz(@threenative/core@file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0))':
     dependencies:
       '@dimforge/rapier3d-compat': 0.19.3
       '@threenative/core': file:../.packages/threenative-core-0.2.0-6d9da1a8e970.tgz(@types/react@19.2.0)(react@19.2.0)

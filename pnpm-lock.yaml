@@ -197,6 +197,28 @@ importers:
         specifier: 'catalog:'
         version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
 
+  examples/fps-friction:
+    dependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1
+    devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+
   examples/native-cpu-load-test:
     dependencies:
       three:

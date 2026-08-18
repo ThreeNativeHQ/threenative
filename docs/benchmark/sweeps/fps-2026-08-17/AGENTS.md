@@ -194,10 +194,8 @@ player.body.teleport({ x: loaded.playerX, y: player.mesh.position.y, z: player.m
 
 `AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
 `.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
-and update the `AnimationPlayer` beside the entity that owns the loaded model. Use
-`player.play("Death", { mode: "once" })` for a clip that holds its last frame; `player.finished`
-reports when it ends. Omit `mode` for the default looping behaviour. This starter does not ship
-a rigged asset; adding one belongs in `public/`, not in the framework.
+and update the `AnimationPlayer` beside the entity that owns the loaded model. This starter
+does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.
@@ -380,9 +378,6 @@ depending on pickups, score, coyote time, or respawns. `playtests/play.playtest.
 other scenarios are starter-game examples that you may delete or rewrite. Steps count frames,
 not milliseconds — `holdFrames`, `waitFrames` — because the harness drives the fixed-step clock
 instead of racing it.
-
-Numeric path assertions use inclusive `gte`/`lte` bounds; combine them when a scenario needs a
-closed interval.
 
 A scenario fails closed: a missing entity, an absent observation, or a scenario with no
 assertions is a failure, never a quiet pass. When you add a feature, add the assertion that

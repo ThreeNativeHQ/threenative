@@ -481,6 +481,32 @@ static const char* formatToString(WGPUTextureFormat format) {
         case WGPUTextureFormat_RG32Float: return "rg32float";
         case WGPUTextureFormat_RGBA16Float: return "rgba16float";
         case WGPUTextureFormat_RGBA32Float: return "rgba32float";
+        // Integer formats. three.js reaches for these whenever it stores indices rather than
+        // colour in a texture — `BatchedMesh` keeps its per-draw indirection in an `r32uint`
+        // texture — and a renderer that cannot name them cannot render a batch.
+        case WGPUTextureFormat_R8Uint: return "r8uint";
+        case WGPUTextureFormat_R8Sint: return "r8sint";
+        case WGPUTextureFormat_RG8Uint: return "rg8uint";
+        case WGPUTextureFormat_RG8Sint: return "rg8sint";
+        case WGPUTextureFormat_RGBA8Uint: return "rgba8uint";
+        case WGPUTextureFormat_RGBA8Sint: return "rgba8sint";
+        case WGPUTextureFormat_R16Uint: return "r16uint";
+        case WGPUTextureFormat_R16Sint: return "r16sint";
+        case WGPUTextureFormat_RG16Uint: return "rg16uint";
+        case WGPUTextureFormat_RG16Sint: return "rg16sint";
+        case WGPUTextureFormat_RGBA16Uint: return "rgba16uint";
+        case WGPUTextureFormat_RGBA16Sint: return "rgba16sint";
+        case WGPUTextureFormat_R32Uint: return "r32uint";
+        case WGPUTextureFormat_R32Sint: return "r32sint";
+        case WGPUTextureFormat_RG32Uint: return "rg32uint";
+        case WGPUTextureFormat_RG32Sint: return "rg32sint";
+        case WGPUTextureFormat_RGBA32Uint: return "rgba32uint";
+        case WGPUTextureFormat_RGBA32Sint: return "rgba32sint";
+        case WGPUTextureFormat_R8Snorm: return "r8snorm";
+        case WGPUTextureFormat_RG8Snorm: return "rg8snorm";
+        case WGPUTextureFormat_RGBA8Snorm: return "rgba8snorm";
+        case WGPUTextureFormat_RGB10A2Unorm: return "rgb10a2unorm";
+        case WGPUTextureFormat_RG11B10Ufloat: return "rg11b10ufloat";
         case WGPUTextureFormat_Depth24Plus: return "depth24plus";
         case WGPUTextureFormat_Depth24PlusStencil8: return "depth24plus-stencil8";
         case WGPUTextureFormat_Depth32Float: return "depth32float";
@@ -504,6 +530,34 @@ static WGPUTextureFormat stringToFormat(const std::string& format) {
     if (format == "rg32float") return WGPUTextureFormat_RG32Float;
     if (format == "rgba16float") return WGPUTextureFormat_RGBA16Float;
     if (format == "rgba32float") return WGPUTextureFormat_RGBA32Float;
+    // Integer formats, the absence of which is not a missing feature but a wrong picture. An
+    // unrecognized name fell through to the BGRA8Unorm default below, so a texture three.js asked
+    // to sample as `uint` came back as a float colour format, every bind group built against it
+    // failed validation, and the draw using it silently did not happen. `BatchedMesh` allocates an
+    // `r32uint` indirection texture, so on this host every batched draw was invalid.
+    if (format == "r8uint") return WGPUTextureFormat_R8Uint;
+    if (format == "r8sint") return WGPUTextureFormat_R8Sint;
+    if (format == "rg8uint") return WGPUTextureFormat_RG8Uint;
+    if (format == "rg8sint") return WGPUTextureFormat_RG8Sint;
+    if (format == "rgba8uint") return WGPUTextureFormat_RGBA8Uint;
+    if (format == "rgba8sint") return WGPUTextureFormat_RGBA8Sint;
+    if (format == "r16uint") return WGPUTextureFormat_R16Uint;
+    if (format == "r16sint") return WGPUTextureFormat_R16Sint;
+    if (format == "rg16uint") return WGPUTextureFormat_RG16Uint;
+    if (format == "rg16sint") return WGPUTextureFormat_RG16Sint;
+    if (format == "rgba16uint") return WGPUTextureFormat_RGBA16Uint;
+    if (format == "rgba16sint") return WGPUTextureFormat_RGBA16Sint;
+    if (format == "r32uint") return WGPUTextureFormat_R32Uint;
+    if (format == "r32sint") return WGPUTextureFormat_R32Sint;
+    if (format == "rg32uint") return WGPUTextureFormat_RG32Uint;
+    if (format == "rg32sint") return WGPUTextureFormat_RG32Sint;
+    if (format == "rgba32uint") return WGPUTextureFormat_RGBA32Uint;
+    if (format == "rgba32sint") return WGPUTextureFormat_RGBA32Sint;
+    if (format == "r8snorm") return WGPUTextureFormat_R8Snorm;
+    if (format == "rg8snorm") return WGPUTextureFormat_RG8Snorm;
+    if (format == "rgba8snorm") return WGPUTextureFormat_RGBA8Snorm;
+    if (format == "rgb10a2unorm") return WGPUTextureFormat_RGB10A2Unorm;
+    if (format == "rg11b10ufloat") return WGPUTextureFormat_RG11B10Ufloat;
     if (format == "depth24plus") return WGPUTextureFormat_Depth24Plus;
     if (format == "depth24plus-stencil8") return WGPUTextureFormat_Depth24PlusStencil8;
     if (format == "depth32float") return WGPUTextureFormat_Depth32Float;

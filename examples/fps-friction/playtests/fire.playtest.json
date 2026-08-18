@@ -1,0 +1,28 @@
+{
+  "name": "fps-friction-fire",
+  "schemaVersion": 1,
+  "subject": "enemy",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "kind": "wait", "label": "settle-crate", "waitTicks": 120, "release": true },
+    { "kind": "input", "label": "fire", "press": "Space", "holdTicks": 3, "release": true },
+    { "kind": "wait", "label": "after-shot", "waitTicks": 30, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "shots", "equals": 1, "changed": true },
+      { "id": "state", "path": "hits", "equals": 1, "changed": true },
+      { "id": "state", "path": "allHits", "equals": 2, "changed": true },
+      { "id": "state", "path": "crateY", "gte": 0.2, "lte": 0.45, "changed": true },
+      { "id": "state", "path": "timeRemaining", "gte": 50, "lte": 59, "changed": true }
+    ]
+  }
+}

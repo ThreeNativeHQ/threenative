@@ -23,3 +23,11 @@ export type { IThreePlaytestPhysics, IThreePlaytestPhysicsBody } from "./physics
 export { connectDevicePlaytestBridge, readPlaytestEndpoint } from "./device.js";
 export type { IDeviceBridgeInstallation } from "./device.js";
 export type { IThreePlaytestEntity } from "./entities.js";
+export { measureThreePose } from "./pose.js";
+export type {
+  IMeasureThreePoseOptions,
+  IThreePoseBounds,
+  IThreePoseMeasurement,
+  ThreePoseQuaternion,
+  ThreePoseVector,
+} from "./pose.js";

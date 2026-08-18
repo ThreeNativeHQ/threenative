@@ -1,13 +1,14 @@
 {
-  "name": "survives",
-  "target": "web",
+  "name": "fps-friction-renders",
   "schemaVersion": 1,
+  "subject": "enemy",
+  "target": "web",
   "viewport": { "width": 1280, "height": 720 },
-  "warmupFrames": 10,
-  "subject": "player",
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": true },
   "steps": [
-    { "kind": "input", "label": "move", "press": "ArrowUp", "holdTicks": 60, "release": true },
-    { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }
+    { "kind": "input", "label": "fire", "press": "Space", "holdTicks": 3, "release": true },
+    { "kind": "wait", "label": "after-shot", "waitTicks": 60, "release": true }
   ],
   "assert": {
     "diagnostics": {
@@ -16,7 +17,6 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
-    "movement": { "entity": "player", "minDistance": 0.5 },
     "visual": [
       {
         "region": {

@@ -12,7 +12,10 @@ describe("core constraints", () => {
   it("should keep visual concerns out of core source", () => {
     const source = readdirSync(sourceDirectory)
       .filter((file) => file.endsWith(".ts"))
-      .filter((file) => file !== "particles.ts" && file !== "collapse.ts")
+      .filter(
+        (file) =>
+          file !== "particles.ts" && file !== "collapse.ts" && file !== "renderProjection.ts",
+      )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
 
@@ -36,6 +39,21 @@ describe("core constraints", () => {
     // not authoring one, and the line that matters — never constructing a light or a material —
     // is still asserted above.
     expect(collapse).toMatch(/isLight/u);
+
+    // `renderProjection.ts` is exempted on exactly the same terms, and needs the exemption for a
+    // sharper reason than the collapse did: it maintains a private mirror of the game's scene, so
+    // it has to name every kind of thing that scene can hold. What it must never do is originate
+    // one. Every material it draws with is the game's own instance, passed through by reference so
+    // that recolouring the original recolours the batch; every light in the mirror is a clone of a
+    // light the game built, kept in step with it. Constructing either would be the framework
+    // deciding how a game looks, which no amount of performance buys back.
+    const projection = readFileSync(path.join(sourceDirectory, "renderProjection.ts"), "utf8");
+    expect(projection).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // It must recognise a light for the same reason the collapse must: the mirror is a separate
+    // graph, and a mirror with no lights in it renders every lit surface black.
+    expect(projection).toMatch(/isLight/u);
   });
 
   /**

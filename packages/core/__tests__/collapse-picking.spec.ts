@@ -9,6 +9,7 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 import { type ISceneCollapseReport, SceneCollapse } from "../src/collapse.js";
+import { SceneRenderProjection } from "../src/renderProjection.js";
 
 const MESH_COUNT = 250;
 const PICKABLE_COUNT = 5;
@@ -145,5 +146,47 @@ describe("SceneCollapse picking contract", () => {
     expect(report.mergedMeshes).toBe(1);
     expect(report.diagnostics.skipped.userData).toBe(0);
     expect(scene.children.filter((object) => object instanceof Mesh)).toHaveLength(1);
+  });
+});
+
+/**
+ * PRD-152 Phase 3. The collapse could only keep a mesh pickable by leaving it out of the merge,
+ * which is why it read `userData` at all — an annotation was the only way a game could say "do not
+ * consume this one". Under the projection there is nothing to opt out of: the game's scene is
+ * never the optimization artifact, so every object in it is as pickable as it ever was, annotated
+ * or not.
+ *
+ * This is the assertion that the annotation is genuinely gone rather than merely undocumented.
+ */
+describe("picking through the render projection", () => {
+  it("returns the game's own mesh, with no userData anywhere", () => {
+    const scene = new Scene();
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < 300; index += 1) {
+      const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+      mesh.position.set(index * 3, 0, 0);
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+    const target = meshes[2] as Mesh;
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    for (let frame = 0; frame < 600; frame += 1) projection.reconcile();
+    // Every mesh here has its own `BoxGeometry`, so no group reaches the batching floor and the
+    // projection correctly stands down rather than building three hundred one-member draws. The
+    // point of this test is that picking is unaffected either way — the authored scene is what a
+    // raycast walks whether the optimizer engaged or not.
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("notWorthwhile");
+
+    // A raycast against the game's scene, exactly as `ctx.raycast` runs one.
+    const raycaster = new Raycaster();
+    raycaster.set(new Vector3(target.position.x, 0, 10), new Vector3(0, 0, -1));
+    const hits = raycaster.intersectObjects(scene.children, true);
+
+    expect(hits[0]?.object).toBe(target);
+    // Not a proxy, not a batch, not an index into one — the object the game created.
+    expect(hits[0]?.object.uuid).toBe(target.uuid);
+    for (const mesh of meshes) expect(Object.keys(mesh.userData)).toEqual([]);
   });
 });

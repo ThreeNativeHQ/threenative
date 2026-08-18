@@ -758,4 +758,123 @@ describe("shadow flags survive the collapse", () => {
     expect(merged.filter((mesh) => !mesh.castShadow).length).toBeGreaterThan(0);
     for (const mesh of merged) expect(mesh.receiveShadow).toBe(true);
   });
+
+  /**
+   * PRD-152 Phase 1. The observation window is a guess, and the watchdog is what makes being wrong
+   * survivable: the bake comes apart before the frame that exposed it draws, once, leaving the
+   * game's own objects exactly where they were.
+   */
+  describe("post-settle escape watchdog", () => {
+    it("restores every source once, with no merged draw left behind", () => {
+      const scene = new Scene();
+      const material = new MeshToonMaterial({ color: 0x334455 });
+      const level = new Group();
+      scene.add(level);
+      const meshes = fill(level, material, 24);
+      const parents = meshes.map((mesh) => mesh.parent);
+
+      const reports: ISceneCollapseReport[] = [];
+      const collapse = new SceneCollapse(scene as never, {
+        observeFrames: 3,
+        minMeshes: 8,
+        onReport: (value) => reports.push(value),
+      });
+      for (let frame = 0; frame < 6; frame += 1) {
+        scene.updateMatrixWorld(true);
+        collapse.frame();
+      }
+      expect(reports.at(-1)?.collapsed).toBe(true);
+      expect(collapse.escaped).toBe(false);
+
+      (meshes[5] as Mesh).position.y += 3;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+
+      expect(collapse.escaped).toBe(true);
+      expect(reports.at(-1)?.reasonCode).toBe("escapedAfterCollapse");
+      expect(reports.at(-1)?.status).toBe("rejected");
+
+      // Every source is back, under the parent it left, exactly once.
+      for (const [index, mesh] of meshes.entries()) {
+        expect(mesh.parent).toBe(parents[index]);
+        expect(level.children.filter((child) => child === mesh).length).toBe(1);
+      }
+      // And nothing merged is still drawing what those sources draw again.
+      const merged = scene.children.filter(
+        (child): child is Mesh => (child as Mesh).isMesh === true,
+      );
+      expect(merged).toEqual([]);
+
+      // A second escaping frame must not restore twice or report twice.
+      const settled = reports.length;
+      (meshes[6] as Mesh).position.y += 3;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+      expect(reports.length).toBe(settled);
+      for (const [index, mesh] of meshes.entries()) expect(mesh.parent).toBe(parents[index]);
+    });
+
+    it("restores when a collapsed source is hidden after settling", () => {
+      const scene = new Scene();
+      const material = new MeshToonMaterial({ color: 0x556677 });
+      const meshes = fill(scene, material, 24);
+
+      let report: ISceneCollapseReport | undefined;
+      const collapse = new SceneCollapse(scene as never, {
+        observeFrames: 3,
+        minMeshes: 8,
+        onReport: (value) => {
+          report = value;
+        },
+      });
+      for (let frame = 0; frame < 6; frame += 1) {
+        scene.updateMatrixWorld(true);
+        collapse.frame();
+      }
+      expect(report?.collapsed).toBe(true);
+
+      (meshes[2] as Mesh).visible = false;
+      scene.updateMatrixWorld(true);
+      collapse.frame();
+
+      expect(collapse.escaped).toBe(true);
+      expect(report?.reasonCode).toBe("escapedAfterCollapse");
+      // The mesh the game hid is in the scene and hidden, which is the only way it does not draw.
+      expect((meshes[2] as Mesh).parent).toBe(scene);
+      expect((meshes[2] as Mesh).visible).toBe(false);
+    });
+
+    it("does not restore a scene whose moving parts are simply moving", () => {
+      const scene = new Scene();
+      const material = new MeshToonMaterial({ color: 0x667788 });
+      const meshes = fill(scene, material, 24);
+      const mover = meshes[0] as Mesh;
+
+      let report: ISceneCollapseReport | undefined;
+      const collapse = new SceneCollapse(scene as never, {
+        observeFrames: 3,
+        minMeshes: 8,
+        onReport: (value) => {
+          report = value;
+        },
+      });
+      for (let frame = 0; frame < 6; frame += 1) {
+        // Moving during the window is what makes it a moving part, and a moving part moving
+        // afterwards is the case the storage buffer exists to carry.
+        mover.position.x += 1;
+        scene.updateMatrixWorld(true);
+        collapse.frame();
+      }
+      expect(report?.collapsed).toBe(true);
+      expect(report?.movingParts).toBeGreaterThan(0);
+
+      for (let frame = 0; frame < 20; frame += 1) {
+        mover.position.x += 1;
+        scene.updateMatrixWorld(true);
+        collapse.frame();
+      }
+      expect(collapse.escaped).toBe(false);
+      expect(report?.collapsed).toBe(true);
+    });
+  });
 });

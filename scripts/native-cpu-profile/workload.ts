@@ -1,11 +1,17 @@
 export type DirtyRatio = 0 | 0.1 | 1;
 export type Hierarchy = "deep" | "flat";
+/**
+ * PRD-152. `legacy-scene-collapse` is the frozen incumbent and exists only so the replacement has
+ * something to be measured against; `scene-projection` is the candidate and runs the same
+ * implementation `defineGame` ships.
+ */
 export type RenderMode =
   | "distinct-materials"
   | "independent"
   | "instanced"
   | "merged"
-  | "scene-collapse";
+  | "legacy-scene-collapse"
+  | "scene-projection";
 export type Visibility = "all-visible" | "mostly-culled";
 export type Vector3Tuple = readonly [number, number, number];
 
@@ -77,9 +83,14 @@ export function validateWorkloadConfig(config: unknown): IWorkloadConfig {
     throw new Error("visibility must be all-visible or mostly-culled.");
   if (
     renderMode !== undefined &&
-    !["independent", "distinct-materials", "instanced", "merged", "scene-collapse"].includes(
-      renderMode as string,
-    )
+    ![
+      "independent",
+      "distinct-materials",
+      "instanced",
+      "merged",
+      "legacy-scene-collapse",
+      "scene-projection",
+    ].includes(renderMode as string)
   )
     throw new Error("renderMode is unsupported.");
   if (passes !== undefined && passes !== 1 && passes !== 2)

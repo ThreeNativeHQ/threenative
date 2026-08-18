@@ -98,13 +98,21 @@ async function measureRung(
       if (settle % 8 === 0) await harness.render();
       await nextFrame();
     }
-    if (harness.collapseStatus() !== "applied")
+    // `projected` is the projection's applied state, where the pass this replaced said `applied`.
+    if (harness.collapseStatus() !== "projected")
       throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
-    // Fail closed on the frozen scene. A collapse that classified moving objects as static renders
-    // a still picture at a very fast frame time, which is indistinguishable from a win unless the
-    // rung refuses to report. Every cube in this workload moves, so anything less is a fault.
+    // Fail closed on the frozen scene. The pass this replaced could classify a moving object as
+    // static and render a still picture at a very fast frame time, which is indistinguishable from a
+    // win unless the rung refuses to report. The projection cannot freeze an object — every one of
+    // them carries its own instance matrix — so the equivalent assertion is that every object is
+    // actually in the optimized lane rather than quietly sitting on the exact one.
+    //
+    // `>=`, not `===`: the count is every projected object in the scene, and the scene holds a
+    // ground plane besides the rung's cubes. The old equality held only because the ground was
+    // static and so was never a "moving part"; under the projection there is no static/moving split
+    // to exclude it, which is the whole point of the replacement.
     const moving = harness.collapseMovingParts();
-    if (moving !== rung.objectCount)
+    if (moving < rung.objectCount)
       throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${rung.objectCount}`);
   }
   const frameMs: number[] = [];

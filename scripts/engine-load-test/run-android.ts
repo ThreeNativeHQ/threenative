@@ -80,6 +80,50 @@ async function readDeviceSerial(): Promise<string> {
   return serial;
 }
 
+/**
+ * The report as the device wrote it to storage, or `undefined` if it is not there yet.
+ *
+ * The log is not a reliable transport for a report this size: at 600 frames across a full ladder it
+ * is over a megabyte emitted in one burst, and logd rate-limits a single uid and discards most of
+ * it — including the terminating marker `parseReport` scans for. A bigger ring buffer does not fix
+ * it, because the loss happens at write time rather than through eviction.
+ *
+ * The runtime therefore also writes the report to `localStorage`, which is a plain JSON file inside
+ * the app's private data directory. `run-as` reads it whole, and works because these are debuggable
+ * builds. The host prints the file's path once at startup, in a single short line that is never the
+ * thing logd drops.
+ */
+async function readStoredReport(packageName: string, log: string): Promise<unknown | undefined> {
+  // Gated on this run having reached its report, and that gate is load-bearing. The stored value
+  // outlives the run that wrote it, so reading it unconditionally would hand back the *previous*
+  // run's numbers under this run's label — the exact shape of failure this benchmark exists to
+  // refuse. The runtime writes storage immediately before emitting BEGIN, and the collector clears
+  // logcat before launching, so BEGIN in this log means this run wrote what is on disk now.
+  if (!log.includes(BEGIN)) return undefined;
+  const located = /\[Mystral\] localStorage initialized: (.+)$/m.exec(log);
+  if (located === null) return undefined;
+  const storagePath = (located[1] as string).trim();
+  let raw: string;
+  try {
+    raw = await adb(["shell", "run-as", packageName, "cat", storagePath]);
+  } catch {
+    return undefined;
+  }
+  let stored: unknown;
+  try {
+    stored = JSON.parse(raw.trim());
+  } catch {
+    return undefined;
+  }
+  const entry = (stored as Record<string, unknown> | null)?.TN_BENCH_REPORT;
+  if (typeof entry !== "string" || entry.length === 0) return undefined;
+  try {
+    return JSON.parse(entry);
+  } catch {
+    return undefined;
+  }
+}
+
 function parseReport(log: string): unknown {
   const failure = /ENGINE_LOAD_TEST_FAILED (.*)$/m.exec(log);
   const start = log.indexOf(BEGIN);
@@ -151,9 +195,12 @@ export async function runAndroidArm(
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 5_000));
     const log = await adb(["logcat", "-d"]);
-    if (log.includes(END) || log.includes(FAILED)) {
+    // Storage first: it carries the whole report, where the log may have lost most of it. The log
+    // is still the trigger for "the run is over" and still the only path when storage is absent.
+    const stored = await readStoredReport(definition.packageName, log);
+    if (stored !== undefined || log.includes(END) || log.includes(FAILED)) {
       await adb(["shell", "am", "force-stop", definition.packageName]);
-      const report = parseReport(log);
+      const report = stored ?? parseReport(log);
       if (typeof report !== "object" || report === null || Array.isArray(report)) {
         throw new Error("TN_BENCH_BAD_REPORT: the Android arm report must be an object.");
       }

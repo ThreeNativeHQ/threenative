@@ -53,12 +53,16 @@ async function main(): Promise<void> {
             }
             await nextFrame();
           }
-          if (harness.collapseStatus() !== "applied")
+          // `projected` is the projection's applied state. The pass this replaced said `applied`;
+          // both mean the same thing here, that the optimizer took the scene rather than handing
+          // the frame back, and a rung that measured an un-optimized scene must still refuse to
+          // report rather than publish L1 timings under an L3 label.
+          if (harness.collapseStatus() !== "projected")
             throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
           // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
           // dangerous outcome here, not the good one.
           const moving = harness.collapseMovingParts();
-          if (moving !== objectCount)
+          if (moving < objectCount)
             throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
         }
         const frameMs: number[] = [];
@@ -145,6 +149,20 @@ async function main(): Promise<void> {
   // Android's logcat truncates a line at ~1 KB, which silently cut every report this arm emitted
   // until the collector tried to parse one. The payload goes out in chunks and is rejoined.
   const payload = JSON.stringify(report);
+  // The log is not a reliable transport for a payload this size and the collector must not depend
+  // on it alone. At 600 frames across a full ladder the report is well over a megabyte and goes out
+  // in one burst; Android's logd rate-limits a single uid and silently discards most of it,
+  // including the terminating marker the collector waits for. Enlarging the ring buffer does not
+  // help, because the drop happens at write time rather than through eviction.
+  //
+  // So the report is also written to storage, where the collector can read it whole. The chunked
+  // log emission below stays: it is the only path on hosts without persistent storage, and it is
+  // what desktop already parses.
+  try {
+    globalThis.localStorage?.setItem("TN_BENCH_REPORT", payload);
+  } catch {
+    // Best effort. A host without storage still has the log path below.
+  }
   console.log("ENGINE_LOAD_TEST_JSON_BEGIN");
   for (let offset = 0; offset < payload.length; offset += 800) {
     console.log(`TNJSON:${payload.slice(offset, offset + 800)}`);

@@ -1,0 +1,903 @@
+import {
+  type BatchedMesh,
+  Bone,
+  BoxGeometry,
+  BufferGeometry,
+  Color,
+  DirectionalLight,
+  Float32BufferAttribute,
+  Group,
+  InstancedMesh,
+  LOD,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  type Object3D,
+  PerspectiveCamera,
+  Points,
+  PointsMaterial,
+  Scene,
+  Skeleton,
+  SkinnedMesh,
+  SphereGeometry,
+  Sprite,
+  SpriteMaterial,
+} from "three";
+import { describe, expect, it } from "vitest";
+import { SceneRenderProjection } from "../src/renderProjection.js";
+
+/**
+ * PRD-152 Phase 2. The projection's whole claim is that a game cannot tell it is there. These
+ * assertions are about the authored scene staying exactly as authored while the renderer's input
+ * collapses — a draw-count win with a rewritten graph underneath it is the defect, not the goal.
+ */
+
+const GEOMETRY = new BoxGeometry(1, 1, 1);
+
+function fill(parent: Object3D, material: MeshStandardMaterial, count: number): Mesh[] {
+  const meshes: Mesh[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const mesh = new Mesh(GEOMETRY, material);
+    mesh.position.set(index % 40, Math.floor(index / 40), 0);
+    parent.add(mesh);
+    meshes.push(mesh);
+  }
+  return meshes;
+}
+
+/** Everything the renderer would walk and draw in the scene it was handed. */
+function drawCandidates(root: Object3D): Object3D[] {
+  const found: Object3D[] = [];
+  root.traverse((object) => {
+    const candidate = object as Mesh & { isSprite?: boolean; isPoints?: boolean };
+    if (candidate.isMesh === true || candidate.isSprite === true || candidate.isPoints === true) {
+      found.push(object);
+    }
+  });
+  return found;
+}
+
+/** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
+function graphSnapshot(scene: Scene): string {
+  const rows: string[] = [];
+  scene.traverse((object) => {
+    rows.push(
+      [
+        object.uuid,
+        object.name,
+        object.type,
+        object.parent?.uuid ?? "root",
+        object.parent?.children.indexOf(object) ?? -1,
+      ].join("|"),
+    );
+  });
+  return rows.join("\n");
+}
+
+function projected(scene: Scene, frames = 1, minMeshes = 8) {
+  const projection = new SceneRenderProjection(scene, { minMeshes });
+  for (let frame = 0; frame < frames; frame += 1) projection.reconcile();
+  return projection;
+}
+
+describe("SceneRenderProjection", () => {
+  it("rejects a mesh floor that cannot be reached", () => {
+    expect(() => new SceneRenderProjection(new Scene(), { minMeshes: 0 })).toThrow(
+      /minMeshes must be a positive integer/,
+    );
+  });
+
+  it("collapses draw candidates without touching the authored graph", () => {
+    const scene = new Scene();
+    scene.add(new DirectionalLight(0xffffff, 1));
+    const level = new Group();
+    level.name = "level";
+    scene.add(level);
+    const meshes = fill(level, new MeshStandardMaterial({ color: 0x88aa44 }), 400);
+    const before = graphSnapshot(scene);
+
+    const projection = projected(scene, 300);
+
+    expect(projection.deoptimized).toBe(false);
+    // The renderer's input, counted from what it is actually handed.
+    const candidates = drawCandidates(projection.root);
+    expect(candidates.length).toBe(1);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+    expect(projection.report.sourceRenderables).toBe(400);
+    expect(projection.report.projectedObjects).toBe(400);
+
+    // And the game's own scene is bit-for-bit the graph it authored, 300 frames later.
+    expect(graphSnapshot(scene)).toBe(before);
+    for (const mesh of meshes) expect(mesh.parent).toBe(level);
+    expect(level.children.length).toBe(400);
+    // Nothing of the projection's leaked into the scene the game can see.
+    expect(drawCandidates(scene).length).toBe(400);
+  });
+
+  it("renders the authored scene directly when there is too little to batch", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 4);
+    const projection = projected(scene, 2, 200);
+
+    expect(projection.deoptimized).toBe(true);
+    // Not merely reported as declined: the renderer is handed the game's own scene.
+    expect(projection.root).toBe(scene);
+    expect(projection.report.reasonCode).toBe("belowMeshFloor");
+  });
+
+  it("gives the frame back to the authored scene when an object hooks its own draw", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    // A game that hooks a draw is handed its own object by three.js. Neither a batch nor a proxy
+    // can do that, so the frame stops being projected rather than lying about which object it is.
+    (meshes[10] as Mesh).onBeforeRender = () => undefined;
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    expect(projection.report.reasonCode).toBe("renderHook");
+  });
+
+  it("keeps one draw per material and never merges two materials into one", () => {
+    const scene = new Scene();
+    const stone = new MeshStandardMaterial({ color: 0x777777 });
+    const grass = new MeshStandardMaterial({ color: 0x33aa33 });
+    fill(scene, stone, 200);
+    fill(scene, grass, 200);
+
+    const projection = projected(scene, 2);
+    const candidates = drawCandidates(projection.root);
+    expect(candidates.length).toBe(2);
+    expect(projection.report.batches).toBe(2);
+    // The game's own material instances, so recolouring one still recolours what draws.
+    const materials = candidates.map((mesh) => (mesh as Mesh).material);
+    expect(materials).toContain(stone);
+    expect(materials).toContain(grass);
+  });
+
+  it("keeps an object three.js semantics cannot batch on a draw of its own", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const instanced = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 3);
+    scene.add(instanced);
+
+    const projection = projected(scene, 2);
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.exact.instanced).toBe(1);
+    expect(projection.report.exactObjects).toBe(1);
+    // The stand-in is a real InstancedMesh drawing the source's own geometry and material, with
+    // every instance intact — and the source itself is still in the game's scene.
+    // Batches are `InstancedMesh` too, so the stand-in is identified by the source geometry it
+    // draws rather than by its class.
+    expect(projection.inspect(instanced)?.lane).toBe("exact");
+    const proxy = drawCandidates(projection.root).find(
+      (object) => (object as Mesh).geometry === instanced.geometry,
+    ) as InstancedMesh | undefined;
+    expect(proxy).toBeDefined();
+    expect(proxy?.material).toBe(instanced.material);
+    expect(instanced.parent).toBe(scene);
+  });
+
+  it("mirrors the scene's lights instead of moving them out of the game's scene", () => {
+    const scene = new Scene();
+    const light = new DirectionalLight(0x8899ff, 2.5);
+    light.position.set(3, 9, 4);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+
+    // The game's light never left the game's scene.
+    expect(light.parent).toBe(scene);
+    const mirrored: DirectionalLight[] = [];
+    projection.root.traverse((object) => {
+      if ((object as DirectionalLight).isDirectionalLight === true) {
+        mirrored.push(object as DirectionalLight);
+      }
+    });
+    expect(mirrored.length).toBe(1);
+    expect(mirrored[0]?.intensity).toBe(2.5);
+    expect(mirrored[0]?.color.getHex()).toBe(0x8899ff);
+    expect(mirrored[0]?.matrixWorld.elements).toEqual(light.matrixWorld.elements);
+
+    // A light the game turns down is turned down in the mirror on the next frame.
+    light.intensity = 0.25;
+    projection.reconcile();
+    expect(mirrored[0]?.intensity).toBe(0.25);
+  });
+
+  it("carries the scene's own look rather than choosing one", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 1);
+    const sky = new Color(0x102030);
+    scene.background = sky;
+    projection.reconcile();
+    expect((projection.root as Scene).background).toBe(sky);
+  });
+
+  it("releases what it owns on dispose and leaves the game's scene whole", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const before = graphSnapshot(scene);
+    const projection = projected(scene, 5);
+    expect(projection.deoptimized).toBe(false);
+
+    projection.dispose();
+
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    expect(graphSnapshot(scene)).toBe(before);
+    // The geometries and materials are the game's, and disposing the projection must not take
+    // them with it: a scene change would take the next scene down too.
+    for (const mesh of meshes) {
+      expect(mesh.geometry.getAttribute("position")).toBeDefined();
+      expect((mesh.material as MeshStandardMaterial).type).toBe("MeshStandardMaterial");
+    }
+  });
+
+  it("draws every object sharing one geometry and material as a single instanced draw", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    // Four hundred references to one geometry is the ordinary case — a level of identical crates.
+    fill(scene, material, 400);
+    const projection = projected(scene, 2);
+    expect(projection.report.projectedObjects).toBe(400);
+    expect(projection.report.batches).toBe(1);
+    expect(drawCandidates(projection.root).length).toBe(1);
+
+    // A lone object of a different shape is *not* batched. An instanced draw of one is one draw,
+    // exactly as the object already was, plus a buffer and a slot table — so it keeps its own draw
+    // and lands on the exact lane instead.
+    const sphere = new Mesh(new SphereGeometry(1, 8, 6), material);
+    scene.add(sphere);
+    projection.reconcile();
+    expect(projection.report.projectedObjects).toBe(400);
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.exact.tooFewToBatch).toBe(1);
+  });
+});
+
+/**
+ * PRD-152 Phase 3. Every row here mutates a settled scene *after* it has been stable for 600
+ * frames, which is the case the pass this replaces got wrong: it decided what could change from
+ * eight startup frames and then drew that decision forever.
+ *
+ * The rows are deliberately one property each. A single "something changed" test passes as soon as
+ * any one field is reconciled and would hide the other nine.
+ */
+describe("SceneRenderProjection reconciliation after settling", () => {
+  const SETTLED = 600;
+
+  /** A scene of ordinary props, projected and left alone long past any observation window. */
+  function settled(count = 300) {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial({ color: 0x557799 });
+    const level = new Group();
+    scene.add(level);
+    const meshes = fill(level, material, count);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    for (let frame = 0; frame < SETTLED; frame += 1) projection.reconcile();
+    expect(projection.deoptimized).toBe(false);
+    return { scene, level, meshes, material, projection };
+  }
+
+  /**
+   * The world matrix the mirror is currently drawing this source with.
+   *
+   * Read through `inspect` rather than off the batch, so these rows assert what the renderer was
+   * given without depending on which three.js primitive the batch happens to be built from.
+   */
+  function drawnMatrix(projection: SceneRenderProjection, object: Mesh): Matrix4 {
+    const found = projection.inspect(object);
+    expect(found).toBeDefined();
+    return (found as { matrixWorld: Matrix4 }).matrixWorld;
+  }
+
+  it("shows a transform changed on frame 600 on frame 601", () => {
+    const { meshes, projection } = settled();
+    const mover = meshes[7] as Mesh;
+    mover.position.set(123, 45, 6);
+
+    projection.reconcile();
+
+    const drawn = drawnMatrix(projection, mover);
+    expect([drawn.elements[12], drawn.elements[13], drawn.elements[14]]).toEqual([123, 45, 6]);
+  });
+
+  it("shows a transform inherited from an ancestor that only starts moving now", () => {
+    const { level, meshes, projection } = settled();
+    // Nothing about the meshes themselves changed. A pass that watched only the leaves sees
+    // nothing here and draws the whole level where it used to be.
+    level.position.set(0, 0, -50);
+
+    projection.reconcile();
+
+    expect(drawnMatrix(projection, meshes[3] as Mesh).elements[14]).toBe(-50);
+  });
+
+  it("hides an object the game hides after settling", () => {
+    const { meshes, projection } = settled();
+    const hidden = meshes[2] as Mesh;
+    expect(projection.inspect(hidden)?.visible).toBe(true);
+
+    hidden.visible = false;
+    projection.reconcile();
+
+    expect(projection.inspect(hidden)?.visible).toBe(false);
+    // Not merely flagged: the transform it draws through has no volume, so nothing is rasterised.
+    expect(drawnMatrix(projection, hidden).elements).toEqual(
+      new Matrix4().multiplyScalar(0).elements,
+    );
+  });
+
+  it("hides an object whose ancestor the game hides after settling", () => {
+    const { level, meshes, projection } = settled();
+
+    level.visible = false;
+    projection.reconcile();
+
+    // Visibility is inherited in a scene graph and is not in a batch, so it has to be resolved
+    // per object rather than read off the flag.
+    expect(projection.inspect(meshes[0] as Mesh)?.visible).toBe(false);
+    expect(projection.inspect(meshes[9] as Mesh)?.visible).toBe(false);
+  });
+
+  it("draws an object added long after the projection settled", () => {
+    const { scene, material, projection } = settled();
+    const before = projection.report.projectedObjects;
+
+    const late = new Mesh(GEOMETRY, material);
+    late.position.set(9, 9, 9);
+    scene.add(late);
+    projection.reconcile();
+
+    expect(projection.report.projectedObjects).toBe(before + 1);
+  });
+
+  it("stops drawing an object the game removes, without disturbing the rest", () => {
+    const { level, meshes, projection } = settled();
+    const before = projection.report.projectedObjects;
+
+    level.remove(meshes[5] as Mesh);
+    projection.reconcile();
+
+    expect(projection.report.projectedObjects).toBe(before - 1);
+    expect(projection.deoptimized).toBe(false);
+  });
+
+  it("follows an object the game reparents under a moved group", () => {
+    const { scene, meshes, projection } = settled();
+    const elsewhere = new Group();
+    elsewhere.position.set(0, 200, 0);
+    scene.add(elsewhere);
+
+    const traveller = meshes[11] as Mesh;
+    traveller.position.set(0, 0, 0);
+    elsewhere.add(traveller);
+    projection.reconcile();
+
+    expect(drawnMatrix(projection, traveller).elements[13]).toBe(200);
+    // Reparented in the game's graph, exactly as the game asked, and nowhere else.
+    expect(traveller.parent).toBe(elsewhere);
+  });
+
+  it("draws a geometry the game streams into without needing to be told", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const streamed = new BufferGeometry();
+    streamed.setAttribute("position", new Float32BufferAttribute(new Float32Array(9), 3));
+    for (let index = 0; index < 300; index += 1) {
+      scene.add(new Mesh(index === 0 ? streamed : GEOMETRY, material));
+    }
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    for (let frame = 0; frame < SETTLED; frame += 1) projection.reconcile();
+
+    // The batch references the game's own geometry rather than copying it into a private buffer,
+    // so the array three.js uploads is the array the game just wrote to. That identity is what
+    // makes a streamed update correct here with no re-upload bookkeeping at all.
+    const drawn = drawCandidates(projection.root)
+      .map((object) => (object as Mesh).geometry)
+      .filter((geometry) => geometry === streamed);
+    expect(drawn.length).toBe(1);
+
+    const position = streamed.getAttribute("position");
+    position.setXYZ(0, 5, 5, 5);
+    position.needsUpdate = true;
+    projection.reconcile();
+
+    expect((drawn[0] as BufferGeometry).getAttribute("position").getX(0)).toBe(5);
+    expect(projection.deoptimized).toBe(false);
+  });
+
+  it("never merges a shadow caster with a non-caster that shares its material", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const meshes = fill(scene, material, 300);
+    for (const [index, mesh] of meshes.entries()) mesh.castShadow = index % 2 === 0;
+
+    const projection = projected(scene, 2);
+
+    // One draw for the casters and one for the rest. A single draw would have to pick one
+    // behaviour and overrule the other half of the level.
+    expect(projection.report.batches).toBe(2);
+    const batches = drawCandidates(projection.root);
+    expect(batches.length).toBe(2);
+    expect(batches.filter((mesh) => mesh.castShadow).length).toBe(1);
+    expect(batches.filter((mesh) => !mesh.castShadow).length).toBe(1);
+  });
+
+  it("moves an object to its own draw when the game turns its shadow on after settling", () => {
+    const { meshes, projection } = settled();
+    expect(projection.report.batches).toBe(1);
+
+    const caster = meshes[4] as Mesh;
+    caster.castShadow = true;
+    projection.reconcile();
+
+    // One caster cannot share the non-casting batch, and one object is not worth a batch of its
+    // own, so it moves to the exact lane — still drawn once, still casting.
+    expect(projection.report.batches).toBe(1);
+    expect(projection.inspect(caster)?.lane).toBe("exact");
+    expect(projection.report.exact.tooFewToBatch).toBe(1);
+    expect(projection.report.projectedObjects).toBe(299);
+  });
+
+  it("moves an object to the exact lane when its material turns transparent, and draws it once", () => {
+    const scene = new Scene();
+    const opaque = new MeshStandardMaterial();
+    const glass = new MeshStandardMaterial();
+    fill(scene, opaque, 300);
+    const window_ = new Mesh(GEOMETRY, glass);
+    scene.add(window_);
+    const projection = projected(scene, 2);
+    // The lone glass pane is already on the exact lane: one object is below the batching floor.
+    expect(projection.report.exact.tooFewToBatch).toBe(1);
+    expect(projection.report.exact.transparent).toBeUndefined();
+
+    glass.transparent = true;
+    projection.reconcile();
+
+    expect(projection.report.exact.transparent).toBe(1);
+    expect(projection.report.exactObjects).toBe(1);
+    // Once as a stand-in, and no longer also inside a batch.
+    expect(projection.inspect(window_)?.lane).toBe("exact");
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("releases what it remembered about an object that leaves the scene", () => {
+    const { scene, level, meshes, projection } = settled();
+    // A level that streams in and out must not grow the projection's memory of it without bound.
+    for (const mesh of meshes) level.remove(mesh);
+    scene.remove(level);
+    projection.reconcile();
+
+    expect(projection.report.projectedObjects).toBe(0);
+    expect(projection.report.sourceRenderables).toBe(0);
+  });
+});
+
+/**
+ * PRD-152. These assert against the mirror *after* `updateMatrixWorld()`, which is the first thing
+ * a renderer does to the scene it is handed.
+ *
+ * Asserting before that call is how a whole class of bug hides: a `Scene` recomposes its own matrix
+ * every frame, which forces every child to recompute `matrixWorld` from its local matrix. A mirror
+ * that writes world matrices directly looks correct to any test that reads them back, and renders
+ * every proxy and every light at the world origin.
+ */
+describe("SceneRenderProjection under the renderer's own matrix pass", () => {
+  function rendered(projection: SceneRenderProjection): Scene {
+    const root = projection.root;
+    // Exactly what WebGLRenderer and WebGPURenderer do at the top of render().
+    root.updateMatrixWorld();
+    return root;
+  }
+
+  it("keeps an exact-lane object where the game put it", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const instanced = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 2);
+    instanced.position.set(11, 22, 33);
+    scene.add(instanced);
+
+    const projection = projected(scene, 2);
+    const root = rendered(projection);
+
+    const proxy = drawCandidates(root).find(
+      (object) => (object as Mesh).geometry === instanced.geometry,
+    ) as InstancedMesh;
+    expect([
+      proxy.matrixWorld.elements[12],
+      proxy.matrixWorld.elements[13],
+      proxy.matrixWorld.elements[14],
+    ]).toEqual([11, 22, 33]);
+  });
+
+  it("keeps a mirrored light where the game put it", () => {
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    light.position.set(4, 8, 15);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    const root = rendered(projection);
+
+    let found: DirectionalLight | undefined;
+    root.traverse((object) => {
+      if ((object as DirectionalLight).isDirectionalLight === true) {
+        found = object as DirectionalLight;
+      }
+    });
+    expect([
+      found?.matrixWorld.elements[12],
+      found?.matrixWorld.elements[13],
+      found?.matrixWorld.elements[14],
+    ]).toEqual([4, 8, 15]);
+  });
+
+  it("follows a light the game moves after settling", () => {
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    light.position.set(1, 2, 3);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 600);
+
+    // Cloning the light copies where it was standing at the time, so a mirror that never updates
+    // it still looks right until the game moves it. A day/night cycle moves it every frame.
+    light.position.set(0, 90, 0);
+    scene.updateMatrixWorld(true);
+    projection.reconcile();
+    const root = rendered(projection);
+
+    let found: DirectionalLight | undefined;
+    root.traverse((object) => {
+      if ((object as DirectionalLight).isDirectionalLight === true) {
+        found = object as DirectionalLight;
+      }
+    });
+    expect([
+      found?.matrixWorld.elements[12],
+      found?.matrixWorld.elements[13],
+      found?.matrixWorld.elements[14],
+    ]).toEqual([0, 90, 0]);
+  });
+
+  it("follows an exact-lane object that moves after settling", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const instanced = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 2);
+    scene.add(instanced);
+    const projection = projected(scene, 600);
+
+    instanced.position.set(0, 0, -70);
+    scene.updateMatrixWorld(true);
+    projection.reconcile();
+    const root = rendered(projection);
+
+    const proxy = drawCandidates(root).find(
+      (object) => (object as Mesh).geometry === instanced.geometry,
+    ) as InstancedMesh;
+    expect(proxy.matrixWorld.elements[14]).toBe(-70);
+  });
+});
+
+/**
+ * PRD-152 Phase 4. A feature-rich scene stays correct while the ordinary props around it still
+ * batch. Each subject here is an advanced Three.js semantic the batch cannot carry; the assertion
+ * is that it survives *and* that its neighbours are still optimized — falling the whole scene back
+ * whenever a game contains one skinned character would make the optimizer useless on real games.
+ */
+describe("SceneRenderProjection exact lane corpus", () => {
+  /** The scene, its projection, and the mirror after the renderer's matrix pass. */
+  function withSubject(subject: Object3D, props = 300) {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), props);
+    scene.add(subject);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+    projection.root.updateMatrixWorld();
+    return { scene, projection };
+  }
+
+  function proxyOf(projection: SceneRenderProjection, predicate: (o: Object3D) => boolean) {
+    return drawCandidates(projection.root).find(predicate);
+  }
+
+  it("keeps a two-material mesh whole, with both materials and both groups", () => {
+    const geometry = new BoxGeometry(1, 1, 1);
+    const front = new MeshBasicMaterial();
+    const back = new MeshBasicMaterial();
+    const subject = new Mesh(geometry, [front, back]);
+    subject.position.set(0, 0, 12);
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.multiMaterial).toBe(1);
+    const proxy = proxyOf(projection, (o) => Array.isArray((o as Mesh).material));
+    expect(proxy).toBeDefined();
+    expect((proxy as Mesh).material).toBe(subject.material);
+    expect((proxy as Mesh).geometry.groups.length).toBe(geometry.groups.length);
+    expect((proxy as Mesh).matrixWorld.elements[14]).toBe(12);
+    // And the ordinary props beside it are still one draw, not three hundred.
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps every instance of an InstancedMesh", () => {
+    const subject = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 3);
+    for (let index = 0; index < 3; index += 1) {
+      subject.setMatrixAt(index, new Matrix4().makeTranslation(index * 4, 0, 0));
+    }
+    subject.instanceMatrix.needsUpdate = true;
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.instanced).toBe(1);
+    const proxy = proxyOf(projection, (o) => (o as Mesh).geometry === subject.geometry);
+    expect((proxy as InstancedMesh).count).toBe(3);
+    // The same instance buffer, so the game moving an instance moves what draws.
+    expect((proxy as InstancedMesh).instanceMatrix).toBe(subject.instanceMatrix);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a skinned mesh bound to the game's own skeleton", () => {
+    const bone = new Bone();
+    const skeleton = new Skeleton([bone]);
+    const geometry = new BoxGeometry(1, 1, 1);
+    const subject = new SkinnedMesh(geometry, new MeshStandardMaterial());
+    subject.add(bone);
+    subject.bind(skeleton);
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.skinned).toBe(1);
+    const proxy = proxyOf(projection, (o) => (o as SkinnedMesh).isSkinnedMesh === true);
+    expect(proxy).toBeDefined();
+    // The game's skeleton, so the bones the game animates are the bones that deform the draw.
+    expect((proxy as SkinnedMesh).skeleton).toBe(skeleton);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a morph-target mesh with its influences live", () => {
+    const geometry = new BoxGeometry(1, 1, 1);
+    const base = geometry.getAttribute("position");
+    geometry.morphAttributes.position = [
+      new Float32BufferAttribute(new Float32Array(base.count * 3), 3),
+    ];
+    const subject = new Mesh(geometry, new MeshStandardMaterial());
+    subject.morphTargetInfluences = [0.5];
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.morph).toBe(1);
+    const proxy = proxyOf(
+      projection,
+      (o) => (o as Mesh).geometry?.morphAttributes?.position !== undefined,
+    );
+    expect(proxy).toBeDefined();
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a geometry that draws only part of its index buffer", () => {
+    const geometry = new BoxGeometry(1, 1, 1);
+    geometry.setDrawRange(0, 6);
+    const subject = new Mesh(geometry, new MeshStandardMaterial());
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.drawRange).toBe(1);
+    // Batching concatenates whole attribute arrays, so the window the game asked for would be lost.
+    const proxy = proxyOf(projection, (o) => (o as Mesh).geometry === geometry);
+    expect((proxy as Mesh).geometry.drawRange.count).toBe(6);
+  });
+
+  it("keeps a sprite and a point cloud as themselves", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const sprite = new Sprite(new SpriteMaterial());
+    const points = new Points(new BoxGeometry(1, 1, 1), new PointsMaterial());
+    scene.add(sprite);
+    scene.add(points);
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+
+    expect(projection.report.exact.sprite).toBe(1);
+    expect(projection.report.exact.points).toBe(1);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps an LOD's levels out of one another", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const lod = new LOD();
+    const near = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial());
+    const far = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    lod.addLevel(near, 0);
+    lod.addLevel(far, 50);
+    lod.position.set(0, 0, -8);
+    scene.add(lod);
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+    projection.root.updateMatrixWorld();
+
+    // The container is the exact-lane object, not its rungs. An LOD shows exactly one rung by
+    // camera distance and decides that on itself every frame, so the mirror needs the container —
+    // mirroring the rungs as siblings would draw every level at once, which is the whole thing an
+    // LOD exists to avoid.
+    expect(projection.report.exact.lod).toBe(1);
+    let mirrored: LOD | undefined;
+    projection.root.traverse((object) => {
+      if ((object as LOD).isLOD === true) mirrored = object as LOD;
+    });
+    expect(mirrored).toBeDefined();
+    expect(mirrored?.levels.length).toBe(2);
+    expect(mirrored?.levels[0]?.distance).toBe(0);
+    expect(mirrored?.levels[1]?.distance).toBe(50);
+    // Each rung draws the game's own geometry and material; only the container is new.
+    expect((mirrored?.levels[0]?.object as Mesh).geometry).toBe(near.geometry);
+    expect((mirrored?.levels[1]?.object as Mesh).geometry).toBe(far.geometry);
+    expect(mirrored?.matrixWorld.elements[14]).toBe(-8);
+
+    // Level selection runs on the stand-in, exactly as it would have on the source.
+    const camera = new PerspectiveCamera();
+    camera.position.set(0, 0, 0);
+    camera.updateMatrixWorld();
+    mirrored?.update(camera);
+    expect(mirrored?.levels[0]?.object.visible).toBe(true);
+    expect(mirrored?.levels[1]?.object.visible).toBe(false);
+
+    expect(projection.report.projectedObjects).toBe(300);
+    // And the game's LOD keeps its own levels, in its own scene.
+    expect(lod.levels.length).toBe(2);
+    expect(lod.parent).toBe(scene);
+  });
+
+  it("keeps a mesh with a custom depth material off the shared draw", () => {
+    const subject = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    subject.customDepthMaterial = new MeshStandardMaterial();
+
+    const { projection } = withSubject(subject);
+
+    // The shadow pass swaps this in per object; a batch is one object and would apply whichever
+    // override it inherited to everything folded into it.
+    expect(projection.report.exact.customDepthMaterial).toBe(1);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a mesh that asked for its own place in the draw order", () => {
+    const subject = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    subject.renderOrder = 5;
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.renderOrder).toBe(1);
+    const proxy = proxyOf(projection, (o) => o.renderOrder === 5);
+    expect(proxy).toBeDefined();
+  });
+
+  it("mirrors a camera-parented overlay where the camera actually is", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const camera = new PerspectiveCamera();
+    camera.position.set(0, 0, 100);
+    scene.add(camera);
+    // A HUD element hangs off the camera and rides along with it.
+    const reticle = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    reticle.position.set(0, 0, -2);
+    camera.add(reticle);
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+    projection.root.updateMatrixWorld();
+
+    // A camera-parented overlay needs no special case: its world matrix already carries the
+    // camera's transform, so mirroring it in world space rides the camera exactly as it did. The
+    // pass this replaces needed a whole second camera-space merge to achieve the same thing.
+    expect(projection.inspect(reticle)?.matrixWorld.elements[14]).toBe(98);
+
+    // And it follows the camera on the next frame.
+    camera.position.set(0, 0, 40);
+    scene.updateMatrixWorld(true);
+    projection.reconcile();
+    expect(projection.inspect(reticle)?.matrixWorld.elements[14]).toBe(38);
+
+    // The camera itself is still the game's, parented where the game put it.
+    expect(camera.parent).toBe(scene);
+    expect(reticle.parent).toBe(camera);
+  });
+
+  it("isolates one unsafe object without giving up on its neighbours", () => {
+    const scene = new Scene();
+    const shared = new MeshStandardMaterial();
+    const meshes = fill(scene, shared, 300);
+    // Every kind of awkward object at once, beside three hundred ordinary props.
+    scene.add(new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 2));
+    scene.add(new Sprite(new SpriteMaterial()));
+    scene.add(
+      new Mesh(new BoxGeometry(1, 1, 1), [new MeshBasicMaterial(), new MeshBasicMaterial()]),
+    );
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.projectedObjects).toBe(300);
+    expect(projection.report.exactObjects).toBe(3);
+    // Three hundred and three source renderables became four draws.
+    expect(projection.report.sourceRenderables).toBe(303);
+    expect(projection.report.resultDrawCandidates).toBe(4);
+    for (const mesh of meshes) expect(mesh.parent).toBe(scene);
+  });
+});
+
+/**
+ * The rule a real game had to teach this class: never make a scene worse.
+ *
+ * A shipped platformer that had already merged itself from 1,698 meshes to 254 was handed to an
+ * earlier version of this projection, which re-expanded it into 1,251 single-member instanced
+ * draws — the same draw count as the authored scene, plus a batch rebuild on the frame that found
+ * them. The loading screen never finished and the phone showed black. Every unit test here passed
+ * at the time, because none of them compared the result against the input.
+ */
+describe("SceneRenderProjection refuses to make a scene worse", () => {
+  it("hands back a scene whose meshes each carry their own geometry", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    // The shape of an already-optimized or procedurally-built level: unique geometry per mesh, so
+    // every group has exactly one member and batching can save nothing.
+    for (let index = 0; index < 300; index += 1) {
+      scene.add(new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material));
+    }
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("notWorthwhile");
+    // The renderer is handed the game's own scene, and nothing was built to discover that.
+    expect(projection.root).toBe(scene);
+    expect(projection.report.batches).toBe(0);
+  });
+
+  it("still projects a scene where batching genuinely wins", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    fill(scene, material, 300);
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+  });
+
+  it("never returns more draw candidates than the scene it was given", () => {
+    // The invariant behind both cases above, asserted directly across a spread of scene shapes.
+    for (const distinctGeometries of [1, 2, 8, 60, 300]) {
+      const scene = new Scene();
+      const material = new MeshStandardMaterial();
+      const shapes = Array.from(
+        { length: distinctGeometries },
+        (_, index) => new BoxGeometry(1, 1 + index * 0.01, 1),
+      );
+      for (let index = 0; index < 300; index += 1) {
+        scene.add(new Mesh(shapes[index % distinctGeometries] as BufferGeometry, material));
+      }
+
+      const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+      projection.reconcile();
+
+      const report = projection.report;
+      expect(report.resultDrawCandidates).toBeLessThanOrEqual(report.sourceRenderables);
+    }
+  });
+});

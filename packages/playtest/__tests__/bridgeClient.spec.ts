@@ -1,5 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -19,6 +19,39 @@ test("standalone args support existing-server and managed-server flows", () => {
   ], "/project");
   expect(managed.server?.command).toBe("pnpm dev");
   expect(managed.server?.timeoutMs).toBe(20_000);
+});
+
+test("scenario flags accumulate and expand a project glob in sorted order", async () => {
+  const projectPath = await makeTempDir("playtest-scenarios-");
+  await mkdir(join(projectPath, "playtests"));
+  await writeFile(join(projectPath, "playtests/b.playtest.json"), "{}");
+  await writeFile(join(projectPath, "playtests/a.playtest.json"), "{}");
+  await writeFile(join(projectPath, "playtests/terminal-menu.playtest.json"), "{}");
+
+  const repeated = parseStandalonePlaytestArgs([
+    "--scenario", "first.playtest.json",
+    "--scenario", "second.playtest.json",
+  ], projectPath);
+  expect(repeated.scenarioPaths).toEqual(["first.playtest.json", "second.playtest.json"]);
+
+  const glob = parseStandalonePlaytestArgs(["--scenario", "playtests/*.playtest.json"], projectPath);
+  expect(glob.scenarioPaths).toEqual([
+    "playtests/a.playtest.json",
+    "playtests/b.playtest.json",
+    "playtests/terminal-menu.playtest.json",
+  ]);
+
+  const hyphenatedGlob = parseStandalonePlaytestArgs(
+    ["--scenario", "playtests/terminal-*.playtest.json"],
+    projectPath,
+  );
+  expect(hyphenatedGlob.scenarioPaths).toEqual(["playtests/terminal-menu.playtest.json"]);
+});
+
+test("a scenario glob that matches nothing fails closed", async () => {
+  const projectPath = await makeTempDir("playtest-empty-glob-");
+  expect(() => parseStandalonePlaytestArgs(["--scenario", "playtests/*.playtest.json"], projectPath))
+    .toThrow(/matched no files/u);
 });
 
 test("a managed server without an explicit URL or port requests a free port", () => {

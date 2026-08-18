@@ -1,0 +1,65 @@
+{
+  "name": "fps-friction-look",
+  "schemaVersion": 1,
+  "subject": "camera.main",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "capture-pointer",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.25,
+        "y": 0.5
+      },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.75,
+        "y": 0.5
+      },
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "camera": {
+      "entity": "camera.main"
+    },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "camera.main",
+      "rotationChanged": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lookYaw",
+        "changed": true
+      }
+    ]
+  }
+}

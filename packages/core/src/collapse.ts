@@ -54,6 +54,17 @@ interface IObjectLike {
   scale?: { x: number; y: number; z: number };
   isCamera?: boolean;
   isMesh?: boolean;
+  /**
+   * The specialized mesh forms. Each carries semantics a merged draw cannot reproduce — a per-
+   * instance matrix array, a bone-driven skin, a morph weight set — so each is a rejection, not a
+   * heuristic. `isLOD` is on the container rather than the mesh, so it is tested up the ancestry.
+   */
+  isInstancedMesh?: boolean;
+  isBatchedMesh?: boolean;
+  isSkinnedMesh?: boolean;
+  isLOD?: boolean;
+  customDepthMaterial?: unknown;
+  customDistanceMaterial?: unknown;
   geometry?: IGeometryLike;
   material?: IMaterialLike | IMaterialLike[];
   renderOrder?: number;
@@ -78,6 +89,12 @@ function hasNonEmptyUserData(object: IObjectLike): boolean {
 interface IGeometryLike {
   readonly attributes: Record<string, { count: number }>;
   readonly index: unknown;
+  /** Index ranges bound to separate material slots. More than one means multi-material. */
+  readonly groups?: readonly unknown[];
+  /** Morph target sets, keyed by attribute name. Present and non-empty means morphing. */
+  readonly morphAttributes?: Record<string, unknown>;
+  /** The window of the index buffer the renderer actually draws. */
+  readonly drawRange?: { start: number; count: number };
   clone(): IGeometryLike;
   toNonIndexed(): IGeometryLike;
   applyMatrix4(matrix: Matrix4): IGeometryLike;
@@ -98,7 +115,12 @@ export type SceneCollapseReasonCode =
   | "mergeGroupMissingPosition"
   | "mergeRefused"
   | "mergeLostNormals"
-  | "movingGroupLostOwnerId";
+  | "movingGroupLostOwnerId"
+  /**
+   * A source the pass baked as static changed after it settled. The bake is undone and the game's
+   * own objects draw again — a correct slow path, not an error.
+   */
+  | "escapedAfterCollapse";
 
 export type SceneCollapseSkipReason =
   | "belowMeshFloor"
@@ -112,7 +134,22 @@ export type SceneCollapseSkipReason =
   | "missingPosition"
   | "missingGeometry"
   | "missingMaterial"
-  | "userData";
+  | "userData"
+  /**
+   * PRD-152 §2. Each of these is an ordinary Three.js input whose semantics a merged draw cannot
+   * carry, so the pass declines it and the game's own object goes on drawing. They are rejections
+   * rather than best-effort merges because the failure mode of guessing is a wrong picture that
+   * reports success — a hidden mesh appearing, two of three instances vanishing, a skin frozen in
+   * its bind pose.
+   */
+  | "hidden"
+  | "multiMaterial"
+  | "instanced"
+  | "skinned"
+  | "morph"
+  | "drawRange"
+  | "customDepthMaterial"
+  | "lod";
 
 export interface ISceneCollapseSkippedCounts extends Record<SceneCollapseSkipReason, number> {}
 
@@ -272,6 +309,14 @@ function emptySkippedCounts(): ISceneCollapseSkippedCounts {
     missingGeometry: 0,
     missingMaterial: 0,
     userData: 0,
+    hidden: 0,
+    multiMaterial: 0,
+    instanced: 0,
+    skinned: 0,
+    morph: 0,
+    drawRange: 0,
+    customDepthMaterial: 0,
+    lod: 0,
   };
 }
 
@@ -543,6 +588,58 @@ function materialSignature(material: IMaterialLike): string {
   return parts.join("|");
 }
 
+/**
+ * The mesh forms a merged draw provably cannot reproduce, each named rather than lumped together
+ * so a report says which one stopped the collapse.
+ *
+ * Every entry here was accepted by the incumbent and rewritten wrongly: an `InstancedMesh` became
+ * one copy of its geometry and lost the rest of its instances, a two-material geometry lost a
+ * material and both its groups, a skin lost its bones and froze. The pass now declines them, which
+ * costs their draws and keeps their pixels.
+ */
+function specializedSkipReason(object: IObjectLike): SceneCollapseSkipReason | undefined {
+  if (object.isInstancedMesh === true || object.isBatchedMesh === true) return "instanced";
+  if (object.isSkinnedMesh === true) return "skinned";
+  // An array material has no single merged equivalent: there is no one material that is all of
+  // them. `materialOf` silently took the first, so every other slot's surface changed look.
+  //
+  // The array is the whole test, and the geometry's groups are not part of it. Three.js consults
+  // `geometry.groups` only when the material is an array; with a single material it draws the
+  // geometry whole and the groups mean nothing. Testing the groups instead rejects every ordinary
+  // mesh in the engine — a stock `BoxGeometry` carries six of them, one per face, numbered 0 to 5
+  // so that it *can* take six materials — and quietly turns the entire pass off.
+  if (Array.isArray(object.material)) return "multiMaterial";
+  const geometry = object.geometry;
+  if (geometry !== undefined) {
+    if (Object.keys(geometry.morphAttributes ?? {}).length > 0) return "morph";
+    // The merge concatenates whole attribute arrays, so a geometry that draws a window of its
+    // index buffer would have the whole thing drawn instead.
+    const range = geometry.drawRange;
+    if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count))) {
+      return "drawRange";
+    }
+  }
+  // Shadow and point-light passes swap in these materials per object. A merged draw has one
+  // object, so whichever override it inherited would apply to every source folded into it.
+  if (object.customDepthMaterial != null || object.customDistanceMaterial != null) {
+    return "customDepthMaterial";
+  }
+  // An LOD picks exactly one child to show by distance, every frame. Baking its levels merges
+  // rungs that are never meant to be on screen together.
+  for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
+    if (current.isLOD === true) return "lod";
+  }
+  return undefined;
+}
+
+/** True when the game currently wants this object off screen, ancestors included. */
+function hiddenBranch(object: IObjectLike): boolean {
+  for (let current: IObjectLike | null = object; current !== null; current = current.parent) {
+    if (current.visible !== true) return true;
+  }
+  return false;
+}
+
 function materialOf(object: IObjectLike): IMaterialLike | undefined {
   const material = object.material;
   if (material === undefined) return undefined;
@@ -700,6 +797,32 @@ export class SceneCollapse {
    */
   #adoptable: { readonly root: IObjectLike; children: number }[] = [];
   #adopted = 0;
+  /**
+   * Everything the bake assumed would hold still, re-checked before every frame it draws.
+   *
+   * The observation window is a guess about the future and it is not one that can be made safely:
+   * nothing in eight frames proves that arbitrary JavaScript will never again move a mesh, hide it
+   * or swap its geometry. A level that streams, a door that opens after a cutscene, a prop nudged
+   * by the first physics contact — each of those was baked frozen and drew frozen for the rest of
+   * the session, with the pass still reporting success.
+   *
+   * So the guess is allowed to be wrong. Each entry holds what the bake relied on; a frame where
+   * any of it no longer matches undoes the bake and hands the frame back to the game's own
+   * objects, before that frame renders rather than after.
+   */
+  #watched: {
+    readonly object: IObjectLike;
+    /**
+     * Both absent for a moving owner: its matrix is uploaded every frame and its own `visible` is
+     * already honoured by pushing its slot out of the frustum, so neither is an escape. Everything
+     * above it is still watched, because nothing carries an *ancestor* going still or hidden.
+     */
+    readonly transform: Float64Array | undefined;
+    readonly visible: boolean | undefined;
+    readonly geometry: IGeometryLike | undefined;
+    readonly material: IMaterialLike | IMaterialLike[] | undefined;
+  }[] = [];
+  #escaped = false;
 
   constructor(scene: IObjectLike, options: ISceneCollapseOptions = {}) {
     const observeFrames = options.observeFrames ?? 8;
@@ -805,6 +928,10 @@ export class SceneCollapse {
    */
   frame(): void {
     if (this.#report !== undefined) {
+      // Before the refresh, not after: this call sits ahead of `renderer.render()`, so an escape
+      // caught here is undone in time for the frame that exposed it. Catching it afterwards would
+      // still show one wrong frame, and one wrong frame is the whole defect.
+      if (this.#checkEscapes()) return;
       this.#refreshTransforms();
       return;
     }
@@ -898,6 +1025,8 @@ export class SceneCollapse {
     // Every root is back in the scene on its own account; watching them for growth would only
     // re-add what is already there.
     this.#adoptable.length = 0;
+    // Nothing is baked any more, so there is nothing left that could escape.
+    this.#watched.length = 0;
   }
 
   #countMeshes(): number {
@@ -911,6 +1040,13 @@ export class SceneCollapse {
   #skipReason(object: IObjectLike): SceneCollapseSkipReason | undefined {
     if (hasNonEmptyUserData(object)) return "userData";
     if (this.#excluded(object)) return "cameraOverlay";
+    const specialized = specializedSkipReason(object);
+    if (specialized !== undefined) return specialized;
+    // A mesh the game hid, or one under a hidden ancestor, has no place in a merged buffer: the
+    // merge bakes vertices, not visibility, so baking it draws exactly what the game asked not to
+    // be drawn and nothing reports it. Visibility can be turned back on at any time, which is the
+    // second reason this is a rejection rather than an omission.
+    if (hiddenBranch(object)) return "hidden";
     if (object.layers !== undefined && object.layers.mask !== 1) return "layers";
     if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
     if (Object.hasOwn(object, "onBeforeRender") || Object.hasOwn(object, "onAfterRender"))
@@ -1041,6 +1177,13 @@ export class SceneCollapse {
         // A camera-parented mesh with authored metadata is still part of the game's pick surface.
         // Keep it on its original layer; the merged overlay below parks consumed sources on layer 0.
         if (hasNonEmptyUserData(object)) return;
+        // A HUD gets no dispensation from PRD-152 §2. An instanced ammo counter or a two-material
+        // gauge folded into a camera-space merge loses exactly what it loses in the world.
+        const specialized = specializedSkipReason(object);
+        if (specialized !== undefined) {
+          addSkipped(skipped, specialized);
+          return;
+        }
         if (object.geometry?.getAttribute("position") === undefined) {
           addSkipped(skipped, "missingPosition");
           return;
@@ -1341,6 +1484,68 @@ export class SceneCollapse {
       this.#adopted += 1;
     }
     this.#adoptable.length = remaining;
+  }
+
+  /**
+   * Undoes the bake if anything it relied on has changed. True when it did, meaning this frame
+   * draws the game's own objects and there is nothing left to refresh.
+   *
+   * Restoring wholesale rather than per object is deliberate for this phase: a partial undo has to
+   * cut one mesh out of a merged buffer, and a buffer edited by hand mid-session is exactly the
+   * class of silent corruption this pass exists to stop. The projection that replaces this pass
+   * deoptimizes the smallest safe group instead; until it lands, the whole scene is the smallest
+   * unit that is provably correct.
+   */
+  #checkEscapes(): boolean {
+    if (this.#escaped || this.#watched.length === 0) return false;
+    let reason: string | undefined;
+    for (const entry of this.#watched) {
+      const object = entry.object;
+      if (entry.visible !== undefined && object.visible !== entry.visible) {
+        reason = "a collapsed source changed visibility after the collapse settled";
+        break;
+      }
+      if (entry.geometry !== undefined && object.geometry !== entry.geometry) {
+        reason = "a collapsed source was given different geometry after the collapse settled";
+        break;
+      }
+      if (entry.material !== undefined && object.material !== entry.material) {
+        reason = "a collapsed source was given a different material after the collapse settled";
+        break;
+      }
+      const previous = entry.transform;
+      if (previous !== undefined && !sameMatrix(previous, transformSample(object))) {
+        reason = "a collapsed source moved after the collapse settled";
+        break;
+      }
+    }
+    if (reason === undefined) return false;
+    this.#escaped = true;
+    this.#watched.length = 0;
+    this.restore();
+    const report = this.#report;
+    this.#report = {
+      ...(report as ISceneCollapseReport),
+      status: "rejected",
+      reasonCode: "escapedAfterCollapse",
+      collapsed: false,
+      reason,
+      mergedMeshes: 0,
+      movingParts: 0,
+      diagnostics: {
+        ...(report as ISceneCollapseReport).diagnostics,
+        // The scene draws its own objects again, so the renderer's input is the source count.
+        resultDrawCandidates: (report as ISceneCollapseReport).diagnostics.sourceRenderables,
+        timings: this.#timings(),
+      },
+    };
+    this.#onReport(this.#report);
+    return true;
+  }
+
+  /** True once a post-settle escape has undone the bake. */
+  get escaped(): boolean {
+    return this.#escaped;
   }
 
   #refreshTransforms(): void {
@@ -1695,6 +1900,41 @@ export class SceneCollapse {
       this.#scene.add(mesh as never as IObjectLike);
       added.push(mesh as never as IObjectLike);
       mergedMeshes += 1;
+    }
+
+    // Built here, while the sources are still parented as the game authored them: the detach below
+    // severs the chains this walk needs.
+    //
+    // Every node from a baked mesh up to the scene goes in, not just the mesh. A `Group` that
+    // holds still through the window and starts rotating afterwards leaves its whole subtree baked
+    // where it used to be, and watching only the leaves would never see it — the leaves' own local
+    // transforms never changed.
+    //
+    // A moving owner is the exception, and it is marked rather than skipped: its matrix is
+    // uploaded every frame and its `visible` already pushes its slot out of the frustum, so
+    // neither counts as an escape, while its geometry sits in the merged buffer like any other and
+    // still does.
+    const watched = new Map<IObjectLike, boolean>();
+    for (const entry of bakedFrom) {
+      for (
+        let current: IObjectLike | null = entry.mesh;
+        current !== null && current !== this.#scene;
+        current = current.parent
+      ) {
+        const live = !movingIndex.has(current);
+        watched.set(current, (watched.get(current) ?? true) && live);
+      }
+    }
+    for (const [object, live] of watched) {
+      this.#watched.push({
+        object,
+        transform: live ? transformSample(object) : undefined,
+        visible: live ? object.visible : undefined,
+        // Watched either way. A moving part's matrix is uploaded every frame, but its *geometry*
+        // is inside the merged buffer like everything else, so swapping it is still an escape.
+        geometry: object.geometry,
+        material: object.material,
+      });
     }
 
     // Removing the source meshes is not enough. Three.js walks the whole graph every frame to
