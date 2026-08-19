@@ -38,12 +38,14 @@ binding document.
   evidence.
 
 The repository currently records 88 done PRDs and 16 blocked PRDs. Active batches are
-[`agent-leverage/`](PRDs/agent-leverage/), [`alpha-readiness/`](PRDs/alpha-readiness/),
-[`asset-pipeline/`](PRDs/asset-pipeline/), [`batch-26-08-16/`](PRDs/batch-26-08-16/README.md),
-[`batch-26-08-17/`](PRDs/batch-26-08-17/README.md), [`experiments/`](PRDs/experiments/),
+[`agent-leverage/`](PRDs/agent-leverage/), [`asset-pipeline/`](PRDs/asset-pipeline/),
+[`batch-26-08-16/`](PRDs/batch-26-08-16/README.md), [`batch-26-08-18/`](PRDs/batch-26-08-18/README.md),
+[`experiments/`](PRDs/experiments/),
 [`native/`](PRDs/native/), [`native-performance-fixes/`](PRDs/native-performance-fixes/),
 [`production-readiness-26-08-14/`](PRDs/production-readiness-26-08-14/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
+`alpha-readiness/` was deleted on 2026-08-18 and `batch-26-08-17/` closed as
+[`done/fps-friction-26-08-17/`](PRDs/done/fps-friction-26-08-17/README.md).
 
 **Studio is no longer in this repository.** It is the local agent-and-preview surface — a server
 plus one self-contained page — and on 2026-08-16 it became the paid product and moved to a private

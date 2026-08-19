@@ -163,7 +163,7 @@ path `defineGame` collapses away, so a normally written game does not sit on it.
 
 | Not earned | Why, precisely |
 |---|---|
-| **"Ships to iOS"** | **iOS-simulator evidence exists from the hosted `macos-15` lane.** No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence follows, so this is not a physical-device or mobile-readiness claim ([PRD-045](../PRDs/done/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md)) |
+| **"Ships to iOS"** | **iOS-simulator evidence exists from the hosted `macos-15` lane.** No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence follows, so this is not a physical-device or mobile-readiness claim ([PRD-045](../PRDs/done/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)) |
 | **"Ships to Android"** as a *product* claim | One physical Pixel 8 (`shiba`, arm64-v8a, Android 17), one thermal state, no second device, no Play Store release. The frame-rate numbers are real; the fleet claim is not |
 | **"The asset MCP improves your game"** | PRD-032's live-agent exit gate **failed**: the no-MCP control produced the better frame. The owner retained the capability as a disposition, not a pass. Frames, hashes and reviewer scores in `docs/verification/PRD-032-asset-proof/`. PRD-049 shipped with preference and token telemetry recorded **unavailable** |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so that axis tops out near 40/100 — a ceiling, not a backlog item |

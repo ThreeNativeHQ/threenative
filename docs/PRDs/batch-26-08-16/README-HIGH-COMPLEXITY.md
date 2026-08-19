@@ -17,7 +17,7 @@ need runs, not paperwork.
 | PRD | State today | What the phone closes | Cost |
 | --- | --- | --- | --- |
 | [PRD-118](../done/PRD-118-android-js-engine.md) | ~~`PARTIAL / PROVISIONAL`~~ → **`ACCEPTED` 2026-08-16, archived to `done/`.** The retake ran at 72%: L3 @ 16 384 reads **8.32 ms** against 8.33 ms provisional. [Record](../../verification/prd-118-charged-retake-2026-08-16.md) | done — and it settled PRD-127 §9's first kill switch: the QuickJS arm, which was free to move, read 20.03 ms charged against 20.02 ms provisional | **done** |
-| [PRD-117](../PRD-117-engine-load-test-godot.md) | `PARTIAL` — web L2 and desktop L2 closed against Godot; phone arm and acceptance open | the third arm of the load test | half a day |
+| [PRD-117](../done/PRD-117-engine-load-test-godot.md) | `PARTIAL` — web L2 and desktop L2 closed against Godot; phone arm and acceptance open | the third arm of the load test | half a day |
 | [PRD-074](../native-performance-fixes/PRD-074-scene-collapse-regression-gate.md) | `IMPLEMENTED` browser-side; Pixel 8 leg open | the collapse regression gate covers the platform it was written for | half a day |
 | [PRD-066](../native-performance-fixes/PRD-066-android-device-frame-rate.md) | `PARTIAL` — root cause measured on the device, Phase 1 landed, Phases 2–5 open. Its own words: *a device frame-rate gate that does not exist yet* | the gate | one to two days |
 

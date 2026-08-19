@@ -41,15 +41,14 @@ change does not land.
 
 ## The alpha bar — the step before this one
 
-**Added 2026-08-15, reconciled 2026-08-16.** [`docs/PRDs/alpha-readiness/`](../PRDs/alpha-readiness/README.md)
-collects the PRDs that stand between the tree and *"an outsider can install this and ship a small
+**Added 2026-08-15, reconciled 2026-08-16.** `docs/PRDs/alpha-readiness/` collected the PRDs that stood between the tree and *"an outsider can install this and ship a small
 game"*. The row that governed the rest is closed: `create-threenative` 404'd on the public registry
 until PRD-119 published all seven packages on 2026-08-16, and a clean room installed them and built
 a game — [registry-install-2026-08-16](../verification/registry-install-2026-08-16.md). The
 sentence that buys is narrow: *a stranger can install ThreeNative from npm and build a game on the
 web.* No native prebuilt artifact is published, and nobody outside this repository has played a
-game yet. Three of the batch's PRDs are blocked on external capabilities and the folder stays
-active. Beta rows 3, 4 and 5 are represented there — PRD-114, PRD-076/077 and PRD-078 — because a
+game yet. Three of the batch's PRDs were blocked on external capabilities; the folder was deleted on
+2026-08-18 and its surviving rows are tracked individually. Beta rows 3, 4 and 5 are represented there — PRD-114, PRD-076/077 and PRD-078 — because a
 claim an outsider cannot check is an alpha problem before it is a beta one.
 
 ## Native reliability tiers — owner decision, 2026-08-10
@@ -116,7 +115,7 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 | Write-once/run-anywhere parity gate | [PRD-054](../PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | ⚠️ blocked at criterion 1; the rerun is green on Browser (`67/0/0`) and Android emulator (`67/0/0`), while Desktop Linux is `66/0/1` because the desktop registry explicitly blocks native multitouch — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
 | The HUD hole on native | [PRD-055](../PRDs/BLOCKED/requires-touch-evidence/PRD-055-native-hud-reopened.md) | ⚠️ open; `25-camera-parented-overlay` passes on desktop and Android, Android multitouch passes, and only the explicit desktop native-multitouch exclusion remains in the matrix — [rerun ledger](../verification/parity-2026-08-10-r2.md) |
 | Playtest on device | [PRD-045](../PRDs/done/PRD-045-playtest-on-device.md) | ✅ iOS-simulator criterion met on the hosted `macos-15` runner; this is not physical-device evidence and makes no mobile-readiness claim |
-| iOS evidence lane | [PRD-065](../PRDs/PRD-065-ios-evidence-lane.md) | ⚠️ open, filed 2026-08-10 — Phase 0 landed (the lane was selecting an **Apple Vision Pro**, so every prior "iOS" artifact was visionOS). Phases 1–3 repair the red consumer handoff, widen the trigger and make the report legible; Phase 4 is a time-boxed real-device spike permitted to end `BLOCKED`. Makes no mobile-readiness claim |
+| iOS evidence lane | [PRD-065](../PRDs/BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md) | ⚠️ open, filed 2026-08-10 — Phase 0 landed (the lane was selecting an **Apple Vision Pro**, so every prior "iOS" artifact was visionOS). Phases 1–3 repair the red consumer handoff, widen the trigger and make the report legible; Phase 4 is a time-boxed real-device spike permitted to end `BLOCKED`. Makes no mobile-readiness claim |
 | Physical mobile production qualification | [PRD-056](../PRDs/BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md) | ❌ filed under `BLOCKED/requires-physical-device/` — every criterion needs a physical device or an Apple signing identity; an untracked duplicate under `production-readiness/` was removed 2026-08-09 |
 | Production readiness: audio parity, profiling, SBOM, promoted distribution | [BLOCKED/](../PRDs/BLOCKED/) | ❌ **Tier 2, parked.** The four PRDs are grouped by blocker. PRD-058 Phase 5 is the one device-free part and is executed by PRD-064; 059 needs a hosted prerelease, 060 needs release credentials |
 | **Beta row 4 — reconcile the two contradicting parity ledgers** | [PRD-076](../PRDs/done/PRD-076-tier-1-parity-reconciliation.md) | ⚠️ **desktop lane adjudicated 2026-08-15, Android still open.** A third run with provenance measured `66/0/1`: r2's summary reproduces exactly, r2's `exit 0` cell is still impossible, and tier-1's overlay failure does not reproduce — [tier-1-2026-08-15](../verification/tier-1-2026-08-15.md). Both predecessors carry desktop-scoped superseded banners. Originally, 2026-08-11: `parity-2026-08-10-r2` and `tier-1-2026-08-10` disagree on the same device on the same day (Android `67/0/0` vs `27/40/0`; desktop overlay pass vs GPU-validation fail). The r2 desktop cell `66/0/1 exit 0` is **not producible** — `reportExitCode` returns `2` whenever `blocked > 0`. Phase 0 is provenance, not repair |
