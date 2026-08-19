@@ -139,6 +139,7 @@ const PLATFORMER_PATHS = [
   "playtests/performance.playtest.json",
   "playtests/terminal-loop-win.playtest.json",
   "playtests/terminal-loop-fail.playtest.json",
+  "playtests/native/touch-controls.playtest.json",
 ];
 
 describe("create-threenative", () => {

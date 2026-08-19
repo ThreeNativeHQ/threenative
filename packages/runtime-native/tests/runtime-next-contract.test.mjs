@@ -45,6 +45,55 @@ test('official ThreeNative CMake presets and feature flags exist', () => {
   assert.match(cmake, /else\(\)[\s\S]*?-Wl,--allow-multiple-definition/u);
 });
 
+test('native host publishes explicit platform facts before the game bundle', () => {
+  const runtime = read('src/runtime.cpp');
+  const descriptorStart = runtime.indexOf('auto platform = jsEngine_->newObject();');
+  const descriptorEnd = runtime.indexOf('jsEngine_->setProperty(nativeHost, "captureScreenshot"', descriptorStart);
+  assert.ok(descriptorStart >= 0, 'native platform descriptor construction is missing');
+  assert.ok(descriptorEnd > descriptorStart, 'native platform descriptor must precede host services');
+  const descriptor = runtime.slice(descriptorStart, descriptorEnd);
+
+  for (const branch of [
+    ['#if defined(__ANDROID__)', 'android'],
+    ['#elif defined(__APPLE__) && TARGET_OS_IPHONE', 'ios'],
+    ['#elif defined(__APPLE__)', 'macos'],
+    ['#elif defined(_WIN32)', 'windows'],
+    ['#elif defined(__linux__)', 'linux'],
+  ]) {
+    assert.ok(descriptor.includes(branch[0]), `missing native platform branch ${branch[0]}`);
+    assert.match(descriptor, new RegExp(`platformOs = "${branch[1]}"`));
+  }
+  assert.ok(
+    descriptor.indexOf('#if defined(__ANDROID__)') < descriptor.indexOf('#elif defined(__linux__)'),
+    'Android must be selected before the overlapping Linux macro',
+  );
+  assert.match(descriptor, /constexpr int kNativeMobileTouchCapacity = 2;/u);
+  assert.match(descriptor, /const int maxTouchPoints = kNativeMobileTouchCapacity;/u);
+  assert.match(descriptor, /const int maxTouchPoints = 0;/u);
+  assert.doesNotMatch(descriptor, /maxTouchPoints\s*=\s*touchDeviceCount/u);
+  assert.match(descriptor, /setProperty\(nativeHost, "platform", platform\)/u);
+
+  const pointerStart = runtime.indexOf('setProperty(playtestHost, "pointer"');
+  const pointerEnd = runtime.indexOf('setProperty(nativeHost, "playtestInput", playtestHost)', pointerStart);
+  assert.ok(pointerStart >= 0, 'native playtest pointer input is missing');
+  assert.ok(pointerEnd > pointerStart, 'native playtest pointer input must be registered');
+  const pointerHost = runtime.slice(pointerStart, pointerEnd);
+  assert.match(pointerHost, /pointerId\s*=\s*args\.size\(\) >= 5/u);
+  assert.match(pointerHost, /pointerType\s*=\s*args\.size\(\) >= 6/u);
+  assert.match(pointerHost, /isPrimary\s*=\s*args\.size\(\) >= 7/u);
+
+  const deviceBridge = read('../playtest/src/three/device.ts');
+  assert.match(deviceBridge, /method === "input\.pointers"/u);
+  assert.match(deviceBridge, /"pointerdown"[\s\S]*"pointerup"/u);
+  assert.match(deviceBridge, /pointer\.id[\s\S]*"touch"/u);
+
+  const smoke = read('../../examples/native-smoke/src/game.ts');
+  for (const helper of ['getPlatform', 'isWeb', 'isNative', 'isMobile', 'isTouchscreenAvailable']) {
+    assert.match(smoke, new RegExp(`\\b${helper}\\b`), `native smoke must consume ${helper}`);
+  }
+  assert.match(smoke, /TN_NATIVE_PLATFORM:/u);
+});
+
 test('Win32 window creation does not require a Vulkan-capable host', () => {
   const windowSource = read('src/platform/window.cpp');
   assert.match(windowSource, /#elif !defined\(_WIN32\)[\s\S]*?SDL_WINDOW_VULKAN/u);

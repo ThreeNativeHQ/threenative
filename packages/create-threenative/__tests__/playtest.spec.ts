@@ -96,7 +96,12 @@ describe("starter playtest proof", () => {
     );
     const parsed = JSON.parse(scenario) as {
       assert: {
-        diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
+        diagnostics: {
+          noConsoleErrors: boolean;
+          noNetworkErrors: boolean;
+          noRuntimeDiagnostics: boolean;
+          runtimeReady: boolean;
+        };
         resources: unknown[];
       };
       steps: Array<{ press?: string }>;
@@ -150,6 +155,75 @@ describe("starter playtest proof", () => {
       pathLength: 6,
       reachesPositionWithin: { maxDistance: 1.2, position: [0, 0.66, 0] },
     });
+  });
+
+  it("should keep touch controls absent in the normal web platformer run", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/platformer/playtests/touch-controls-web.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
+        visibility: Array<{ entity: string; present: boolean }>;
+      };
+      steps: Array<{ press?: string }>;
+      target: string;
+    };
+    const level = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+      "utf8",
+    );
+
+    expect(scenario.target).toBe("web");
+    expect(scenario.steps).toContainEqual(expect.objectContaining({ press: "ArrowUp" }));
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+    });
+    expect(scenario.assert.visibility).toEqual([{ entity: "touch-controls", present: false }]);
+    expect(level).toContain(
+      "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
+    );
+  });
+
+  it("should form the same native touch scenario for Android and iOS targets", async () => {
+    const scenarioPath =
+      "packages/create-threenative/templates/platformer/playtests/native/touch-controls.playtest.json";
+    const scenario = JSON.parse(await readFile(path.resolve(scenarioPath), "utf8")) as {
+      assert: { resources: unknown[]; visibility: unknown[] };
+      steps: Array<{ pointers?: Array<{ id: number }> }>;
+    };
+    const packageJson = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/platformer/package.json"),
+        "utf8",
+      ),
+    ) as { scripts: { test: string } };
+    const targetCommands = ["android", "ios"].map(
+      (target) => `node packages/playtest/dist/runner/cli.js ${scenarioPath} --target ${target}`,
+    );
+
+    expect(packageJson.scripts.test).toContain('--scenario "playtests/*.playtest.json"');
+    expect(scenarioPath).toContain("/playtests/native/");
+    expect(targetCommands).toEqual([
+      `node packages/playtest/dist/runner/cli.js ${scenarioPath} --target android`,
+      `node packages/playtest/dist/runner/cli.js ${scenarioPath} --target ios`,
+    ]);
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) === 2)).toBe(true);
+    expect(scenario.assert.visibility).toContainEqual({
+      entity: "touch-controls",
+      present: true,
+    });
+    expect(scenario.assert.resources).toEqual([
+      { changed: true, gte: 1, id: "state", path: "jumps" },
+      { changed: true, gte: 0.05, id: "state", path: "playerX" },
+    ]);
   });
 
   it("should run a load-bearing platformer physics assertion", async () => {

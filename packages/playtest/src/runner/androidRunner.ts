@@ -238,7 +238,7 @@ async function runDevicePlaytestInternal(
         });
       }
       if (step.pointers !== undefined) {
-        await target.driver.setPointers?.(step.pointers);
+        await setDevicePointers(target, transport, step.pointers, scenario.viewport);
         pointerCount = step.pointers.length;
       }
       const pressed = step.press;
@@ -311,7 +311,7 @@ async function runDevicePlaytestInternal(
         await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
       }
       if (step.pointers !== undefined && step.release) {
-        await target.driver.setPointers?.([]);
+        await setDevicePointers(target, transport, [], scenario.viewport);
         pointerCount = 0;
         await bridge.advance(1);
         if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
@@ -402,9 +402,13 @@ async function runDevicePlaytestInternal(
         cleanupErrors.push(error);
       }
     };
-    if (target.name === "android" && scenario.steps.some((step) => step.pointers !== undefined)) {
+    if (scenario.steps.some((step) => step.pointers !== undefined)) {
       await attemptCleanup(async () => {
-        await target.driver.setPointers?.([]);
+        if (target.name === "ios") {
+          await transport.call("input.pointers", { pointers: [] });
+        } else if (target.name === "android") {
+          await target.driver.setPointers?.([]);
+        }
       });
     }
     await attemptCleanup(() => target.driver.stop());
@@ -446,6 +450,29 @@ function createDeviceTransport(
   return new DeviceBridgeTransport(endpoint);
 }
 
+async function setDevicePointers(
+  target: IDevicePlaytestTarget,
+  transport: IDevicePlaytestTransport,
+  pointers: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
+  viewport: IPlaytestScenario["viewport"],
+): Promise<void> {
+  if (target.name === "ios") {
+    // iOS simulator and device transports already carry playtest requests into the native host.
+    // The host's touch PointerEvent seam preserves the complete held set without depending on an
+    // external HID injector that is unavailable on the supported Xcode transport.
+    await transport.call("input.pointers", {
+      pointers: pointers.map((pointer) => ({
+        ...(pointer.buttons === undefined ? {} : { buttons: pointer.buttons }),
+        id: pointer.id,
+        x: pointer.x * viewport.width,
+        y: pointer.y * viewport.height,
+      })),
+    });
+    return;
+  }
+  await target.driver.setPointers?.(pointers);
+}
+
 function isMailboxDriver(
   driver: IDevicePlaytestDriver,
 ): driver is IDevicePlaytestDriver & Required<Pick<IDevicePlaytestDriver, "readFile" | "removeFile" | "writeFile">> {
@@ -459,13 +486,6 @@ function unsupportedAssertion(
   target: "android" | "desktop" | "ios",
 ): IPlaytestProtocolDiagnostic | undefined {
   const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
-  if (hasMultiPointerInput && target === "ios") {
-    return unsupportedDiagnostic(
-      "complete held-pointer input",
-      "Run this scenario on --target browser or --target android; iOS multi-pointer injection is not implemented.",
-      target,
-    );
-  }
   if (hasMultiPointerInput && target === "desktop") {
     return unsupportedDiagnostic(
       "complete held-pointer input",

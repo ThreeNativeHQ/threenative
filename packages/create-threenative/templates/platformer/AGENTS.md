@@ -61,8 +61,10 @@ Godot-named nodes keeps that correct without thinking about it.
   camera-parented geometry HUD in `hud.ts`.
 - `src/scenes/Level.ts` is the live caller that wires the pieces together.
 - `playtests/survives.playtest.json` is the durable smoke proof: keep it when replacing the
-  platformer gameplay. The other `playtests/` scenarios prove movement, collection, stomping,
-  respawn, and one-way platforms in this example game.
+  platformer gameplay. The other root `playtests/` scenarios prove movement, collection,
+  stomping, respawn, and one-way platforms in this example game. The native-only
+  `playtests/native/touch-controls.playtest.json` is run explicitly with `--target android` or
+  `--target ios`; it is intentionally outside the browser test glob.
 
 **This template has one HUD, and it is `src/ui/Hud.tsx`.** It previously shipped a
 camera-attached geometry HUD as well, and both drew hearts, coins and the clock on top of each

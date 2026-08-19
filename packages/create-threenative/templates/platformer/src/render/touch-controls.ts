@@ -43,6 +43,7 @@ function ringMesh(radius: number, material: MeshBasicMaterial): Mesh {
 
 export class TouchControls {
   readonly root = new Group();
+  readonly object = this.root;
   #camera: PerspectiveCamera;
   #input: ITouchInput = { dashPressed: false, jumpPressed: false, move: new Vector2() };
   #wasDash = false;

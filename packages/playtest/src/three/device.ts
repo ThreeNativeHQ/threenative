@@ -18,6 +18,13 @@ const BRIDGE_METHODS = new Set<keyof IPlaytestBridgeV1>([
   "sample",
 ]);
 
+interface INativePointer {
+  buttons: number;
+  id: number;
+  x: number;
+  y: number;
+}
+
 export interface IDeviceBridgeInstallation {
   close(): void;
 }
@@ -30,6 +37,7 @@ export function connectDevicePlaytestBridge(
   if (nativeInstallation !== undefined) return nativeInstallation;
   let closed = false;
   let reportedError = false;
+  const nativePointers = new Map<number, INativePointer>();
   let scheduled: number | ReturnType<typeof setTimeout> | undefined;
   const schedule = (): void => {
     if (closed) return;
@@ -46,7 +54,7 @@ export function connectDevicePlaytestBridge(
       if (response.status !== 204) {
         if (!response.ok) throw new Error(`Device bridge poll failed with HTTP ${response.status}.`);
         const request = parseRequest(await response.json());
-        await postResponse(endpoint, await dispatch(bridge, request));
+        await postResponse(endpoint, await dispatch(bridge, request, nativePointers));
       }
     } catch (error) {
       if (!reportedError) {
@@ -89,6 +97,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   ) return undefined;
   let closed = false;
   let frame: number | undefined;
+  const nativePointers = new Map<number, INativePointer>();
   const respond = (response: IPlaytestDeviceResponse): void => {
     if (!host.respond!(mailbox.response as string, JSON.stringify(response))) {
       console.error("TN_PLAYTEST_DEVICE_TRANSPORT: native mailbox response failed");
@@ -100,7 +109,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     if (raw !== undefined) {
       try {
         const request = parseRequest(JSON.parse(raw));
-        void dispatch(bridge, request).then(respond);
+        void dispatch(bridge, request, nativePointers).then(respond);
       } catch (error) {
         respond({
           error: { message: error instanceof Error ? error.message : String(error) },
@@ -129,10 +138,11 @@ export function readPlaytestEndpoint(): string | undefined {
 async function dispatch(
   bridge: IPlaytestBridgeV1,
   request: IPlaytestDeviceRequest,
+  nativePointers: Map<number, INativePointer>,
 ): Promise<IPlaytestDeviceResponse> {
   try {
     if (request.method.startsWith("input.")) {
-      return { id: request.id, result: dispatchInput(request.method, request.argument) };
+      return { id: request.id, result: dispatchInput(request.method, request.argument, nativePointers) };
     }
     if (!BRIDGE_METHODS.has(request.method as keyof IPlaytestBridgeV1)) {
       throw new Error(`Bridge operation '${request.method}' is unavailable.`);
@@ -149,12 +159,24 @@ async function dispatch(
   }
 }
 
-function dispatchInput(method: string, argument: JsonValue | undefined): JsonValue {
+function dispatchInput(
+  method: string,
+  argument: JsonValue | undefined,
+  nativePointers: Map<number, INativePointer>,
+): JsonValue {
   const host = (globalThis as typeof globalThis & {
     __THREENATIVE_NATIVE__?: {
       playtestInput?: {
         keyboard?(type: string, key: string, code: string): void;
-        pointer?(type: string, x: number, y: number, buttons: number): void;
+        pointer?(
+          type: string,
+          x: number,
+          y: number,
+          buttons: number,
+          pointerId?: number,
+          pointerType?: string,
+          isPrimary?: boolean,
+        ): void;
       };
     };
   }).__THREENATIVE_NATIVE__?.playtestInput;
@@ -176,7 +198,88 @@ function dispatchInput(method: string, argument: JsonValue | undefined): JsonVal
     host.pointer(type, argument.x, argument.y, argument.buttons);
     return null;
   }
+  if (method === "input.pointers") {
+    if (typeof host?.pointer !== "function") {
+      throw new Error("Native playtest multi-pointer input is unavailable.");
+    }
+    const next = parseNativePointers(argument.pointers);
+    const nextById = new Map(next.map((pointer) => [pointer.id, pointer]));
+    const previousPrimary = nativePointers.keys().next().value;
+    const nextPrimary = nextById.keys().next().value;
+    for (const pointer of nativePointers.values()) {
+      if (nextById.has(pointer.id)) continue;
+      host.pointer(
+        "pointerup",
+        pointer.x,
+        pointer.y,
+        0,
+        pointer.id,
+        "touch",
+        pointer.id === previousPrimary,
+      );
+    }
+    for (const pointer of next) {
+      const previous = nativePointers.get(pointer.id);
+      if (previous === undefined) {
+        host.pointer(
+          "pointerdown",
+          pointer.x,
+          pointer.y,
+          pointer.buttons,
+          pointer.id,
+          "touch",
+          pointer.id === nextPrimary,
+        );
+      } else if (
+        previous.x !== pointer.x
+        || previous.y !== pointer.y
+        || previous.buttons !== pointer.buttons
+      ) {
+        host.pointer(
+          "pointermove",
+          pointer.x,
+          pointer.y,
+          pointer.buttons,
+          pointer.id,
+          "touch",
+          pointer.id === nextPrimary,
+        );
+      }
+    }
+    nativePointers.clear();
+    for (const pointer of next) nativePointers.set(pointer.id, pointer);
+    return null;
+  }
   throw new Error(`Device input operation '${method}' is unavailable.`);
+}
+
+function parseNativePointers(value: unknown): INativePointer[] {
+  if (!Array.isArray(value)) throw new Error("Device input.pointers requires a pointer array.");
+  const pointers = value.map((pointer, index) => {
+    if (!isRecord(pointer)) throw new Error(`Device input.pointers[${index}] must be an object.`);
+    if (
+      !Number.isInteger(pointer.id)
+      || (pointer.id as number) < 1
+      || typeof pointer.x !== "number"
+      || !Number.isFinite(pointer.x)
+      || typeof pointer.y !== "number"
+      || !Number.isFinite(pointer.y)
+      || (pointer.buttons !== undefined
+        && (!Number.isInteger(pointer.buttons) || (pointer.buttons as number) < 1))
+    ) {
+      throw new Error(`Device input.pointers[${index}] contains invalid pointer coordinates or buttons.`);
+    }
+    return {
+      buttons: pointer.buttons === undefined ? 1 : pointer.buttons as number,
+      id: pointer.id as number,
+      x: pointer.x,
+      y: pointer.y,
+    };
+  });
+  if (new Set(pointers.map(({ id }) => id)).size !== pointers.length) {
+    throw new Error("Device input.pointers requires unique pointer ids.");
+  }
+  return pointers;
 }
 
 function parseRequest(value: unknown): IPlaytestDeviceRequest {

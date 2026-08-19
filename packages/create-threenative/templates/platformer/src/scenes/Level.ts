@@ -1,4 +1,11 @@
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  isMobile,
+  isNative,
+  isTouchscreenAvailable,
+} from "@threenative/core";
 import { CollisionShape3D, RigidBody3D } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
@@ -46,7 +53,10 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     setupCamera(camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
-    const touchControls = ctx.entities.add("touch-controls", new TouchControls(camera));
+    const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
     ctx.viewport.resize();
     createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
     createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
@@ -134,7 +144,7 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       character.update(
         frameCtx,
         dt,
-        touchControls.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+        touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       chaser.update(dt);
       avoidanceChaser.update(dt);

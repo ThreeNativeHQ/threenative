@@ -524,7 +524,7 @@ flowchart TD
     repo["threenative/"]
     workspace["pnpm-workspace.yaml"]
     packages["packages/"]
-    core["core/<br/>loop, lifecycle, scenes, input, assets, web platform,<br/>renderer bootstrap, state store, hot reload"]
+    core["core/<br/>loop, lifecycle, scenes, input, assets, web platform,<br/>platform identity and capability detection,<br/>renderer bootstrap, state store, hot reload"]
     physics["physics/<br/>Rapier binding — separate because of the WASM dependency"]
     ui["ui/<br/>React bindings — separate because of the React dependency"]
     native["runtime-native/<br/>owned C++ host and native toolchains"]

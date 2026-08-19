@@ -1,4 +1,13 @@
-import { type ICtx, Scene, defineGame } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  defineGame,
+  getPlatform,
+  isMobile,
+  isNative,
+  isTouchscreenAvailable,
+  isWeb,
+} from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
   BoxGeometry,
@@ -29,6 +38,7 @@ export interface ISmokeStatus {
 declare global {
   var canvas: HTMLCanvasElement | undefined;
 }
+declare const __TN_RUNTIME__: "native" | "web";
 declare const __TN_PLAYTEST_ENABLED__: boolean;
 declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   extraDrawControl: boolean;
@@ -49,6 +59,20 @@ export const OVERLAY_INSET = 16;
 export const status: ISmokeStatus = { frames: 0, ready: false };
 
 const profile = __TN_JS_ENGINE_PROFILE__;
+
+const platform = getPlatform();
+if (__TN_RUNTIME__ === "native" || isNative()) {
+  if (
+    platform.runtime !== "native" ||
+    isWeb() ||
+    !isNative() ||
+    isMobile() !== (platform.formFactor === "mobile") ||
+    isTouchscreenAvailable() !== platform.maxTouchPoints > 0
+  ) {
+    throw new Error(`TN_NATIVE_PLATFORM_INVALID: inconsistent helpers ${JSON.stringify(platform)}`);
+  }
+  console.info(`TN_NATIVE_PLATFORM:${JSON.stringify(platform)}`);
+}
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);

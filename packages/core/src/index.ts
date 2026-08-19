@@ -36,6 +36,13 @@ export type {
   IPathFollow3DProjection,
   IPathFollow3DSample,
 } from "./path-follow.js";
+export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";
+export type {
+  IPlatformInfo,
+  PlatformFormFactor,
+  PlatformOS,
+  PlatformRuntime,
+} from "./platform.js";
 export { ScenePicker } from "./picking.js";
 export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
 export { createReplayDriver, replay } from "./replay.js";

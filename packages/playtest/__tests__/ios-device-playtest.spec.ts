@@ -17,6 +17,22 @@ import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { runIosPlaytest } from "../src/runner/iosRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
 
+interface INativeHost {
+  __THREENATIVE_NATIVE__?: {
+    playtestInput: {
+      pointer(
+        type: string,
+        x: number,
+        y: number,
+        buttons: number,
+        pointerId?: number,
+        pointerType?: string,
+        isPrimary?: boolean,
+      ): void;
+    };
+  };
+}
+
 class FakeIosDriver implements IDevicePlaytestDriver {
   installation?: IDeviceBridgeInstallation;
   prepared = false;
@@ -117,20 +133,59 @@ test("network assertions fail explicitly unsupported on iOS", async () => {
   expect(driver.prepared).toBe(false);
 });
 
-test("iOS multi-pointer scenarios block explicitly before launch", async () => {
+test("iOS delivers a complete held-pointer set through the native device bridge", async () => {
   const driver = new FakeIosDriver(bridge());
-  const result = await runIos(
-    { diagnostics: { ...deviceDiagnosticsOptOut, runtimeReady: true } },
-    driver,
-    1_000,
-    [{ holdFrames: 2, pointers: [{ id: 1, x: 0.2, y: 0.8 }], release: true }],
-  );
+  const pointerEvents: Array<{
+    buttons: number;
+    isPrimary: boolean | undefined;
+    pointerId: number | undefined;
+    pointerType: string | undefined;
+    type: string;
+    x: number;
+    y: number;
+  }> = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      pointer: (type, x, y, buttons, pointerId, pointerType, isPrimary) => {
+        pointerEvents.push({ buttons, isPrimary, pointerId, pointerType, type, x, y });
+      },
+    },
+  };
+  try {
+    const result = await runIos(
+      { diagnostics: { ...deviceDiagnosticsOptOut, runtimeReady: true } },
+      driver,
+      1_000,
+      [
+        { holdFrames: 2, pointers: [{ id: 1, x: 0.2, y: 0.8 }], release: false },
+        {
+          holdFrames: 2,
+          pointers: [
+            { id: 1, x: 0.2, y: 0.8 },
+            { id: 2, x: 0.8, y: 0.8 },
+          ],
+          release: true,
+        },
+      ],
+    );
 
-  expect(result.diagnostics).toContainEqual(expect.objectContaining({
-    code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
-    message: expect.stringContaining("complete held-pointer input"),
-  }));
-  expect(driver.prepared).toBe(false);
+    expect(driver.prepared).toBe(true);
+    expect(result.pass).toBe(true);
+    expect(result.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+    }));
+    expect(pointerEvents).toEqual([
+      { buttons: 1, isPrimary: true, pointerId: 1, pointerType: "touch", type: "pointerdown", x: 128, y: 288 },
+      { buttons: 1, isPrimary: false, pointerId: 2, pointerType: "touch", type: "pointerdown", x: 512, y: 288 },
+      { buttons: 0, isPrimary: true, pointerId: 1, pointerType: "touch", type: "pointerup", x: 128, y: 288 },
+      { buttons: 0, isPrimary: false, pointerId: 2, pointerType: "touch", type: "pointerup", x: 512, y: 288 },
+    ]);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
 });
 
 async function runIos(

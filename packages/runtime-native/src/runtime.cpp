@@ -1361,14 +1361,16 @@ private:
         );
 
         // process.platform - useful for platform-specific code
-#if defined(__APPLE__)
+#if defined(__ANDROID__)
+        jsEngine_->setProperty(process, "platform", jsEngine_->newString("android"));
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+        jsEngine_->setProperty(process, "platform", jsEngine_->newString("ios"));
+#elif defined(__APPLE__)
         jsEngine_->setProperty(process, "platform", jsEngine_->newString("darwin"));
 #elif defined(_WIN32)
         jsEngine_->setProperty(process, "platform", jsEngine_->newString("win32"));
 #elif defined(__linux__)
         jsEngine_->setProperty(process, "platform", jsEngine_->newString("linux"));
-#elif defined(__ANDROID__)
-        jsEngine_->setProperty(process, "platform", jsEngine_->newString("android"));
 #else
         jsEngine_->setProperty(process, "platform", jsEngine_->newString("unknown"));
 #endif
@@ -4102,6 +4104,47 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
             jsEngine_->setProperty(safeAreaValue, "left", jsEngine_->newNumber(safeArea.left));
             jsEngine_->setProperty(nativeHost, "safeAreaInsets", safeAreaValue);
         }
+
+        // Publish the runtime facts before the import-free game bundle is evaluated. The public
+        // core detector treats this marker as authoritative; document/window are compatibility
+        // stubs and cannot identify the host. Android must remain before Linux because Android
+        // toolchains define both macros. The iOS branch likewise precedes the macOS branch.
+        auto platformInfo = jsEngine_->newObject();
+        jsEngine_->setProperty(platformInfo, "runtime", jsEngine_->newString("native"));
+#if defined(__ANDROID__)
+        const char* platformOs = "android";
+        const char* platformFormFactor = "mobile";
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+        const char* platformOs = "ios";
+        const char* platformFormFactor = "mobile";
+#elif defined(__APPLE__)
+        const char* platformOs = "macos";
+        const char* platformFormFactor = "desktop";
+#elif defined(_WIN32)
+        const char* platformOs = "windows";
+        const char* platformFormFactor = "desktop";
+#elif defined(__linux__)
+        const char* platformOs = "linux";
+        const char* platformFormFactor = "desktop";
+#else
+        const char* platformOs = "unknown";
+        const char* platformFormFactor = "unknown";
+#endif
+        jsEngine_->setProperty(platformInfo, "os", jsEngine_->newString(platformOs));
+        jsEngine_->setProperty(platformInfo, "formFactor", jsEngine_->newString(platformFormFactor));
+        // SDL exposes touch-device IDs and currently active fingers, but not the device's maximum
+        // simultaneous contact capacity. The native mobile host is required to carry the shared
+        // two-pointer contract, so publish that conservative capability rather than the number of
+        // SDL devices (normally one on a phone). Desktop stays zero because its capacity is not
+        // known here.
+        constexpr int kNativeMobileTouchCapacity = 2;
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+        const int maxTouchPoints = kNativeMobileTouchCapacity;
+#else
+        const int maxTouchPoints = 0;
+#endif
+        jsEngine_->setProperty(platformInfo, "maxTouchPoints", jsEngine_->newNumber(maxTouchPoints));
+        jsEngine_->setProperty(nativeHost, "platform", platformInfo);
         // The surface's actual present mode, so a benchmark can report whether it was pinned to the
         // display rather than assume it. `configureSurface` refuses to fall back to FIFO when an
         // uncapped mode was asked for, so this always describes what really happened.
@@ -4139,7 +4182,16 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                 event.clientY = jsEngine_->toNumber(args[2]);
                 event.buttons = static_cast<int>(jsEngine_->toNumber(args[3]));
                 event.button = event.buttons == 0 ? 0 : event.buttons - 1;
-                if (event.type == "pointermove") {
+                event.pointerId = args.size() >= 5
+                    ? static_cast<int>(jsEngine_->toNumber(args[4]))
+                    : 1;
+                event.pointerType = args.size() >= 6
+                    ? jsEngine_->toString(args[5])
+                    : "mouse";
+                event.isPrimary = args.size() >= 7
+                    ? jsEngine_->toBoolean(args[6])
+                    : true;
+                if (event.type == "pointermove" && event.pointerType == "mouse") {
                     event.movementX = playtestPointerInitialized_ ? event.clientX - playtestPointerX_ : 0;
                     event.movementY = playtestPointerInitialized_ ? event.clientY - playtestPointerY_ : 0;
                     platform::MouseEventData mouse{};
@@ -4152,14 +4204,15 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                     mouse.buttons = event.buttons;
                     dispatchMouseEvent(mouse);
                 }
-                if (event.type != "pointerup" && event.type != "pointercancel") {
+                if (
+                    event.pointerType == "mouse" &&
+                    event.type != "pointerup" &&
+                    event.type != "pointercancel"
+                ) {
                     playtestPointerX_ = event.clientX;
                     playtestPointerY_ = event.clientY;
                     playtestPointerInitialized_ = true;
                 }
-                event.pointerId = 1;
-                event.pointerType = "mouse";
-                event.isPrimary = true;
                 event.width = 1;
                 event.height = 1;
                 event.pressure = event.buttons == 0 ? 0 : 0.5;

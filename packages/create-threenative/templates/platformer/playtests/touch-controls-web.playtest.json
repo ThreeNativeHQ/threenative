@@ -1,0 +1,40 @@
+{
+  "name": "platformer-touch-controls-web",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": "after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "keyboard-movement",
+      "press": "ArrowUp",
+      "holdTicks": 45,
+      "release": true
+    },
+    { "kind": "wait", "label": "settled", "waitTicks": 10, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": { "entity": "player", "minDistance": 0.5 },
+    "visibility": [{ "entity": "touch-controls", "present": false }],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}
