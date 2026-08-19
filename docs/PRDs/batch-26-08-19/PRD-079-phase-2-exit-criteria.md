@@ -4,8 +4,21 @@ prd_contract: v1
 
 # PRD-079 — Phase 2's exit gate: the round-4 proof measured the harness, and the gate cannot be passed as written
 
-**Status: PROPOSED, 2026-08-11. Nothing here is executed.** §1 and §2 are a read of
-[`round-4-2026-08-10.md`](../verification/round-4-2026-08-10.md) and of the tree at commit
+**Status: HALF ONE LANDED, HALF TWO OPEN — amended 2026-08-19.** Phase 0, the harness defect
+below, was extracted into [PRD-081](../done/PRD-081-physics-assertions-a-user-can-write.md) and shipped
+complete on 2026-08-12 (commit `0fe0e02b`, "compose physics with playtest assertions"), after this
+file was written. On `HEAD` today: `packages/physics/src/plugin.ts:156` contributes
+`["runtime.physics"]` through a generic observation seam, `packages/core/src/playtest.ts:184`
+advertises `runtime.audio`, `runtime.world` and whatever a plugin contributed, and
+`packages/core/__tests__/playtest.spec.ts:38` asserts the capability is *not* advertised without a
+contributing plugin. **§1's third and fourth bullets are therefore stale and are kept for the
+record, not as current state.** This is a read of the tree, not an executed run: nothing has
+re-measured a paired arm. **Half two — the gate cannot be passed as written — is untouched, and it
+is what this PRD is now for.** Relative links in this file were rewritten for its new folder; no
+other line moved.
+
+Original status, 2026-08-11: **PROPOSED. Nothing here is executed.** §1 and §2 are a read of
+[`round-4-2026-08-10.md`](../../verification/round-4-2026-08-10.md) and of the tree at commit
 `11bf82d`. No round has been run for this document, and none will be — the kill switch
 prohibits a fifth genre or an arm rerun. No mobile-readiness, device or iOS claim is made.
 
@@ -44,7 +57,7 @@ worth fixing whether or not Phase 2 ever closes.
 **Half two — the gate cannot be passed as written.** Phase 2 exits when *"hot reload/state
 preservation or physics reach ships with consumer-scoped proof the paired vanilla arm cannot
 match inside the same brief."* But
-[VALUE-PROPOSITION.md](../strategy/VALUE-PROPOSITION.md) states the benchmark's design
+[VALUE-PROPOSITION.md](../../strategy/VALUE-PROPOSITION.md) states the benchmark's design
 plainly: the paired benchmark **deliberately hands the vanilla arm the scaffolding and the
 `playtest` bridge**, so axes 1 and 3 *"win no benchmark column by construction."* And the
 same file's own scoring note says the hot-reload work is *"consumer-scoped, **not** the
@@ -79,7 +92,7 @@ Phase 3: `docs/verification/`.
 
 ## 1. What round 4 actually measured
 
-From [`round-4-2026-08-10.md`](../verification/round-4-2026-08-10.md), verbatim where it
+From [`round-4-2026-08-10.md`](../../verification/round-4-2026-08-10.md), verbatim where it
 matters:
 
 | Arm | Proof | Reported |
