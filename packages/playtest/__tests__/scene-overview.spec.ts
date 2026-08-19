@@ -105,9 +105,106 @@ describe("scene overview", () => {
 
   it("formats a report a person can read at a glance", () => {
     const text = formatSceneOverview(summariseScene(OBSERVATION));
-    expect(text).toMatch(/entities\s+4 observed, 3 visible, 1 hidden/);
+    expect(text).toMatch(/entities\s+4 registered with the bridge, 3 visible, 1 hidden/);
     expect(text).toMatch(/118 draw calls/);
     expect(text).toMatch(/61 fps/);
     expect(text.split("\n").length).toBeLessThan(16);
+  });
+});
+
+describe("scene overview, the parts that catch a broken run", () => {
+  it("separates an unobserved draw count from a zero one", () => {
+    const unobserved = summariseScene(observation({ performance: undefined }));
+    expect(unobserved.render.drawCalls).toBeUndefined();
+    expect(formatSceneOverview(unobserved)).toMatch(/draw calls not observed/);
+
+    const drewNothing = summariseScene(observation({ performance: { drawCalls: 0, triangles: 0 } }));
+    expect(drewNothing.render.drawCalls).toBe(0);
+    expect(drewNothing.warnings.join(" ")).toMatch(/nothing drew/i);
+  });
+
+  it("calls a scene that did not change between samples frozen", () => {
+    const frozen = summariseScene({
+      ...OBSERVATION,
+      previous: { ...OBSERVATION.snapshot },
+    });
+    expect(frozen.liveness.moved).toBe(0);
+    expect(frozen.liveness.live).toBe(false);
+    expect(frozen.warnings.join(" ")).toMatch(/did not change/i);
+  });
+
+  it("counts the entities that moved between two samples", () => {
+    const moving = summariseScene({
+      ...OBSERVATION,
+      previous: {
+        ...OBSERVATION.snapshot,
+        clock: { mode: "fixed-step", tick: 60 },
+        entities: [
+          { id: "player", transform: { position: [0, 1, 0], scale: [1, 1, 1] }, visible: true },
+          { id: "enemy.1", transform: { position: [4, 1, -4], scale: [1, 1, 1] }, visible: true },
+        ],
+      },
+    });
+    expect(moving.liveness).toMatchObject({ live: true, moved: 1, ticks: 60 });
+  });
+
+  it("reads a uniform frame as a blank screen and says so loudly", () => {
+    const blank = summariseScene({
+      ...OBSERVATION,
+      frame: { brightPixelRatio: 0, distinctColors: 1, height: 720, luminanceStdDev: 0, width: 1280 },
+    });
+    expect(blank.screen?.blank).toBe(true);
+    expect(blank.warnings.join(" ")).toMatch(/blank/i);
+    const drawn = summariseScene({
+      ...OBSERVATION,
+      frame: { brightPixelRatio: 0.38, distinctColors: 41_000, height: 720, luminanceStdDev: 0.21, width: 1280 },
+    });
+    expect(drawn.screen?.blank).toBe(false);
+  });
+
+  it("says when a frame time is a vsync interval rather than a measured cost", () => {
+    const vsynced = summariseScene(
+      observation({
+        runtimeDiagnosticsSeries: [
+          { frameMs: 33.3, drawCalls: 424 },
+          { frameMs: 33.4, drawCalls: 424 },
+          { frameMs: 33.3, drawCalls: 424 },
+        ],
+      }),
+    );
+    expect(vsynced.render.vsyncLocked).toBe(true);
+    expect(vsynced.warnings.join(" ")).toMatch(/vsync/i);
+    expect(vsynced.warnings.join(" ")).toMatch(/disable-gpu-vsync/);
+
+    const measured = summariseScene(
+      observation({
+        runtimeDiagnosticsSeries: [
+          { frameMs: 7.2, drawCalls: 424 },
+          { frameMs: 7.4, drawCalls: 424 },
+          { frameMs: 7.1, drawCalls: 424 },
+        ],
+      }),
+    );
+    expect(measured.render.vsyncLocked).toBe(false);
+    expect(measured.warnings.join(" ")).not.toMatch(/vsync/i);
+  });
+
+  it("treats a software adapter as a warning, because its numbers are not the machine's", () => {
+    const software = summariseScene({
+      ...OBSERVATION,
+      page: { adapter: "Google SwiftShader (vulkan)", canvas: { dpr: 1, height: 720, width: 1280 }, consoleErrors: [] },
+    });
+    expect(software.warnings.join(" ")).toMatch(/swiftshader/i);
+  });
+
+  it("reports a missing canvas and console errors, the two loudest startup failures", () => {
+    const broken = summariseScene({
+      ...OBSERVATION,
+      page: { consoleErrors: ["TypeError: x is not a function"] },
+      startupMs: 4200,
+    });
+    expect(broken.warnings.join(" ")).toMatch(/no canvas/i);
+    expect(formatSceneOverview(broken)).toMatch(/TypeError/);
+    expect(formatSceneOverview(broken)).toMatch(/4\.2 s/);
   });
 });

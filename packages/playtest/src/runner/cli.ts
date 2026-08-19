@@ -118,10 +118,38 @@ export function classifyRunnerError(
  * "and what is actually in the game running there" — the second question is the one asked while
  * staring at a screenshot that looks wrong.
  */
+export interface IDoctorArgs {
+  readonly browserArgs: readonly string[];
+  readonly text: boolean;
+  readonly url: string | undefined;
+}
+
+export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
+  const browserArgs: string[] = [];
+  let text = false;
+  let url: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--text") text = true;
+    else if (flag === "--url") {
+      url = argv[index + 1];
+      index += 1;
+    } else if (flag === "--browser-arg") {
+      const value = argv[index + 1];
+      if (value !== undefined) browserArgs.push(value);
+      index += 1;
+    }
+  }
+  return { browserArgs, text, url };
+}
+
+/** Extra arguments extend the WebGPU recipe; replacing it would silently reintroduce SwiftShader. */
+export function doctorBrowserArgs(extra: readonly string[]): string[] {
+  return [...WEBGPU_BROWSER_ARGS, ...extra];
+}
+
 export async function doctorCommand(argv: readonly string[]): Promise<number> {
-  const text = argv.includes("--text");
-  const urlIndex = argv.indexOf("--url");
-  const url = urlIndex === -1 ? undefined : argv[urlIndex + 1];
+  const { browserArgs, text, url } = parseDoctorArgs(argv);
   const report = diagnoseHarness(readHarnessEnvironment());
   if (url === undefined) {
     process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
@@ -134,9 +162,7 @@ export async function doctorCommand(argv: readonly string[]): Promise<number> {
     process.exitCode = 1;
     return 1;
   }
-  const overview = summariseScene(
-    await observeScene(url, { browserArgs: WEBGPU_BROWSER_ARGS }),
-  );
+  const overview = summariseScene(await observeScene(url, { browserArgs: doctorBrowserArgs(browserArgs) }));
   process.stdout.write(
     text
       ? `${formatDoctorReport(report)}\n${formatSceneOverview(overview)}`

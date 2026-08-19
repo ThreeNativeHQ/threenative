@@ -1,3 +1,4 @@
+import { softwareAdapterName } from "./browser.js";
 import type {
   IPlaytestBridgeDescription,
   IPlaytestEntityObservation,
@@ -13,9 +14,31 @@ import type {
  * with nothing behind it is exactly the failure this harness exists to prevent.
  */
 
+export interface ISceneFrameStats {
+  readonly brightPixelRatio: number;
+  readonly distinctColors: number;
+  readonly height: number;
+  readonly luminanceStdDev: number;
+  readonly width: number;
+}
+
+export interface IScenePageProbe {
+  readonly adapter?: string;
+  /** Raw `adapter.info`, so the shared software-adapter detector decides rather than a new regex. */
+  readonly adapterInfo?: Readonly<Record<string, string>>;
+  readonly canvas?: { dpr: number; height: number; width: number };
+  readonly consoleErrors: readonly string[];
+}
+
 export interface ISceneObservation {
   readonly description?: IPlaytestBridgeDescription | { engine?: string; name?: string; version?: string };
+  /** A screenshot's statistics, which is how a blank screen is told from a rendered one. */
+  readonly frame?: ISceneFrameStats;
+  readonly page?: IScenePageProbe;
+  /** An earlier sample, so the report can say whether anything is actually moving. */
+  readonly previous?: IPlaytestObservationSnapshot;
   readonly snapshot: IPlaytestObservationSnapshot;
+  readonly startupMs?: number;
   readonly url: string;
 }
 
@@ -27,6 +50,11 @@ export interface ISceneAxisExtent {
 
 export interface ISceneOverview {
   readonly entities: { hidden: number; observed: number; visible: number };
+  readonly liveness: { live: boolean; moved: number; ticks?: number };
+  readonly page?: IScenePageProbe;
+  readonly screen?: { blank: boolean; brightPixelRatio: number; distinctColors: number };
+  readonly startupMs?: number;
+  readonly warnings: readonly string[];
   readonly extents?: { x: ISceneAxisExtent; y: ISceneAxisExtent; z: ISceneAxisExtent };
   readonly gameplay: {
     clipsAdvancing: readonly string[];
@@ -34,7 +62,14 @@ export interface ISceneOverview {
     tags: Record<string, number>;
   };
   readonly notObserved: readonly string[];
-  readonly render: { drawCalls?: number; fps?: number; frameMs?: number; triangles?: number };
+  readonly render: {
+    drawCalls?: number;
+    fps?: number;
+    frameMs?: number;
+    triangles?: number;
+    /** True when the frame time sits on a display refresh interval, so it is a cap, not a cost. */
+    vsyncLocked?: boolean;
+  };
   readonly runtime: {
     clock: string;
     consoleErrors: number;
@@ -52,6 +87,20 @@ export interface ISceneOverview {
  * reading stops being credible and centimetre-authored source is the likelier explanation.
  */
 const CENTIMETRE_HEURISTIC_THRESHOLD = 10;
+
+/** Fallback for a probe that only captured a joined adapter string. */
+const SOFTWARE_ADAPTER_TEXT = /swiftshader|llvmpipe|lavapipe|software|basic render/iu;
+
+/**
+ * Common refresh intervals in milliseconds. A frame time sitting on one of these is the display
+ * waiting, not the game costing — reporting it as cost has sent people optimising a scene that was
+ * already idle most of the frame.
+ */
+const VSYNC_INTERVALS_MS = [8.33, 11.11, 16.67, 33.33] as const;
+
+function onVsyncInterval(frameMs: number | undefined): boolean {
+  return frameMs !== undefined && VSYNC_INTERVALS_MS.some((interval) => Math.abs(frameMs - interval) <= interval * 0.03);
+}
 
 function median(values: readonly number[]): number | undefined {
   if (values.length === 0) return undefined;
@@ -107,6 +156,86 @@ function countConsoleErrors(snapshot: IPlaytestObservationSnapshot): number {
   }).length;
 }
 
+function entityPositions(
+  snapshot: IPlaytestObservationSnapshot | undefined,
+): Map<string, [number, number, number]> {
+  const map = new Map<string, [number, number, number]>();
+  for (const entity of snapshot?.entities ?? []) {
+    const position = entity.transform?.position;
+    if (Array.isArray(position) && position.length === 3) map.set(entity.id, position);
+  }
+  return map;
+}
+
+function liveness(observation: ISceneObservation): ISceneOverview["liveness"] {
+  const { previous, snapshot } = observation;
+  if (previous === undefined) return { live: true, moved: 0 };
+  const before = entityPositions(previous);
+  let moved = 0;
+  for (const [id, position] of entityPositions(snapshot)) {
+    const earlier = before.get(id);
+    if (earlier === undefined) continue;
+    if (position.some((value, axis) => Math.abs(value - (earlier[axis] as number)) > 1e-4)) moved += 1;
+  }
+  const ticks =
+    snapshot.clock.tick === undefined || previous.clock.tick === undefined
+      ? undefined
+      : snapshot.clock.tick - previous.clock.tick;
+  return { live: moved > 0 || (ticks ?? 0) > 0, moved, ...(ticks === undefined ? {} : { ticks }) };
+}
+
+/**
+ * A frame with almost no distinct colours and no bright pixels is the black screen this harness
+ * exists to catch — the failure that costs the most time because everything else reports fine.
+ */
+function screenVerdict(frame: ISceneFrameStats | undefined): ISceneOverview["screen"] {
+  if (frame === undefined) return undefined;
+  return {
+    blank: frame.distinctColors <= 2 || (frame.brightPixelRatio <= 0.001 && frame.luminanceStdDev <= 0.01),
+    brightPixelRatio: frame.brightPixelRatio,
+    distinctColors: frame.distinctColors,
+  };
+}
+
+function warningsFor(
+  observation: ISceneObservation,
+  overview: Omit<ISceneOverview, "warnings">,
+): string[] {
+  const warnings: string[] = [];
+  if (overview.screen?.blank === true) {
+    warnings.push("the frame is blank — the game is running but nothing reached the screen");
+  }
+  if (overview.render.drawCalls === 0) {
+    warnings.push("0 draw calls: nothing drew in the sampled frame");
+  }
+  if (overview.render.vsyncLocked === true) {
+    warnings.push(
+      `${overview.render.frameMs?.toFixed(1)} ms/frame is a vsync interval, so it is the display's cap and not the game's cost — rerun with --browser-arg --disable-gpu-vsync --browser-arg --disable-frame-rate-limit to measure the real one`,
+    );
+  }
+  if (observation.previous !== undefined && !overview.liveness.live) {
+    warnings.push("the scene did not change between samples — the loop may be stopped or held");
+  }
+  if (overview.entities.observed > 0 && overview.entities.visible === 0) {
+    warnings.push("every registered entity is invisible");
+  }
+  const software =
+    softwareAdapterName(observation.page?.adapterInfo) ??
+    (SOFTWARE_ADAPTER_TEXT.test(observation.page?.adapter ?? "") ? observation.page?.adapter : undefined);
+  if (software !== undefined) {
+    warnings.push(
+      `${software} is a software renderer, so these numbers are not this machine's — run headed under a display (sh scripts/xvfb.sh) to reach the real GPU`,
+    );
+  }
+  if (observation.page !== undefined && observation.page.canvas === undefined) {
+    warnings.push("no canvas in the page — nothing can render at all");
+  }
+  for (const error of observation.page?.consoleErrors.slice(0, 3) ?? []) {
+    warnings.push(`console error: ${error}`);
+  }
+  return warnings;
+}
+
 export function summariseScene(observation: ISceneObservation): ISceneOverview {
   const { snapshot } = observation;
   const entities = snapshot.entities ?? [];
@@ -118,8 +247,12 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
   const clips = Object.entries(snapshot.gameplay?.animation ?? {})
     .filter(([, animation]) => animation.advancedFrames > 0)
     .map(([entity, animation]) => `${entity}: ${animation.clip}`);
-  return {
+  const base = {
     entities: { hidden: entities.length - visible, observed: entities.length, visible },
+    liveness: liveness(observation),
+    ...(observation.page === undefined ? {} : { page: observation.page }),
+    screen: screenVerdict(observation.frame),
+    ...(observation.startupMs === undefined ? {} : { startupMs: observation.startupMs }),
     extents:
       points.length === 0
         ? undefined
@@ -144,6 +277,7 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
       fps: frameMs === undefined || frameMs <= 0 ? undefined : Math.round(1000 / frameMs),
       frameMs,
       triangles: snapshot.performance?.triangles,
+      ...(frameMs === undefined ? {} : { vsyncLocked: onVsyncInterval(frameMs) }),
     },
     runtime: {
       clock: snapshot.clock.mode,
@@ -156,6 +290,7 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
     scale: scaleVerdict(entities),
     url: observation.url,
   };
+  return { ...base, warnings: warningsFor(observation, base) };
 }
 
 function extentLine(extents: ISceneOverview["extents"]): string {
@@ -169,38 +304,77 @@ function extentLine(extents: ISceneOverview["extents"]): string {
   return `  extents      ${axis("x")} · ${axis("y")} · ${axis("z")}`;
 }
 
+function startupLine(overview: ISceneOverview): string | undefined {
+  const parts: string[] = [];
+  if (overview.startupMs !== undefined) parts.push(`bridge answered after ${(overview.startupMs / 1000).toFixed(1)} s`);
+  const canvas = overview.page?.canvas;
+  parts.push(canvas === undefined ? "no canvas" : `canvas ${canvas.width}×${canvas.height} @${canvas.dpr}dpr`);
+  if (overview.page?.adapter !== undefined) parts.push(`adapter ${overview.page.adapter}`);
+  return overview.startupMs === undefined && overview.page === undefined ? undefined : `  startup      ${parts.join(" · ")}`;
+}
+
+function screenLine(overview: ISceneOverview): string | undefined {
+  const { screen } = overview;
+  if (screen === undefined) return undefined;
+  return `  screen       ${screen.blank ? "BLANK" : "rendering"} — ${screen.distinctColors.toLocaleString("en-US")} distinct colours, ${(
+    screen.brightPixelRatio * 100
+  ).toFixed(0)}% bright pixels`;
+}
+
+function livenessLine(overview: ISceneOverview): string | undefined {
+  const { liveness: state } = overview;
+  if (state.ticks === undefined && state.moved === 0) return undefined;
+  return `  liveness     ${state.ticks === undefined ? "" : `${state.ticks} ticks between samples · `}${
+    state.moved
+  } entities moved`;
+}
+
 export function formatSceneOverview(overview: ISceneOverview): string {
   const { entities, gameplay, render, runtime, scale } = overview;
   const tags = Object.entries(gameplay.tags).map(([tag, count]) => `${tag} ${count}`);
   const lines = [
     `scene overview — ${overview.url}`,
+    startupLine(overview),
+    screenLine(overview),
     `  runtime      core ${runtime.core ?? "?"} · rapier ${runtime.rapier ?? "none"} · seed ${
       runtime.seed ?? "none"
     } · clock ${runtime.clock}${runtime.tick === undefined ? "" : ` at tick ${runtime.tick}`}`,
     entities.observed === 0
       ? "  entities     no entities observed — the game may register none, or the bridge sampled before startup"
-      : `  entities     ${entities.observed} observed, ${entities.visible} visible, ${entities.hidden} hidden`,
+      : `  entities     ${entities.observed} registered with the bridge, ${entities.visible} visible, ${entities.hidden} hidden`,
     extentLine(overview.extents),
     `  scale        ${scale.verdict}${
       scale.medianEntityScale === undefined
         ? ""
         : ` (median ${scale.medianEntityScale}×, largest ${scale.largestEntityScale}×)`
     }`,
-    `  render       ${render.drawCalls ?? "?"} draw calls · ${
-      render.triangles === undefined ? "? triangles" : `${render.triangles.toLocaleString("en-US")} triangles`
-    }${render.frameMs === undefined ? "" : ` · ${render.frameMs.toFixed(1)} ms/frame (${render.fps} fps)`}`,
+    `  render       ${
+      render.drawCalls === undefined ? "draw calls not observed" : `${render.drawCalls} draw calls`
+    } · ${
+      render.triangles === undefined
+        ? "triangles not observed"
+        : `${render.triangles.toLocaleString("en-US")} triangles`
+    }${
+      render.frameMs === undefined
+        ? " · frame time not observed"
+        : ` · ${render.frameMs.toFixed(1)} ms/frame (${render.fps} fps)`
+    }`,
+    livenessLine(overview),
     `  gameplay     ${gameplay.states} states · ${
       gameplay.clipsAdvancing.length === 0 ? "no clips advancing" : `clips ${gameplay.clipsAdvancing.join(", ")}`
     }${tags.length === 0 ? "" : ` · tags ${tags.join(", ")}`}`,
     `  console      ${runtime.consoleErrors} errors`,
+    ...overview.warnings.map((warning) => `  ⚠  ${warning}`),
     ...overview.notObserved.map((entry) => `  not observed ${entry}`),
   ];
-  return `${lines.join("\n")}\n`;
+  return `${lines.filter((line): line is string => line !== undefined).join("\n")}\n`;
 }
 
 export interface IObserveSceneOptions {
   readonly browserArgs?: readonly string[];
   readonly headless?: boolean;
+  /** How long the game runs freely between the two samples that decide whether it is live. */
+  readonly settleMs?: number;
   readonly timeoutMs?: number;
   readonly warmupMs?: number;
 }
@@ -217,16 +391,25 @@ export async function observeScene(
   const { chromium } = await import("playwright");
   const { connectPlaytestBridge } = await import("./bridgeClient.js");
   const { resolveBrowserArguments } = await import("./browser.js");
+  const { inspectFrame } = await import("../capture.js");
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const startedAt = Date.now();
+  const consoleErrors: string[] = [];
   const browser = await chromium.launch({
     ...(options.browserArgs === undefined ? {} : { args: resolveBrowserArguments(options.browserArgs) }),
-    headless: options.headless ?? true,
+    // Headless Chromium serves WebGPU from SwiftShader even with the Vulkan flag, so a machine
+    // that has a display gets a headed browser and the GPU its numbers claim to describe.
+    headless: options.headless ?? process.env.DISPLAY === undefined,
   });
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
+    page.on("console", (entry) => {
+      if (entry.type() === "error") consoleErrors.push(entry.text());
+    });
+    page.on("pageerror", (error) => consoleErrors.push(error.message));
     await page.goto(url, { timeout: timeoutMs, waitUntil: "load" });
-    // The bridge appears at startup, but entity registration and the first rendered frames land
-    // after it, and an overview taken before them reports an empty scene that is not empty.
+    // Entity registration and the first rendered frames land after the bridge appears, and an
+    // overview taken before them reports an empty scene that is not empty.
     await page.waitForTimeout(options.warmupMs ?? 1_500);
     const bridge = await connectPlaytestBridge(
       page,
@@ -246,12 +429,79 @@ export async function observeScene(
         "TN_PLAYTEST_BRIDGE_MISSING: the page at this URL installs no playtest bridge, so its scene cannot be read. Install playtest() in defineGame, or installThreePlaytestBridge for a plain Three.js project.",
       );
     }
-    const snapshot = await bridge.sample({
-      include: ["runtimeDiagnostics", "performance", "gameplay", "diagnostics"],
-    });
+    const startupMs = Date.now() - startedAt;
+    const include = ["diagnostics", "entities", "gameplay", "resources", "runtimeDiagnosticsSeries"];
+    const previous = await bridge.sample({ include });
+    // Let the game run on its own for a moment: the difference between the two samples is what
+    // separates a live scene from one whose loop stopped, and reports a real rendered frame.
+    await page.waitForTimeout(options.settleMs ?? 700);
+    const snapshot = await bridge.sample({ include });
+    const page_ = await pageProbe(page, consoleErrors);
+    const frame = await screenshotStats(page, inspectFrame);
     await bridge.close();
-    return { description: bridge.description, snapshot, url };
+    return {
+      description: bridge.description,
+      ...(frame === undefined ? {} : { frame }),
+      page: page_,
+      previous,
+      snapshot,
+      startupMs,
+      url,
+    };
   } finally {
     await browser.close();
+  }
+}
+
+async function pageProbe(
+  page: import("playwright").Page,
+  consoleErrors: readonly string[],
+): Promise<IScenePageProbe> {
+  const probe = await page
+    .evaluate(async () => {
+      const canvas = document.querySelector("canvas");
+      const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
+      let adapter: string | undefined;
+      let adapterInfo: Record<string, string> | undefined;
+      if (gpu !== undefined) {
+        const found = (await gpu.requestAdapter()) as { info?: Record<string, string> } | null;
+        const info = found?.info;
+        if (info !== undefined) {
+          adapterInfo = Object.fromEntries(
+            Object.entries(info).filter(([, value]) => typeof value === "string" && value.length > 0),
+          ) as Record<string, string>;
+          adapter = [info.vendor, info.architecture, info.device, info.description]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+        }
+      }
+      return {
+        ...(adapter === undefined || adapter.length === 0 ? {} : { adapter }),
+        ...(adapterInfo === undefined ? {} : { adapterInfo }),
+        ...(canvas === null
+          ? {}
+          : {
+              canvas: {
+                dpr: globalThis.devicePixelRatio,
+                height: canvas.height,
+                width: canvas.width,
+              },
+            }),
+      };
+    })
+    .catch(() => ({}));
+  return { ...probe, consoleErrors: [...consoleErrors] };
+}
+
+async function screenshotStats(
+  page: import("playwright").Page,
+  inspectFrame: (png: Buffer) => ISceneFrameStats,
+): Promise<ISceneFrameStats | undefined> {
+  try {
+    return inspectFrame(await page.screenshot({ type: "png" }));
+  } catch {
+    // A screenshot can fail on a crashed renderer; the rest of the report is still worth having.
+    return undefined;
   }
 }

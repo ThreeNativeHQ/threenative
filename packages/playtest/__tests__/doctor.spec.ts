@@ -75,6 +75,35 @@ describe("playtest doctor", () => {
   });
 });
 
+describe("doctor flags", () => {
+  it("parses the flags it advertises, and repeats --browser-arg", async () => {
+    const { parseDoctorArgs } = await import("../src/runner/cli.js");
+    expect(
+      parseDoctorArgs([
+        "--url",
+        "http://127.0.0.1:4185",
+        "--text",
+        "--browser-arg",
+        "--disable-gpu-vsync",
+        "--browser-arg",
+        "--disable-frame-rate-limit",
+      ]),
+    ).toEqual({
+      browserArgs: ["--disable-gpu-vsync", "--disable-frame-rate-limit"],
+      text: true,
+      url: "http://127.0.0.1:4185",
+    });
+    expect(parseDoctorArgs([])).toEqual({ browserArgs: [], text: false, url: undefined });
+  });
+
+  it("adds its extra browser arguments to the webgpu ones rather than replacing them", async () => {
+    const { doctorBrowserArgs } = await import("../src/runner/cli.js");
+    const args = doctorBrowserArgs(["--disable-gpu-vsync"]);
+    expect(args).toContain("--enable-features=Vulkan");
+    expect(args).toContain("--disable-gpu-vsync");
+  });
+});
+
 describe("threenative-playtest doctor", () => {
   it("is reachable as a command and reports this machine as JSON", async () => {
     const { main } = await import("../src/runner/cli.js");
