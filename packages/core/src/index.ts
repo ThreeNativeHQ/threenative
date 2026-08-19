@@ -12,7 +12,12 @@ export { AnimationPlayer } from "./animation.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
 export { AudioBus } from "./audio.js";
 export { CanvasLayer } from "./canvas-layer.js";
-export type { IThreeNativeConfig, ThreeNativeOrientation } from "./config.js";
+export type {
+  IThreeNativeBootSplash,
+  IThreeNativeConfig,
+  IThreeNativeIconVariants,
+  ThreeNativeOrientation,
+} from "./config.js";
 export { createRandom } from "./random.js";
 export type { IRandom } from "./random.js";
 export { defineGame } from "./game.js";

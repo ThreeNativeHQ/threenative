@@ -55,6 +55,7 @@ const STARTER_PATHS = [
   "tailwind.config.ts",
   "tsconfig.json",
   "src/style.css",
+  "vite.config.ts",
   "src/game.ts",
   "src/main.ts",
   "src/scenes/Play.ts",
@@ -65,6 +66,7 @@ const STARTER_PATHS = [
   "src/render/shapes.ts",
   "src/render/camera.ts",
   "src/render/sky.ts",
+  "src/render/loading.ts",
   "src/entities/Crate.ts",
   "src/entities/Player.ts",
   "src/ui/Hud.tsx",
@@ -253,6 +255,11 @@ describe("create-threenative", () => {
       await mkdir(scope, { recursive: true });
       await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
       await symlink(path.resolve("packages/physics"), path.join(scope, "physics"), "dir");
+      await symlink(
+        path.resolve("packages/create-threenative"),
+        path.join(result.target, "node_modules", "create-threenative"),
+        "dir",
+      );
       const pnpmPackages = await readdir(path.resolve("node_modules/.pnpm"));
       const vitePackage = pnpmPackages.find((entry) => entry.startsWith("vite@"));
       const threePackage = pnpmPackages.find((entry) => entry.startsWith("three@"));

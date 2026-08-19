@@ -15,6 +15,22 @@ export interface IViewportSize {
   readonly width: number;
 }
 
+export interface IViewportInsets {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+export interface IViewportSafeArea extends IViewportInsets {
+  /** The safe rectangle in drawable pixel coordinates, with y measured from the top edge. */
+  readonly height: number;
+  readonly source: "full-drawable-fallback" | "measured";
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface IViewportOptions {
   readonly camera: Camera;
   readonly renderer: IRendererLike;
@@ -26,6 +42,7 @@ export type ViewportResizeHandler = (size: IViewportSize) => void;
 export interface IViewportPlatformSource {
   observeResize(canvas: HTMLCanvasElement, resize: () => void): () => void;
   readSize(canvas: HTMLCanvasElement): IViewportSize;
+  readSafeArea?(canvas: HTMLCanvasElement, size: IViewportSize): IViewportInsets | undefined;
 }
 
 export class Viewport {
@@ -34,6 +51,7 @@ export class Viewport {
   #source: IViewportPlatformSource | undefined;
   #listeners = new Set<ViewportResizeHandler>();
   #size: IViewportSize = { aspect: 1, height: 1, width: 1 };
+  #safeArea: IViewportSafeArea = fullDrawableSafeArea(this.#size);
   #stopObserving: () => void = () => undefined;
   #disposed = false;
   #raycaster = new Raycaster();
@@ -52,6 +70,10 @@ export class Viewport {
 
   get size(): IViewportSize {
     return this.#size;
+  }
+
+  get safeArea(): IViewportSafeArea {
+    return this.#safeArea;
   }
 
   projectPosition(screen: Vector2, z = 0): Vector3 {
@@ -86,11 +108,14 @@ export class Viewport {
       const [width, height] = readCanvasSize(this.renderer.domElement);
       next = { aspect: width / height, height, width };
     }
+    const safeArea = readSafeArea(this.#source, this.renderer.domElement, next);
     const changed =
       next.width !== this.#size.width ||
       next.height !== this.#size.height ||
       next.aspect !== this.#size.aspect;
+    const safeAreaChanged = !sameSafeArea(safeArea, this.#safeArea);
     this.#size = next;
+    this.#safeArea = safeArea;
     if (this.camera instanceof PerspectiveCamera) {
       this.camera.aspect = next.aspect;
       this.camera.updateProjectionMatrix();
@@ -102,7 +127,7 @@ export class Viewport {
       this.camera.bottom = -size;
       this.camera.updateProjectionMatrix();
     }
-    if (changed) for (const listener of this.#listeners) listener(next);
+    if (changed || safeAreaChanged) for (const listener of this.#listeners) listener(next);
   }
 
   dispose(): void {
@@ -114,4 +139,106 @@ export class Viewport {
   }
 
   #resize = (): void => this.resize();
+}
+
+function fullDrawableSafeArea(size: IViewportSize): IViewportSafeArea {
+  return {
+    bottom: 0,
+    height: size.height,
+    left: 0,
+    right: 0,
+    source: "full-drawable-fallback",
+    top: 0,
+    width: size.width,
+    x: 0,
+    y: 0,
+  };
+}
+
+function clampInset(value: number, maximum: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(maximum, value)) : 0;
+}
+
+function safeAreaFromInsets(size: IViewportSize, raw: IViewportInsets): IViewportSafeArea {
+  const top = clampInset(raw.top, size.height);
+  const bottom = clampInset(raw.bottom, size.height - top);
+  const left = clampInset(raw.left, size.width);
+  const right = clampInset(raw.right, size.width - left);
+  return {
+    bottom,
+    height: Math.max(0, size.height - top - bottom),
+    left,
+    right,
+    source: "measured",
+    top,
+    width: Math.max(0, size.width - left - right),
+    x: left,
+    y: top,
+  };
+}
+
+function nativeInsets(): IViewportInsets | undefined {
+  // biome-ignore lint/style/useNamingConvention: this is the native host's public global contract.
+  const host = (globalThis as { __THREENATIVE_NATIVE__?: unknown }).__THREENATIVE_NATIVE__;
+  if (typeof host !== "object" || host === null) return undefined;
+  const value = (host as { safeAreaInsets?: unknown }).safeAreaInsets;
+  if (typeof value !== "object" || value === null) return undefined;
+  const insets = value as Partial<IViewportInsets>;
+  if (
+    typeof insets.top !== "number" ||
+    typeof insets.right !== "number" ||
+    typeof insets.bottom !== "number" ||
+    typeof insets.left !== "number"
+  )
+    return undefined;
+  return insets as IViewportInsets;
+}
+
+function browserInsets(): IViewportInsets | undefined {
+  if (typeof document === "undefined" || typeof window === "undefined") return undefined;
+  if (typeof window.getComputedStyle !== "function") return undefined;
+  const probe = document.createElement("div");
+  probe.style.cssText = [
+    "position:fixed",
+    "inset:0",
+    "padding-top:env(safe-area-inset-top)",
+    "padding-right:env(safe-area-inset-right)",
+    "padding-bottom:env(safe-area-inset-bottom)",
+    "padding-left:env(safe-area-inset-left)",
+    "visibility:hidden",
+    "pointer-events:none",
+  ].join(";");
+  document.body?.appendChild(probe);
+  const style = window.getComputedStyle(probe);
+  const value = {
+    bottom: Number.parseFloat(style.paddingBottom) || 0,
+    left: Number.parseFloat(style.paddingLeft) || 0,
+    right: Number.parseFloat(style.paddingRight) || 0,
+    top: Number.parseFloat(style.paddingTop) || 0,
+  };
+  probe.remove();
+  return value;
+}
+
+function readSafeArea(
+  source: IViewportPlatformSource | undefined,
+  canvas: HTMLCanvasElement,
+  size: IViewportSize,
+): IViewportSafeArea {
+  const measured = source?.readSafeArea?.(canvas, size) ?? nativeInsets() ?? browserInsets();
+  return measured === undefined ? fullDrawableSafeArea(size) : safeAreaFromInsets(size, measured);
+}
+
+function sameSafeArea(left: IViewportSafeArea, right: IViewportSafeArea): boolean {
+  return (
+    left.bottom === right.bottom &&
+    left.height === right.height &&
+    left.left === right.left &&
+    left.right === right.right &&
+    left.source === right.source &&
+    left.top === right.top &&
+    left.width === right.width &&
+    left.x === right.x &&
+    left.y === right.y
+  );
 }

@@ -8,6 +8,8 @@
 #include "mystral/platform/window.h"
 #include <SDL3/SDL.h>
 #if defined(__ANDROID__)
+#include <SDL3/SDL_system.h>
+#include <jni.h>
 #include <android/native_window.h>
 #endif
 #include <algorithm>
@@ -25,6 +27,7 @@ static PointerCallback g_pointerCallback;
 static WheelCallback g_wheelCallback;
 static GamepadCallback g_gamepadCallback;
 static ResizeCallback g_resizeCallback;
+static SafeAreaInsets g_safeAreaInsets{0, 0, 0, 0, false};
 
 // Gamepad tracking
 static std::unordered_map<SDL_JoystickID, SDL_Gamepad*> g_gamepads;
@@ -67,6 +70,54 @@ static int g_nextTouchPointerId = 2;
 static int g_presentedTouchWidth = 0;
 static int g_presentedTouchHeight = 0;
 #endif
+
+void setSafeAreaInsets(int top, int right, int bottom, int left) {
+    g_safeAreaInsets = {
+        std::max(0, top),
+        std::max(0, right),
+        std::max(0, bottom),
+        std::max(0, left),
+        true,
+    };
+}
+
+SafeAreaInsets getSafeAreaInsets() {
+    return g_safeAreaInsets;
+}
+
+void refreshSafeAreaInsets() {
+#if defined(__ANDROID__)
+    auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (environment == nullptr || activity == nullptr) return;
+
+    jclass activityClass = environment->GetObjectClass(activity);
+    if (activityClass == nullptr) return;
+    jmethodID method = environment->GetMethodID(activityClass, "getSafeAreaInsets", "()[I");
+    if (method == nullptr) {
+        environment->ExceptionClear();
+        environment->DeleteLocalRef(activityClass);
+        return;
+    }
+    auto values = static_cast<jintArray>(environment->CallObjectMethod(activity, method));
+    if (environment->ExceptionCheck() != JNI_FALSE || values == nullptr) {
+        environment->ExceptionClear();
+        environment->DeleteLocalRef(activityClass);
+        return;
+    }
+    if (environment->GetArrayLength(values) >= 4) {
+        jint insets[4] = {0, 0, 0, 0};
+        environment->GetIntArrayRegion(values, 0, 4, insets);
+        if (environment->ExceptionCheck() == JNI_FALSE) {
+            setSafeAreaInsets(insets[0], insets[1], insets[2], insets[3]);
+        } else {
+            environment->ExceptionClear();
+        }
+    }
+    environment->DeleteLocalRef(values);
+    environment->DeleteLocalRef(activityClass);
+#endif
+}
 
 /**
  * SDL key to DOM "key" property
@@ -663,6 +714,7 @@ void processGamepadDisconnected(SDL_JoystickID id) {
  */
 void processResize(int width, int height) {
 #if defined(__ANDROID__)
+    refreshSafeAreaInsets();
     // Android may report a logical portrait resize after the landscape presented surface was
     // captured. Refresh same-orientation dimensions before the optional JavaScript resize
     // callback so touch mapping stays current even when no resize listener is installed.

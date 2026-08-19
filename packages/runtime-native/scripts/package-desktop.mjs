@@ -108,7 +108,17 @@ export function stageDesktopFiles(bundle, assets, staging, config = undefined) {
   mkdirSync(dirname(entry), { recursive: true });
   copyFileSync(bundle, entry);
   if (config !== undefined) {
-    writeFileSync(join(staging, '.threenative', 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
+    const icon = config.app?.icon ?? config.app?.icons?.android?.foreground;
+    const packaged = { ...config, app: { ...(config.app ?? {}) } };
+    if (icon !== undefined) {
+      if (!existsSync(icon) || !statSync(icon).isFile()) {
+        throw new Error(`TN_CONFIG_BRAND_DESKTOP_MISSING: app icon does not exist: ${icon}`);
+      }
+      const stagedIcon = join(staging, '.threenative', 'app-icon.png');
+      copyFileSync(icon, stagedIcon);
+      packaged.app.icon = '.threenative/app-icon.png';
+    }
+    writeFileSync(join(staging, '.threenative', 'config.json'), `${JSON.stringify(packaged, null, 2)}\n`);
   }
   return entry;
 }

@@ -1,25 +1,42 @@
-import { type Mesh, MeshBasicMaterial, OrthographicCamera, PerspectiveCamera, Scene } from "three";
+import {
+  type Mesh,
+  MeshBasicMaterial,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Scene,
+  Texture,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
-import { createLoadingScreen } from "../templates/minimal/src/render/loading.js";
+import { createLoadingScreen, loading } from "../templates/platformer/src/render/loading.js";
 
 /**
  * The loading screen is generated user source, but every scaffolded project starts from this copy,
  * so a defect here ships to every game that keeps the default loading screen.
  */
-function host(width = 900, height = 900) {
+function host(
+  width = 900,
+  height = 900,
+  safeArea?: { height: number; width: number; x: number; y: number },
+) {
   const camera = new PerspectiveCamera(60, width / height, 0.1, 2_000);
   const scene = new Scene();
   scene.add(camera);
   const canvasCamera = new OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 0, 2);
   canvasCamera.position.z = 1;
   return {
+    assets: undefined as { texture(path: string): Promise<Texture> } | undefined,
     camera,
     canvasLayer: { camera: canvasCamera, opaque: false, scene: new Scene() },
     scene,
     // Neither promise resolves: the screen must be correct while it is still up, which is the point.
     renderer: { compileAsync: () => new Promise<void>(() => undefined) },
     startup: { progress: 0, whenReady: () => new Promise<void>(() => undefined) },
+    ...(safeArea === undefined ? {} : { viewport: { safeArea } }),
   };
+}
+
+function setLoadingValue<K extends keyof typeof loading>(key: K, value: unknown): void {
+  Object.defineProperty(loading, key, { configurable: true, value, writable: true });
 }
 
 /** The three quads, in the order the screen adds them: backdrop, track, fill. */
@@ -53,6 +70,21 @@ describe("template loading screen", () => {
       expect(quad.material).toBeInstanceOf(MeshBasicMaterial);
       expect((quad.material as MeshBasicMaterial).transparent).toBe(false);
       expect(quad.renderOrder).toBeLessThanOrEqual(1_000);
+    }
+  });
+
+  it("can disable the overlay without creating meshes or blocking the world", () => {
+    const source = host();
+    const previous: boolean = loading.enabled;
+    setLoadingValue("enabled", false);
+    try {
+      const controller = createLoadingScreen(source);
+      expect(source.canvasLayer.scene.children).toEqual([]);
+      expect(source.canvasLayer.opaque).toBe(false);
+      controller.update();
+      controller.finish();
+    } finally {
+      setLoadingValue("enabled", previous);
     }
   });
 
@@ -120,6 +152,54 @@ describe("template loading screen", () => {
     expect(backdrop.scale.y).toBe(2400);
   });
 
+  it("keeps the bar inside an asymmetric measured safe rectangle", () => {
+    const source = host(900, 600, { height: 500, width: 740, x: 64, y: 72 });
+    createLoadingScreen(source);
+    const { track, fill } = quads(source.canvasLayer.scene);
+    const camera = source.canvasLayer.camera;
+    const safeLeft = camera.left + 64;
+    const safeRight = camera.right - 96;
+    const safeTop = camera.top - 72;
+    const safeBottom = camera.bottom + 28;
+    expect(track.position.x - track.scale.x / 2).toBeGreaterThanOrEqual(safeLeft - 1e-9);
+    expect(track.position.x + track.scale.x / 2).toBeLessThanOrEqual(safeRight + 1e-9);
+    expect(track.position.y + track.scale.y / 2).toBeLessThanOrEqual(safeTop + 1e-9);
+    expect(track.position.y - track.scale.y / 2).toBeGreaterThanOrEqual(safeBottom - 1e-9);
+    expect(fill.position.x - fill.scale.x / 2).toBeGreaterThanOrEqual(safeLeft - 1e-9);
+  });
+
+  it("crops image fills and covers image backdrops without stretching", async () => {
+    const source = host(900, 900);
+    const background = new Texture({ width: 1800, height: 900 });
+    const fillImage = new Texture({ width: 900, height: 1800 });
+    const previousBackground = loading.backgroundImage;
+    const previousFill = loading.fillImage;
+    setLoadingValue("backgroundImage", "background.png");
+    setLoadingValue("fillImage", "fill.png");
+    source.assets = {
+      texture: vi.fn(async (path: string) => (path === "background.png" ? background : fillImage)),
+    };
+    try {
+      const controller = createLoadingScreen(source);
+      await Promise.resolve();
+      const { backdrop, fill } = quads(source.canvasLayer.scene);
+      const backdropUv = backdrop.geometry.getAttribute("uv");
+      expect(backdropUv.getX(0)).toBeCloseTo(0.25, 6);
+      expect(backdropUv.getX(1)).toBeCloseTo(0.75, 6);
+      source.startup.progress = 0.5;
+      controller.update();
+      const fillUv = fill.geometry.getAttribute("uv");
+      expect(fillUv.getX(0)).toBeCloseTo(0, 6);
+      expect(fillUv.getX(1)).toBeCloseTo(0.5, 6);
+      controller.finish();
+    } finally {
+      setLoadingValue("backgroundImage", previousBackground);
+      setLoadingValue("fillImage", previousFill);
+      background.dispose();
+      fillImage.dispose();
+    }
+  });
+
   it("removes and disposes its quads before making the canvas layer transparent", () => {
     const source = host();
     const loading = createLoadingScreen(source);
@@ -176,5 +256,25 @@ describe("template loading screen", () => {
     expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
+  });
+
+  it("reveals after a bounded compile warm-up when the renderer never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const source = host();
+      source.startup.whenReady = () => Promise.resolve();
+      source.renderer.compileAsync = vi.fn(() => new Promise<void>(() => undefined));
+
+      createLoadingScreen(source);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(source.canvasLayer.opaque).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(source.canvasLayer.scene.children).toEqual([]);
+      expect(source.canvasLayer.opaque).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

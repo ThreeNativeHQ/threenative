@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
 
+export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
+
 export type ScaffoldTemplate = string;
 
 export interface IKitManifest {

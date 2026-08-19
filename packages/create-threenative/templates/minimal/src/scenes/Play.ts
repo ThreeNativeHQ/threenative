@@ -22,9 +22,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
-    // This kit has no runtime assets to await; do not let the compile cover become the first
-    // playtest frame while the scene is already ready to play.
-    loading.finish();
     ctx.add(ctx.camera);
     const hud = ctx.entities.add(
       "hud",

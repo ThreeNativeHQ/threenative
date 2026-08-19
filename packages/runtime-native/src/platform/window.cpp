@@ -6,9 +6,12 @@
  */
 
 #include "mystral/platform/input.h"
+#include "mystral/vfs/embedded_bundle.h"
 #include <iostream>
 #include <cstdlib>
+#include <vector>
 #include <SDL3/SDL.h>
+#include "stb_image.h"
 
 namespace mystral {
 namespace platform {
@@ -38,6 +41,35 @@ struct Window {
 };
 
 static Window g_window;
+
+static void applyEmbeddedWindowIcon() {
+    const char* configured = std::getenv("THREENATIVE_WINDOW_ICON_BUNDLE");
+    const std::string path = configured && configured[0] != '\0'
+        ? configured
+        : ".threenative/app-icon.png";
+    std::vector<uint8_t> bytes;
+    if (!vfs::readEmbeddedFile(path, bytes)) {
+        std::cerr << "[Window] Brand icon unavailable in embedded bundle; using compositor default" << std::endl;
+        return;
+    }
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4);
+    if (pixels == nullptr || width <= 0 || height <= 0) {
+        std::cerr << "[Window] Brand icon could not be decoded; using compositor default" << std::endl;
+        if (pixels != nullptr) stbi_image_free(pixels);
+        return;
+    }
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, pixels, width * 4);
+    if (surface == nullptr || !SDL_SetWindowIcon(g_window.sdlWindow, surface)) {
+        std::cerr << "[Window] SDL_SetWindowIcon failed: " << SDL_GetError() << std::endl;
+    } else {
+        std::cout << "[Window] Brand icon applied from " << path << std::endl;
+    }
+    if (surface != nullptr) SDL_DestroySurface(surface);
+    stbi_image_free(pixels);
+}
 
 /**
  * Initialize SDL and create window
@@ -89,6 +121,8 @@ bool createWindow(const char* title, int width, int height, bool fullscreen, boo
     g_window.height = (actualHeight > 0) ? actualHeight : height;
     g_window.fullscreen = fullscreen;
     g_window.shouldQuit = false;
+
+    applyEmbeddedWindowIcon();
 
     std::cout << "[Window] Actual window size: " << g_window.width << "x" << g_window.height << std::endl;
 

@@ -74,6 +74,39 @@ test('desktop staging embeds the resolved window contract for the native host', 
   }
 });
 
+test('desktop staging carries the resolved brand icon into the embedded bundle', () => {
+  const root = makeTempDirSync('threenative-desktop-brand-');
+  try {
+    const bundle = join(root, 'bundle.js');
+    const icon = join(root, 'icon.png');
+    const staging = join(root, 'staging');
+    const config = {
+      app: {
+        id: 'com.studio.foxgame',
+        name: 'Fox',
+        version: '1.2.3',
+        build: 7,
+        icon,
+      },
+    };
+    writeFileSync(bundle, 'export default 1;');
+    writeFileSync(icon, 'brand-icon');
+
+    stageDesktopFiles(bundle, undefined, staging, config);
+
+    assert.equal(readFileSync(join(staging, '.threenative', 'app-icon.png'), 'utf8'), 'brand-icon');
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(staging, '.threenative', 'config.json'), 'utf8')).app,
+      { id: 'com.studio.foxgame', name: 'Fox', version: '1.2.3', build: 7, icon: '.threenative/app-icon.png' },
+    );
+    const windowSource = readFileSync(new URL('../src/platform/window.cpp', import.meta.url), 'utf8');
+    assert.match(windowSource, /SDL_SetWindowIcon\(/u);
+    assert.match(windowSource, /readEmbeddedFile\(path/u);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
 test('desktop native config parser preserves escaped JSON window titles', () => {
   const root = makeTempDirSync('threenative-desktop-json-');
   try {

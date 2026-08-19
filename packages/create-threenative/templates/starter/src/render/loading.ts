@@ -11,7 +11,7 @@ import {
 } from "three";
 import { palette } from "./palette.js";
 
-/** Action-RPG look and composition; edit this file, not framework configuration. */
+/** Edit these source constants for the starter's loading look. */
 export const loading = {
   backgroundColor: palette.skyLow,
   backgroundImage: undefined as string | undefined,
@@ -21,7 +21,7 @@ export const loading = {
   progressColor: palette.accent,
   showStatus: false,
   trackColor: palette.skyHigh,
-  bar: { anchorX: 0.5, anchorY: 0.74, height: 10, maxWidth: 500, width: 0.58 },
+  bar: { anchorX: 0.5, anchorY: 0.72, height: 12, maxWidth: 520, width: 0.62 },
 } as const;
 
 interface LoadingHost {
@@ -81,7 +81,7 @@ function coverUv(
   uv.needsUpdate = true;
 }
 
-function createStatus(
+function statusMesh(
   layer: LoadingHost["canvasLayer"],
 ):
   | { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; texture: Texture; update(value: number): void }
@@ -119,22 +119,22 @@ export function createLoadingScreen(host: LoadingHost) {
     layer.opaque = false;
     return { finish: () => undefined, update: () => undefined };
   }
-  const create = (color: number, order: number): Mesh<PlaneGeometry, MeshBasicMaterial> => {
-    const mesh = new Mesh(
+  const mesh = (color: number, order: number): Mesh<PlaneGeometry, MeshBasicMaterial> => {
+    const value = new Mesh(
       new PlaneGeometry(1, 1),
       new MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
     );
-    mesh.frustumCulled = false;
-    mesh.renderOrder = order;
-    layer.scene.add(mesh);
-    return mesh;
+    value.frustumCulled = false;
+    value.renderOrder = order;
+    layer.scene.add(value);
+    return value;
   };
-  const backdrop = create(loading.backgroundColor, 0);
-  const track = create(loading.trackColor, 1);
-  const fill = create(loading.progressColor, 2);
-  const logo = create(0xffffff, 3);
+  const backdrop = mesh(loading.backgroundColor, 0);
+  const track = mesh(loading.trackColor, 1);
+  const fill = mesh(loading.progressColor, 2);
+  const logo = mesh(0xffffff, 3);
   logo.visible = false;
-  const status = createStatus(layer);
+  const status = statusMesh(layer);
   const parts = [backdrop, track, fill, logo, ...(status === undefined ? [] : [status.mesh])];
   const ownedTextures = new Set<Texture>(status === undefined ? [] : [status.texture]);
   const fillBaseU = Array.from({ length: fill.geometry.getAttribute("uv").count }, (_, index) =>
@@ -194,11 +194,22 @@ export function createLoadingScreen(host: LoadingHost) {
     if (backdropTexture !== undefined)
       coverUv(backdrop.geometry, backdropTexture, width, height, fillBaseU, fillBaseV);
   };
-  const setProgress = (value: number): void => {
+  const updateProgress = (value: number): void => {
     progress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
     setFillUv(fill.geometry, progress, fillBaseU);
     status?.update(progress);
     layout();
+  };
+  const attach = (target: Mesh<PlaneGeometry, MeshBasicMaterial>, texture: Texture): void => {
+    if (done) return;
+    configureTexture(texture);
+    target.material.map = texture;
+    target.material.color.set(0xffffff);
+    target.material.needsUpdate = true;
+    ownedTextures.add(texture);
+    if (target === backdrop) backdropTexture = texture;
+    layout();
+    updateProgress(progress);
   };
   const load = (
     source: string | undefined,
@@ -207,16 +218,7 @@ export function createLoadingScreen(host: LoadingHost) {
     if (source === undefined || host.assets === undefined) return;
     void host.assets
       .texture(source)
-      .then((texture) => {
-        if (done) return;
-        configureTexture(texture);
-        target.material.map = texture;
-        target.material.color.set(0xffffff);
-        target.material.needsUpdate = true;
-        ownedTextures.add(texture);
-        if (target === backdrop) backdropTexture = texture;
-        setProgress(progress);
-      })
+      .then((texture) => attach(target, texture))
       .catch(() => undefined);
   };
   load(loading.backgroundImage, backdrop);
@@ -237,6 +239,7 @@ export function createLoadingScreen(host: LoadingHost) {
   }
   layer.opaque = true;
   layout();
+  updateProgress(0);
   const finish = (): void => {
     if (done) return;
     done = true;
@@ -244,10 +247,10 @@ export function createLoadingScreen(host: LoadingHost) {
       clearTimeout(compileTimeout);
       compileTimeout = undefined;
     }
-    for (const mesh of parts) {
-      mesh.removeFromParent();
-      mesh.geometry.dispose();
-      mesh.material.dispose();
+    for (const value of parts) {
+      value.removeFromParent();
+      value.geometry.dispose();
+      value.material.dispose();
     }
     for (const texture of ownedTextures) texture.dispose();
     layer.opaque = false;
@@ -267,8 +270,8 @@ export function createLoadingScreen(host: LoadingHost) {
   })();
   return {
     finish,
-    update: () => {
-      if (!done) setProgress(host.startup.progress);
+    update(): void {
+      if (!done) updateProgress(host.startup.progress);
     },
   };
 }

@@ -120,6 +120,18 @@ struct ResizeEventData {
 };
 
 /**
+ * Insets around the drawable that game-authored display-safe UI must avoid.
+ * A false measured flag means the caller must use the full-drawable fallback.
+ */
+struct SafeAreaInsets {
+    int top;
+    int right;
+    int bottom;
+    int left;
+    bool measured;
+};
+
+/**
  * Input event callback types
  */
 using KeyboardCallback = std::function<void(const KeyboardEventData&)>;
@@ -138,6 +150,11 @@ void setPointerCallback(PointerCallback callback);
 void setWheelCallback(WheelCallback callback);
 void setGamepadCallback(GamepadCallback callback);
 void setResizeCallback(ResizeCallback callback);
+
+/** Refresh and read the platform's coarse safe-area measurement. */
+void refreshSafeAreaInsets();
+SafeAreaInsets getSafeAreaInsets();
+void setSafeAreaInsets(int top, int right, int bottom, int left);
 
 /** Translate an SDL touch contact into a DOM-compatible pointer event. */
 void processTouchEvent(const SDL_TouchFingerEvent& event);

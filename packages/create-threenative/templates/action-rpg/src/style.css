@@ -30,3 +30,30 @@ body {
   font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
 }
+
+#threenative-launch {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  background: var(--color-void);
+  color: var(--color-amber);
+  font: 700 0.9rem / 1 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.threenative-launch-card {
+  display: grid;
+  gap: 1.25rem;
+  justify-items: center;
+}
+
+.threenative-launch-card img {
+  max-width: min(36vw, 16rem);
+  max-height: 22vh;
+  object-fit: contain;
+}

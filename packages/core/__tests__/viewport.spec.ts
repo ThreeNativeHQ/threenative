@@ -121,4 +121,65 @@ describe("Viewport", () => {
     expect(screen.x).toBeCloseTo(640, 6);
     expect(screen.y).toBeCloseTo(360, 6);
   });
+
+  it("keeps an asymmetric measured safe rectangle through resize", () => {
+    const canvas = testCanvas();
+    let insets = { bottom: 24, left: 18, right: 42, top: 80 };
+    const source = {
+      observeResize: (_canvas: HTMLCanvasElement, resize: () => void) => {
+        FakeResizeObserver.current = {
+          callback: resize,
+          disconnected: false,
+        } as FakeResizeObserver;
+        return () => undefined;
+      },
+      readSafeArea: () => insets,
+      readSize: () => canvas.size,
+    };
+    const viewport = new Viewport({
+      camera: new OrthographicCamera(-1, 1, 1, -1),
+      renderer: renderer(canvas),
+      source,
+    });
+
+    expect(viewport.safeArea).toMatchObject({
+      bottom: 24,
+      left: 18,
+      right: 42,
+      source: "measured",
+      top: 80,
+      width: 1220,
+      x: 18,
+      y: 80,
+    });
+    insets = { bottom: 12, left: 60, right: 10, top: 30 };
+    canvas.size = { aspect: 720 / 1280, height: 1280, width: 720 };
+    viewport.resize();
+    expect(viewport.safeArea).toMatchObject({
+      bottom: 12,
+      left: 60,
+      right: 10,
+      source: "measured",
+      top: 30,
+      width: 650,
+      x: 60,
+      y: 30,
+    });
+  });
+
+  it("reports the full drawable when the host cannot measure insets", () => {
+    const canvas = testCanvas(640, 360);
+    const viewport = new Viewport({ camera: new PerspectiveCamera(), renderer: renderer(canvas) });
+    expect(viewport.safeArea).toEqual({
+      bottom: 0,
+      height: 360,
+      left: 0,
+      right: 0,
+      source: "full-drawable-fallback",
+      top: 0,
+      width: 640,
+      x: 0,
+      y: 0,
+    });
+  });
 });

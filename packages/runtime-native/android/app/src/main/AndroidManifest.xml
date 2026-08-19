@@ -25,6 +25,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ThreeNative"
         android:hasCode="true">
+        <!-- package-android.mjs writes the project adaptive launcher icon here. -->
 
         <!-- Main SDL Activity -->
         <activity

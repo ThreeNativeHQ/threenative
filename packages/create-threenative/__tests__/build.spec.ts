@@ -10,6 +10,7 @@ import {
   buildWeb,
   nativeOrientation,
   parseBuildArgs,
+  writePackagingConfig,
 } from "../src/build.js";
 import { createProject } from "../src/index.js";
 
@@ -54,6 +55,48 @@ await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\
 }
 
 describe("threenative build", () => {
+  it("resolves every declared brand input through the live packaging-config caller", async () => {
+    const config = {
+      app: {
+        build: 4,
+        icon: "public/icon.png",
+        icons: {
+          android: {
+            background: "#123456",
+            foreground: "public/foreground.png",
+            monochrome: "public/monochrome.png",
+          },
+          ios: { dark: "public/dark.png", tinted: "public/tinted.png" },
+          web: {
+            appleTouch: "public/touch.png",
+            favicon: "public/favicon.svg",
+            maskable: "public/maskable.png",
+            monochrome: "public/web-mono.png",
+          },
+        },
+        id: "com.example.game",
+        name: "Brand Game",
+        version: "1.2.3",
+      },
+      bootSplash: { backgroundColor: "#123456", image: "public/launch.png" },
+      display: { fullscreen: true, keepScreenOn: false, orientation: "landscape" as const },
+      nativeEntry: "src/game.ts",
+      renderer: { preferWebGPU: true },
+      window: { height: 720, resizable: true, title: "Brand Game", width: 1280 },
+    };
+
+    const root = await makeTempDir("threenative-brand-build-");
+    roots.push(root);
+    const output = await writePackagingConfig(root, config);
+    const resolved = JSON.parse(await readFile(output, "utf8"));
+    expect(resolved.app.icon).toBe(path.join(root, "public/icon.png"));
+    expect(resolved.app.icons?.android?.foreground).toBe(path.join(root, "public/foreground.png"));
+    expect(resolved.app.icons?.ios?.tinted).toBe(path.join(root, "public/tinted.png"));
+    expect(resolved.app.icons?.web?.favicon).toBe(path.join(root, "public/favicon.svg"));
+    expect(resolved.bootSplash?.image).toBe(path.join(root, "public/launch.png"));
+    expect(resolved.app.icons?.android?.background).toBe("#123456");
+  });
+
   it("keeps build as the only command and target as a flag", () => {
     expect(parseBuildArgs(["build"])).toEqual({ target: "web", viteArgs: [] });
     expect(parseBuildArgs(["build", "--target", "desktop"])).toEqual({

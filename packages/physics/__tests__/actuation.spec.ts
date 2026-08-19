@@ -33,20 +33,19 @@ const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
   "docs/verification/native-runtime-census-2026-08-16.md",
 );
 const EXPECTED_NATIVE_LOC_AREAS = [
-  // PRD-152 adds 54 lines: the WebGPU texture-format tables in src/webgpu/bindings.cpp gained the
-  // integer, snorm and packed formats, without which `r32uint` fell through to a BGRA8Unorm default
-  // and every bind group built against it failed validation on the native host.
-  ["src/", 38_513],
+  // PRD-153 adds 699 native lines for brand-resource packaging, launch inspection, and measured
+  // safe-area transport. Keep this fixture tied to the checked-in census and its budget output.
+  ["src/", 38_630],
   ["conformance/", 6_331],
-  ["tests/", 9_192],
-  ["scripts/", 11_641],
-  ["include/", 3_798],
-  ["android/", 1_941],
+  ["tests/", 9_342],
+  ["scripts/", 12_006],
+  ["include/", 3_816],
+  ["android/", 1_960],
   ["native/", 3_276],
   ["Root CMakeLists.txt", 1_673],
   ["cmake/", 280],
   ["CMakePresets.json", 140],
-  ["ios/", 104],
+  ["ios/", 134],
   ["package.json", 63],
   ["vitest.config.ts", 10],
   // The desktop multitouch injector's ioctl helper, PRD-077. A new counted area, so it appears
@@ -54,8 +53,8 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 146 files, 1,359 passed, 0 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 312 passed, 37 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 147 files, 1,364 passed, 0 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 320 passed, 31 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();

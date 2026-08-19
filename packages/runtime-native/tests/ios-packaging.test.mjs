@@ -137,12 +137,18 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
   const output = join(root, 'game.app');
   const bundle = join(root, 'game.js');
   const icon = join(root, 'icon.png');
+  const dark = join(root, 'icon-dark.png');
+  const tinted = join(root, 'icon-tinted.png');
+  const launch = join(root, 'launch.png');
   mkdirSync(templateApp, { recursive: true });
   writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(bundle, 'new-game');
   writeFileSync(icon, VALID_PNG);
+  writeFileSync(dark, VALID_PNG);
+  writeFileSync(tinted, VALID_PNG);
+  writeFileSync(launch, VALID_PNG);
 
   const report = stageIosSimulatorApp({
     assets: undefined,
@@ -154,7 +160,9 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
         version: '9.8.7',
         build: 42,
         icon,
+        icons: { ios: { dark, tinted } },
       },
+      bootSplash: { backgroundColor: '#0d1b2a', image: launch },
       display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true },
       window: { title: 'Vulpine Window', width: 1111, height: 777, resizable: false },
     },
@@ -162,12 +170,16 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     templateApp,
     compileIcon: (catalog, compiled) => {
       assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024.png')).equals(VALID_PNG), true);
+      assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024-dark.png')).equals(VALID_PNG), true);
+      assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024-tinted.png')).equals(VALID_PNG), true);
+      assert.match(readFileSync(join(catalog, 'AppIcon.appiconset/Contents.json'), 'utf8'), /"value": "tinted"/u);
       writeFileSync(join(compiled, 'Assets.car'), Buffer.from('compiled-app-icon'));
     },
   });
 
   assert.equal(readFileSync(join(output, 'native-smoke.js'), 'utf8'), 'new-game');
   assert.equal(readFileSync(join(output, 'Assets.car'), 'utf8'), 'compiled-app-icon');
+  assert.deepEqual(readFileSync(join(output, 'LaunchImage.png')), VALID_PNG);
   assert.equal(existsSync(join(output, 'Assets.xcassets')), false);
   assert.deepEqual(
     {
@@ -200,6 +212,8 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     /<key>TNWindowHeight<\/key>\s*<integer>777<\/integer>/u,
     /<key>TNWindowResizable<\/key>\s*<false\/>/u,
     /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
+    /<key>UILaunchScreen<\/key>[\s\S]*?<key>UIColorName<\/key>\s*<string>TNLaunchBackground<\/string>/u,
+    /<key>UIImageName<\/key>\s*<string>LaunchImage<\/string>/u,
   ]) {
     assert.match(plist, pattern);
   }

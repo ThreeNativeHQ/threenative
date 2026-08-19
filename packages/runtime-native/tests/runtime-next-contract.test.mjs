@@ -51,6 +51,36 @@ test('Win32 window creation does not require a Vulkan-capable host', () => {
   assert.doesNotMatch(windowSource, /#else\s+flags \|= SDL_WINDOW_VULKAN/u);
 });
 
+test('native hosts forward one coarse safe-area value through resize and rotation', () => {
+  const input = read('src/platform/input.cpp');
+  assert.match(input, /refreshSafeAreaInsets\(\)/u);
+  assert.match(input, /getSafeAreaInsets\(\)/u);
+  assert.match(input, /setSafeAreaInsets\(int top, int right, int bottom, int left\)/u);
+  assert.match(input, /processResize\(int width, int height\)[\s\S]*refreshSafeAreaInsets\(\)/u);
+
+  const window = read('src/platform/window.cpp');
+  assert.match(window, /SDL_EVENT_WINDOW_RESIZED[\s\S]*processResize/u);
+
+  const activity = read('android/app/src/main/java/com/mystral/engine/MystralActivity.java');
+  assert.match(activity, /getSafeAreaInsets\(\)/u);
+  assert.match(activity, /WindowInsets\.Type\.systemBars\(\) \| WindowInsets\.Type\.displayCutout\(\)/u);
+
+  const ios = read('ios/main.mm');
+  assert.match(ios, /safeAreaInsets/u);
+  assert.match(ios, /UIDeviceOrientationDidChangeNotification/u);
+
+  const runtime = read('src/runtime.cpp');
+  assert.match(runtime, /safeAreaInsets/u);
+  assert.match(runtime, /platform::refreshSafeAreaInsets\(\)/u);
+
+  const fixture = { bottom: 24, left: 18, right: 42, top: 80 };
+  assert.deepEqual(
+    Object.keys(fixture).sort(),
+    ['bottom', 'left', 'right', 'top'],
+    'the asymmetric fixture must remain four-sided rather than collapsing to one padding value',
+  );
+});
+
 test('default builds do not compile/register deprecated native GLTF path', () => {
   const cmake = read('CMakeLists.txt');
   const nativeBlock = cmake.match(/if\(TN_ENABLE_NATIVE_GLTF\)([\s\S]*?)endif\(\)/);

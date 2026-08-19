@@ -5,6 +5,7 @@ import { Crate } from "../entities/Crate.js";
 import { Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
+import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { ball, block, makeRandom, roundedBox, sculpture, spike, tube } from "../render/shapes.js";
@@ -55,6 +56,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
       lookAhead: new Vector3(0, 0.9, -0.4),
@@ -136,6 +138,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }));
     return (frameCtx, dt) => {
+      loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
         frameCtx.state.set(Play.initialState);

@@ -3,6 +3,7 @@ import { createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import game from "./game.js";
 import { App } from "./ui/App.js";
+import "./style.css";
 import "./render/ui.css";
 
 function WebApp({ game: currentGame }: { game: typeof game }) {
@@ -24,3 +25,18 @@ const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof cr
 const reactRoot = appRoot.__threenativeRoot ?? createRoot(appRoot);
 appRoot.__threenativeRoot = reactRoot;
 reactRoot.render(createElement(WebApp, { game }));
+
+function removeLaunchSurfaceAfterPaint(): void {
+  const launch = document.querySelector<HTMLElement>("[data-threenative-launch]");
+  if (launch === null) return;
+  const waitForCanvas = () => {
+    if (document.querySelector("canvas") === null) {
+      requestAnimationFrame(waitForCanvas);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => launch.remove()));
+  };
+  requestAnimationFrame(waitForCanvas);
+}
+
+removeLaunchSurfaceAfterPaint();

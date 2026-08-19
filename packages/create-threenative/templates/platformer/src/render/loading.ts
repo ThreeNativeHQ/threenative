@@ -1,113 +1,340 @@
 import {
   type Camera,
+  CanvasTexture,
+  ClampToEdgeWrapping,
   Mesh,
   MeshBasicMaterial,
   type OrthographicCamera,
   PlaneGeometry,
   type Scene,
+  type Texture,
 } from "three";
 import { palette } from "./palette.js";
 
-/**
- * What the framework hands a loading screen. Structural on purpose: nothing under `src/render/`
- * imports the framework, and `ctx` already satisfies this shape.
- */
+/** The five authoring points for this screen stay in this generated file. */
+export const loading = {
+  backgroundColor: palette.skyLow,
+  backgroundImage: undefined as string | undefined,
+  enabled: true,
+  fillImage: undefined as string | undefined,
+  logoImage: undefined as string | undefined,
+  progressColor: palette.accent,
+  showStatus: false,
+  trackColor: palette.skyHigh,
+  bar: {
+    anchorX: 0.5,
+    anchorY: 0.72,
+    height: 12,
+    maxWidth: 1200,
+    width: 0.62,
+  },
+} as const;
+
 export interface LoadingHost {
+  readonly assets?: { texture(path: string): Promise<Texture> };
   readonly camera: Camera;
-  readonly scene: Scene;
   readonly canvasLayer: {
     readonly camera: OrthographicCamera;
     readonly scene: Scene;
     opaque: boolean;
   };
   readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
+  readonly scene: Scene;
   readonly startup: { readonly progress: number; whenReady(): Promise<void> };
+  readonly viewport?: {
+    readonly safeArea: {
+      readonly height: number;
+      readonly width: number;
+      readonly x: number;
+      readonly y: number;
+    };
+  };
 }
 
-/**
- * Draws the loading screen in the framework's pixel-sized canvas layer. Colours, layout, and the
- * shape of the bar live here in generated source, so they remain the game's to change or delete.
- */
-export function createLoadingScreen(host: LoadingHost) {
-  const layer = host.canvasLayer;
-  const camera = layer.camera;
-  const cover = (color: number, renderOrder: number) => {
-    const mesh = new Mesh(
-      new PlaneGeometry(1, 1),
-      new MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
-    );
-    mesh.frustumCulled = false;
-    mesh.renderOrder = renderOrder;
-    layer.scene.add(mesh);
-    return mesh;
+interface ILoadingController {
+  update(): void;
+  finish(): void;
+}
+
+function noOp(layer: LoadingHost["canvasLayer"]): ILoadingController {
+  layer.opaque = false;
+  return { finish: () => undefined, update: () => undefined };
+}
+
+function meshFor(
+  layer: LoadingHost["canvasLayer"],
+  material: MeshBasicMaterial,
+  renderOrder: number,
+): Mesh<PlaneGeometry, MeshBasicMaterial> {
+  const mesh = new Mesh(new PlaneGeometry(1, 1), material);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = renderOrder;
+  layer.scene.add(mesh);
+  return mesh;
+}
+
+function setFillUv(geometry: PlaneGeometry, progress: number, base: readonly number[]): void {
+  const uv = geometry.getAttribute("uv");
+  for (let index = 0; index < uv.count; index += 1) uv.setX(index, (base[index] ?? 0) * progress);
+  uv.needsUpdate = true;
+}
+
+function imageAspect(texture: Texture | null | undefined): number {
+  const image = texture?.image as { height?: number; width?: number } | undefined;
+  const width = image?.width ?? 1;
+  const height = image?.height ?? 1;
+  return width > 0 && height > 0 ? width / height : 1;
+}
+
+function configureTexture(texture: Texture): void {
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+}
+
+function coverUv(
+  geometry: PlaneGeometry,
+  texture: Texture,
+  width: number,
+  height: number,
+  baseU: readonly number[],
+  baseV: readonly number[],
+): void {
+  const imageRatio = imageAspect(texture);
+  const boxRatio = width / Math.max(1, height);
+  const visibleU = imageRatio > boxRatio ? boxRatio / imageRatio : 1;
+  const visibleV = imageRatio < boxRatio ? imageRatio / boxRatio : 1;
+  const offsetU = (1 - visibleU) / 2;
+  const offsetV = (1 - visibleV) / 2;
+  const uv = geometry.getAttribute("uv");
+  for (let index = 0; index < uv.count; index += 1) {
+    uv.setX(index, offsetU + (baseU[index] ?? 0) * visibleU);
+    uv.setY(index, offsetV + (baseV[index] ?? 0) * visibleV);
+  }
+  uv.needsUpdate = true;
+}
+
+function statusMesh(
+  layer: LoadingHost["canvasLayer"],
+):
+  | { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; update(value: number): void; texture: Texture }
+  | undefined {
+  if (!loading.showStatus || typeof document === "undefined") return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = 180;
+  canvas.height = 48;
+  const context = canvas.getContext("2d");
+  if (context === null) return undefined;
+  const texture = new CanvasTexture(canvas);
+  const mesh = meshFor(
+    layer,
+    new MeshBasicMaterial({ depthTest: false, depthWrite: false, map: texture, transparent: true }),
+    4,
+  );
+  const update = (value: number): void => {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#ffffff";
+    context.font = "700 20px monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(`${Math.round(value * 100)}%`, canvas.width / 2, canvas.height / 2);
+    texture.needsUpdate = true;
   };
-  const backdrop = cover(palette.skyLow, 0);
-  const track = cover(palette.skyHigh, 1);
-  const fill = cover(palette.accent, 2);
-  const parts = [backdrop, track, fill];
+  update(0);
+  return { mesh, texture, update };
+}
+
+export function createLoadingScreen(host: LoadingHost): ILoadingController {
+  const layer = host.canvasLayer;
+  if (!loading.enabled) return noOp(layer);
+  const camera = layer.camera;
+  const backdrop = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.backgroundColor, depthTest: false, depthWrite: false }),
+    0,
+  );
+  const track = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.trackColor, depthTest: false, depthWrite: false }),
+    1,
+  );
+  const fill = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.progressColor, depthTest: false, depthWrite: false }),
+    2,
+  );
+  const fillBaseU = Array.from({ length: fill.geometry.getAttribute("uv").count }, (_, index) =>
+    fill.geometry.getAttribute("uv").getX(index),
+  );
+  const fillBaseV = Array.from({ length: fill.geometry.getAttribute("uv").count }, (_, index) =>
+    fill.geometry.getAttribute("uv").getY(index),
+  );
+  const logo =
+    loading.logoImage === undefined
+      ? undefined
+      : meshFor(
+          layer,
+          new MeshBasicMaterial({
+            color: 0xffffff,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+          }),
+          3,
+        );
+  const status = statusMesh(layer);
+  const parts = [
+    backdrop,
+    track,
+    fill,
+    ...(logo === undefined ? [] : [logo]),
+    ...(status === undefined ? [] : [status.mesh]),
+  ];
+  const ownedTextures = new Set<Texture>(status === undefined ? [] : [status.texture]);
   layer.opaque = true;
 
-  let width = 0;
-  let height = 0;
+  let width = 1;
+  let height = 1;
+  let barWidth = 1;
+  let barHeight: number = loading.bar.height;
+  let barX = 0;
+  let barY = 0;
   let lastProgress = 0;
+  let laidOutWidth = -1;
+  let laidOutHeight = -1;
+  let backdropTexture: Texture | undefined;
+  let compileTimeout: ReturnType<typeof setTimeout> | undefined;
+  let done = false;
 
   const layout = (): void => {
-    const nextWidth = camera.right - camera.left;
-    const nextHeight = camera.top - camera.bottom;
-    width = Number.isFinite(nextWidth) && nextWidth > 0 ? nextWidth : 1;
-    height = Number.isFinite(nextHeight) && nextHeight > 0 ? nextHeight : 1;
+    width = Math.max(1, camera.right - camera.left);
+    height = Math.max(1, camera.top - camera.bottom);
+    const safe = host.viewport?.safeArea ?? { height, width, x: 0, y: 0 };
+    const safeWidth = Math.max(1, Math.min(width, safe.width));
+    const safeHeight = Math.max(1, Math.min(height, safe.height));
+    const safeX = Math.max(0, Math.min(width - safeWidth, safe.x));
+    const safeY = Math.max(0, Math.min(height - safeHeight, safe.y));
+    barWidth = Math.max(2, Math.min(loading.bar.maxWidth, safeWidth * loading.bar.width));
+    barHeight = Math.max(2, Math.min(loading.bar.height, safeHeight * 0.05));
+    barX = safeX + safeWidth * loading.bar.anchorX;
+    barY = safeY + safeHeight * loading.bar.anchorY;
+    const worldX = (screenX: number): number => camera.left + screenX;
+    const worldY = (screenY: number): number => camera.top - screenY;
     backdrop.scale.set(width, height, 1);
-    track.scale.set(width * 0.5, height * 0.012, 1);
-    track.position.set(0, -height * 0.05, 0);
-    fill.position.set(0, -height * 0.05, 0);
+    backdrop.position.set(worldX(width / 2), worldY(height / 2), 0);
+    track.scale.set(barWidth, barHeight, 1);
+    track.position.set(worldX(barX), worldY(barY), 0);
+    fill.position.set(worldX(barX - barWidth / 2), worldY(barY), 0);
+    fill.scale.set(Math.max(2, barWidth * lastProgress), barHeight, 1);
+    if (logo?.visible) {
+      const logoWidth = Math.min(safeWidth * 0.42, 280);
+      logo.scale.set(
+        logoWidth,
+        Math.min(logoWidth / imageAspect(logo.material.map), safeHeight * 0.22),
+        1,
+      );
+      logo.position.set(worldX(barX), worldY(Math.max(safeY, barY - safeHeight * 0.2)), 0);
+    }
+    if (status !== undefined) {
+      status.mesh.scale.set(Math.min(180, safeWidth * 0.32), 48, 1);
+      status.mesh.position.set(worldX(barX), worldY(Math.min(height, barY + barHeight * 2.5)), 0);
+    }
+    laidOutWidth = width;
+    laidOutHeight = height;
+    if (backdropTexture !== undefined) {
+      coverUv(backdrop.geometry, backdropTexture, width, height, fillBaseU, fillBaseV);
+    }
   };
 
-  const setProgress = (progress: number): void => {
-    // `Math.max(0, Math.min(1, NaN))` is NaN, so non-finite progress means no progress.
-    lastProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
-    const full = width * 0.5;
-    const barWidth = Math.max(full * 0.002, full * lastProgress);
-    fill.scale.set(barWidth, height * 0.012, 1);
-    fill.position.x = -full / 2 + barWidth / 2;
+  const setProgress = (value: number): void => {
+    lastProgress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    const visibleWidth = Math.max(2, barWidth * lastProgress);
+    fill.scale.x = visibleWidth;
+    fill.position.x = camera.left + barX - barWidth / 2 + visibleWidth / 2;
+    setFillUv(fill.geometry, lastProgress, fillBaseU);
+    status?.update(lastProgress);
   };
 
-  let laidOutWidth = camera.right - camera.left;
-  let laidOutHeight = camera.top - camera.bottom;
+  const attachTexture = (mesh: Mesh<PlaneGeometry, MeshBasicMaterial>, texture: Texture): void => {
+    if (done) return;
+    configureTexture(texture);
+    mesh.material.map = texture;
+    mesh.material.color.set(0xffffff);
+    mesh.material.needsUpdate = true;
+    ownedTextures.add(texture);
+    if (mesh === backdrop) backdropTexture = texture;
+    layout();
+    setProgress(lastProgress);
+  };
+
+  const load = (path: string | undefined, mesh: Mesh<PlaneGeometry, MeshBasicMaterial>): void => {
+    if (path === undefined || host.assets === undefined) return;
+    void host.assets
+      .texture(path)
+      .then((texture) => attachTexture(mesh, texture))
+      .catch(() => undefined);
+  };
+  load(loading.backgroundImage, backdrop);
+  load(loading.fillImage, fill);
+  if (logo !== undefined && loading.logoImage !== undefined && host.assets !== undefined) {
+    void host.assets
+      .texture(loading.logoImage)
+      .then((texture) => {
+        if (done) return;
+        configureTexture(texture);
+        logo.material.map = texture;
+        logo.material.needsUpdate = true;
+        logo.visible = true;
+        ownedTextures.add(texture);
+        layout();
+      })
+      .catch(() => undefined);
+  }
+
   layout();
   setProgress(0);
 
-  let done = false;
   const finish = (): void => {
     if (done) return;
     done = true;
+    if (compileTimeout !== undefined) {
+      clearTimeout(compileTimeout);
+      compileTimeout = undefined;
+    }
     for (const mesh of parts) {
       mesh.removeFromParent();
       mesh.geometry.dispose();
       mesh.material.dispose();
     }
+    for (const texture of ownedTextures) texture.dispose();
     layer.opaque = false;
   };
 
   void (async () => {
     await host.startup.whenReady();
-    // Compile the collapsed world's pipelines while the opaque canvas layer still covers it.
-    await host.renderer.compileAsync(host.scene, host.camera).catch(() => undefined);
-    finish();
+    if (done) return;
+    let compilePromise: Promise<void>;
+    try {
+      compilePromise = host.renderer.compileAsync(host.scene, host.camera).catch(() => undefined);
+    } catch {
+      compilePromise = Promise.resolve();
+    }
+    const reveal = (): void => finish();
+    compileTimeout = setTimeout(reveal, 1_000);
+    void compilePromise.then(reveal, reveal);
   })();
 
   return {
+    finish,
     update(): void {
       if (done) return;
-      const nextWidth = camera.right - camera.left;
-      const nextHeight = camera.top - camera.bottom;
-      if (nextWidth !== laidOutWidth || nextHeight !== laidOutHeight) {
-        laidOutWidth = nextWidth;
-        laidOutHeight = nextHeight;
+      if (
+        camera.right - camera.left !== laidOutWidth ||
+        camera.top - camera.bottom !== laidOutHeight
+      ) {
         layout();
-        setProgress(lastProgress);
       }
       setProgress(host.startup.progress);
     },
-    finish,
   };
 }

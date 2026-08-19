@@ -1,5 +1,28 @@
 export type ThreeNativeOrientation = "landscape" | "portrait" | "sensor";
 
+export interface IThreeNativeIconVariants {
+  readonly android?: {
+    readonly foreground?: string;
+    readonly background?: string;
+    readonly monochrome?: string;
+  };
+  readonly ios?: {
+    readonly dark?: string;
+    readonly tinted?: string;
+  };
+  readonly web?: {
+    readonly favicon?: string;
+    readonly maskable?: string;
+    readonly monochrome?: string;
+    readonly appleTouch?: string;
+  };
+}
+
+export interface IThreeNativeBootSplash {
+  readonly backgroundColor?: string;
+  readonly image?: string;
+}
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -7,6 +30,7 @@ export interface IThreeNativeConfig {
     readonly version?: string;
     readonly build?: number;
     readonly icon?: string;
+    readonly icons?: IThreeNativeIconVariants;
   };
   readonly display?: {
     readonly orientation?: ThreeNativeOrientation;
@@ -19,22 +43,7 @@ export interface IThreeNativeConfig {
     readonly height?: number;
     readonly resizable?: boolean;
   };
-  /**
-   * What the generated loading screen reads.
-   *
-   * These are declarations, not a renderer: `src/render/loading.ts` is your source and it is the
-   * only thing that draws them, so a look this cannot express is a file you edit rather than an
-   * option we add. Deleting that file still opts out of the screen entirely.
-   */
-  readonly loading?: {
-    /** Image drawn centred above the bar, project-relative like `public/logo.png`. */
-    readonly image?: string;
-    readonly backdropColor?: string;
-    readonly trackColor?: string;
-    readonly progressColor?: string;
-    /** False draws the backdrop and image with no bar. */
-    readonly showProgressBar?: boolean;
-  };
+  readonly bootSplash?: IThreeNativeBootSplash;
   readonly nativeEntry?: string;
   readonly renderer?: {
     readonly preferWebGPU?: boolean;

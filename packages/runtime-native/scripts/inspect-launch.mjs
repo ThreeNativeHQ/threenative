@@ -241,6 +241,66 @@ export function summarise(frames) {
   };
 }
 
+/**
+ * Check the handoff as an ordered sequence, rather than trusting one screenshot from each phase.
+ * Callers may provide an explicit phase (used by device bridges) or the pixel-classified fields
+ * returned by classifyFrame. Every frame must be platform splash, live loading, or playable game;
+ * no generic/default frame is accepted between those states.
+ */
+export function assertLaunchFrameSequence(frames) {
+  if (!Array.isArray(frames) || frames.length === 0) {
+    throw new InspectError("TN_LAUNCH_SEQUENCE_NO_FRAMES", 1);
+  }
+  const phaseNames = new Set(["platform-splash", "loading", "playable"]);
+  let firstLoading = -1;
+  let lastLoading = -1;
+  let previousRank = 0;
+  const phases = frames.map((frame, index) => {
+    if (frame === null || typeof frame !== "object") {
+      throw new InspectError("TN_LAUNCH_SEQUENCE_INVALID_FRAME:index=" + index, 1);
+    }
+    const brand = String(frame.brand ?? "").toLowerCase();
+    if (
+      frame.offBrand === true ||
+      frame.foreign === true ||
+      brand === "default" ||
+      brand === "generic" ||
+      brand === "magenta"
+    ) {
+      throw new InspectError("TN_LAUNCH_SEQUENCE_OFF_BRAND:index=" + index, 1);
+    }
+    let phase = frame.phase;
+    if (phase === undefined) {
+      phase = frame.backdrop > 0.5 ? "loading" : firstLoading < 0 ? "platform-splash" : "playable";
+    }
+    if (!phaseNames.has(phase)) {
+      throw new InspectError(
+        "TN_LAUNCH_SEQUENCE_PHASE_INVALID:index=" + index + ":" + String(phase),
+        1,
+      );
+    }
+    const rank = phase === "platform-splash" ? 0 : phase === "loading" ? 1 : 2;
+    if (rank < previousRank) {
+      throw new InspectError("TN_LAUNCH_SEQUENCE_ORDER:index=" + index + ":phase=" + phase, 1);
+    }
+    previousRank = rank;
+    if (phase === "loading") {
+      if (firstLoading === -1) firstLoading = index;
+      lastLoading = index;
+    }
+    return phase;
+  });
+  if (firstLoading === -1) throw new InspectError("TN_LAUNCH_SEQUENCE_NO_LOADING", 1);
+  if (lastLoading === phases.length - 1) {
+    throw new InspectError("TN_LAUNCH_SEQUENCE_NO_PLAYABLE", 1);
+  }
+  return {
+    firstLoading,
+    lastLoading,
+    phases,
+  };
+}
+
 function adbPath(environment = process.env) {
   if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
   const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
@@ -351,8 +411,22 @@ async function main() {
   const box = findContentBox(images);
   const frames = images.map((png) => classifyFrame(png, palette, 14, box));
   const report = summarise(frames);
+  const sequence = assertLaunchFrameSequence(
+    frames.map((frame, index) => ({
+      ...frame,
+      phase:
+        index < report.loadingFirstFrame
+          ? "platform-splash"
+          : index <= report.loadingLastFrame
+            ? "loading"
+            : "playable",
+    })),
+  );
 
   console.log(`launch inspection — ${options.device}, ${target}`);
+  console.log(
+    `  launch sequence: ${sequence.phases.join(" → ")}`,
+  );
   console.log(`  ${report.frames} frames, ${report.resolution} (${report.orientation})`);
   console.log(`  recorder letterbox cropped: ${box.width}x${box.height} at ${box.x},${box.y}`);
   console.log(`  loading screen: frames ${report.loadingFirstFrame}–${report.loadingLastFrame} (${report.loadingFrames})`);

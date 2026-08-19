@@ -83,7 +83,18 @@ function androidPaths(root = runtimeRoot) {
     androidManifest: join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'),
     androidStrings: join(root, 'android', 'app', 'src', 'main', 'res', 'values', 'strings.xml'),
     androidTheme: join(root, 'android', 'app', 'src', 'main', 'res', 'values', 'themes.xml'),
+    androidBranding: join(root, 'android', 'app', 'src', 'main', 'res', 'values', 'branding.xml'),
     androidGradle: join(root, 'android', 'app', 'build.gradle.kts'),
+    androidAdaptiveIcon: join(
+      root,
+      'android',
+      'app',
+      'src',
+      'main',
+      'res',
+      'mipmap-anydpi-v26',
+      'ic_launcher.xml',
+    ),
     androidIcon: join(
       root,
       'android',
@@ -93,6 +104,36 @@ function androidPaths(root = runtimeRoot) {
       'res',
       'mipmap-xxxhdpi',
       'ic_launcher.png',
+    ),
+    androidForeground: join(
+      root,
+      'android',
+      'app',
+      'src',
+      'main',
+      'res',
+      'drawable-nodpi',
+      'ic_launcher_foreground.png',
+    ),
+    androidMonochrome: join(
+      root,
+      'android',
+      'app',
+      'src',
+      'main',
+      'res',
+      'drawable-nodpi',
+      'ic_launcher_monochrome.png',
+    ),
+    androidSplash: join(
+      root,
+      'android',
+      'app',
+      'src',
+      'main',
+      'res',
+      'drawable-nodpi',
+      'tn_boot_splash.png',
     ),
   };
 }
@@ -108,6 +149,7 @@ function configValue(value, orientation) {
   const app = source.app && typeof source.app === 'object' ? source.app : {};
   const display = source.display && typeof source.display === 'object' ? source.display : {};
   const window = source.window && typeof source.window === 'object' ? source.window : {};
+  const bootSplash = source.bootSplash && typeof source.bootSplash === 'object' ? source.bootSplash : {};
   return {
     app: { ...DEFAULT_ANDROID_CONFIG.app, ...app },
     display: {
@@ -116,6 +158,7 @@ function configValue(value, orientation) {
       orientation: orientation ?? display.orientation ?? DEFAULT_ANDROID_CONFIG.display.orientation,
     },
     window: { ...DEFAULT_ANDROID_CONFIG.window, ...window },
+    ...(source.bootSplash === undefined ? {} : { bootSplash: { ...bootSplash } }),
   };
 }
 
@@ -154,6 +197,69 @@ function orientationValue(value = 'landscape') {
   );
 }
 
+function androidIcons(config) {
+  const app = config.app ?? {};
+  return app.icons?.android ?? {};
+}
+
+function hasAndroidIcon(config) {
+  return iconForeground(config) !== undefined;
+}
+
+function appIcon(config) {
+  return config.app?.icon;
+}
+
+function iconForeground(config) {
+  return androidIcons(config).foreground ?? appIcon(config);
+}
+
+function iconMonochrome(config) {
+  return androidIcons(config).monochrome ?? iconForeground(config);
+}
+
+function iconBackground(config) {
+  return androidIcons(config).background ?? config.bootSplash?.backgroundColor ?? '#000000';
+}
+
+function bootSplashBackground(config) {
+  return config.bootSplash?.backgroundColor ?? '#000000';
+}
+
+function setThemeItem(source, name, value) {
+  const item = new RegExp(`<item\\s+name="${name}">[\\s\\S]*?<\\/item>`, 'u');
+  const rendered = `<item name="${name}">${value}</item>`;
+  if (item.test(source)) return source.replace(item, rendered);
+  return source.replace(/\s*<\/style>/u, `\n        ${rendered}\n    </style>`);
+}
+
+export function renderAndroidBrandingResources(config) {
+  const icons = androidIcons(config);
+  const hasIcon = hasAndroidIcon(config);
+  const adaptive = hasIcon
+    ? `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/tn_icon_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
+`
+    : undefined;
+  const colors = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tn_icon_background">${xmlEscape(iconBackground(config))}</color>
+    <color name="tn_boot_splash_background">${xmlEscape(bootSplashBackground(config))}</color>
+</resources>
+`;
+  return {
+    adaptive,
+    colors,
+    foreground: icons.foreground ?? appIcon(config),
+    monochrome: icons.monochrome ?? icons.foreground ?? appIcon(config),
+    splash: config.bootSplash?.image,
+  };
+}
+
 export function renderAndroidManifest(source, orientation = 'landscape') {
   const config = configValue(typeof orientation === 'string' ? undefined : orientation, typeof orientation === 'string' ? orientation : undefined);
   const value = orientationValue(config.display.orientation);
@@ -164,6 +270,14 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
   let rendered = source.replace(
     application[0],
     setXmlAttribute(application[0], 'icon', config.app.icon === undefined ? undefined : '@mipmap/ic_launcher'),
+  );
+  rendered = rendered.replace(
+    /<application\b[^>]*>/u,
+    (tag) => setXmlAttribute(tag, 'icon', hasAndroidIcon(config) ? '@mipmap/ic_launcher' : undefined),
+  );
+  rendered = rendered.replace(
+    /<application\b[^>]*>/u,
+    (tag) => setXmlAttribute(tag, 'roundIcon', hasAndroidIcon(config) ? '@mipmap/ic_launcher' : undefined),
   );
   const renderedActivity = setXmlAttribute(
     activity[0],
@@ -193,8 +307,17 @@ export function renderAndroidTheme(source, config) {
   const parent = value.display.fullscreen ? 'android:Theme.NoTitleBar.Fullscreen' : 'android:Theme.NoTitleBar';
   let rendered = source.replace(/(parent=")[^"]*(")/u, `$1${parent}$2`);
   const item = /<item\s+name="android:windowFullscreen">[\s\S]*?<\/item>/u;
-  if (item.test(rendered)) return rendered.replace(item, `<item name="android:windowFullscreen">${fullscreen}</item>`);
-  return rendered.replace(/\s*<\/style>/u, `\n        <item name="android:windowFullscreen">${fullscreen}</item>\n    </style>`);
+  rendered = item.test(rendered)
+    ? rendered.replace(item, `<item name="android:windowFullscreen">${fullscreen}</item>`)
+    : rendered.replace(/\s*<\/style>/u, `\n        <item name="android:windowFullscreen">${fullscreen}</item>\n    </style>`);
+  rendered = setThemeItem(rendered, 'android:windowSplashScreenBackground', '@color/tn_boot_splash_background');
+  if (hasAndroidIcon(config)) {
+    rendered = setThemeItem(rendered, 'android:windowSplashScreenAnimatedIcon', '@drawable/ic_launcher_foreground');
+  }
+  if (configValue(config).bootSplash?.image !== undefined) {
+    rendered = setThemeItem(rendered, 'android:windowSplashScreenBrandingImage', '@drawable/tn_boot_splash');
+  }
+  return rendered;
 }
 
 export function renderAndroidBuildGradle(source, config) {
@@ -215,11 +338,24 @@ function installAndroidFiles(config, root = runtimeRoot) {
     androidManifest,
     androidStrings,
     androidTheme,
+    androidBranding,
     androidGradle,
+    androidAdaptiveIcon,
     androidIcon,
+    androidForeground,
+    androidMonochrome,
+    androidSplash,
   } = androidPaths(root);
-  if (config.app.icon !== undefined && (!existsSync(config.app.icon) || !statSync(config.app.icon).isFile())) {
-    throw new Error(`TN_CONFIG_ICON_MISSING: app.icon does not exist: ${config.app.icon}`);
+  const branding = renderAndroidBrandingResources(config);
+  const requiredAssets = [
+    [branding.foreground, 'TN_CONFIG_BRAND_ANDROID_FOREGROUND_MISSING'],
+    [branding.monochrome, 'TN_CONFIG_BRAND_ANDROID_MONOCHROME_MISSING'],
+    [branding.splash, 'TN_CONFIG_BRAND_SPLASH_MISSING'],
+  ];
+  for (const [file, code] of requiredAssets) {
+    if (file !== undefined && (!existsSync(file) || !statSync(file).isFile())) {
+      throw new Error(`${code}: declared Android brand asset does not exist: ${file}`);
+    }
   }
   const originals = new Map([
     [androidManifest, readFileSync(androidManifest)],
@@ -227,20 +363,50 @@ function installAndroidFiles(config, root = runtimeRoot) {
     [androidTheme, readFileSync(androidTheme)],
     [androidGradle, readFileSync(androidGradle)],
   ]);
+  const generated = [androidBranding, androidAdaptiveIcon, androidForeground, androidMonochrome, androidSplash];
+  const generatedOriginals = new Map(
+    generated.map((file) => [file, existsSync(file) ? readFileSync(file) : undefined]),
+  );
   const iconOriginal = existsSync(androidIcon) ? readFileSync(androidIcon) : undefined;
   writeFileSync(androidManifest, renderAndroidManifest(originals.get(androidManifest).toString('utf8'), config));
   writeFileSync(androidStrings, renderAndroidStrings(originals.get(androidStrings).toString('utf8'), config));
   writeFileSync(androidTheme, renderAndroidTheme(originals.get(androidTheme).toString('utf8'), config));
   writeFileSync(androidGradle, renderAndroidBuildGradle(originals.get(androidGradle).toString('utf8'), config));
-  if (config.app.icon !== undefined) {
+  writeFileSync(androidBranding, branding.colors);
+  if (branding.adaptive !== undefined) {
+    mkdirSync(dirname(androidAdaptiveIcon), { recursive: true });
+    writeFileSync(androidAdaptiveIcon, branding.adaptive);
+  } else {
+    rmSync(androidAdaptiveIcon, { force: true });
+  }
+  if (branding.foreground !== undefined) {
+    mkdirSync(dirname(androidForeground), { recursive: true });
+    copyFileSync(branding.foreground, androidForeground);
+  } else {
+    rmSync(androidForeground, { force: true });
+  }
+  if (branding.monochrome !== undefined) {
+    mkdirSync(dirname(androidMonochrome), { recursive: true });
+    copyFileSync(branding.monochrome, androidMonochrome);
+  } else {
+    rmSync(androidMonochrome, { force: true });
+  }
+  if (branding.splash !== undefined) {
+    mkdirSync(dirname(androidSplash), { recursive: true });
+    copyFileSync(branding.splash, androidSplash);
+  } else {
+    rmSync(androidSplash, { force: true });
+  }
+  if (branding.foreground !== undefined) {
     mkdirSync(dirname(androidIcon), { recursive: true });
-    copyFileSync(config.app.icon, androidIcon);
+    copyFileSync(branding.foreground, androidIcon);
   } else {
     rmSync(androidIcon, { force: true });
   }
   return () => {
     for (const [file, original] of originals) restoreFile(file, original);
     restoreFile(androidIcon, iconOriginal);
+    for (const [file, original] of generatedOriginals) restoreFile(file, original);
   };
 }
 

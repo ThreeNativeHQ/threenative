@@ -1,4 +1,5 @@
 #include "mystral/runtime.h"
+#include "mystral/platform/input.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -6,6 +7,7 @@
 #import <UIKit/UIKit.h>
 
 #include <cstdlib>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -41,6 +43,24 @@ std::string mailboxRoot() {
     return directories.count == 0 ? std::string() : directories.firstObject.path.UTF8String;
 }
 
+void refreshIosSafeAreaInsets() {
+    NSArray<UIScene*>* scenes = UIApplication.sharedApplication.connectedScenes.allObjects;
+    for (UIScene* scene in scenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        UIWindowScene* windowScene = (UIWindowScene*)scene;
+        for (UIWindow* window in windowScene.windows) {
+            if (!window.isKeyWindow && windowScene.windows.count > 1) continue;
+            const UIEdgeInsets insets = window.safeAreaInsets;
+            mystral::platform::setSafeAreaInsets(
+                static_cast<int>(std::round(insets.top)),
+                static_cast<int>(std::round(insets.right)),
+                static_cast<int>(std::round(insets.bottom)),
+                static_cast<int>(std::round(insets.left)));
+            return;
+        }
+    }
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -74,8 +94,17 @@ int main(int, char**) {
         config.title = title.UTF8String;
         config.fullscreen = fullscreen;
         config.resizable = false;
+        refreshIosSafeAreaInsets();
+        id safeAreaObserver = [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIDeviceOrientationDidChangeNotification
+            object:nil
+            queue:[NSOperationQueue mainQueue]
+            usingBlock:^(__unused NSNotification* notification) {
+                refreshIosSafeAreaInsets();
+            }];
         auto runtime = mystral::Runtime::create(config);
         if (!runtime) {
+            [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
             NSLog(@"TN_IOS_PROOF_FAILED: runtime initialization failed");
             return 2;
         }
@@ -98,6 +127,7 @@ int main(int, char**) {
             return 2;
         }
         runtime->run();
+        [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
         return runtime->getExitCode();
     }
 }

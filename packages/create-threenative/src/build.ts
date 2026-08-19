@@ -100,19 +100,90 @@ export async function nativeOrientation(cwd: string): Promise<NativeOrientation>
   return (await loadConfig(cwd)).display.orientation;
 }
 
-async function writePackagingConfig(
+export function resolvePackagingConfig(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+): IResolvedThreeNativeConfig {
+  const resolve = (value: string | undefined): string | undefined =>
+    value === undefined ? undefined : path.resolve(cwd, value);
+  const artifact: IResolvedThreeNativeConfig = {
+    ...config,
+    app: {
+      ...config.app,
+      ...(config.app.icon === undefined ? {} : { icon: path.resolve(cwd, config.app.icon) }),
+      ...(config.app.icons === undefined
+        ? {}
+        : {
+            icons: {
+              ...(config.app.icons.android === undefined
+                ? {}
+                : {
+                    android: {
+                      ...(config.app.icons.android.foreground === undefined
+                        ? {}
+                        : { foreground: path.resolve(cwd, config.app.icons.android.foreground) }),
+                      ...(config.app.icons.android.background === undefined
+                        ? {}
+                        : { background: config.app.icons.android.background }),
+                      ...(config.app.icons.android.monochrome === undefined
+                        ? {}
+                        : { monochrome: path.resolve(cwd, config.app.icons.android.monochrome) }),
+                    },
+                  }),
+              ...(config.app.icons.ios === undefined
+                ? {}
+                : {
+                    ios: {
+                      ...(config.app.icons.ios.dark === undefined
+                        ? {}
+                        : { dark: path.resolve(cwd, config.app.icons.ios.dark) }),
+                      ...(config.app.icons.ios.tinted === undefined
+                        ? {}
+                        : { tinted: path.resolve(cwd, config.app.icons.ios.tinted) }),
+                    },
+                  }),
+              ...(config.app.icons.web === undefined
+                ? {}
+                : {
+                    web: {
+                      ...(config.app.icons.web.favicon === undefined
+                        ? {}
+                        : { favicon: resolve(config.app.icons.web.favicon) }),
+                      ...(config.app.icons.web.maskable === undefined
+                        ? {}
+                        : { maskable: resolve(config.app.icons.web.maskable) }),
+                      ...(config.app.icons.web.monochrome === undefined
+                        ? {}
+                        : { monochrome: resolve(config.app.icons.web.monochrome) }),
+                      ...(config.app.icons.web.appleTouch === undefined
+                        ? {}
+                        : { appleTouch: resolve(config.app.icons.web.appleTouch) }),
+                    },
+                  }),
+            },
+          }),
+    },
+    ...(config.bootSplash === undefined
+      ? {}
+      : {
+          bootSplash: {
+            ...config.bootSplash,
+            ...(config.bootSplash.image === undefined
+              ? {}
+              : { image: path.resolve(cwd, config.bootSplash.image) }),
+          },
+        }),
+  };
+  return artifact;
+}
+
+export async function writePackagingConfig(
   cwd: string,
   config: IResolvedThreeNativeConfig,
 ): Promise<string> {
   const directory = path.join(cwd, ".threenative", "build");
   await mkdir(directory, { recursive: true });
-  const artifact = {
-    ...config,
-    app: {
-      ...config.app,
-      ...(config.app.icon === undefined ? {} : { icon: path.resolve(cwd, config.app.icon) }),
-    },
-  };
+  const artifact = resolvePackagingConfig(cwd, config);
   const output = path.join(directory, "config.json");
   await writeFile(output, `${JSON.stringify(artifact, null, 2)}\n`);
   return output;

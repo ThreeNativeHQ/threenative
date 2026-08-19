@@ -41,6 +41,7 @@ function configValue(value, orientation) {
   const app = source.app && typeof source.app === 'object' ? source.app : {};
   const display = source.display && typeof source.display === 'object' ? source.display : {};
   const window = source.window && typeof source.window === 'object' ? source.window : {};
+  const bootSplash = source.bootSplash && typeof source.bootSplash === 'object' ? source.bootSplash : {};
   return {
     app: { ...DEFAULT_IOS_CONFIG.app, ...app },
     display: {
@@ -49,6 +50,7 @@ function configValue(value, orientation) {
       orientation: orientation ?? display.orientation ?? DEFAULT_IOS_CONFIG.display.orientation,
     },
     window: { ...DEFAULT_IOS_CONFIG.window, ...window },
+    ...(source.bootSplash === undefined ? {} : { bootSplash: { ...bootSplash } }),
   };
 }
 
@@ -69,21 +71,35 @@ function plistKey(source, key, value) {
   const rendered = `  <key>${key}</key>\n  <string>${xmlEscape(value)}</string>`;
   const pattern = new RegExp(`\\s*<key>${key}</key>\\s*<(?:string|true|false)>[\\s\\S]*?</(?:string|true|false)>`, 'u');
   if (pattern.test(source)) return source.replace(pattern, `\n${rendered}`);
-  return source.replace(/\s*<\/dict>/u, `\n${rendered}\n</dict>`);
+  return source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
 }
 
 function plistBoolean(source, key, value) {
   const rendered = `  <key>${key}</key>\n  <${value ? 'true' : 'false'}/>`;
   const pattern = new RegExp(`\\s*<key>${key}</key>\\s*<(?:true|false)\\s*/?>`, 'u');
   if (pattern.test(source)) return source.replace(pattern, `\n${rendered}`);
-  return source.replace(/\s*<\/dict>/u, `\n${rendered}\n</dict>`);
+  return source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
 }
 
 function plistInteger(source, key, value) {
   const rendered = `  <key>${key}</key>\n  <integer>${value}</integer>`;
   const pattern = new RegExp(`\\s*<key>${key}</key>\\s*<integer>[\\s\\S]*?</integer>`, 'u');
   if (pattern.test(source)) return source.replace(pattern, `\n${rendered}`);
-  return source.replace(/\s*<\/dict>/u, `\n${rendered}\n</dict>`);
+  return source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
+}
+
+function plistLaunchScreen(source, config) {
+  const image = config.bootSplash?.image === undefined ? undefined : 'LaunchImage';
+  const inner = [
+    '  <key>UIColorName</key>',
+    '  <string>TNLaunchBackground</string>',
+    ...(image === undefined ? [] : ['  <key>UIImageName</key>', `  <string>${image}</string>`]),
+  ].join('\n');
+  const rendered = `  <key>UILaunchScreen</key>\n  <dict>\n${inner}\n  </dict>`;
+  const pattern = /\s*<key>UILaunchScreen<\/key>\s*<dict>[\s\S]*?<\/dict>/u;
+  return pattern.test(source)
+    ? source.replace(pattern, `\n${rendered}`)
+    : source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
 }
 
 function orientationValue(value = 'landscape') {
@@ -115,8 +131,10 @@ export function renderIosInfoPlist(source, orientation = 'landscape') {
   rendered = plistInteger(rendered, 'TNWindowWidth', config.window.width);
   rendered = plistInteger(rendered, 'TNWindowHeight', config.window.height);
   rendered = plistBoolean(rendered, 'TNWindowResizable', config.window.resizable);
-  if (config.app.icon !== undefined) rendered = plistKey(rendered, 'CFBundleIconName', 'AppIcon');
-  return rendered;
+  if (config.app.icon !== undefined || config.app.icons?.ios !== undefined) {
+    rendered = plistKey(rendered, 'CFBundleIconName', 'AppIcon');
+  }
+  return plistLaunchScreen(rendered, config);
 }
 
 function argumentAfter(args, flag) {
@@ -159,15 +177,15 @@ function findApp(directory) {
   return undefined;
 }
 
-function compileIosIcon(catalog, output) {
+function compileIosAssets(catalog, output, includeAppIcon = false) {
+  const iconArguments = includeAppIcon ? ['--app-icon', 'AppIcon'] : [];
   const result = spawnSync(
     'xcrun',
     [
       'actool',
       '--compile',
       output,
-      '--app-icon',
-      'AppIcon',
+      ...iconArguments,
       '--platform',
       'iphonesimulator',
       '--minimum-deployment-target',
@@ -192,7 +210,45 @@ function compileIosIcon(catalog, output) {
   }
 }
 
-function stageIosIcon(output, icon, compileIcon = compileIosIcon) {
+function compileIosIcon(catalog, output) {
+  return compileIosAssets(catalog, output, true);
+}
+
+function colorComponents(value) {
+  const hex = /^#([0-9a-f]{6})$/iu.exec(value ?? '')?.[1] ?? '000000';
+  return {
+    blue: hex.slice(4, 6),
+    green: hex.slice(2, 4),
+    red: hex.slice(0, 2),
+  };
+}
+
+function writeLaunchColor(catalog, value) {
+  const colorset = join(catalog, 'LaunchBackground.colorset');
+  mkdirSync(colorset, { recursive: true });
+  const components = colorComponents(value);
+  writeFileSync(
+    join(colorset, 'Contents.json'),
+    `${JSON.stringify(
+      {
+        colors: [
+          {
+            color: {
+              'color-space': 'srgb',
+              components: { alpha: '1.000', ...components },
+            },
+            idiom: 'universal',
+          },
+        ],
+        info: { author: 'xcode', version: 1 },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) {
   if (!existsSync(icon) || !statSync(icon).isFile()) {
     throw new Error(`TN_CONFIG_ICON_MISSING: app.icon does not exist: ${icon}`);
   }
@@ -204,19 +260,38 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon) {
     mkdirSync(appIcon, { recursive: true });
     mkdirSync(compiled, { recursive: true });
     copyFileSync(icon, join(appIcon, 'AppIcon-1024.png'));
+    const appearances = options.variants ?? {};
+    const images = [
+      {
+        filename: 'AppIcon-1024.png',
+        idiom: 'universal',
+        platform: 'ios',
+        scale: '1x',
+        size: '1024x1024',
+      },
+    ];
+    for (const [appearance, source] of [['dark', appearances.dark], ['tinted', appearances.tinted]]) {
+      if (source === undefined) continue;
+      if (!existsSync(source) || !statSync(source).isFile()) {
+        throw new Error(`TN_CONFIG_BRAND_IOS_${appearance.toUpperCase()}_MISSING: ${source}`);
+      }
+      const filename = `AppIcon-1024-${appearance}.png`;
+      copyFileSync(source, join(appIcon, filename));
+      images.push({
+        appearances: [{ appearance: 'luminosity', value: appearance }],
+        filename,
+        idiom: 'universal',
+        platform: 'ios',
+        scale: '1x',
+        size: '1024x1024',
+      });
+    }
+    writeLaunchColor(catalog, options.backgroundColor ?? '#000000');
     writeFileSync(
       join(appIcon, 'Contents.json'),
       `${JSON.stringify(
         {
-          images: [
-            {
-              idiom: 'universal',
-              platform: 'ios',
-              size: '1024x1024',
-              scale: '1x',
-              filename: 'AppIcon-1024.png',
-            },
-          ],
+          images,
           info: { author: 'xcode', version: 1 },
         },
         null,
@@ -235,6 +310,24 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon) {
   }
 }
 
+function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIosAssets) {
+  const temporary = mkdtempSync(join(tmpdir(), 'threenative-ios-launch-'));
+  try {
+    const catalog = join(temporary, 'Assets.xcassets');
+    const compiled = join(temporary, 'compiled');
+    mkdirSync(compiled, { recursive: true });
+    writeLaunchColor(catalog, backgroundColor);
+    compileAssets(catalog, compiled);
+    const assetsCar = join(compiled, 'Assets.car');
+    if (!existsSync(assetsCar) || !statSync(assetsCar).isFile() || statSync(assetsCar).size === 0) {
+      throw new Error('TN_IOS_LAUNCH_COMPILE_FAILED: actool did not produce a usable Assets.car.');
+    }
+    copyFileSync(assetsCar, join(output, 'Assets.car'));
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+}
+
 export function stageIosSimulatorApp({
   assets,
   bundle,
@@ -243,6 +336,7 @@ export function stageIosSimulatorApp({
   orientation = undefined,
   config = undefined,
   compileIcon = compileIosIcon,
+  compileAssets = compileIosAssets,
 }) {
   const declared = configValue(config, orientation);
   const declaredOrientation = orientationValue(declared.display.orientation);
@@ -266,7 +360,26 @@ export function stageIosSimulatorApp({
   mkdirSync(game, { recursive: true });
   const plist = join(output, 'Info.plist');
   writeFileSync(plist, renderIosInfoPlist(readFileSync(plist, 'utf8'), declared));
-  if (declared.app.icon !== undefined) stageIosIcon(output, declared.app.icon, compileIcon);
+  const iosVariants = declared.app.icons?.ios ?? {};
+  const icon = declared.app.icon ?? iosVariants.dark ?? iosVariants.tinted;
+  if (icon !== undefined) {
+    stageIosIcon(output, icon, compileIcon, {
+      backgroundColor: declared.bootSplash?.backgroundColor,
+      variants: iosVariants,
+    });
+  } else if (declared.bootSplash !== undefined) {
+    stageIosLaunchAssets(
+      output,
+      declared.bootSplash.backgroundColor ?? '#000000',
+      compileAssets,
+    );
+  }
+  if (declared.bootSplash?.image !== undefined) {
+    if (!existsSync(declared.bootSplash.image) || !statSync(declared.bootSplash.image).isFile()) {
+      throw new Error(`TN_CONFIG_BRAND_SPLASH_MISSING: ${declared.bootSplash.image}`);
+    }
+    copyFileSync(declared.bootSplash.image, join(output, 'LaunchImage.png'));
+  }
   let assetFiles = [];
   if (assets && existsSync(assets)) {
     if (!statSync(assets).isDirectory()) {
@@ -288,8 +401,10 @@ export function stageIosSimulatorApp({
     appName: declared.app.name,
     version: declared.app.version,
     build: declared.app.build,
-    ...(declared.app.icon === undefined ? {} : { icon: declared.app.icon }),
-    ...(declared.app.icon === undefined ? {} : { iconArtifact: 'Assets.car' }),
+    ...(icon === undefined ? {} : { icon }),
+    ...(icon === undefined ? {} : { iconArtifact: 'Assets.car' }),
+    ...(declared.bootSplash?.image === undefined ? {} : { launchImage: 'LaunchImage.png' }),
+    launchBackground: declared.bootSplash?.backgroundColor ?? '#000000',
     output,
     outputBundleSha256: checksum(join(output, 'native-smoke.js')),
   };

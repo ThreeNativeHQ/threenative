@@ -4,5 +4,7 @@
     <style name="Theme.ThreeNative" parent="android:Theme.NoTitleBar.Fullscreen">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
+        <!-- package-android.mjs replaces these generated brand resources per project. -->
+        <item name="android:windowSplashScreenBackground">@color/tn_boot_splash_background</item>
     </style>
 </resources>

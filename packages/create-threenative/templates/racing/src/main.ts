@@ -13,3 +13,18 @@ const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof cr
 const reactRoot = appRoot.__threenativeRoot ?? createRoot(appRoot);
 appRoot.__threenativeRoot = reactRoot;
 reactRoot.render(createElement(App, { game }));
+
+function removeLaunchSurfaceAfterPaint(): void {
+  const launch = document.querySelector<HTMLElement>("[data-threenative-launch]");
+  if (launch === null) return;
+  const waitForCanvas = () => {
+    if (document.querySelector("canvas") === null) {
+      requestAnimationFrame(waitForCanvas);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => launch.remove()));
+  };
+  requestAnimationFrame(waitForCanvas);
+}
+
+removeLaunchSurfaceAfterPaint();

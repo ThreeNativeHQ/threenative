@@ -69,13 +69,6 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).resolves.toEqual({
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true },
-      // Omitted entirely by the fixture above, so this is the defaulting path.
-      loading: {
-        backdropColor: "#0d1b2a",
-        trackColor: "#274060",
-        progressColor: "#8fd694",
-        showProgressBar: true,
-      },
       window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
@@ -153,57 +146,75 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_PACKAGE_INVALID/u);
   });
 
-  it("reads the loading screen's declared values and rejects malformed ones", async () => {
+  it("resolves every declared brand variant and boot splash asset", async () => {
     const root = await project();
-    await writeFile(
-      path.join(root, "threenative.config.ts"),
+    for (const file of [
+      "icon.png",
+      "foreground.png",
+      "monochrome.png",
+      "dark.png",
+      "tinted.png",
+      "maskable.png",
+      "apple.png",
+      "launch.png",
+    ])
+      await writeFile(path.join(root, file), VALID_PNG);
+    await writeFile(path.join(root, "favicon.svg"), '<svg xmlns="http://www.w3.org/2000/svg" />\n');
+    await config(
+      root,
       `export default {
-        loading: {
-          backdropColor: "#101820",
-          trackColor: "#223344",
-          progressColor: "#ffcc00",
-          showProgressBar: false,
-          image: "public/logo.png",
+        app: {
+          icon: "icon.png",
+          icons: {
+            android: { foreground: "foreground.png", background: "#111827", monochrome: "monochrome.png" },
+            ios: { dark: "dark.png", tinted: "tinted.png" },
+            web: { favicon: "favicon.svg", maskable: "maskable.png", monochrome: "monochrome.png", appleTouch: "apple.png" },
+          },
         },
-      };\n`,
+        bootSplash: { backgroundColor: "#0d1b2a", image: "launch.png" },
+      };`,
     );
     await expect(loadConfig(root)).resolves.toMatchObject({
-      loading: {
-        backdropColor: "#101820",
-        trackColor: "#223344",
-        progressColor: "#ffcc00",
-        showProgressBar: false,
-        image: "public/logo.png",
+      app: {
+        icon: "icon.png",
+        icons: {
+          android: {
+            foreground: "foreground.png",
+            background: "#111827",
+            monochrome: "monochrome.png",
+          },
+          ios: { dark: "dark.png", tinted: "tinted.png" },
+          web: {
+            favicon: "favicon.svg",
+            maskable: "maskable.png",
+            monochrome: "monochrome.png",
+            appleTouch: "apple.png",
+          },
+        },
       },
+      bootSplash: { backgroundColor: "#0d1b2a", image: "launch.png" },
     });
   });
 
-  it.each([
-    [
-      "a colour that is not #rrggbb",
-      `{ loading: { progressColor: "green" } }`,
-      "TN_CONFIG_LOADING_COLOR_INVALID",
-    ],
-    [
-      "a shorthand colour",
-      `{ loading: { backdropColor: "#fff" } }`,
-      "TN_CONFIG_LOADING_COLOR_INVALID",
-    ],
-    [
-      "a non-boolean bar flag",
-      `{ loading: { showProgressBar: "yes" } }`,
-      "TN_CONFIG_LOADING_BAR_INVALID",
-    ],
-    [
-      "an absolute image path",
-      `{ loading: { image: "/etc/passwd" } }`,
-      "TN_CONFIG_LOADING_IMAGE_INVALID",
-    ],
-    ["an unknown key", `{ loading: { progressColour: "#ffffff" } }`, "TN_CONFIG_UNKNOWN_KEY"],
-  ])("rejects %s", async (_name, body, code) => {
+  it("rejects a declared brand variant with its path and stable code", async () => {
     const root = await project();
-    await writeFile(path.join(root, "threenative.config.ts"), `export default ${body};\n`);
-    await expect(loadConfig(root)).rejects.toThrow(code);
+    await config(
+      root,
+      `export default { app: { icons: { android: { foreground: "missing-foreground.png" } } } };`,
+    );
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_BRAND_ANDROID_FOREGROUND_MISSING",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
+    await expect(loadConfig(root)).rejects.toThrow(/missing-foreground\.png/u);
+  });
+
+  it("rejects a reintroduced loading group as an unknown config key", async () => {
+    const root = await project();
+    await config(root, 'export default { loading: { progressColor: "#ffffff" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
   });
 
   it("rejects bad orientation with the named code", async () => {

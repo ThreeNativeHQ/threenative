@@ -45,12 +45,23 @@ jar --create --file app/build/outputs/apk/debug/app-debug.apk \\
   -C app/src/main AndroidManifest.xml \\
   -C app/src/main/res values/strings.xml \\
   -C app/src/main/res values/themes.xml \\
+  -C app/src/main/res values/branding.xml \\
   -C app build.gradle.kts \\
   -C app/build/generated/threenative/assets scripts/main.js
 if [ -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
   jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
     -C app/src/main/res mipmap-xxxhdpi/ic_launcher.png
 fi
+for resource in \
+  mipmap-anydpi-v26/ic_launcher.xml \
+  drawable-nodpi/ic_launcher_foreground.png \
+  drawable-nodpi/ic_launcher_monochrome.png \
+  drawable-nodpi/tn_boot_splash.png; do
+  if [ -f "app/src/main/res/$resource" ]; then
+    jar --update --file app/build/outputs/apk/debug/app-debug.apk \
+      -C app/src/main/res "$resource"
+  fi
+done
 if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
   jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
     -C app/build/generated/threenative/assets game/level.bin
@@ -141,6 +152,40 @@ public final class Window {
   public void addFlags(int value) { flags |= value; }
   public void clearFlags(int value) { flags &= ~value; }
   public boolean hasFlag(int value) { return (flags & value) != 0; }
+  public View getDecorView() { return new View(); }
+}
+`,
+    'android/graphics/Insets.java': `package android.graphics;
+
+public final class Insets {
+  public final int top;
+  public final int right;
+  public final int bottom;
+  public final int left;
+  public Insets(int top, int right, int bottom, int left) {
+    this.top = top;
+    this.right = right;
+    this.bottom = bottom;
+    this.left = left;
+  }
+}
+`,
+    'android/view/View.java': `package android.view;
+
+public class View {
+  public WindowInsets getRootWindowInsets() { return null; }
+}
+`,
+    'android/view/WindowInsets.java': `package android.view;
+
+import android.graphics.Insets;
+
+public final class WindowInsets {
+  public Insets getInsets(int types) { return new Insets(0, 0, 0, 0); }
+  public static final class Type {
+    public static int systemBars() { return 1; }
+    public static int displayCutout() { return 2; }
+  }
 }
 `,
     'org/libsdl/app/SDLActivity.java': `package org.libsdl.app;
@@ -236,10 +281,16 @@ test('real Android packaging emits configured and no-config artifacts through th
   const runtime = createFakeAndroidRuntime();
   const bundle = join(root, 'game.js');
   const icon = join(root, 'icon.png');
+  const foreground = join(root, 'foreground.png');
+  const monochrome = join(root, 'monochrome.png');
+  const splash = join(root, 'launch.png');
   const assets = join(root, 'public');
   const configuredOutput = join(root, 'dist', 'fox.apk');
   writeFileSync(bundle, 'export default { start() {} };\n');
   writeFileSync(icon, VALID_PNG);
+  writeFileSync(foreground, VALID_PNG);
+  writeFileSync(monochrome, VALID_PNG);
+  writeFileSync(splash, VALID_PNG);
   mkdirSync(assets);
   writeFileSync(join(assets, 'level.bin'), 'level');
 
@@ -249,7 +300,15 @@ test('real Android packaging emits configured and no-config artifacts through th
     prepareAndroidPrebuilts: async () => undefined,
   };
   const config = {
-    app: { id: 'com.studio.foxgame', name: 'Fox', version: '1.2.3', build: 7, icon },
+    app: {
+      id: 'com.studio.foxgame',
+      name: 'Fox',
+      version: '1.2.3',
+      build: 7,
+      icon,
+      icons: { android: { foreground, monochrome, background: '#111827' } },
+    },
+    bootSplash: { backgroundColor: '#0d1b2a', image: splash },
     display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true },
     window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
   };
@@ -273,10 +332,24 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(strings, /<string name="app_name">Fox<\/string>/u);
   assert.match(strings, /<string name="window_title">Fox Desktop<\/string>/u);
   assert.match(theme, /android:windowFullscreen">false</u);
+  assert.match(theme, /android:windowSplashScreenBackground">@color\/tn_boot_splash_background</u);
+  assert.match(theme, /android:windowSplashScreenAnimatedIcon">@drawable\/ic_launcher_foreground</u);
+  assert.match(theme, /android:windowSplashScreenBrandingImage">@drawable\/tn_boot_splash</u);
   assert.match(gradle, /applicationId = "com\.studio\.foxgame"/u);
   assert.match(gradle, /versionCode = 7/u);
   assert.match(gradle, /versionName = "1\.2\.3"/u);
   assert.deepEqual(artifactEntry(configuredOutput, 'mipmap-xxxhdpi/ic_launcher.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(configuredOutput, 'drawable-nodpi/ic_launcher_foreground.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(configuredOutput, 'drawable-nodpi/ic_launcher_monochrome.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(configuredOutput, 'drawable-nodpi/tn_boot_splash.png'), VALID_PNG);
+  assert.match(
+    artifactEntry(configuredOutput, 'mipmap-anydpi-v26/ic_launcher.xml').toString('utf8'),
+    /android:drawable="@drawable\/ic_launcher_monochrome"/u,
+  );
+  assert.match(
+    artifactEntry(configuredOutput, 'values/branding.xml').toString('utf8'),
+    /tn_boot_splash_background.*#0d1b2a/u,
+  );
   assert.equal(artifactEntry(configuredOutput, 'scripts/main.js').toString('utf8'), readFileSync(bundle, 'utf8'));
   assert.equal(artifactEntry(configuredOutput, 'game/level.bin').toString('utf8'), 'level');
 

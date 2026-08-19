@@ -928,6 +928,17 @@ public:
         }
 
         platform::setWindowSize(width, height);
+        platform::refreshSafeAreaInsets();
+        const auto safeArea = platform::getSafeAreaInsets();
+        auto nativeHost = jsEngine_->getGlobalProperty("__THREENATIVE_NATIVE__");
+        if (safeArea.measured && jsEngine_->isObject(nativeHost)) {
+            auto safeAreaValue = jsEngine_->newObject();
+            jsEngine_->setProperty(safeAreaValue, "top", jsEngine_->newNumber(safeArea.top));
+            jsEngine_->setProperty(safeAreaValue, "right", jsEngine_->newNumber(safeArea.right));
+            jsEngine_->setProperty(safeAreaValue, "bottom", jsEngine_->newNumber(safeArea.bottom));
+            jsEngine_->setProperty(safeAreaValue, "left", jsEngine_->newNumber(safeArea.left));
+            jsEngine_->setProperty(nativeHost, "safeAreaInsets", safeAreaValue);
+        }
         // TODO: Dispatch resize event to JS
     }
 
@@ -4079,8 +4090,18 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
 
         // Host-neutral device playtest input. The JS bridge invokes this while
         // the normal SDL input path remains unchanged for players.
+        platform::refreshSafeAreaInsets();
         auto nativeHost = jsEngine_->getGlobalProperty("__THREENATIVE_NATIVE__");
         if (jsEngine_->isUndefined(nativeHost)) nativeHost = jsEngine_->newObject();
+        const auto safeArea = platform::getSafeAreaInsets();
+        if (safeArea.measured) {
+            auto safeAreaValue = jsEngine_->newObject();
+            jsEngine_->setProperty(safeAreaValue, "top", jsEngine_->newNumber(safeArea.top));
+            jsEngine_->setProperty(safeAreaValue, "right", jsEngine_->newNumber(safeArea.right));
+            jsEngine_->setProperty(safeAreaValue, "bottom", jsEngine_->newNumber(safeArea.bottom));
+            jsEngine_->setProperty(safeAreaValue, "left", jsEngine_->newNumber(safeArea.left));
+            jsEngine_->setProperty(nativeHost, "safeAreaInsets", safeAreaValue);
+        }
         // The surface's actual present mode, so a benchmark can report whether it was pinned to the
         // display rather than assume it. `configureSurface` refuses to fall back to FIFO when an
         // uncapped mode was asked for, so this always describes what really happened.

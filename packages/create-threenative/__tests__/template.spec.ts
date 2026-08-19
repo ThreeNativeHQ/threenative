@@ -7,6 +7,15 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createProject } from "../src/index.js";
 
 const templates = ["starter", "minimal"] as const;
+const brandingTemplates = [
+  "action-rpg",
+  "defense",
+  "minimal",
+  "platformer",
+  "racing",
+  "shooter",
+  "starter",
+] as const;
 const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
 // Only `minimal` still ships a camera-attached geometry HUD, because it is the one template with
 // no React and therefore no other way to draw one. Round 10 removed it from platformer, shooter,
@@ -102,6 +111,7 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   await linkDependency(target, "@threenative/core", path.resolve("packages/core"));
   await linkDependency(target, "@threenative/physics", path.resolve("packages/physics"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
+  await linkDependency(target, "create-threenative", path.resolve("packages/create-threenative"));
   await linkDependency(target, "three", path.resolve("packages/core/node_modules/three"));
   if (packageJson.devDependencies?.["@types/three"] !== undefined)
     await linkDependency(
@@ -126,6 +136,40 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
 }
 
 describe("template contracts", () => {
+  it("wires the brand adapter, launch handoff, and generated loading source in every template", async () => {
+    for (const template of brandingTemplates) {
+      const root = path.join(templateRoot, template);
+      const [config, index, main, vite] = await Promise.all([
+        readFile(path.join(root, "threenative.config.ts"), "utf8"),
+        readFile(path.join(root, "index.html"), "utf8"),
+        readFile(path.join(root, "src/main.ts"), "utf8"),
+        readFile(path.join(root, "vite.config.ts"), "utf8"),
+      ]);
+      expect(vite, template).toContain("createWebBrandPlugin()");
+      expect(index, template).toContain("data-threenative-launch");
+      expect(main, template).toContain("requestAnimationFrame");
+      expect(main, template).toContain("launch.remove()");
+      expect(config, template).toContain("bootSplash");
+      expect(config, template).toContain("icons");
+      expect(config, template).not.toMatch(/loading\s*:/u);
+
+      const sources = await sourceFiles(root);
+      const loadingSource = sources.find(([file]) => file.endsWith("src/render/loading.ts"))?.[1];
+      expect(loadingSource, template).toContain("createLoadingScreen");
+      expect(loadingSource, template).toContain("safeArea");
+      expect(loadingSource, template).toContain("fillImage");
+      expect(
+        sources.some(
+          ([file, source]) =>
+            file.endsWith(".ts") &&
+            !file.endsWith("src/render/loading.ts") &&
+            source.includes("createLoadingScreen("),
+        ),
+        template,
+      ).toBe(true);
+    }
+  });
+
   it("should import every module under each template render directory", async () => {
     for (const template of templates) {
       const root = path.join(templateRoot, template);

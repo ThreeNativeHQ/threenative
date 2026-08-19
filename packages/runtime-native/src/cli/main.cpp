@@ -524,6 +524,7 @@ struct CLIOptions {
     int width = 1280;
     int height = 720;
     std::string title = "ThreeNative";
+    std::string iconPath;
     bool resizable = true;
     bool showHelp = false;
     bool showVersion = false;
@@ -570,6 +571,15 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     const std::string config(bytes.begin(), bytes.end());
     const std::string title = extractJsonString(config, "title");
     if (!title.empty()) opts.title = title;
+    const std::string icon = extractJsonString(config, "icon");
+    if (!icon.empty()) {
+        opts.iconPath = icon;
+#ifdef _WIN32
+        _putenv_s("THREENATIVE_WINDOW_ICON_BUNDLE", icon.c_str());
+#else
+        setenv("THREENATIVE_WINDOW_ICON_BUNDLE", icon.c_str(), 1);
+#endif
+    }
     const double width = extractJsonNumber(config, "width", opts.width);
     const double height = extractJsonNumber(config, "height", opts.height);
     if (width > 0) opts.width = static_cast<int>(width);

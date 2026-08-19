@@ -14,4 +14,17 @@ acceptHotUpdate(game, import.meta.hot);
 void game.start().then(() => {
   const canvas = game.ctx?.renderer.domElement;
   if (canvas !== undefined) app.prepend(canvas);
+  const launch = document.querySelector<HTMLElement>("[data-threenative-launch]");
+  const waitForCanvas = () => {
+    if (document.querySelector("canvas") === null) {
+      requestAnimationFrame(waitForCanvas);
+      return;
+    }
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (launch !== null) launch.remove();
+      }),
+    );
+  };
+  requestAnimationFrame(waitForCanvas);
 });

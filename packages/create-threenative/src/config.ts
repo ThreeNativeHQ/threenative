@@ -2,7 +2,12 @@ import { access, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { IThreeNativeConfig, ThreeNativeOrientation } from "@threenative/core";
+import type {
+  IThreeNativeBootSplash,
+  IThreeNativeConfig,
+  IThreeNativeIconVariants,
+  ThreeNativeOrientation,
+} from "@threenative/core";
 
 export type { IThreeNativeConfig, ThreeNativeOrientation } from "@threenative/core";
 
@@ -13,6 +18,7 @@ export interface IResolvedThreeNativeConfig {
     readonly version: string;
     readonly build: number;
     readonly icon?: string;
+    readonly icons?: IThreeNativeIconVariants;
   };
   readonly display: {
     readonly orientation: ThreeNativeOrientation;
@@ -25,13 +31,7 @@ export interface IResolvedThreeNativeConfig {
     readonly height: number;
     readonly resizable: boolean;
   };
-  readonly loading: {
-    readonly image?: string;
-    readonly backdropColor: string;
-    readonly trackColor: string;
-    readonly progressColor: string;
-    readonly showProgressBar: boolean;
-  };
+  readonly bootSplash?: IThreeNativeBootSplash;
   readonly nativeEntry: string;
   readonly renderer: {
     readonly preferWebGPU: boolean;
@@ -157,35 +157,53 @@ function crc32(value: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function isPng(value: Buffer): boolean {
+interface IPngInfo {
+  readonly width: number;
+  readonly height: number;
+  readonly hasAlpha: boolean;
+}
+
+function parsePng(value: Buffer): IPngInfo | undefined {
   if (value.length < PNG_SIGNATURE.length || !value.subarray(0, 8).equals(PNG_SIGNATURE)) {
-    return false;
+    return undefined;
   }
 
   let offset = PNG_SIGNATURE.length;
   let hasHeader = false;
   let hasData = false;
+  let width = 0;
+  let height = 0;
+  let colorType = 0;
+  let hasTransparencyChunk = false;
   while (offset + 12 <= value.length) {
     const length = value.readUInt32BE(offset);
     const chunkEnd = offset + 12 + length;
-    if (chunkEnd > value.length) return false;
+    if (chunkEnd > value.length) return undefined;
     const type = value.toString("ascii", offset + 4, offset + 8);
     const chunk = value.subarray(offset + 4, offset + 8 + length);
-    if (crc32(chunk) !== value.readUInt32BE(offset + 8 + length)) return false;
+    if (crc32(chunk) !== value.readUInt32BE(offset + 8 + length)) return undefined;
     if (type === "IHDR") {
-      if (hasHeader || length !== 13) return false;
-      if (value.readUInt32BE(offset + 8) === 0 || value.readUInt32BE(offset + 12) === 0) {
-        return false;
-      }
+      if (hasHeader || length !== 13) return undefined;
+      width = value.readUInt32BE(offset + 8);
+      height = value.readUInt32BE(offset + 12);
+      colorType = value.readUInt8(offset + 17);
+      if (width === 0 || height === 0) return undefined;
       hasHeader = true;
     } else if (type === "IDAT") {
       hasData = true;
+    } else if (type === "tRNS") {
+      hasTransparencyChunk = true;
     } else if (type === "IEND") {
-      return length === 0 && hasHeader && hasData && chunkEnd === value.length;
+      if (length !== 0 || !hasHeader || !hasData || chunkEnd !== value.length) return undefined;
+      return {
+        width,
+        height,
+        hasAlpha: colorType === 4 || colorType === 6 || hasTransparencyChunk,
+      };
     }
     offset = chunkEnd;
   }
-  return false;
+  return undefined;
 }
 
 function projectRequire(cwd: string): NodeJS.Require {
@@ -439,7 +457,7 @@ async function validateApp(
   cwd: string,
 ): Promise<IResolvedThreeNativeConfig["app"]> {
   const app = assertRecord(raw, "app");
-  assertKeys(app, "app", ["id", "name", "version", "build", "icon"]);
+  assertKeys(app, "app", ["id", "name", "version", "build", "icon", "icons"]);
   const id =
     app.id === undefined
       ? defaultAppId(name)
@@ -462,30 +480,258 @@ async function validateApp(
     );
   }
   const build = positiveInteger(app.build, 1, "TN_CONFIG_APP_BUILD_INVALID", "app.build");
-  if (app.icon === undefined) return { id, name: appName, version, build };
+  const icon =
+    app.icon === undefined
+      ? undefined
+      : await validateProjectAsset(app.icon, cwd, "app.icon", {
+          codePrefix: "TN_CONFIG_ICON",
+          formats: ["png"],
+          square: true,
+        });
+  const icons = await validateIconVariants(app.icons, cwd);
+  if (
+    icons?.android !== undefined &&
+    icon === undefined &&
+    icons.android.foreground === undefined
+  ) {
+    fail(
+      "TN_CONFIG_BRAND_ANDROID_FOREGROUND_MISSING",
+      "app.icons.android.foreground is required when app.icon is not declared.",
+    );
+  }
+  return {
+    id,
+    name: appName,
+    version,
+    build,
+    ...(icon === undefined ? {} : { icon }),
+    ...(icons === undefined ? {} : { icons }),
+  };
+}
 
-  const icon = nonEmptyString(app.icon, "TN_CONFIG_ICON_INVALID", "app.icon");
-  if (path.extname(icon).toLowerCase() !== ".png") {
-    fail("TN_CONFIG_ICON_INVALID", "app.icon must point to a PNG file.");
+type BrandFormat = "png" | "svg";
+
+interface IProjectAssetOptions {
+  readonly codePrefix: string;
+  readonly formats: readonly BrandFormat[];
+  readonly requiresAlpha?: boolean;
+  readonly square?: boolean;
+}
+
+async function validateProjectAsset(
+  raw: unknown,
+  cwd: string,
+  label: string,
+  options: IProjectAssetOptions,
+): Promise<string> {
+  const relative = nonEmptyString(raw, `${options.codePrefix}_INVALID`, label);
+  if (path.isAbsolute(relative)) {
+    fail(`${options.codePrefix}_PATH_INVALID`, `${label} must be project-relative: ${relative}`);
   }
-  const iconPath = path.resolve(cwd, icon);
+  const resolved = path.resolve(cwd, relative);
+  const withinProject = path.relative(cwd, resolved);
+  if (
+    withinProject === ".." ||
+    withinProject.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(withinProject)
+  ) {
+    fail(
+      `${options.codePrefix}_PATH_INVALID`,
+      `${label} must stay inside the project: ${relative}`,
+    );
+  }
+  const extension = path.extname(relative).slice(1).toLowerCase() as BrandFormat;
+  if (!options.formats.includes(extension)) {
+    fail(
+      options.codePrefix === "TN_CONFIG_ICON"
+        ? `${options.codePrefix}_INVALID`
+        : `${options.codePrefix}_FORMAT_INVALID`,
+      `${label} must use ${options.formats.map((format) => `.${format}`).join(" or ")}: ${relative}`,
+    );
+  }
+  let info: Awaited<ReturnType<typeof stat>>;
   try {
-    const info = await stat(iconPath);
-    if (!info.isFile()) fail("TN_CONFIG_ICON_MISSING", `app.icon does not name a file: ${icon}`);
-  } catch (error) {
-    if (error instanceof ConfigFailure) throw error;
-    fail("TN_CONFIG_ICON_MISSING", `app.icon does not exist: ${icon}`);
+    info = await stat(resolved);
+  } catch {
+    fail(`${options.codePrefix}_MISSING`, `${label} does not exist: ${relative}`);
   }
+  if (!info.isFile()) fail(`${options.codePrefix}_MISSING`, `${label} is not a file: ${relative}`);
   let contents: Buffer;
   try {
-    contents = await readFile(iconPath);
+    contents = await readFile(resolved);
   } catch (error) {
-    fail("TN_CONFIG_ICON_INVALID", error instanceof Error ? error.message : String(error));
+    fail(
+      `${options.codePrefix}_INVALID`,
+      `${label} could not be read at ${relative}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  if (!isPng(contents)) {
-    fail("TN_CONFIG_ICON_INVALID", `app.icon is not a valid PNG file: ${icon}`);
+  if (extension === "svg") {
+    if (!/<svg(?:\s|>)/iu.test(contents.toString("utf8"))) {
+      fail(`${options.codePrefix}_INVALID`, `${label} is not a valid SVG file: ${relative}`);
+    }
+    return relative;
   }
-  return { id, name: appName, version, build, icon };
+  const png = parsePng(contents);
+  if (png === undefined) {
+    fail(`${options.codePrefix}_INVALID`, `${label} is not a valid PNG file: ${relative}`);
+  }
+  if (options.square === true && png.width !== png.height) {
+    fail(
+      `${options.codePrefix}_DIMENSIONS_INVALID`,
+      `${label} must be square (${png.width}x${png.height}): ${relative}`,
+    );
+  }
+  if (options.requiresAlpha === true && !png.hasAlpha) {
+    fail(
+      `${options.codePrefix}_ALPHA_INVALID`,
+      `${label} must include an alpha channel: ${relative}`,
+    );
+  }
+  return relative;
+}
+
+function validateBrandColor(raw: unknown, label: string): string {
+  if (typeof raw !== "string" || !/^#[0-9a-f]{6}$/iu.test(raw)) {
+    fail("TN_CONFIG_BRAND_COLOR_INVALID", `${label} must be a #rrggbb colour.`);
+  }
+  return raw;
+}
+
+async function validateIconVariants(
+  raw: unknown,
+  cwd: string,
+): Promise<IThreeNativeIconVariants | undefined> {
+  if (raw === undefined) return undefined;
+  const icons = assertRecord(raw, "app.icons");
+  assertKeys(icons, "app.icons", ["android", "ios", "web"]);
+  const android =
+    icons.android === undefined ? undefined : assertRecord(icons.android, "app.icons.android");
+  const ios = icons.ios === undefined ? undefined : assertRecord(icons.ios, "app.icons.ios");
+  const web = icons.web === undefined ? undefined : assertRecord(icons.web, "app.icons.web");
+  if (android !== undefined)
+    assertKeys(android, "app.icons.android", ["foreground", "background", "monochrome"]);
+  if (ios !== undefined) assertKeys(ios, "app.icons.ios", ["dark", "tinted"]);
+  if (web !== undefined)
+    assertKeys(web, "app.icons.web", ["favicon", "maskable", "monochrome", "appleTouch"]);
+  const androidResult =
+    android === undefined
+      ? undefined
+      : {
+          ...(android.foreground === undefined
+            ? {}
+            : {
+                foreground: await validateProjectAsset(
+                  android.foreground,
+                  cwd,
+                  "app.icons.android.foreground",
+                  {
+                    codePrefix: "TN_CONFIG_BRAND_ANDROID_FOREGROUND",
+                    formats: ["png"],
+                    requiresAlpha: true,
+                    square: true,
+                  },
+                ),
+              }),
+          ...(android.background === undefined
+            ? {}
+            : {
+                background: validateBrandColor(android.background, "app.icons.android.background"),
+              }),
+          ...(android.monochrome === undefined
+            ? {}
+            : {
+                monochrome: await validateProjectAsset(
+                  android.monochrome,
+                  cwd,
+                  "app.icons.android.monochrome",
+                  {
+                    codePrefix: "TN_CONFIG_BRAND_ANDROID_MONOCHROME",
+                    formats: ["png"],
+                    requiresAlpha: true,
+                    square: true,
+                  },
+                ),
+              }),
+        };
+  const iosResult =
+    ios === undefined
+      ? undefined
+      : {
+          ...(ios.dark === undefined
+            ? {}
+            : {
+                dark: await validateProjectAsset(ios.dark, cwd, "app.icons.ios.dark", {
+                  codePrefix: "TN_CONFIG_BRAND_IOS_DARK",
+                  formats: ["png"],
+                  square: true,
+                }),
+              }),
+          ...(ios.tinted === undefined
+            ? {}
+            : {
+                tinted: await validateProjectAsset(ios.tinted, cwd, "app.icons.ios.tinted", {
+                  codePrefix: "TN_CONFIG_BRAND_IOS_TINTED",
+                  formats: ["png"],
+                  square: true,
+                }),
+              }),
+        };
+  const webResult =
+    web === undefined
+      ? undefined
+      : {
+          ...(web.favicon === undefined
+            ? {}
+            : {
+                favicon: await validateProjectAsset(web.favicon, cwd, "app.icons.web.favicon", {
+                  codePrefix: "TN_CONFIG_BRAND_WEB_FAVICON",
+                  formats: ["png", "svg"],
+                  square: true,
+                }),
+              }),
+          ...(web.maskable === undefined
+            ? {}
+            : {
+                maskable: await validateProjectAsset(web.maskable, cwd, "app.icons.web.maskable", {
+                  codePrefix: "TN_CONFIG_BRAND_WEB_MASKABLE",
+                  formats: ["png"],
+                  square: true,
+                }),
+              }),
+          ...(web.monochrome === undefined
+            ? {}
+            : {
+                monochrome: await validateProjectAsset(
+                  web.monochrome,
+                  cwd,
+                  "app.icons.web.monochrome",
+                  {
+                    codePrefix: "TN_CONFIG_BRAND_WEB_MONOCHROME",
+                    formats: ["png"],
+                    square: true,
+                  },
+                ),
+              }),
+          ...(web.appleTouch === undefined
+            ? {}
+            : {
+                appleTouch: await validateProjectAsset(
+                  web.appleTouch,
+                  cwd,
+                  "app.icons.web.appleTouch",
+                  {
+                    codePrefix: "TN_CONFIG_BRAND_WEB_APPLE_TOUCH",
+                    formats: ["png"],
+                    square: true,
+                  },
+                ),
+              }),
+        };
+  return {
+    ...(androidResult === undefined ? {} : { android: androidResult }),
+    ...(iosResult === undefined ? {} : { ios: iosResult }),
+    ...(webResult === undefined ? {} : { web: webResult }),
+  };
 }
 
 function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
@@ -537,45 +783,27 @@ function validateWindow(raw: unknown, appName: string): IResolvedThreeNativeConf
   };
 }
 
-/**
- * The loading screen's declared values. This validates them and nothing draws them: the screen
- * itself is `src/render/loading.ts` in the generated project, which is the user's file to edit or
- * delete. A look this cannot express is a source edit, not another option here.
- */
-function validateLoading(raw: unknown): IResolvedThreeNativeConfig["loading"] {
-  const loading = assertRecord(raw, "loading");
-  assertKeys(loading, "loading", [
-    "image",
-    "backdropColor",
-    "trackColor",
-    "progressColor",
-    "showProgressBar",
-  ]);
-  const color = (value: unknown, fallback: string, label: string): string => {
-    if (value === undefined) return fallback;
-    if (typeof value !== "string" || !/^#[0-9a-f]{6}$/iu.test(value)) {
-      fail("TN_CONFIG_LOADING_COLOR_INVALID", `${label} must be a #rrggbb colour.`);
-    }
-    return value as string;
-  };
-  const image =
-    loading.image === undefined
+async function validateBootSplash(
+  raw: unknown,
+  cwd: string,
+): Promise<IResolvedThreeNativeConfig["bootSplash"]> {
+  if (raw === undefined) return undefined;
+  const bootSplash = assertRecord(raw, "bootSplash");
+  assertKeys(bootSplash, "bootSplash", ["backgroundColor", "image"]);
+  const backgroundColor =
+    bootSplash.backgroundColor === undefined
       ? undefined
-      : nonEmptyString(loading.image, "TN_CONFIG_LOADING_IMAGE_INVALID", "loading.image");
-  if (image !== undefined && path.isAbsolute(image)) {
-    fail("TN_CONFIG_LOADING_IMAGE_INVALID", "loading.image must be project-relative.");
-  }
+      : validateBrandColor(bootSplash.backgroundColor, "bootSplash.backgroundColor");
+  const image =
+    bootSplash.image === undefined
+      ? undefined
+      : await validateProjectAsset(bootSplash.image, cwd, "bootSplash.image", {
+          codePrefix: "TN_CONFIG_BRAND_SPLASH",
+          formats: ["png"],
+        });
   return {
+    ...(backgroundColor === undefined ? {} : { backgroundColor }),
     ...(image === undefined ? {} : { image }),
-    backdropColor: color(loading.backdropColor, "#0d1b2a", "loading.backdropColor"),
-    trackColor: color(loading.trackColor, "#274060", "loading.trackColor"),
-    progressColor: color(loading.progressColor, "#8fd694", "loading.progressColor"),
-    showProgressBar: booleanValue(
-      loading.showProgressBar,
-      true,
-      "TN_CONFIG_LOADING_BAR_INVALID",
-      "loading.showProgressBar",
-    ),
   };
 }
 
@@ -616,7 +844,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
         assertKeys(raw, "config", [
           "app",
           "display",
-          "loading",
+          "bootSplash",
           "window",
           "nativeEntry",
           "renderer",
@@ -630,13 +858,14 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
         );
       }
       const app = await validateApp(raw?.app, name, root);
+      const bootSplash = await validateBootSplash(raw?.bootSplash, root);
       return {
         app,
         display: validateDisplay(raw?.display),
-        loading: validateLoading(raw?.loading),
         window: validateWindow(raw?.window, app.name),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
         renderer: validateRenderer(raw?.renderer),
+        ...(bootSplash === undefined ? {} : { bootSplash }),
       };
     },
   );

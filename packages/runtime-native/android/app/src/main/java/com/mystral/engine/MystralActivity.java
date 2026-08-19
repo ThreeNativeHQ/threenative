@@ -2,7 +2,10 @@ package com.threenative.runtime;
 
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Insets;
 import android.os.Bundle;
+import android.view.View;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import org.libsdl.app.SDLActivity;
 
@@ -28,6 +31,19 @@ public class MystralActivity extends SDLActivity {
         } catch (PackageManager.NameNotFoundException exception) {
             return null;
         }
+    }
+
+    /**
+     * Return top, right, bottom and left display cutout/system-bar insets in drawable pixels.
+     * Native refreshes this coarse value when SDL reports a resize or system-bar change.
+     */
+    public int[] getSafeAreaInsets() {
+        View decor = getWindow().getDecorView();
+        WindowInsets windowInsets = decor.getRootWindowInsets();
+        if (windowInsets == null) return new int[] {0, 0, 0, 0};
+        Insets insets = windowInsets.getInsets(
+            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        return new int[] {insets.top, insets.right, insets.bottom, insets.left};
     }
 
     @Override

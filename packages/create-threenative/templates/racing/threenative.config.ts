@@ -6,6 +6,7 @@ export default {
     name: "__PROJECT_NAME__",
     version: "1.0.0",
     build: 1,
+    icons: { web: { favicon: "public/favicon.svg" } },
   },
   display: {
     orientation: "landscape",
@@ -18,11 +19,8 @@ export default {
     height: 720,
     resizable: true,
   },
-  loading: {
-    backdropColor: "#07111d",
-    trackColor: "#16324a",
-    progressColor: "#ffcf4a",
-    showProgressBar: true,
+  bootSplash: {
+    backgroundColor: "#07111d",
   },
   nativeEntry: "src/game.ts",
   renderer: { preferWebGPU: true },
