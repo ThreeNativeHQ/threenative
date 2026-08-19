@@ -71,7 +71,7 @@
         "id": "state",
         "path": "area",
         "equals": "hub",
-        "allowTrivial": true
+        "allowTrivial": "The exploration proof intentionally starts in the hub area; this assertion verifies that the initial resource value remains stable."
       },
       {
         "id": "state",

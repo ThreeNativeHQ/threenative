@@ -17,7 +17,12 @@
     "resources": [
       { "id": "state", "path": "status", "equals": "WON", "changed": true },
       { "id": "state", "path": "wave", "equals": 10, "changed": true },
-      { "id": "state", "path": "leaks", "equals": 0, "allowTrivial": true },
+      {
+        "id": "state",
+        "path": "leaks",
+        "equals": 0,
+        "allowTrivial": "The survival route reaches the win state without leaks; zero leaks is the intended held invariant while the other rows prove progression."
+      },
       { "id": "state", "path": "defeated", "gte": 10, "changed": true },
       { "id": "state", "path": "spent", "equals": 120, "changed": true },
       { "id": "state", "path": "shots", "gte": 1, "changed": true }

@@ -1,52 +1,84 @@
-# Batch — the game's name, icon, and first frame, 2026-08-18
+# Batch — the engine ships it, the agent finds it, the gate can't lie about it
 
-**Status: PROPOSED, 2026-08-18. Nothing in this folder has run.** One PRD, PRD-153. It defines
-the player-visible branding path from launcher or browser entry through the first playable frame.
-No implementation, device result, mobile-readiness claim or platform-parity claim exists yet.
+**Status: ACTIVE, 2026-08-19.** PRD-151 and PRD-158 are complete and individually archived;
+PRD-156 and PRD-157 remain proposed. No device result, mobile-readiness claim or platform-parity
+claim exists for any PRD in this batch.
+
+PRD-153, which this folder previously carried, closed on 2026-08-18 and is archived at
+`docs/PRDs/done/PRD-153-game-branding-from-launch-to-play.md`.
 
 ## Why this batch exists today
 
-The engine has the beginnings of an app-shape file, native icon packaging and a generated loading
-screen, but they do not form one truthful consumer path. `threenative.config.ts` already carries
-app/display settings, while its loading colors, image and bar toggle are accepted without any
-renderer reading them. Web identity is separate, desktop never consumes the icon, platform launch
-surfaces are generic, and the seven templates do not expose the same loading customization path.
+One incident on 2026-08-18, on a real scaffolded game at
+`~/projects/threenative/sandbox/fps-framework`, produced three separate findings that are three
+layers of the same failure.
 
-This is one product boundary, not a collection of visual presets: platform-owned brand plumbing
-belongs in the config/build/runtime path, while every live loading-screen visual remains generated
-game source under `src/render/`.
+An agent building an ordinary shooter hand-wrote roughly 700 lines the engine either already
+shipped or should have — including 446 lines replacing `@threenative/physics/navigation` and
+`attachToBone`, both installed and importable. Two of those hand-rolled systems then ran the game
+at **9.4 FPS**. And the scenario written to protect the death animation stayed green while the
+death animation was frozen, because all six of its assertions had waived the harness's own
+triviality guard.
+
+Read as layers:
+
+| Layer | What went wrong | PRD |
+|---|---|---|
+| The agent could not see the capability | ~20 public exports have no tool surface, no manifest, no generated reference — one paragraph of prose that omits half of them | [157](./PRD-157-capability-discovery-before-authoring.md) |
+| The engine did not ship the convention | Grounding, asset scale and pipeline prewarm are each left to the game, and the game got them wrong at a 6x frame-rate cost | [156](./PRD-156-engine-ships-conventions-by-default.md) |
+| The gate could not report either one | `allowTrivial` is a free boolean the failure message itself recommends; the guard covers 3 of 21 assertion kinds | [158](../done/PRD-158-the-triviality-opt-out-is-free.md) |
+| The docs that should have carried the rule | Seven hand-copied `AGENTS.md` files, four of which dropped rules the other three keep | [151](../done/PRD-151-shared-template-agent-docs.md) |
 
 ## The work
 
 | PRD | What it closes | Complexity | State |
 | --- | --- | --- | --- |
-| [153](./PRD-153-game-branding-from-launch-to-play.md) | Config-driven web/native identity and static boot splash; generated-source loading layout, images, disabling and safe-area placement; verified handoff to play | 7 | PROPOSED |
-| [156](./PRD-156-engine-ships-conventions-by-default.md) | Ships skinned-model grounding, asset scale normalisation and GPU pipeline prewarm as engine conventions with documented overrides; gates the templates' capability docs against the real export set | 9 | PROPOSED |
 | [157](./PRD-157-capability-discovery-before-authoring.md) | Generates a situation-indexed capability manifest from the export maps and serves it to the authoring agent as MCP tools, so engine capabilities are found before they are hand-written | 7 | PROPOSED |
+| [156](./PRD-156-engine-ships-conventions-by-default.md) | Ships skinned-model grounding, asset scale normalisation and GPU pipeline prewarm as engine conventions with documented overrides; gates the templates' capability docs against the real export set | 9 | PROPOSED |
+| [158](../done/PRD-158-the-triviality-opt-out-is-free.md) | Makes the triviality waiver carry a written reason, counts waivers in the report, fails a scenario that waived everything, and makes all 21 registry entries justify their `triviality` label | 5 | DONE |
+| [151](../done/PRD-151-shared-template-agent-docs.md) | Writes the rule every generated project's agent must read once, in shared fragments, enforced by the existing `sync:agents --check` gate instead of by whoever remembers to paste it seven times | 3 | DONE |
 
 ## Order
 
-PRD-156 and PRD-157 fix two halves of one measured failure — a game hand-wrote 446 lines of
-navigation and bone attachment that were installed and importable, plus grounding that ran it at
-9 FPS. **Build PRD-157's manifest generator first**, then have PRD-156's census gate consume its
-output; two independent export-walkers would drift past each other silently. Otherwise the two
-are independent of PRD-153.
+**1. PRD-157 first.** Its manifest generator walks the export maps; PRD-156's census gate consumes
+that output. Two independent export-walkers would drift past each other silently.
 
-PRD-153's phases are the order. First make the accepted config truthful, then prove web and native
-packaging consumers, then prove the live loading screen on the platformer, roll the source through
-all templates, and finish with the cross-target launch-sequence gate. A later phase does not start
-while the prior checkpoint has an unfilled integration-ledger row or an unobserved negative control.
+**2. PRD-158 second, and before PRD-156's Phase 5.** 156 deletes hand-rolled systems from
+`fps-framework` and proves the deletion with that project's gates. Those gates are the ones with
+18 waivers across 8 scenarios. Repairing the gates after trusting them to certify a deletion is
+the wrong order.
+
+**3. PRD-156 third.** Its Phase 0 census gate needs 157's manifest; its Phase 5 needs 158's
+repaired gates.
+
+**4. PRD-151 last, or in parallel.** It depends on nothing and blocks nothing. Landing it after
+156 and 158 means the shared fragments are written once against the final rules rather than
+edited twice. If it lands first instead, 156 Phase 0 and 158 Phase 4 edit fragments rather than
+seven files each — either order works, and only this one is a free choice.
+
+Within each PRD, its own phases are the order, and a later phase does not start on an unrun
+earlier one.
+
+## What this batch can be executed against
+
+Every gate in all four PRDs runs on this machine: `pnpm typecheck`, `pnpm lint`, `pnpm test`,
+`pnpm test:templates`, `pnpm budgets`, and browser playtests under `sh scripts/xvfb.sh`. **No
+phone, no Mac and no CI minute is required by anything here.** PRD-156's frame-rate criteria are
+desktop-browser measurements against a named adapter, not device claims.
 
 ## Batch completion
 
-This folder remains active while PRD-153 is `PROPOSED`, `OPEN`, `PARTIAL`, `BLOCKED` or otherwise
-unfinished. Archive the whole folder to `docs/PRDs/done/batch-26-08-18/` in the commit that closes
-the PRD, with its executed evidence linked and every acceptance row resolved.
+This folder remains active while any PRD in it is `PROPOSED`, `OPEN`, `PARTIAL`, `BLOCKED` or
+otherwise unfinished. Archive the whole folder to `docs/PRDs/done/batch-26-08-18/` in the commit
+that closes the last one, with executed evidence linked and every acceptance row resolved. A PRD
+that finishes well ahead of its siblings is archived individually.
 
 ## Deliberately outside this batch
 
-- Store listings, screenshots, trailers, signing, ratings and release credentials.
-- Runtime-selectable alternate icons, notification badges, shortcuts and localized app names.
-- A loading-screen preset/component library or framework-owned visual style.
-- Offline/PWA behavior and physical-mobile claims that were not executed.
-
+- **PRD-133** (published packages have READMEs), which stays at `docs/PRDs/`. Its one remaining
+  red criterion is five stale published-version findings, and clearing it means publishing to npm
+  — an outward-facing action that needs an owner decision, not an unattended run.
+- Any physical-device, iOS or Android result. The Android emulator lane is red and bisects to
+  PRD-155; that is its own work.
+- A preset system, a component library, or any framework-owned visual style. Still closed.
+- Re-scoring `OPPORTUNITY-AREAS.md` against the retired 20-line rule.

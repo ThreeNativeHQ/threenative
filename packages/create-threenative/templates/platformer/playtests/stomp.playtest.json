@@ -27,7 +27,12 @@
     "resources": [
       { "id": "state", "path": "defeated", "gte": 1, "changed": true },
       { "id": "state", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "state", "path": "hearts", "equals": 3, "allowTrivial": true }
+      {
+        "id": "state",
+        "path": "hearts",
+        "equals": 3,
+        "allowTrivial": "A successful stomp should not damage the player; three hearts remains the intentional held invariant while defeat and jump prove the action."
+      }
     ],
     "tags": [{ "tag": "patrol", "count": 0 }]
   }

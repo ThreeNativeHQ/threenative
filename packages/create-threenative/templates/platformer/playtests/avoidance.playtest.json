@@ -17,7 +17,12 @@
       { "entity": "chaser", "component": "steeringFinished", "equals": true },
       { "entity": "chaser.avoidance", "component": "steeringFinished", "equals": true },
       { "entity": "chaser.avoidance", "component": "routeComplete", "equals": true },
-      { "entity": "chaser.avoidance", "component": "separation", "gte": 0.56, "allowTrivial": true }
+      {
+        "entity": "chaser.avoidance",
+        "component": "separation",
+        "gte": 0.56,
+        "allowTrivial": "The avoidance fixture starts outside the minimum separation; this row records that authored held spacing while steering completion proves the run."
+      }
     ]
   }
 }

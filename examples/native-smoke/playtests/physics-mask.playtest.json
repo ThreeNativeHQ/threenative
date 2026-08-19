@@ -10,13 +10,18 @@
   "assert": {
     "movement": { "entity": "dynamicBox", "minDistance": 5 },
     "resources": [
-      { "id": "GameState", "path": "parity.collisionEventSet", "equals": [], "allowTrivial": true },
+      {
+        "id": "GameState",
+        "path": "parity.collisionEventSet",
+        "equals": [],
+        "allowTrivial": "The collision mask intentionally excludes this pair, so an empty collision-event set is the held result this mask scenario verifies."
+      },
       {
         "id": "GameState",
         "path": "parity.control",
         "equals": "masked",
         "changed": false,
-        "allowTrivial": true
+        "allowTrivial": "The mask is configured before the run and never changes; this row verifies the native and browser mask label remains the declared value."
       }
     ]
   }

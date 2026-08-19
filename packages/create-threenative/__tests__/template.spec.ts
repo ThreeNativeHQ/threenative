@@ -23,8 +23,23 @@ const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
 // numbers twice, and in shooter the overlap was unreadable.
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+const agentDocsRoot = path.resolve("packages/create-threenative/agent-docs");
+const requiredSharedFragments = [
+  "framework-blocks-you",
+  "asset-mcp-loop",
+  "sculpt-loop",
+  "look-at-it-and-budget-the-look",
+  "ctx-surface",
+] as const;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
+
+async function templateNames(): Promise<string[]> {
+  return (await readdir(templateRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
 
 async function filesUnder(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -408,13 +423,20 @@ describe("template contracts", () => {
       path: "entityCount",
     });
 
-    for (const template of templates) {
+    for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
       expect(agents).toContain(
         "## The `ctx` surface — you already have these, do not rebuild them",
       );
-      expect(agents).toContain('| `ctx.goto("play")` |');
+      expect(agents).toContain('| `ctx.goto("<scene-name>")` |');
+      expect(agents).toContain("`ctx.goto(name)` rebuilds the scene without resetting game state");
+      expect(agents).toContain("ctx.state.set({ /* copy this game's initial-state shape */ })");
+      expect(agents).toContain(
+        '`game.goto("<scene-name>")` also rebuilds the scene, but it resets the game\'s state',
+      );
+      expect(agents).toContain("deterministic only when `defineGame({ seed })` is configured");
       expect(agents).toContain("goto` and then `return`");
+      expect(agents).not.toContain("That is your entire restart button");
       expect(agents).not.toContain("probably does not exist");
     }
   });
@@ -503,12 +525,58 @@ describe("template contracts", () => {
     }
   });
 
+  it("should require every shared agent fragment in every template", async () => {
+    const names = await templateNames();
+    expect(names.length).toBeGreaterThanOrEqual(7);
+    const fragmentFiles = (await readdir(agentDocsRoot))
+      .filter((file) => file.endsWith(".md"))
+      .map((file) => file.slice(0, -3))
+      .sort();
+    expect(fragmentFiles).toEqual([...requiredSharedFragments].sort());
+    for (const template of names) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      for (const fragment of requiredSharedFragments) {
+        expect(agents, `${template}/${fragment}`).toContain(`<!-- shared: ${fragment} -->`);
+      }
+    }
+  });
+
+  it("should scaffold flat agent docs without shared marker comments", async () => {
+    const root = await makeTempDir("threenative-shared-agent-scaffold-");
+    const sharedBodies = await Promise.all(
+      requiredSharedFragments.map(
+        async (fragment) =>
+          [
+            fragment,
+            (await readFile(path.join(agentDocsRoot, `${fragment}.md`), "utf8")).trim(),
+          ] as const,
+      ),
+    );
+    try {
+      for (const template of await templateNames()) {
+        const result = await createProject(
+          { install: false, target: `generated-${template}`, template },
+          root,
+        );
+        for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+          const docs = await readFile(path.join(result.target, file), "utf8");
+          expect(docs, `${template}/${file}`).not.toMatch(/<!--\s*(?:shared:|\/shared)/u);
+          for (const [fragment, body] of sharedBodies) {
+            expect(docs, `${template}/${file}/${fragment}`).toContain(body);
+          }
+        }
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 30_000);
+
   it("should document only tools the pinned sculpt MCP serves", async () => {
     const surface = JSON.parse(
       await readFile(path.resolve("packages/create-threenative/sculpt-mcp-tools.json"), "utf8"),
     ) as { recommended: string[]; tools: string[]; version: string };
     const served = new Set(surface.tools);
-    for (const template of typecheckTemplates) {
+    for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
       const mentioned = [...agents.matchAll(/`(sculpt_[a-z0-9_]+)`/gu)].map(
         (match) => match[1] as string,

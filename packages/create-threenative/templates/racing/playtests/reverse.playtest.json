@@ -29,7 +29,7 @@
         "id": "state",
         "path": "completedLaps",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Reverse steering tests rejection before a lap completes; zero completed laps is the intentional held race-start invariant."
       },
       { "id": "state", "path": "reverseRejects", "gte": 1, "changed": true }
     ]

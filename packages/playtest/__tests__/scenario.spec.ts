@@ -166,6 +166,7 @@ test("numeric upper bounds enforce an interval and keep the triviality guard", a
       entity: "player",
       expectMoved: false,
       frames: 1,
+      trivialityOptOuts: [],
       observations: {
         console: [],
         hud: {},

@@ -11,6 +11,12 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [{ "id": "state", "path": "levelX", "changed": true, "gte": -1, "lte": 1 }],
     "world": { "seed": 90210 },
-    "visibility": [{ "entity": "player", "minProjectedPixels": 1 }]
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the seed assertion.",
+        "entity": "player",
+        "minProjectedPixels": 1
+      }
+    ]
   }
 }

@@ -11,7 +11,12 @@
     "resources": [
       { "id": "state", "path": "status", "equals": "LOST", "changed": true },
       { "id": "state", "path": "leaks", "gte": 20, "changed": true },
-      { "id": "state", "path": "spent", "equals": 0, "allowTrivial": true },
+      {
+        "id": "state",
+        "path": "spent",
+        "equals": 0,
+        "allowTrivial": "The leak scenario spends no currency while proving the loss path; zero spent is an intentional held invariant, not the main transition proof."
+      },
       { "id": "state", "path": "wave", "gte": 10, "changed": true }
     ]
   }

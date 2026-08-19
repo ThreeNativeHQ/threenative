@@ -37,6 +37,12 @@
       { "id": "state", "path": "coyoteJumps", "equals": 1, "changed": true },
       { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the coyote assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

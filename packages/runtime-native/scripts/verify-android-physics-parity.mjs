@@ -63,19 +63,22 @@ export function generateOperatorScenario(template, fixtureBytes) {
           path: "parity.steps",
         },
         {
-          allowTrivial: true,
+          allowTrivial:
+            "Native parity setup establishes parity.grounded before stepping; this row checks the held ground-state result.",
           equals: true,
           id: "GameState",
           path: "parity.grounded",
         },
         {
-          allowTrivial: true,
+          allowTrivial:
+            "Native parity setup declares the floor collider before stepping; this row checks the held collider identity.",
           equals: "floor",
           id: "GameState",
           path: "parity.groundCollider",
         },
         {
-          allowTrivial: true,
+          allowTrivial:
+            "Native parity derives this assertion from the fixture bytes; this row checks the generated scenario hash remains fixed.",
           equals: scenarioSha256,
           id: "GameState",
           path: "parity.scenarioSha256",
@@ -85,7 +88,7 @@ export function generateOperatorScenario(template, fixtureBytes) {
           "oneWayPassedUpward",
           "platformGroundedObserved",
         ].map((coverage) => ({
-          allowTrivial: true,
+          allowTrivial: `Native parity fixture declares ${coverage} before stepping; this row checks that the coverage marker remains held.`,
           equals: true,
           id: "GameState",
           path: `parity.scenarioCoverage.${coverage}`,

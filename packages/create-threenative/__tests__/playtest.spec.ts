@@ -186,7 +186,14 @@ describe("starter playtest proof", () => {
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.visibility).toEqual([{ entity: "touch-controls", present: false }]);
+    expect(scenario.assert.visibility).toEqual([
+      {
+        allowTrivial:
+          "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held.",
+        entity: "touch-controls",
+        present: false,
+      },
+    ]);
     expect(level).toContain(
       "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
     );

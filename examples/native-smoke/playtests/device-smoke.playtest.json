@@ -8,6 +8,14 @@
   "steps": [{ "waitFrames": 2 }],
   "artifacts": { "screenshots": false },
   "assert": {
-    "visibility": [{ "entity": "cube", "present": true, "minProjectedPixels": 20 }]
+    "movement": { "entity": "player", "maxDistance": 10 },
+    "visibility": [
+      {
+        "allowTrivial": "The native smoke scene intentionally starts with the cube visible and in frame; this checks cross-target visibility wiring.",
+        "entity": "cube",
+        "minProjectedPixels": 20,
+        "present": true
+      }
+    ]
   }
 }

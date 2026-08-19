@@ -23,6 +23,12 @@
       { "id": "state", "path": "rescuePositionError", "equals": 0, "changed": true },
       { "id": "state", "path": "rescueHeadingError", "equals": 0, "changed": true }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The racing scene begins with the player visible and in frame; this held visibility row accompanies the rescue assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

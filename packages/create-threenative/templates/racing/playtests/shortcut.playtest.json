@@ -36,7 +36,7 @@
         "id": "state",
         "path": "completedLaps",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "The shortcut rejection occurs before a lap completes; zero completed laps is the intentional held race-start invariant."
       },
       { "id": "state", "path": "shortcutRejects", "gte": 1, "changed": true }
     ]

@@ -26,7 +26,12 @@
     "resources": [
       { "id": "state", "path": "terminal", "equals": 2, "changed": true },
       { "id": "state", "path": "hearts", "equals": 0, "changed": true },
-      { "id": "state", "path": "respawns", "equals": 0, "allowTrivial": true }
+      {
+        "id": "state",
+        "path": "respawns",
+        "equals": 0,
+        "allowTrivial": "The terminal fail scenario ends before a respawn; zero respawns is the intentional held invariant for this failure path."
+      }
     ],
     "signals": [{ "entity": "game", "name": "lost", "minCount": 1 }]
   }

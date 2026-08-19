@@ -64,8 +64,18 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "state", "path": "completedLaps", "gte": 3, "changed": true },
-      { "id": "state", "path": "place", "gte": 2, "allowTrivial": true },
-      { "id": "state", "path": "rescues", "equals": 0, "allowTrivial": true },
+      {
+        "id": "state",
+        "path": "place",
+        "gte": 2,
+        "allowTrivial": "The outcome fixture starts with a qualifying place; this row records the held ranking bound while the finish transition proves the race."
+      },
+      {
+        "id": "state",
+        "path": "rescues",
+        "equals": 0,
+        "allowTrivial": "The outcome path uses no rescue action; zero rescues is the intentional held invariant while laps and finish prove the result."
+      },
       {
         "id": "state",
         "path": "raceStatus",

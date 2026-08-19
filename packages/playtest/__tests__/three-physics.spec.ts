@@ -41,8 +41,17 @@ async function sampling(installation: { bridge: { sample: (request: { include: s
   return installation.bridge.sample({ include: ["physicsDebugSeries"], label });
 }
 
-function reportWith(series: unknown): IPlaytestReport {
-  return { observations: { console: [], hud: {}, network: [], physicsDebugSeries: series, resources: {} } } as unknown as IPlaytestReport;
+function reportWith(series: unknown, physicsDebugBefore?: unknown): IPlaytestReport {
+  return {
+    observations: {
+      console: [],
+      hud: {},
+      network: [],
+      physicsDebugBefore,
+      physicsDebugSeries: series,
+      resources: {},
+    },
+  } as unknown as IPlaytestReport;
 }
 
 test("a physics provider advertises runtime.physics and nothing else advertises it", async () => {
@@ -75,6 +84,32 @@ test("a recorded series satisfies the settled assertion the framework arm can al
 
   const settled = assertions.find(({ id }) => id === "settled.crate");
   expect(settled).toEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
+  expect(diagnostics).toEqual([]);
+  installation.dispose();
+});
+
+test("a pose-distance comparison is not trivial when the initial bodies already sleep", async () => {
+  let position = 0;
+  let sleeping = true;
+  const installation = installPhysicsBridge(() => [{ id: "crate.0", position: [position, 0, 0], sleeping }]);
+
+  const initial = await installation.bridge.sample({ include: ["physicsDebugSeries"], label: "initial" });
+  position = 0;
+  sleeping = false;
+  await installation.bridge.sample({ include: ["physicsDebugSeries"], label: "drop" });
+  position = 2;
+  sleeping = true;
+  const settled = await installation.bridge.sample({ include: ["physicsDebugSeries"], label: "settled" });
+  const initialSnapshot = (initial.physicsDebugSeries as Array<{ snapshot: unknown }>)[0]?.snapshot;
+
+  const { assertions, diagnostics } = evaluateRichPlaytestAssertions({
+    report: reportWith(settled.physicsDebugSeries, initialSnapshot),
+    scenario: settledScenario({ atStep: "settled", compareToStep: "drop", entity: "crate", minBodies: 1, minMeanPoseDistance: 1 }),
+  });
+
+  const result = assertions.find(({ id }) => id === "settled.crate");
+  expect(result).toEqual(expect.objectContaining({ id: "settled.crate", pass: true }));
+  expect(result?.details).toMatchObject({ initialPass: false, initialPosePass: false, trivial: false });
   expect(diagnostics).toEqual([]);
   installation.dispose();
 });

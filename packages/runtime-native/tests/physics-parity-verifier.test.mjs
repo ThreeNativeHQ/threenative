@@ -199,7 +199,7 @@ describe("Android physics parity verifier report parsing", () => {
     const generated = generateOperatorScenario(template, fixtureBytes);
     expect(generated.steps).toEqual([{ label: "complete", waitTicks: fixture.steps }]);
     expect(generated.assert.resources).toContainEqual({
-      allowTrivial: true,
+      allowTrivial: expect.any(String),
       equals: sha,
       id: "GameState",
       path: "parity.scenarioSha256",
@@ -212,7 +212,7 @@ describe("Android physics parity verifier report parsing", () => {
     const changedSha = createHash("sha256").update(changedBytes).digest("hex");
     expect(changed.steps[0].waitTicks).toBe(fixture.steps + 7);
     expect(changed.assert.resources).toContainEqual({
-      allowTrivial: true,
+      allowTrivial: expect.any(String),
       equals: changedSha,
       id: "GameState",
       path: "parity.scenarioSha256",

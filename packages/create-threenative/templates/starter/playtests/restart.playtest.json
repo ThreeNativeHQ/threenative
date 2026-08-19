@@ -31,6 +31,12 @@
         "atSteps": [{ "label": "collected", "equals": 2 }, { "label": "restarted", "equals": 3 }]
       }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the restart assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

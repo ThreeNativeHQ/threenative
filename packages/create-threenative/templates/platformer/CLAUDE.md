@@ -6,6 +6,7 @@ This project is an editable Three.js platformer starter. The framework owns the 
 input, renderer, physics bindings, and playtest bridge; this repository owns the feel,
 level, entities, and look.
 
+<!-- shared: framework-blocks-you -->
 ## When the framework blocks you, write plain Three.js
 
 An API in `@threenative/*` that is broken, missing, or does not do what you need is **not
@@ -26,6 +27,7 @@ implementation sitting beside a framework API is a supported outcome, not a hack
 
 Never contort the game to flatter the framework, and never stall on a framework bug. A
 finished game carrying a plain Three.js patch beats a blocked one every time.
+<!-- /shared -->
 
 ## Commands
 
@@ -67,6 +69,11 @@ Godot-named nodes keeps that correct without thinking about it.
   stomping, respawn, and one-way platforms in this example game. The native-only
   `playtests/native/touch-controls.playtest.json` is run explicitly with `--target android` or
   `--target ios`; it is intentionally outside the browser test glob.
+
+Every `allowTrivial` waiver in `playtests/` must be a reason string with at least 20 non-whitespace
+characters explaining why the initial value is intentionally held; `allowTrivial: true` is invalid.
+The reason appears in the report. A scenario whose every triviality-eligible assertion is waived
+fails with `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`, so keep an independent assertion in the scenario.
 
 **This template has one HUD, and it is `src/ui/Hud.tsx`.** It previously shipped a
 camera-attached geometry HUD as well, and both drew hearts, coins and the clock on top of each
@@ -127,6 +134,7 @@ soft shadows with `normalBias`, sky-derived fog, and bloom through
 `renderer.setOutputNode()`. These visual decisions belong in this generated project, not in
 the framework packages. Run `pnpm visuals` when changing the render layer.
 
+<!-- shared: asset-mcp-loop -->
 ## Finding assets — you have an MCP server for this
 
 **Reach for it when the asset is conventional; build anything custom yourself.**
@@ -191,7 +199,9 @@ truth for the pinned version, and they change between versions.
 Load what you downloaded the ordinary way — `ctx.assets.model("crate.glb")`,
 `ctx.assets.texture(...)`, `ctx.assets.audio(...)` — and write your own material and lighting
 around it in `src/render/`. The framework ships no asset and picks none for you.
+<!-- /shared -->
 
+<!-- shared: sculpt-loop -->
 ## Building what you cannot download — sculpt from a reference
 
 Choose one branch before writing code:
@@ -226,16 +236,151 @@ or ship runtime code; it guides the source you write:
 
 A missing or blank capture is a failed run, never a finished model. Add the reference image,
 its creator, license, and source URL to `CREDITS.md` before the turn ends.
+<!-- /shared -->
 
 
+<!-- shared: look-at-it-and-budget-the-look -->
 ## Budget real time for the look
 
-The automated gates are blind to how the game looks. **Budget real time for the look:** boot
-the game, capture a headed screenshot, and inspect the silhouette, contact shadows, motion,
-and HUD before calling a visual change done. Note that headless Chromium usually cannot render WebGPU;
-use a real browser or browser tool, or
-`npx @threenative/playtest <scenario> --browser-recipe webgpu --headed`, whose recipe carries
-the flags a WebGPU capture needs — including `--enable-features=Vulkan`, without which
-Chromium silently serves WebGPU from its CPU rasteriser. On a screenless machine start `Xvfb`
-yourself rather than using `xvfb-run`, which replaces a successful command's exit status with
-a failing one.
+Read this as an instruction about **where your effort goes**, not as a style tip.
+
+Every automated gate in this project — `typecheck`, `lint`, `pnpm test`, every playtest
+scenario — is blind to how the game looks. All of them pass on a game that is grey boxes on
+a black screen. If you let the gates define "done", you will ship grey boxes on a black
+screen and the gates will tell you that you succeeded.
+
+So the rule here is: **a feature is not done when its assertion passes. It is done when you
+have looked at it and it reads well.** Plan for roughly as much work on presentation as on
+mechanics. That is not gold-plating; it is the majority of what a player experiences, and
+it is the part nothing else in this repo will catch.
+
+Concretely, when you add anything a player sees, do all of these before calling it done:
+
+1. **Look at it.** Boot the game, get the thing on screen, take a screenshot, open the
+   screenshot. Reading your own diff is not looking at it.
+2. **Silhouette first.** Can you tell what it is from its outline alone? Break up long
+   straight edges — overhangs, fringes, props crossing the line. A shape that reads at a
+   glance beats a detailed shape that does not.
+3. **Give it depth.** Something bright behind it, something dark under it. Contact shadows
+   and a rim make a prop sit in the world instead of floating on top of it.
+4. **Make it move.** Idle bob, a squash on impact, a particle on pickup, a screen shake on
+   damage. A few frames of motion is the cheapest quality-per-line in the whole project.
+5. **Finish the HUD too.** Spacing, hierarchy, a transition on every number that changes.
+   An unstyled HUD makes a good-looking game look unfinished.
+
+### How to actually look at it
+
+Run `pnpm dev`, then get eyes on it. In rough order of preference:
+
+1. **Browser automation against the user's real Chrome**, if you have it — Claude in Chrome
+   or any equivalent MCP browser tool. This is the best option by a wide margin: it runs on
+   a real GPU, so WebGPU works, and you can navigate, press keys, screenshot, and read the
+   console in the same loop you are already coding in. Drive the game, do not just load the
+   menu.
+2. **`npx @threenative/playtest <scenario> --browser-recipe webgpu --headed`.** The recipe
+   carries the Chromium flags a WebGPU capture needs, including `--enable-features=Vulkan`.
+   Do not hand-roll the flag list: without that one flag Chromium never reaches the Linux
+   Vulkan driver and serves WebGPU from SwiftShader, its CPU rasteriser — no error, healthy
+   limits, and a software renderer's picture. The runner now fails such a run with
+   `TN_PLAYTEST_SOFTWARE_ADAPTER` and prints the adapter it got; `--allow-software` accepts
+   the fallback if you truly want it.
+3. **Ask the user to look**, and say specifically what you want them to check.
+
+On a machine with no screen, run any of those under a virtual display. **Do not use
+`xvfb-run`:** on `xorg-server-xvfb` 21.1.x its cleanup `kill` fails after Xvfb has already
+exited and that failing kill's status replaces the real one, so
+`xvfb-run -a -s '-screen 0 1600x900x24' true` exits `1`. Every gate wrapped in it reports
+failure whether it passed or not. Start `Xvfb` yourself on a free display and export
+`DISPLAY`, or check the command's own exit code separately.
+
+What does *not* work: **headless Chromium usually cannot render WebGPU.** The page loads,
+the HUD paints, and the 3D canvas comes out blank or black. That looks exactly like a bug
+in your scene, and it is not. Symptoms are `Instance dropped in popErrorScope` and
+`createBuffer failed, size (N) is too large for the implementation` in the console.
+
+So: if a screenshot comes back black or empty, suspect the capture before you rewrite the
+scene. Confirm the renderer works at all before you go debugging your materials.
+
+### When you think you are done
+
+Ask yourself, honestly: *would a player screenshot this?* If the answer is no, you are not
+finished — and no command in this repo is going to tell you that.
+<!-- /shared -->
+
+<!-- shared: ctx-surface -->
+## The `ctx` surface — you already have these, do not rebuild them
+
+`ctx` carries six things that get reimplemented by hand in almost every project, because
+they are **properties on `ctx`, never imports** — grepping an existing file's imports will
+never surface them. This table is the complete list.
+
+| You already have | Rather than | Signature |
+|---|---|---|
+| `ctx.goto("<scene-name>")` | a hand-written `#reset()` | `(name: string) => Promise<void>` |
+| `ctx.tween(obj, { y: 2 }, 0.4)` | a `Math.sin` / `lerp` accumulator | `(target, props, seconds) => Promise<void>` |
+| `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
+| `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
+| `ctx.random.range(-1, 1)` | `Math.random()` | deterministic when `seed` is configured; otherwise `Math.random()` |
+| `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` + `intersectObject(s)` | `(options?: { screen?, origin?, direction?, far?, targets?, exclude? }) => Intersection \| undefined` / `readonly Intersection[]` |
+
+**`ctx.raycast()` is how you pick geometry under the pointer.** It defaults to the current
+pointer position and the whole scene, returns the nearest `THREE.Intersection`, and stays
+under a millisecond on meshes large enough that a plain `Raycaster` visibly stutters — it
+keeps an acceleration structure per geometry and rebuilds it when that geometry's positions
+change. Pass `{ origin, direction }` for a world ray, `{ far }` to cap its distance, `{ exclude }`
+to remove subtrees, and `{ targets }` to narrow it. Use `raycastAll` when occlusion or another
+query needs every hit; results are sorted nearest first. `{ screen }` tests a point that is not
+the pointer. Skinned, instanced and morphed meshes fall back to the stock Three.js path
+automatically, so the result always matches `Raycaster.intersectObject`.
+
+When scene collapse runs on a large static scene, a mesh with non-empty `userData` stays as the
+original object in the live graph. Put the target or entity metadata you already use for picking on
+the mesh; `ctx.raycast()` then still returns that mesh and its metadata. Meshes without `userData`
+may be merged into fewer draws.
+
+**`ctx.goto(name)` rebuilds the scene without resetting game state.** Calling
+`ctx.goto("<scene-name>")` from inside the matching scene tears it down and rebuilds it: `exit()` runs,
+scheduled callbacks are cleared, registered entities are cleared, the Three scene is emptied,
+then a fresh instance runs `load()` and `enter()`. Values in `ctx.state` — health, score,
+inventory, or any other game-owned state — survive this scene rebuild. When death-and-retry
+should reset gameplay, reset your own state explicitly before calling `ctx.goto()`:
+
+```ts
+if (player.dead) {
+  ctx.state.set({ /* copy this game's initial-state shape */ });
+  ctx.state.flush();
+  void ctx.goto("<scene-name>");
+  return;
+}
+```
+
+Do **not** write a `#reset()` that walks your entities putting them back. It is ~15 lines
+that look right and quietly miss the scheduler and anything you spawned after `enter()`, so
+the second playthrough behaves differently from the first — and no gate in this project will
+catch that.
+
+**One rule when calling it from a frame function: `goto` and then `return`, immediately.**
+
+```ts
+if (player.dead) {
+  void ctx.goto("<scene-name>");
+  return;              // ← required. Everything below now runs against a torn-down scene.
+}
+```
+
+From React, `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state to its
+declared initial state first. Use `game.goto("<scene-name>")` for a full restart button; use
+`ctx.goto("<scene-name>")` only when preserving game state across the scene rebuild is intended.
+
+**`ctx.tween` is for timing, not for looks.** Use it for the *when* — a pickup rising over
+0.4s, a door opening, a hit flash — and keep the *what* (colour, shape, easing feel) in
+`src/render/`. Motion driven by a persistent `Math.sin(elapsed)` in `update()` is still the
+right tool for a continuous idle bob; `tween` is for anything that starts, runs once, and
+finishes.
+
+**`ctx.random` is deterministic only when `defineGame({ seed })` is configured.** Check
+`src/game.ts`: the templates that declare a seed get replayable values for spawn positions,
+patrol offsets, and level variation; without a seed, `ctx.random` falls back to `Math.random()`.
+Add a fixed seed when a playtest needs replayable randomness. Never use `Math.random()` for a
+value the scenario must reproduce.
+<!-- /shared -->

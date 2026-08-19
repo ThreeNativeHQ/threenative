@@ -54,8 +54,16 @@
     ],
     "components": [{ "entity": "player", "component": "health", "equals": 95, "changed": true }],
     "visibility": [
-      { "entity": "player", "minProjectedPixels": 20 },
-      { "entity": "enemy.visible", "minProjectedPixels": 1 }
+      {
+        "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the combat assertions.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      },
+      {
+        "allowTrivial": "The action RPG scene begins with the visible enemy in frame; this held visibility row accompanies the combat assertions.",
+        "entity": "enemy.visible",
+        "minProjectedPixels": 1
+      }
     ]
   }
 }

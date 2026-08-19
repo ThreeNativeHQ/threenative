@@ -97,7 +97,7 @@ test("every registry field declaring a scalar type is actually enforced", async 
   // inherits it. This fails if someone adds a scalar field the checker skips.
   const scalarTypes = new Set([
     "boolean", "non-empty string", "non-negative integer", "number",
-    "number in [0, 180]", "positive integer", "positive number", "string",
+    "number in [0, 180]", "positive integer", "positive number", "string", "triviality reason",
   ]);
   const wrongValue = (type: string): unknown => (type.includes("string") ? 42 : "not-a-number");
 
@@ -126,6 +126,73 @@ test("valid scalar values still parse unchanged", async () => {
 
   expect(scenario.assert.movement).toEqual({ entity: "player", maxDistance: 10, minDistance: 0.5, rotationChanged: true });
   expect(scenario.assert.camera).toEqual({ entity: "camera", follows: "player", targetInViewport: true, within: 5 });
+});
+
+test("the boolean triviality opt-out is rejected instead of coerced", async () => {
+  const error = await loadError({
+    resources: [{ allowTrivial: true, equals: 0, id: "state", path: "spent" }],
+  });
+
+  expect(error.diagnostic.code).toBe("TN_PLAYTEST_SCENARIO_INVALID");
+  expect(error.diagnostic.message).toMatch(/assert\.resources\[0\]\.allowTrivial.*string with at least 20 non-whitespace characters.*boolean/u);
+});
+
+test("a triviality reason must contain prose, not only whitespace or one character", async () => {
+  for (const reason of ["x", " ".repeat(30)]) {
+    const error = await loadError({
+      resources: [{ allowTrivial: reason, equals: 0, id: "state", path: "spent" }],
+    });
+
+    expect(error.diagnostic.message).toMatch(/allowTrivial.*at least 20 non-whitespace characters/u);
+  }
+});
+
+test("a reason-string triviality opt-out parses unchanged", async () => {
+  const reason = "The value is intentionally held until the separate transition assertion proves the route.";
+  const scenario = await load({
+    resources: [{ allowTrivial: reason, equals: 0, id: "state", path: "spent" }],
+  }) as { assert: { resources: Array<{ allowTrivial?: string }> } };
+
+  expect(scenario.assert.resources[0]?.allowTrivial).toBe(reason);
+});
+
+test("the six held-value assertion kinds reject boolean and short triviality opt-outs", async () => {
+  const cases: Array<[string, unknown]> = [
+    ["tags", [{ count: 1, tag: "coin" }]],
+    ["states", [{ entity: "player", equals: "idle" }]],
+    ["visibility", [{ entity: "player", present: true }]],
+    ["settled", [{ entity: "body", minBodies: 1 }]],
+    ["occluded", [{}]],
+    ["animation", [{ clip: "run", entity: "player" }]],
+  ];
+
+  for (const [kind, assertion] of cases) {
+    for (const allowTrivial of [true, "too short"]) {
+      const value = Array.isArray(assertion)
+        ? assertion.map((entry) => ({ ...(entry as Record<string, unknown>), allowTrivial }))
+        : assertion;
+      const error = await loadError({ [kind]: value });
+      expect(error.diagnostic.message, `${kind} accepted ${JSON.stringify(allowTrivial)}`).toMatch(
+        new RegExp(`assert\\.${kind}\\[0\\]\\.allowTrivial.*at least 20 non-whitespace characters`, "u"),
+      );
+    }
+  }
+});
+
+test("every registry entry carries rationale and the audit reclassifies the six held-value kinds", () => {
+  expect(PLAYTEST_ASSERTION_REGISTRY).toHaveLength(21);
+  expect(PLAYTEST_ASSERTION_REGISTRY.every(({ trivialityRationale }) => trivialityRationale.trim().length > 0)).toBe(true);
+  expect(PLAYTEST_ASSERTION_REGISTRY.filter(({ triviality }) => triviality === "reject-initial-value").map(({ kind }) => kind)).toEqual([
+    "components",
+    "resources",
+    "tags",
+    "states",
+    "hud",
+    "visibility",
+    "settled",
+    "occluded",
+    "animation",
+  ]);
 });
 
 test("an empty signals array fails at load instead of asserting nothing", async () => {

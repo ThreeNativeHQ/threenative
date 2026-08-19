@@ -106,6 +106,12 @@
       { "name": "defeated", "entity": "enemy", "minCount": 1, "atStep": "seeded-drops" },
       { "name": "seeded", "entity": "loot", "minCount": 1 }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the inventory assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

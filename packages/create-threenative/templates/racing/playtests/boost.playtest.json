@@ -37,7 +37,7 @@
         "id": "state",
         "path": "boostActive",
         "equals": false,
-        "allowTrivial": true
+        "allowTrivial": "The boost scenario waits for the temporary boost to end; false is the intentional final held state after speed was proven."
       },
       { "id": "state", "path": "speedAfterBoost", "equals": 9, "changed": true }
     ]

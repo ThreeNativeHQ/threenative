@@ -24,7 +24,13 @@
       "runtimeReady": true
     },
     "movement": { "entity": "player", "minDistance": 0.5 },
-    "visibility": [{ "entity": "touch-controls", "present": false }],
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held."
+      }
+    ],
     "visual": [
       {
         "region": {

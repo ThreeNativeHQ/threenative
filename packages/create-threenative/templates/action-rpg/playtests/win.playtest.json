@@ -25,6 +25,12 @@
       { "id": "state", "path": "enemiesDefeated", "gte": 1, "changed": true }
     ],
     "signals": [{ "name": "defeated", "entity": "boss", "minCount": 1, "atStep": "boss-hit-3" }],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the win assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

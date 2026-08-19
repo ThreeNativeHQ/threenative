@@ -47,6 +47,7 @@ async function evaluate(
       expectMoved: false,
       frames: 1,
       observations: EMPTY_OBSERVATIONS,
+      trivialityOptOuts: [],
       ...report,
     },
     scenario,
@@ -278,6 +279,68 @@ test("an animation assertion reads the runtime animation channel", async () => {
   );
 
   expect(evaluated.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
+});
+
+test("all six held-value assertions reject an unchanged pre-run match", async () => {
+  const physicsSnapshot = {
+    artifact: {
+      primitives: [{ category: "sleep", entity: "body", value: 1 }],
+    },
+  };
+  const effectLog = {
+    entries: [{
+      payload: { request: { entity: "listener", target: "wall" }, result: { hit: true } },
+      service: "physics.raycast",
+    }],
+  };
+  const runtime = {
+    gameplay: {
+      animation: { player: { advancedFrames: 4, clip: "run" } },
+      states: { player: "idle" },
+      tags: { coin: { count: 1 } },
+    },
+    gameplayBefore: {
+      animation: { player: { advancedFrames: 4, clip: "run" } },
+      states: { player: "idle" },
+      tags: { coin: { count: 1 } },
+    },
+  };
+  const diagnostics = {
+    scene: {
+      renderedEntities: [{
+        id: "player",
+        projectedBounds: { max: [0.5, 0.5], min: [-0.5, -0.5] },
+        visible: true,
+      }],
+    },
+  };
+  const evaluated = await evaluate(
+    {
+      animation: [{ advancedFrames: 4, clip: "run", entity: "player" }],
+      occluded: [{ entity: "listener", target: "wall" }],
+      settled: [{ entity: "body", minBodies: 1 }],
+      states: [{ entity: "player", equals: "idle" }],
+      tags: [{ count: 1, tag: "coin" }],
+      visibility: [{ entity: "player", minProjectedPixels: 1 }],
+    },
+    {
+      effectLog,
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        effectLogBefore: effectLog,
+        physicsDebugBefore: physicsSnapshot,
+        physicsDebugSeries: [{ label: "settled", snapshot: physicsSnapshot, tick: 1 }],
+        runtimeDiagnostics: diagnostics,
+        runtimeDiagnosticsBefore: diagnostics,
+        runtimeObservations: runtime,
+      } as IPlaytestObservations,
+    },
+  );
+
+  for (const id of ["tags.coin", "states.player", "visibility.player", "settled.body", "occluded.listener", "animation.player"]) {
+    expect(evaluated.assertions).toContainEqual(expect.objectContaining({ id, pass: false }));
+  }
+  expect(evaluated.diagnostics.filter(({ code }) => code === "TN_PLAYTEST_ASSERTION_TRIVIAL")).toHaveLength(6);
 });
 
 test("a finished animation assertion requires exact runtime completion evidence", async () => {

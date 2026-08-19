@@ -58,6 +58,7 @@ function report(series: unknown[]) {
     entity: "",
     expectMoved: false,
     frames: 2,
+    trivialityOptOuts: [],
     observations: {
       ...EMPTY_OBSERVATIONS,
       performanceSeries: series,

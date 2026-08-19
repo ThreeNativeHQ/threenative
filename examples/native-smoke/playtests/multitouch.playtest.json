@@ -41,7 +41,7 @@
         "id": "GameState",
         "path": "currentPointers",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "The final step releases every pointer; zero current pointers is the intentional held end-state after the multitouch delivery proof."
       }
     ]
   }

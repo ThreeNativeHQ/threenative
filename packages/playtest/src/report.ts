@@ -37,6 +37,11 @@ export interface IPlaytestCaptureProvenance {
   viewport: IPlaytestViewport;
 }
 
+export interface IPlaytestTrivialityOptOut {
+  id: string;
+  reason: string;
+}
+
 interface IPlaytestViewport {
   height: number;
   width: number;
@@ -59,4 +64,5 @@ export interface IPlaytestReport {
   movementDelta?: PlaytestVec3;
   observations?: IPlaytestObservations;
   pathLength?: number;
+  trivialityOptOuts: IPlaytestTrivialityOptOut[];
 }

@@ -10,6 +10,7 @@ import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import {
   boundedTeardownStep,
+  advanceFixedStep,
   buildReport,
   captureVisualSurface,
   handlePlaytestSignal,
@@ -53,6 +54,22 @@ test("visual capture reads the largest canvas instead of composited page UI", as
   expect(nth).toHaveBeenCalledWith(1);
   expect(screenshot).toHaveBeenCalledWith();
   expect(page.screenshot).not.toHaveBeenCalled();
+});
+
+test("fixed-step startup races retry without hiding a stopped loop", async () => {
+  let attempts = 0;
+  const bridge = {
+    advance: vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("page.evaluate: Error: Cannot advance a stopped loop.");
+    }),
+  };
+  const page = { evaluate: vi.fn(async () => undefined) } as unknown as Page;
+
+  await advanceFixedStep(page, bridge, 10);
+
+  expect(attempts).toBe(2);
+  expect(page.evaluate).toHaveBeenCalledTimes(1);
 });
 
 function scenario(assert: IPlaytestScenario["assert"]): IPlaytestScenario {
@@ -170,6 +187,79 @@ test("runner carries a supplied HUD observation into the evaluated report", () =
     pass: true,
   });
   expect(result.pass).toBe(true);
+});
+
+test("runner records the reason for each triviality opt-out", () => {
+  const reason = "The initial health is intentionally held while the independent flag transition proves the scenario ran.";
+  const currentScenario = scenario({
+    components: [
+      { allowTrivial: reason, component: "health", entity: "player", equals: 3 },
+      { allowTrivial: "This reason is present but the initial value fails, so this row proves an actual transition.", changed: true, component: "armed", entity: "player", equals: true },
+    ],
+  });
+  const snapshot = (armed: boolean): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick: armed ? 1 : 0 },
+    components: { player: { armed, health: 3 } },
+    entities: [],
+    resources: {},
+  });
+
+  const result = buildReport(CONFIG, currentScenario, snapshot(false), snapshot(true), [], []);
+
+  expect(result.pass).toBe(true);
+  expect(result.trivialityOptOutCount).toBe(1);
+  expect(result.trivialityOptOuts).toEqual([{ id: "component.player.health.value", reason }]);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    details: expect.objectContaining({ trivialityOptOut: true }),
+    id: "component.player.health.value",
+  }));
+});
+
+test("runner records a tag triviality reason while another assertion proves the run", () => {
+  const reason = "The initial coin count is intentionally held while the player state transition proves this scenario executed.";
+  const currentScenario = scenario({
+    states: [{ entity: "player", equals: "active" }],
+    tags: [{ allowTrivial: reason, count: 1, tag: "coin" }],
+  });
+  const snapshot = (state: string): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick: state === "active" ? 1 : 0 },
+    entities: [],
+    gameplay: {
+      animation: {},
+      states: { player: state },
+      tags: { coin: { count: 1 } },
+    },
+    resources: {},
+  });
+
+  const result = buildReport(CONFIG, currentScenario, snapshot("idle"), snapshot("active"), [], []);
+
+  expect(result.pass).toBe(true);
+  expect(result.trivialityOptOuts).toEqual([{ id: "tags.coin", reason }]);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    details: expect.objectContaining({ trivialityOptOut: true }),
+    id: "tags.coin",
+  }));
+});
+
+test("a scenario with only waived triviality assertions fails closed", () => {
+  const reason = "The initial corpse state is deliberately held only while this scenario proves nothing else.";
+  const currentScenario = scenario({
+    components: [{ allowTrivial: reason, component: "health", entity: "player", equals: 3 }],
+  });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 0 },
+    components: { player: { health: 3 } },
+    entities: [],
+    resources: {},
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.pass).toBe(false);
+  expect(result.trivialityOptOuts).toEqual([{ id: "component.player.health.value", reason }]);
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING");
+  expect(exitCodeForReport(result)).toBe(1);
 });
 
 test("standalone reports retain framebuffer coverage observations", () => {
@@ -291,12 +381,16 @@ test("visibility can prove a streamed entity is absent or present", () => {
       { entity: "chunk.7", minProjectedPixels: 1, present: true },
     ],
   });
-  const snapshot: IPlaytestObservationSnapshot = {
+  const beforeSnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 0 },
+    entities: [{ id: "chunk.0", visible: true }],
+  };
+  const afterSnapshot: IPlaytestObservationSnapshot = {
     clock: { mode: "fixed-step", tick: 1 },
     entities: [{ bounds: { height: 100, width: 100, x: 100, y: 100 }, id: "chunk.7", visible: true }],
   };
 
-  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+  const result = buildReport(CONFIG, currentScenario, beforeSnapshot, afterSnapshot, [], []);
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.0", pass: true }));
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.7", pass: true }));

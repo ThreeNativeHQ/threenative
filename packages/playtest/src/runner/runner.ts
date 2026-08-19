@@ -24,6 +24,7 @@ import {
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestSetupRequest,
+  type IPlaytestTrivialityOptOut,
   type PlaytestVec3,
 } from "../index.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
@@ -57,6 +58,7 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   runtime: "native" | "web";
   scenario: string;
   target: string;
+  trivialityOptOutCount: number;
   url: string;
 }
 
@@ -140,6 +142,8 @@ type RunnerConsoleEntry = {
 };
 
 const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
+const MAX_FIXED_STEP_STARTUP_RETRIES = 120;
+const STOPPED_LOOP_ERROR = "Cannot advance a stopped loop.";
 
 interface IMovementSampleInterval {
   after: IPlaytestObservationSnapshot;
@@ -653,6 +657,7 @@ export function buildReport(
     entity,
     expectMoved: scenario.assert?.movement?.minDistance !== undefined,
     frames: scenario.steps.reduce((total, step) => total + (step.holdFrames ?? step.waitFrames ?? step.holdTicks ?? step.waitTicks ?? 1), 0),
+    trivialityOptOuts: [],
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),
     observations: buildObservations({
@@ -673,10 +678,13 @@ export function buildReport(
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
-      ...(afterSnapshot?.gameplay === undefined && labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)
+      ...(beforeSnapshot?.gameplay === undefined
+        && afterSnapshot?.gameplay === undefined
+        && labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)
         ? {}
         : {
             runtimeObservations: {
+              ...(beforeSnapshot?.gameplay === undefined ? {} : { gameplayBefore: beforeSnapshot.gameplay }),
               ...(afterSnapshot?.gameplay === undefined ? {} : { gameplay: afterSnapshot.gameplay }),
               ...(labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)
                 ? {}
@@ -690,7 +698,13 @@ export function buildReport(
       ...(afterSnapshot?.physicsDebugSeries === undefined
         ? {}
         : { physicsDebugSeries: afterSnapshot.physicsDebugSeries }),
+      ...(beforeSnapshot?.physicsDebugSeries?.[0]?.snapshot === undefined
+        ? {}
+        : { physicsDebugBefore: beforeSnapshot.physicsDebugSeries[0].snapshot }),
       runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
+      ...(beforeSnapshot === undefined
+        ? {}
+        : { runtimeDiagnosticsBefore: normalizedRuntimeDiagnostics(beforeSnapshot, scenario, consoleEntries) }),
       ...(visual === undefined ? {} : { visual }),
     }),
   };
@@ -700,6 +714,7 @@ export function buildReport(
   const evaluated = evaluateRichPlaytestAssertions({ report: base, scenario });
   const cameraResult = evaluateCamera(scenario, afterSnapshot);
   const assertionResults = [...evaluated.assertions, ...(cameraResult === undefined ? [] : [cameraResult])];
+  const trivialityOptOuts = collectTrivialityOptOuts(assertionResults);
   const allDiagnostics = [...diagnostics, ...evaluated.diagnostics];
   // Scoped to WebGPU because that is where the fallback is silent: a WebGL context reports its
   // software renderer in the same provenance field, but the browser never pretends otherwise
@@ -741,8 +756,20 @@ export function buildReport(
     runtime: "web",
     scenario: scenario.name,
     target: scenario.target,
+    trivialityOptOutCount: trivialityOptOuts.length,
+    trivialityOptOuts,
     url: config.url,
   };
+}
+
+function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertionResult[]): IPlaytestTrivialityOptOut[] {
+  return assertions.flatMap(({ details, id }) => {
+    if (details?.trivialityOptOut !== true) return [];
+    const expected = details.expected;
+    if (typeof expected !== "object" || expected === null || Array.isArray(expected)) return [];
+    const reason = (expected as { allowTrivial?: unknown }).allowTrivial;
+    return typeof reason === "string" ? [{ id, reason }] : [];
+  });
 }
 
 /** Capture the largest rendered canvas without composited DOM overlays. */
@@ -872,6 +899,8 @@ function failureReport(config: IStandalonePlaytestConfig, scenario: IPlaytestSce
     runtime: "web",
     scenario: scenario.name,
     target: scenario.target,
+    trivialityOptOutCount: 0,
+    trivialityOptOuts: [],
     url: config.url,
   } as IStandalonePlaytestReport;
 }
@@ -957,7 +986,7 @@ async function runStep(
     // deterministic clock on loaded runners and makes long recordings nondeterministic.
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
-      await bridge.advance(Math.min(sampleTicks, ticks - index));
+      await advanceFixedStep(page, bridge, Math.min(sampleTicks, ticks - index));
       await samplePathPosition(bridge, pathEntity, pathPositions);
     }
   } else {
@@ -979,7 +1008,7 @@ async function runStep(
     // from one continuous hold to input latches.
     if (!finalStep) {
       if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-        await bridge.advance(1);
+        await advanceFixedStep(page, bridge, 1);
       } else {
         await waitFrames(page, 1);
       }
@@ -994,7 +1023,7 @@ async function runStep(
   if (step.pointers !== undefined && step.release) {
     await setBrowserPointers(page, inputState, [], viewport);
     if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-      await bridge.advance(1);
+      await advanceFixedStep(page, bridge, 1);
     } else {
       await waitFrames(page, 1);
     }
@@ -1003,6 +1032,32 @@ async function runStep(
     }
   }
   return { afterInput, afterStep, inputDriven };
+}
+
+/**
+ * The core bridge is installed before an async scene load completes, so its describe/ready
+ * handshake can finish one browser frame before the fixed-step loop starts. Retry only that
+ * exact startup race; a stopped loop that does not recover remains a runner failure.
+ */
+export async function advanceFixedStep(
+  page: Page,
+  bridge: Pick<IPlaytestBridgeClient, "advance">,
+  ticks: number,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await bridge.advance(ticks);
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error)
+        || !error.message.includes(STOPPED_LOOP_ERROR)
+        || attempt >= MAX_FIXED_STEP_STARTUP_RETRIES
+      )
+        throw error;
+      await waitFrames(page, 1);
+    }
+  }
 }
 
 type StepInputState = {

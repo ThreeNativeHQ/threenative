@@ -46,6 +46,7 @@ export type {
   IPlaytestCaptureProvenance,
   IPlaytestDiagnosticsPolicy,
   IPlaytestReport,
+  IPlaytestTrivialityOptOut,
   PlaytestVec3,
 } from "./report.js";
 export {

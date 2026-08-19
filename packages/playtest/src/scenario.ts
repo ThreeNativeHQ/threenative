@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { PLAYTEST_ASSERTION_REGISTRY } from "./assertions.js";
 
 const NUMERIC_COMPARISON_KEYS = ["gte", "lte"] as const;
+const MIN_TRIVIALITY_REASON_LENGTH = 20;
 
 export type PlaytestTarget = "web" | "desktop" | "bevy";
 export type PlaytestInputDelivery = "deterministic" | "focused-dom";
@@ -98,7 +99,7 @@ export interface IPlaytestPathAssertion {
   gte?: number;
   id: string;
   lte?: number;
-  allowTrivial?: boolean;
+  allowTrivial?: string;
   path?: string;
   textIncludes?: string;
   throughoutSteps?: boolean;
@@ -160,6 +161,7 @@ export interface IPlaytestSignalAssertion {
 
 export interface IPlaytestSettledAssertion {
   atStep?: string;
+  allowTrivial?: string;
   compareToStep?: string;
   entity?: string;
   minBodies?: number;
@@ -168,6 +170,7 @@ export interface IPlaytestSettledAssertion {
 }
 
 export interface IPlaytestOccludedAssertion {
+  allowTrivial?: string;
   entity?: string;
   target?: string;
 }
@@ -183,6 +186,7 @@ export interface IPlaytestOverlayNodeAssertion {
 
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
+  allowTrivial?: string;
   clip?: string;
   entered?: boolean;
   entity?: string;
@@ -190,6 +194,7 @@ export interface IPlaytestAnimationAssertion {
 }
 
 export interface IPlaytestTagCountAssertion {
+  allowTrivial?: string;
   count?: number;
   gte?: number;
   lte?: number;
@@ -197,11 +202,13 @@ export interface IPlaytestTagCountAssertion {
 }
 
 export interface IPlaytestStateAssertion {
+  allowTrivial?: string;
   entity?: string;
   equals: string;
 }
 
 export interface IPlaytestVisibilityAssertion {
+  allowTrivial?: string;
   entity?: string;
   maxOffscreenRatio?: number;
   minProjectedPixels?: number;
@@ -884,7 +891,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
   }
   return {
     ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map(validateAerodynamicsAssertion).filter((item): item is IPlaytestAerodynamicsAssertion => item !== undefined) } : {}),
-    ...(Array.isArray(value.animation) ? { animation: value.animation.map(validateAnimationAssertion).filter((item): item is IPlaytestAnimationAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.animation) ? { animation: value.animation.map((entry, index) => validateAnimationAssertion(entry, scenarioPath, `assert.animation[${index}]`)) } : {}),
     ...(camera === undefined
       ? {}
       : {
@@ -970,7 +977,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
             ...(typeof movement.rotationChanged === "boolean" ? { rotationChanged: movement.rotationChanged } : {}),
           },
     }),
-    ...(Array.isArray(value.occluded) ? { occluded: value.occluded.map(validateOccludedAssertion).filter((item): item is IPlaytestOccludedAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.occluded) ? { occluded: value.occluded.map((entry, index) => validateOccludedAssertion(entry, scenarioPath, `assert.occluded[${index}]`)) } : {}),
     ...(Array.isArray(value.overlayNodes)
       ? {
           overlayNodes: value.overlayNodes.map((entry, index) =>
@@ -996,7 +1003,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
       : {}),
     ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
-    ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map(validateVisibilityAssertion).filter((item): item is IPlaytestVisibilityAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map((entry, index) => validateVisibilityAssertion(entry, scenarioPath, `assert.visibility[${index}]`)) } : {}),
     ...(Array.isArray(value.visual) ? { visual: value.visual.map(validateVisualAssertion).filter((item): item is IPlaytestVisualAssertion => item !== undefined) } : {}),
     ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
   };
@@ -1053,8 +1060,9 @@ function validateReachabilityAssertion(value: Record<string, unknown>, scenarioP
 
 function validateSettledAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSettledAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["atStep", "compareToStep", "entity", "minBodies", "minMeanPoseDistance", "requiredOn"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "atStep", "compareToStep", "entity", "minBodies", "minMeanPoseDistance", "requiredOn"], scenarioPath, objectPath);
   return {
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
     ...present("compareToStep", optionalString(record, "compareToStep", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
@@ -1099,7 +1107,7 @@ function validateComponentAssertion(value: unknown, scenarioPath: string, object
     ...present("changed", optionalBoolean(record, "changed", scenarioPath, objectPath)),
     component: requireString(record, "component", scenarioPath, objectPath),
     entity: requireString(record, "entity", scenarioPath, objectPath),
-    ...present("allowTrivial", optionalBoolean(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     // As above: any JSON value is a legal comparison target.
     ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
     ...present("gte", optionalNumber(record, "gte", scenarioPath, objectPath)),
@@ -1161,13 +1169,13 @@ function validateAerodynamicsAssertion(value: unknown): IPlaytestAerodynamicsAss
   };
 }
 
-function validateOccludedAssertion(value: unknown): IPlaytestOccludedAssertion | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
+function validateOccludedAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestOccludedAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "entity", "target"], scenarioPath, objectPath);
   return {
-    ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
-    ...(typeof value.target === "string" ? { target: value.target } : {}),
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("target", optionalString(record, "target", scenarioPath, objectPath)),
   };
 }
 
@@ -1258,6 +1266,19 @@ function requireString(value: Record<string, unknown>, key: string, scenarioPath
 function optionalString(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): string | undefined {
   if (value[key] === undefined) return undefined;
   return requireString(value, key, scenarioPath, objectPath);
+}
+
+function optionalTrivialityReason(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): string | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  const nonWhitespaceLength = typeof raw === "string" ? raw.replace(/\s/gu, "").length : 0;
+  if (typeof raw !== "string" || nonWhitespaceLength < MIN_TRIVIALITY_REASON_LENGTH) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}.${key}' must be a string with at least ${MIN_TRIVIALITY_REASON_LENGTH} non-whitespace characters, received ${describeValue(raw)}.`,
+    );
+  }
+  return raw;
 }
 
 function optionalBoolean(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): boolean | undefined {
@@ -1392,8 +1413,9 @@ function validateFramebufferCoverageAssertion(
 
 function validateStateAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestStateAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["entity", "equals"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "entity", "equals"], scenarioPath, objectPath);
   return {
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     equals: requireString(record, "equals", scenarioPath, objectPath),
   };
@@ -1401,7 +1423,7 @@ function validateStateAssertion(value: unknown, scenarioPath: string, objectPath
 
 function validateTagCountAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestTagCountAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["count", ...NUMERIC_COMPARISON_KEYS, "tag"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "count", ...NUMERIC_COMPARISON_KEYS, "tag"], scenarioPath, objectPath);
   const count = optionalNonNegativeInteger(record, "count", scenarioPath, objectPath);
   const gte = optionalNonNegativeInteger(record, "gte", scenarioPath, objectPath);
   const lte = optionalNonNegativeInteger(record, "lte", scenarioPath, objectPath);
@@ -1415,6 +1437,7 @@ function validateTagCountAssertion(value: unknown, scenarioPath: string, objectP
     );
   }
   return {
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...present("count", count),
     ...present("gte", gte),
     ...present("lte", lte),
@@ -1449,28 +1472,28 @@ function validateSignalAssertion(value: unknown, scenarioPath: string, objectPat
   };
 }
 
-function validateAnimationAssertion(value: unknown): IPlaytestAnimationAssertion | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
+function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished"], scenarioPath, objectPath);
   return {
-    ...(typeof value.advancedFrames === "number" && Number.isFinite(value.advancedFrames) ? { advancedFrames: value.advancedFrames } : {}),
-    ...(typeof value.clip === "string" ? { clip: value.clip } : {}),
-    ...(typeof value.entered === "boolean" ? { entered: value.entered } : {}),
-    ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
-    ...(typeof value.finished === "boolean" ? { finished: value.finished } : {}),
+    ...present("advancedFrames", optionalNumber(record, "advancedFrames", scenarioPath, objectPath)),
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("clip", optionalString(record, "clip", scenarioPath, objectPath)),
+    ...present("entered", optionalBoolean(record, "entered", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("finished", optionalBoolean(record, "finished", scenarioPath, objectPath)),
   };
 }
 
-function validateVisibilityAssertion(value: unknown): IPlaytestVisibilityAssertion | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
+function validateVisibilityAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisibilityAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "entity", "maxOffscreenRatio", "minProjectedPixels", "present"], scenarioPath, objectPath);
   return {
-    ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
-    ...(typeof value.maxOffscreenRatio === "number" && Number.isFinite(value.maxOffscreenRatio) ? { maxOffscreenRatio: value.maxOffscreenRatio } : {}),
-    ...(typeof value.minProjectedPixels === "number" && Number.isFinite(value.minProjectedPixels) ? { minProjectedPixels: value.minProjectedPixels } : {}),
-    ...(typeof value.present === "boolean" ? { present: value.present } : {}),
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("maxOffscreenRatio", optionalNumber(record, "maxOffscreenRatio", scenarioPath, objectPath)),
+    ...present("minProjectedPixels", optionalNumber(record, "minProjectedPixels", scenarioPath, objectPath)),
+    ...present("present", optionalBoolean(record, "present", scenarioPath, objectPath)),
   };
 }
 
@@ -1485,7 +1508,7 @@ function validatePathAssertion(value: unknown, scenarioPath: string, objectPath:
       ? [{ ...(hasKey(step, "equals") ? { equals: step.equals } : {}), label: step.label, ...(typeof step.textIncludes === "string" ? { textIncludes: step.textIncludes } : {}) }]
       : []) } : {}),
     ...(typeof value.changed === "boolean" ? { changed: value.changed } : {}),
-    ...(typeof value.allowTrivial === "boolean" ? { allowTrivial: value.allowTrivial } : {}),
+    ...present("allowTrivial", optionalTrivialityReason(value, "allowTrivial", scenarioPath, objectPath)),
     ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
     ...present("gte", gte),
     id: value.id,
@@ -1639,10 +1662,16 @@ const ASSERTION_FIELD_TYPE_CHECKS: Readonly<Record<string, (value: unknown) => b
   "positive integer": (value) => typeof value === "number" && Number.isInteger(value) && value > 0,
   "positive number": (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
   "string": isNonEmptyString,
+  "triviality reason": isTrivialityReason,
 };
 
 function isNonEmptyString(value: unknown): boolean {
   return typeof value === "string" && value.trim() !== "";
+}
+
+function isTrivialityReason(value: unknown): boolean {
+  return typeof value === "string"
+    && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH;
 }
 
 function rejectWrongTypedFields(
@@ -1655,9 +1684,12 @@ function rejectWrongTypedFields(
     const check = ASSERTION_FIELD_TYPE_CHECKS[field.type];
     if (check === undefined || value[field.name] === undefined) continue;
     if (!check(value[field.name])) {
+      const expectedType = field.type === "triviality reason"
+        ? `a string with at least ${MIN_TRIVIALITY_REASON_LENGTH} non-whitespace characters`
+        : field.type;
       throw invalidScenario(
         scenarioPath,
-        `'${objectPath}.${field.name}' must be ${field.type}, received ${describeValue(value[field.name])}.`,
+        `'${objectPath}.${field.name}' must be ${expectedType}, received ${describeValue(value[field.name])}.`,
       );
     }
   }

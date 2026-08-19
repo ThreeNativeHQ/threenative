@@ -23,6 +23,12 @@
       { "id": "state", "path": "score", "gte": 1, "changed": true },
       { "id": "state", "path": "playerX", "changed": true }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the hot-reload assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

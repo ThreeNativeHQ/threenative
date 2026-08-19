@@ -16,6 +16,17 @@ async function fixture(): Promise<string> {
   return root;
 }
 
+async function sharedFixture(markup: string): Promise<string> {
+  const root = await makeTempDir("threenative-shared-agent-docs-");
+  const template = path.join(root, "packages", "create-threenative", "templates", "starter");
+  const fragments = path.join(root, "packages", "create-threenative", "agent-docs");
+  await mkdir(template, { recursive: true });
+  await mkdir(fragments, { recursive: true });
+  await writeFile(path.join(fragments, "rule.md"), "## shared rule\n");
+  await writeFile(path.join(template, "AGENTS.md"), markup);
+  return root;
+}
+
 describe("sync-agent-docs", () => {
   it("should mirror every AGENTS.md and skip node_modules", async () => {
     const root = await fixture();
@@ -41,6 +52,66 @@ describe("sync-agent-docs", () => {
       const result = await syncAgentDocs(root, true);
       expect(result.changed).toEqual(["CLAUDE.md"]);
       await expect(readFile(path.join(root, "CLAUDE.md"), "utf8")).resolves.toBe("# stale\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should expand shared fragments before mirroring them", async () => {
+    const root = await sharedFixture("<!-- shared: rule -->\nold body\n<!-- /shared -->\n");
+    try {
+      const first = await syncAgentDocs(root);
+      expect(first.changed).toContain(
+        path.join("packages", "create-threenative", "templates", "starter", "AGENTS.md"),
+      );
+      const agents = await readFile(
+        path.join(root, "packages/create-threenative/templates/starter/AGENTS.md"),
+        "utf8",
+      );
+      expect(agents).toContain("## shared rule");
+      expect(agents).toContain("<!-- shared: rule -->");
+      await expect(
+        readFile(
+          path.join(root, "packages/create-threenative/templates/starter/CLAUDE.md"),
+          "utf8",
+        ),
+      ).resolves.toContain("## shared rule");
+      expect((await syncAgentDocs(root)).changed).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should fail closed for an unknown shared fragment", async () => {
+    const root = await sharedFixture(
+      "<!-- shared: rule -->\nold body\n<!-- /shared -->\n<!-- shared: missing -->\nold body\n<!-- /shared -->\n",
+    );
+    try {
+      await expect(syncAgentDocs(root)).rejects.toThrow("Unknown shared fragment 'missing'");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should fail closed when a shared fragment is unused", async () => {
+    const root = await sharedFixture("<!-- shared: rule -->\nold body\n<!-- /shared -->\n");
+    try {
+      await writeFile(
+        path.join(root, "packages/create-threenative/agent-docs/unused.md"),
+        "## unused\n",
+      );
+      await expect(syncAgentDocs(root)).rejects.toThrow(
+        "Shared fragment 'unused' is not included by any template AGENTS.md",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should fail closed for an unclosed shared fragment", async () => {
+    const root = await sharedFixture("<!-- shared: rule -->\nold body\n");
+    try {
+      await expect(syncAgentDocs(root)).rejects.toThrow("Unclosed shared fragment 'rule'");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

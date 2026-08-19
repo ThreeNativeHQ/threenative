@@ -82,7 +82,11 @@
       { "name": "cleared", "entity": "wave", "minCount": 5 }
     ],
     "visibility": [
-      { "entity": "player", "minProjectedPixels": 20 },
+      {
+        "allowTrivial": "The shooter scene begins with the player visible and in frame; this held visibility row accompanies the combat assertions.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      },
       { "entity": "demo-target", "present": false }
     ]
   }

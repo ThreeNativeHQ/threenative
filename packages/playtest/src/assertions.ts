@@ -1,6 +1,6 @@
 import type { IPlaytestDiagnosticsPolicy, IPlaytestReport } from "./report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "./protocol.js";
-import type { IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion, IPlaytestPerformanceAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
+import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion, IPlaytestPerformanceAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
 type Vec3 = [number, number, number];
@@ -23,6 +23,7 @@ export interface IPlaytestAssertionSchemaEntry {
   resultIdPrefix: string;
   supportedOn: readonly PlaytestTarget[];
   triviality: "not-applicable" | "reject-initial-value";
+  trivialityRationale: string;
 }
 
 export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
@@ -49,6 +50,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "framebufferCoverage",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It samples a window-wide framebuffer over a labeled loading interval; a static initial value cannot satisfy the temporal pixel-evidence contract.",
   },
   {
     description: "Checks every consecutive platform against a measured static movement-envelope fit; it does not simulate traversal, walls, ceilings, run-up, or air control.",
@@ -64,6 +66,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "reachability.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It compares authored platform geometry with a measured movement envelope; no runtime initial value is asserted.",
   },
   {
     description: "Proves aerodynamic force telemetry and signed control-surface delivery for a flight entity.",
@@ -81,6 +84,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "aerodynamics.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It requires force telemetry and signed control delivery across samples; no held initial scalar can satisfy the proof.",
   },
   {
     description: "Proves screenshot change, populated regions, and sustained projected entity visibility.",
@@ -97,6 +101,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "visual.",
     supportedOn: ["web"],
     triviality: "not-applicable",
+    trivialityRationale: "It requires screenshot evidence from a capture; the initial scene alone cannot satisfy its frame-difference or region contract.",
   },
   {
     description: "Proves the subject moved, reached a minimum velocity, or changed rotation during held input.",
@@ -125,6 +130,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "movement.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It measures transform displacement under scenario input; an initial pose cannot itself prove movement.",
   },
   {
     description: "Proves a camera follows an entity or keeps a target in view.",
@@ -142,6 +148,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "camera",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It checks a camera-to-target relationship from runtime observations; the registry keeps this relationship outside the held-value guard.",
   },
   {
     description: "Proves a live entity component value after the scenario or at named steps.",
@@ -155,7 +162,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Maximum numeric value.", name: "lte", type: "number" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals: json }>" },
-      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "components",
@@ -164,6 +171,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "component.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
+    trivialityRationale: "A component comparator can pass on its initial snapshot, so initial satisfaction must be rejected unless a written held-invariant reason is recorded.",
   },
   {
     description: "Proves resource state after the scenario through equals, gte, lte, textIncludes, or changed checks.",
@@ -178,7 +186,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
-      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
       { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>" },
     ],
     cardinality: "array",
@@ -188,6 +196,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "resource.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
+    trivialityRationale: "A resource comparator can pass on its initial snapshot, so initial satisfaction must be rejected unless a written held-invariant reason is recorded.",
   },
   {
     description: "Proves the final count of entities carrying a bounded runtime tag.",
@@ -197,6 +206,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Exact expected entity count.", name: "count", type: "non-negative integer" },
       { description: "Minimum expected entity count.", name: "gte", type: "non-negative integer" },
       { description: "Maximum expected entity count.", name: "lte", type: "non-negative integer" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "tags",
@@ -204,7 +214,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     requiredCapabilities: ["runtime.tags"],
     resultIdPrefix: "tags.",
     supportedOn: ["web", "desktop", "bevy"],
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "A tag count can already equal its expected initial count; the scenario must prove a transition or document why that count is intentionally held.",
   },
   {
     description: "Proves a named Godot signal was emitted by the application during the run or at a labeled step.",
@@ -223,6 +234,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "signal.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It requires an emitted signal event; an initial state contains no matching event evidence to satisfy the assertion.",
   },
   {
     description: "Proves an observed entity's final runtime-owned state-machine state.",
@@ -230,6 +242,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Optional entity id; when omitted, choose an observed state candidate.", name: "entity", type: "string" },
       { description: "Expected current state name.", name: "equals", required: true, type: "string" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "states",
@@ -237,7 +250,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     requiredCapabilities: ["runtime.state"],
     resultIdPrefix: "states.",
     supportedOn: ["web", "desktop", "bevy"],
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "An entity can already be in the expected state at step zero; the scenario must prove a transition or document why the state is held.",
   },
   {
     description: "Proves retained UI/HUD text or values after the scenario.",
@@ -250,7 +264,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Maximum numeric value.", name: "lte", type: "number" },
       { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
-      { description: "Visible opt-out for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "boolean" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "hud",
@@ -259,6 +273,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "hud.",
     supportedOn: ["web"],
     triviality: "reject-initial-value",
+    trivialityRationale: "A HUD value can satisfy its comparator before input, so initial satisfaction must be rejected unless a written held-invariant reason is recorded.",
   },
   {
     description: "Proves DOM state inside a same-origin webview overlay iframe.",
@@ -278,6 +293,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "overlayNode.",
     supportedOn: ["web"],
     triviality: "not-applicable",
+    trivialityRationale: "It reads a declared overlay DOM snapshot; the registry does not treat browser overlay setup state as a gameplay held invariant.",
   },
   {
     description: "Proves console, network, runtime, and readiness diagnostics stayed clean.",
@@ -298,6 +314,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "diagnostics",
     supportedOn: ["web"],
     triviality: "not-applicable",
+    trivialityRationale: "It evaluates captured error and readiness channels across the run; no initial scalar value can satisfy those diagnostics by itself.",
   },
   {
     description: "Proves a live render sample exists and optionally bounds frame time, draw calls, and triangles.",
@@ -314,6 +331,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "performance.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It reads aggregate render samples such as frame time and draw calls; an initial value cannot stand in for the measured series.",
   },
   {
     description: "Proves projected entity visibility in the viewport.",
@@ -323,6 +341,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Minimum projected pixel area.", name: "minProjectedPixels", type: "number" },
       { description: "Maximum allowed offscreen ratio.", name: "maxOffscreenRatio", type: "number" },
       { description: "Require the entity to be registered in the sampled scene.", name: "present", type: "boolean" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "visibility",
@@ -330,7 +349,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     requiredCapabilities: ["entity.bounds"],
     resultIdPrefix: "visibility.",
     supportedOn: ["web"],
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "An entity can be present and in-frame before input; the scenario must prove visibility after its setup or document why that presence is held.",
   },
   {
     description: "Proves runtime world metadata exposed by the application bridge.",
@@ -346,6 +366,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "world.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It checks configured world identity and runtime fingerprint data; those environment facts are not a mutable assertion value.",
   },
   {
     description: "Proves contact or trigger evidence appeared in the effect log.",
@@ -366,6 +387,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     resultIdPrefix: "contact.",
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "not-applicable",
+    trivialityRationale: "It requires retained contact evidence from the run; a pre-existing value cannot manufacture an emitted contact event.",
   },
   {
     description: "Proves an observed cohort of matching physics bodies is asleep in a retained physics-debug sample.",
@@ -377,11 +399,13 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Optional earlier labeled step whose matching body positions are compared.", name: "compareToStep", type: "string" },
       { description: "Minimum mean body-position distance from compareToStep, in metres.", name: "minMeanPoseDistance", type: "positive number" },
       { description: "Targets on which the settled assertion is required.", name: "requiredOn", type: "Array<'web' | 'desktop' | 'bevy'>" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "settled",
     observationPath: "physicsDebugSeries",
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "A body can begin asleep and already satisfy the settled bounds; the scenario must prove settling or document why the rest state is held.",
     requiredCapabilities: ["runtime.physics"],
     resultIdPrefix: "settled.",
     supportedOn: ["web", "desktop", "bevy"],
@@ -392,6 +416,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Optional origin/listener entity token expected in the raycast request.", name: "entity", type: "string" },
       { description: "Optional target/emitter entity token expected in the raycast request.", name: "target", type: "string" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "occluded",
@@ -399,7 +424,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     requiredCapabilities: ["runtime.physics"],
     resultIdPrefix: "occluded.",
     supportedOn: ["web", "desktop", "bevy"],
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "A static scene can already produce the requested occlusion; the scenario must prove the ray result or document why the occlusion is held.",
   },
   {
     description: "Proves animation evidence appeared in the effect log or runtime observation.",
@@ -410,6 +436,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Require entering the animation state.", name: "entered", type: "boolean" },
       { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
       { description: "Require the observed clip to report its completion state.", name: "finished", type: "boolean" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",
     kind: "animation",
@@ -417,7 +444,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     requiredCapabilities: ["runtime.animation"],
     resultIdPrefix: "animation.",
     supportedOn: ["web", "desktop", "bevy"],
-    triviality: "not-applicable",
+    triviality: "reject-initial-value",
+    trivialityRationale: "A clip can already be playing at the first sample; an entered assertion must prove a transition or document why the clip is held.",
   },
 ] as const;
 
@@ -498,6 +526,7 @@ export interface IPlaytestObservations {
   contacts?: unknown;
   debugColliderCount?: number;
   effectLog?: unknown;
+  effectLogBefore?: unknown;
   effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   entityTransforms?: Record<string, { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }>;
   framebufferCoverage?: IPlaytestFramebufferCoverageObservation;
@@ -505,12 +534,14 @@ export interface IPlaytestObservations {
   overlayNodes?: Record<string, { after?: unknown; before?: unknown }>;
   network: Array<{ method: string; url: string }>;
   physicsDebug?: unknown;
+  physicsDebugBefore?: unknown;
   physicsDebugSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   performanceSeries?: unknown[];
   resources: Record<string, { after?: unknown; before?: unknown }>;
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;
   runtimeDiagnostics?: unknown;
+  runtimeDiagnosticsBefore?: unknown;
   signals?: unknown[];
   signalSeries?: Array<{ label: string; signals: unknown[]; tick: number }>;
   visibility?: Record<string, unknown>;
@@ -872,7 +903,7 @@ export function evaluateRichPlaytestAssertions(input: {
         && valueChecks.length > 0
         && before !== undefined
         && componentValueChecks(assertion, before).every(Boolean);
-      const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || assertion.allowTrivial === true);
+      const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || typeof assertion.allowTrivial === "string");
       assertions.push({
         details: {
           after,
@@ -881,12 +912,12 @@ export function evaluateRichPlaytestAssertions(input: {
           entity: assertion.entity,
           expected: assertion,
           trivial,
-          ...(trivial && assertion.allowTrivial === true ? { trivialityOptOut: true } : {}),
+          ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
         },
         id: `component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`,
         pass,
       });
-      if (!pass) diagnostics.push(trivial && assertion.allowTrivial !== true
+      if (!pass) diagnostics.push(trivial && typeof assertion.allowTrivial !== "string"
         ? trivialAssertionDiagnostic(`component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`, assertion.path, before, input.scenario.sourcePath)
         : componentAssertionDiagnostic(assertion, before, after));
     }
@@ -1235,7 +1266,13 @@ export function evaluateRichPlaytestAssertions(input: {
   }
   for (const assertion of scenarioAssertions.visibility ?? []) {
     const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
-    const result = evaluateVisibilityAssertion(entity, assertion.minProjectedPixels, assertion.maxOffscreenRatio, assertion.present, input.scenario.viewport, input.report.observations?.runtimeDiagnostics);
+    const result = evaluateVisibilityAssertion(
+      assertion,
+      entity,
+      input.scenario.viewport,
+      input.report.observations?.runtimeDiagnostics,
+      input.report.observations?.runtimeDiagnosticsBefore,
+    );
     assertions.push(result.assertion);
     if (result.diagnostic !== undefined) {
       diagnostics.push(result.diagnostic);
@@ -1343,19 +1380,53 @@ export function evaluateRichPlaytestAssertions(input: {
     const posePass = assertion.minMeanPoseDistance === undefined
       || (poseDistance !== undefined && poseDistance.sharedBodies >= minimum && poseDistance.mean >= assertion.minMeanPoseDistance);
     const complete = omittedBodies === 0;
-    const pass = complete && candidate !== undefined && bodies.length >= minimum && sleeping === bodies.length && posePass;
+    const comparisonPass = complete && candidate !== undefined && bodies.length >= minimum && sleeping === bodies.length && posePass;
+    const initialSnapshot = initialPhysicsDebugSnapshot(input.report.observations);
+    const initialCandidate = settledCandidate(initialSnapshot, assertion.entity);
+    const initialBodies = initialCandidate?.bodies ?? [];
+    // A pose-distance threshold is inherently a comparison between two retained samples. The
+    // initial snapshot has no labeled comparison step, so it cannot make this assertion trivial
+    // merely because its bodies happened to start asleep.
+    const initialPosePass = assertion.minMeanPoseDistance === undefined;
+    const initialPass = initialSnapshot !== undefined
+      && physicsDebugOmittedBodies(initialSnapshot) === 0
+      && initialCandidate !== undefined
+      && initialBodies.length >= minimum
+      && initialBodies.every((body) => body.sleeping)
+      && initialPosePass;
+    const trivial = comparisonPass && initialPass;
+    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
     const resultEntity = candidate?.selector ?? assertion.entity ?? "anonymous";
     assertions.push({
-      details: { atStep: assertion.atStep, bodies: bodies.length, candidates: candidate?.candidates ?? [], compareToStep: assertion.compareToStep, entity: resultEntity, minimum, omittedBodies, poseDistance, sleeping },
+      details: {
+        atStep: assertion.atStep,
+        bodies: bodies.length,
+        candidates: candidate?.candidates ?? [],
+        compareToStep: assertion.compareToStep,
+        entity: resultEntity,
+        expected: assertion,
+        initialPass,
+        initialPosePass,
+        minimum,
+        omittedBodies,
+        poseDistance,
+        sleeping,
+        trivial,
+        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+      },
       id: assertion.entity === undefined ? `settled.${settledIndex}` : `settled.${assertion.entity}`,
       pass,
     });
     if (!pass) diagnostics.push({
       artifactPath: "observations.json",
-      code: !complete
+      code: trivial && typeof assertion.allowTrivial !== "string"
+        ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+        : !complete
         ? "TN_PLAYTEST_PHYSICS_EVIDENCE_TRUNCATED"
         : !posePass ? "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT" : "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
-      message: !complete
+      message: trivial && typeof assertion.allowTrivial !== "string"
+        ? `Assertion 'settled.${resultEntity}' was already satisfied before the scenario ran.`
+        : !complete
         ? `Physics evidence omitted ${omittedBodies} bod${omittedBodies === 1 ? "y" : "ies"}; settled cannot pass on a partial snapshot.`
         : !posePass
         ? `Expected mean settled-pose distance for '${resultEntity}' to reach ${assertion.minMeanPoseDistance}m from step '${assertion.compareToStep}'; observed ${poseDistance?.mean ?? "unavailable"}m across ${poseDistance?.sharedBodies ?? 0} bodies.`
@@ -1364,20 +1435,48 @@ export function evaluateRichPlaytestAssertions(input: {
       path: `${input.scenario.sourcePath ?? "playtest"}/assert/settled/${resultEntity}`,
       severity: "error",
       ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
-      suggestion: "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake.",
+      suggestion: trivial && typeof assertion.allowTrivial !== "string"
+        ? "Drive the asserted bodies from an awake initial state, or provide allowTrivial with the reason the rest state is intentionally held."
+        : "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake.",
     });
   }
   for (const assertion of scenarioAssertions.occluded ?? []) {
     const matches = matchingOccludedRaycasts(input.report.effectLog, assertion.entity, assertion.target);
-    const pass = matches > 0;
-    assertions.push({ details: { count: matches, entity: assertion.entity, target: assertion.target }, id: `occluded.${assertion.entity ?? "ray"}`, pass });
+    const id = `occluded.${assertion.entity ?? "ray"}`;
+    const initialMatches = matchingOccludedRaycasts(
+      initialEffectLog(input.report.observations),
+      assertion.entity,
+      assertion.target,
+    );
+    const comparisonPass = matches > 0;
+    const trivial = comparisonPass && initialMatches > 0;
+    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
+    assertions.push({
+      details: {
+        count: matches,
+        entity: assertion.entity,
+        expected: assertion,
+        initialMatches,
+        target: assertion.target,
+        trivial,
+        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+      },
+      id,
+      pass,
+    });
     if (!pass) diagnostics.push({
       artifactPath: "effect-log.json",
-      code: "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
-      message: "Expected a render scene-ray query or physics raycast result with hit=true, but no matching occlusion evidence was observed.",
+      code: trivial && typeof assertion.allowTrivial !== "string"
+        ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+        : "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
+      message: trivial && typeof assertion.allowTrivial !== "string"
+        ? `Assertion '${id}' was already satisfied before the scenario ran.`
+        : "Expected a render scene-ray query or physics raycast result with hit=true, but no matching occlusion evidence was observed.",
       observedRuntimePath: "effect-log.json/entries[service=render.sceneRayQuery|physics.raycast]/payload/result/hit",
       severity: "error",
-      suggestion: "Check the listener/emitter entity ids and rendered occluder geometry, then inspect effect-log.json for the scene-query request and hit result.",
+      suggestion: trivial && typeof assertion.allowTrivial !== "string"
+        ? "Drive the asserted occlusion from a non-occluded initial state, or provide allowTrivial with the reason the occlusion is intentionally held."
+        : "Check the listener/emitter entity ids and rendered occluder geometry, then inspect effect-log.json for the scene-query request and hit result.",
     });
   }
   for (const assertion of scenarioAssertions.animation ?? []) {
@@ -1393,13 +1492,38 @@ export function evaluateRichPlaytestAssertions(input: {
         && (assertion.entered !== true || clip !== undefined)
         && (assertion.finished === undefined || (finished !== undefined && finished === assertion.finished))
         && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
-      assertions.push({ details: { advancedFrames, clip, entity, expected: assertion, finished }, id: `animation.${entity}`, pass });
-      if (!pass) {
+      const initialGameplay = runtimeGameplayBefore(input.report.observations?.runtimeObservations);
+      const initialAnimations = isRecord(initialGameplay?.animation) ? initialGameplay.animation : undefined;
+      const initialObserved = isRecord(initialAnimations?.[entity]) ? initialAnimations[entity] : undefined;
+      const initialPass = animationObservationPass(assertion, initialObserved);
+      const trivial = pass && initialPass;
+      const guardedPass = pass && (!trivial || typeof assertion.allowTrivial === "string");
+      assertions.push({
+        details: {
+          advancedFrames,
+          clip,
+          entity,
+          expected: assertion,
+          finished,
+          initialPass,
+          trivial,
+          ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+        },
+        id: `animation.${entity}`,
+        pass: guardedPass,
+      });
+      if (!guardedPass) {
         diagnostics.push({
-          code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
-          message: `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
+          code: trivial && typeof assertion.allowTrivial !== "string"
+            ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+            : "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+          message: trivial && typeof assertion.allowTrivial !== "string"
+            ? `Assertion 'animation.${entity}' was already satisfied before the scenario ran.`
+            : `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
           severity: "error",
-          suggestion: "Check model animation clip wiring and runtime animation playback state.",
+          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+            ? "Drive the asserted animation from a different initial clip, or provide allowTrivial with the reason the clip is intentionally held."
+            : "Check model animation clip wiring and runtime animation playback state.",
         });
       }
       continue;
@@ -1417,14 +1541,37 @@ export function evaluateRichPlaytestAssertions(input: {
     const tokens = [entity, assertion.clip].filter((item): item is string => item !== undefined);
     const count = countMatchingEntries(input.report.effectLog, tokens);
     const minCount = Math.max(1, assertion.advancedFrames ?? 1);
-    const pass = count >= minCount;
-    assertions.push({ details: { count, entity, clip: assertion.clip, advancedFrames: assertion.advancedFrames, finished: assertion.finished }, id: `animation.${entity}`, pass });
+    const comparisonPass = count >= minCount;
+    const initialCount = countMatchingEntries(initialEffectLog(input.report.observations), tokens);
+    const trivial = comparisonPass && initialCount >= minCount;
+    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
+    assertions.push({
+      details: {
+        count,
+        entity,
+        clip: assertion.clip,
+        advancedFrames: assertion.advancedFrames,
+        expected: assertion,
+        finished: assertion.finished,
+        initialCount,
+        trivial,
+        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+      },
+      id: `animation.${entity}`,
+      pass,
+    });
     if (!pass) {
       diagnostics.push({
-        code: "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
-        message: `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
+        code: trivial && typeof assertion.allowTrivial !== "string"
+          ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+          : "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+        message: trivial && typeof assertion.allowTrivial !== "string"
+          ? `Assertion 'animation.${entity}' was already satisfied before the scenario ran.`
+          : `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
         severity: "error",
-        suggestion: "Check model animation clip wiring and runtime animation playback state.",
+        suggestion: trivial && typeof assertion.allowTrivial !== "string"
+          ? "Drive the asserted animation from a different initial clip, or provide allowTrivial with the reason the clip is intentionally held."
+          : "Check model animation clip wiring and runtime animation playback state.",
       });
     }
   }
@@ -1437,6 +1584,15 @@ export function evaluateRichPlaytestAssertions(input: {
     const id = `assert.${entry.kind}`;
     assertions.push({ details: { reason: "registered-without-evaluator" }, id, pass: false });
     diagnostics.push(assertionNotEvaluatedDiagnostic(id, "the registered assertion produced no evaluator result"));
+  }
+  if (allTrivialityEligibleAssertionsWaived(assertions)) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING",
+      message: `Scenario '${input.scenario.name}' waived every triviality-eligible assertion, so it asserts nothing independently of its initial state.`,
+      severity: "error",
+      ...(input.scenario.sourcePath === undefined ? {} : { sourcePath: input.scenario.sourcePath }),
+      suggestion: "Remove at least one triviality waiver and drive that assertion from a failing initial state or assert changed:true.",
+    });
   }
   if (assertions.length === 0 || (scenarioAssertions.diagnostics === undefined && !assertions.some(({ id }) => id !== "diagnostics"))) {
     const id = "scenario.assertions";
@@ -1616,24 +1772,46 @@ function evaluateTagCountAssertion(
   observations: unknown,
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
   const gameplay = gameplayObservations(observations);
-  const tags = isRecord(gameplay?.tags) ? gameplay.tags : undefined;
-  const candidate = tags?.[assertion.tag];
-  const summary = isRecord(candidate) ? candidate : undefined;
-  const count = typeof summary?.count === "number" ? summary.count : tags === undefined ? undefined : 0;
-  const pass = count !== undefined
+  const count = tagCount(gameplay, assertion.tag);
+  const comparisonPass = count !== undefined
     && (assertion.count === undefined || count === assertion.count)
     && (assertion.gte === undefined || count >= assertion.gte)
     && (assertion.lte === undefined || count <= assertion.lte);
-  const result = { details: { count: count ?? null, expected: assertion, tag: assertion.tag }, id: `tags.${assertion.tag}`, pass };
+  const initialCount = tagCount(runtimeGameplayBefore(observations), assertion.tag);
+  const initialPass = initialCount !== undefined
+    && (assertion.count === undefined || initialCount === assertion.count)
+    && (assertion.gte === undefined || initialCount >= assertion.gte)
+    && (assertion.lte === undefined || initialCount <= assertion.lte);
+  const trivial = comparisonPass && initialPass;
+  const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
+  const result = {
+    details: {
+      count: count ?? null,
+      expected: assertion,
+      initialCount: initialCount ?? null,
+      initialPass,
+      tag: assertion.tag,
+      trivial,
+      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+    },
+    id: `tags.${assertion.tag}`,
+    pass,
+  };
   return pass
     ? { assertion: result }
     : {
         assertion: result,
         diagnostic: {
-          code: "TN_PLAYTEST_TAG_COUNT_ASSERTION_FAILED",
-          message: `Tag '${assertion.tag}' count ${count === undefined ? "was unavailable" : count} did not satisfy the expected count.`,
+          code: trivial && typeof assertion.allowTrivial !== "string"
+            ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+            : "TN_PLAYTEST_TAG_COUNT_ASSERTION_FAILED",
+          message: trivial && typeof assertion.allowTrivial !== "string"
+            ? `Assertion 'tags.${assertion.tag}' was already satisfied before the scenario ran.`
+            : `Tag '${assertion.tag}' count ${count === undefined ? "was unavailable" : count} did not satisfy the expected count.`,
           severity: "error",
-          suggestion: "Ensure the runtime entity tags are authored and inspect runtimeObservations.gameplay.tags in the playtest artifact.",
+          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+            ? "Drive the asserted tag count from a different initial count, or provide allowTrivial with the reason the count is intentionally held."
+            : "Ensure the runtime entity tags are authored and inspect runtimeObservations.gameplay.tags in the playtest artifact.",
         },
       };
 }
@@ -1670,14 +1848,25 @@ function evaluateStateAssertion(
   const selectedPreExisting = selected === undefined
     ? terminal.preExisting
     : terminal.preExistingEntities.includes(selected[0]);
-  const pass = observed === assertion.equals && terminal.contactObserved && terminal.historyComplete && !selectedPreExisting;
+  const comparisonPass = observed === assertion.equals && terminal.contactObserved && terminal.historyComplete && !selectedPreExisting;
+  const initialStates = runtimeGameplayBefore(observations);
+  const initialStateMap = isRecord(initialStates?.states) ? initialStates.states : undefined;
+  const initialPass = assertion.entity === undefined
+    ? Object.values(initialStateMap ?? {}).some((state) => state === assertion.equals)
+    : initialStateMap?.[assertion.entity] === assertion.equals;
+  const trivial = comparisonPass && initialPass;
+  const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
   const result = {
     details: {
       candidates: candidates.map(([entity, state]) => ({ entity, state })),
       entity: selectedEntity ?? "anonymous",
-      expected: assertion.equals,
+      expected: assertion,
+      expectedState: assertion.equals,
+      initialPass,
       observed: observed ?? null,
       terminal: { contactObserved: terminal.contactObserved, historyComplete: terminal.historyComplete, preExisting: selectedPreExisting, step: terminal.step },
+      trivial,
+      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
     },
     id: assertion.entity === undefined ? `states.${index}` : `states.${assertion.entity}`,
     pass,
@@ -1687,14 +1876,20 @@ function evaluateStateAssertion(
     : {
         assertion: result,
         diagnostic: {
-          code: observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
+          code: trivial && typeof assertion.allowTrivial !== "string"
+            ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
+            : observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
             ? "TN_PLAYTEST_STATE_ORDERING_FAILED"
             : "TN_PLAYTEST_STATE_ASSERTION_FAILED",
-          message: observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
+          message: trivial && typeof assertion.allowTrivial !== "string"
+            ? `Assertion '${result.id}' was already satisfied before the scenario ran.`
+            : observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
             ? `Terminal state '${assertion.equals}' was not observed after retained contact evidence at '${terminal.step ?? "an unavailable step"}'.`
             : `Entity '${selectedEntity ?? "anonymous"}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
           severity: "error",
-          suggestion: "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
+          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+            ? "Drive the asserted state from a different initial state, or provide allowTrivial with the reason the state is intentionally held."
+            : "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
         },
       };
 }
@@ -1831,6 +2026,37 @@ function runtimeObservationValue(value: unknown): unknown {
   return value.runtimeObservations;
 }
 
+function runtimeGameplayBefore(value: unknown): Record<string, unknown> | undefined {
+  const runtime = runtimeObservationValue(value);
+  if (!isRecord(runtime)) return undefined;
+  return isRecord(runtime.gameplayBefore) ? runtime.gameplayBefore : undefined;
+}
+
+function tagCount(gameplay: Record<string, unknown> | undefined, tag: string): number | undefined {
+  const tags = isRecord(gameplay?.tags) ? gameplay.tags : undefined;
+  const summary = isRecord(tags?.[tag]) ? tags[tag] : undefined;
+  return typeof summary?.count === "number" ? summary.count : tags === undefined ? undefined : 0;
+}
+
+function initialPhysicsDebugSnapshot(observations: IPlaytestObservations | undefined): unknown {
+  return observations?.physicsDebugBefore;
+}
+
+function initialEffectLog(observations: IPlaytestObservations | undefined): unknown {
+  return observations?.effectLogBefore;
+}
+
+function animationObservationPass(assertion: IPlaytestAnimationAssertion, observed: unknown): boolean {
+  if (!isRecord(observed)) return false;
+  const clip = typeof observed.clip === "string" ? observed.clip : undefined;
+  const advancedFrames = typeof observed.advancedFrames === "number" ? observed.advancedFrames : undefined;
+  const finished = typeof observed.finished === "boolean" ? observed.finished : undefined;
+  return (assertion.clip === undefined || clip === assertion.clip)
+    && (assertion.entered !== true || clip !== undefined)
+    && (assertion.finished === undefined || (finished !== undefined && finished === assertion.finished))
+    && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
+}
+
 function runtimeGameplaySamples(value: unknown): Array<{ gameplay: Record<string, unknown>; label: string }> {
   const runtime = runtimeObservationValue(value);
   if (!isRecord(runtime) || !Array.isArray(runtime.gameplaySeries)) return [];
@@ -1947,7 +2173,7 @@ function evaluatePathAssertion(
     const observed = before !== undefined || after !== undefined;
     checks.push(observed && (assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after)));
   }
-  const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || assertion.allowTrivial === true);
+  const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || typeof assertion.allowTrivial === "string");
   const result = {
     details: {
       after,
@@ -1956,7 +2182,7 @@ function evaluatePathAssertion(
       id: assertion.id,
       path: assertion.path,
       trivial,
-      ...(trivial && assertion.allowTrivial === true ? { trivialityOptOut: true } : {}),
+      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
     },
     id: `${kind}.${assertion.id}${assertion.path === undefined ? "" : `.${assertion.path}`}`,
     pass,
@@ -1965,7 +2191,7 @@ function evaluatePathAssertion(
     ? { assertion: result }
     : {
         assertion: result,
-        diagnostic: trivial && assertion.allowTrivial !== true
+        diagnostic: trivial && typeof assertion.allowTrivial !== "string"
           ? trivialAssertionDiagnostic(`${kind}.${assertion.id}`, assertion.path, before, context.scenarioSourcePath)
           : pathAssertionDiagnostic(kind, assertion, before, after, context),
       };
@@ -2011,6 +2237,12 @@ function rejectsTrivialAssertion(kind: keyof NonNullable<IPlaytestScenario["asse
   return PLAYTEST_ASSERTION_REGISTRY.find((entry) => entry.kind === kind)?.triviality === "reject-initial-value";
 }
 
+function allTrivialityEligibleAssertionsWaived(assertions: readonly IPlaytestAssertionResult[]): boolean {
+  // Diagnostics is an automatically-added health check, not an independent gameplay assertion.
+  const substantive = assertions.filter(({ id }) => id !== "diagnostics");
+  return substantive.length > 0 && substantive.every(({ details }) => details?.trivialityOptOut === true);
+}
+
 function componentValueChecks(assertion: IPlaytestComponentAssertion, value: unknown): boolean[] {
   const resolved = value;
   return [
@@ -2038,7 +2270,7 @@ function trivialAssertionDiagnostic(id: string, path: string | undefined, before
     path,
     severity: "error",
     ...(sourcePath === undefined ? {} : { sourcePath }),
-    suggestion: "Drive the asserted value from a failing initial state, assert changed:true, or set allowTrivial:true with a documented held-invariant reason.",
+    suggestion: "Drive the asserted value from a failing initial state, or assert changed:true. If the value is genuinely a held invariant, allowTrivial takes the reason it is held — it is recorded in the report and counted against the run.",
   };
 }
 
@@ -2275,52 +2507,81 @@ function evaluateDiagnosticsPolicy(
 }
 
 function evaluateVisibilityAssertion(
+  assertion: IPlaytestVisibilityAssertion,
   entity: string,
-  minProjectedPixels: number | undefined,
-  maxOffscreenRatio: number | undefined,
-  present: boolean | undefined,
   viewport: { height: number; width: number },
   runtimeDiagnosticsValue: unknown,
+  initialRuntimeDiagnosticsValue: unknown,
 ): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const minProjectedPixels = assertion.minProjectedPixels;
+  const maxOffscreenRatio = assertion.maxOffscreenRatio;
+  const present = assertion.present;
   const diagnosticsSnapshot = runtimeDiagnosticsSnapshot(runtimeDiagnosticsValue);
   const rendered = renderedEntity(diagnosticsSnapshot, entity);
   const supportsProjectedBounds = renderedEntitiesAreReported(diagnosticsSnapshot);
+  const initialSnapshot = runtimeDiagnosticsSnapshot(initialRuntimeDiagnosticsValue);
+  const initialRendered = renderedEntity(initialSnapshot, entity);
+  const initialObserved = initialRendered !== undefined;
+  const initialBounds = isRecord(initialRendered?.projectedBounds) ? initialRendered.projectedBounds : undefined;
+  const initialMin = Array.isArray(initialBounds?.min) ? initialBounds.min : undefined;
+  const initialMax = Array.isArray(initialBounds?.max) ? initialBounds.max : undefined;
+  const initialProjectedPixels = initialMin === undefined || initialMax === undefined
+    ? undefined
+    : Math.max(0, ((Number(initialMax[0]) - Number(initialMin[0])) / 2) * viewport.width) * Math.max(0, ((Number(initialMax[1]) - Number(initialMin[1])) / 2) * viewport.height);
+  const initialOffscreenRatio = initialMin === undefined || initialMax === undefined
+    ? undefined
+    : projectedOffscreenRatio([Number(initialMin[0]), Number(initialMin[1])], [Number(initialMax[0]), Number(initialMax[1])]);
+  const initialPass = present !== undefined && minProjectedPixels === undefined && maxOffscreenRatio === undefined
+    ? initialObserved === present
+    : initialRendered !== undefined
+      && (present === undefined || present)
+      && (minProjectedPixels === undefined || (initialProjectedPixels ?? 0) >= minProjectedPixels)
+      && (maxOffscreenRatio === undefined || (initialOffscreenRatio ?? 1) <= maxOffscreenRatio);
+  const guarded = (comparisonPass: boolean, details: Record<string, unknown>, failure: IPlaytestDiagnostic) => {
+    const trivial = comparisonPass && initialPass;
+    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
+    const result = {
+      details: {
+        ...details,
+        expected: assertion,
+        initialPass,
+        trivial,
+        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
+      },
+      id: `visibility.${entity}`,
+      pass,
+    };
+    return pass
+      ? { assertion: result }
+      : {
+        assertion: result,
+        diagnostic: trivial && typeof assertion.allowTrivial !== "string"
+          ? trivialAssertionDiagnostic(result.id, undefined, true, undefined)
+          : failure,
+      };
+  };
   if (present !== undefined && minProjectedPixels === undefined && maxOffscreenRatio === undefined) {
     const observed = rendered !== undefined;
-    const pass = observed === present;
-    const assertion = { details: { entity, observed, present }, id: `visibility.${entity}`, pass };
-    return pass
-      ? { assertion }
-      : {
-        assertion,
-        diagnostic: {
-          code: "TN_PLAYTEST_VISIBILITY_FAILED",
-          message: `Entity '${entity}' presence did not match the expected value.`,
-          severity: "error",
-          suggestion: "Check entity registration and streaming unload decisions.",
-        },
-      };
+    return guarded(observed === present, { entity, observed, present }, {
+      code: "TN_PLAYTEST_VISIBILITY_FAILED",
+      message: `Entity '${entity}' presence did not match the expected value.`,
+      severity: "error",
+      suggestion: "Check entity registration and streaming unload decisions.",
+    });
   }
   if (!supportsProjectedBounds && hasNativeReadinessSamples(diagnosticsSnapshot)) {
-    return {
-      assertion: {
-        details: {
-          entity,
-          maxOffscreenRatio,
-          minProjectedPixels,
-          reason: "native-projected-bounds-unavailable",
-          skipped: false,
-        },
-        id: `visibility.${entity}`,
-        pass: false,
-      },
-      diagnostic: {
-        code: "TN_PLAYTEST_VISIBILITY_FAILED",
-        message: `Entity '${entity}' projected bounds are unavailable on the native target.`,
-        severity: "error",
-        suggestion: "Expose rendered entity projected bounds or remove the projected-pixel assertion.",
-      },
-    };
+    return guarded(false, {
+      entity,
+      maxOffscreenRatio,
+      minProjectedPixels,
+      reason: "native-projected-bounds-unavailable",
+      skipped: false,
+    }, {
+      code: "TN_PLAYTEST_VISIBILITY_FAILED",
+      message: `Entity '${entity}' projected bounds are unavailable on the native target.`,
+      severity: "error",
+      suggestion: "Expose rendered entity projected bounds or remove the projected-pixel assertion.",
+    });
   }
   const bounds = isRecord(rendered?.projectedBounds) ? rendered.projectedBounds : undefined;
   const min = Array.isArray(bounds?.min) ? bounds.min : undefined;
@@ -2334,18 +2595,12 @@ function evaluateVisibilityAssertion(
     && (present === undefined || present)
     && (minProjectedPixels === undefined || (projectedPixels ?? 0) >= minProjectedPixels)
     && (maxOffscreenRatio === undefined || (offscreenRatio ?? 1) <= maxOffscreenRatio);
-  const assertion = { details: { entity, maxOffscreenRatio, minProjectedPixels, offscreenRatio, present, projectedPixels }, id: `visibility.${entity}`, pass };
-  return pass
-    ? { assertion }
-    : {
-        assertion,
-        diagnostic: {
-          code: "TN_PLAYTEST_VISIBILITY_FAILED",
-          message: `Entity '${entity}' did not satisfy projected visibility assertions.`,
-          severity: "error",
-          suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
-        },
-      };
+  return guarded(pass, { entity, maxOffscreenRatio, minProjectedPixels, offscreenRatio, present, projectedPixels }, {
+    code: "TN_PLAYTEST_VISIBILITY_FAILED",
+    message: `Entity '${entity}' did not satisfy projected visibility assertions.`,
+    severity: "error",
+    suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
+  });
 }
 
 function projectedPixelsForEntity(snapshot: unknown, entity: string, viewport: { height: number; width: number }): number | undefined {

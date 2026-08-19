@@ -43,6 +43,7 @@ export interface IScaffoldResult {
 
 const TEXT_FILE_EXTENSIONS = new Set([".css", ".html", ".json", ".md", ".svg", ".ts", ".tsx"]);
 const TEMPLATE_NAME = /^[a-z][a-z0-9-]*$/u;
+const SHARED_AGENT_MARKER_LINE = /^<!--\s*(?:shared:\s*[^>]+|\/shared)\s*-->\r?\n?/gmu;
 
 export function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
@@ -174,6 +175,9 @@ async function renderTemplate(
     let rendered = content;
     for (const [placeholder, value] of Object.entries(replacements)) {
       rendered = rendered.replaceAll(placeholder, value);
+    }
+    if (entry.name === "AGENTS.md" || entry.name === "CLAUDE.md") {
+      rendered = rendered.replace(SHARED_AGENT_MARKER_LINE, "");
     }
     await writeFile(source, rendered);
   }

@@ -15,6 +15,7 @@ React.
 `src/ui/` are ordinary code in this repository. Nothing in `@threenative/*` reads them.
 Rewrite or delete any of it.
 
+<!-- shared: framework-blocks-you -->
 ## When the framework blocks you, write plain Three.js
 
 An API in `@threenative/*` that is broken, missing, or does not do what you need is **not
@@ -35,6 +36,7 @@ implementation sitting beside a framework API is a supported outcome, not a hack
 
 Never contort the game to flatter the framework, and never stall on a framework bug. A
 finished game carrying a plain Three.js patch beats a blocked one every time.
+<!-- /shared -->
 
 ## Commands
 
@@ -51,6 +53,13 @@ APK and emulator scenario are proven without Rapier WASM. A published scaffold s
 ship Android or iOS until signed prebuilt runtime assets and their checksum manifest exist,
 so those targets fail closed for consumers. Linux desktop is source-machine evidence, not a
 clean-machine distribution proof; macOS, Windows, iOS, and physical hardware remain OPEN.
+
+## Playtest assertions
+
+Every `allowTrivial` waiver in `playtests/` must be a reason string with at least 20 non-whitespace
+characters explaining why the initial value is intentionally held; `allowTrivial: true` is invalid.
+The reason appears in the report. A scenario whose every triviality-eligible assertion is waived
+fails with `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`, so keep an independent assertion in the scenario.
 
 ## Keep the game portable to native
 
@@ -157,6 +166,7 @@ the call, then compare `mesh.position.distanceTo(before)` on the next update, af
 Storing `mesh.position` itself aliases the live transform and reports zero. The player keeps the
 coyote-time and jump-buffer timers in the entity so jump feel stays game-owned.
 
+<!-- shared: ctx-surface -->
 ## The `ctx` surface — you already have these, do not rebuild them
 
 `ctx` carries six things that get reimplemented by hand in almost every project, because
@@ -165,11 +175,11 @@ never surface them. This table is the complete list.
 
 | You already have | Rather than | Signature |
 |---|---|---|
-| `ctx.goto("play")` | a hand-written `#reset()` | `(name: string) => Promise<void>` |
+| `ctx.goto("<scene-name>")` | a hand-written `#reset()` | `(name: string) => Promise<void>` |
 | `ctx.tween(obj, { y: 2 }, 0.4)` | a `Math.sin` / `lerp` accumulator | `(target, props, seconds) => Promise<void>` |
 | `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
 | `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
-| `ctx.random.range(-1, 1)` | `Math.random()` | seeded — a replay produces identical results |
+| `ctx.random.range(-1, 1)` | `Math.random()` | deterministic when `seed` is configured; otherwise `Math.random()` |
 | `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` + `intersectObject(s)` | `(options?: { screen?, origin?, direction?, far?, targets?, exclude? }) => Intersection \| undefined` / `readonly Intersection[]` |
 
 **`ctx.raycast()` is how you pick geometry under the pointer.** It defaults to the current
@@ -187,10 +197,21 @@ original object in the live graph. Put the target or entity metadata you already
 the mesh; `ctx.raycast()` then still returns that mesh and its metadata. Meshes without `userData`
 may be merged into fewer draws.
 
-**`ctx.goto(name)` restarts the current scene.** Calling `ctx.goto("play")` from inside
-`Play` tears the scene down and rebuilds it: `exit()` runs, scheduled callbacks are cleared,
-registered entities are cleared, the Three scene is emptied, then a fresh instance runs
-`load()` and `enter()`. That is your entire restart button, and your entire death-and-retry.
+**`ctx.goto(name)` rebuilds the scene without resetting game state.** Calling
+`ctx.goto("<scene-name>")` from inside the matching scene tears it down and rebuilds it: `exit()` runs,
+scheduled callbacks are cleared, registered entities are cleared, the Three scene is emptied,
+then a fresh instance runs `load()` and `enter()`. Values in `ctx.state` — health, score,
+inventory, or any other game-owned state — survive this scene rebuild. When death-and-retry
+should reset gameplay, reset your own state explicitly before calling `ctx.goto()`:
+
+```ts
+if (player.dead) {
+  ctx.state.set({ /* copy this game's initial-state shape */ });
+  ctx.state.flush();
+  void ctx.goto("<scene-name>");
+  return;
+}
+```
 
 Do **not** write a `#reset()` that walks your entities putting them back. It is ~15 lines
 that look right and quietly miss the scheduler and anything you spawned after `enter()`, so
@@ -201,13 +222,14 @@ catch that.
 
 ```ts
 if (player.dead) {
-  void ctx.goto("play");
+  void ctx.goto("<scene-name>");
   return;              // ← required. Everything below now runs against a torn-down scene.
 }
 ```
 
-From React, the same call is `game.goto("play")` — use that for a restart button instead of
-routing a counter through game state.
+From React, `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state to its
+declared initial state first. Use `game.goto("<scene-name>")` for a full restart button; use
+`ctx.goto("<scene-name>")` only when preserving game state across the scene rebuild is intended.
 
 **`ctx.tween` is for timing, not for looks.** Use it for the *when* — a pickup rising over
 0.4s, a door opening, a hit flash — and keep the *what* (colour, shape, easing feel) in
@@ -215,9 +237,12 @@ routing a counter through game state.
 right tool for a continuous idle bob; `tween` is for anything that starts, runs once, and
 finishes.
 
-**`ctx.random` is seeded from `defineGame({ seed })`.** Use it for anything a playtest needs
-to reproduce — spawn positions, patrol offsets, level variation. `Math.random()` makes a
-scenario that passes once and fails on replay for no visible reason.
+**`ctx.random` is deterministic only when `defineGame({ seed })` is configured.** Check
+`src/game.ts`: the templates that declare a seed get replayable values for spawn positions,
+patrol offsets, and level variation; without a seed, `ctx.random` falls back to `Math.random()`.
+Add a fixed seed when a playtest needs replayable randomness. Never use `Math.random()` for a
+value the scenario must reproduce.
+<!-- /shared -->
 
 ## Save and load
 
@@ -251,6 +276,7 @@ units and forward-axis lines as labelled heuristics, then choose the game-owned 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.
 
+<!-- shared: asset-mcp-loop -->
 ## Finding assets — you have an MCP server for this
 
 **Reach for it when the asset is conventional; build anything custom yourself.**
@@ -315,7 +341,9 @@ truth for the pinned version, and they change between versions.
 Load what you downloaded the ordinary way — `ctx.assets.model("crate.glb")`,
 `ctx.assets.texture(...)`, `ctx.assets.audio(...)` — and write your own material and lighting
 around it in `src/render/`. The framework ships no asset and picks none for you.
+<!-- /shared -->
 
+<!-- shared: sculpt-loop -->
 ## Building what you cannot download — sculpt from a reference
 
 Choose one branch before writing code:
@@ -350,6 +378,7 @@ or ship runtime code; it guides the source you write:
 
 A missing or blank capture is a failed run, never a finished model. Add the reference image,
 its creator, license, and source URL to `CREDITS.md` before the turn ends.
+<!-- /shared -->
 
 
 ## Visuals
@@ -439,6 +468,7 @@ A scenario fails closed: a missing entity, an absent observation, or a scenario 
 assertions is a failure, never a quiet pass. When you add a feature, add the assertion that
 would catch its absence, and run the scenario before reporting the feature works.
 
+<!-- shared: look-at-it-and-budget-the-look -->
 ## Budget real time for the look
 
 Read this as an instruction about **where your effort goes**, not as a style tip.
@@ -504,3 +534,4 @@ scene. Confirm the renderer works at all before you go debugging your materials.
 
 Ask yourself, honestly: *would a player screenshot this?* If the answer is no, you are not
 finished — and no command in this repo is going to tell you that.
+<!-- /shared -->

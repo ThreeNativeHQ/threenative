@@ -24,7 +24,13 @@
       "within": 9.5
     },
     "movement": { "entity": "player", "minDistance": 4 },
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }],
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the look assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ],
     "visual": [
       { "frameDiff": { "minChangedPixelRatio": 0.01 } },
       {

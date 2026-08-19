@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-151 — Seven hand-copied `AGENTS.md` files, and four of them dropped the rules
 
-**Status:** PROPOSED, 2026-08-17. Nothing below has executed. The duplication counts and the
-coverage matrix in §1 were measured on the tree at that date; everything in §2 and §3 is
-unbuilt.
+**Status:** DONE, 2026-08-19. The duplication counts and coverage matrix in §1 are the original
+baseline; the shared-fragment expansion, fail-closed checks, and seven-template scaffold proof
+are complete. Executed evidence: [prd-151-shared-agent-docs-2026-08-19.md](../../verification/prd-151-shared-agent-docs-2026-08-19.md).
 
 **Outcome:** a rule that every generated project's agent must read is written once, and every
 template ships it — enforced by a gate rather than by whoever remembers to paste it into seven
@@ -130,6 +130,22 @@ Executable, in order. Each pasted with its real output into
 
 Steps 3, 4 and 5 are not optional. A gate nobody has watched fail is a gate nobody has tested.
 
+### Execution record — 2026-08-19
+
+| Criterion | Observed result |
+| --- | --- |
+| Sync and mirror gate | `pnpm sync:agents`: `agent docs synced: 15 mirrors, 13 written`; `pnpm sync:agents --check`: `agent docs in sync: 15 CLAUDE.md mirrors`. |
+| Stale expanded region | Hand-editing the action-rpg expanded region made `pnpm sync:agents --check` exit `1` and name the template mirror. |
+| Missing required marker | Removing `ctx-surface` from a template made the required-set test exit `1` with the missing template and fragment. |
+| Unknown fragment | A marker naming `racing` made `pnpm sync:agents` exit `1` with `Unknown shared fragment 'racing'`. |
+| Repository tests | `pnpm typecheck && pnpm lint && pnpm test`: exit `0`; 146 test files and 1,365 tests passed. Lint reported 223 existing warn-level cognitive-complexity diagnostics and no errors. |
+| Scaffold proof | All seven templates scaffolded successfully; every generated `AGENTS.md` and `CLAUDE.md` was flat and contained no shared marker comments. |
+
+The lane commits were `b205f2d`, `0fdd126`, and `9bba86f`. The second review also caught and
+repaired genre-specific scene names in the shared example, the unseeded `ctx.random` claim, and
+the scaffold test's missing fragment-body assertion. The final integrated commit is the delivery
+commit for this PRD.
+
 ## 4. What this does not claim
 
 Not that the seven templates should say the same thing overall. Genre-specific prose stays
@@ -141,7 +157,7 @@ Not that any agent reads better because of this. Nobody has measured whether an 
 into `racing` builds a better game once it is told how to look at one; that would be a sweep, and
 this PRD does not run one.
 
-Not a change to what the scaffolder does. `renderTemplate` still copies a template directory
-verbatim; composing at scaffold time was considered and rejected, because it breaks the property
-that the template directory is exactly what ships and rewires every spec that reads
-`templates/*/AGENTS.md` directly.
+Not a change to the template's public shape. The repository keeps one flat `AGENTS.md` and one
+`CLAUDE.md` per generated project; `renderTemplate` substitutes project tokens and removes the
+shared marker comments after the repository-side expansion. The generated project never needs to
+resolve an include, and specs can continue to inspect `templates/*/AGENTS.md` directly.

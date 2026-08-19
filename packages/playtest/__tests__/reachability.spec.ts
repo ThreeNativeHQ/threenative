@@ -20,6 +20,7 @@ test("reachability loads the measured artifact and evaluates every consecutive h
   const report = evaluateRichPlaytestAssertions({
     report: {
       diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1,
+      trivialityOptOuts: [],
       observations: {
         console: [], hud: {}, network: [], resources: {},
         entityTransforms: {
@@ -48,6 +49,7 @@ test("reachability is explicit static envelope-fit and rejects falls beyond the 
   const report = evaluateRichPlaytestAssertions({
     report: {
       diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1,
+      trivialityOptOuts: [],
       observations: { console: [], hud: {}, network: [], resources: {}, entityTransforms: {
         sameA: { position: [0, 0, 0], scale: [0, 0, 0] },
         sameB: { position: [7, 0, 0], scale: [0, 0, 0] },

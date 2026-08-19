@@ -35,6 +35,9 @@ const MIRRORED_APPLICATION_ROOTS = new Set(["hosting"]);
  * ordinary `sweeps/` elsewhere in the repo would still be mirrored.
  */
 const SKIP_PATHS = new Set([path.join("docs", "benchmark")]);
+const SHARED_FRAGMENT_DIRECTORY = path.join("packages", "create-threenative", "agent-docs");
+const TEMPLATE_DIRECTORY = path.join("packages", "create-threenative", "templates");
+const SHARED_MARKER_PATTERN = /<!--\s*shared:\s*([^>]+?)\s*-->|<!--\s*\/shared\s*-->/gu;
 
 export const BANNER = "<!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->\n";
 
@@ -59,6 +62,95 @@ export function mirrorContent(agents: string): string {
   return `${BANNER}\n${agents}`;
 }
 
+async function readSharedFragments(root: string): Promise<Map<string, string>> {
+  const directory = path.join(root, SHARED_FRAGMENT_DIRECTORY);
+  if (!existsSync(directory)) return new Map();
+
+  const fragments = new Map<string, string>();
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const name = entry.name.slice(0, -3);
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name)) {
+      throw new Error(`Invalid shared fragment filename '${entry.name}'.`);
+    }
+    if (fragments.has(name)) throw new Error(`Duplicate shared fragment '${name}'.`);
+    fragments.set(name, (await readFile(path.join(directory, entry.name), "utf8")).trimEnd());
+  }
+  return fragments;
+}
+
+interface ISharedReplacement {
+  readonly end: number;
+  readonly start: number;
+  readonly value: string;
+}
+
+interface IOpenSharedMarker {
+  readonly name: string;
+  readonly start: number;
+}
+
+export function expandSharedRegions(
+  agents: string,
+  fragments: ReadonlyMap<string, string>,
+  file = "AGENTS.md",
+): string {
+  const replacements: ISharedReplacement[] = [];
+  let open: IOpenSharedMarker | undefined;
+  for (const match of agents.matchAll(SHARED_MARKER_PATTERN)) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    const name = match[1]?.trim();
+    if (name !== undefined) {
+      if (open !== undefined) {
+        throw new Error(`Nested shared fragment '${name}' in ${file}; close '${open.name}' first.`);
+      }
+      open = { name, start };
+      continue;
+    }
+
+    if (open === undefined) throw new Error(`Unexpected shared fragment close in ${file}.`);
+    const fragment = fragments.get(open.name);
+    if (fragment === undefined) {
+      throw new Error(`Unknown shared fragment '${open.name}' in ${file}.`);
+    }
+    replacements.push({
+      end: start + token.length,
+      start: open.start,
+      value: `<!-- shared: ${open.name} -->\n${fragment}\n<!-- /shared -->`,
+    });
+    open = undefined;
+  }
+
+  if (open !== undefined) throw new Error(`Unclosed shared fragment '${open.name}' in ${file}.`);
+  let expanded = agents;
+  for (const replacement of replacements.reverse()) {
+    expanded =
+      expanded.slice(0, replacement.start) + replacement.value + expanded.slice(replacement.end);
+  }
+  return expanded;
+}
+
+async function validateSharedFragmentUsage(
+  root: string,
+  fragments: ReadonlyMap<string, string>,
+): Promise<void> {
+  const directory = path.join(root, TEMPLATE_DIRECTORY);
+  if (!existsSync(directory) || fragments.size === 0) return;
+  const templateTexts: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const agentsPath = path.join(directory, entry.name, "AGENTS.md");
+    if (existsSync(agentsPath)) templateTexts.push(await readFile(agentsPath, "utf8"));
+  }
+  for (const name of fragments.keys()) {
+    const marker = new RegExp(`<!--\\s*shared:\\s*${name}\\s*-->`, "u");
+    if (!templateTexts.some((text) => marker.test(text))) {
+      throw new Error(`Shared fragment '${name}' is not included by any template AGENTS.md.`);
+    }
+  }
+}
+
 export interface SyncResult {
   readonly changed: string[];
   readonly checked: string[];
@@ -67,13 +159,23 @@ export interface SyncResult {
 export async function syncAgentDocs(root: string, check = false): Promise<SyncResult> {
   const changed: string[] = [];
   const checked: string[] = [];
+  const fragments = await readSharedFragments(root);
+  await validateSharedFragmentUsage(root, fragments);
   for (const agentsPath of await agentsFiles(root)) {
     const claudePath = path.join(path.dirname(agentsPath), "CLAUDE.md");
-    const expected = mirrorContent(await readFile(agentsPath, "utf8"));
+    const relativeAgentsPath = path.relative(root, agentsPath);
+    const currentAgents = await readFile(agentsPath, "utf8");
+    const expandedAgents = expandSharedRegions(currentAgents, fragments, relativeAgentsPath);
+    if (currentAgents !== expandedAgents) {
+      changed.push(relativeAgentsPath);
+      if (!check) await writeFile(agentsPath, expandedAgents);
+    }
+    const expected = mirrorContent(expandedAgents);
     const current = existsSync(claudePath) ? await readFile(claudePath, "utf8") : undefined;
     checked.push(path.relative(root, claudePath));
     if (current === expected) continue;
-    changed.push(path.relative(root, claudePath));
+    const relativeClaudePath = path.relative(root, claudePath);
+    changed.push(relativeClaudePath);
     if (!check) await writeFile(claudePath, expected);
   }
   return { changed, checked };
@@ -88,7 +190,9 @@ if (
     .then(({ changed, checked }) => {
       if (check && changed.length > 0) {
         console.error(
-          `CLAUDE.md out of sync with AGENTS.md:\n${changed.map((file) => `  ${file}`).join("\n")}\nRun: pnpm sync:agents`,
+          `agent docs out of sync with shared fragments or AGENTS.md:\n${changed
+            .map((file) => `  ${file}`)
+            .join("\n")}\nRun: pnpm sync:agents`,
         );
         process.exitCode = 1;
         return;

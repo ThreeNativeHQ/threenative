@@ -34,8 +34,19 @@
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "state", "path": "hearts", "equals": 2, "changed": true },
-      { "id": "state", "path": "defeated", "equals": 0, "allowTrivial": true }
+      {
+        "id": "state",
+        "path": "defeated",
+        "equals": 0,
+        "allowTrivial": "The rising stomp must not defeat the enemy; zero defeated is the intentional held invariant before the landing action completes."
+      }
     ],
-    "tags": [{ "tag": "patrol", "count": 1 }]
+    "tags": [
+      {
+        "tag": "patrol",
+        "count": 1,
+        "allowTrivial": "The rising stomp intentionally leaves the patrol tag present until the landing action completes; the damage and held defeated assertions prove this intermediate state."
+      }
+    ]
   }
 }

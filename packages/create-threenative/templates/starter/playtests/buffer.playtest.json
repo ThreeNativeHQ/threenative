@@ -21,9 +21,20 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "state", "path": "jumps", "equals": 2, "changed": true },
-      { "id": "state", "path": "coyoteJumps", "equals": 0, "allowTrivial": true },
+      {
+        "id": "state",
+        "path": "coyoteJumps",
+        "equals": 0,
+        "allowTrivial": "This buffer scenario exercises a jump without consuming coyote time; coyoteJumps staying at zero is the intentional held invariant."
+      },
       { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
     ],
-    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the buffer assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
   }
 }

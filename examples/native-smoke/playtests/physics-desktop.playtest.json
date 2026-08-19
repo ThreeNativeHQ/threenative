@@ -23,73 +23,73 @@
         "id": "GameState",
         "path": "parity.grounded",
         "equals": true,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup initializes parity.grounded before stepping; this row checks that the declared grounded result stays unchanged."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.rayDistance",
         "equals": 2,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup creates the ray hit before stepping; this row checks that the declared ray distance remains the cross-target result."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.rayNormal",
         "equals": [0, 1, 0],
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup creates the ray hit before stepping; this row checks that the declared ray normal remains the cross-target result."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.rayPosition",
         "equals": [0, 0, 1],
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup creates the ray hit before stepping; this row checks that the declared ray position remains the cross-target result."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.shapeCount",
         "equals": 1,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the shape query before stepping; this row checks that its declared hit count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.pointCount",
         "equals": 1,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the point query before stepping; this row checks that its declared hit count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.pointMissCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the point miss query before stepping; this row checks that its declared count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.pointMaskedHitCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the masked point query before stepping; this row checks that its declared count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.shapeMissCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the shape miss query before stepping; this row checks that its declared count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.shapeMaskedHitCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the masked shape query before stepping; this row checks that its declared count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.clearHitCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup clears the query hit before stepping; this row checks that its declared count remains stable."
       },
       {
         "id": "GameState",
         "path": "parity.spatialQuery.maskedHitCount",
         "equals": 0,
-        "allowTrivial": true
+        "allowTrivial": "Native-smoke setup performs the masked hit query before stepping; this row checks that its declared count remains stable."
       }
     ]
   }

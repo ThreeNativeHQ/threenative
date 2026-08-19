@@ -564,6 +564,8 @@ function failureReport(
     runtime: "native",
     scenario: scenario.name,
     target,
+    trivialityOptOutCount: 0,
+    trivialityOptOuts: [],
     url: target === "desktop"
       ? config.desktop?.executable ?? "desktop"
       : config.endpoint ?? "http://127.0.0.1:41777/playtest",
