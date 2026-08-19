@@ -17,6 +17,7 @@ describe("visual gate", () => {
   it("builds playtest before packages that import its export map", () => {
     const names = LOCAL_FRAMEWORK_PACKAGES.map(([name]) => name);
     expect(names.indexOf("@threenative/playtest")).toBeLessThan(names.indexOf("@threenative/core"));
+    expect(names).toContain("threenative-engine-mcp");
   });
 
   it("terminates the complete visual server process group outside Windows", () => {

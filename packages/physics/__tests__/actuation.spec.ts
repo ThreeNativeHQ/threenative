@@ -39,8 +39,8 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // census and its budget output.
   ["src/", 38_799],
   ["conformance/", 6_331],
-  ["tests/", 9_466],
-  ["scripts/", 12_155],
+  ["tests/", 9_468],
+  ["scripts/", 12_158],
   ["include/", 3_816],
   ["android/", 1_973],
   ["native/", 3_276],

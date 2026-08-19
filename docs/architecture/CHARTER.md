@@ -56,6 +56,27 @@ Three promises, all testable:
 
 One line: *R3F gives you a scene. ThreeNative gives you a game — on web, desktop and device.*
 
+### Engine ships conventions by default
+
+If a behaviour is the ordinary, expected answer for its situation — a character's feet meet
+the floor, a weapon stays in the hand that holds it, an agent walks around a wall, one metre is
+one metre — **the engine ships it working, on, and discoverable, before any game asks.**
+The game's agent should reach that behaviour by doing nothing.
+
+**Every convention carries a range, not a mandate.** A convention that cannot be turned off is a
+cage, and a game that has to fork the engine to differ has been failed twice. Each one ships with:
+
+1. **A default that is correct for the ordinary case** — on, with no option passed.
+2. **A named override on the same object** — a documented field or option, never a fork, a
+   patch, or a reimplementation. `grounded = false` is the convention working; a game rewriting
+   grounding is the convention failing.
+3. **Honest reporting when overridden** — turning a convention off must not turn its measurement
+   off. A body that is deliberately airborne still reports its real clearance.
+
+**A convention that is not in the templates' `AGENTS.md` does not exist.** The agent's field of
+view is that file. Shipping a capability the doc omits is shipping nothing, and is a release
+defect, not a docs chore.
+
 **Framework, not engine.** A library you call (`three` — you own the loop); a framework
 calls you (it owns loop and lifecycle, you fill in scenes and entities); an engine adds an
 authoring environment — editor, asset pipeline, scene format — which §2 rules out. Godot's

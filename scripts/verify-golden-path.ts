@@ -601,6 +601,7 @@ export async function packWorkspace(staging: string, build = true): Promise<Pack
 
 function packageFlag(name: string): string {
   if (name === "create-threenative") return "--cli-package";
+  if (name === "threenative-engine-mcp") return "--engine-mcp-package";
   if (name.startsWith("@threenative/")) {
     return `--${name.slice("@threenative/".length)}-package`;
   }

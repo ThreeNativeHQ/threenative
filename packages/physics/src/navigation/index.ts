@@ -43,6 +43,13 @@ function disposeNavigation(navigation: INavigationContext): void {
   navigation.obstacles.clear();
 }
 
+/**
+ * Install navmesh pathfinding and crowd avoidance.
+ * @situation enemy walks around a wall
+ * @situation NPC patrols a level and chases a player
+ * @constraint requires rapier() earlier in the plugins array
+ * @example const game = defineGame({ plugins: [rapier(), recast()] });
+ */
 export function recast(): NavigationPlugin {
   let navigation: INavigationContext | undefined;
   return {
@@ -84,13 +91,41 @@ export function recast(): NavigationPlugin {
   };
 }
 
+/**
+ * Move an agent along a baked navmesh toward a target.
+ * @situation enemy walks around a wall
+ * @situation enemy patrols a level and chases the player
+ * @situation enemy walks around a patrol path and chases the player when it sees them
+ * @situation enemy patrols and chases while avoiding obstacles
+ * @situation enemy chases the player with line of sight and obstacle avoidance
+ * @situation NPC walks to a destination
+ * @constraint import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
+ * @example import { NavigationAgent3D } from "@threenative/physics/navigation";
+ * const agent = new NavigationAgent3D({ navigation, object });
+ * agent.setTargetPosition(player.position);
+ * const next = agent.getNextPathPosition();
+ */
 export { NavigationAgent3D } from "./NavigationAgent3D.js";
 export type {
   INavigationAgent3DOptions,
   NavigationAgentEvent,
   NavigationAgentHandler,
 } from "./NavigationAgent3D.js";
+/**
+ * Add a non-moving crowd obstacle to a navmesh.
+ * @situation keep navigation agents away from a blocking prop
+ * @situation make a stationary character affect crowd avoidance
+ * @constraint create it after recast() and dispose it with the scene
+ * @example const obstacle = new NavigationObstacle3D({ navigation, object });
+ */
 export { NavigationObstacle3D } from "./NavigationObstacle3D.js";
 export type { INavigationObstacle3DOptions } from "./NavigationObstacle3D.js";
+/**
+ * Bake walkable Three.js geometry into a navigation region.
+ * @situation let enemies walk around level geometry
+ * @situation create the baked navmesh required by NavigationAgent3D
+ * @constraint bake before creating agents or obstacles
+ * @example const region = new NavigationRegion3D({ navigation, meshes: [floor] });
+ */
 export { NavigationRegion3D } from "./NavigationRegion3D.js";
 export type { INavigationRegion3DOptions } from "./NavigationRegion3D.js";

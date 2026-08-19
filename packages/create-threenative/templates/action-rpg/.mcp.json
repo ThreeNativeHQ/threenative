@@ -11,6 +11,10 @@
     "threenative-sculpt": {
       "command": "node",
       "args": ["./node_modules/threenative-sculpt-mcp/dist/server.js"]
+    },
+    "threenative-engine": {
+      "command": "node",
+      "args": ["./node_modules/threenative-engine-mcp/dist/index.js"]
     }
   }
 }

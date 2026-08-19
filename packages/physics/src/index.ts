@@ -1,9 +1,37 @@
 import "./web.js";
 
+/**
+ * Detect overlaps without turning the body into a moving collider.
+ * @situation detect when an enemy enters a trigger area
+ * @situation react to a player entering a zone
+ * @constraint add the area to the physics context before stepping the world
+ * @example const area = new Area3D({ context, shape });
+ */
 export { Area3D } from "./Area3D.js";
+/**
+ * Move a character body with collision-aware sliding.
+ * @situation move an enemy or player through a level
+ * @situation keep a character from walking through walls
+ * @constraint use moveAndSlide inside the physics update
+ * @example const body = new CharacterBody3D({ context, object });
+ */
 export { CharacterBody3D } from "./CharacterBody3D.js";
+/**
+ * Give a physics body a Three.js collision shape.
+ * @situation add a capsule or box collider to a character
+ * @situation configure the shape used by a rigid body
+ * @constraint create shapes through the owning physics context
+ * @example const shape = new CollisionShape3D({ context, shape: "capsule" });
+ */
 export { CollisionShape3D } from "./CollisionShape3D.js";
 export type { ICollisionShapeHandle } from "./CollisionShape3D.js";
+/**
+ * Connect two physics bodies with a Godot-style joint.
+ * @situation constrain a rigid body to another body
+ * @situation build a hinge or pin mechanism
+ * @constraint both bodies must belong to the same physics context
+ * @example const joint = new Joint3D({ context, kind: "hinge" });
+ */
 export { Joint3D } from "./Joint3D.js";
 export type {
   IFixedJoint3DOptions,
@@ -12,6 +40,13 @@ export type {
   IPinJoint3DOptions,
   PhysicsJointBody,
 } from "./Joint3D.js";
+/**
+ * Query the physics world without creating a body.
+ * @situation raycast for visibility or aiming
+ * @situation find bodies inside a shape or point query
+ * @constraint query results are bounded by the configured result limit
+ * @example const space = new PhysicsDirectSpaceState3D(context);
+ */
 export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 export type {
   IIntersectPointOptions,
@@ -28,8 +63,28 @@ export type {
   IPhysicsHandle,
   IPhysicsWorldHandle,
 } from "./handles.js";
+/**
+ * Encode collision layers and masks for Rapier groups.
+ * @situation make an enemy collide with the world but not pickups
+ * @situation configure which physics layers interact
+ * @example const groups = interactionGroups(1, 3);
+ */
 export { interactionGroups } from "./collision.js";
+/**
+ * Simulate a dynamic or static rigid body.
+ * @situation give a crate or prop physical motion
+ * @situation create a body that collides with a character
+ * @constraint register rapier() in the game plugin list before using bodies
+ * @example const crate = new RigidBody3D({ context, object, mode: "dynamic" });
+ */
 export { RigidBody3D } from "./RigidBody3D.js";
+/**
+ * Install the Rapier physics plugin and simulation backend.
+ * @situation add physics to a portable game
+ * @situation provide the context used by character and rigid bodies
+ * @constraint place rapier() before recast() in the plugin list
+ * @example const game = defineGame({ plugins: [rapier()] });
+ */
 export { rapier } from "./plugin.js";
 export type { PhysicsBody3D, IPhysicsContext } from "./plugin.js";
 export {

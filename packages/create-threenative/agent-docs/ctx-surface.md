@@ -2,7 +2,8 @@
 
 `ctx` carries six things that get reimplemented by hand in almost every project, because
 they are **properties on `ctx`, never imports** — grepping an existing file's imports will
-never surface them. This table is the complete list.
+never surface them. This table covers only the `ctx` properties; call
+`engine_search_capabilities` for imports.
 
 | You already have | Rather than | Signature |
 |---|---|---|

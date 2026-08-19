@@ -1,8 +1,8 @@
 # Batch — the engine ships it, the agent finds it, the gate can't lie about it
 
-**Status: ACTIVE, 2026-08-19.** PRD-151 and PRD-158 are complete and individually archived;
-PRD-156 and PRD-157 remain proposed. No device result, mobile-readiness claim or platform-parity
-claim exists for any PRD in this batch.
+**Status: ACTIVE, 2026-08-19.** PRD-151, PRD-156, PRD-157 and PRD-158 are complete and
+individually archived. No device result, mobile-readiness claim or platform-parity claim exists
+for any PRD in this batch.
 
 PRD-153, which this folder previously carried, closed on 2026-08-18 and is archived at
 `docs/PRDs/done/PRD-153-game-branding-from-launch-to-play.md`.
@@ -24,8 +24,8 @@ Read as layers:
 
 | Layer | What went wrong | PRD |
 |---|---|---|
-| The agent could not see the capability | ~20 public exports have no tool surface, no manifest, no generated reference — one paragraph of prose that omits half of them | [157](./PRD-157-capability-discovery-before-authoring.md) |
-| The engine did not ship the convention | Grounding, asset scale and pipeline prewarm are each left to the game, and the game got them wrong at a 6x frame-rate cost | [156](./PRD-156-engine-ships-conventions-by-default.md) |
+| The agent could not see the capability | ~20 public exports have no tool surface, no manifest, no generated reference — one paragraph of prose that omits half of them | [157](../done/PRD-157-capability-discovery-before-authoring.md) |
+| The engine did not ship the convention | Grounding, asset scale and pipeline prewarm are each left to the game, and the game got them wrong at a 6x frame-rate cost | [156](../done/PRD-156-engine-ships-conventions-by-default.md) |
 | The gate could not report either one | `allowTrivial` is a free boolean the failure message itself recommends; the guard covers 3 of 21 assertion kinds | [158](../done/PRD-158-the-triviality-opt-out-is-free.md) |
 | The docs that should have carried the rule | Seven hand-copied `AGENTS.md` files, four of which dropped rules the other three keep | [151](../done/PRD-151-shared-template-agent-docs.md) |
 
@@ -33,8 +33,8 @@ Read as layers:
 
 | PRD | What it closes | Complexity | State |
 | --- | --- | --- | --- |
-| [157](./PRD-157-capability-discovery-before-authoring.md) | Generates a situation-indexed capability manifest from the export maps and serves it to the authoring agent as MCP tools, so engine capabilities are found before they are hand-written | 7 | PROPOSED |
-| [156](./PRD-156-engine-ships-conventions-by-default.md) | Ships skinned-model grounding, asset scale normalisation and GPU pipeline prewarm as engine conventions with documented overrides; gates the templates' capability docs against the real export set | 9 | PROPOSED |
+| [157](../done/PRD-157-capability-discovery-before-authoring.md) | Generates a situation-indexed capability manifest from the export maps and serves it to the authoring agent as MCP tools, so engine capabilities are found before they are hand-written | 7 | DONE |
+| [156](../done/PRD-156-engine-ships-conventions-by-default.md) | Ships skinned-model grounding, asset scale normalisation and GPU pipeline prewarm as engine conventions with documented overrides; gates the templates' capability docs against the real export set | 9 | DONE |
 | [158](../done/PRD-158-the-triviality-opt-out-is-free.md) | Makes the triviality waiver carry a written reason, counts waivers in the report, fails a scenario that waived everything, and makes all 21 registry entries justify their `triviality` label | 5 | DONE |
 | [151](../done/PRD-151-shared-template-agent-docs.md) | Writes the rule every generated project's agent must read once, in shared fragments, enforced by the existing `sync:agents --check` gate instead of by whoever remembers to paste it seven times | 3 | DONE |
 

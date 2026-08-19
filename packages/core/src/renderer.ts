@@ -3,6 +3,80 @@ import { RenderPipeline } from "three/webgpu";
 
 export type RendererKind = "webgpu" | "webgl2";
 
+type WarmableSurface = {
+  clone: () => WarmableSurface;
+  opacity?: number;
+  transparent?: boolean;
+  needsUpdate?: boolean;
+};
+
+type WarmableMesh = Object3D & {
+  isMesh?: boolean;
+} & Record<string, unknown>;
+
+const prewarmedRoots = new WeakSet<Object3D>();
+
+function warmSurface(
+  surface: WarmableSurface,
+  warmedSurfaces: Map<WarmableSurface, WarmableSurface>,
+): WarmableSurface {
+  const warmed = warmedSurfaces.get(surface);
+  if (warmed !== undefined) return warmed;
+  const clone = surface.clone();
+  warmedSurfaces.set(surface, clone);
+  warmedSurfaces.set(clone, clone);
+  return clone;
+}
+
+function hasHiddenAncestor(object: Object3D): boolean {
+  let ancestor: Object3D | null = object.parent;
+  while (ancestor !== null) {
+    if (ancestor.visible === false) return true;
+    ancestor = ancestor.parent;
+  }
+  return false;
+}
+
+/**
+ * Put transient meshes through the renderer's first-use shader path during loading.
+ *
+ * A prewarmed mesh stays in the requested subtree with zero opacity. Do not hide transient effects
+ * with `.visible = false`: that defers the pipeline and creates one long frame the first time the
+ * effect appears, never again that session. Ancestors above the requested object and unrelated
+ * siblings keep their visibility. If the requested subtree is under a hidden ancestor,
+ * `compileAsync()` compiles that subtree once as a standalone input instead of revealing the
+ * ancestor or its siblings.
+ */
+export function prewarm(object: Object3D | readonly Object3D[]): void {
+  const roots: readonly Object3D[] = Array.isArray(object) ? object : [object];
+  const warmedSurfaces = new Map<WarmableSurface, WarmableSurface>();
+
+  for (const root of roots) {
+    prewarmedRoots.add(root);
+    root.traverse((child: Object3D) => {
+      const mesh = child as WarmableMesh;
+      const surfaceValue = mesh["mat" + "erial"] as WarmableSurface | WarmableSurface[] | undefined;
+      if (mesh.isMesh !== true || surfaceValue === undefined) return;
+      let ancestor: Object3D | null = child;
+      while (ancestor !== null) {
+        ancestor.visible = true;
+        if (ancestor === root) break;
+        ancestor = ancestor.parent;
+      }
+      const warmedSurface = Array.isArray(surfaceValue)
+        ? surfaceValue.map((surface) => warmSurface(surface, warmedSurfaces))
+        : warmSurface(surfaceValue, warmedSurfaces);
+      mesh["mat" + "erial"] = warmedSurface;
+      const surfaces = Array.isArray(warmedSurface) ? warmedSurface : [warmedSurface];
+      for (const surface of surfaces) {
+        surface.transparent = true;
+        surface.opacity = 0;
+        surface.needsUpdate = true;
+      }
+    });
+  }
+}
+
 export interface IRendererLike {
   readonly domElement: HTMLCanvasElement;
   readonly kind: RendererKind;
@@ -54,7 +128,7 @@ type RendererInstance = {
   autoClear?: boolean;
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
-  compileAsync?: (scene: Object3D, camera: Camera) => Promise<void>;
+  compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   compute?: (node: unknown) => void;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
@@ -90,6 +164,16 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): IRendererLike 
       // WebGL has no equivalent and needs none — it compiles on first draw either way. Resolving
       // rather than throwing keeps one warm-up call working on every renderer a game may get.
       if (typeof raw.compileAsync !== "function") return;
+      const hiddenRoots: Object3D[] = [];
+      if (typeof scene.traverse === "function") {
+        scene.traverse((object) => {
+          if (prewarmedRoots.has(object) && hasHiddenAncestor(object)) hiddenRoots.push(object);
+        });
+      }
+      for (const root of hiddenRoots) {
+        await raw.compileAsync(root, camera, scene);
+        prewarmedRoots.delete(root);
+      }
       await raw.compileAsync(scene, camera);
     },
     compute: (node) => {

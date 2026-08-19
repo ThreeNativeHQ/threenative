@@ -39,6 +39,7 @@ export const LOCAL_FRAMEWORK_PACKAGES = [
   ["@threenative/runtime-native", "threenative-runtime-native-"],
   ["@threenative/ui", "threenative-ui-"],
   ["create-threenative", "create-threenative-"],
+  ["threenative-engine-mcp", "threenative-engine-mcp-"],
 ] as const;
 
 export function visualServerProcessGroup(

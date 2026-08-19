@@ -14,7 +14,10 @@ describe("core constraints", () => {
       .filter((file) => file.endsWith(".ts"))
       .filter(
         (file) =>
-          file !== "particles.ts" && file !== "collapse.ts" && file !== "renderProjection.ts",
+          file !== "particles.ts" &&
+          file !== "collapse.ts" &&
+          file !== "renderProjection.ts" &&
+          file !== "renderer.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
@@ -54,6 +57,13 @@ describe("core constraints", () => {
     // It must recognise a light for the same reason the collapse must: the mirror is a separate
     // graph, and a mirror with no lights in it renders every lit surface black.
     expect(projection).toMatch(/isLight/u);
+
+    // `renderer.ts` is exempted because `prewarm` must inspect and clone the game's own render
+    // surfaces to compile them early. It does not construct a surface or choose its appearance.
+    const renderer = readFileSync(path.join(sourceDirectory, "renderer.ts"), "utf8");
+    expect(renderer).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
   });
 
   /**

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { checkCapabilityManifest } from "./build-capability-manifest.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -331,10 +332,23 @@ export function budgetErrors(report: BudgetReport): string[] {
   return errors;
 }
 
+export async function capabilityManifestErrors(root: string): Promise<string[]> {
+  // Small budget fixtures intentionally contain no engine package. The real tree has core, and
+  // its presence is the unambiguous signal that the manifest freshness gate applies.
+  if (!existsSync(path.join(root, "packages", "core", "package.json"))) return [];
+  try {
+    await checkCapabilityManifest(root);
+    return [];
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+}
+
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const report = await collectBudgets(root);
   const errors = [
     ...budgetErrors(report),
+    ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root, report.nativeRuntimeLoc)),
   ];
   if (errors.length > 0) throw new Error(errors.join("\n"));

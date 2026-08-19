@@ -20,6 +20,13 @@ import type { ICtx } from "./scene.js";
 const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
 
+/**
+ * Install the playtest bridge into a portable game.
+ * @situation expose movement and world observations to a playtest
+ * @situation connect a game to the ThreeNative scenario runner
+ * @constraint install once in the game's plugin list
+ * @example const game = defineGame({ plugins: [playtest()] });
+ */
 export function playtest<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,

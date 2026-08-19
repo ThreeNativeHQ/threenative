@@ -13,9 +13,23 @@ export interface IHotDiagnostics {
 type HotData = { readonly state: Record<string, unknown>; readonly reloads: number };
 const isDev =
   (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
+/**
+ * Validate that hot-reload state can cross the Vite boundary.
+ * @situation preserve JSON-shaped state during hot reload
+ * @situation reject a non-portable game state before reload
+ * @constraint state must contain finite numbers and plain objects only
+ * @example assertPortableState(game.state.getState());
+ */
 export function assertPortableState(state: unknown): void {
   visitPortable(state, "state", new Set<object>());
 }
+/**
+ * Register hot-reload state preservation for a game.
+ * @situation keep game state while editing source in development
+ * @situation diagnose state shape changes during hot reload
+ * @constraint use only in the web development entry
+ * @example acceptHotUpdate(game, import.meta.hot);
+ */
 export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>(
   game: IGame<TState, TPhysics>,
   hot: IImportMeta["hot"],

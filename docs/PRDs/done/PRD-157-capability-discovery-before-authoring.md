@@ -1,12 +1,33 @@
 # PRD-157: Capability discovery before authoring
 
 **Date:** 2026-08-18
-**Status:** PROPOSED — nothing here has run
+**Status:** COMPLETE — 2026-08-19. The feature evidence and repair-4 agent cohort pass; the
+repository-wide documentation-link baseline is called out explicitly below.
 **Pairs with:** PRD-156 (*Engine ships conventions by default*). 156 makes the conventions
 exist and keeps the docs honest. **157 makes the agent find them before it writes a line.**
 
 **Complexity: 7 → HIGH mode** (10+ files `+3`, new module from scratch `+2`, multi-package `+2`).
 Mandatory checkpoint after every phase.
+
+## Completion record
+
+- The pre-feature cohort reproduced the discovery failure: three fresh sessions imported neither
+  `@threenative/physics/navigation` nor `attachToBone`; the full baseline is in
+  [capability-discovery-baseline.md](../../verification/capability-discovery-baseline.md).
+- The pre-tag manifest negative control exited 1 and named the real untagged export set, including
+  the `@threenative/physics/navigation` subpath. The generated offline manifest and the two-tool
+  MCP server now pass the focused manifest, search, grounding-detail, and seven-template scaffold
+  tests.
+- Repair 4 used three fresh Claude Haiku sessions and the real local MCP path. The first search
+  preceded the first edit/write in all three; the final cohort reached **2/3** navigation-subpath
+  imports, **2/3** `attachToBone` imports, and **0/3** hand-written A*/path-search LOC. See
+  [capability-discovery-after.md](../../verification/capability-discovery-after.md) and the
+  [integration ledger](../../verification/capability-discovery-integration-ledger.md).
+- All seven templates expose the engine MCP server and copied `capabilities.json`; the generated
+  `AGENTS.md`/`CLAUDE.md` mirrors pass `pnpm sync:agents --check`.
+- The exact repository `pnpm test` command currently stops at seven pre-existing broken links in
+  unrelated docs before package tests run. This PRD does not rewrite the user's dirty docs; the
+  feature gates that ran are listed in the delivery record.
 
 ---
 
@@ -98,18 +119,18 @@ flowchart TD
 
 **Key decisions**
 
-- [ ] **The manifest is generated, and the generator is the gate.** A symbol reaching a public
+- [x] **The manifest is generated, and the generator is the gate.** A symbol reaching a public
       `exports` path without a `situations` entry **fails the build**. There is no hand-maintained
       list to fall out of date.
-- [ ] **MCP, not a longer `AGENTS.md`.** The doc route has been tried and measured: the agent read
+- [x] **MCP, not a longer `AGENTS.md`.** The doc route has been tried and measured: the agent read
       `AGENTS.md`, believed the "complete list" sentence, and wrote 446 lines. The asset path
       proves the tool route works in this exact repo with this exact agent.
-- [ ] **Indexed by situation, not by symbol.** An agent about to write pathfinding does not search
+- [x] **Indexed by situation, not by symbol.** An agent about to write pathfinding does not search
       for `NavigationAgent3D` — it does not know the name. It searches for *"enemy walks around a
       wall"*. Situations are the search keys; symbols are the results.
-- [ ] **`situations` lives beside the code**, as a structured doc tag on the export, so it is
+- [x] **`situations` lives beside the code**, as a structured doc tag on the export, so it is
       reviewed in the same diff that adds the capability. Not a separate registry file.
-- [ ] **Shares PRD-156's manifest.** 156's census gate and this PRD's MCP server read the same
+- [x] **Shares PRD-156's manifest.** 156's census gate and this PRD's MCP server read the same
       generated `capabilities.json`. Two consumers, one source. If 156 lands first, this PRD adds
       the `situations` field and the server; if this lands first, 156's gate consumes the manifest
       instead of re-walking the exports.
@@ -123,11 +144,11 @@ committed so the scaffold ships it offline.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `scripts/build-capability-manifest.ts` | TBD — root `package.json` `build` script | nothing | n/a | add an export with no `situations` tag → generator exits 1 |
-| 2 | `capabilities.json` | TBD — consumed by rows 3 and by PRD-156's census gate | the prose table in `templates/*/AGENTS.md` | prose keeps the six `ctx` rows; the full list moves to the manifest | delete the file → server start fails loudly, never serves an empty list |
-| 3 | `packages/engine-mcp/` (`threenative-engine-mcp`) | TBD — `templates/*/.mcp.json` | nothing | n/a | ask for `"enemy walks around a wall"` → must return `NavigationAgent3D`; return empty → red |
-| 4 | `.mcp.json` engine server entry ×7 templates | TBD — scaffolded project's agent tool list | n/a | n/a | scaffold a project, list MCP tools, assert `engine_search_capabilities` present |
-| 5 | "Ask before you write a system" rule | TBD — `templates/*/AGENTS.md` | n/a | n/a | n/a (doc) |
+| 1 | `scripts/build-capability-manifest.ts` | `package.json:13` runs the generator before recursive package builds; `scripts/check-budgets.ts:335` and `:340` verify freshness | nothing | n/a | add an export with no `situations` tag → generator exits 1 |
+| 2 | `capabilities.json` | `packages/create-threenative/src/index.ts:216` copies it into a scaffold; `packages/engine-mcp/src/index.ts:224` loads it before serving | the prose table in `templates/*/AGENTS.md` | prose keeps the six `ctx` rows; the full list moves to the manifest | delete the file → server start fails loudly, never serves an empty list |
+| 3 | `packages/engine-mcp/` (`threenative-engine-mcp`) | `packages/engine-mcp/src/index.ts:224` is the executable; its search/detail handlers are at `:123` and `:153` | nothing | n/a | ask for `"enemy walks around a wall"` → must return `NavigationAgent3D`; return empty → red |
+| 4 | `.mcp.json` engine server entry ×7 templates | `packages/create-threenative/src/index.ts:226` and `:255` validate the scaffolded server entry | n/a | n/a | scaffold a project, list MCP tools, assert `engine_search_capabilities` present |
+| 5 | "Ask before you write a system" rule | root `AGENTS.md:20` and all seven template `AGENTS.md` files; `pnpm sync:agents` generates their mirrors | n/a | n/a | n/a (doc) |
 
 ### Reachability
 
@@ -169,12 +190,12 @@ it produces a PRD that cannot prove it changed anything.
 - `docs/verification/capability-discovery-baseline.md` — NEW: the recorded result
 
 **Implementation:**
-- [ ] Scaffold a fresh project from the `shooter` template on the **current** tree.
-- [ ] Give a clean agent session one task, verbatim: *"Add an enemy that patrols the level, chases
+- [x] Scaffold a fresh project from the `shooter` template on the **current** tree.
+- [x] Give a clean agent session one task, verbatim: *"Add an enemy that patrols the level, chases
       the player when it sees them, and holds a rifle in its right hand."*
-- [ ] Record, without intervening: which engine symbols it imported; how many lines of navigation
+- [x] Record, without intervening: which engine symbols it imported; how many lines of navigation
       and bone-attachment code it wrote; whether it ever inspected `package.json` `exports` maps.
-- [ ] Repeat **3 times** with fresh sessions. Discovery is stochastic; one run is an anecdote.
+- [x] Repeat **3 times** with fresh sessions. Discovery is stochastic; one run is an anecdote.
 
 **Expected baseline (this PRD's premise — if it does not reproduce, stop and re-scope):** 0 of 3
 runs import `@threenative/physics/navigation` or `attachToBone`.
@@ -197,13 +218,13 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
 - `scripts/__tests__/capability-manifest.spec.ts` — NEW
 
 **Implementation:**
-- [ ] Walk every package's `package.json` `exports` map — **including subpaths**. This is the
+- [x] Walk every package's `package.json` `exports` map — **including subpaths**. This is the
       branch that catches `@threenative/physics/navigation`; without it the manifest reproduces the
       exact blind spot this PRD exists to fix.
-- [ ] For each exported class/function, emit: `symbol`, `package`, `importPath` (the literal string
+- [x] For each exported class/function, emit: `symbol`, `package`, `importPath` (the literal string
       an agent must write), `kind`, `signature`, `situations: string[]`, `example` (≤10 lines),
       `constraints: string[]`.
-- [ ] `situations` and `example` come from a structured doc tag on the export itself:
+- [x] `situations` and `example` come from a structured doc tag on the export itself:
       ```ts
       /**
        * Steer an agent along a navmesh path, avoiding obstacles and other agents.
@@ -213,14 +234,14 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
        * @constraint requires `recast()` in the plugins array, after `rapier()`
        */
       ```
-- [ ] **A public export with zero `@situation` tags fails the generator, exit 1.** Allowlist
+- [x] **A public export with zero `@situation` tags fails the generator, exit 1.** Allowlist
       internal exports explicitly, each with a one-line reason; an empty reason fails.
-- [ ] Write `packages/create-threenative/capabilities.json`, committed, so the scaffold works offline.
+- [x] Write `packages/create-threenative/capabilities.json`, committed, so the scaffold works offline.
 
 **Wiring:**
-- [ ] Caller edited: root `package.json` — `build` generates, `budgets` verifies freshness
-- [ ] Registration: CI's existing `build → budgets` branch picks it up
-- [ ] Ledger rows filled: #1, #2
+- [x] Caller edited: root `package.json` — `build` generates, `budgets` verifies freshness
+- [x] Registration: CI's existing `build → budgets` branch picks it up
+- [x] Ledger rows filled: #1, #2
 
 **Tests Required:**
 | Test File | Test Name | Assertion | Negative control (observed red) |
@@ -243,21 +264,21 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
 - `packages/engine-mcp/__tests__/search.spec.ts` — NEW
 
 **Implementation:**
-- [ ] Two tools, deliberately not more:
+- [x] Two tools, deliberately not more:
   - `engine_search_capabilities({ situation: string })` → ranked matches over `situations`, each
     with `symbol`, `importPath`, one-line summary, `constraints`.
   - `engine_capability_detail({ symbol: string })` → full signature, example, constraints,
     and any override field (the charter's "flexibility range" — e.g. `GroundSnap.enabled`).
-- [ ] Reads the committed `capabilities.json`. **Never** returns an empty list silently: a missing
+- [x] Reads the committed `capabilities.json`. **Never** returns an empty list silently: a missing
       or unparseable manifest throws with the path, because an empty result is
       indistinguishable from "the engine has nothing" and that is the failure being fixed.
-- [ ] Match on `situations` text, not symbol names. An agent searching *"enemy walks around a
+- [x] Match on `situations` text, not symbol names. An agent searching *"enemy walks around a
       wall"* must reach `NavigationAgent3D` without knowing the word "navigation".
-- [ ] No network. No writes. Read-only over a committed file.
+- [x] No network. No writes. Read-only over a committed file.
 
 **Wiring:**
-- [ ] Caller edited: `pnpm-workspace.yaml`; consumed by Phase 3's `.mcp.json`
-- [ ] Ledger rows filled: #3
+- [x] Caller edited: `pnpm-workspace.yaml`; consumed by Phase 3's `.mcp.json`
+- [x] Ledger rows filled: #3
 
 **Tests Required:**
 | Test File | Test Name | Assertion | Negative control |
@@ -282,21 +303,21 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
 - `packages/create-threenative/__tests__/scaffold-mcp.spec.ts` — NEW
 
 **Implementation:**
-- [ ] Add the engine server beside the existing two, matching their shape exactly:
+- [x] Add the engine server beside the existing two, matching their shape exactly:
       ```json
       "threenative-engine": {
         "command": "node",
         "args": ["./node_modules/threenative-engine-mcp/dist/index.js"]
       }
       ```
-- [ ] Add `threenative-engine-mcp` to each template's `devDependencies`.
-- [ ] Ensure `capabilities.json` lands in the scaffolded project so the server runs offline.
+- [x] Add `threenative-engine-mcp` to each template's `devDependencies`.
+- [x] Ensure `capabilities.json` lands in the scaffolded project so the server runs offline.
 
 **Wiring:**
-- [ ] Caller edited: all 7 `.mcp.json` files
-- [ ] Registration: `pnpm test:templates` already scaffolds each template — extend it to assert the
+- [x] Caller edited: all 7 `.mcp.json` files
+- [x] Registration: `pnpm test:templates` already scaffolds each template — extend it to assert the
       tool is present
-- [ ] Ledger rows filled: #4
+- [x] Ledger rows filled: #4
 
 **Tests Required:**
 | Test File | Test Name | Assertion | Negative control |
@@ -316,7 +337,7 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
 - `docs/verification/capability-discovery-after.md` — NEW: the re-measurement
 
 **Implementation:**
-- [ ] Add to each template's `AGENTS.md`, near the top, where the "complete list" sentence used to be:
+- [x] Add to each template's `AGENTS.md`, near the top, where the "complete list" sentence used to be:
 
   > ### Before you write a system, ask what already exists
   >
@@ -334,14 +355,14 @@ runs import `@threenative/physics/navigation` or `attachToBone`.
   > and bone attachment that were installed and importable at the time, and the hand-written
   > grounding that came with them ran the game at 9 FPS.
 
-- [ ] Delete any surviving "complete list" claim (PRD-156 Phase 0 removes two; verify none remain).
-- [ ] **Re-run Phase 0's experiment**, unchanged: same 3 fresh sessions, same verbatim task, same
+- [x] Delete any surviving "complete list" claim (PRD-156 Phase 0 removes two; verify none remain).
+- [x] **Re-run Phase 0's experiment**, unchanged: same 3 fresh sessions, same verbatim task, same
       template.
 
 **Wiring:**
-- [ ] Caller edited: all 7 template `AGENTS.md` + engine `AGENTS.md`
-- [ ] Registration: `pnpm sync:agents` regenerates `CLAUDE.md` mirrors; `--check` in CI
-- [ ] Ledger rows filled: #5
+- [x] Caller edited: all 7 template `AGENTS.md` + engine `AGENTS.md`
+- [x] Registration: `pnpm sync:agents` regenerates `CLAUDE.md` mirrors; `--check` in CI
+- [x] Ledger rows filled: #5
 
 **Acceptance for this phase — the whole PRD stands or falls here:**
 
@@ -364,29 +385,31 @@ agent called the tool *before* writing, not after being corrected.
 
 Consumer-scoped. None is satisfiable by a build a user could not tell apart from the previous one.
 
-- [ ] Phase 0 baseline recorded, 3 runs, transcripts committed — **before** any fix lands
-- [ ] The manifest generator, run on the **pre-change** tree, fails and names every untagged public
+- [x] Phase 0 baseline recorded, 3 runs, transcripts committed — **before** any fix lands
+- [x] The manifest generator, run on the **pre-change** tree, fails and names every untagged public
       export; output pasted
-- [ ] `capabilities.json` contains `NavigationAgent3D` with `importPath: "@threenative/physics/navigation"`
+- [x] `capabilities.json` contains `NavigationAgent3D` with `importPath: "@threenative/physics/navigation"`
       — the subpath case that started this
-- [ ] A freshly scaffolded project's agent tool list contains `engine_search_capabilities`, in all
+- [x] A freshly scaffolded project's agent tool list contains `engine_search_capabilities`, in all
       **7** templates
-- [ ] `engine_search_capabilities({ situation: "enemy walks around a wall" })` returns
+- [x] `engine_search_capabilities({ situation: "enemy walks around a wall" })` returns
       `NavigationAgent3D` in its top 3
-- [ ] `engine_search_capabilities({ situation: "put a weapon in a character's hand" })` returns
+- [x] `engine_search_capabilities({ situation: "put a weapon in a character's hand" })` returns
       `attachToBone` in its top 3
-- [ ] **≥2 of 3 fresh agent sessions import the engine navigation instead of writing A*** — the
+- [x] **≥2 of 3 fresh agent sessions import the engine navigation instead of writing A*** — the
       before/after transcripts are committed and diffable
-- [ ] No template `AGENTS.md` claims any partial table is "the complete list"
-- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm test:templates && pnpm budgets` pass
+- [x] No template `AGENTS.md` claims any partial table is "the complete list"
+- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm test:templates && pnpm budgets` is fully green:
+      `pnpm test` stops at seven pre-existing unrelated documentation links before package tests.
+      Typecheck, lint, focused tests, templates, playtest, and budgets pass on the integrated feature.
 
 **Integration gates (unchecked = NOT done):**
 
-- [ ] Integration Ledger has zero `TBD` cells
-- [ ] Every new export has a non-test consumer (caller census pasted)
-- [ ] Revert check passed for rows 1-4
-- [ ] Every gate has a negative control **observed red**
-- [ ] Proved on a real scaffolded project with a real agent session — not on a unit fixture
+- [x] Integration Ledger has zero `TBD` cells.
+- [x] Every new export has a non-test consumer; the caller census is pasted in the integration ledger.
+- [x] Revert checks passed for rows 1-4.
+- [x] Every gate has a negative control **observed red**.
+- [x] Proved on real scaffolded projects with real agent sessions — not on a unit fixture.
 
 ---
 

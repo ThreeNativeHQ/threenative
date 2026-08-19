@@ -17,7 +17,7 @@ passing.
 **Depends on:** nothing. `TN_PLAYTEST_ASSERTION_TRIVIAL` and the `allowTrivial` key already exist
 and already work.
 
-**Blocks:** nothing. Pairs with [PRD-156](../batch-26-08-18/PRD-156-engine-ships-conventions-by-default.md), whose
+**Blocks:** nothing. Pairs with [PRD-156](./PRD-156-engine-ships-conventions-by-default.md), whose
 incident section names this failure but repairs it only inside one game.
 
 **Complexity: 5 → MEDIUM mode.** One schema field change with a migration across 40 live call

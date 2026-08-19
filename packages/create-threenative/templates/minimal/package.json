@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@threenative/playtest": "0.2.0",
+    "threenative-engine-mcp": "0.2.0",
     "@types/three": "0.185.3",
     "create-threenative": "0.2.2",
     "esbuild": "0.27.0",

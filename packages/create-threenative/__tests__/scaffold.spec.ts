@@ -18,6 +18,7 @@ const run = promisify(execFile);
 const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
+const ENGINE_MCP = "threenative-engine-mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
 /** Stages a broken template in a throwaway copy of the template tree and hands the body its
@@ -351,7 +352,7 @@ describe("create-threenative", () => {
     }
   });
 
-  it("should launch both MCP servers from the project's own node_modules", async () => {
+  it("should launch all three MCP servers from the project's own node_modules", async () => {
     const root = await makeTempDir("threenative-mcp-");
     try {
       const result = await createProject(
@@ -369,11 +370,15 @@ describe("create-threenative", () => {
       const sculptServer = config.mcpServers["threenative-sculpt"];
       expect(sculptServer?.command).toBe("node");
       expect(sculptServer?.args[0]).toBe(`./node_modules/${SCULPT_MCP}/dist/server.js`);
+      const engineServer = config.mcpServers["threenative-engine"];
+      expect(engineServer?.command).toBe("node");
+      expect(engineServer?.args[0]).toBe(`./node_modules/${ENGINE_MCP}/dist/index.js`);
       const manifest = JSON.parse(
         await readFile(path.join(result.target, "package.json"), "utf8"),
       ) as { devDependencies?: Record<string, string> };
       expect(manifest.devDependencies?.[ASSET_MCP]).toBeDefined();
       expect(manifest.devDependencies?.[SCULPT_MCP]).toBe("0.1.0");
+      expect(manifest.devDependencies?.[ENGINE_MCP]).toBe("0.2.0");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -390,6 +395,7 @@ describe("create-threenative", () => {
         ) as { devDependencies?: Record<string, string> };
         return {
           asset: manifest.devDependencies?.[ASSET_MCP],
+          engine: manifest.devDependencies?.[ENGINE_MCP],
           sculpt: manifest.devDependencies?.[SCULPT_MCP],
         };
       }),
@@ -399,6 +405,8 @@ describe("create-threenative", () => {
     expect(new Set(pins.map(({ asset }) => asset)).size, JSON.stringify(pins)).toBe(1);
     expect(pins[0]?.sculpt).toBe("0.1.0");
     expect(new Set(pins.map(({ sculpt }) => sculpt)).size, JSON.stringify(pins)).toBe(1);
+    expect(pins[0]?.engine).toBe("0.2.0");
+    expect(new Set(pins.map(({ engine }) => engine)).size, JSON.stringify(pins)).toBe(1);
   });
 
   it("should document only tools the pinned asset MCP actually serves", async () => {
@@ -470,6 +478,35 @@ describe("create-threenative", () => {
     // trips on a loaded machine and reports a timeout where there is no defect.
   }, 30_000);
 
+  it("should throw when .mcp.json omits the engine server", async () => {
+    const root = await makeTempDir("threenative-mcp-engine-missing-");
+    try {
+      const broken = JSON.stringify({
+        mcpServers: {
+          "threenative-assets": {
+            command: "node",
+            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+          },
+          "threenative-sculpt": {
+            command: "node",
+            args: [`./node_modules/${SCULPT_MCP}/dist/server.js`],
+          },
+        },
+      });
+      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
+        await expect(
+          createProject(
+            { install: false, target: "my-game", template: "starter" },
+            root,
+            templates,
+          ),
+        ).rejects.toThrow(/missing required MCP server 'threenative-engine'/u);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("should throw when .mcp.json names a package the project does not depend on", async () => {
     const root = await makeTempDir("threenative-mcp-undeclared-");
     try {
@@ -482,6 +519,10 @@ describe("create-threenative", () => {
           "threenative-sculpt": {
             command: "node",
             args: ["./node_modules/not-a-dependency/dist/index.js"],
+          },
+          "threenative-engine": {
+            command: "node",
+            args: [`./node_modules/${ENGINE_MCP}/dist/index.js`],
           },
         },
       });
@@ -511,6 +552,10 @@ describe("create-threenative", () => {
             args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
           },
           "threenative-sculpt": { command: "npx", args: ["-y", SCULPT_MCP] },
+          "threenative-engine": {
+            command: "node",
+            args: [`./node_modules/${ENGINE_MCP}/dist/index.js`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -535,6 +580,16 @@ describe("create-threenative", () => {
     ).toEqual({
       install: false,
       packageSources: { "@threenative/playtest": "/tmp/playtest.tgz" },
+      target: "my-game",
+    });
+  });
+
+  it("should accept a local engine MCP package for offline scaffold tests", () => {
+    expect(
+      parseArgs(["my-game", "--no-install", "--engine-mcp-package", "/tmp/engine-mcp.tgz"]),
+    ).toEqual({
+      install: false,
+      packageSources: { "threenative-engine-mcp": "/tmp/engine-mcp.tgz" },
       target: "my-game",
     });
   });

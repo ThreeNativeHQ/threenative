@@ -28,6 +28,7 @@
     "@types/three": "0.185.3",
     "@vitejs/plugin-react": "6.0.5",
     "@threenative/playtest": "0.2.0",
+    "threenative-engine-mcp": "0.2.0",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "playwright": "1.62.1",

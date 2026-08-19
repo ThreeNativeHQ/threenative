@@ -17,6 +17,27 @@ conventions, React/Tailwind for UI, vanilla `three` on every surface underneath.
 Mantra: *build a system that builds itself.* Every piece you build gets playtested against
 the real build before you move on. If it fails, fix it before continuing.
 
+### Engine ships conventions by default
+
+If a behaviour is the ordinary, expected answer for its situation — a character's feet meet the
+floor, a weapon stays in the hand that holds it, an agent walks around a wall, one metre is one
+metre — the engine ships it working, on, and discoverable, before any game asks. The game's agent
+should reach that behaviour by doing nothing.
+
+Every convention carries a range, not a mandate. It ships with a correct default, a named
+override on the same object, and honest reporting when overridden. Turning a convention off must
+not turn its measurement off. A convention that is not in the templates' `AGENTS.md` does not
+exist; omitting it is a release defect.
+### Before you write a system, ask what already exists
+
+You have `engine_search_capabilities` in your tool list. **Call it before writing any entity system, movement system, pathfinding, attachment, audio bus, particle system, or measurement helper** — describe the situation in plain words: *"enemy walks around a wall"*, *"put a weapon in a character's hand"*, *"keep a character's feet on the floor"*.
+
+The engine's public surface is about twenty classes across four packages, and several are **subpath imports** like `@threenative/physics/navigation` that no amount of grepping this project will reveal — nothing imports them yet. The tool is the only complete answer; this file is a summary and always will be.
+
+Treat the returned constraints as binding. For patrol, chase, obstacle-avoidance, or line-of-sight movement, import `NavigationAgent3D` from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for that symbol. For a weapon held in a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle. If the stock visual has no skeleton, add a portable Three.js `Bone` named `RightHand` under the character, then call the helper.
+
+This is not a suggestion about tidiness. A previous game hand-wrote 446 lines of navigation and bone attachment that were installed and importable at the time, and the hand-written grounding that came with them ran the game at 9 FPS.
+
 **This repository is MIT, all of it, and that is now literally true** — there is nothing here
 that is not. Studio, the paid editor, and the `hosting/` service that serves it moved to the
 private `jonit-dev/threenative-studio` on 2026-08-16 (PRD-129). Do not add anything to this

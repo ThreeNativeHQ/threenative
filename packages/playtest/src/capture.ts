@@ -15,6 +15,12 @@ export interface ICaptureFrameStats {
   readonly width: number;
 }
 
+/**
+ * Explain why a captured frame failed the non-blank guard.
+ * @situation fail a visual test when the rendered frame is blank
+ * @situation include capture statistics in a playtest error
+ * @example throw new CaptureGuardError("menu", "no bright pixels");
+ */
 export class CaptureGuardError extends Error {
   readonly code = "TN_CAPTURE_BLANK";
 
@@ -28,6 +34,12 @@ export class CaptureGuardError extends Error {
   }
 }
 
+/**
+ * Inspect a PNG frame for visible pixels and luminance variation.
+ * @situation measure whether a screenshot contains a rendered game
+ * @situation diagnose a uniform or blank capture
+ * @example const stats = inspectFrame(png);
+ */
 export function inspectFrame(png: Buffer): ICaptureFrameStats {
   const image = PNG.sync.read(png);
   const colors = new Set<number>();
@@ -61,6 +73,13 @@ export function inspectFrame(png: Buffer): ICaptureFrameStats {
   };
 }
 
+/**
+ * Fail closed when a screenshot is blank or uniform.
+ * @situation guard a visual playtest against a blank frame
+ * @situation prove a screenshot contains more than a loading surface
+ * @constraint the assertion throws instead of returning a false pass
+ * @example assertCaptureNotBlank(png, "first frame");
+ */
 export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats {
   const stats = inspectFrame(png);
   if (stats.distinctColors < CAPTURE_GUARD_LIMITS.minDistinctColors) {

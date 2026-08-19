@@ -1,3 +1,26 @@
+### Before you write a system, ask what already exists
+
+You have `engine_search_capabilities` in your tool list. **Call it before writing any entity
+system, movement system, pathfinding, attachment, audio bus, particle system, or measurement
+helper** — describe the situation in plain words: *"enemy walks around a wall"*, *"put a weapon
+in a character's hand"*, *"keep a character's feet on the floor"*.
+
+The engine's public surface is about twenty classes across four packages, and several are
+**subpath imports** like `@threenative/physics/navigation` that no amount of grepping this
+project will reveal — nothing imports them yet. The tool is the only complete answer; this file
+is a summary and always will be.
+
+Treat the returned constraints as binding. For patrol, chase, obstacle-avoidance, or line-of-sight
+movement, import `NavigationAgent3D` from exactly `@threenative/physics/navigation`;
+`@threenative/physics` is not a valid import for that symbol. For a weapon held in a hand, import
+and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the
+rifle. If the stock visual has no skeleton, add a portable Three.js `Bone` named `RightHand`
+under the character, then call the helper.
+
+This is not a suggestion about tidiness. A previous game hand-wrote 446 lines of navigation and
+bone attachment that were installed and importable at the time, and the hand-written grounding
+that came with them ran the game at 9 FPS.
+
 ## When the framework blocks you, write plain Three.js
 
 An API in `@threenative/*` that is broken, missing, or does not do what you need is **not

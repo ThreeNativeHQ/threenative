@@ -27,7 +27,8 @@ export interface IScaffoldOptions {
       | "@threenative/playtest"
       | "@threenative/runtime-native"
       | "@threenative/ui"
-      | "create-threenative",
+      | "create-threenative"
+      | "threenative-engine-mcp",
       string
     >
   >;
@@ -201,7 +202,11 @@ async function applyPackageSources(
       packageJson.optionalDependencies[name] = source.startsWith("file:")
         ? source
         : `file:${source}`;
-    } else if (name === "@threenative/playtest" || name === "create-threenative") {
+    } else if (
+      name === "@threenative/playtest" ||
+      name === "create-threenative" ||
+      name === "threenative-engine-mcp"
+    ) {
       packageJson.devDependencies ??= {};
       packageJson.devDependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
     } else {
@@ -217,8 +222,21 @@ async function applyPackageSources(
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+async function copyCapabilityManifest(
+  target: string,
+  templateRootDirectory: string,
+): Promise<void> {
+  const source = path.join(path.dirname(templateRootDirectory), "capabilities.json");
+  if (!existsSync(source)) return;
+  await cp(source, path.join(target, "capabilities.json"));
+}
+
 const NODE_MODULES_PREFIX = "./node_modules/";
-const REQUIRED_MCP_SERVERS = ["threenative-assets", "threenative-sculpt"] as const;
+const REQUIRED_MCP_SERVERS = [
+  "threenative-assets",
+  "threenative-sculpt",
+  "threenative-engine",
+] as const;
 
 function mcpPackageName(entry: string): string {
   const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");
@@ -324,6 +342,7 @@ export async function createProject(
       ["__PROJECT_ID__", projectId],
     ]),
   );
+  await copyCapabilityManifest(target, root);
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
 
@@ -352,6 +371,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     ["@threenative/playtest", "--playtest-package"],
     ["@threenative/runtime-native", "--runtime-native-package"],
     ["@threenative/ui", "--ui-package"],
+    ["threenative-engine-mcp", "--engine-mcp-package"],
     ["create-threenative", "--cli-package"],
   ] as const) {
     const source = readFlag(argv, flag);

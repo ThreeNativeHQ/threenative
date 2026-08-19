@@ -10,7 +10,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "pnpm -r --if-present run build",
+    "build": "tsx scripts/build-capability-manifest.ts && pnpm -r --if-present run build",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "pnpm run check:docs && bash scripts/run-test-suite.sh",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
@@ -21,7 +21,7 @@
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
-    "budgets": "tsx scripts/check-budgets.ts",
+    "budgets": "tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
