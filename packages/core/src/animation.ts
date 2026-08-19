@@ -27,7 +27,7 @@ export class AnimationPlayer {
   #mode: AnimationMode = "loop";
   #advancedFrames = 0;
   #finished = false;
-  #fadeFrom: AnimationAction | undefined;
+  #fadeOut: { action: AnimationAction; from: number }[] = [];
   #fadeElapsed = 0;
   #fadeDuration = 0;
 
@@ -69,8 +69,8 @@ export class AnimationPlayer {
   }
 
   #replayCurrent(action: AnimationAction, mode: AnimationMode): void {
-    this.#fadeFrom?.stop();
-    this.#fadeFrom = undefined;
+    for (const entry of this.#fadeOut) entry.action.stop();
+    this.#fadeOut = [];
     for (const other of this.#actions.values()) {
       if (other !== action) other.setEffectiveWeight(0).stop();
     }
@@ -90,17 +90,32 @@ export class AnimationPlayer {
     const previous = this.#current === undefined ? undefined : this.#actions.get(this.#current);
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+
+    // Every clip still contributing ramps out together, from the weight it currently holds.
+    //
+    // This used to hard-stop anything that was not `previous` and force `previous` to weight 1.
+    // Interrupting a blend therefore dropped the older clip's contribution in a single frame
+    // and snapped the outgoing clip up to full — a visible pop, and one that appeared only when
+    // transitions came faster than the fade, which is exactly when a character is reacting.
+    const outgoing: { action: AnimationAction; from: number }[] = [];
     for (const action of this.#actions.values()) {
-      if (action !== previous) action.setEffectiveWeight(0).stop();
+      if (action === next) continue;
+      const weight = action.getEffectiveWeight();
+      if (weight > 1e-4) outgoing.push({ action, from: weight });
+      else action.setEffectiveWeight(0).stop();
     }
-    previous?.setEffectiveWeight(1).play();
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && previous !== undefined ? 0 : 1);
-    if (previous === undefined || fade === 0) {
-      previous?.stop();
-      this.#fadeFrom = undefined;
+    if (previous !== undefined && !outgoing.some((entry) => entry.action === previous)) {
+      previous.setEffectiveWeight(1).play();
+      outgoing.push({ action: previous, from: 1 });
+    }
+
+    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? 0 : 1);
+    if (outgoing.length === 0 || fade === 0) {
+      for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
+      this.#fadeOut = [];
     } else {
-      previous.play();
-      this.#fadeFrom = previous;
+      for (const entry of outgoing) entry.action.play();
+      this.#fadeOut = outgoing;
       this.#fadeElapsed = 0;
       this.#fadeDuration = fade;
     }
@@ -125,14 +140,20 @@ export class AnimationPlayer {
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
     const before = this.mixer.time;
     this.mixer.update(dt);
-    if (this.#fadeFrom !== undefined) {
+    if (this.#fadeOut.length > 0) {
       this.#fadeElapsed = Math.min(this.#fadeDuration, this.#fadeElapsed + dt);
-      const progress = this.#fadeDuration === 0 ? 1 : this.#fadeElapsed / this.#fadeDuration;
-      this.#fadeFrom.setEffectiveWeight(1 - progress);
+      const linear = this.#fadeDuration === 0 ? 1 : this.#fadeElapsed / this.#fadeDuration;
+      // Smoothstep rather than linear. A linear weight ramp changes the pose's velocity
+      // instantly at both ends, which reads as a corner on the character even when the fade
+      // duration is right.
+      const progress = linear * linear * (3 - 2 * linear);
+      for (const entry of this.#fadeOut) {
+        entry.action.setEffectiveWeight(entry.from * (1 - progress));
+      }
       this.#actions.get(this.#current ?? "")?.setEffectiveWeight(progress);
-      if (progress >= 1) {
-        this.#fadeFrom.stop();
-        this.#fadeFrom = undefined;
+      if (linear >= 1) {
+        for (const entry of this.#fadeOut) entry.action.setEffectiveWeight(0).stop();
+        this.#fadeOut = [];
       }
     }
     if (this.#current !== undefined && this.mixer.time !== before) this.#advancedFrames += 1;
@@ -144,7 +165,7 @@ export class AnimationPlayer {
     this.#mode = "loop";
     this.#finished = false;
     this.#advancedFrames = 0;
-    this.#fadeFrom = undefined;
+    this.#fadeOut = [];
   }
 
   dispose(): void {

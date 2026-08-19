@@ -22,6 +22,59 @@ describe("AnimationPlayer", () => {
     expect(player.current).toBe("run");
   });
 
+  it("should not pop the pose when a crossfade is interrupted by another clip", () => {
+    const root = new Object3D();
+    const idle = new AnimationClip("idle", 1, []);
+    const run = new AnimationClip("run", 1, []);
+    const hit = new AnimationClip("hit", 1, []);
+    const player = new AnimationPlayer({ clips: [idle, run, hit], root });
+    const weightOf = (clip: AnimationClip): number =>
+      player.mixer.clipAction(clip).getEffectiveWeight();
+    const total = (): number => weightOf(idle) + weightOf(run) + weightOf(hit);
+
+    player.play("idle");
+    player.update(1 / 60);
+    player.play("run", { fade: 0.4 });
+    player.update(0.2); // halfway: idle and run both contribute
+
+    const runBefore = weightOf(run);
+    const idleBefore = weightOf(idle);
+    expect(runBefore).toBeGreaterThan(0.1);
+    expect(idleBefore).toBeGreaterThan(0.1);
+
+    // Interrupt mid-blend. Nothing may jump: previously `idle` was hard-stopped to 0 and
+    // `run` was snapped to 1 in this single call, which is a visible pop on the character.
+    player.play("hit", { fade: 0.4 });
+
+    expect(weightOf(run)).toBeCloseTo(runBefore, 3);
+    expect(weightOf(idle)).toBeCloseTo(idleBefore, 3);
+    expect(weightOf(hit)).toBeCloseTo(0, 3);
+    expect(total()).toBeCloseTo(1, 3);
+
+    // ...and the blend still completes on the new clip.
+    player.update(0.4);
+    expect(weightOf(hit)).toBeCloseTo(1, 3);
+    expect(total()).toBeCloseTo(1, 3);
+    expect(player.current).toBe("hit");
+  });
+
+  it("should ease the blend rather than ramp it linearly", () => {
+    const root = new Object3D();
+    const idle = new AnimationClip("idle", 1, []);
+    const run = new AnimationClip("run", 1, []);
+    const player = new AnimationPlayer({ clips: [idle, run], root });
+
+    player.play("idle");
+    player.update(1 / 60);
+    player.play("run", { fade: 1 });
+    player.update(0.25);
+
+    // A linear ramp would sit at 0.25 here; smoothstep(0.25) is ~0.156.
+    const weight = player.mixer.clipAction(run).getEffectiveWeight();
+    expect(weight).toBeLessThan(0.22);
+    expect(weight).toBeGreaterThan(0.1);
+  });
+
   it("throws on an unknown clip and reports mixer advancement", () => {
     const player = new AnimationPlayer({
       clips: [new AnimationClip("idle", 1, [])],

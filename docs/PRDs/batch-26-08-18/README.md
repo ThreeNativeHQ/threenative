@@ -21,8 +21,16 @@ game source under `src/render/`.
 | PRD | What it closes | Complexity | State |
 | --- | --- | --- | --- |
 | [153](./PRD-153-game-branding-from-launch-to-play.md) | Config-driven web/native identity and static boot splash; generated-source loading layout, images, disabling and safe-area placement; verified handoff to play | 7 | PROPOSED |
+| [156](./PRD-156-engine-ships-conventions-by-default.md) | Ships skinned-model grounding, asset scale normalisation and GPU pipeline prewarm as engine conventions with documented overrides; gates the templates' capability docs against the real export set | 9 | PROPOSED |
+| [157](./PRD-157-capability-discovery-before-authoring.md) | Generates a situation-indexed capability manifest from the export maps and serves it to the authoring agent as MCP tools, so engine capabilities are found before they are hand-written | 7 | PROPOSED |
 
 ## Order
+
+PRD-156 and PRD-157 fix two halves of one measured failure — a game hand-wrote 446 lines of
+navigation and bone attachment that were installed and importable, plus grounding that ran it at
+9 FPS. **Build PRD-157's manifest generator first**, then have PRD-156's census gate consume its
+output; two independent export-walkers would drift past each other silently. Otherwise the two
+are independent of PRD-153.
 
 PRD-153's phases are the order. First make the accepted config truthful, then prove web and native
 packaging consumers, then prove the live loading screen on the platformer, roll the source through
