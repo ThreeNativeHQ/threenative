@@ -4,9 +4,12 @@ prd_contract: v1
 
 # PRD-153 — One game brand from launcher tap to the first playable frame
 
-**Status:** PROPOSED, 2026-08-18. Nothing below has executed. The incumbent census and dead
-configuration path were read from the current tree; all proposed packaging, launch-surface and
-loading-screen behavior is unbuilt.
+**Status:** PARTIAL, 2026-08-19. Built, merged and squashed onto `main` as `930569b`, with two
+follow-up fixes in `620e464` and `a4a7db3`. Every gate that can run on this operator box is green —
+typecheck, lint, `pnpm test`, `pnpm test:templates`, `pnpm test:browser`, `pnpm test:playtest`,
+budgets, and `pnpm native:verify:desktop`. Criterion 2 is **not** met: the Android emulator lane is
+red on the canvas-layer overlay assertion, bisected to PRD-155 rather than to this work, and the
+iOS simulator has never executed here. Record: `docs/verification/prd-153-154-integration-2026-08-19.md`.
 
 **Outcome:** a generated game can replace every player-visible brand surface that ThreeNative
 currently owns — web title and install icons, native launcher and desktop icons, the platform boot

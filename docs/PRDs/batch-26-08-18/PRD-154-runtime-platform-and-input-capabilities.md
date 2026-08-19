@@ -4,9 +4,13 @@ prd_contract: v1
 
 # PRD-154 — Runtime platform and input capabilities
 
-**Status:** PROPOSED, 2026-08-18. Nothing below has executed. This document records the
-current host seams and platformer caller, but no API, default-visibility change, native result or
-platform claim exists yet.
+**Status:** PARTIAL, 2026-08-19. Built, merged and squashed onto `main` as `5cc9be8`. `getPlatform`,
+`isWeb`, `isNative`, `isMobile` and `isTouchscreenAvailable` ship from `@threenative/core`, the C++
+host publishes the facts they read, and the platformer's touch overlay follows them. Every gate that
+can run on this operator box is green, including `pnpm native:build` and `pnpm native:verify:desktop`.
+The last acceptance criterion is **not** met: the Android emulator lane is red on a defect bisected
+to PRD-155, and the hosted iOS simulator has not executed. Record:
+`docs/verification/prd-153-154-integration-2026-08-19.md`.
 
 **Outcome:** portable game source can ask which runtime, operating-system family and input
 capabilities it is running on, while the generated platformer's touch controls stay hidden on web
