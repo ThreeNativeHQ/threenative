@@ -92,6 +92,14 @@ pnpm budgets                               # hard invariants fail; LOC triggers 
 pnpm quality                               # file length, suppressions, lint holes; never fatal
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
 pnpm --filter abyss-framework dev          # there is no root `pnpm dev`
+
+# prove one game: build the CLI, then drive the real build (packages/playtest/AGENTS.md)
+pnpm --filter @threenative/playtest build
+sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js <scenario>.playtest.json \
+  --url http://127.0.0.1:5173 --server-command "<workspace dev command>" --browser-recipe webgpu
+
+pnpm native:build                          # opt-in; downloads deps, compiles the C++ host
+pnpm native:verify:desktop                 # 300 native frames + a non-blank screenshot
 ```
 
 CI chains `install → typecheck → lint → test → scaffold-smoke → visuals`. **Prove it locally before
