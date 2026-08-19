@@ -216,29 +216,26 @@ describe("template loading screen", () => {
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
-  it("compiles the collapsed world behind the opaque screen before reveal", async () => {
+  it("prewarms the collapsed world, and reveals without waiting for it", async () => {
     let ready: () => void = () => undefined;
-    let compiled: () => void = () => undefined;
     const readyPromise = new Promise<void>((resolve) => {
       ready = resolve;
     });
-    const compilePromise = new Promise<void>((resolve) => {
-      compiled = resolve;
-    });
     const source = host();
     source.startup.whenReady = () => readyPromise;
-    source.renderer.compileAsync = vi.fn(() => compilePromise);
+    // A compile that never settles. Holding the screen for it is the defect: a lit,
+    // post-processed world outlives the launch window, and a fixed-step playtest runs a whole
+    // scenario behind the launch screen, so every capture photographs the loading bar.
+    source.renderer.compileAsync = vi.fn(() => new Promise<void>(() => undefined));
     createLoadingScreen(source);
 
-    ready();
-    await Promise.resolve();
-    expect(source.renderer.compileAsync).toHaveBeenCalledWith(source.scene, source.camera);
     expect(source.canvasLayer.opaque).toBe(true);
     expect(source.canvasLayer.scene.children).toHaveLength(3);
 
-    compiled();
-    await compilePromise;
+    ready();
+    await readyPromise;
     await Promise.resolve();
+    expect(source.renderer.compileAsync).toHaveBeenCalledWith(source.scene, source.camera);
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
   });
@@ -258,23 +255,39 @@ describe("template loading screen", () => {
     expect(source.canvasLayer.opaque).toBe(false);
   });
 
-  it("reveals after a bounded compile warm-up when the renderer never settles", async () => {
+  it("keeps the screen up while startup has not settled, on no timer at all", async () => {
     vi.useFakeTimers();
     try {
       const source = host();
-      source.startup.whenReady = () => Promise.resolve();
-      source.renderer.compileAsync = vi.fn(() => new Promise<void>(() => undefined));
+      source.startup.whenReady = () => new Promise<void>(() => undefined);
+      source.renderer.compileAsync = vi.fn(() => Promise.resolve());
 
       createLoadingScreen(source);
       await Promise.resolve();
       await Promise.resolve();
       expect(source.canvasLayer.opaque).toBe(true);
 
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(source.canvasLayer.scene.children).toEqual([]);
-      expect(source.canvasLayer.opaque).toBe(false);
+      // No wall-clock ceiling reveals the world behind a startup that never finished. `whenReady()`
+      // is the only gate, so a game that really is still collapsing keeps its launch screen.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(source.canvasLayer.scene.children).toHaveLength(3);
+      expect(source.canvasLayer.opaque).toBe(true);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reveals even when the renderer has no compileAsync to prewarm with", async () => {
+    const source = host();
+    source.startup.whenReady = () => Promise.resolve();
+    (source.renderer as { compileAsync?: unknown }).compileAsync = undefined;
+
+    createLoadingScreen(source);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.canvasLayer.scene.children).toEqual([]);
+    expect(source.canvasLayer.opaque).toBe(false);
   });
 });

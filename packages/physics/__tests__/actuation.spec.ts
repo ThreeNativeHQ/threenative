@@ -39,10 +39,10 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // census and its budget output.
   ["src/", 38_799],
   ["conformance/", 6_331],
-  ["tests/", 9_464],
+  ["tests/", 9_466],
   ["scripts/", 12_155],
   ["include/", 3_816],
-  ["android/", 1_960],
+  ["android/", 1_973],
   ["native/", 3_276],
   ["Root CMakeLists.txt", 1_673],
   ["cmake/", 280],
@@ -55,7 +55,7 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 148 files, 1,380 passed, 0 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 148 files, 1,381 passed, 0 skipped.";
 const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 325 passed, 30 skipped.";
 
 beforeAll(async () => {

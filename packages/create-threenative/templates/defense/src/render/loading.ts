@@ -153,7 +153,6 @@ export function createLoadingScreen(host: LoadingHost) {
   let progress = 0;
   let done = false;
   let backdropTexture: Texture | undefined;
-  let compileTimeout: ReturnType<typeof setTimeout> | undefined;
   const layout = (): void => {
     width = Math.max(1, camera.right - camera.left);
     height = Math.max(1, camera.top - camera.bottom);
@@ -240,10 +239,6 @@ export function createLoadingScreen(host: LoadingHost) {
   const finish = (): void => {
     if (done) return;
     done = true;
-    if (compileTimeout !== undefined) {
-      clearTimeout(compileTimeout);
-      compileTimeout = undefined;
-    }
     for (const mesh of parts) {
       mesh.removeFromParent();
       mesh.geometry.dispose();
@@ -255,15 +250,18 @@ export function createLoadingScreen(host: LoadingHost) {
   void (async () => {
     await host.startup.whenReady();
     if (done) return;
-    let compilePromise: Promise<void>;
+    // Prewarm the world's shaders, but do not wait for them here. `whenReady()` already means the
+    // world is safe to show, and compiling a lit, post-processed scene takes far longer than the
+    // launch window: hold the screen for it and a playtest — which advances a fixed step as fast
+    // as the machine allows — runs an entire scenario behind the launch screen, so every capture
+    // photographs the loading bar instead of the game. The prewarm still happens; it no longer
+    // decides when the player sees the world.
     try {
-      compilePromise = host.renderer.compileAsync(host.scene, host.camera).catch(() => undefined);
+      void host.renderer.compileAsync(host.scene, host.camera).catch(() => undefined);
     } catch {
-      compilePromise = Promise.resolve();
+      // A renderer without compileAsync is not a reason to keep the world hidden.
     }
-    const reveal = (): void => finish();
-    compileTimeout = setTimeout(reveal, 1_000);
-    void compilePromise.then(reveal, reveal);
+    finish();
   })();
   return {
     finish,
