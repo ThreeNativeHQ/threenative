@@ -94,6 +94,11 @@ pnpm quality                               # file length, suppressions, lint hol
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
 pnpm --filter <example> dev                # there is no root `pnpm dev`
 
+# when a gate fails for a reason that is not the game — no browser, blank screenshot, silent
+# device — ask the machine and the project first
+node packages/playtest/dist/runner/cli.js doctor --text
+npx threenative doctor --text              # inside a generated project
+
 # prove one game — usually the sandbox game you are working on, not an in-repo example
 # (flags, four targets and exit codes: packages/playtest/AGENTS.md)
 pnpm --filter @threenative/playtest build

@@ -55,7 +55,10 @@ claiming the scaffold works.
 
 ## CLI surface
 
-Four commands, ever: `dev`, `build`, `test`, `ship`. v1 shipped 178 command forms and a
+Four commands, ever: `dev`, `build`, `test`, `ship`, plus `doctor`, which reports rather than
+builds and is borrowed whole from `npm doctor` and `flutter doctor` (added 2026-08-19 by owner
+request; `__tests__/cli.spec.ts` pins the advertised list, so a sixth needs that decision made
+again). v1 shipped 178 command forms and a
 2,477-word root help, in a product whose founding constraint is that models are bad at
 discovering novel APIs. Flags stay boring: `--template`, `--no-install`, and the
 `--*-package` overrides CI uses to test against local tarballs.

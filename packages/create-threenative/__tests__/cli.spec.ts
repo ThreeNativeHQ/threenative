@@ -42,7 +42,7 @@ describe("create-threenative CLI", () => {
   it("prints successful help from the real threenative executable", async () => {
     const root = await run(process.execPath, [threenativeCli, "--help"]);
     expect(root.stderr).toBe("");
-    expect(root.stdout).toContain("Usage: threenative build [options]");
+    expect(root.stdout).toContain("Usage: threenative <command> [options]");
     const advertised = [...root.stdout.matchAll(/^ {2}([a-z]+)\s+/gmu)]
       .map(([, command]) => command)
       .filter((command): command is string => command !== undefined);
@@ -52,7 +52,7 @@ describe("create-threenative CLI", () => {
       expect(commandHelp.stderr, command).toBe("");
       expect(commandHelp.stdout, command).toContain(`Usage: threenative ${command}`);
     }
-    expect(advertised).toEqual(["build"]);
+    expect(advertised).toEqual(["build", "doctor"]);
 
     for (const command of ["dev", "test", "ship"]) {
       await expect(

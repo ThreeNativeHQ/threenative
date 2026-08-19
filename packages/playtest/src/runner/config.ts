@@ -91,6 +91,8 @@ export function formatUsage(): string {
     "       threenative-playtest --scenario <path> [options]",
     "",
     "Commands:",
+    "  doctor                check this machine can run a playtest at all",
+    "                        (add --text for a human-readable report)",
     "  init                  create a starter playtest configuration",
     "  record-to-scenario    convert a replay recording into a scenario",
     "                        (requires --oracle <json> and --out <json>)",

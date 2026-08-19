@@ -38,6 +38,12 @@ that came with them ran the game at 9 FPS.
 
 ## When the framework blocks you, write plain Three.js
 
+**First rule out your machine and your project**: when a build or a playtest fails for a reason that
+is not your game code — a browser that will not launch, a blank screenshot, a device that will not
+answer, an import that resolves to nothing — run `npx threenative doctor` and
+`npx @threenative/playtest doctor`. They check the project and the machine and name the cause; only
+after they come back clean is the framework itself the suspect.
+
 An API in `@threenative/*` that is broken, missing, or does not do what you need is **not
 something to wait for or to work around from inside its shape.** Drop to vanilla Three.js —
 or to the plain code that does the job — for that one thing and keep building. Your `src/`

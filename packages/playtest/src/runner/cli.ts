@@ -10,6 +10,7 @@ import {
   PlaytestCliUsageError,
   type IStandalonePlaytestConfig,
 } from "./config.js";
+import { diagnoseHarness, formatDoctorReport, readHarnessEnvironment } from "./doctor.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
@@ -116,6 +117,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (argv.includes("--help")) {
       process.stdout.write(formatUsage());
       return 0;
+    }
+    if (argv[0] === "doctor") {
+      const report = diagnoseHarness(readHarnessEnvironment());
+      process.stdout.write(
+        argv.includes("--text") ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`,
+      );
+      process.exitCode = report.pass ? 0 : 1;
+      return report.pass ? 0 : 1;
     }
     if (argv[0] === "init") {
       const result = await initStandalonePlaytest(process.cwd());
