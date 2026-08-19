@@ -90,7 +90,24 @@ node conformance/run-conformance.mjs          # same scene, browser reference vs
 selected by `--only-tests` is reported **blocked**, never passed and never omitted. Keep it
 that way.
 
-Report what ran. Desktop and the **iOS simulator** are green — the simulator lane runs on the
-hosted `macos-15` runner and `verify-ios-simulator.mjs` pins it to a `SimRuntime.iOS-*` device,
-because before 2026-08-11 it silently selected an Apple Vision Pro. Physical hardware and
-performance parity are open. Never write mobile-ready while those rows are open.
+Report what ran, per platform, and never write mobile-ready while a row below is open.
+
+- **Desktop** — green.
+- **iOS simulator** — green on the hosted `macos-15` runner; `verify-ios-simulator.mjs` pins a
+  `SimRuntime.iOS-*` device because before 2026-08-11 it silently selected an Apple Vision Pro.
+- **Android on a physical phone** — executed: PRD-130's engine comparison and later render work were
+  measured on hardware, not only on an emulator.
+- **Android emulator** — a separate result from the phone, and the two have disagreed. A green on
+  one does not carry to the other; say which you ran.
+- **iOS on physical hardware** — open. arm64 with real Metal, signing, touch input, thermal and
+  battery still need a phone.
+
+## Device lanes, before you record one as unavailable
+
+`adb` and the Android SDK are frequently installed but off `PATH`; export `ANDROID_HOME` and call
+the SDK's `platform-tools/adb` directly before concluding a device lane cannot run here. Wi-Fi ADB
+(`adb tcpip 5555`) is how a device stays **discharging** while you drive it, which the benchmark
+preflight requires — a cable makes the run fail its own gate. Gradle and Kotlin want **JDK 17**;
+newer JDKs abort with an `IllegalArgumentException` naming the version, which reads like a code
+error and is not one. And confirm the app is in the foreground before `adb shell screencap`: a blind
+capture returns whatever the owner has on screen.

@@ -2,8 +2,34 @@
 
 # AGENTS.md — @threenative/playtest
 
-Read `/AGENTS.md` first. This file covers only what is different here. The operator CLI,
-its flags and its exit codes are documented there; this file is about changing the harness.
+Read `/AGENTS.md` first. This file covers the operator CLI and what is different about changing
+the harness.
+
+## Running a scenario
+
+```sh
+pnpm --filter @threenative/playtest build          # the CLI is built, not checked in
+node packages/playtest/dist/runner/cli.js init     # writes playtests/smoke.playtest.json
+node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
+  --url http://127.0.0.1:5173 --server-command "pnpm --filter abyss-framework dev" \
+  --browser-recipe webgpu
+```
+
+Exit `0` passed, `1` assertions failed, `2` never reached assertions. `--server-command` needs a
+workspace that has a `dev` script — an example or a scaffolded project; there is no root `pnpm dev`.
+`--browser-recipe webgpu` supplies the current Chromium WebGPU flags including
+`--enable-features=Vulkan`, without which Chromium silently serves WebGPU from SwiftShader and
+reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape hatch, and a run
+that does not name its adapter is not evidence. For screenshot or `visual` assertions on headless
+Linux, prefix with `sh scripts/xvfb.sh` — never `xvfb-run`, whose exit status is its own failing
+cleanup kill rather than the command's.
+
+In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
+network, screenshot and trace assertions work against any URL. The framework template installs the
+bridge with `playtest()` in `defineGame`; a plain Three.js project uses `installThreePlaytestBridge`
+from `@threenative/playtest/three`. Semantic assertions (`movement`, `camera`, `visibility`) against
+a project with neither bridge fail `TN_PLAYTEST_BRIDGE_MISSING` — that is the harness being right.
+Install the bridge or narrow the scenario; never delete the assertion to get green.
 
 ## The rule that outranks everything else in this package
 

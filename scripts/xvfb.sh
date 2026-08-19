@@ -10,10 +10,30 @@
 #
 # Screen geometry comes from TN_XVFB_SCREEN and defaults to the repository's usual
 # 1600x900x24.
+#
+# Only Linux needs this. Xvfb is an X11 server, so it does not exist on macOS or Windows,
+# where the OS already provides a display and the wrapper is a no-op that must still hand
+# back the command's own status. Wrapping every gate in this script therefore stays correct
+# on a contributor's machine that is not Linux.
 set -u
 
 if [ "$#" -eq 0 ]; then
   echo "usage: scripts/xvfb.sh <command> [args...]" >&2
+  exit 2
+fi
+
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  Linux*) ;;
+  *)
+    # macOS, the BSDs and Git Bash on Windows: run it where the display already is.
+    exec "$@"
+    ;;
+esac
+
+if ! command -v Xvfb >/dev/null 2>&1; then
+  echo "scripts/xvfb.sh: Xvfb is required for headless runs on Linux and is not installed." >&2
+  echo "scripts/xvfb.sh: install it (Debian/Ubuntu 'xvfb', Arch 'xorg-server-xvfb', Fedora" >&2
+  echo "scripts/xvfb.sh: 'xorg-x11-server-Xvfb'). Refusing to run blind." >&2
   exit 2
 fi
 
