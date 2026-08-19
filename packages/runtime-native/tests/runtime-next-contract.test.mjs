@@ -47,7 +47,9 @@ test('official ThreeNative CMake presets and feature flags exist', () => {
 
 test('native host publishes explicit platform facts before the game bundle', () => {
   const runtime = read('src/runtime.cpp');
-  const descriptorStart = runtime.indexOf('auto platform = jsEngine_->newObject();');
+  // The handle is `platformInfo`, not `platform`: the same scope calls the `platform::` namespace
+  // for safe-area insets, and a local of that name reads as a shadow of it.
+  const descriptorStart = runtime.indexOf('auto platformInfo = jsEngine_->newObject();');
   const descriptorEnd = runtime.indexOf('jsEngine_->setProperty(nativeHost, "captureScreenshot"', descriptorStart);
   assert.ok(descriptorStart >= 0, 'native platform descriptor construction is missing');
   assert.ok(descriptorEnd > descriptorStart, 'native platform descriptor must precede host services');
@@ -71,7 +73,7 @@ test('native host publishes explicit platform facts before the game bundle', () 
   assert.match(descriptor, /const int maxTouchPoints = kNativeMobileTouchCapacity;/u);
   assert.match(descriptor, /const int maxTouchPoints = 0;/u);
   assert.doesNotMatch(descriptor, /maxTouchPoints\s*=\s*touchDeviceCount/u);
-  assert.match(descriptor, /setProperty\(nativeHost, "platform", platform\)/u);
+  assert.match(descriptor, /setProperty\(nativeHost, "platform", platformInfo\)/u);
 
   const pointerStart = runtime.indexOf('setProperty(playtestHost, "pointer"');
   const pointerEnd = runtime.indexOf('setProperty(nativeHost, "playtestInput", playtestHost)', pointerStart);

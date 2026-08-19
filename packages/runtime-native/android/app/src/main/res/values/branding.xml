@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The unbranded host defaults. `scripts/package-android.mjs` overwrites this file with the
+  game's own colours while it packages, then restores it. The host tree has to define them
+  anyway: `themes.xml` references `@color/tn_boot_splash_background`, so without this file
+  `:app:assembleDebug` fails resource linking and the Android device gate cannot build at all.
+  The values match `bootSplashBackground()`/`iconBackground()` for a config that declares nothing.
+-->
+<resources>
+    <color name="tn_icon_background">#000000</color>
+    <color name="tn_boot_splash_background">#000000</color>
+</resources>

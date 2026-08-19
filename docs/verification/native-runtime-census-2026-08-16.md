@@ -62,7 +62,7 @@ evidence remains unverified.
 | --- | --- | --- |
 | `pnpm budgets` | PASS, exit `0` | 6 framework packages, 7 example workspaces, 13,869/15,000 framework LOC, 78,246/50,000 native runtime LOC, 12 PRD files, largest template 2,248 LOC; the native review trigger remains visible. |
 
-- Root Vitest: 147 files, 1,364 passed, 0 skipped.
-- Runtime-native Vitest: 48 files, 320 passed, 31 skipped.
+- Root Vitest: 148 files, 1,380 passed, 0 skipped.
+- Runtime-native Vitest: 48 files, 325 passed, 30 skipped.
 - The focused device-preflight, Android JS-engine, and physics-parity fixture tests are current
   evidence; no physical-device result is claimed.
