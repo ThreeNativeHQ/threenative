@@ -10,7 +10,9 @@ import {
   PlaytestCliUsageError,
   type IStandalonePlaytestConfig,
 } from "./config.js";
+import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 import { diagnoseHarness, formatDoctorReport, readHarnessEnvironment } from "./doctor.js";
+import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
@@ -111,6 +113,38 @@ export function classifyRunnerError(
   );
 }
 
+/**
+ * `doctor` answers "can this machine run a playtest", and `doctor --url` additionally answers
+ * "and what is actually in the game running there" — the second question is the one asked while
+ * staring at a screenshot that looks wrong.
+ */
+export async function doctorCommand(argv: readonly string[]): Promise<number> {
+  const text = argv.includes("--text");
+  const urlIndex = argv.indexOf("--url");
+  const url = urlIndex === -1 ? undefined : argv[urlIndex + 1];
+  const report = diagnoseHarness(readHarnessEnvironment());
+  if (url === undefined) {
+    process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
+    process.exitCode = report.pass ? 0 : 1;
+    return report.pass ? 0 : 1;
+  }
+  if (!report.pass) {
+    // Reaching a scene needs the browser the machine checks just said is missing.
+    process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
+    process.exitCode = 1;
+    return 1;
+  }
+  const overview = summariseScene(
+    await observeScene(url, { browserArgs: WEBGPU_BROWSER_ARGS }),
+  );
+  process.stdout.write(
+    text
+      ? `${formatDoctorReport(report)}\n${formatSceneOverview(overview)}`
+      : `${JSON.stringify({ machine: report, scene: overview }, null, 2)}\n`,
+  );
+  return 0;
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   let config: IStandalonePlaytestConfig | undefined;
   try {
@@ -118,14 +152,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stdout.write(formatUsage());
       return 0;
     }
-    if (argv[0] === "doctor") {
-      const report = diagnoseHarness(readHarnessEnvironment());
-      process.stdout.write(
-        argv.includes("--text") ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`,
-      );
-      process.exitCode = report.pass ? 0 : 1;
-      return report.pass ? 0 : 1;
-    }
+    if (argv[0] === "doctor") return await doctorCommand(argv.slice(1));
     if (argv[0] === "init") {
       const result = await initStandalonePlaytest(process.cwd());
       process.stdout.write(`${JSON.stringify({ ...result, pass: true }, null, 2)}\n`);

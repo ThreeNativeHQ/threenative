@@ -23,6 +23,13 @@ npx @threenative/playtest playtests/movement.playtest.json \
   --browser-arg --enable-features=Vulkan
 ```
 
+## Doctor
+
+```sh
+npx @threenative/playtest doctor --text              # can this machine run a playtest?
+npx @threenative/playtest doctor --url <url> --text  # and what is in the game running there
+```
+
 ## Native targets
 
 The same scenario format runs through `--target browser`, `--target android`, `--target desktop`,

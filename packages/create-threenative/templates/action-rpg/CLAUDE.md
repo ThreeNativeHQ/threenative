@@ -41,6 +41,19 @@ answer, an import that resolves to nothing — run `npx threenative doctor` and
 `npx @threenative/playtest doctor`. They check the project and the machine and name the cause; only
 after they come back clean is the framework itself the suspect.
 
+**And when the game runs but looks wrong, ask it what it is:**
+
+```sh
+npx @threenative/playtest doctor --url http://127.0.0.1:5173 --text
+```
+
+One sample from the running game: how many entities exist and how many are visible, the world
+extents they occupy, whether their scale is consistent with one unit being one metre, draw calls,
+triangles, frame time and frame rate, the states and animation clips actually advancing, and the
+console error count. It is the fastest way to tell "nothing is there" from "everything is there and
+off-screen", or a stall from a scene that is simply drawing far too much. It reports only what the
+bridge observes and names what it cannot see, so treat a missing line as unobserved, never as zero.
+
 An API in `@threenative/*` that is broken, missing, or does not do what you need is **not
 something to wait for or to work around from inside its shape.** Drop to vanilla Three.js —
 or to the plain code that does the job — for that one thing and keep building. Your `src/`

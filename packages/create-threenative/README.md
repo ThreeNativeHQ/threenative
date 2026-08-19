@@ -18,3 +18,7 @@ pnpm create threenative my-game --template defense
 pnpm create threenative my-game --template racing
 pnpm create threenative my-game --template shooter
 ```
+
+Inside a generated project, `npx threenative doctor --text` reports what would break a build:
+missing or version-mismatched `@threenative` packages, a portable entry with no default game
+export, no web entry, no scenario, no capability search for your agent.
