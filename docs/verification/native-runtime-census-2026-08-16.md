@@ -12,10 +12,10 @@ considered, and a KEEP/DELETE verdict.
 
 | Counted area | Lines | Owner | Live proof or caller | Alternative considered | Verdict |
 | --- | ---: | --- | --- | --- | --- |
-| `src/` | 38,630 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143, PRD-153 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
+| `src/` | 38,799 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143, PRD-153, PRD-154, PRD-155 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
 | `conformance/` | 6,331 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
-| `tests/` | 9,342 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127, PRD-143, PRD-153 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
-| `scripts/` | 12,006 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127, PRD-153 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
+| `tests/` | 9,464 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127, PRD-143, PRD-153, PRD-154, PRD-155 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
+| `scripts/` | 12,155 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127, PRD-153, PRD-155 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
 | `include/` | 3,816 | PRD-046, PRD-047, PRD-053, PRD-116, PRD-143, PRD-153 | `include/threenative/physics_native.h:131`; C ABI consumed at `src/physics/native_bindings.cpp:586` | Add per-game native headers or remove the C boundary | **KEEP** — the coarse host ABI is the shared boundary. |
 | `android/` | 1,960 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054, PRD-153 | Android host sources and `scripts/verify-android-physics-parity.mjs` | Require each game to rebuild Android lifecycle and transport | **KEEP** — required Android packaging and execution plumbing. |
 | `native/` | 3,276 | PRD-046, PRD-049, PRD-116, PRD-143 | `native/physics/src/lib.rs:463`; `native/physics/tests/actuation.rs:324` | Use the web WASM/Rapier backend on native or move physics into games | **KEEP** — this is the native Rust implementation behind the shared API. |
@@ -26,7 +26,7 @@ considered, and a KEEP/DELETE verdict.
 | `package.json` | 63 | PRD-048, PRD-050, PRD-054, PRD-116 | `native:build`, `native:physics:parity`, and `native:verify:desktop` scripts | Hide opt-in native commands in per-game manifests | **KEEP** — package-level command contract. |
 | `vitest.config.ts` | 10 | PRD-048, PRD-050 | Runtime-native Vitest command and parity producer | Drop native package test collection | **KEEP** — declares the native package test boundary. |
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
-| **Total** | **77,806** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
+| **Total** | **78,246** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
 
 The 2026-08-16 device-preflight and Android report-condition repairs account for the current
 `tests/` and `scripts/` rows; PRD-143 adds the shared native joint ABI and constraint backend.
@@ -44,15 +44,23 @@ was 77,107 / 50,000; the current trigger after PRD-153 is recorded below. Physic
 Android, iOS, and hardware evidence remains unverified.
 
 PRD-153 adds 699 lines across `src/`, `tests/`, `scripts/`, `include/`, `android/` and `ios/` for
-brand-resource packaging, launch inspection, and measured safe-area transport. The native review
-trigger remains visible at 77,806 / 50,000. Physical Android, iOS, and hardware evidence remains
-unverified.
+brand-resource packaging, launch inspection, and measured safe-area transport.
+
+PRD-155 adds 338 lines across `src/`, `scripts/` and `tests/`: the present-once-per-frame fix and
+the device-lane screenshot gate that can fail on what actually reached the screen.
+
+PRD-154 adds 102 lines across `src/` and `tests/`: the host publishes its own runtime, OS, form
+factor and touch capacity to the bundle instead of leaving a portable game to sniff browser globals
+that the native host only stubs.
+
+The native review trigger remains visible at 78,246 / 50,000. Physical Android, iOS, and hardware
+evidence remains unverified.
 
 ## Current gate summaries
 
 | Command | Result | Evidence |
 | --- | --- | --- |
-| `pnpm budgets` | PASS, exit `0` | 6 framework packages, 7 example workspaces, 13,645/15,000 framework LOC, 77,806/50,000 native runtime LOC, 12 PRD files, largest template 2,235 LOC; the native review trigger remains visible. |
+| `pnpm budgets` | PASS, exit `0` | 6 framework packages, 7 example workspaces, 13,869/15,000 framework LOC, 78,246/50,000 native runtime LOC, 12 PRD files, largest template 2,248 LOC; the native review trigger remains visible. |
 
 - Root Vitest: 147 files, 1,364 passed, 0 skipped.
 - Runtime-native Vitest: 48 files, 320 passed, 31 skipped.
