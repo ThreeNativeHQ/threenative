@@ -85,24 +85,49 @@ SafeAreaInsets getSafeAreaInsets() {
     return g_safeAreaInsets;
 }
 
+#if defined(__ANDROID__)
+/**
+ * Deletes a JNI local reference when it leaves scope.
+ *
+ * Every reference JNI hands back here is a local one, and the local reference table is small and
+ * per-thread. This runs on every resize, so a reference dropped on any early-return path is not a
+ * slow leak but a countdown to a JNI abort after a few hundred rotations.
+ */
+class LocalRef {
+public:
+    LocalRef(JNIEnv* environment, jobject reference) : environment_(environment), reference_(reference) {}
+    ~LocalRef() {
+        if (environment_ != nullptr && reference_ != nullptr) environment_->DeleteLocalRef(reference_);
+    }
+    LocalRef(const LocalRef&) = delete;
+    LocalRef& operator=(const LocalRef&) = delete;
+
+private:
+    JNIEnv* environment_;
+    jobject reference_;
+};
+#endif
+
 void refreshSafeAreaInsets() {
 #if defined(__ANDROID__)
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
     auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
     if (environment == nullptr || activity == nullptr) return;
+    // SDL hands back a local reference the caller owns. Nothing else releases it.
+    LocalRef activityRef(environment, activity);
 
     jclass activityClass = environment->GetObjectClass(activity);
     if (activityClass == nullptr) return;
+    LocalRef activityClassRef(environment, activityClass);
     jmethodID method = environment->GetMethodID(activityClass, "getSafeAreaInsets", "()[I");
     if (method == nullptr) {
         environment->ExceptionClear();
-        environment->DeleteLocalRef(activityClass);
         return;
     }
     auto values = static_cast<jintArray>(environment->CallObjectMethod(activity, method));
+    LocalRef valuesRef(environment, values);
     if (environment->ExceptionCheck() != JNI_FALSE || values == nullptr) {
         environment->ExceptionClear();
-        environment->DeleteLocalRef(activityClass);
         return;
     }
     if (environment->GetArrayLength(values) >= 4) {
@@ -114,8 +139,6 @@ void refreshSafeAreaInsets() {
             environment->ExceptionClear();
         }
     }
-    environment->DeleteLocalRef(values);
-    environment->DeleteLocalRef(activityClass);
 #endif
 }
 

@@ -132,6 +132,36 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("rejects an entry that carries no usage example rather than answering with undefined", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-no-example-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 1,
+          entries: [
+            {
+              symbol: "GroundSnap",
+              package: "@threenative/core",
+              importPath: "@threenative/core",
+              kind: "class",
+              signature: "class GroundSnap",
+              summary: "Keeps a character's feet on the floor.",
+              situations: ["keep a character's feet on the floor"],
+              constraints: [],
+            },
+          ],
+        }),
+      );
+      expect(() => loadCapabilityManifest(file)).toThrow("entry 0 is malformed");
+      expect(() => searchCapabilities("feet on the floor", file)).toThrow("entry 0 is malformed");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("uses the project-root manifest by default", () => {
     expect(defaultManifestPath()).toBe(path.resolve("capabilities.json"));
   });

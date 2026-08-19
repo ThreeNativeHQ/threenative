@@ -153,11 +153,29 @@ function sourceProgram(root: string, entries: readonly string[]): ts.Program {
   });
 }
 
+/**
+ * True for a callable or constructible export, however it was written.
+ *
+ * `export function f() {}` and `export const f = () => {}` are the same capability to a game's
+ * agent and were not the same thing to this gate: only the declaration forms were counted, so the
+ * day a helper is written as an arrow const it leaves the scan silently and its absence from every
+ * template's AGENTS.md stops being a release defect. A gate that quietly narrows what it covers is
+ * the failure this repository names as the most dangerous one, so the form is not the test — being
+ * a function or a class is.
+ */
 function isPublicClassOrFunction(checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-  return (resolved.declarations ?? []).some(
-    (declaration) => ts.isClassDeclaration(declaration) || ts.isFunctionDeclaration(declaration),
-  );
+  return (resolved.declarations ?? []).some((declaration) => {
+    if (ts.isClassDeclaration(declaration) || ts.isFunctionDeclaration(declaration)) return true;
+    if (!ts.isVariableDeclaration(declaration)) return false;
+    const initializer = declaration.initializer;
+    if (initializer === undefined) return false;
+    return (
+      ts.isArrowFunction(initializer) ||
+      ts.isFunctionExpression(initializer) ||
+      ts.isClassExpression(initializer)
+    );
+  });
 }
 
 function exportedValueNames(checker: ts.TypeChecker, entry: ts.SourceFile): readonly string[] {

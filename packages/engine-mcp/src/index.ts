@@ -67,15 +67,24 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
     throw manifestError(file, "root must contain a numeric version and entries array");
   }
   for (const [index, raw] of value.entries.entries()) {
+    // Every field `ICapabilityEntry` declares is checked, `kind` and `example` included. They were
+    // the two that were not, and they are the two an authoring agent is handed most directly: a
+    // manifest missing `example` validated cleanly and then answered `engine_search_capabilities`
+    // with `example: undefined` typed as a string. A capability tool that reports a usage example
+    // it does not have is worse than one that refuses to start.
     if (
       !isRecord(raw) ||
       typeof raw.symbol !== "string" ||
       typeof raw.package !== "string" ||
       typeof raw.importPath !== "string" ||
+      typeof raw.kind !== "string" ||
       typeof raw.signature !== "string" ||
       typeof raw.summary !== "string" ||
+      typeof raw.example !== "string" ||
       !Array.isArray(raw.situations) ||
-      !Array.isArray(raw.constraints)
+      !Array.isArray(raw.constraints) ||
+      !raw.situations.every((situation) => typeof situation === "string") ||
+      !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
     }

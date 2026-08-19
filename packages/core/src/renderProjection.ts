@@ -53,7 +53,6 @@ export type ProjectionReasonCode =
   | "renderHook"
   | "unsupportedLight"
   | "unsupportedObject"
-  | "batchOverflow"
   | "notWorthwhile";
 
 export type ProjectionExactReason =
@@ -69,6 +68,7 @@ export type ProjectionExactReason =
   | "transparent"
   | "renderOrder"
   | "tooFewToBatch"
+  | "batchOverflow"
   | "unsupportedGeometry";
 
 export interface IRenderProjectionReport {
@@ -616,9 +616,15 @@ export class SceneRenderProjection {
           this.#projectedObjects += 1;
           continue;
         }
+        // `#syncBatched` declines only when its batch has no slot left — the mesh was classified
+        // as batchable and its geometry and material are fine. Filing that under
+        // `unsupportedGeometry` sends whoever reads the report looking at the asset, which is the
+        // one place the cause is not. It keeps its own draw either way; only the reason differs,
+        // and the reason is the whole value of the report.
+        const reason = batch === undefined ? "unsupportedGeometry" : "batchOverflow";
         this.#release(mesh);
-        this.#exact.set("unsupportedGeometry", (this.#exact.get("unsupportedGeometry") ?? 0) + 1);
-        exactLane.push({ object: mesh, reason: "unsupportedGeometry" });
+        this.#exact.set(reason, (this.#exact.get(reason) ?? 0) + 1);
+        exactLane.push({ object: mesh, reason });
       }
     }
     for (const entry of exactLane) {

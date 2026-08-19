@@ -36,8 +36,10 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // PRD-153 adds 699 native lines for brand-resource packaging, launch inspection, and measured
   // safe-area transport; PRD-155 adds 338 for the present fix and the device screenshot gate;
   // PRD-154 adds 102 for the published platform facts. Keep this fixture tied to the checked-in
-  // census and its budget output.
-  ["src/", 38_799],
+  // census and its budget output. The JNI local-reference repair in refreshSafeAreaInsets adds 23
+  // more: SDL hands back an activity reference the caller owns, and nothing released it on any
+  // path, so every resize spent one entry of a per-thread table that holds a few hundred.
+  ["src/", 38_822],
   ["conformance/", 6_331],
   ["tests/", 9_468],
   ["scripts/", 12_158],

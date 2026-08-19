@@ -880,6 +880,31 @@ describe("SceneRenderProjection refuses to make a scene worse", () => {
     expect(projection.report.resultDrawCandidates).toBe(1);
   });
 
+  it("names slot exhaustion as slot exhaustion rather than as an unsupported geometry", () => {
+    // A batch keeps its slots until the retirement sweep at the end of the frame, so a level that
+    // swaps a whole set of props in one frame asks for slots the outgoing set still holds. The
+    // meshes that miss out keep their own draw, which is correct. What was wrong is what the
+    // report said about them: `unsupportedGeometry` sends a reader to inspect an asset that is
+    // fine, when the cause is a batch that was full.
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const first = fill(scene, material, 60);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+    expect(projection.report.exact.batchOverflow).toBeUndefined();
+
+    for (const mesh of first) scene.remove(mesh);
+    fill(scene, material, 60);
+    projection.reconcile();
+
+    const report = projection.report;
+    expect(report.exact.batchOverflow).toBeGreaterThan(0);
+    expect(report.exact.unsupportedGeometry).toBeUndefined();
+    // Still drawn, just not batched. Naming the reason must not cost the object its frame.
+    expect(report.resultDrawCandidates).toBeGreaterThan(0);
+    expect(report.projectedObjects + (report.exact.batchOverflow ?? 0)).toBe(60);
+  });
+
   it("never returns more draw candidates than the scene it was given", () => {
     // The invariant behind both cases above, asserted directly across a spread of scene shapes.
     for (const distinctGeometries of [1, 2, 8, 60, 300]) {

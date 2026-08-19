@@ -49,6 +49,24 @@ function testCanvas(width = 1280, height = 720): HTMLCanvasElement & { size: IVi
   return canvas;
 }
 
+/** Installs stand-in browser globals for one call, then restores whatever was there before. */
+function withGlobals(values: Record<string, unknown>, body: () => void): void {
+  const restore = Object.entries(values).map(
+    ([name]) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+  );
+  try {
+    for (const [name, value] of Object.entries(values)) {
+      Object.defineProperty(globalThis, name, { configurable: true, value });
+    }
+    body();
+  } finally {
+    for (const [name, descriptor] of restore) {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, name);
+      else Object.defineProperty(globalThis, name, descriptor);
+    }
+  }
+}
+
 const resizeObserverDescriptor = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
 
 afterEach(() => {
@@ -181,5 +199,27 @@ describe("Viewport", () => {
       x: 0,
       y: 0,
     });
+  });
+
+  it("does not report a measured safe area when the probe cannot be attached", () => {
+    // A document whose body is not there yet. The probe stays detached, every computed padding
+    // resolves to the empty string, and four parsed zeroes look exactly like a device with no
+    // insets. Claiming `measured` for that is the dishonest green this asserts against.
+    const style = { paddingBottom: "", paddingLeft: "", paddingRight: "", paddingTop: "" };
+    const probe = { remove: () => undefined, style: { cssText: "" } };
+    withGlobals(
+      {
+        document: { body: null, createElement: () => probe },
+        window: { getComputedStyle: () => style },
+      },
+      () => {
+        const canvas = testCanvas(640, 360);
+        const viewport = new Viewport({
+          camera: new PerspectiveCamera(),
+          renderer: renderer(canvas),
+        });
+        expect(viewport.safeArea.source).toBe("full-drawable-fallback");
+      },
+    );
   });
 });

@@ -56,6 +56,36 @@ async function missingCapabilityBudgetFixture(): Promise<string> {
   return root;
 }
 
+/** A two-package tree whose capabilities are written in every callable form TypeScript allows. */
+async function arrowExportFixture(): Promise<string> {
+  const root = await makeTempDir("threenative-capability-arrow-");
+  const sources: Record<string, string> = {
+    core: [
+      "export const steerAroundWall = (): void => undefined;",
+      "export const SnapToFloor = class { snap(): void {} };",
+      "export const VERSION = 1;",
+      "export interface INotACapability { readonly kind: string }",
+    ].join("\n"),
+    physics: [
+      "export const holdWeapon = function attach(): void {};",
+      "export function alsoCounted(): void {}",
+    ].join("\n"),
+  };
+  for (const [packageName, source] of Object.entries(sources)) {
+    const packageRoot = path.join(root, "packages", packageName);
+    await mkdir(path.join(packageRoot, "src"), { recursive: true });
+    await writeFile(path.join(packageRoot, "src", "index.ts"), `${source}\n`);
+    await writeFile(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({
+        name: `@threenative/${packageName}`,
+        exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
+      }),
+    );
+  }
+  return root;
+}
+
 describe("capability documentation gate", () => {
   it("should make root budgets exit nonzero when a template document is missing", async () => {
     const root = await missingCapabilityBudgetFixture();
@@ -109,6 +139,22 @@ describe("capability documentation gate", () => {
         }),
       ]),
     );
+  });
+
+  it("should scan a capability written as an arrow const, not only declaration forms", async () => {
+    // The gate's job is to make an undocumented capability a release defect. It counted only
+    // `class`/`function` declarations, so `export const helper = () => {}` left the scan without a
+    // word — the symbol simply stopped existing as far as every template's AGENTS.md was
+    // concerned. A constant that is not callable must still be ignored, or the gate starts
+    // demanding prose for every exported number.
+    const root = await arrowExportFixture();
+    const capabilities = await collectPublicExports(root);
+    const names = capabilities.map((capability) => capability.name);
+
+    expect(names).toContain("steerAroundWall");
+    expect(names).toContain("holdWeapon");
+    expect(names).toContain("SnapToFloor");
+    expect(names).not.toContain("VERSION");
   });
 
   it("should pass against the repaired scaffold documents", async () => {

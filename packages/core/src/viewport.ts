@@ -208,7 +208,13 @@ function browserInsets(): IViewportInsets | undefined {
     "visibility:hidden",
     "pointer-events:none",
   ].join(";");
-  document.body?.appendChild(probe);
+  // Nothing is measured until the probe is in the document. A detached element resolves every
+  // computed padding to the empty string, which parses to zero — four zeroes indistinguishable
+  // from a device that genuinely has no insets, reported as `measured`. The full-drawable
+  // fallback is the honest answer when there was no measurement to take.
+  const body = document.body;
+  if (body === null || body === undefined) return undefined;
+  body.appendChild(probe);
   const style = window.getComputedStyle(probe);
   const value = {
     bottom: Number.parseFloat(style.paddingBottom) || 0,
