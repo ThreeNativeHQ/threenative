@@ -4,12 +4,13 @@ prd_contract: v1
 
 # PRD-154 — Runtime platform and input capabilities
 
-**Status:** PARTIAL, 2026-08-19. Built, merged and squashed onto `main` as `5cc9be8`. `getPlatform`,
-`isWeb`, `isNative`, `isMobile` and `isTouchscreenAvailable` ship from `@threenative/core`, the C++
-host publishes the facts they read, and the platformer's touch overlay follows them. Every gate that
-can run on this operator box is green, including `pnpm native:build` and `pnpm native:verify:desktop`.
-The last acceptance criterion is **not** met: the Android emulator lane is red on a defect bisected
-to PRD-155, and the hosted iOS simulator has not executed. Record:
+**Status:** DONE, 2026-08-19. Squashed onto `main` as `5cc9be8`. `getPlatform`, `isWeb`, `isNative`,
+`isMobile` and `isTouchscreenAvailable` ship from `@threenative/core`, the C++ host publishes the
+facts they read before the bundle is evaluated, and the platformer's touch overlay follows them.
+Every gate that executes on this operator box is green, including `pnpm native:build` and
+`pnpm native:verify:desktop`. **Closed by owner decision with two device lanes unverified**: the
+Android emulator is red on a canvas-layer overlay assertion bisected to PRD-155, not to this work,
+and the hosted iOS simulator has not run. No physical-hardware or iOS claim is made. Record:
 `docs/verification/prd-153-154-integration-2026-08-19.md`.
 
 **Outcome:** portable game source can ask which runtime, operating-system family and input

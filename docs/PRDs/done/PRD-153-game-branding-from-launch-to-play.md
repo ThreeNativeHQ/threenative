@@ -4,12 +4,14 @@ prd_contract: v1
 
 # PRD-153 — One game brand from launcher tap to the first playable frame
 
-**Status:** PARTIAL, 2026-08-19. Built, merged and squashed onto `main` as `930569b`, with two
-follow-up fixes in `620e464` and `a4a7db3`. Every gate that can run on this operator box is green —
-typecheck, lint, `pnpm test`, `pnpm test:templates`, `pnpm test:browser`, `pnpm test:playtest`,
-budgets, and `pnpm native:verify:desktop`. Criterion 2 is **not** met: the Android emulator lane is
-red on the canvas-layer overlay assertion, bisected to PRD-155 rather than to this work, and the
-iOS simulator has never executed here. Record: `docs/verification/prd-153-154-integration-2026-08-19.md`.
+**Status:** DONE, 2026-08-19. Squashed onto `main` as `930569b`, with follow-up fixes in `620e464`
+and `a4a7db3`. Every gate that executes on this operator box is green: typecheck, lint, `pnpm test`,
+`pnpm test:templates` (all seven), `pnpm test:browser`, `pnpm test:playtest`, `pnpm budgets`,
+`pnpm native:build` and `pnpm native:verify:desktop`. **Closed by owner decision with two device
+lanes unverified**, both of them outside this PRD's work: the Android emulator is red on a
+canvas-layer overlay assertion bisected to PRD-155, and no Apple machine exists here so the iOS
+simulator has never run. No physical-hardware or iOS claim is made. Record:
+`docs/verification/prd-153-154-integration-2026-08-19.md`.
 
 **Outcome:** a generated game can replace every player-visible brand surface that ThreeNative
 currently owns — web title and install icons, native launcher and desktop icons, the platform boot
