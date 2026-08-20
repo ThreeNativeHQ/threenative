@@ -1,0 +1,103 @@
+{
+  "aggregate": {
+    "atFloor": 1,
+    "counted": 2,
+    "excluded": 5,
+    "meanAfter": 3
+  },
+  "duplicateSpreads": [
+    {
+      "copy": "defense::before::duplicate",
+      "of": "defense::before",
+      "rater": "rater-1.json",
+      "spread": 0
+    },
+    {
+      "copy": "defense::before::duplicate",
+      "of": "defense::before",
+      "rater": "rater-2.json",
+      "spread": 1
+    },
+    {
+      "copy": "defense::before::duplicate",
+      "of": "defense::before",
+      "rater": "rater-3.json",
+      "spread": 1
+    },
+    {
+      "copy": "action-rpg::before::duplicate",
+      "of": "action-rpg::before",
+      "rater": "rater-1.json",
+      "spread": 0
+    },
+    {
+      "copy": "action-rpg::before::duplicate",
+      "of": "action-rpg::before",
+      "rater": "rater-2.json",
+      "spread": 0
+    },
+    {
+      "copy": "action-rpg::before::duplicate",
+      "of": "action-rpg::before",
+      "rater": "rater-3.json",
+      "spread": 0
+    }
+  ],
+  "mde": 1,
+  "raters": [
+    "rater-1.json",
+    "rater-2.json",
+    "rater-3.json"
+  ],
+  "rows": [
+    {
+      "after": 3,
+      "before": 4,
+      "classification": "INDETERMINATE",
+      "delta": -1,
+      "template": "action-rpg"
+    },
+    {
+      "after": 3,
+      "before": 2,
+      "classification": "INDETERMINATE",
+      "delta": 1,
+      "template": "defense"
+    },
+    {
+      "after": 2,
+      "before": 2,
+      "classification": "INDETERMINATE",
+      "delta": 0,
+      "template": "minimal"
+    },
+    {
+      "after": 2,
+      "before": 3,
+      "classification": "INDETERMINATE",
+      "delta": -1,
+      "template": "platformer"
+    },
+    {
+      "after": 2,
+      "before": 3,
+      "classification": "INDETERMINATE",
+      "delta": -1,
+      "template": "racing"
+    },
+    {
+      "after": 4,
+      "before": 2,
+      "classification": "WIN",
+      "delta": 2,
+      "template": "shooter"
+    },
+    {
+      "after": 2,
+      "before": 4,
+      "classification": "LOSS",
+      "delta": -2,
+      "template": "starter"
+    }
+  ]
+}

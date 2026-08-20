@@ -1,0 +1,70 @@
+{
+  "promptSha256": "abf9eb1ebfdd8ae86ab67682754826d6fe383b0e367e9b6f21854e6207e01aed",
+  "samples": [
+    {
+      "image": "sample-01/image.png",
+      "label": "sample-01"
+    },
+    {
+      "image": "sample-02/image.png",
+      "label": "sample-02"
+    },
+    {
+      "image": "sample-03/image.png",
+      "label": "sample-03"
+    },
+    {
+      "image": "sample-04/image.png",
+      "label": "sample-04"
+    },
+    {
+      "image": "sample-05/image.png",
+      "label": "sample-05"
+    },
+    {
+      "image": "sample-06/image.png",
+      "label": "sample-06"
+    },
+    {
+      "image": "sample-07/image.png",
+      "label": "sample-07"
+    },
+    {
+      "image": "sample-08/image.png",
+      "label": "sample-08"
+    },
+    {
+      "image": "sample-09/image.png",
+      "label": "sample-09"
+    },
+    {
+      "image": "sample-10/image.png",
+      "label": "sample-10"
+    },
+    {
+      "image": "sample-11/image.png",
+      "label": "sample-11"
+    },
+    {
+      "image": "sample-12/image.png",
+      "label": "sample-12"
+    },
+    {
+      "image": "sample-13/image.png",
+      "label": "sample-13"
+    },
+    {
+      "image": "sample-14/image.png",
+      "label": "sample-14"
+    },
+    {
+      "image": "sample-15/image.png",
+      "label": "sample-15"
+    },
+    {
+      "image": "sample-16/image.png",
+      "label": "sample-16"
+    }
+  ],
+  "verdict": "ready"
+}

@@ -4,7 +4,17 @@ prd_contract: v1
 
 # PRD-159 — Round 10 named five visual defects, four were changed, and nobody scored the result
 
-**Status:** PROPOSED, 2026-08-19. Nothing below has executed. §1 is a read of the tree and of
+**Status: COMPLETE, 2026-08-19.** Executed. The round-11 ledger is
+[`round-11-2026-08-19.md`](../../verification/round-11-2026-08-19.md) and the durable evidence is
+under [`visuals/ab-2026-08-19/`](../../verification/visuals/ab-2026-08-19/): the blind bundle, the
+reveal, three rater files and the score. Measured MDE is 1 point. Gaps 1, 2 and 3 are
+`INDETERMINATE` at that resolution; gaps 4 (`starter`, −2 LOSS) and 5 (`minimal`) are **re-opened
+with their frames** and left unrepaired, which is what this PRD asked for. The before commit
+`937085e1` did not survive the history rewrite; the labelled source-equivalent `250d5b25` was used
+and the substitution is stated rather than silently renamed. **This is a model score, not the human
+blind session `docs/product/VISUAL-BASELINE.md` requires.**
+
+Original status, 2026-08-19: PROPOSED. Nothing below has executed. §1 is a read of the tree and of
 `docs/verification/template-visual-baseline-2026-08-16.md`; it contains no new score.
 
 **Outcome:** the seven templates carry a paired, self-calibrating visual score with a stated
@@ -15,7 +25,7 @@ belief — and the round-10 gap list is either closed with evidence or re-opened
 this machine.
 
 **Blocks:** any future claim that a template change improved how a generated project looks. It does
-not block [PRD-079](./PRD-079-phase-2-exit-criteria.md), which measures the paired *game* arms.
+not block [PRD-079](../batch-26-08-19/PRD-079-phase-2-exit-criteria.md), which measures the paired *game* arms.
 
 **Complexity: 4 → MEDIUM mode.** No new module. One capture of before-frames from a known commit,
 one capture of after-frames from `HEAD`, one bundle, one scored run, one ledger.

@@ -1,7 +1,7 @@
 # Batch — the three beta blockers this machine can move, and the instrument that stopped working
 
-**Status: ACTIVE, 2026-08-19.** PRD-161 is **COMPLETE**; the batch remains ACTIVE for PRD-079,
-PRD-159, and PRD-160. No device result, no mobile-readiness claim, and no platform-parity claim
+**Status: ACTIVE, 2026-08-19.** PRD-161 and PRD-159 are **COMPLETE**; the batch remains ACTIVE for
+PRD-079 and PRD-160. No device result, no mobile-readiness claim, and no platform-parity claim
 exists for any PRD in it.
 
 ## Why this batch, today
@@ -35,7 +35,7 @@ And the last round ledger named its own next action, which nobody ran:
 Four of round 10's five visual gaps have had their template source changed since. **None of the
 five has been re-scored.** Reading `sky.ts` and concluding a gradient reaches the screen is the
 exact false signal that made the baseline necessary in the first place. That is
-[PRD-159](./PRD-159-round-11-paired-visual-ab.md).
+[PRD-159](../done/PRD-159-round-11-paired-visual-ab.md).
 
 ## The work
 
@@ -43,7 +43,7 @@ exact false signal that made the baseline necessary in the first place. That is
 | --- | --- | --- | --- |
 | [079](./PRD-079-phase-2-exit-criteria.md) | Beta row 3 — rewrites the Phase 2 exit criteria with the owner, now that the harness defect half of it has shipped as PRD-081 | 7 | HALF ONE LANDED, HALF TWO OPEN |
 | [160](./PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) | Beta row 4's Android half — attributes the emulator overlay red bisected to `c842a6a`, then adjudicates `67/0/0` against `27/40/0` with provenance | 6 | PROPOSED |
-| [159](./PRD-159-round-11-paired-visual-ab.md) | Round 11 — one paired blind bundle with a measured minimum detectable effect, and a disposition for all five round-10 visual gaps | 4 | PROPOSED |
+| [159](../done/PRD-159-round-11-paired-visual-ab.md) | Round 11 — one paired blind bundle with a measured minimum detectable effect, and a disposition for all five round-10 visual gaps | 4 | COMPLETE — MDE 1; gaps 4 and 5 re-opened with frames |
 | [161](../done/PRD-161-the-kill-switch-has-no-working-instrument.md) | The framework LOC trigger 262 lines away with no attribution, the native trigger 28,266 past with no owner, and a dead `round:deletions` | 5 | COMPLETE |
 
 ## Order
@@ -56,8 +56,8 @@ rest of 161 can follow later in the day.
 and the lane runs unattended; starting it early overlaps its runtime with reading work elsewhere.
 Its Phase 1 attribution — engine bug or harness bug — must be written before any code is touched.
 
-**3. PRD-159 third.** Capturing two conditions and scoring one bundle is mostly machine time. It
-does not depend on the others and does not block them.
+**3. PRD-159 third — done.** Two conditions captured, one blind bundle scored, five gaps disposed:
+[`round-11-2026-08-19.md`](../../verification/round-11-2026-08-19.md).
 
 **4. PRD-079 last, and only its half two.** It is the one item here that **cannot be finished
 without an owner decision**: rewriting a phase gate is not a defect fix and no agent has the
