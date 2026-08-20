@@ -30,7 +30,17 @@ export interface IScenePageProbe {
   readonly consoleErrors: readonly string[];
 }
 
+export interface ISceneProjectionDiagnostic {
+  readonly batches?: number;
+  readonly projecting?: boolean;
+  readonly reason?: string;
+  readonly reasonCode?: string;
+  readonly sourceRenderables?: number;
+}
+
 export interface ISceneObservation {
+  /** The engine's own render-projection report, if the page printed one. */
+  readonly projection?: ISceneProjectionDiagnostic;
   readonly description?: IPlaytestBridgeDescription | { engine?: string; name?: string; version?: string };
   /** A screenshot's statistics, which is how a blank screen is told from a rendered one. */
   readonly frame?: ISceneFrameStats;
@@ -52,6 +62,7 @@ export interface ISceneOverview {
   readonly entities: { hidden: number; observed: number; visible: number };
   readonly liveness: { live: boolean; moved: number; ticks?: number };
   readonly page?: IScenePageProbe;
+  readonly projection?: { batches?: number; projecting?: boolean; reason?: string; reasonCode?: string; renderables?: number };
   readonly screen?: { blank: boolean; brightPixelRatio: number; distinctColors: number };
   readonly startupMs?: number;
   readonly warnings: readonly string[];
@@ -251,6 +262,17 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
     entities: { hidden: entities.length - visible, observed: entities.length, visible },
     liveness: liveness(observation),
     ...(observation.page === undefined ? {} : { page: observation.page }),
+    ...(observation.projection === undefined
+      ? {}
+      : {
+          projection: {
+            batches: observation.projection.batches,
+            projecting: observation.projection.projecting,
+            reason: observation.projection.reason,
+            reasonCode: observation.projection.reasonCode,
+            renderables: observation.projection.sourceRenderables,
+          },
+        }),
     screen: screenVerdict(observation.frame),
     ...(observation.startupMs === undefined ? {} : { startupMs: observation.startupMs }),
     extents:
@@ -321,12 +343,45 @@ function screenLine(overview: ISceneOverview): string | undefined {
   ).toFixed(0)}% bright pixels`;
 }
 
+/**
+ * The entity count is what the game registered for assertions; this is what the renderer was
+ * handed. A game can register two entities and draw fifteen hundred objects, and reading the first
+ * number as the second is how a scene looks empty in a report and heavy on the GPU.
+ */
+function renderablesLine(overview: ISceneOverview): string | undefined {
+  const { projection } = overview;
+  if (projection?.renderables === undefined) return undefined;
+  const state =
+    projection.projecting === true
+      ? `projection batching ${projection.batches ?? 0} groups`
+      : `projection standing down${projection.reasonCode === undefined ? "" : ` (${projection.reasonCode})`}`;
+  return `  renderables  ${projection.renderables.toLocaleString("en-US")} handed to the renderer · ${state}`;
+}
+
 function livenessLine(overview: ISceneOverview): string | undefined {
   const { liveness: state } = overview;
   if (state.ticks === undefined && state.moved === 0) return undefined;
   return `  liveness     ${state.ticks === undefined ? "" : `${state.ticks} ticks between samples · `}${
     state.moved
   } entities moved`;
+}
+
+const PROJECTION_PREFIX = "TN_RENDER_PROJECTION:";
+
+/** Read the engine's projection report out of the page's console output. */
+export function parseProjectionDiagnostic(
+  consoleLines: readonly string[],
+): ISceneProjectionDiagnostic | undefined {
+  for (const line of [...consoleLines].reverse()) {
+    const index = line.indexOf(PROJECTION_PREFIX);
+    if (index === -1) continue;
+    try {
+      return JSON.parse(line.slice(index + PROJECTION_PREFIX.length)) as ISceneProjectionDiagnostic;
+    } catch {
+      // A truncated or reformatted line is not a diagnostic; keep looking rather than guessing.
+    }
+  }
+  return undefined;
 }
 
 export function formatSceneOverview(overview: ISceneOverview): string {
@@ -359,6 +414,7 @@ export function formatSceneOverview(overview: ISceneOverview): string {
         ? " · frame time not observed"
         : ` · ${render.frameMs.toFixed(1)} ms/frame (${render.fps} fps)`
     }`,
+    renderablesLine(overview),
     livenessLine(overview),
     `  gameplay     ${gameplay.states} states · ${
       gameplay.clipsAdvancing.length === 0 ? "no clips advancing" : `clips ${gameplay.clipsAdvancing.join(", ")}`
@@ -395,6 +451,7 @@ export async function observeScene(
   const timeoutMs = options.timeoutMs ?? 30_000;
   const startedAt = Date.now();
   const consoleErrors: string[] = [];
+  const consoleLines: string[] = [];
   const browser = await chromium.launch({
     ...(options.browserArgs === undefined ? {} : { args: resolveBrowserArguments(options.browserArgs) }),
     // Headless Chromium serves WebGPU from SwiftShader even with the Vulkan flag, so a machine
@@ -404,7 +461,9 @@ export async function observeScene(
   try {
     const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
     page.on("console", (entry) => {
-      if (entry.type() === "error") consoleErrors.push(entry.text());
+      const text = entry.text();
+      consoleLines.push(text);
+      if (entry.type() === "error") consoleErrors.push(text);
     });
     page.on("pageerror", (error) => consoleErrors.push(error.message));
     await page.goto(url, { timeout: timeoutMs, waitUntil: "load" });
@@ -439,9 +498,11 @@ export async function observeScene(
     const page_ = await pageProbe(page, consoleErrors);
     const frame = await screenshotStats(page, inspectFrame);
     await bridge.close();
+    const projection = parseProjectionDiagnostic(consoleLines);
     return {
       description: bridge.description,
       ...(frame === undefined ? {} : { frame }),
+      ...(projection === undefined ? {} : { projection }),
       page: page_,
       previous,
       snapshot,

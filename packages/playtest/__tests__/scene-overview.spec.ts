@@ -189,6 +189,35 @@ describe("scene overview, the parts that catch a broken run", () => {
     expect(measured.warnings.join(" ")).not.toMatch(/vsync/i);
   });
 
+  it("reports the engine's own renderable count, which the entity count is not", () => {
+    const withProjection = summariseScene({
+      ...OBSERVATION,
+      projection: {
+        batches: 0,
+        projecting: false,
+        reason: "projecting would draw 1477 of 1477 candidates, which is not worth its own cost",
+        reasonCode: "notWorthwhile",
+        sourceRenderables: 1477,
+      },
+    });
+    expect(withProjection.projection?.renderables).toBe(1477);
+    const text = formatSceneOverview(withProjection);
+    expect(text).toMatch(/renderables\s+1,477/);
+    expect(text).toMatch(/notWorthwhile/);
+  });
+
+  it("parses the projection diagnostic the engine prints to the console", async () => {
+    const { parseProjectionDiagnostic } = await import("../src/runner/sceneOverview.js");
+    expect(
+      parseProjectionDiagnostic([
+        "irrelevant",
+        'TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"notWorthwhile","reason":"nope","sourceRenderables":1477,"batches":0}',
+      ]),
+    ).toMatchObject({ batches: 0, projecting: false, reasonCode: "notWorthwhile", sourceRenderables: 1477 });
+    expect(parseProjectionDiagnostic(["nothing here"])).toBeUndefined();
+    expect(parseProjectionDiagnostic(["TN_RENDER_PROJECTION:{not json"])).toBeUndefined();
+  });
+
   it("treats a software adapter as a warning, because its numbers are not the machine's", () => {
     const software = summariseScene({
       ...OBSERVATION,
