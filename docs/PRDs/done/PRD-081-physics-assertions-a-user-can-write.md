@@ -9,7 +9,7 @@ prd_contract: v1
 The generated platformer and Rust simulation ran; no native host or device ran, so no desktop,
 mobile, Android, or iOS readiness claim is made.
 
-**The user-facing half of [PRD-079](../batch-26-08-19/PRD-079-phase-2-exit-criteria.md), extracted so it can
+**The user-facing half of [PRD-079](./PRD-079-phase-2-exit-criteria.md), extracted so it can
 ship without waiting on an owner decision about Phase 2's exit gate.** PRD-079 mixes an engine
 bug with a roadmap rewrite; only the engine bug costs a user anything today. Nothing in this
 PRD touches `ROADMAP.md`, the round ledger, or any gate wording. If PRD-079 Phases 2–3 are

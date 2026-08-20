@@ -80,6 +80,21 @@ that list was never turned into deletions.
 | Let `round:next` perform the action it prints | Then a wrong inference becomes a wrong build. It prints; the operator or the skill runs it |
 | Track rounds in `docs/PRDs/` | The PRD budget is 10 files and rounds are unbounded. Rounds are verification records, and that is where they go |
 
+### Stop-condition handoff for capability gates
+
+The round loop's `kill switch` remains terminal for the paired improvement instrument:
+`round:next` returns `stop round N` for any recorded stop condition other than `none` or
+`none yet`. It must not launch a fifth genre or rerun an arm to answer a capability question
+that the paired brief deliberately neutralises. A capability PRD may replace the Phase 2
+exit gate, but its result belongs in a dated `docs/verification/phase-2-<date>.md` record and
+must not be inferred from a round's functional, visual or cost columns.
+
+Owner decision by Joao Paulo Furtado, recorded through PRD-079 on 2026-08-19: adopt the
+replacement consumer-scoped gate
+once, with a same-subject negative control, while retaining the round-4 ledger unchanged. A
+red gate result is a valid result and leaves the beta row open; it does not authorise another
+paired run.
+
 ## 3. Integration Ledger
 
 | # | New thing | Live caller (non-test) | Replaces | Old path removed? | Negative control |

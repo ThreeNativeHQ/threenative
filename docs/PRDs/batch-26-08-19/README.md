@@ -12,7 +12,7 @@ repository does not have:
 
 | Beta row | Blocker | Movable here today? |
 |---|---|---|
-| 3 — a paired result vanilla cannot match | The exit gate asks the paired instrument to demonstrate a capability that instrument is designed to neutralise | **yes** — [PRD-079](./PRD-079-phase-2-exit-criteria.md), half two |
+| 3 — a paired result vanilla cannot match | The exit gate asks the paired instrument to demonstrate a capability that instrument is designed to neutralise | **yes** — [PRD-079](../done/PRD-079-phase-2-exit-criteria.md), half two |
 | 4 — parity is checkable, not asserted | The Android emulator lane has two contradicting ledgers, and is currently red on a bisected commit | **yes** — [PRD-160](./PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) |
 | 5 — a toolchain-free user ships from published artifacts | Ten release tags, zero surviving releases; needs a hosted run | **no** — [PRD-078](../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md), stays blocked |
 
@@ -41,7 +41,7 @@ exact false signal that made the baseline necessary in the first place. That is
 
 | PRD | What it closes | Complexity | State |
 | --- | --- | --- | --- |
-| [079](./PRD-079-phase-2-exit-criteria.md) | Beta row 3 — rewrites the Phase 2 exit criteria with the owner, now that the harness defect half of it has shipped as PRD-081 | 7 | HALF ONE LANDED, HALF TWO OPEN |
+| [079](../done/PRD-079-phase-2-exit-criteria.md) | Beta row 3 — rewrites the Phase 2 exit criteria with the owner, now that the harness defect half of it has shipped as PRD-081 | 7 | COMPLETE — gate adopted by the owner; its one execution is RED and Phase 2 stays open |
 | [160](./PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) | Beta row 4's Android half — attributes the emulator overlay red bisected to `c842a6a`, then adjudicates `67/0/0` against `27/40/0` with provenance | 6 | PROPOSED |
 | [159](../done/PRD-159-round-11-paired-visual-ab.md) | Round 11 — one paired blind bundle with a measured minimum detectable effect, and a disposition for all five round-10 visual gaps | 4 | COMPLETE — MDE 1; gaps 4 and 5 re-opened with frames |
 | [161](../done/PRD-161-the-kill-switch-has-no-working-instrument.md) | The framework LOC trigger 262 lines away with no attribution, the native trigger 28,266 past with no owner, and a dead `round:deletions` | 5 | COMPLETE |
@@ -59,9 +59,9 @@ Its Phase 1 attribution — engine bug or harness bug — must be written before
 **3. PRD-159 third — done.** Two conditions captured, one blind bundle scored, five gaps disposed:
 [`round-11-2026-08-19.md`](../../verification/round-11-2026-08-19.md).
 
-**4. PRD-079 last, and only its half two.** It is the one item here that **cannot be finished
-without an owner decision**: rewriting a phase gate is not a defect fix and no agent has the
-authority to move it alone. Prepare the rewrite and the evidence; stop at the decision.
+**4. PRD-079 last, and only its half two — done.** The rewrite and its evidence were prepared, the
+owner adopted the gate on 2026-08-19, and it was executed once. The execution is RED and claims no
+score points.
 
 Within each PRD, its own phases are the order, and a later phase does not start on an unrun
 earlier one.

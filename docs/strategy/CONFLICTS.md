@@ -19,6 +19,22 @@ made here.
 | 8 | Cloud builds, device lab, store submission | The mobile gate is *resolved on paper, unrun in practice* | Every cloud claim is downstream of Phase 0a/0b running on a physical phone. Do not sell what has not booted. |
 | 9 | A shipping bar reached without physical hardware — [ROADMAP.md](ROADMAP.md)'s Tier 1 | The product promise includes web, desktop and mobile, and the device matrix is the definition of done; neither admits a tier that stops at the emulator | **Stage, do not repeal.** Tier 1 licenses one sentence — browser, desktop, Android emulator, iOS packaging — and no mobile-readiness claim. The device matrix stays the definition of done; Tier 2 restarts when a stranger has played a ThreeNative game for five minutes. Owned by [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md). **Open decision:** whether the charter should be amended to name the tiers, or keep the tension recorded here. |
 
+## Phase 2 capability gate and the paired sweep — PRD-079
+
+The old Phase 2 wording asked a paired vanilla arm to fail to match a capability while the
+benchmark deliberately gave both arms the same `playtest` bridge. That is a strategy/instrument
+conflict, not evidence that the framework capability is absent. Round 4's functional tie was
+specifically two real arms that exited `0/1` before assertion evaluation, so its cost and visual
+columns remain untouched and its history is not rewritten.
+
+Owner decision by Joao Paulo Furtado, 2026-08-19: adopt a three-part replacement gate — consumer-visible capability,
+an instrument whose control does not receive that capability, and a same-subject negative control
+observed red. The paired sweep stays in the loop as the cost-and-polish ratchet; it is not rerun
+for this question. The first execution is recorded as red in
+[`phase-2-2026-08-19.md`](../verification/phase-2-2026-08-19.md), because the platformer proof
+was already shipped by PRD-081 and cannot be counted as new post-adoption evidence. This keeps
+the gate honest without claiming that vanilla lost a capability column.
+
 ## Package count and budget status
 
 `pnpm budgets` currently reports seven framework packages and five example workspaces. The

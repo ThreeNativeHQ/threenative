@@ -4,7 +4,16 @@ prd_contract: v1
 
 # PRD-079 — Phase 2's exit gate: the round-4 proof measured the harness, and the gate cannot be passed as written
 
-**Status: HALF ONE LANDED, HALF TWO OPEN — amended 2026-08-19.** Phase 0, the harness defect
+**Status: COMPLETE, 2026-08-19 — and Phase 2 is still not green, which is the point.** This PRD's
+deliverable was a Phase 2 exit gate that can be passed, decided with the owner. The owner adopted
+the replacement gate on 2026-08-19 (recorded in [CONFLICTS.md](../../strategy/CONFLICTS.md) and
+[ROADMAP.md](../../strategy/ROADMAP.md)), and it was executed once. **That execution is RED and
+claims no score points**: the platformer composition it reproduced shipped in PRD-081 on
+2026-08-12, before the decision, so it is consumer evidence and not new post-adoption evidence.
+Beta row 3 stays open, now blocked on shipping a capability rather than on a gate nobody could
+pass. Evidence: [`phase-2-2026-08-19.md`](../../verification/phase-2-2026-08-19.md).
+
+Prior status: HALF ONE LANDED, HALF TWO OPEN — amended 2026-08-19.** Phase 0, the harness defect
 below, was extracted into [PRD-081](../done/PRD-081-physics-assertions-a-user-can-write.md) and shipped
 complete on 2026-08-12 (commit `0fe0e02b`, "compose physics with playtest assertions"), after this
 file was written. On `HEAD` today: `packages/physics/src/plugin.ts:156` contributes
@@ -13,8 +22,8 @@ advertises `runtime.audio`, `runtime.world` and whatever a plugin contributed, a
 `packages/core/__tests__/playtest.spec.ts:38` asserts the capability is *not* advertised without a
 contributing plugin. **§1's third and fourth bullets are therefore stale and are kept for the
 record, not as current state.** This is a read of the tree, not an executed run: nothing has
-re-measured a paired arm. **Half two — the gate cannot be passed as written — is untouched, and it
-is what this PRD is now for.** Relative links in this file were rewritten for its new folder; no
+re-measured a paired arm. **The replacement gate was adopted and executed once on 2026-08-19. The
+execution is RED, and Phase 2 remains open.** Relative links in this file were rewritten for its new folder; no
 other line moved.
 
 Original status, 2026-08-11: **PROPOSED. Nothing here is executed.** §1 and §2 are a read of

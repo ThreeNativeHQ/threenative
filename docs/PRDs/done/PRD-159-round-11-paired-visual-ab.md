@@ -25,7 +25,7 @@ belief — and the round-10 gap list is either closed with evidence or re-opened
 this machine.
 
 **Blocks:** any future claim that a template change improved how a generated project looks. It does
-not block [PRD-079](../batch-26-08-19/PRD-079-phase-2-exit-criteria.md), which measures the paired *game* arms.
+not block [PRD-079](./PRD-079-phase-2-exit-criteria.md), which measures the paired *game* arms.
 
 **Complexity: 4 → MEDIUM mode.** No new module. One capture of before-frames from a known commit,
 one capture of after-frames from `HEAD`, one bundle, one scored run, one ledger.

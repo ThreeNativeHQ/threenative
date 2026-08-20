@@ -6,10 +6,11 @@ not done; nothing here is aspirational prose.
 
 **Legend:** ✅ done · ⚠️ partially done · ❌ not done.
 
-**Status (reconciled 2026-08-16):** Gate 0 ✅ closed 2026-08-07 · Phase 1 ✅ passed
-2026-08-08 · Phase 2 ⚠️ active, gate not green · Phase 3 ⚠️ started out of order by the
-native lane. Completed work is archived under `docs/PRDs/done/`; active and blocked work remains
-in its owning folder.
+**Status (reconciled 2026-08-19):** Gate 0 ✅ closed 2026-08-07 · Phase 1 ✅ passed
+2026-08-08 · Phase 2 ⚠️ active, its replacement gate was adopted 2026-08-19 and its one
+execution is red · Phase 3 ⚠️ executed once for that gate, while the native lane remains out of
+order. Completed work is archived under `docs/PRDs/done/`; active and blocked work remains in its
+owning folder.
 The charter wins wherever this file disagrees with it.
 
 Phases are gated, not scheduled. A phase starts because the previous gate passed.
@@ -32,7 +33,7 @@ phase gates are this file's subject. If a number disagrees, the value-propositio
 |---|---|---|
 | 1 | `pnpm typecheck && pnpm lint && pnpm test` green, budgets green, no cap raised | ✅ held on every landed change |
 | 2 | Seven templates scaffold, build, and pass their playtests from a clean machine | ✅ `pnpm test:templates`, scaffold-smoke in CI |
-| 3 | A paired result the vanilla arm cannot match — the Phase 2 exit gate | ⚠️ not yet; round 3 lost visual and cost, and round 9 lost the visual column again on a defect that reached the screen through generated template source ([round-9](../verification/round-9-2026-08-15.md)) |
+| 3 | The adopted three-part Phase 2 capability gate must **PASS**: a post-adoption capability that vanilla Three.js cannot match, a consumer-scoped proof on an instrument that does not hand the control arm the capability, and a same-subject negative control observed red | ⚠️ open; the owner adopted the replacement gate on 2026-08-19 and its one Phase 3 execution is red. The paired sweep remains a cost-and-polish ratchet, not the capability instrument ([phase-2-2026-08-19](../verification/phase-2-2026-08-19.md)) |
 | 4 | Web/native parity is *checkable*, not asserted — PRD-054's matrix passes aggregate | ⚠️ Tier 1 not reached. The desktop lane is measured with provenance and checked — [tier-1-2026-08-15](../verification/tier-1-2026-08-15.md), `66/0/1`, exit `2` — and cannot exit `0` while the multitouch row is excluded ([PRD-077](../PRDs/BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md), blocked on a host that delivers a kernel input device). The Android emulator lane's `67/0/0` vs `27/40/0` disagreement is still open |
 | 5 | A user with no C++ toolchain ships a native game from published artifacts | ⚠️ **There are no published artifacts.** Ten release tags produced zero surviving releases; the lane deletes its own release when the consumer proof fails ([PRD-078](../PRDs/BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md)). The `v0.1.14` version skew is diagnosed and fixed — the binary's version now comes from `package.json` instead of a second copy in `CMakeLists.txt` — and the tag that would prove it has not been pushed |
 
@@ -121,7 +122,7 @@ neither. The tension is recorded as row 9 in [CONFLICTS.md](CONFLICTS.md).
 | **Beta row 4 — reconcile the two contradicting parity ledgers** | [PRD-076](../PRDs/done/PRD-076-tier-1-parity-reconciliation.md) | ⚠️ **desktop lane adjudicated 2026-08-15, Android still open.** A third run with provenance measured `66/0/1`: r2's summary reproduces exactly, r2's `exit 0` cell is still impossible, and tier-1's overlay failure does not reproduce — [tier-1-2026-08-15](../verification/tier-1-2026-08-15.md). Both predecessors carry desktop-scoped superseded banners. Originally, 2026-08-11: `parity-2026-08-10-r2` and `tier-1-2026-08-10` disagree on the same device on the same day (Android `67/0/0` vs `27/40/0`; desktop overlay pass vs GPU-validation fail). The r2 desktop cell `66/0/1 exit 0` is **not producible** — `reportExitCode` returns `2` whenever `blocked > 0`. Phase 0 is provenance, not repair |
 | **Beta row 4 — desktop native multitouch** | [PRD-077](../PRDs/BLOCKED/requires-evdev-delivery/PRD-077-desktop-multitouch-injector.md) | ⚠️ proposed 2026-08-11. The desktop host already dispatches `SDL_EVENT_FINGER_*` as multi-contact PointerEvents (`platform/input.cpp:480`); the `desktop-multitouch-input` exclusion exists only because the harness has no injector, and it guarantees the desktop lane can never exit `0` |
 | **Beta row 5 — the toolchain-free consumer proof** | [PRD-078](../PRDs/BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md) | ❌ **BLOCKED** on one hosted release run with all five legs green; its own subject, the missing Vulkan ICD, is fixed. Filed 2026-08-11. 10 release tags, 10 runs, **0 published releases** — `cleanup-failed-release` deletes each one after `clean-consumer` fails. Run `31360511081` died in 314 ms: `SDL_CreateWindow failed: Installed Vulkan doesn't implement the VK_KHR_surface extension`. A missing runner ICD, not a framework defect |
-| **Beta row 3 — reopen the Phase 2 win criteria** | [PRD-079](../PRDs/batch-26-08-19/PRD-079-phase-2-exit-criteria.md) | ⚠️ proposed 2026-08-11, executing round 4's own recorded next action. Both arms failed `TN_PLAYTEST_CAPABILITY_MISSING` for `runtime.physics`: `core/src/playtest.ts:144` auto-advertises only `runtime.audio` and `runtime.world`, and nothing in `packages/` writes `physicsDebugSeries`. The round-4 "functional tie" is a tie between two runs that never reached assertion evaluation |
+| **Beta row 3 — reopen the Phase 2 win criteria** | [PRD-079](../PRDs/done/PRD-079-phase-2-exit-criteria.md) | ⚠️ open; the owner adopted the replacement gate on 2026-08-19. The one execution reproduced the platformer consumer proof and its red `rapier()` deletion control, but did not close the gate: the proof predates adoption and cannot establish a vanilla-specific exclusivity claim. The round-4 "functional tie" remains a tie between two runs that never reached assertion evaluation. Evidence: [phase-2-2026-08-19](../verification/phase-2-2026-08-19.md) |
 | **The five-minute stranger test** | [PRD-080](../PRDs/BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) | ❌ **BLOCKED** on one external person. Filed 2026-08-11; it was specified two mutually inconsistent ways until Phase 0 settled it on 2026-08-15 — the single definition now lives in [product/STRANGER-TEST-PROTOCOL.md](../product/STRANGER-TEST-PROTOCOL.md), one player, own device, at a URL. Run zero times |
 | Build-time asset pipeline | none | ❌ deferred behind two measured triggers (`docs/product/ASSET-PIPELINE.md`) |
 | Device spikes 0a / 0b | none — forbidden | ❌ never a PRD (`CHARTER.md:364`); both were answered by the native lane instead |
@@ -140,16 +141,35 @@ equal in every genre, framework blind polish strictly higher in two, authored LO
 non-positive in two, no genre losing both, budgets green with no cap raised. Evidence:
 [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md). **+30 → ~60/100.**
 
-**⚠️ Phase 2 — capabilities vanilla does not have.** *Gate to exit:* hot reload/state
-preservation or physics reach ships with consumer-scoped proof the paired vanilla arm cannot
-match inside the same brief. **Still not green:** round 3 lost visual and cost on `open-world`
-while tying functionally, and round 4's `physics-puzzle` proof also tied functionally at 0/1;
-the framework won blind visual polish, but vanilla won fair authored cost by 2 LOC; no framework-only capability
-was demonstrated because both real arms failed closed on missing `runtime.physics`. The
-no-op control reached assertion evaluation and failed its physics assertions, so the negative
-control is now physics-specific. Evidence: [round-4-2026-08-10.md](../verification/round-4-2026-08-10.md)
-and `verification/round-3-2026-08-09.md`. The kill switch prohibits a fifth genre or arm rerun.
-**+15 → ~75/100.**
+**⚠️ Phase 2 — consumer-scoped capability evidence.** Owner decision by Joao Paulo Furtado, 2026-08-19: adopt
+PRD-079's replacement gate and execute it once. Phase 2 exits only when all three hold:
+
+1. A capability ships with a user-observable outcome that vanilla Three.js has no answer for;
+   the proof is consumer-scoped, so it evaluates the outcome rather than counting framework
+   artifacts or package lines.
+2. The proof uses an instrument that does not hand the control arm the capability under test.
+   The paired benchmark deliberately gives both arms the playtest bridge, so it remains the
+   cost-and-polish ratchet and is retired as the instrument for this gate.
+3. The same subject and Phase 3 execution include a negative control that is observed red; a missing
+   capability must fail closed, not skip or pass vacuously.
+
+The litmus was applied before adoption: a pre-existing measurement cannot close the gate merely
+because it already has the right shape, and a build indistinguishable from the previous one is
+not new shipping evidence. The platformer composition proof from PRD-081 is therefore retained
+as history and rerun for the consumer check, but it is not counted as a new Phase 2 win.
+
+**Phase 3 result, 2026-08-19: RED.** The generated platformer evaluated `settled` without bridge
+code, and deleting `rapier()` failed with `TN_PLAYTEST_CAPABILITY_MISSING` on the same scenario.
+Those observations prove the composition and its load-bearing control. They do not prove a
+post-adoption capability that vanilla cannot match: the composition shipped in PRD-081 before
+this decision, and the non-capability control is not a vanilla implementation. The literal
+core boundary check also finds pre-existing generic `runtime.rapier` metadata; no new physics
+dependency was added to core, but the stronger absolute wording remains unmet. Phase 2 stays
+open. Evidence: [phase-2-2026-08-19](../verification/phase-2-2026-08-19.md), with round 4 retained
+at [round-4-2026-08-10](../verification/round-4-2026-08-10.md).
+
+No new genre sweep or arm rerun was authorised. **+15 → ~75/100 only if this gate later passes;
+no score points are claimed from this red execution.**
 
 **⚠️ Phase 3 — the platform question.** Does not formally start until Phase 2 is green, but
 the native lane has already executed most of it. Spike 0a (rendering) and 0b (native physics)
