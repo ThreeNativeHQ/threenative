@@ -10,7 +10,7 @@ dependency is not ready.
 | [`requires-parity-rerun/`](requires-parity-rerun/) | [PRD-054](requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | A clean, non-blocked cross-platform parity run |
 | [`requires-touch-evidence/`](requires-touch-evidence/) | [PRD-055](requires-touch-evidence/PRD-055-native-hud-reopened.md) | Android touch-playability evidence |
 | [`requires-physical-device/`](requires-physical-device/) | [PRD-056](requires-physical-device/PRD-056-physical-mobile-qualification.md) | Named physical Android/iOS devices, signed artifacts, and Apple credentials |
-| [`review-cap/`](review-cap/) | [PRD-057](review-cap/PRD-057-native-audio-parity.md) | Specification reopen after the review cap |
+| [`review-cap/`](review-cap/) | [PRD-057](review-cap/PRD-057-native-audio-parity.md), [PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) | Specification reopen after the review cap; for PRD-160, an owner-approved parity run that reaches pixel comparison |
 | [`requires-physical-proof/`](requires-physical-proof/) | [PRD-058](requires-physical-proof/PRD-058-performance-reliability-observability.md) | Current-candidate physical evidence and marker-control repair |
 | [`requires-release-credentials/`](requires-release-credentials/) | [PRD-060](requires-release-credentials/PRD-060-promoted-consumer-distribution.md) | Release, registry, and platform-signing credentials plus prerequisite evidence |
 | [`requires-ray-measurement/`](requires-ray-measurement/) | [PRD-088](requires-ray-measurement/PRD-088-physics-spatial-queries.md) | Authoritative pre-implementation ray measurement |

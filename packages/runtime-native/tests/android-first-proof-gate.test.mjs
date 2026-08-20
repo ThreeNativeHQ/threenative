@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { PNG } from 'pngjs';
 
 import {
@@ -22,10 +25,12 @@ import {
   engineFromLog,
   filterAppLog,
   inspectScreenshot,
+  prepareAndroidEmulator,
   javaMajorFromRelease,
   parseAdbDevices,
   parseArgs,
   selectDevice,
+  verifyAndroidFirstProof,
 } from '../scripts/verify-android-first-proof.mjs';
 
 test('screenshot inspection rejects blank PNGs and accepts visible output', () => {
@@ -60,23 +65,18 @@ test('packaged Android asset must match the generated bundle metadata', () => {
   );
 });
 
-test('argument parser resolves paths and validates timing values', () => {
-  const options = parseArgs([
-    '--device', 'emulator-5554',
-    '--timeout-ms', '12000',
-    '--settle-ms', '2500',
-    '--screenshot', 'artifacts/android/cube.png',
-    '--skip-build',
-  ]);
-
-  assert.equal(options.device, 'emulator-5554');
-  assert.equal(options.timeoutMs, 12000);
-  assert.equal(options.settleMs, 2500);
-  assert.equal(options.skipBuild, true);
-  assert.match(options.screenshotPath, /artifacts\/android\/cube\.png$/);
-  assert.ok(options.screenshotPath);
-  assert.throws(() => parseArgs(['--timeout-ms', '999']), /at least 1000/);
-  assert.throws(() => parseArgs(['--unknown']), /Unknown option/);
+test('first proof prepares emulator before installation and launch', async () => {
+  const calls = [];
+  assert.deepEqual(prepareAndroidEmulator('emulator-5554', (...args) => calls.push(args)), { prepared: true }); assert.deepEqual(prepareAndroidEmulator('physical-device', (...args) => calls.push(args)), { prepared: false }); assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], ['shell', 'settings', 'put', 'secure', 'immersive_mode_confirmations', 'confirmed']);
+  assert.throws(() => parseArgs(['--timeout-ms', '999']), /at least 1000/); assert.throws(() => parseArgs(['--unknown']), /Unknown option/); calls.length = 0;
+  const temporary = makeTempDirSync('threenative-android-proof-'), apk = join(temporary, 'app-debug.apk'), screenshot = new PNG({ height: 80, width: 80 });
+  for (let index = 0; index < screenshot.data.length; index += 4) screenshot.data.set([255, 0, 255, 255], index); screenshot.data.set([0, 0, 0, 255], 0); writeFileSync(apk, 'test apk');
+  const output = PNG.sync.write(screenshot), log = `${THREE_VERSION_MARKER}\n${READY_MARKER}\n${FIRST_FRAME_MARKER}\n${FRAME_MARKER}\n08-08 12:00:01.000 4242 4242 I MystralRuntime: TN_PRESENTS_TICK:{"frames":60,"presents":60}\n`;
+  const execute = (_command, args) => (calls.push(args), args[0] === 'devices' ? { status: 0, stdout: 'List of devices attached\nemulator-5554 device\n' } : args.includes('pidof') ? { status: 0, stdout: '4242\n' } : args.includes('logcat') && args.includes('-d') ? { status: 0, stdout: log } : args.includes('exec-out') ? { status: 0, stdout: output } : args.includes('start') ? { status: 0, stdout: 'Status: ok\n' } : args.includes('install') ? { status: 0, stdout: 'Success\n' } : args.includes('size') ? { status: 0, stdout: 'Physical size: 1080x2400\n' } : args.includes('density') ? { status: 0, stdout: 'Physical density: 420\n' } : { status: 0, stdout: '' });
+  const report = await verifyAndroidFirstProof(parseArgs(['--device', 'emulator-5554', '--apk', apk, '--skip-build', '--timeout-ms', '1000', '--settle-ms', '0', '--logcat', join(temporary, 'logcat.txt'), '--report', join(temporary, 'report.json'), '--screenshot', join(temporary, 'proof.png')]), { tools: { adb: 'fake-adb', javaHome: 'fake-java', sdkRoot: 'fake-sdk' }, run: execute, verifyAndroidBundle: () => ({ entry: 'test', outputSha256: 'test', publicApiPackage: '@threenative/core' }), verifyPackagedAndroidBundle: () => {}, delay: async () => {} });
+  const preparation = calls.findIndex((args) => args.includes('immersive_mode_confirmations')), installation = calls.findIndex((args) => args.includes('install')), launch = calls.findIndex((args) => args.includes('start'));
+  assert.ok(preparation >= 0 && preparation < installation && installation < launch); assert.deepEqual(report.devicePreparation, { prepared: true });
 });
 
 test('adb device parsing selects one online target and explains ambiguous states', () => {

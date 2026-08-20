@@ -4,10 +4,22 @@ prd_contract: v1
 
 # PRD-160 — The Android emulator lane is red on a bisected commit, and beta row 4's Android half has been open since the day two ledgers disagreed
 
-**Status:** PROPOSED, 2026-08-19. Nothing below has executed. The bisect in §1.2 was performed on
-one booted emulator on 2026-08-19 and is recorded here as a prior observation, not as this PRD's
-result. **No physical-device, iOS, or mobile-readiness claim is made or licensed by anything in
-this file.**
+**Status: COMPLETE, 2026-08-19.** The overlay red is attributed to a **harness defect** — Android 15
+stopped printing `mCurrentFocus` under `dumpsys window windows`, so the foreground guard could only
+fail closed — repaired with a regression test carrying both real API-35 dumps as fixtures. Two full
+emulator lanes then measured `66 / 1 / 0` against a same-commit browser reference set, the first
+PRD-160 runs to reach pixel comparison at all. **`parity-2026-08-10-r2`'s `67 / 0 / 0` reproduces
+and `tier-1-2026-08-10`'s `27 / 40 / 0` is retired on its Android row**, each with a scoped banner.
+Beta row 4's Android half has one number instead of two for the first time since 2026-08-11, and it
+is **not green**: the lane exits `1` on one row that never reaches its marker, filed as
+[PRD-166](../PRD-166-camera-parented-overlay-never-marks-on-android.md). Evidence:
+[`android-parity-2026-08-19.md`](../../verification/android-parity-2026-08-19.md).
+**No physical-device, iOS, arm64, frame-rate or mobile-readiness claim is made or licensed by
+anything in this file. The emulator proves the emulator.**
+
+Prior status, 2026-08-19: BLOCKED / review-cap. The Android rerun was red at the foreground-capture
+guard and stopped before pixel comparison, so no evidence identified which predecessor reproduced.
+The guard has since been attributed and repaired, which is what unblocked it.
 
 **Outcome:** the Android emulator gate is green or its red is attributed to a named defect with an
 owner, and the two contradicting Android parity ledgers are adjudicated the way the desktop pair
@@ -18,7 +30,7 @@ number instead of two.
 and `threenative-prd050` boots on KVM in about 30 s. **This does not need CI minutes and does not
 need a phone.**
 
-**Blocks:** beta row 4 aggregate. [PRD-076](../done/PRD-076-tier-1-parity-reconciliation.md)
+**Blocks:** beta row 4 aggregate. [PRD-076](./PRD-076-tier-1-parity-reconciliation.md)
 adjudicated the desktop lane on 2026-08-15 and explicitly left Android open.
 [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md) and
 [PRD-064](../PRD-064-tier-1-native-reliability.md) both carry an Android cell this settles.

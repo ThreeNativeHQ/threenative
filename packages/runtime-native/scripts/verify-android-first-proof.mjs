@@ -24,13 +24,13 @@ export { FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 export const APP_ID = 'com.threenative.game';
 export const ACTIVITY_CLASS = 'com.threenative.runtime.MystralActivity';
 export const ACTIVITY = `${APP_ID}/${ACTIVITY_CLASS}`;
-export const SUCCESS_MARKER = FRAME_MARKER;
-export const REQUIRED_MARKERS = [
-  THREE_VERSION_MARKER,
-  READY_MARKER,
-  FIRST_FRAME_MARKER,
-  FRAME_MARKER,
-];
+export const SUCCESS_MARKER = FRAME_MARKER,
+  prepareAndroidEmulator = (serial, execute) => {
+    if (serial.startsWith('emulator-'))
+      execute('shell', 'settings', 'put', 'secure', 'immersive_mode_confirmations', 'confirmed');
+    return { prepared: serial.startsWith('emulator-') };
+  };
+export const REQUIRED_MARKERS = [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspace = resolve(root, '..', '..');
@@ -371,14 +371,14 @@ function adbArgs(serial, ...args) {
   return ['-s', serial, ...args];
 }
 
-function getPid(adb, serial) {
-  const result = run(adb, adbArgs(serial, 'shell', 'pidof', APP_ID), { allowFailure: true, timeoutMs: 10000 });
+function getPid(adb, serial, execute = run) {
+  const result = execute(adb, adbArgs(serial, 'shell', 'pidof', APP_ID), { allowFailure: true, timeoutMs: 10000 });
   if (result.status !== 0) return null;
   return String(result.stdout).trim().split(/\s+/).find(Boolean) || null;
 }
 
-function captureLog(adb, serial) {
-  const result = run(adb, adbArgs(serial, 'logcat', '-d', '-v', 'threadtime'), { timeoutMs: 15000 });
+function captureLog(adb, serial, execute = run) {
+  const result = execute(adb, adbArgs(serial, 'logcat', '-d', '-v', 'threadtime'), { timeoutMs: 15000 });
   return String(result.stdout || '');
 }
 
@@ -513,7 +513,7 @@ function buildFailureMessage(analysis, logPath) {
 }
 
 export async function verifyAndroidFirstProof(options, dependencies = {}) {
-  const tools = dependencies.tools || discoverTools();
+  const tools = dependencies.tools || discoverTools(); const execute = dependencies.run || run; const verifyBundle = dependencies.verifyAndroidBundle || verifyAndroidBundle; const verifyPackage = dependencies.verifyPackagedAndroidBundle || verifyPackagedAndroidBundle; const prepare = dependencies.prepareAndroidEmulator || prepareAndroidEmulator;
   const now = dependencies.now || (() => new Date());
   const wait = dependencies.delay || delay;
   const startedAt = now();
@@ -523,12 +523,12 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   if (!existsSync(options.apk)) {
     throw new GateError(`Debug APK not found at ${options.apk}. Remove --skip-build so the gate builds it.`);
   }
-  const bundleMetadata = verifyAndroidBundle();
-  verifyPackagedAndroidBundle(options.apk, bundleMetadata, tools.javaHome);
+  const bundleMetadata = verifyBundle();
+  verifyPackage(options.apk, bundleMetadata, tools.javaHome);
 
-  const devicesOutput = run(tools.adb, ['devices', '-l'], { timeoutMs: 10000 }).stdout;
+  const devicesOutput = execute(tools.adb, ['devices', '-l'], { timeoutMs: 10000 }).stdout;
   const serial = selectDevice(parseAdbDevices(String(devicesOutput)), options.device);
-  const common = (...args) => run(tools.adb, adbArgs(serial, ...args), { timeoutMs: 120000 });
+  const common = (...args) => execute(tools.adb, adbArgs(serial, ...args), { timeoutMs: 120000 }); const devicePreparation = prepare(serial, (...args) => common(...args));
 
   console.log(`2/4 Targeting Android device ${serial}...`);
   if (!options.skipInstall) {
@@ -552,26 +552,26 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   let analysis = { markerFound: false, missingMarkers: [...REQUIRED_MARKERS], failures: [] };
   const deadline = Date.now() + options.timeoutMs;
   while (Date.now() <= deadline) {
-    pid ||= getPid(tools.adb, serial);
-    rawLog = captureLog(tools.adb, serial);
+    pid ||= getPid(tools.adb, serial, execute);
+    rawLog = captureLog(tools.adb, serial, execute);
     appLog = filterAppLog(rawLog, pid);
     analysis = analyzeAppLog(appLog);
     writeText(options.logPath, appLog.endsWith('\n') ? appLog : `${appLog}\n`);
     if (analysis.failures.length) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
     if (analysis.markerFound) break;
-    if (pid && !getPid(tools.adb, serial)) {
+    if (pid && !getPid(tools.adb, serial, execute)) {
       throw new GateError(`Android process ${APP_ID} exited before success. Full log: ${options.logPath}`);
     }
     await wait(500);
   }
 
   if (!analysis.markerFound) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
-  if (!pid || !getPid(tools.adb, serial)) {
+  if (!pid || !getPid(tools.adb, serial, execute)) {
     throw new GateError(`Success marker appeared, but Android process ${APP_ID} is no longer alive. Full log: ${options.logPath}`);
   }
 
   if (options.settleMs > 0) await wait(options.settleMs);
-  rawLog = captureLog(tools.adb, serial);
+  rawLog = captureLog(tools.adb, serial, execute);
   appLog = filterAppLog(rawLog, pid);
   // The app has reported 300 frames by now, so it has emitted five present ticks. A log with none
   // is a gate that measured nothing, which is the failure this repository treats as the dangerous
@@ -582,12 +582,12 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   // Before the screenshot, so a mismatched engine fails on the engine rather than on whatever the
   // wrong build happened to draw.
   const engineCheck = assertEngine(appLog, options.expectEngine);
-  if (!getPid(tools.adb, serial)) {
+  if (!getPid(tools.adb, serial, execute)) {
     throw new GateError(`Android process ${APP_ID} exited during the ${options.settleMs} ms stability window. Full log: ${options.logPath}`);
   }
 
   if (!options.screenshotPath) throw new GateError('Android proof requires a screenshot path.');
-  const png = run(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
+  const png = execute(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
   const dimensions = inspectScreenshot(png);
   mkdirSync(dirname(options.screenshotPath), { recursive: true });
   writeFileSync(options.screenshotPath, png);
@@ -626,7 +626,7 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
     // report that does not say which engine produced it cannot be compared with another one.
     jsEngine: engineCheck.engine,
     jsEngineExpected: engineCheck.expected,
-    deviceSerial: serial,
+    deviceSerial: serial, devicePreparation,
     pid,
     apk: options.apk,
     apkBytes: statSync(options.apk).size,

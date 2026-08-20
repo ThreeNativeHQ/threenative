@@ -32,6 +32,7 @@ import {
   androidDisplayRestoreTarget,
   androidDisplaySize,
   androidForegroundBlocker,
+  androidWindowDump,
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
@@ -237,6 +238,53 @@ test("Android capture waits for the pinned landscape size instead of reporting a
   const source = readFileSync(runner, "utf8");
   assert.match(source, /await waitForAndroidDisplaySize\(common, ANDROID_CAPTURE_SIZE\)/u);
   assert.match(source, /TN_ANDROID_DISPLAY_ORIENTATION: captured \$\{capture\.width\}/u);
+});
+
+test("the foreground guard reads a window dump that actually carries mCurrentFocus", () => {
+  // 2026-08-19: the emulator lane reported 66 rows of TN_ANDROID_FOCUS_UNKNOWN and stopped before
+  // any pixel comparison. Nothing was wrong with the guard or the renderer. Android 15 (API 35)
+  // stopped printing `mCurrentFocus` under the `windows` subcommand, and the lane was asking for
+  // exactly that dump. A guard fed a dump the field was never in fails closed forever, which reads
+  // as a lane that cannot be run rather than as a lane asking the wrong question.
+  //
+  // Both strings below are real `adb -s emulator-5554` output from
+  // sdk_gphone64_x86_64, ro.build.version.sdk=35, on 2026-08-19.
+  const apiThirtyFiveWindowsSubcommand = [
+    "WINDOW MANAGER WINDOWS (dumpsys window windows)",
+    "  Window #0 Window{52ed8e5 u0 ScreenDecorOverlayBottom}:",
+    "    mDisplayId=0 rootTaskId=1 mSession=Session{9a1cfb6 829:u0a10181}",
+    "    mOwnerUid=10181 showForAllUsers=true package=com.android.systemui appop=NONE",
+  ].join("\n");
+  const apiThirtyFiveFullDump = [
+    "  mLayoutSeq=4948",
+    "  mCurrentFocus=Window{2528440 u0 com.threenative.game/com.threenative.runtime.MystralActivity}",
+    "  mFocusedApp=ActivityRecord{585e449 u0 com.threenative.game/com.threenative.runtime.MystralActivity t296}",
+  ].join("\n");
+
+  // The field is genuinely absent from the subcommand the lane used, so the guard was right to
+  // refuse. This row is the defect, recorded rather than argued.
+  assert.equal(androidFocusedWindowOwner(apiThirtyFiveWindowsSubcommand), null);
+  assert.match(
+    androidForegroundBlocker(apiThirtyFiveWindowsSubcommand),
+    /TN_ANDROID_FOCUS_UNKNOWN/u,
+  );
+
+  const asked = [];
+  const common = (...args) => {
+    asked.push(args.join(" "));
+    return {
+      stdout: args.at(-1) === "windows" ? apiThirtyFiveWindowsSubcommand : apiThirtyFiveFullDump,
+    };
+  };
+  // The dump the lane takes must be one the field is in, on this API level.
+  assert.equal(androidForegroundBlocker(androidWindowDump(common)), null);
+  assert.deepEqual(asked, ["shell dumpsys window"]);
+
+  // And the call sites take it through that helper, so a revert to the `windows` subcommand turns
+  // this test red instead of turning 66 conformance rows red.
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /androidForegroundBlocker\(androidWindowDump\(common\)\)/u);
+  assert.doesNotMatch(source, /common\("shell", "dumpsys", "window", "windows"\)/u);
 });
 
 test("a capture is refused when any window but the app owns focus", () => {

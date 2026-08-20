@@ -854,6 +854,20 @@ export function androidFocusedWindowOwner(windowDump) {
   return /^\s*mCurrentFocus=Window\{[^}]*?\s(\S+)\}/mu.exec(String(windowDump))?.[1] || null;
 }
 
+/**
+ * The dump the focus question is answerable from.
+ *
+ * `dumpsys window windows` prints one block per window and, on Android 15 (API 35), no
+ * `mCurrentFocus` at all — the field moved out of that subcommand. A guard reading it can only
+ * ever fail closed, which on 2026-08-19 turned 66 conformance rows into `TN_ANDROID_FOCUS_UNKNOWN`
+ * before a single pixel was compared. The full `dumpsys window` dump still carries the field on
+ * every level this lane targets, so that is what the guard is fed. Failing closed on a dump the
+ * field was never in is a lane that reports on its own question, not on the renderer.
+ */
+export function androidWindowDump(common) {
+  return String(common("shell", "dumpsys", "window").stdout || "");
+}
+
 export function androidForegroundBlocker(windowDump, appId = APP_ID) {
   const dialog = androidSystemDialog(windowDump);
   if (dialog) return `TN_ANDROID_SYSTEM_DIALOG: ${dialog}`;
@@ -1148,9 +1162,7 @@ async function runAndroid(
     if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
     if (!androidPid(tools.adb, serial))
       throw new Error(`Android process died during the ${settleMs} ms settle window.`);
-    const beforeCaptureBlocker = androidForegroundBlocker(
-      common("shell", "dumpsys", "window", "windows").stdout,
-    );
+    const beforeCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
     if (beforeCaptureBlocker) {
       throw new Error(beforeCaptureBlocker);
     }
@@ -1172,9 +1184,7 @@ async function runAndroid(
         `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
       );
     }
-    const afterCaptureBlocker = androidForegroundBlocker(
-      common("shell", "dumpsys", "window", "windows").stdout,
-    );
+    const afterCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
     if (afterCaptureBlocker) {
       throw new Error(afterCaptureBlocker);
     }

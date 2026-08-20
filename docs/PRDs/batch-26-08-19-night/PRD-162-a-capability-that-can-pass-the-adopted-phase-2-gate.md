@@ -18,7 +18,7 @@ conditions the attempt failed and why. Both are results; only silence is not.
 
 **Blocks:** beta row 3 — the only one of the three beta blockers that is open to *work* rather than
 to an owner decision or a hosted run. Row 5 needs a release run; row 4's Android half is
-[PRD-160](../batch-26-08-19/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md).
+[PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md).
 
 **Complexity: 8 → LARGE mode.** One capability shipped across a web/native seam, one honest vanilla
 arm, one instrument that does not cheat, three phases that can each end the PRD.
