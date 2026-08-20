@@ -4,8 +4,11 @@ prd_contract: v1
 
 # PRD-161 — The framework is 262 lines from its review trigger, the native runtime is 28,266 past its own, and the tool that finds deletable surface crashes
 
-**Status:** PROPOSED, 2026-08-19. Nothing below has executed. Every number in §1 was produced by
-running the repository's own commands on `HEAD` today and is quoted verbatim.
+**Status:** COMPLETE, 2026-08-19. Phases 0–4 executed in lane `prd161-r3`; independent review approved commit `1a74e245` with no `DEFECT` or `EVIDENCE-GAP` findings.
+Evidence is recorded in [the framework attribution](../../verification/loc-attribution-2026-08-19.md),
+the [native census](../../verification/native-runtime-census-2026-08-16.md), and PRD-064's current
+owner record. Every number in §1 is the pre-execution baseline produced by the repository's own
+commands on `HEAD` and is quoted verbatim.
 
 **Outcome:** the next framework change crosses the 15,000-line review trigger with a justification
 already written and a deletion pass already run, instead of crossing it silently; the native

@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -120,6 +120,56 @@ async function ledger(root: string, round: number, archivePath: string): Promise
   await writeFile(path.join(root, `docs/verification/round-${round}-2026-08-07.md`), markdown);
 }
 
+async function noArmsLedger(root: string, round: number): Promise<void> {
+  const markdown = [
+    `# Improvement round ledger — round ${round} — 2026-08-16`,
+    `Round: ${round}`,
+    "Date: 2026-08-16",
+    "Framework commit: working tree",
+    "Framework version: 0.1.0",
+    "Genres: none — template visual baseline",
+    "Budget: none",
+    "Stop condition met: none",
+    "Next action: run the paired visual comparison",
+    "",
+    "## Gap list",
+    "| # | Column | Defect | Evidence | Smallest change |",
+    "| --- | --- | --- | --- | --- |",
+    "| None | None | None | None | None |",
+    "",
+    "## Dispositions",
+    "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |",
+    "| --- | --- | --- | --- | --- | --- |",
+    "| None | None | None | None | None | None |",
+    "",
+    "## Deletions this round",
+    "| Export | Rounds unreached | Deleted? | Evidence |",
+    "| --- | --- | --- | --- |",
+    "| None | 0 | no | unmeasured |",
+    "",
+    "## Gates",
+    "| Gate | Command | Result |",
+    "| --- | --- | --- |",
+    "| Typecheck | pnpm typecheck | pass |",
+    "| Lint | pnpm lint | pass |",
+    "| Test | pnpm test | pass |",
+    "| Budgets | pnpm budgets | pass |",
+    "",
+    "## Firewall attestation",
+    "| Rule | Held? | Evidence |",
+    "| --- | --- | --- |",
+    "| Arms built in separate contexts | yes | baseline |",
+    "| Neither builder saw the sealed proofs | yes | baseline |",
+    "| Judge was fresh, read-only, blind to arm | yes | baseline |",
+    "| Lead agent wrote no game code | yes | baseline |",
+    "",
+    "## Notes",
+    "This round declares that it ran no framework or vanilla arm.",
+  ].join("\n");
+  await mkdir(path.join(root, "docs/verification"), { recursive: true });
+  await writeFile(path.join(root, `docs/verification/round-${round}-2026-08-16.md`), markdown);
+}
+
 describe("round:deletions", () => {
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -151,6 +201,55 @@ describe("round:deletions", () => {
       },
     ]);
     expect(renderDeletionTable(report)).toContain("PersistentExport | 2");
+  });
+
+  it("reports a declared no-arms round without inventing deletion evidence", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    await ledger(root, 9, previous);
+    await noArmsLedger(root, 10);
+
+    const report = findPersistentUnusedExports(root);
+
+    expect(report.noFrameworkArms).toEqual([10]);
+    expect(report.archivesChecked).toHaveLength(1);
+    expect(report.candidates).toEqual([]);
+    expect(renderDeletionTable(report)).toContain(
+      "Round 10: declared no-arms round; no framework archive rows",
+    );
+  });
+
+  it("fails closed when a paired round is missing its framework arm", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, current);
+    const currentLedger = path.join(root, "docs/verification/round-2-2026-08-07.md");
+    const markdown = await readFile(currentLedger, "utf8");
+    await writeFile(currentLedger, markdown.replace(/^\| exploration \| framework \|.*\n/m, ""));
+
+    expect(() => findPersistentUnusedExports(root)).toThrow(
+      /Round 2 has no framework archive rows/u,
+    );
+  });
+
+  it("fails closed when a normal genre has an empty Arms table", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, current);
+    const currentLedger = path.join(root, "docs/verification/round-2-2026-08-07.md");
+    const markdown = await readFile(currentLedger, "utf8");
+    await writeFile(
+      currentLedger,
+      markdown.replace(/^\| exploration \| (?:framework|vanilla) \|.*\n/gm, ""),
+    );
+
+    expect(() => findPersistentUnusedExports(root)).toThrow(
+      /Round 2 has no framework archive rows/u,
+    );
   });
 
   it("fails closed when a round still names a placeholder archive", async () => {

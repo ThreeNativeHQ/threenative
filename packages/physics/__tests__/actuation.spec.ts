@@ -57,8 +57,8 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // cannot be added without somebody writing its kill-switch verdict in the record.
   ["tools/", 145],
 ] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 148 files, 1,381 passed, 0 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 325 passed, 30 skipped.";
+const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 161 files, 1,498 passed, 0 skipped.";
+const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 318 passed, 37 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();

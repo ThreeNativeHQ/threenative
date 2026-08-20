@@ -4,7 +4,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
-import { budgetErrors, budgetTriggers, collectBudgets, enforceBudgets } from "../check-budgets";
+import {
+  budgetErrors,
+  budgetTriggers,
+  collectBudgets,
+  enforceBudgets,
+  verifyFrameworkLocAttribution,
+} from "../check-budgets";
 
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -43,6 +49,28 @@ async function writeNativeCensus(
       "| --- | ---: | --- |",
       tableRows,
       `| **Total** | **${total}** | |`,
+    ].join("\n"),
+  );
+}
+
+async function writeFrameworkAttribution(
+  root: string,
+  rows: readonly (readonly [string, number])[],
+  total: number,
+): Promise<void> {
+  const recordPath = path.join(root, "docs", "verification", "loc-attribution-2026-08-19.md");
+  await mkdir(path.dirname(recordPath), { recursive: true });
+  const tableRows = rows.map(([name, lines]) => `| ${name} | ${lines} |`).join("\n");
+  await writeFile(
+    recordPath,
+    [
+      "# Framework LOC attribution",
+      "",
+      `Recorded framework LOC: ${total}`,
+      "",
+      "| Package | Counted LOC |",
+      "| --- | ---: |",
+      tableRows,
     ].join("\n"),
   );
 }
@@ -101,6 +129,68 @@ describe("budget gate", () => {
     const report = await collectBudgets(root);
     expect(budgetTriggers(report)).toEqual([]);
     expect(budgetErrors(report)).toEqual([]);
+  });
+
+  it("should name framework packages that moved since the recorded attribution", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "core", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
+    await writeFile(path.join(directory, "large.ts"), "x\n".repeat(15_000));
+    await writeFrameworkAttribution(root, [["core", 0]], 0);
+
+    const report = await collectBudgets(root);
+    const trigger = budgetTriggers(report).join("\n");
+
+    expect(report.frameworkLocByPackage).toEqual([{ loc: report.frameworkLoc, name: "core" }]);
+    expect(trigger).toContain("Packages moved since last recorded attribution: core (+");
+  });
+
+  it("should allow a stale historical attribution during normal budget enforcement", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "physics", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "physics", "package.json"), "{}");
+    await writeFile(path.join(directory, "owned.ts"), "owned");
+    await writeFrameworkAttribution(root, [["physics", 0]], 0);
+
+    const report = await collectBudgets(root);
+    expect(report.frameworkLoc).toBe(1);
+    expect(report.frameworkLocAttribution?.total).toBe(0);
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkLoc: 1 });
+  });
+
+  it("should fail closed when the explicit framework attribution verifier finds a mismatch", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "physics", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "physics", "package.json"), "{}");
+    await writeFile(path.join(directory, "owned.ts"), "owned");
+    await writeFrameworkAttribution(root, [["physics", 0]], 0);
+
+    await expect(verifyFrameworkLocAttribution(root)).rejects.toThrow(
+      "recorded framework LOC attribution total disagrees with measured framework LOC: recorded 0, measured 1",
+    );
+  });
+
+  it("should fail the opt-in verifier when package rows move even if the total stays equal", async () => {
+    const root = await fixtureRoot();
+    const directory = path.join(root, "packages", "core", "src");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
+    await writeFile(path.join(directory, "owned.ts"), "owned");
+    await writeFrameworkAttribution(
+      root,
+      [
+        ["core", 0],
+        ["physics", 1],
+      ],
+      1,
+    );
+
+    await expect(verifyFrameworkLocAttribution(root)).rejects.toThrow(
+      "framework LOC attribution package rows disagree",
+    );
   });
 
   it("should count native source and build files toward the framework LOC trigger", async () => {

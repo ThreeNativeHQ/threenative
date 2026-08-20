@@ -1,7 +1,8 @@
 # Batch — the three beta blockers this machine can move, and the instrument that stopped working
 
-**Status: ACTIVE, 2026-08-19.** Nothing in this folder has executed. No device result, no
-mobile-readiness claim, and no platform-parity claim exists for any PRD in it.
+**Status: ACTIVE, 2026-08-19.** PRD-161 is **COMPLETE**; the batch remains ACTIVE for PRD-079,
+PRD-159, and PRD-160. No device result, no mobile-readiness claim, and no platform-parity claim
+exists for any PRD in it.
 
 ## Why this batch, today
 
@@ -25,7 +26,7 @@ this batch, and neither had a PRD:
   that finds deletable surface — one of the two commands the agent instructions name for the
   self-improvement loop — has been dead since round 10.
 
-Both are [PRD-161](./PRD-161-the-kill-switch-has-no-working-instrument.md).
+Both are [PRD-161](../done/PRD-161-the-kill-switch-has-no-working-instrument.md).
 
 And the last round ledger named its own next action, which nobody ran:
 
@@ -43,7 +44,7 @@ exact false signal that made the baseline necessary in the first place. That is
 | [079](./PRD-079-phase-2-exit-criteria.md) | Beta row 3 — rewrites the Phase 2 exit criteria with the owner, now that the harness defect half of it has shipped as PRD-081 | 7 | HALF ONE LANDED, HALF TWO OPEN |
 | [160](./PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) | Beta row 4's Android half — attributes the emulator overlay red bisected to `c842a6a`, then adjudicates `67/0/0` against `27/40/0` with provenance | 6 | PROPOSED |
 | [159](./PRD-159-round-11-paired-visual-ab.md) | Round 11 — one paired blind bundle with a measured minimum detectable effect, and a disposition for all five round-10 visual gaps | 4 | PROPOSED |
-| [161](./PRD-161-the-kill-switch-has-no-working-instrument.md) | The framework LOC trigger 262 lines away with no attribution, the native trigger 28,266 past with no owner, and a dead `round:deletions` | 5 | PROPOSED |
+| [161](../done/PRD-161-the-kill-switch-has-no-working-instrument.md) | The framework LOC trigger 262 lines away with no attribution, the native trigger 28,266 past with no owner, and a dead `round:deletions` | 5 | COMPLETE |
 
 ## Order
 

@@ -120,7 +120,9 @@ async function publishedOutcomeSummary(arm: string, archive: string): Promise<st
 
 describe("round ledger schema", () => {
   it("accepts a complete, bounded ledger", () => {
-    expect(validateRoundLedger(ledger()).round).toBe(1);
+    const parsed = validateRoundLedger(ledger());
+    expect(parsed.round).toBe(1);
+    expect(parsed.declaresNoArms).toBe(false);
   });
 
   it("rejects the placeholder template", async () => {
@@ -234,6 +236,7 @@ describe("a round that declares no genres", () => {
       baseline("none yet — this round opens on the template baseline rather than a paired build"),
     );
     expect(ledger.round).toBe(10);
+    expect(ledger.declaresNoArms).toBe(true);
     expect(ledger.arms).toEqual([]);
     expect(ledger.columns).toEqual([]);
     expect(ledger.stopCondition).toBe("none");

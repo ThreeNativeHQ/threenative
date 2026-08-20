@@ -28,6 +28,16 @@ considered, and a KEEP/DELETE verdict.
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
 | **Total** | **78,289** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
 
+The current measurement uses the same native extensions and exclusions as `scripts/check-budgets.ts`:
+`third_party/`, `build/`, `.runtime/`, `artifacts/`, `.cxx/`, `.gradle/`, `.test-tmp/`, and
+`target/` are excluded, as are global `node_modules/`, `dist/`, and `.git/` directories. The
+generated Android bundle `android/app/src/main/assets/scripts/main.js` and its `.meta.json` are
+also excluded. This tree has no tracked `third_party/` files and no generated Android bundle, so
+the current `78,289` total contains **0 vendored-but-tracked dependency lines** and **0 excluded
+generated-output lines**. One tracked generated input remains counted: the pre-compiled
+`src/raytracing/shaders/rt_shaders_spirv.h` contributes 189 budget-counted lines (188 physical
+newline separators plus its final non-empty line).
+
 The 2026-08-16 device-preflight and Android report-condition repairs account for the current
 `tests/` and `scripts/` rows; PRD-143 adds the shared native joint ABI and constraint backend.
 
@@ -53,16 +63,16 @@ PRD-154 adds 102 lines across `src/` and `tests/`: the host publishes its own ru
 factor and touch capacity to the bundle instead of leaving a portable game to sniff browser globals
 that the native host only stubs.
 
-The native review trigger remains visible at 78,266 / 50,000. Physical Android, iOS, and hardware
-evidence remains unverified.
+The measured native review trigger remains visible at **78,289 / 50,000** (**+28,289**). Physical
+Android, iOS, and hardware evidence remains unverified.
 
 ## Current gate summaries
 
 | Command | Result | Evidence |
 | --- | --- | --- |
-| `pnpm budgets` | PASS, exit `0` | 6 framework packages, 7 example workspaces, 13,869/15,000 framework LOC, 78,289/50,000 native runtime LOC, 12 PRD files, largest template 2,246 LOC; the native review trigger remains visible. |
+| `pnpm budgets` | PASS, exit `0` | 7 framework packages, 7 example workspaces, 15,025/15,000 framework LOC, 78,289/50,000 native runtime LOC, 11 direct PRD files, largest template 2,246 LOC; both review triggers remain visible. |
 
-- Root Vitest: 148 files, 1,381 passed, 0 skipped.
-- Runtime-native Vitest: 48 files, 325 passed, 30 skipped.
+- Root Vitest: 161 files, 1,498 passed, 0 skipped.
+- Runtime-native Vitest: 48 files, 318 passed, 37 skipped.
 - The focused device-preflight, Android JS-engine, and physics-parity fixture tests are current
   evidence; no physical-device result is claimed.

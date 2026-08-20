@@ -61,6 +61,8 @@ export interface RoundLedger {
   readonly arms: readonly RoundArm[];
   readonly columns: readonly RoundColumnVerdict[];
   readonly date: string;
+  /** True only when the ledger's `Genres` field explicitly declares a no-arms round. */
+  readonly declaresNoArms: boolean;
   readonly dispositions: readonly RoundDispositionRow[];
   readonly gaps: readonly RoundGap[];
   readonly gates: readonly RoundGate[];
@@ -343,12 +345,14 @@ export function parseRoundLedger(markdown: string, ledgerPath?: string): RoundLe
   const notes = section(markdown, "Notes").trim();
   const round = Number.parseInt(value(markdown, "Round"), 10);
   if (!Number.isInteger(round)) throw new Error("Round ledger field 'Round' is not an integer.");
+  const declaresNoArms = declaresNoGenres(markdown);
   return {
     visualDeltas: parseVisualDeltas(markdown),
     visualMde: parseVisualMde(markdown),
     arms: parseArms(markdown),
     columns: parseColumns(markdown),
     date: value(markdown, "Date"),
+    declaresNoArms,
     dispositions: parseDispositions(markdown),
     gaps: parseGaps(markdown),
     gates: parseGates(markdown),

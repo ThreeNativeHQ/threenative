@@ -203,7 +203,7 @@ No physical device, no iOS beyond the packaging that already exists, no promoted
 no PRD-058 phase other than 5, and no work on PRD-056, 057, 059 or 060. **No package source is
 added to make a row pass** — a row goes green because the runtime is right, or it is recorded
 red. The 20-line rule and the kill switch apply unchanged; the native LOC review trigger is
-already at 61,617/50,000, so any line added here needs its justification in this PRD.
+tracked in §9, so any line added here needs its justification in this PRD.
 
 ## 8. Kill switch — the outcome this PRD must be willing to reach
 
@@ -214,8 +214,9 @@ failure mode this exists to prevent is a Tier 1 declared green by narrowing what
 
 ## 9. Native LOC review trigger — the justification this PRD owes
 
-§7 said any line added here needs its justification in this PRD, and this is it. The trigger was
-61,617 lines when that was written and is **68,396** now, against a 50,000 review trigger. The
+§7 said any line added here needs its justification in this PRD, and this is it. The historical
+snapshot for this section was 61,617 lines when it was written and the later recorded snapshot was
+**68,396**, against a 50,000 review trigger. The
 merge that landed the night batch moved it from 64,489 to 68,035; the rest is the launch
 inspector added afterwards.
 
@@ -245,3 +246,53 @@ a C++ host and the harness that measures it — and it has been crossed since we
 Splitting the count so the host and its apparatus are reported separately would make the number
 mean something again; that is a budget change and belongs to whoever owns `check-budgets.ts`, not
 to a line item here. **Until then the trigger stays crossed and reported, never silenced.**
+
+### 2026-08-19 continuation — current native residual (PRD-161)
+
+PRD-161's opening snapshot names **78,266 / 50,000** and a **+28,266** overshoot. The current
+re-runnable walk in `scripts/check-budgets.ts` measures **78,289 / 50,000**, a **+28,289-line
+residual**. The [refreshed native census](../verification/native-runtime-census-2026-08-16.md)
+records the counted areas, owners, live proof or caller, plain alternative, and KEEP verdict. The
+limit and trigger text are unchanged; this is an owner record, not a budget-limit decision.
+
+The 2026-08-09 `53,851` value is a prose snapshot in `docs/PRDs/OPPORTUNITY-AREAS.md`, not a
+re-runnable census with a comparable file walk or an ancestry that can be replayed from this tree.
+Therefore the PRD-161 prose's **24,415-line** subtraction (`78,266 - 53,851`) cannot honestly be
+assigned to individual commits from current evidence. The first comparable exact census is
+`61,617` in `docs/verification/native-loc-trigger-2026-08-10.md`; the current walk is `78,289`.
+That reproducible growth is **+16,672 lines**, with the area deltas below. The unassignable gap
+between the historical prose value and the first exact census remains stated as unassigned rather
+than being invented as authored runtime growth; the 23-line difference between the PRD-161 snapshot
+and the current walk is likewise recorded as snapshot drift.
+
+| Counted area | 2026-08-10 | 2026-08-19 | Change | Role and platforms served |
+| --- | ---: | ---: | ---: | --- |
+| `src/` | 37,179 | 38,822 | +1,643 | Shared host, rendering seams, physics ABI, lifecycle, desktop and Android runtime; iOS host plumbing where present |
+| `conformance/` | 5,613 | 6,331 | +718 | Executable parity registry and runners for browser, Linux desktop, Android emulator, and iOS simulator lanes |
+| `tests/` | 4,962 | 9,468 | +4,506 | Fail-closed native/runtime contracts, packaging and device-lane evidence on the host |
+| `scripts/` | 4,827 | 12,158 | +7,331 | Build, package, launch, desktop, Android, iOS-simulator, and evidence orchestration |
+| `include/` | 3,550 | 3,816 | +266 | Shared C/C++ ABI consumed by the host and physics bindings |
+| `android/` | 1,738 | 1,973 | +235 | Android lifecycle, packaging, transport, and emulator execution |
+| `native/` | 1,590 | 3,276 | +1,686 | Rust native physics backend used by the native targets |
+| Root `CMakeLists.txt` | 1,579 | 1,673 | +94 | Reproducible native host and binding build configuration |
+| `cmake/` | 280 | 280 | 0 | Shared platform/build modules |
+| `CMakePresets.json` | 137 | 140 | +3 | Declared Linux/native build presets |
+| `ios/` | 98 | 134 | +36 | iOS packaging and simulator lifecycle; no physical iOS run claimed |
+| `package.json` | 54 | 63 | +9 | Opt-in native build, parity, and verification command contract |
+| `vitest.config.ts` | 10 | 10 | 0 | Runtime-native test collection |
+| `tools/` | 0 | 145 | +145 | Linux `uinput` touch injector used by the desktop conformance lane |
+| **Total** | **61,617** | **78,289** | **+16,672** | **No area rejected by the kill switch** |
+
+The rows serve the owned C++ host, shared ABI and physics backend, desktop Linux execution, Android
+packaging and emulator execution, iOS packaging/simulator execution, and their executable proof.
+They do not claim a phone, arm64 hardware, mobile frame rate, or physical iOS result. The plain
+alternative would make each game own a native host, ABI, physics backend, platform lifecycle,
+packaging path, build configuration, and parity/device evidence, or would delete the proof. That
+duplicates unportable platform plumbing or removes evidence, so every row remains **KEEP**.
+
+The current counter has **0 vendored-but-tracked dependency lines**: `third_party/` is absent and
+the census gate reports no tracked files there. It also has **0 counted generated Android bundle
+lines**: `main.js` and its `.meta.json` are excluded by the exact budget walk and absent in this
+tree. One tracked generated input remains counted — `src/raytracing/shaders/rt_shaders_spirv.h`,
+189 budget-counted lines — so the honest total is not presented as authored-only. No limit is raised,
+no native source is deleted, and no mobile or physical-device proof is claimed.

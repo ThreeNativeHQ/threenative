@@ -25,6 +25,7 @@ export interface RoundDeletionReport {
   readonly archivesChecked: readonly DeletionArchive[];
   readonly candidates: readonly PersistentUnusedExport[];
   readonly currentRound: number;
+  readonly noFrameworkArms: readonly number[];
   readonly previousRound: number;
 }
 
@@ -78,7 +79,10 @@ function frameworkArms(ledger: RoundLedger, round: number, repo: string): Deleti
   const arms = ledger.arms.filter(
     (arm): arm is RoundArm & { arm: "framework" } => arm.arm === "framework",
   );
-  if (arms.length === 0) throw new Error(`Round ${round} has no framework archive rows.`);
+  if (arms.length === 0) {
+    if (ledger.declaresNoArms && ledger.arms.length === 0) return [];
+    throw new Error(`Round ${round} has no framework archive rows.`);
+  }
   return arms.map((arm) => {
     const archive = archivePath(arm.archive, repo);
     if (!isDirectory(archive))
@@ -122,6 +126,9 @@ export function findPersistentUnusedExports(repo = REPO): RoundDeletionReport {
   const currentUnused = intersection(currentArchives.map((archive) => archive.unusedExports));
   const previousUnused = intersection(previousArchives.map((archive) => archive.unusedExports));
   const persistent = [...intersection([[...currentUnused], [...previousUnused]])].sort();
+  const noFrameworkArms = [current, previous]
+    .filter((ledger) => ledger.declaresNoArms && ledger.arms.length === 0)
+    .map((ledger) => ledger.round);
   const candidates = persistent.map((exportName) => ({
     archives: archivesChecked
       .filter((archive) => archive.unusedExports.includes(exportName))
@@ -133,6 +140,7 @@ export function findPersistentUnusedExports(repo = REPO): RoundDeletionReport {
     archivesChecked,
     candidates,
     currentRound: current.round,
+    noFrameworkArms,
     previousRound: previous.round,
   };
 }
@@ -140,6 +148,10 @@ export function findPersistentUnusedExports(repo = REPO): RoundDeletionReport {
 export function renderDeletionTable(report: RoundDeletionReport): string {
   const lines = [
     `Persistent unused exports: rounds ${report.previousRound} and ${report.currentRound}`,
+    ...report.noFrameworkArms.map(
+      (round) =>
+        `Round ${round}: declared no-arms round; no framework archive rows, so no deletion candidate can be supported from it.`,
+    ),
     "| Export | Rounds unreached | Archives checked |",
     "| --- | ---: | --- |",
   ];
