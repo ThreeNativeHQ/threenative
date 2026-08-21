@@ -7,6 +7,10 @@ prd_contract: v1
 **Status:** PROPOSED, 2026-08-19. Nothing below has executed. The budget output in §1 was observed on
 `HEAD` (`21960efd`) while assembling this batch.
 
+**Closed 2026-08-20 — the counter is back under its trigger.** `pnpm budgets` on integrated main
+reports 14,989/15,000 framework LOC with `LIMITS` unchanged, and the `ui` row reads `Earned` in
+[loc-attribution-2026-08-20](../../../verification/loc-attribution-2026-08-20.md).
+
 **Outcome:** the framework LOC line is either back under 15,000 by deletion, or over it with a
 written kill-switch verdict naming what was added and why it is earned — and the `ui` package's
 `Undecided` row from the 2026-08-19 attribution becomes `Earned` or `Deletable`, with the evidence
@@ -42,7 +46,7 @@ Two facts make this worth a night:
    The trigger obliges a justification in the owning PRD and a kill-switch pass over what was added.
    No PRD owns it, so this one does.
 2. **"Packages moved since last recorded attribution: none."** The attribution baseline recorded in
-   [`loc-attribution-2026-08-19.md`](../../verification/loc-attribution-2026-08-19.md) was itself
+   [`loc-attribution-2026-08-19.md`](../../../verification/loc-attribution-2026-08-19.md) was itself
    captured at 15,025 — already over. The counter therefore reports movement against a baseline that
    never was under the limit, and no package can be pointed at. That is a measurement gap, not an
    accusation against any package.

@@ -279,7 +279,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
-      "signature": "export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(): IGamePluginHooks<TState, TPhysics> & ReplayPublic { … }",
+      "signature": "export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IReplayOptions = { … }",
       "situations": [
         "reproduce a gameplay bug from recorded input",
         "run a deterministic replay in a playtest"

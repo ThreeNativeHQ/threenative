@@ -70,14 +70,14 @@ PRD-154 adds 102 lines across `src/` and `tests/`: the host publishes its own ru
 factor and touch capacity to the bundle instead of leaving a portable game to sniff browser globals
 that the native host only stubs.
 
-The measured native review trigger remains visible at **78,289 / 50,000** (**+28,289**). Physical
+The measured native review trigger remains visible at **78,347 / 50,000** (**+28,347**). Physical
 Android, iOS, and hardware evidence remains unverified.
 
 ## Current gate summaries
 
 | Command | Result | Evidence |
 | --- | --- | --- |
-| `pnpm budgets` | PASS, exit `0` | 7 framework packages, 7 example workspaces, 15,025/15,000 framework LOC, 78,289/50,000 native runtime LOC, 11 direct PRD files, largest template 2,246 LOC; both review triggers remain visible. |
+| `pnpm budgets` | PASS, exit `0` | Re-run 2026-08-20 after the night batch: 7 framework packages, 8 example workspaces, 15,000/15,000 framework LOC, 78,347/50,000 native runtime LOC, 13 direct PRD files, largest template 2,279 LOC; the native review trigger remains visible. |
 
 - Root Vitest: 161 files, 1,498 passed, 0 skipped.
 - Runtime-native Vitest: 48 files, 318 passed, 37 skipped.

@@ -40,8 +40,10 @@ const EXPECTED_NATIVE_LOC_AREAS = [
   // more: SDL hands back an activity reference the caller owns, and nothing released it on any
   // path, so every resize spent one entry of a per-thread table that holds a few hundred.
   ["src/", 38_822],
-  ["conformance/", 6_331],
-  ["tests/", 9_468],
+  // PRD-160 added 10 conformance lines for androidWindowDump and 48 test lines for the Android
+  // emulator lane repair; d75f4644 recorded them in the census and this fixture stayed behind.
+  ["conformance/", 6_341],
+  ["tests/", 9_516],
   ["scripts/", 12_158],
   ["include/", 3_816],
   ["android/", 1_973],

@@ -5,7 +5,14 @@ prd_contract: v1
 # PRD-162 — Ship one capability that can actually pass the adopted Phase 2 gate
 
 **Status:** PROPOSED, 2026-08-19. Nothing below has executed. The red recorded in §1 is
-[`phase-2-2026-08-19.md`](../../verification/phase-2-2026-08-19.md)'s result, not this PRD's.
+[`phase-2-2026-08-19.md`](../../../verification/phase-2-2026-08-19.md)'s result, not this PRD's.
+
+**Closed 2026-08-20 — RED with attribution, the permitted ending in §8.** The capability shipped
+and both consumer legs executed to `stateHash = 1884960806`; the gate is red on the instrument
+condition, because a plain-Three.js arm has no desktop runtime and lending it the framework's host
+voids the run. Evidence: [phase-2-2026-08-20](../../../verification/phase-2-2026-08-20.md). The
+desktop instrument's flake is filed as
+[PRD-167](../../PRD-167-desktop-playtest-mailbox-goes-silent.md).
 
 **Outcome:** beta row 3 has a **post-adoption** capability shipped, proven by an outcome a consumer
 observes, on an instrument that does not hand the control arm the capability, with a same-subject
@@ -18,7 +25,7 @@ conditions the attempt failed and why. Both are results; only silence is not.
 
 **Blocks:** beta row 3 — the only one of the three beta blockers that is open to *work* rather than
 to an owner decision or a hosted run. Row 5 needs a release run; row 4's Android half is
-[PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md).
+[PRD-160](../PRD-160-android-emulator-lane-repair-and-parity-adjudication.md).
 
 **Complexity: 8 → LARGE mode.** One capability shipped across a web/native seam, one honest vanilla
 arm, one instrument that does not cheat, three phases that can each end the PRD.

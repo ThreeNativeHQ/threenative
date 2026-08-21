@@ -4,9 +4,14 @@
 below was observed on `HEAD` (`21960efd`) while assembling the batch, and is recorded as a prior
 observation rather than as a result of any PRD in it.
 
+**Closed 2026-08-20.** All four PRDs executed and landed on `main`; this folder is archived. Their
+results are not uniform: 163, 164 and 165 closed green, and 162 closed **red with attribution** on
+the exclusivity condition, which §8 of that PRD names as a permitted ending. The follow-up it
+raised is [PRD-167](../../PRD-167-desktop-playtest-mailbox-goes-silent.md).
+
 ## Why this batch, tonight
 
-The day batch [`batch-26-08-19`](../done/batch-26-08-19/README.md) closed three of its four PRDs. What it
+The day batch [`batch-26-08-19`](../batch-26-08-19/README.md) closed three of its four PRDs. What it
 produced was not a finish line but a shortlist, because two of its results explicitly deferred their
 own next spend and two of its instruments broke after it was written:
 
@@ -43,7 +48,7 @@ are long and unattended, which is the right shape for a night.
 **4. PRD-165 last, because Phase 3 needs the sweep PRD-164 repairs** and its `ui` audit is reading
 work that does not block anything else.
 
-**[PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) stays
+**[PRD-160](../PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) stays
 in the day batch and stays owned there.** It is not re-filed here. If the emulator is free, its
 boot-and-wait shape overlaps well with any of the above — but its Phase 1 attribution must be written
 before any code is touched, and re-running the parity lane while it is red on an unrelated defect

@@ -8,6 +8,10 @@ prd_contract: v1
 `HEAD` (`21960efd`) while assembling this batch and are recorded as prior observations, not as this
 PRD's result.
 
+**Closed 2026-08-20 — both commands are back.** `pnpm round:next` reports `close round 12` and
+`pnpm round:deletions` exits `0`, reporting that a visual-only round contributes no deletion
+evidence instead of throwing on its screenshot archives.
+
 **Outcome:** `pnpm round:next` and `pnpm round:deletions` both exit `0` on `HEAD` with round 11 as
 the current ledger, without weakening either script's fail-closed behaviour, and a regression test
 holds the shape that broke them.
@@ -44,13 +48,13 @@ The root agent instructions name exactly two commands for the self-improvement l
 round:next` computes the single next action and `pnpm round:deletions` reports exports unreached
 across consecutive rounds"* — and **both are down**.
 
-[PRD-161](../done/PRD-161-the-kill-switch-has-no-working-instrument.md) repaired the same pair on
+[PRD-161](../PRD-161-the-kill-switch-has-no-working-instrument.md) repaired the same pair on
 2026-08-19 for the round-10 no-arms case and recorded exit `0`. Round 11 landed hours later and
 broke them again with a different shape, so the repair fixed one instance and not the class.
 
 ## 2. Why round 11 has this shape
 
-[`round-11-2026-08-19.md`](../../verification/round-11-2026-08-19.md) is a **template-only
+[`round-11-2026-08-19.md`](../../../verification/round-11-2026-08-19.md) is a **template-only
 before/after AB**, not a framework-versus-vanilla game pair. The ledger says so in its own words:
 
 > The round-ledger parser requires two condition arms named `framework` and `vanilla`, so those

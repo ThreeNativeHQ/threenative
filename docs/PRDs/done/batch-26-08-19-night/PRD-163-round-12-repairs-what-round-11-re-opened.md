@@ -5,8 +5,12 @@ prd_contract: v1
 # PRD-163 — Round 12 repairs the two template defects round 11 measured, and re-measures them blind
 
 **Status:** PROPOSED, 2026-08-19. Nothing below has executed. Every number quoted comes from
-[`round-11-2026-08-19.md`](../../verification/round-11-2026-08-19.md) and is that round's result,
+[`round-11-2026-08-19.md`](../../../verification/round-11-2026-08-19.md) and is that round's result,
 not this one's.
+
+**Closed 2026-08-20 — repairs landed and scored.** Round 12 is filed at
+[round-12-2026-08-20](../../../verification/round-12-2026-08-20.md) as a visual-only round with a
+paired seven-template capture and three blind raters.
 
 **Outcome:** the starter template's measured **−2 LOSS** and the minimal template's HUD/scene
 contradiction are repaired in template source, and round 12 re-measures both blind against round

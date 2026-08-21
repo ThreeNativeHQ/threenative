@@ -3,9 +3,15 @@
 This is the PRD-165 reconciliation record. It supersedes the 2026-08-19 attribution captured
 before the UI audit. The source PRD remains unchanged.
 
-Recorded framework LOC: 14,989
+Recorded framework LOC: 15,000
 
 ## Measurement and reconciliation
+
+**Restated on integration.** This record was first written from `main` at `d75f4644` plus the UI
+commit alone, which measured 14,989. PRD-162 landed in the same batch and added 11 counted lines to
+`core` (`replay({ portable })` and its exported options type), so the integrated total measured on
+`main` after the batch is **15,000** — level with the review trigger and not above it. `pnpm budgets`
+reports `budgets ok`, and the one-shot verifier agrees with the rows below.
 
 The historical baseline was 15,025 framework lines, recorded by PRD-161 at commit `12380541`.
 The UI audit removed 36 counted source lines in commit `4c9ea89d`, changing `ui` from 208 to 172.
@@ -33,7 +39,7 @@ node --import tsx/esm -e 'import { collectBudgets } from "./scripts/check-budget
 | --- | ---: |
 | Historical baseline | 15,025 |
 | UI audit delta | -36 |
-| Integrated target | **14,989** |
+| Integrated target | **15,000** |
 | Framework trigger | 15,000 |
 
 The integrated target is 11 lines under the trigger. The lane's pre-integration checkout reports
@@ -50,12 +56,12 @@ surface portably, and whether the surface decides the game's look.
 
 | Package | Counted LOC | Could the game write it portably? | Does it decide the game's look? | Disposition |
 | --- | ---: | --- | --- | --- |
-| `core` | 7,832 | **No.** Renderer/bootstrap, host seams, lifecycle, input, assets, and inspection are framework web/native plumbing. | **No.** Materials, lights, shaders, camera framing, and post remain generated game source. | **Earned** |
+| `core` | 7,843 | **No.** Renderer/bootstrap, host seams, lifecycle, input, assets, and inspection are framework web/native plumbing. | **No.** Materials, lights, shaders, camera framing, and post remain generated game source. | **Earned** |
 | `create-threenative` | 2,491 | **No.** Scaffolding, package wiring, and the project contract are framework tooling. | **No.** The generator copies and validates user-owned render and UI source; it does not choose the game's appearance. | **Earned** |
 | `engine-mcp` | 289 | **No.** The offline capability server is the framework discovery contract, not game code. | **No.** It reports imports, constraints, and examples without rendering. | **Earned** |
 | `physics` | 4,205 | **No.** Rapier/Recast WASM and the native bulk backend are dependency boundaries the game cannot supply portably. | **No.** Bodies and queries use supplied Three.js objects and do not choose materials or composition. | **Earned** |
 | `ui` | 172 | **No.** The shared React mounting, throttled state, and diagnostics seams are framework plumbing; native builds omit the DOM package. | **No.** `DebugOverlay` now emits semantic markup only; `GameCanvas` retains only canvas mounting, sizing, and input-handling mechanics. | **Earned** |
-| **Total** | **14,989** |  |  |  |
+| **Total** | **15,000** |  |  |  |
 
 There is no `Undecided` row and no deletion claim.
 
