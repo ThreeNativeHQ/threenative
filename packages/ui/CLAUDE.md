@@ -41,6 +41,12 @@ profiler still looks fine on a small scene.
 user's generated `src/ui/`, in Tailwind classes they own — the framework must not ship a
 styled HUD, for the same reason it must not ship a lighting rig.
 
+`DebugOverlay` follows the same rule: it renders one
+`<aside data-threenative-debug-overlay="true">` and no presentation at all. Every project that
+mounts it owns a rule for that selector in its own stylesheet — without one the overlay paints
+behind an absolutely positioned `GameCanvas`. `scripts/__tests__/debug-overlay-css.spec.ts`
+fails any example or template that mounts the overlay and never styles it.
+
 ## Tests
 
 `__tests__/*.spec.tsx`, vitest + `react-test-renderer` in a node environment. React and

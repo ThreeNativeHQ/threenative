@@ -57,3 +57,40 @@ body {
 canvas {
   cursor: none;
 }
+
+/*
+ * The debug surface is framework plumbing with no presentation of its own, so
+ * the Abyss build styles it here in Abyss colours. GameCanvas is absolutely
+ * positioned over the page; without this rule the overlay paints behind it.
+ */
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  max-width: 24rem;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: rgb(4 8 13 / 90%);
+  border: 1px solid var(--color-line);
+  color: var(--color-lume);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-threenative-debug-overlay="true"] table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+[data-threenative-debug-overlay="true"] th,
+[data-threenative-debug-overlay="true"] td {
+  padding-right: 1rem;
+  text-align: left;
+}
+
+[data-threenative-debug-overlay="true"] td:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}

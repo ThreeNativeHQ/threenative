@@ -39,6 +39,25 @@ export function App({ game }: { game: IGame<GameState, IPhysicsContext> }) {
 }
 ```
 
+## Styling the debug overlay
+
+`DebugOverlay` ships no presentation — it renders one `<aside data-threenative-debug-overlay="true">`
+and leaves every pixel to you. Generated projects already carry a rule for it in their stylesheet;
+a project that imports the package directly must write its own, or the overlay paints behind an
+absolutely positioned `GameCanvas` and its diagnostics are invisible:
+
+```css
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  pointer-events: none;
+  background: rgb(2 6 23 / 90%);
+  color: #cffafe;
+}
+```
+
 ## Links
 
 - [Repository](https://github.com/ThreeNativeHQ/threenative)

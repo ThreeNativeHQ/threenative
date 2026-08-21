@@ -58,7 +58,7 @@ async function writeFrameworkAttribution(
   rows: readonly (readonly [string, number])[],
   total: number,
 ): Promise<void> {
-  const recordPath = path.join(root, "docs", "verification", "loc-attribution-2026-08-19.md");
+  const recordPath = path.join(root, "docs", "verification", "loc-attribution-2026-08-20.md");
   await mkdir(path.dirname(recordPath), { recursive: true });
   const tableRows = rows.map(([name, lines]) => `| ${name} | ${lines} |`).join("\n");
   await writeFile(
@@ -131,7 +131,7 @@ describe("budget gate", () => {
     expect(budgetErrors(report)).toEqual([]);
   });
 
-  it("should name framework packages that moved since the recorded attribution", async () => {
+  it("should name framework packages that moved since the active attribution", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "core", "src");
     await mkdir(directory, { recursive: true });
@@ -160,7 +160,7 @@ describe("budget gate", () => {
     await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkLoc: 1 });
   });
 
-  it("should fail closed when the explicit framework attribution verifier finds a mismatch", async () => {
+  it("should fail closed when the active attribution verifier finds a mismatch", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "physics", "src");
     await mkdir(directory, { recursive: true });
@@ -173,7 +173,7 @@ describe("budget gate", () => {
     );
   });
 
-  it("should fail the opt-in verifier when package rows move even if the total stays equal", async () => {
+  it("should fail the active verifier when package rows move even if the total stays equal", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "core", "src");
     await mkdir(directory, { recursive: true });

@@ -40,7 +40,7 @@ const NATIVE_RUNTIME_PACKAGE = path.join("packages", "runtime-native");
 const FRAMEWORK_LOC_ATTRIBUTION = path.join(
   "docs",
   "verification",
-  "loc-attribution-2026-08-19.md",
+  "loc-attribution-2026-08-20.md",
 );
 const NATIVE_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
@@ -134,9 +134,8 @@ function parseFrameworkLocPackages(
 }
 
 /**
- * Read the historical framework attribution without treating it as a live budget invariant. The
- * current file walk remains the authority for current numbers; this record is the comparison
- * point that lets a later trigger name what moved.
+ * Read the active framework attribution without making historical movement fatal to normal
+ * budget enforcement. The current file walk remains authoritative for the live counter.
  */
 export async function readFrameworkLocAttribution(
   root: string,
@@ -147,11 +146,11 @@ export async function readFrameworkLocAttribution(
   const totalMatch = markdown.match(/^Recorded framework LOC:\s*([\d,]+)\s*$/mu);
   if (totalMatch?.[1] === undefined)
     throw new Error(`framework LOC attribution is missing its recorded total: ${file}`);
-  const tableStart = markdown.indexOf("| Package | Counted LOC |");
-  if (tableStart < 0)
+  const tableMatch = markdown.match(/^\| Package \| [^|]+ \|/mu);
+  if (tableMatch?.index === undefined)
     throw new Error(`framework LOC attribution is missing its package table: ${file}`);
 
-  const packages = parseFrameworkLocPackages(markdown, tableStart, file);
+  const packages = parseFrameworkLocPackages(markdown, tableMatch.index, file);
   if (packages.length === 0)
     throw new Error(`framework LOC attribution has no package rows: ${file}`);
   if (new Set(packages.map((item) => item.name)).size !== packages.length)
@@ -476,8 +475,8 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
 }
 
 /**
- * One-shot verification for the dated framework attribution record. Normal budget enforcement
- * must keep historical records non-fatal so package movement remains visible in the trigger.
+ * One-shot verification for the active framework attribution. Normal budget enforcement keeps
+ * historical records non-fatal so budget movement remains visible in the trigger.
  */
 export async function verifyFrameworkLocAttribution(root: string): Promise<BudgetReport> {
   const report = await collectBudgets(root);

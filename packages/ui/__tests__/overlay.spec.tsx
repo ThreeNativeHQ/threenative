@@ -47,9 +47,9 @@ describe("DebugOverlay", () => {
     });
 
     expect(renderer.root.findAllByType("tbody")[0]?.findAllByType("tr")).toHaveLength(4);
-    expect(renderer.root.findAllByProps({ "data-threenative-debug-overlay": "true" })).toHaveLength(
-      1,
-    );
+    const overlay = renderer.root.findByProps({ "data-threenative-debug-overlay": "true" });
+    expect(overlay.props.style).toBeUndefined();
+    expect(overlay.findByType("table").props.style).toBeUndefined();
     act(() => renderer.unmount());
   });
 

@@ -1,5 +1,9 @@
 # Framework LOC attribution — 2026-08-19
 
+> Superseded on 2026-08-20 by [the reconciled active attribution](loc-attribution-2026-08-20.md).
+> The historical measurement and package dispositions below are retained unchanged; the active
+> verifier no longer consumes this record.
+
 This is the historical framework counter baseline for PRD-161, captured from this lane's current
 tree. It records the package composition at capture; it is not a deletion list and is not rewritten
 by normal budget enforcement. Later movement is reported by `pnpm budgets`, but does not make that
@@ -12,7 +16,7 @@ other than the salvage packages `playtest`, `asset-mcp`, and `shader-portable`, 
 `runtime-native`, that walk counts `.ts`, `.tsx`, `.js`, and `.jsx` under `src/`, plus the native
 source extensions and `CMakeLists.txt` anywhere in the package. The shared file set removes any
 overlap between those two selections. A non-empty file contributes its split-line count, including
-its final line; this is why the table is not a `wc -l` approximation.
+its final line; this is why this table is not a `wc -l` approximation.
 
 Reproduction command:
 
@@ -66,7 +70,7 @@ same export across consecutive framework-arm rounds.
 | `physics` | 4,205 | No — Rapier/Recast WASM and the native bulk backend are the dependency boundary; the game cannot supply that portably. | No — bodies and queries bind supplied Three.js objects and do not choose their materials or composition. | **Earned** | Live callers: `examples/abyss-framework/src/navigation-main.tsx:3` and `packages/create-threenative/templates/starter/src/scenes/Play.ts:2`. The shared backend surface is reached outside tests. |
 | `create-threenative` | 2,491 | No — scaffold, package wiring, and the four-command project contract are framework tooling rather than game code. | No — generated `src/render/` remains user source; the package only copies and validates it. | **Earned** | Live callers: `scripts/visual-gate.ts:315` and `packages/create-threenative/templates/starter/vite.config.ts:3`. The generator and generated project contract are live. |
 | `engine-mcp` | 289 | No — the offline capability server is the framework's discovery contract, not a game feature. | No — it reports imports, constraints, and examples without rendering anything. | **Earned** | Live callers: `packages/create-threenative/src/index.ts:374` and `packages/create-threenative/templates/starter/.mcp.json:17`. The generated project wires the discovery server outside tests. |
-| `ui` | 208 | Undecided — a bespoke UI can be game-owned, while the shared React canvas/store and diagnostics seam may still be the portable boundary. | Undecided — the generic diagnostics overlay has fixed presentation that needs a visual-boundary audit. | **Undecided** | Live callers: `examples/abyss-framework/src/ui/App.tsx:2` and `packages/create-threenative/templates/starter/src/ui/App.tsx:3`. Evidence still needed: audit `DebugOverlay` and `GameCanvas` against the generated-source look rule, then retain only the generic mechanism or move game-facing appearance into generated UI source. |
+| `ui` | 208 | Undecided — a bespoke UI can be game-owned, while the shared React canvas/store and diagnostics seam may still be the portable boundary. | Undecided — the generic diagnostics overlay has fixed presentation that needs a visual-boundary audit. | **Undecided** | Live callers include `examples/abyss-framework/src/ui/App.tsx:2-3` and the starter template's `src/ui/App.tsx:3`. Evidence still needed: audit `DebugOverlay` and `GameCanvas` against the generated-source look rule, then either retain the generic diagnostics mechanism or move any game-facing appearance into generated UI source. |
 | **Total** | **15,025** |  |  |  |  |
 
 There is no **Deletable** row. Round 10 is explicitly declared no-arms, so the repaired sweep has

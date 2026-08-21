@@ -57,3 +57,36 @@ body {
   max-height: 22vh;
   object-fit: contain;
 }
+
+/* The debug surface is framework plumbing; its default presentation is yours to change. */
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  max-width: 24rem;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: rgb(2 6 23 / 90%);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 30%);
+  color: #cffafe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-threenative-debug-overlay="true"] table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+[data-threenative-debug-overlay="true"] th,
+[data-threenative-debug-overlay="true"] td {
+  padding-right: 1rem;
+  text-align: left;
+}
+
+[data-threenative-debug-overlay="true"] td:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
