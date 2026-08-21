@@ -64,6 +64,10 @@ was executed and what remains unproven. Native claims are evidence-bound: hosted
 execution can produce iOS-simulator evidence, while physical-device, signing, thermal, battery,
 and performance-parity claims remain open.
 
+The [technical-debt audit](verification/tech-debt-audit-2026-08-20.md) is a dated sweep of the whole
+repository rather than of one PRD: measured gate state, the code the gates do not fail, the friction
+recorded in builder sessions, and the defect shapes reviewers keep re-finding.
+
 A round ledger records one self-improvement round's inputs, decisions, evidence, and resulting
 state. `pnpm round:next` resumes from the latest ledger, and `pnpm round:deletions` reports
 persistent unused-export evidence. The [newest ledger is round 10](verification/round-10-2026-08-16.md);

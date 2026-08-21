@@ -14,10 +14,7 @@ describe("core constraints", () => {
       .filter((file) => file.endsWith(".ts"))
       .filter(
         (file) =>
-          file !== "particles.ts" &&
-          file !== "collapse.ts" &&
-          file !== "renderProjection.ts" &&
-          file !== "renderer.ts",
+          file !== "particles.ts" && file !== "renderProjection.ts" && file !== "renderer.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
@@ -29,22 +26,8 @@ describe("core constraints", () => {
       /new\s+\w*Material|new\s+Color|light|tonemapping|postprocessing|\.wgsl/iu,
     );
 
-    // `collapse.ts` is exempted on the same terms as `particles.ts` and for the same reason: it
-    // handles the game's material without ever authoring one. It merges meshes and re-parents a
-    // transform, so it must name materials — but it may only forward or clone what the game
-    // built. The moment it constructs one, it has started deciding how the game looks.
-    const collapse = readFileSync(path.join(sourceDirectory, "collapse.ts"), "utf8");
-    expect(collapse).not.toMatch(
-      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
-    );
-    // It may name lights, and has to: the pass lifts the collapsed hierarchy out of the scene and
-    // would take the game's lights with it, leaving every lit surface black. Recognising one is
-    // not authoring one, and the line that matters — never constructing a light or a material —
-    // is still asserted above.
-    expect(collapse).toMatch(/isLight/u);
-
     // `renderProjection.ts` is exempted on exactly the same terms, and needs the exemption for a
-    // sharper reason than the collapse did: it maintains a private mirror of the game's scene, so
+    // sharper reason than particles did: it maintains a private mirror of the game's scene, so
     // it has to name every kind of thing that scene can hold. What it must never do is originate
     // one. Every material it draws with is the game's own instance, passed through by reference so
     // that recolouring the original recolours the batch; every light in the mirror is a clone of a
@@ -54,7 +37,7 @@ describe("core constraints", () => {
     expect(projection).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
-    // It must recognise a light for the same reason the collapse must: the mirror is a separate
+    // It must recognise a light: the mirror is a separate
     // graph, and a mirror with no lights in it renders every lit surface black.
     expect(projection).toMatch(/isLight/u);
 

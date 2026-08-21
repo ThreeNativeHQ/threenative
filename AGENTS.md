@@ -161,3 +161,7 @@ rather than patched into the sandbox copy.
 Device lanes are in `packages/runtime-native/AGENTS.md`; PRD filing and the round ledger in
 `docs/PRDs/AGENTS.md`. Another agent may be working in this tree at the same time, so commit as you
 go — an uncommitted edit here does get overwritten.
+
+`.worktrees/` holds other agents' lanes — never search it, never read its AGENTS.md. A repo-wide
+grep or a "closest AGENTS.md" walk that lands there is reading a dead lane from another day, not
+this repository.

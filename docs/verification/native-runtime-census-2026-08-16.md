@@ -1,8 +1,11 @@
-# Current native runtime census — refreshed 2026-08-19
+# Current native runtime census — refreshed 2026-08-21
 
 This is the current evidence record for the native runtime LOC census. It is separate from the
-historical PRD-116 verification record. `scripts/check-budgets.ts` and the physics evidence test
-consume this table and fail closed when the measured total, area rows, or gate summaries drift.
+historical PRD-116 verification record. `pnpm census` generates the `Lines` column and the total
+from the same walk `scripts/check-budgets.ts` runs; the budget gate fails closed on the *verdicts* —
+every counted area must have an owner, a live proof or caller, a considered alternative, and a
+KEEP/DELETE, and a new top-level entry in the runtime tree cannot pass without one — while line
+drift is reported as a trigger, never as a hand-retyped sum to chase.
 
 ## Native LOC kill switch
 
@@ -34,6 +37,14 @@ why the foreground guard cannot read `dumpsys window windows` on Android 15; `te
 (9,468 → 9,516) for the regression test that carries both real API-35 dumps as fixtures. Both are
 fail-closed evidence for a defect that had turned 66 conformance rows red, and the census check is
 what caught the drift — which is the instrument PRD-161 repaired working on the next change after it.
+
+**Regenerated 2026-08-21 by the technical-debt audit integration: totals unchanged at 78,347.**
+The `Lines` column is now written by `pnpm census`, not retyped, and the physics evidence test no
+longer pins this table's rows or vitest summary strings — that coupling put a hand-maintained
+Markdown number between every native change and the native parity gate (the audit's §1–§2). The
+gate now enforces what the census exists for: one judged verdict per counted area, with area-set
+equality against the measured walk. Line drift shows up in `pnpm budgets` output as a trigger
+naming the drifted rows and the regeneration command.
 
 The current measurement uses the same native extensions and exclusions as `scripts/check-budgets.ts`:
 `third_party/`, `build/`, `.runtime/`, `artifacts/`, `.cxx/`, `.gradle/`, `.test-tmp/`, and
@@ -77,9 +88,9 @@ Android, iOS, and hardware evidence remains unverified.
 
 | Command | Result | Evidence |
 | --- | --- | --- |
-| `pnpm budgets` | PASS, exit `0` | Re-run 2026-08-20 after the night batch: 7 framework packages, 8 example workspaces, 15,000/15,000 framework LOC, 78,347/50,000 native runtime LOC, 13 direct PRD files, largest template 2,279 LOC; the native review trigger remains visible. |
+| `pnpm budgets` | PASS, exit `0` | Re-run 2026-08-21 after the technical-debt audit integration: 7 framework packages, 8 example workspaces, 12,936/15,000 framework LOC, 78,347/50,000 native runtime LOC, 13 direct PRD files, largest template 2,279 LOC; the native review trigger remains visible and no census drift is reported. |
 
-- Root Vitest: 161 files, 1,498 passed, 0 skipped.
-- Runtime-native Vitest: 48 files, 318 passed, 37 skipped.
-- The focused device-preflight, Android JS-engine, and physics-parity fixture tests are current
-  evidence; no physical-device result is claimed.
+- Root Vitest: 158 files, 1,480 passed, 0 skipped.
+- Runtime-native Vitest: 48 files, 319 passed, 37 skipped; `native:physics:parity` executed in the
+  same run — web parity spec 24/24 and the shipping Rust simulation against the web artifact.
+- No physical-device result is claimed.

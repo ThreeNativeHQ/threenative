@@ -22,6 +22,7 @@
     "quality": "tsx scripts/check-quality.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
     "budgets": "tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts",
+    "census": "tsx scripts/generate-native-census.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",

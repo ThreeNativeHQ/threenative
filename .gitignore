@@ -30,6 +30,9 @@ docs/benchmark/sweeps/*/assets/generated/
 .linchpin/
 .gauntlet/
 
+# Other agents' lanes. Never searched, never read; see AGENTS.md.
+.worktrees
+
 # Secrets. Never committed, never copied into an image.
 .env
 .env.*

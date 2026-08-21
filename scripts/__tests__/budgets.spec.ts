@@ -9,6 +9,7 @@ import {
   budgetTriggers,
   collectBudgets,
   enforceBudgets,
+  nativeCensusDrift,
   verifyFrameworkLocAttribution,
 } from "../check-budgets";
 
@@ -38,10 +39,25 @@ async function writeNativeCensus(
   root: string,
   rows: readonly (readonly [string, number])[],
   total: number,
+  overrides?: {
+    readonly alternative?: string;
+    readonly liveProof?: string;
+    readonly owner?: string;
+    readonly verdict?: string;
+  },
 ): Promise<void> {
   const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
   await mkdir(path.dirname(recordPath), { recursive: true });
-  const tableRows = rows.map(([area, lines]) => `| ${area} | ${lines} | owner |`).join("\n");
+  const owner = overrides?.owner ?? "owner";
+  const liveProof = overrides?.liveProof ?? "live proof";
+  const alternative = overrides?.alternative ?? "alternative considered";
+  const verdict = overrides?.verdict ?? "**KEEP** — judged.";
+  const tableRows = rows
+    .map(
+      ([area, lines]) =>
+        `| ${area} | ${lines} | ${owner} | ${liveProof} | ${alternative} | ${verdict} |`,
+    )
+    .join("\n");
   await writeFile(
     recordPath,
     [
@@ -330,51 +346,101 @@ describe("budget gate", () => {
     });
   });
 
-  it("should reject an incomplete native census when enforcing budgets", async () => {
+  it("should reject a census row with no KEEP/DELETE verdict", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);
-    await writeNativeCensus(root, [["src/", 1]], 2);
+    await writeNativeCensus(root, [["`runtime.cpp`", 1]], 2, { verdict: "seems fine" });
 
     await expect(enforceBudgets(root)).rejects.toThrow(
-      "native census sum no longer equals measured native runtime LOC",
+      "native census row runtime.cpp has no KEEP/DELETE verdict",
     );
+  });
 
+  it("should reject a census row missing its owner, proof, or alternative", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(root, [["`runtime.cpp`", 1]], 2, { owner: "" });
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census row runtime.cpp is missing its owner, live proof or caller, or alternative considered",
+    );
+  });
+
+  it("should reject a measured area with no census row", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(root, [["`runtime.cpp`", 1]], 1);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census record has no row for counted area Root CMakeLists.txt",
+    );
+  });
+
+  it("should reject a census row whose area left the runtime tree", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
     await writeNativeCensus(
       root,
       [
-        ["src/", 1],
-        ["tests/", 1],
+        ["`runtime.cpp`", 1],
+        ["Root `CMakeLists.txt`", 1],
+        ["`deleted/`", 12],
+      ],
+      14,
+    );
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census row deleted/ counts an area the runtime tree no longer has",
+    );
+  });
+
+  it("should reject a census total that disagrees with its own rows", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(
+      root,
+      [
+        ["`runtime.cpp`", 1],
+        ["Root `CMakeLists.txt`", 1],
+      ],
+      3,
+    );
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census total disagrees with its own area rows: rows sum to 2, total row says 3",
+    );
+  });
+
+  it("should not fail on census line drift, and should report it as drift instead", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    // The table judges both areas and stays internally consistent; only its numbers trail the
+    // tree once runtime.cpp grows. That lag is a report, not a red gate: the judgement the
+    // census exists to force is per area, not per line.
+    await writeNativeCensus(
+      root,
+      [
+        ["`runtime.cpp`", 1],
+        ["Root `CMakeLists.txt`", 1],
       ],
       2,
     );
-    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
+    await writeFile(path.join(root, "packages", "runtime-native", "runtime.cpp"), "owned\nmore\n");
+
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 4 });
+    const drift = await nativeCensusDrift(root);
+    expect(drift.join("\n")).toContain("runtime.cpp recorded 1, measured 3");
+    expect(drift.join("\n")).toContain("run `pnpm census`");
   });
 
-  it("should reject a stale native census total when enforcing budgets", async () => {
-    const root = await fixtureRoot();
-    await nativeFixture(root);
-    const rows = [
-      ["src/", 1],
-      ["tests/", 1],
-    ] as const;
-    await writeNativeCensus(root, rows, 1);
-
-    await expect(enforceBudgets(root)).rejects.toThrow(
-      "recorded native census total disagrees with measured native runtime LOC",
-    );
-
-    await writeNativeCensus(root, rows, 2);
-    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
-  });
-
-  it("should pass the restored native census", async () => {
+  it("should pass a complete native census", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);
     await writeNativeCensus(
       root,
       [
-        ["src/", 1],
-        ["tests/", 1],
+        ["`runtime.cpp`", 1],
+        ["Root `CMakeLists.txt`", 1],
       ],
       2,
     );

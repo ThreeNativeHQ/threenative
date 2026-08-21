@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh } from "three";
@@ -27,40 +25,6 @@ function rigidBodyObject(body: RigidBody3D) {
   if (object === undefined) throw new Error("TEST_RIGID_BODY_OBJECT_MISSING");
   return object;
 }
-
-const NATIVE_CENSUS_VERIFICATION_RECORD = path.resolve(
-  process.cwd(),
-  "docs/verification/native-runtime-census-2026-08-16.md",
-);
-const EXPECTED_NATIVE_LOC_AREAS = [
-  // PRD-153 adds 699 native lines for brand-resource packaging, launch inspection, and measured
-  // safe-area transport; PRD-155 adds 338 for the present fix and the device screenshot gate;
-  // PRD-154 adds 102 for the published platform facts. Keep this fixture tied to the checked-in
-  // census and its budget output. The JNI local-reference repair in refreshSafeAreaInsets adds 23
-  // more: SDL hands back an activity reference the caller owns, and nothing released it on any
-  // path, so every resize spent one entry of a per-thread table that holds a few hundred.
-  ["src/", 38_822],
-  // PRD-160 added 10 conformance lines for androidWindowDump and 48 test lines for the Android
-  // emulator lane repair; d75f4644 recorded them in the census and this fixture stayed behind.
-  ["conformance/", 6_341],
-  ["tests/", 9_516],
-  ["scripts/", 12_158],
-  ["include/", 3_816],
-  ["android/", 1_973],
-  ["native/", 3_276],
-  ["Root CMakeLists.txt", 1_673],
-  ["cmake/", 280],
-  ["CMakePresets.json", 140],
-  ["ios/", 134],
-  ["package.json", 63],
-  ["vitest.config.ts", 10],
-  // The desktop multitouch injector's ioctl helper, PRD-077. A new counted area, so it appears
-  // here rather than growing an existing row: the point of this list is that a native area
-  // cannot be added without somebody writing its kill-switch verdict in the record.
-  ["tools/", 145],
-] as const;
-const EXPECTED_ROOT_VITEST_SUMMARY = "Root Vitest: 161 files, 1,498 passed, 0 skipped.";
-const EXPECTED_RUNTIME_VITEST_SUMMARY = "Runtime-native Vitest: 48 files, 318 passed, 37 skipped.";
 
 beforeAll(async () => {
   await RAPIER.init();
@@ -252,44 +216,5 @@ describe("character push", () => {
 
     expect(rigidBodyObject(included).position.x - includedStart).toBeGreaterThan(0.1);
     expect(Math.abs(rigidBodyObject(excluded).position.x - excludedStart)).toBeLessThan(0.01);
-  });
-});
-
-describe("PRD-116 verification evidence", () => {
-  it("keeps the native census and final test counts tied to committed gate output", () => {
-    const record = readFileSync(NATIVE_CENSUS_VERIFICATION_RECORD, "utf8");
-    const censusStart = record.indexOf("| Counted area | Lines | Owner |");
-    const totalStart = record.indexOf("| **Total** |", censusStart);
-    expect(censusStart).toBeGreaterThanOrEqual(0);
-    expect(totalStart).toBeGreaterThan(censusStart);
-
-    const rows = [
-      ...record.slice(censusStart, totalStart).matchAll(/^\| ([^|]+) \| ([\d,]+) \|/gmu),
-    ].map((match) => {
-      const area = match[1];
-      const lines = match[2];
-      if (area === undefined || lines === undefined) {
-        throw new Error("PRD-116 verification record contains a malformed census row.");
-      }
-      return [area.replaceAll("`", "").trim(), Number(lines.replaceAll(",", ""))] as const;
-    });
-    expect(rows).toEqual(EXPECTED_NATIVE_LOC_AREAS);
-
-    const totalMatch = record.match(/^\| \*\*Total\*\* \| \*\*([\d,]+)\*\*/mu);
-    if (!totalMatch || totalMatch[1] === undefined) {
-      throw new Error("PRD-116 verification record is missing its census total.");
-    }
-    const total = Number(totalMatch[1].replaceAll(",", ""));
-    expect(rows.reduce((sum, [, lines]) => sum + lines, 0)).toBe(total);
-
-    const budgetMatch = record.match(
-      /^\| `pnpm budgets` \|.*?([\d,]+)\/50,000 native runtime LOC/mu,
-    );
-    if (!budgetMatch || budgetMatch[1] === undefined) {
-      throw new Error("PRD-116 verification record is missing budget output.");
-    }
-    expect(Number(budgetMatch[1].replaceAll(",", ""))).toBe(total);
-    expect(record).toContain(EXPECTED_ROOT_VITEST_SUMMARY);
-    expect(record).toContain(EXPECTED_RUNTIME_VITEST_SUMMARY);
   });
 });

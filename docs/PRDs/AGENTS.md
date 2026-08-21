@@ -28,3 +28,7 @@ under that reason; two lanes were once parked for a day on a tool that was on di
 not. A gate result that lives only in a commit message does not exist. The self-improvement loop
 resumes from `docs/verification/round-*.md` — `pnpm round:next` computes the single next action and
 `pnpm round:deletions` reports exports unreached across consecutive rounds.
+
+A red-green acceptance criterion states its mutation: which line, reverted, makes the test fail —
+and pastes that failure. Five repair rounds in one batch were spent on reds produced by the wrong
+thing failing; a test whose "red" survives the feature's removal proves nothing.

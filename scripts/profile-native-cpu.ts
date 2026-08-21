@@ -236,14 +236,7 @@ export function parseProfileArgs(args: readonly string[]): IProfileArgs {
     renderModes: enumList(
       value("--render-mode"),
       ["independent"],
-      [
-        "independent",
-        "distinct-materials",
-        "instanced",
-        "merged",
-        "legacy-scene-collapse",
-        "scene-projection",
-      ],
+      ["independent", "distinct-materials", "instanced", "merged", "scene-projection"],
       "--render-mode",
     ),
     outputDir: value("--output-dir") ?? "artifacts/native-cpu-profile",
@@ -751,7 +744,7 @@ export async function runNativeCpuProfile(
 ): Promise<void> {
   if (cliArgs.includes("--help")) {
     process.stdout.write(
-      "pnpm profile:native-cpu -- [--diagnostic] [--render-advisor] [--visual-evidence fox-scale] [--verify-presentation --headed] [--scenario fox-scale] [--objects 500,1000] [--render-mode independent,distinct-materials,instanced,merged,legacy-scene-collapse,scene-projection] [--passes 1,2] [--hierarchy flat,deep] [--dirty 0,10,100] [--visibility all-visible,mostly-culled] [--repeats 3] [--samples 180] [--allow-software]\nVisual evidence must run headed with a display; use pnpm profile:native-cpu:fox or xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --headed --verify-presentation --scenario fox-scale. Timing-only headless runs are labeled timing-only.\n",
+      "pnpm profile:native-cpu -- [--diagnostic] [--render-advisor] [--visual-evidence fox-scale] [--verify-presentation --headed] [--scenario fox-scale] [--objects 500,1000] [--render-mode independent,distinct-materials,instanced,merged,scene-projection] [--passes 1,2] [--hierarchy flat,deep] [--dirty 0,10,100] [--visibility all-visible,mostly-culled] [--repeats 3] [--samples 180] [--allow-software]\nVisual evidence must run headed with a display; use pnpm profile:native-cpu:fox or xvfb-run -a -s '-screen 0 1600x900x24' pnpm profile:native-cpu -- --headed --verify-presentation --scenario fox-scale. Timing-only headless runs are labeled timing-only.\n",
     );
     return;
   }

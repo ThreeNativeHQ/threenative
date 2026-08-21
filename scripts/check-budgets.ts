@@ -304,6 +304,63 @@ async function vendoredExternalMcp(root: string): Promise<string[]> {
   return offenders;
 }
 
+/**
+ * The native census counts whole top-level entries of `packages/runtime-native/`, so a counted
+ * area is a directory with a trailing slash or a root file by name (`CMakeLists.txt` is prefixed
+ * with "Root"). Names are plain text — the census table adds its own markdown backticks. The
+ * census record's Lines column and this measurement are produced by the same walk; nothing
+ * retypes them.
+ */
+export type INativeCensusMeasurement = {
+  readonly areas: ReadonlyMap<string, number>;
+  readonly total: number;
+};
+
+function nativeCensusAreaName(entryName: string, isDirectory: boolean): string {
+  if (isDirectory) return `${entryName}/`;
+  if (entryName === "CMakeLists.txt") return `Root ${entryName}`;
+  return entryName;
+}
+
+const NATIVE_RUNTIME_WALK_EXCLUSIONS = new Set([
+  "third_party",
+  "build",
+  ".runtime",
+  "artifacts",
+  ".cxx",
+  ".gradle",
+  ".test-tmp",
+  "target",
+]);
+
+function isNativeRuntimeSource(candidate: string): boolean {
+  return (
+    !GENERATED_ANDROID_BUNDLE_FILES.some((generated) => candidate.endsWith(generated)) &&
+    (NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) || path.basename(candidate) === "CMakeLists.txt")
+  );
+}
+
+export async function measureNativeCensusAreas(root: string): Promise<INativeCensusMeasurement> {
+  const nativeRuntimeRoot = path.join(root, NATIVE_RUNTIME_PACKAGE);
+  const files = await filesUnder(
+    nativeRuntimeRoot,
+    isNativeRuntimeSource,
+    new Set([...NATIVE_RUNTIME_WALK_EXCLUSIONS]),
+  );
+  const areas = new Map<string, number>();
+  for (const file of files) {
+    const segments = path.relative(nativeRuntimeRoot, file).split(path.sep);
+    const top = segments[0];
+    if (top === undefined) continue;
+    const name = nativeCensusAreaName(top, segments.length > 1);
+    areas.set(name, (areas.get(name) ?? 0) + (await countLines([file])));
+  }
+  return {
+    areas,
+    total: [...areas.values()].reduce((sum, lines) => sum + lines, 0),
+  };
+}
+
 export async function collectBudgets(root: string): Promise<BudgetReport> {
   const packageEntries = await readdir(path.join(root, "packages"), { withFileTypes: true }).catch(
     () => [],
@@ -338,20 +395,8 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   const nativeRuntimeRoot = path.join(root, NATIVE_RUNTIME_PACKAGE);
   const nativeRuntimeFiles = await filesUnder(
     nativeRuntimeRoot,
-    (candidate) =>
-      !GENERATED_ANDROID_BUNDLE_FILES.some((generated) => candidate.endsWith(generated)) &&
-      (NATIVE_RUNTIME_SOURCE_PATTERN.test(candidate) ||
-        path.basename(candidate) === "CMakeLists.txt"),
-    new Set([
-      "third_party",
-      "build",
-      ".runtime",
-      "artifacts",
-      ".cxx",
-      ".gradle",
-      ".test-tmp",
-      "target",
-    ]),
+    isNativeRuntimeSource,
+    new Set(NATIVE_RUNTIME_WALK_EXCLUSIONS),
   );
   const templateRoot = path.join(root, "packages", "create-threenative", "templates");
   const templates: { name: string; loc: number }[] = [];
@@ -501,58 +546,149 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const errors = [
     ...budgetErrors(report),
     ...(await capabilityManifestErrors(root)),
-    ...(await nativeCensusErrors(root, report.nativeRuntimeLoc)),
+    ...(await nativeCensusErrors(root)),
   ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return report;
 }
 
-async function nativeCensusErrors(
-  root: string,
-  measuredNativeRuntimeLoc: number,
-): Promise<string[]> {
+/**
+ * The census exists to force a KEEP/DELETE judgement per counted area, so that is what the gate
+ * enforces: every measured area must have a row whose owner, live proof or caller, considered
+ * alternative, and verdict are all present. The Lines column is generated from the same walk this
+ * file already does (`pnpm census`), and arithmetic drift against it is reported as a trigger,
+ * not failed — a hand-retyped sum was the single most expensive recurring gate failure.
+ */
+export async function nativeCensusErrors(root: string): Promise<string[]> {
   const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
   if (!existsSync(recordPath)) return [];
 
   const record = await readFile(recordPath, "utf8");
-  const censusStart = record.indexOf("| Counted area | Lines | Owner |");
-  if (censusStart < 0) {
+  if (!record.includes("| Counted area | Lines | Owner |")) {
     return ["native census record is missing its counted-area table"];
   }
-
-  const totalStart = record.indexOf("| **Total** |", censusStart);
-  if (totalStart <= censusStart) {
-    return ["native census record is missing its total row"];
-  }
-
-  const rows = [...record.slice(censusStart, totalStart).matchAll(/^\| ([^|]+) \| ([\d,]+) \|/gmu)];
-  if (rows.length === 0) {
-    return ["native census record contains no counted-area rows"];
-  }
-
-  const areaSum = rows.reduce((sum, match) => {
-    const lines = match[2];
-    if (lines === undefined) throw new Error("native census record contains a malformed row");
-    return sum + Number(lines.replaceAll(",", ""));
-  }, 0);
-  const totalMatch = record.slice(totalStart).match(/^\| \*\*Total\*\* \| \*\*([\d,]+)\*\*/mu);
-  if (!totalMatch || totalMatch[1] === undefined) {
-    return ["native census record contains a malformed total row"];
-  }
-
-  const recordedTotal = Number(totalMatch[1].replaceAll(",", ""));
+  const parsed = parseNativeCensusTable(record);
   const errors: string[] = [];
-  if (areaSum !== measuredNativeRuntimeLoc) {
-    errors.push(
-      `native census sum no longer equals measured native runtime LOC: counted areas ${areaSum}, measured ${measuredNativeRuntimeLoc}`,
-    );
+
+  for (const row of parsed.rows) {
+    if (row.owner.length === 0 || row.liveProof.length === 0 || row.alternative.length === 0) {
+      errors.push(
+        `native census row ${row.area} is missing its owner, live proof or caller, or alternative considered`,
+      );
+    }
+    if (!/^\*\*(?:KEEP|DELETE)\b/u.test(row.verdict)) {
+      errors.push(
+        `native census row ${row.area} has no KEEP/DELETE verdict: the cell must start with **KEEP** or **DELETE**`,
+      );
+    }
   }
-  if (recordedTotal !== measuredNativeRuntimeLoc) {
+
+  const measurement = await measureNativeCensusAreas(root);
+  const recordedAreas = new Set(parsed.rows.map((row) => row.area));
+  for (const [area] of measurement.areas) {
+    if (!recordedAreas.has(area)) {
+      errors.push(
+        `native census record has no row for counted area ${area}: add one with its owner, live proof or caller, alternative considered, and KEEP/DELETE verdict`,
+      );
+    }
+  }
+  const knownAreas = new Set(measurement.areas.keys());
+  for (const area of recordedAreas) {
+    if (!knownAreas.has(area)) {
+      errors.push(
+        `native census row ${area} counts an area the runtime tree no longer has: record the deletion in the doc's changelog, then remove the row`,
+      );
+    }
+  }
+
+  const areaSum = parsed.rows.reduce((sum, row) => sum + row.lines, 0);
+  if (parsed.total === null) {
+    errors.push("native census record contains a malformed total row");
+  } else if (areaSum !== parsed.total) {
     errors.push(
-      `recorded native census total disagrees with measured native runtime LOC: recorded ${recordedTotal}, measured ${measuredNativeRuntimeLoc}`,
+      `native census total disagrees with its own area rows: rows sum to ${areaSum}, total row says ${parsed.total}`,
     );
   }
   return errors;
+}
+
+type INativeCensusRow = {
+  readonly area: string;
+  readonly lines: number;
+  readonly owner: string;
+  readonly liveProof: string;
+  readonly alternative: string;
+  readonly verdict: string;
+};
+
+function parseNativeCensusTable(record: string): {
+  rows: INativeCensusRow[];
+  total: number | null;
+} {
+  const rows: INativeCensusRow[] = [];
+  let total: number | null = null;
+  let inTable = false;
+  for (const line of record.split(/\r?\n/u)) {
+    if (line.startsWith("| Counted area | Lines | Owner |")) {
+      inTable = true;
+      continue;
+    }
+    if (!inTable) continue;
+    if (!line.startsWith("|")) break;
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    if (cells.every((cell) => /^[-:]+$/u.test(cell))) continue;
+    if (line.startsWith("| **Total** |")) {
+      const lines = cells[1]?.replaceAll("*", "").replaceAll(",", "");
+      if (lines !== undefined && /^\d+$/u.test(lines)) total = Number(lines);
+      continue;
+    }
+    const area = cells[0]?.replaceAll("`", "").trim();
+    const lines = cells[1]?.replaceAll(",", "");
+    if (area === undefined || area.length === 0 || lines === undefined || !/^\d+$/u.test(lines)) {
+      throw new Error(`native census record contains a malformed row: ${line}`);
+    }
+    rows.push({
+      alternative: cells[4] ?? "",
+      area,
+      lines: Number(lines),
+      liveProof: cells[3] ?? "",
+      owner: cells[2] ?? "",
+      verdict: cells[5] ?? "",
+    });
+  }
+  return { rows, total };
+}
+
+/**
+ * Reported, never fatal: the generated Lines column can trail the tree between a native edit and
+ * the next `pnpm census`, and that lag must be loud without blocking on retyped arithmetic.
+ */
+export async function nativeCensusDrift(root: string): Promise<string[]> {
+  const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
+  if (!existsSync(recordPath)) return [];
+  const record = await readFile(recordPath, "utf8");
+  if (!record.includes("| Counted area | Lines | Owner |")) return [];
+
+  let parsed: ReturnType<typeof parseNativeCensusTable>;
+  try {
+    parsed = parseNativeCensusTable(record);
+  } catch {
+    return ["native census record has a malformed row; run `pnpm census` after fixing it"];
+  }
+  const measurement = await measureNativeCensusAreas(root);
+  const drift: string[] = [];
+  for (const row of parsed.rows) {
+    const measured = measurement.areas.get(row.area);
+    if (measured !== undefined && measured !== row.lines) {
+      drift.push(
+        `native census drift: ${row.area} recorded ${row.lines.toLocaleString("en-US")}, measured ${measured.toLocaleString("en-US")} — run \`pnpm census\` to regenerate the Lines column`,
+      );
+    }
+  }
+  return drift;
 }
 
 if (
@@ -564,11 +700,12 @@ if (
     ? verifyFrameworkLocAttribution(process.cwd())
     : enforceBudgets(process.cwd());
   verification
-    .then((report) => {
+    .then(async (report) => {
       if (verifyAttribution) {
         console.log(`framework LOC attribution verified: ${report.frameworkLoc} lines`);
       } else {
         for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
+        for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
         console.log(
           `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
         );
