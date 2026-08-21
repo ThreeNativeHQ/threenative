@@ -20,8 +20,10 @@ optimization lands before a profile names the bottleneck.
 
 > **Where it actually landed, 2026-08-16.** Two answers arrived after this file and outrank every
 > row in it. **The cost is interpreted JavaScript per object, not the boundary** — the render
-> bindings measure ~2% of a CPU-bound frame — so `SceneCollapse` (`packages/core/src/collapse.ts`)
-> removes the per-object work instead of speeding up the crossing. And the **engine** was worth
+> bindings measure ~2% of a CPU-bound frame — so the scene projection (`SceneRenderProjection` in
+> `packages/core/src/renderProjection.ts`; PRD-152 replaced the `SceneCollapse` named here when
+> this was written, and that module was deleted on 2026-08-21) removes the per-object work instead
+> of speeding up the crossing. And the **engine** was worth
 > more than any of it: PRD-118 swapped Android's QuickJS for V8 and cut script time 22× on a
 > Pixel 8, and **PRD-130 made V8 the Android default on 2026-08-16** — 8.34 ms against QuickJS's
 > 101.24 ms at 16,384 cubes on the same phone, a 12× lower bound

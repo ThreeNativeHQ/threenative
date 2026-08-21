@@ -561,7 +561,15 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
  */
 export async function nativeCensusErrors(root: string): Promise<string[]> {
   const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
-  if (!existsSync(recordPath)) return [];
+  if (!existsSync(recordPath)) {
+    // Small budget fixtures carry no census record. The real tree — signalled the same way the
+    // capability-manifest gate signals it — must not be able to silence the verdict gate by
+    // deleting the file.
+    if (!existsSync(path.join(root, "packages", "core", "package.json"))) return [];
+    return [
+      "native census record is missing: the counted-area verdict gate has nothing to enforce",
+    ];
+  }
 
   const record = await readFile(recordPath, "utf8");
   if (!record.includes("| Counted area | Lines | Owner |")) {
@@ -703,6 +711,7 @@ if (
     .then(async (report) => {
       if (verifyAttribution) {
         console.log(`framework LOC attribution verified: ${report.frameworkLoc} lines`);
+        for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
       } else {
         for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
         for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);

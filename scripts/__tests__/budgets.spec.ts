@@ -433,6 +433,25 @@ describe("budget gate", () => {
     expect(drift.join("\n")).toContain("run `pnpm census`");
   });
 
+  it("should pass fixtures that carry no census record at all", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
+  });
+
+  it("should not let the real tree silence the verdict gate by deleting the census record", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    const coreDirectory = path.join(root, "packages", "core");
+    await mkdir(coreDirectory, { recursive: true });
+    await writeFile(path.join(coreDirectory, "package.json"), "{}");
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "native census record is missing: the counted-area verdict gate has nothing to enforce",
+    );
+  });
+
   it("should pass a complete native census", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);

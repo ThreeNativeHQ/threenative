@@ -20,9 +20,11 @@ per-object matrix updates and culling — and **no layer in this diagram touches
 **What did touch it, added 2026-08-16.** One layer of this sketch was right and is now built,
 and it is not one of the three middle ones: the **JS runtime**. PRD-118 put V8 behind
 `-PthreenativeJsEngine=v8` on Android and script time fell 22× on the same Pixel 8. The other
-answer came from outside the stack entirely — `SceneCollapse` deletes the per-object JavaScript
-work rather than transporting it faster. Both are cheaper than a shim, a command stream and a
-render thread, and together they are why this page stays declined.
+answer came from outside the stack entirely — the scene projection (`SceneRenderProjection`;
+PRD-152's replacement for the `SceneCollapse` named here when this was written, deleted on
+2026-08-21) deletes the per-object JavaScript work rather than transporting it faster. Both are
+cheaper than a shim, a command stream and a render thread, and together they are why this page
+stays declined.
 
 ## The sketch, as proposed
 
