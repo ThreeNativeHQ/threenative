@@ -2,6 +2,8 @@ node_modules/
 .pnpm-store/
 .npmrc
 dist/
+dist-native/
+.threenative/
 coverage/
 playwright-report/
 test-results/

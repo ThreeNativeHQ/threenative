@@ -1,0 +1,17 @@
+{
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "equals": 1884960806, "id": "state", "path": "stateHash" }]
+  },
+  "name": "prd162-portable-replay",
+  "schemaVersion": 1,
+  "steps": [
+    { "holdTicks": 1, "press": "KeyP" },
+    { "label": "replay-async", "pointerPosition": { "x": 0.5, "y": 0.5 } },
+    { "waitTicks": 1, "release": true }
+  ],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 0
+}

@@ -10,7 +10,7 @@ interface IRecordingSample {
 interface IRecordingValue {
   input: IRecordingSample[];
   randomState: number;
-  runtime: { agent: string; core: string; rapier: string | null; step: number };
+  runtime: { agent: string; core: string; portable?: boolean; rapier: string | null; step: number };
   seed: number;
   ticks: number;
   version: 1;
@@ -81,9 +81,12 @@ function validateRecording(value: unknown, scenarioPath: string): IRecordingValu
   if (!Array.isArray(root.input) || root.input.length === 0)
     throw invalidScenario(scenarioPath, "recording.input must contain at least one sample.");
   const runtime = recordObject(root.runtime, "recording.runtime");
-  rejectUnknownKeys(runtime, ["agent", "core", "rapier", "step"], scenarioPath, "recording.runtime");
+  rejectUnknownKeys(runtime, ["agent", "core", "portable", "rapier", "step"], scenarioPath, "recording.runtime");
   const agent = recordString(runtime.agent, "recording.runtime.agent");
   const core = recordString(runtime.core, "recording.runtime.core");
+  const portable = runtime.portable;
+  if (portable !== undefined && typeof portable !== "boolean")
+    throw invalidScenario(scenarioPath, "recording.runtime.portable must be a boolean.");
   if (runtime.rapier !== null && typeof runtime.rapier !== "string")
     throw invalidScenario(scenarioPath, "recording.runtime.rapier must be a string or null.");
   const step = recordNumber(runtime.step, "recording.runtime.step");
@@ -106,7 +109,20 @@ function validateRecording(value: unknown, scenarioPath: string): IRecordingValu
     previousTick = tick;
     return { keys, ...(pointer === undefined ? {} : { pointer }), tick };
   });
-  return { input, randomState, runtime: { agent, core, rapier: runtime.rapier as string | null, step }, seed, ticks, version: 1 };
+  return {
+    input,
+    randomState,
+    runtime: {
+      agent,
+      core,
+      ...(portable === undefined ? {} : { portable }),
+      rapier: runtime.rapier as string | null,
+      step,
+    },
+    seed,
+    ticks,
+    version: 1,
+  };
 }
 
 function validateRecordingOracle(value: unknown, scenarioPath: string): IRecordingOracle {
@@ -229,6 +245,7 @@ export function recordToScenario(
       runtime: {
         agent: recording.runtime.agent,
         core: recording.runtime.core,
+        ...(recording.runtime.portable === undefined ? {} : { portable: recording.runtime.portable }),
         randomState: recording.randomState,
         rapier: recording.runtime.rapier,
         step: recording.runtime.step,

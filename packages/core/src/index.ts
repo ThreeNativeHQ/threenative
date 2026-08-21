@@ -123,7 +123,7 @@ export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
  * @example const driver = createReplayDriver({ recording });
  */
 export { createReplayDriver, replay } from "./replay.js";
-export type { Recording } from "./replay.js";
+export type { IReplayOptions, Recording } from "./replay.js";
 /**
  * Schedule delayed and repeating callbacks with game-owned cleanup.
  * @situation delay an enemy patrol transition

@@ -110,6 +110,6 @@ describe("core constraints", () => {
   it("should keep the replay exports on the public surface", () => {
     const source = readFileSync(indexSource, "utf8");
     expect(source).toContain('export { createReplayDriver, replay } from "./replay.js";');
-    expect(source).toContain('export type { Recording } from "./replay.js";');
+    expect(source).toContain('export type { IReplayOptions, Recording } from "./replay.js";');
   });
 });

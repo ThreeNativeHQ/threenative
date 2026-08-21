@@ -277,6 +277,7 @@ export interface IPlaytestReachabilityAssertion {
 export interface IPlaytestWorldRuntimeAssertion {
   agent: string;
   core: string;
+  portable?: boolean;
   randomState: number;
   rapier: string | null;
   step: number;
@@ -1017,7 +1018,11 @@ function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: st
   const runtimeValue = value.runtime;
   if (runtimeValue === undefined) return { seed: value.seed as number | null };
   const runtime = requireRecord(runtimeValue, scenarioPath, "assert.world.runtime");
-  rejectUnknownKeys(runtime, ["agent", "core", "randomState", "rapier", "step"], scenarioPath, "assert.world.runtime");
+  rejectUnknownKeys(runtime, ["agent", "core", "portable", "randomState", "rapier", "step"], scenarioPath, "assert.world.runtime");
+  const portable = runtime.portable;
+  if (portable !== undefined && typeof portable !== "boolean") {
+    throw invalidScenario(scenarioPath, "'assert.world.runtime.portable' must be a boolean.");
+  }
   const randomState = optionalNumber(runtime, "randomState", scenarioPath, "assert.world.runtime");
   if (randomState === undefined || !Number.isInteger(randomState)) {
     throw invalidScenario(scenarioPath, "'assert.world.runtime.randomState' must be an integer.");
@@ -1030,6 +1035,7 @@ function validateWorldAssertion(value: Record<string, unknown>, scenarioPath: st
     runtime: {
       agent: requireString(runtime, "agent", scenarioPath, "assert.world.runtime"),
       core: requireString(runtime, "core", scenarioPath, "assert.world.runtime"),
+      ...(portable === undefined ? {} : { portable }),
       randomState,
       rapier: rapier as string | null,
       step: optionalPositiveNumber(runtime, "step", scenarioPath, "assert.world.runtime") ?? (() => {

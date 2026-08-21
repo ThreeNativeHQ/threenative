@@ -95,6 +95,15 @@ test("should preserve finite fractional seeds", () => {
   expect(scenario.assert?.world).toMatchObject({ seed: 1.5 });
 });
 
+test("should carry portable runtime compatibility into the generated assertion", () => {
+  const scenario = recordToScenario({
+    ...recording(),
+    runtime: { ...recording().runtime, portable: true },
+  }, "recording.json", oracle());
+
+  expect(scenario.assert?.world?.runtime).toMatchObject({ portable: true });
+});
+
 test("should reject pointer buttons outside the runner's supported mask", () => {
   expect(() =>
     recordToScenario(

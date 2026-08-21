@@ -1978,7 +1978,7 @@ function evaluateWorldAssertion(
   const expectedRuntime = assertion.runtime;
   const runtimePass = expectedRuntime === undefined || (
     observedRuntime !== undefined &&
-    observedRuntime.agent === expectedRuntime.agent &&
+    (expectedRuntime.portable === true || observedRuntime.agent === expectedRuntime.agent) &&
     observedRuntime.core === expectedRuntime.core &&
     observedRuntime.randomState === expectedRuntime.randomState &&
     observedRuntime.rapier === expectedRuntime.rapier &&

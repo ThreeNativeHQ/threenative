@@ -1,0 +1,12 @@
+{
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "resources": [{ "equals": 1884960806, "id": "state", "path": "stateHash" }]
+  },
+  "name": "prd162-portable-replay-desktop",
+  "schemaVersion": 1,
+  "steps": [{ "holdTicks": 1, "press": "KeyP" }, { "waitTicks": 1, "release": true }],
+  "target": "desktop",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 0
+}

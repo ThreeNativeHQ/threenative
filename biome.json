@@ -3,6 +3,8 @@
   "files": {
     "ignore": [
       "**/dist/**",
+      "**/dist-native/**",
+      "**/.threenative/**",
       "artifacts/**",
       ".worktrees/**",
       ".claude/worktrees/**",

@@ -27,7 +27,7 @@ function runtime(
   };
 }
 
-async function recordThreeTicks(): Promise<{
+async function recordThreeTicks(portable = false): Promise<{
   input: InputMap;
   plugin: ReturnType<typeof replay>;
   recording: Recording;
@@ -37,7 +37,7 @@ async function recordThreeTicks(): Promise<{
 }> {
   const target = new EventTarget();
   const input = new InputMap(undefined, target);
-  const plugin = replay();
+  const plugin = replay(portable ? { portable: true } : {});
   const ctx = { input, random: createRandom(90210) } as unknown as ICtx;
   const trace: string[][] = [];
   await plugin.setup?.(ctx, runtime());
@@ -383,6 +383,33 @@ describe("replay", () => {
     expect(() => createReplayDriver(mismatched, new EventTarget())(runtime())).toThrow(
       /TN_REPLAY_RUNTIME_MISMATCH/u,
     );
+    input.dispose();
+  });
+
+  it("should keep rejecting a non-portable recording from another host", async () => {
+    const { input, recording } = await recordThreeTicks();
+    const mismatched = {
+      ...recording,
+      runtime: { ...recording.runtime, agent: "another-host" },
+    };
+
+    expect(() => createReplayDriver(mismatched, new EventTarget())(runtime())).toThrow(
+      /TN_REPLAY_RUNTIME_MISMATCH/u,
+    );
+    input.dispose();
+  });
+
+  it("should accept a portable recording from another host", async () => {
+    const { input, recording } = await recordThreeTicks(true);
+    const crossHostRecording = {
+      ...recording,
+      runtime: { ...recording.runtime, agent: "browser-host" },
+    };
+
+    expect(recording.runtime.portable).toBe(true);
+    expect(() =>
+      createReplayDriver(crossHostRecording, new EventTarget())(runtime()),
+    ).not.toThrow();
     input.dispose();
   });
 

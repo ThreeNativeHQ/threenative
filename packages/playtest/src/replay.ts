@@ -9,7 +9,13 @@ export interface IReplayRecordingSample {
 export interface IReplayRecording {
   readonly input: readonly IReplayRecordingSample[];
   readonly randomState: number;
-  readonly runtime: { agent: string; core: string; rapier: string | null; step: number };
+  readonly runtime: {
+    agent: string;
+    core: string;
+    portable?: boolean;
+    rapier: string | null;
+    step: number;
+  };
   readonly seed: number;
   readonly ticks: number;
   readonly version: 1;
@@ -47,13 +53,14 @@ export function parseReplayRecording(value: unknown): IReplayRecording {
   if (!Number.isInteger(ticks) || ticks < 1) fail("ticks must be positive");
   const input = root.input;
   if (!Array.isArray(input) || input.length === 0) fail("empty input", "TN_REPLAY_EMPTY");
-  const runtime = checked(root.runtime, ["agent", "core", "rapier", "step"]);
+  const runtime = checked(root.runtime, ["agent", "core", "portable", "rapier", "step"]);
   const step = runtime.step as number;
   if (
     typeof runtime.agent !== "string" ||
     !runtime.agent ||
     typeof runtime.core !== "string" ||
     !runtime.core ||
+    (runtime.portable !== undefined && typeof runtime.portable !== "boolean") ||
     (runtime.rapier !== null && typeof runtime.rapier !== "string") ||
     !Number.isFinite(step) ||
     step <= 0

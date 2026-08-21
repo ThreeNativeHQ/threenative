@@ -8,6 +8,10 @@ type ReplayContext = { renderer?: { domElement: HTMLCanvasElement } };
 type Random = NonNullable<IGamePluginRuntime["random"]>;
 let replayDepth = 0;
 export type Recording = IReplayRecording;
+export interface IReplayOptions {
+  /** Allow a recording to be replayed by a different host with the same simulation contract. */
+  readonly portable?: boolean;
+}
 function fail(message: string, code = "TN_REPLAY_INVALID"): never {
   throw new Error(`${code}: ${message}`);
 }
@@ -62,8 +66,9 @@ type ReplayPublic = { readonly recording: Recording | undefined; readonly runId:
 export function replay<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
->(): IGamePluginHooks<TState, TPhysics> & ReplayPublic {
+>(options: IReplayOptions = {}): IGamePluginHooks<TState, TPhysics> & ReplayPublic {
   const runId = Symbol("replay");
+  const portable = options.portable === true;
   const samples: Array<Recording["input"][number]> = [];
   let header: Omit<Recording, "input" | "ticks"> | undefined;
   let ticks = 0;
@@ -85,7 +90,13 @@ export function replay<
       const { rapier, seed, step } = runtime;
       header = {
         randomState: ctx.random.state,
-        runtime: { agent: currentAgent, core: CORE_VERSION, rapier: rapier ?? null, step },
+        runtime: {
+          agent: currentAgent,
+          core: CORE_VERSION,
+          ...(portable ? { portable: true } : {}),
+          rapier: rapier ?? null,
+          step,
+        },
         seed,
         version: 1,
       };
@@ -114,7 +125,7 @@ function validateRuntime(runtime: IGamePluginRuntime, recording: Recording): Ran
     runtime.step !== recording.runtime.step ||
     (runtime.rapier ?? null) !== (recording.runtime.rapier ?? null) ||
     recording.runtime.core !== CORE_VERSION ||
-    recording.runtime.agent !== currentAgent ||
+    (recording.runtime.portable !== true && recording.runtime.agent !== currentAgent) ||
     random === undefined
   )
     fail("recording runtime does not match the current build", "TN_REPLAY_RUNTIME_MISMATCH");
