@@ -104,11 +104,14 @@ describe("starter visual floor", () => {
     expect(shapes).not.toContain("Math.random(");
   });
 
-  it("should keep the starter sculpture inside a real-time geometry budget", async () => {
-    const shapes = await readFile(path.join(starter, "src/render/shapes.ts"), "utf8");
-    const segments = shapes.match(/new TorusKnotGeometry\([^)]*?,\s*(\d+),\s*(\d+)\)/u);
-    expect(segments).not.toBeNull();
-    expect(Number(segments?.[1]) * Number(segments?.[2])).toBeLessThanOrEqual(3_072);
+  it("should not ship an unused high-poly sculpture helper", async () => {
+    const [shapes, play] = await Promise.all([
+      readFile(path.join(starter, "src/render/shapes.ts"), "utf8"),
+      readFile(path.join(starter, "src/scenes/Play.ts"), "utf8"),
+    ]);
+    expect(shapes).not.toContain("TorusKnotGeometry");
+    expect(shapes).not.toContain("export function sculpture");
+    expect(play).not.toContain("sculpture");
   });
 
   it("should light silhouettes with a rim, not just a key", async () => {

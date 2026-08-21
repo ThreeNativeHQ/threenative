@@ -19,7 +19,6 @@ import {
   MathUtils,
   Mesh,
   SphereGeometry,
-  TorusKnotGeometry,
   Vector3,
 } from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
@@ -123,14 +122,6 @@ export function spike(
 ): Mesh {
   const geometry = new ConeGeometry(radius, height, options.segments ?? 14);
   return shadowed(new Mesh(geometry, material), options);
-}
-
-/** A smooth prop for the starter scene. */
-export function sculpture(material: Material): Mesh {
-  // 128 × 24 is 6,144 triangles. The old 500 × 100 mesh pushed 100k triangles
-  // through the colour, shadow and bloom passes for no visible gain.
-  const geometry = new TorusKnotGeometry(1.35, 0.38, 128, 24);
-  return shadowed(new Mesh(geometry, material), {});
 }
 
 /**

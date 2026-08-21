@@ -1,0 +1,82 @@
+[
+  {
+    "arm": "platformer::after",
+    "id": "platformer-after",
+    "label": "sample-01"
+  },
+  {
+    "arm": "defense::before",
+    "id": "defense-before",
+    "label": "sample-02"
+  },
+  {
+    "arm": "racing::after",
+    "id": "racing-after",
+    "label": "sample-03"
+  },
+  {
+    "arm": "shooter::after",
+    "id": "shooter-after",
+    "label": "sample-04"
+  },
+  {
+    "arm": "starter::before",
+    "id": "starter-before",
+    "label": "sample-05"
+  },
+  {
+    "arm": "starter::after",
+    "id": "starter-after",
+    "label": "sample-06"
+  },
+  {
+    "arm": "defense::before::duplicate",
+    "id": "defense-before-duplicate",
+    "label": "sample-07"
+  },
+  {
+    "arm": "action-rpg::before::duplicate",
+    "id": "action-rpg-before-duplicate",
+    "label": "sample-08"
+  },
+  {
+    "arm": "minimal::after",
+    "id": "minimal-after",
+    "label": "sample-09"
+  },
+  {
+    "arm": "action-rpg::after",
+    "id": "action-rpg-after",
+    "label": "sample-10"
+  },
+  {
+    "arm": "action-rpg::before",
+    "id": "action-rpg-before",
+    "label": "sample-11"
+  },
+  {
+    "arm": "minimal::before",
+    "id": "minimal-before",
+    "label": "sample-12"
+  },
+  {
+    "arm": "platformer::before",
+    "id": "platformer-before",
+    "label": "sample-13"
+  },
+  {
+    "arm": "racing::before",
+    "id": "racing-before",
+    "label": "sample-14"
+  },
+  {
+    "arm": "shooter::before",
+    "id": "shooter-before",
+    "label": "sample-15"
+  },
+  {
+    "arm": "defense::after",
+    "id": "defense-after",
+    "label": "sample-16"
+  }
+]

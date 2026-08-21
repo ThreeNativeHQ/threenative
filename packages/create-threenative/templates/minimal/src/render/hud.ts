@@ -8,7 +8,19 @@ const GLYPHS =
     .split(" ")
     .map((hex) => BigInt(`0x${hex}`));
 
-export function createHud(camera: PerspectiveCamera, primaryLabel: string, counterLabel: string) {
+type HudValues = { counter?: number; primary: number; seconds: number };
+
+function formatHudText(primaryLabel: string, counterLabel: string | undefined, values: HudValues) {
+  const minutes = String(Math.floor(values.seconds / 60)).padStart(2, "0");
+  const seconds = String(Math.floor(values.seconds % 60)).padStart(2, "0");
+  const lines = [`${primaryLabel} ${Math.max(0, Math.round(values.primary))}`];
+  if (counterLabel !== undefined && values.counter !== undefined)
+    lines.push(`${counterLabel} ${Math.max(0, Math.round(values.counter))}`);
+  lines.push(`TIME ${minutes}:${seconds}`);
+  return lines.join("\n");
+}
+
+export function createHud(camera: PerspectiveCamera, primaryLabel: string, counterLabel?: string) {
   const material = new MeshBasicMaterial({
     color: palette.player,
     depthTest: false,
@@ -21,10 +33,8 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
   camera.add(root);
   return {
     glyphs: 0,
-    update(values: { counter: number; primary: number; seconds: number }): void {
-      const minutes = String(Math.floor(values.seconds / 60)).padStart(2, "0");
-      const seconds = String(Math.floor(values.seconds % 60)).padStart(2, "0");
-      const text = `${primaryLabel} ${Math.max(0, Math.round(values.primary))}\n${counterLabel} ${Math.max(0, Math.round(values.counter))}\nTIME ${minutes}:${seconds}`;
+    update(values: HudValues): void {
+      const text = formatHudText(primaryLabel, counterLabel, values);
       let instance = 0;
       for (const [y, line] of text.split("\n").entries()) {
         for (let x = 0; x < line.length; x += 1) {

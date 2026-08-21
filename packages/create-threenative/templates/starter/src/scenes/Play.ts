@@ -8,7 +8,7 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
-import { ball, block, makeRandom, roundedBox, sculpture, spike, tube } from "../render/shapes.js";
+import { ball, block, makeRandom, roundedBox, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
@@ -63,10 +63,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     const materials = createMaterials();
-    const sculptureMesh = sculpture(materials.crate);
-    sculptureMesh.name = "sculpture";
-    sculptureMesh.position.set(-2, 2.6, -1.5);
-    ctx.add(sculptureMesh);
     // Keep the initial -99 sentinel until seed.playtest samples it. If this draw is replaced with
     // Math.random, the unchanged seeded state reports an out-of-range value and seed.playtest
     // identifies the bypass instead of silently accepting an unseeded level.

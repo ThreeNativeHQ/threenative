@@ -23,10 +23,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
-    const hud = ctx.entities.add(
-      "hud",
-      createHud(ctx.camera as PerspectiveCamera, "SCORE", "ITEMS"),
-    );
+    const hud = ctx.entities.add("hud", createHud(ctx.camera as PerspectiveCamera, "SCORE"));
     const floor = new Mesh(new BoxGeometry(10, 0.2, 4), floorMaterial);
     floor.position.y = -0.1;
     floor.receiveShadow = true;
@@ -55,7 +52,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       elapsed += dt;
       const state = frameCtx.state.getState();
       hud.update({
-        counter: Math.abs(player.mesh.position.x) * 10,
         primary: state.score,
         seconds: elapsed,
       });

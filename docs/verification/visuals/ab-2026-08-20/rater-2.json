@@ -1,0 +1,20 @@
+{
+  "samples": [
+    { "label": "sample-01", "visuals": 2 },
+    { "label": "sample-02", "visuals": 4 },
+    { "label": "sample-03", "visuals": 2 },
+    { "label": "sample-04", "visuals": 4 },
+    { "label": "sample-05", "visuals": 2 },
+    { "label": "sample-06", "visuals": 4 },
+    { "label": "sample-07", "visuals": 4 },
+    { "label": "sample-08", "visuals": 4 },
+    { "label": "sample-09", "visuals": 3 },
+    { "label": "sample-10", "visuals": 4 },
+    { "label": "sample-11", "visuals": 5 },
+    { "label": "sample-12", "visuals": 2 },
+    { "label": "sample-13", "visuals": 2 },
+    { "label": "sample-14", "visuals": 3 },
+    { "label": "sample-15", "visuals": 4 },
+    { "label": "sample-16", "visuals": 4 }
+  ]
+}
