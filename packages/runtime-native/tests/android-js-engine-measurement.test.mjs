@@ -15,8 +15,9 @@ import {
   parseJsonMarkers,
   parsePeakRssKb,
   percentile,
-  requireMeasurementDevice,
   requireInstallForEvidence,
+  requireMeasurementDevice,
+  resolveMeasurementSerial,
   validateCandidateComparison,
   validateNativeFootprint,
   validateOptimizationProvenance,
@@ -148,6 +149,29 @@ test("physical acceptance blocks emulators and the wrong phone", () => {
   );
   assert.throws(
     () => requireMeasurementDevice({ hardware: "tensor", qemu: "0" }, "other-phone"),
+    /WRONG_DEVICE/u,
+  );
+  // The Wi-Fi transport names a device `ip:port`; the phone's identity is its `ro.serialno`.
+  // The Pixel 8 reached over wireless adb must stay acceptance-eligible — the discharging
+  // preflight requires the untethered lane, so a transport string can never be the identity.
+  assert.equal(
+    resolveMeasurementSerial("37251FDJH0037Z", "192.168.1.192:5555"),
+    "37251FDJH0037Z",
+  );
+  assert.equal(resolveMeasurementSerial("", "192.168.1.192:5555"), "192.168.1.192:5555");
+  assert.equal(resolveMeasurementSerial(undefined, "emulator-5554"), "emulator-5554");
+  // The Wi-Fi transport names a device `ip:port`; the phone's identity is its `ro.serialno`.
+  // The Pixel 8 reached over wireless adb must stay acceptance-eligible — the discharging
+  // preflight requires the untethered lane, so a transport string can never be the identity.
+  assert.equal(
+    requireMeasurementDevice(
+      { hardware: "tensor", qemu: "0" },
+      "37251FDJH0037Z",
+    ).acceptanceEligible,
+    true,
+  );
+  assert.throws(
+    () => requireMeasurementDevice({ hardware: "tensor", qemu: "0" }, "192.168.1.192:5555"),
     /WRONG_DEVICE/u,
   );
   assert.throws(

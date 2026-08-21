@@ -30,6 +30,12 @@ docs/benchmark/sweeps/*/assets/generated/
 .linchpin/
 .gauntlet/
 
+# Shared editor settings are committed — they keep VS Code's watcher and TypeScript server out
+# of the 6+ GB of build output under packages/runtime-native. Everything else VS Code drops in
+# here is per-machine and is not.
+.vscode/*
+!.vscode/settings.json
+
 # Other agents' lanes. Never searched, never read; see AGENTS.md.
 .worktrees
 

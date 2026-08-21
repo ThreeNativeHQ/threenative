@@ -474,6 +474,15 @@ export function classifyDevice(properties) {
     : "physical";
 }
 
+// Wireless adb names the same phone `ip:port`, and the discharging preflight (PRD-127) requires
+// the untethered lane, so the transport string can never be the device's identity. The hardware
+// serial from `ro.serialno` is; an empty read falls back to the transport string, which then
+// fails the physical check below exactly as an unknown phone would.
+export function resolveMeasurementSerial(hardwareSerial, transportSerial) {
+  const identity = String(hardwareSerial ?? "").trim();
+  return identity !== "" ? identity : String(transportSerial ?? "").trim();
+}
+
 export function requireMeasurementDevice(properties, serial, allowEmulatorDevelopment = false) {
   const kind = classifyDevice(properties);
   if (kind === "emulator" && !allowEmulatorDevelopment) {
@@ -753,7 +762,12 @@ async function main() {
     model: adb(adbExecutable, options.device, "shell", "getprop", "ro.product.model").trim(),
     qemu: adb(adbExecutable, options.device, "shell", "getprop", "ro.kernel.qemu").trim(),
   };
-  const device = requireMeasurementDevice(properties, options.device, options.allowEmulatorDevelopment);
+  const hardwareSerial = adb(adbExecutable, options.device, "shell", "getprop", "ro.serialno").trim();
+  const device = requireMeasurementDevice(
+    properties,
+    resolveMeasurementSerial(hardwareSerial, options.device),
+    options.allowEmulatorDevelopment,
+  );
   requireInstallForEvidence(device, options);
   const defaultRoot = device.acceptanceEligible
     ? join(runtimeRoot, "artifacts", "android", "js-engine")
