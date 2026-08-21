@@ -6,6 +6,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type RegistryProbe,
   alphaBar,
+  pairedRoundRow,
   readEvidenceBlocks,
   renderTable,
   summariseAlphaBar,
@@ -114,6 +115,64 @@ function roundLedger(root: string): void {
       "",
       "## Notes",
       "Fixture round for the alpha-bar spec.",
+    ].join("\n"),
+  );
+}
+
+/** A visual-only before/after ledger that must not support a framework-versus-vanilla claim. */
+function visualOnlyRoundLedger(root: string): void {
+  write(
+    root,
+    "docs/verification/round-11-2026-08-19.md",
+    [
+      "# Improvement round ledger — round 11 — 2026-08-19",
+      "Round: 11",
+      "Date: 2026-08-19",
+      "Framework commit: working tree",
+      "Framework version: 0.2.0",
+      "Round kind: visual-only",
+      "Genres: template-visual",
+      "Budget: screenshot-only fixture",
+      "Stop condition met: none",
+      "Next action: continue",
+      "Visual MDE: 1",
+      "",
+      "## Visual deltas",
+      "| Template | Before | After | Δ | Verdict |",
+      "| --- | --- | --- | --- | --- |",
+      "| starter | 2 | 2 | 0 | INDETERMINATE |",
+      "",
+      "## Arms",
+      "| Genre | Arm | Archive | Brief SHA-256 | Proof SHA-256 | Proof passed/total | Instrument visual | User LOC | Source files | Reach rate |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| template-visual | before | docs/verification/visuals/before | prompt | prompt | 7/7 | 4 | n/a | 7 | n/a |",
+      "| template-visual | after | docs/verification/visuals/after | prompt | prompt | 7/7 | 4 | n/a | 7 | n/a |",
+      "",
+      "## Column verdicts",
+      "| Genre | Functional | Visual | Cost | Verdict |",
+      "| --- | --- | --- | --- | --- |",
+      "| template-visual | tie | tie | tie | schema-only |",
+      "",
+      "## Gap list",
+      "| # | Genre | Column | What vanilla did better | Evidence | Smallest change that would close it |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Dispositions",
+      "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Gates",
+      "| Gate | Command | Result |",
+      "| --- | --- | --- |",
+      "| Typecheck | pnpm typecheck | pass |",
+      "| Lint | pnpm lint | pass |",
+      "| Test | pnpm test | pass |",
+      "| Budgets | pnpm budgets | pass |",
+      "",
+      "## Notes",
+      "This visual-only fixture has numeric screenshots and deltas but is not a value pair.",
     ].join("\n"),
   );
 }
@@ -349,6 +408,17 @@ describe("pnpm alpha:bar", () => {
     const a4 = after.rows.find((row) => row.id === "A4");
     expect(a4?.status).toBe("unmeasured");
     expect(a4?.detail).toMatch(/round-5-2026-08-16\.md/u);
+  });
+
+  it("does not count a measured visual-only ledger as a framework-versus-vanilla pair", async () => {
+    const root = await makeTempDir("threenative-alpha-visual-only-");
+    roots.push(root);
+    visualOnlyRoundLedger(root);
+
+    const a4 = pairedRoundRow(root);
+
+    expect(a4.status).toBe("fail");
+    expect(a4.detail).toMatch(/visual-only.*framework-versus-vanilla/u);
   });
 
   it("fails A5 when the current ledger records an exit code its own report contradicts", async () => {

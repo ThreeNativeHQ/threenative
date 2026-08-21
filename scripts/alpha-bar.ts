@@ -334,6 +334,8 @@ function ledgerFiles(repo: string): readonly string[] {
 }
 
 function pairedAndMeasured(ledger: RoundLedger): string | undefined {
+  if (ledger.declaresVisualOnly)
+    return `round ${ledger.round} is visual-only, not a framework-versus-vanilla value claim`;
   if (ledger.stopCondition === "void") return `round ${ledger.round} is VOID`;
   const genres = new Map<string, number>();
   for (const arm of ledger.arms) genres.set(arm.genre, (genres.get(arm.genre) ?? 0) + 1);

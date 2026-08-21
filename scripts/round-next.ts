@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { inspectFrame } from "./capture-guard.js";
 import { readManifest } from "./make-sandbox.js";
 import {
   NO_STOP_CONDITION,
@@ -22,6 +23,31 @@ function archivePath(archive: string, repo: string): string | undefined {
 
 function captureExists(archive: string): boolean {
   return fs.existsSync(path.join(archive, "captures", "index.json"));
+}
+
+function visualArchiveTemplates(archive: string, arm: string, ledgerFile: string): Set<string> {
+  if (!fs.existsSync(archive) || !fs.statSync(archive).isDirectory())
+    throw new Error(
+      `${ledgerFile}: visual-only ${arm} archive is missing screenshot evidence: ${archive}`,
+    );
+  const imageFiles = fs
+    .readdirSync(archive, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".png"));
+  if (imageFiles.length === 0)
+    throw new Error(
+      `${ledgerFile}: visual-only ${arm} archive is missing screenshot evidence: ${archive}`,
+    );
+  for (const entry of imageFiles) {
+    const file = path.join(archive, entry.name);
+    try {
+      inspectFrame(fs.readFileSync(file));
+    } catch (error) {
+      throw new Error(
+        `${ledgerFile}: visual-only ${arm} archive contains invalid image bytes: ${file} (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+  return new Set(imageFiles.map((entry) => path.parse(entry.name).name));
 }
 
 function proofPasses(archive: string): boolean {
@@ -137,8 +163,35 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
       `stop round ${ledger.round}`,
       `Stop condition recorded: ${ledger.stopCondition}. Resolve it before resuming the round.`,
     );
+  if (ledger.declaresVisualOnly) {
+    if (ledger.visualDeltas.length === 0 || ledger.visualMde === null)
+      throw new Error(
+        `${ledgerFile}: visual-only round requires a nonempty Visual deltas measurement and numeric Visual MDE.`,
+      );
+    const templatesByArm = new Map<string, Set<string>>();
+    for (const arm of ledger.arms) {
+      const resolved = archivePath(arm.archive, repo);
+      if (resolved === undefined)
+        throw new Error(
+          `${ledgerFile}: visual-only ${arm.arm} archive is missing screenshot evidence: ${arm.archive}.`,
+        );
+      templatesByArm.set(arm.arm, visualArchiveTemplates(resolved, arm.arm, ledgerFile));
+    }
+    for (const delta of ledger.visualDeltas) {
+      for (const arm of ["before", "after"] as const) {
+        if (!templatesByArm.get(arm)?.has(delta.template))
+          throw new Error(
+            `${ledgerFile}: visual-only archive is missing ${arm} image for visual delta '${delta.template}'.`,
+          );
+      }
+    }
+  }
   const candidates: RoundNextAction[] = [];
   for (const arm of ledger.arms) {
+    // A visual-only round's before/after directories contain screenshots, not sweep archives.
+    // Their evidence is read from the visual delta section and must never be treated as a
+    // framework or vanilla build that needs proof, capture, or a sweep manifest.
+    if (ledger.declaresVisualOnly) continue;
     if (arm.archive === "pending") {
       if (candidates.length === 0)
         candidates.push(
@@ -183,7 +236,8 @@ export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo))
   const first = firstOf(candidates);
   if (first !== undefined) return first;
 
-  const unmeasuredVisual = ledger.arms.some((arm) => arm.instrumentVisual === "unmeasured");
+  const unmeasuredVisual =
+    !ledger.declaresVisualOnly && ledger.arms.some((arm) => arm.instrumentVisual === "unmeasured");
   if (unmeasuredVisual) {
     const bundle = notePath(ledger.notes, "Blind bundle");
     const critic = notePath(ledger.notes, "Critic input");

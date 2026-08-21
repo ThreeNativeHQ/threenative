@@ -170,6 +170,81 @@ async function noArmsLedger(root: string, round: number): Promise<void> {
   await writeFile(path.join(root, `docs/verification/round-${round}-2026-08-16.md`), markdown);
 }
 
+async function visualArchive(root: string, name: string): Promise<string> {
+  const relative = `docs/verification/visuals/${name}`;
+  const directory = path.join(root, relative);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${name}.png`), "screenshot-only fixture\n");
+  return relative;
+}
+
+async function visualLedger(
+  root: string,
+  round: number,
+  before: string,
+  after: string,
+): Promise<void> {
+  const markdown = [
+    `# Improvement round ledger — round ${round} — 2026-08-19`,
+    `Round: ${round}`,
+    "Date: 2026-08-19",
+    "Framework commit: working tree",
+    "Framework version: 0.1.0",
+    "Round kind: visual-only",
+    "Genres: template-visual",
+    "Budget: screenshot-only fixture",
+    "Stop condition met: none",
+    "Next action: continue",
+    "",
+    "## Arms",
+    "| Genre | Arm | Archive | Brief SHA-256 | Proof SHA-256 | Proof passed/total | Instrument visual | User LOC | Source files | Reach rate |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    `| template-visual | before | ${before} | prompt | prompt | 7/7 | unmeasured | n/a | 7 | n/a |`,
+    `| template-visual | after | ${after} | prompt | prompt | 7/7 | unmeasured | n/a | 7 | n/a |`,
+    "",
+    "## Column verdicts",
+    "| Genre | Functional | Visual | Cost | Verdict |",
+    "| --- | --- | --- | --- | --- |",
+    "| template-visual | tie | tie | tie | schema-only |",
+    "",
+    "## Gap list",
+    "| # | Genre | Column | What vanilla did better | Evidence | Smallest change that would close it |",
+    "| --- | --- | --- | --- | --- | --- |",
+    "| None | None | None | None | None | None |",
+    "",
+    "## Dispositions",
+    "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |",
+    "| --- | --- | --- | --- | --- | --- |",
+    "| None | None | None | None | None | None |",
+    "",
+    "## Deletions this round",
+    "| Export | Rounds unreached | Deleted? | Evidence |",
+    "| --- | --- | --- | --- |",
+    "| None | 0 | no | screenshot-only |",
+    "",
+    "## Gates",
+    "| Gate | Command | Result |",
+    "| --- | --- | --- |",
+    "| Typecheck | pnpm typecheck | pass |",
+    "| Lint | pnpm lint | pass |",
+    "| Test | pnpm test | pass |",
+    "| Budgets | pnpm budgets | pass |",
+    "",
+    "## Firewall attestation",
+    "| Rule | Held? | Evidence |",
+    "| --- | --- | --- |",
+    "| Arms built in separate contexts | yes | screenshot-only fixture |",
+    "| Neither builder saw the sealed proofs | yes | screenshot-only fixture |",
+    "| Judge was fresh, read-only, blind to arm | yes | screenshot-only fixture |",
+    "| Lead agent wrote no game code | yes | screenshot-only fixture |",
+    "",
+    "## Notes",
+    "This visual-only round has no sweep measurement and contributes no deletion evidence.",
+  ].join("\n");
+  await mkdir(path.join(root, "docs/verification"), { recursive: true });
+  await writeFile(path.join(root, `docs/verification/round-${round}-2026-08-19.md`), markdown);
+}
+
 describe("round:deletions", () => {
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -212,6 +287,7 @@ describe("round:deletions", () => {
     const report = findPersistentUnusedExports(root);
 
     expect(report.noFrameworkArms).toEqual([10]);
+    expect(report.visualOnlyRounds).toEqual([]);
     expect(report.archivesChecked).toHaveLength(1);
     expect(report.candidates).toEqual([]);
     expect(renderDeletionTable(report)).toContain(
@@ -252,6 +328,54 @@ describe("round:deletions", () => {
     );
   });
 
+  it("still throws when a real framework sweep is missing sweep.json", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, current);
+    await rm(path.join(root, current, "sweep.json"));
+
+    expect(() => findPersistentUnusedExports(root)).toThrow(/missing sweep\.json/u);
+  });
+
+  it("still throws when a framework archive contradicts its ledger row", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, current);
+    await writeFile(
+      path.join(root, current, "sweep.json"),
+      JSON.stringify({
+        arm: "framework",
+        genre: "different-genre",
+        briefHash: "brief",
+        proofHash: "proof",
+        template: "fixture",
+        date: "2026-08-07T00:00:00.000Z",
+        frameworkVersion: "0.1.0",
+        sourceLines: 1,
+      }),
+    );
+
+    expect(() => findPersistentUnusedExports(root)).toThrow(
+      /contradicts its framework ledger row/u,
+    );
+  });
+
+  it("still throws when the two ledgers are not consecutive", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 3, current);
+
+    expect(() => findPersistentUnusedExports(root)).toThrow(
+      /no consecutive previous round ledger/u,
+    );
+  });
+
   it("fails closed when a round still names a placeholder archive", async () => {
     const root = await fixtureRoot();
     const current = await archive(root, "current", "framework", "exploration");
@@ -259,5 +383,22 @@ describe("round:deletions", () => {
     await ledger(root, 2, current);
 
     expect(() => findPersistentUnusedExports(root)).toThrow(/placeholder archive/u);
+  });
+
+  it("excludes a declared visual-only round instead of measuring screenshots as empty", async () => {
+    const root = await fixtureRoot();
+    const before = await visualArchive(root, "before");
+    const after = await visualArchive(root, "after");
+    await noArmsLedger(root, 10);
+    await visualLedger(root, 11, before, after);
+
+    const report = findPersistentUnusedExports(root);
+
+    expect(report.archivesChecked).toEqual([]);
+    expect(report.candidates).toEqual([]);
+    expect(report.noFrameworkArms).toEqual([11, 10]);
+    expect(report.visualOnlyRounds).toEqual([11]);
+    expect(renderDeletionTable(report)).toContain("Round 11");
+    expect(renderDeletionTable(report)).toMatch(/no deletion candidates/u);
   });
 });

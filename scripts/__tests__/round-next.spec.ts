@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { nextRoundAction } from "../round-next.js";
@@ -141,6 +142,100 @@ async function archive(
 async function writeLedger(root: string, markdown: string): Promise<string> {
   const file = path.join(root, "docs/verification/round-1-2026-08-06.md");
   await writeFile(file, markdown);
+  return file;
+}
+
+function screenshot(): Buffer {
+  const png = new PNG({ height: 8, width: 8 });
+  for (let offset = 0; offset < png.data.length; offset += 4) {
+    const pixel = offset / 4;
+    png.data[offset] = 80 + (pixel % 8) * 20;
+    png.data[offset + 1] = 100 + Math.floor(pixel / 8) * 15;
+    png.data[offset + 2] = 180;
+    png.data[offset + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+async function writeVisualOnlyLedger(
+  root: string,
+  options: {
+    readonly afterTemplate?: string;
+    readonly beforeBytes?: Buffer;
+    readonly beforeTemplate?: string;
+    readonly measurement?: boolean;
+  } = {},
+): Promise<string> {
+  const before = path.join(root, "docs/verification/visuals/before");
+  const after = path.join(root, "docs/verification/visuals/after");
+  await mkdir(before, { recursive: true });
+  await mkdir(after, { recursive: true });
+  await writeFile(
+    path.join(before, `${options.beforeTemplate ?? "starter"}.png`),
+    options.beforeBytes ?? screenshot(),
+  );
+  await writeFile(path.join(after, `${options.afterTemplate ?? "starter"}.png`), screenshot());
+  const measurement =
+    options.measurement === false
+      ? []
+      : [
+          "Visual MDE: 1",
+          "",
+          "## Visual deltas",
+          "| Template | Before | After | Δ | Verdict |",
+          "| --- | --- | --- | --- | --- |",
+          "| starter | 2 | 2 | 0 | INDETERMINATE |",
+          "",
+        ];
+  const file = path.join(root, "docs/verification/round-11-2026-08-19.md");
+  await writeFile(
+    file,
+    [
+      "# Improvement round ledger — round 11 — 2026-08-19",
+      "Round: 11",
+      "Date: 2026-08-19",
+      "Framework commit: working tree",
+      "Framework version: 0.1.0",
+      "Round kind: visual-only",
+      "Genres: template-visual",
+      "Budget: screenshot-only fixture",
+      "Stop condition met: none",
+      "Next action: continue",
+      "",
+      ...measurement,
+      "## Arms",
+      "| Genre | Arm | Archive | Brief SHA-256 | Proof SHA-256 | Proof passed/total | Instrument visual | User LOC | Source files | Reach rate |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| template-visual | before | docs/verification/visuals/before | prompt | prompt | 7/7 | unmeasured | n/a | 7 | n/a |",
+      "| template-visual | after | docs/verification/visuals/after | prompt | prompt | 7/7 | unmeasured | n/a | 7 | n/a |",
+      "",
+      "## Column verdicts",
+      "| Genre | Functional | Visual | Cost | Verdict |",
+      "| --- | --- | --- | --- | --- |",
+      "| template-visual | tie | tie | tie | schema-only |",
+      "",
+      "## Gap list",
+      "| # | Genre | Column | What vanilla did better | Evidence | Smallest change that would close it |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Dispositions",
+      "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| None | None | None | None | None | None |",
+      "",
+      "## Gates",
+      "| Gate | Command | Result |",
+      "| --- | --- | --- |",
+      "| Typecheck | pnpm typecheck | pass |",
+      "| Lint | pnpm lint | pass |",
+      "| Test | pnpm test | pass |",
+      "| Budgets | pnpm budgets | pass |",
+      "",
+      "## Notes",
+      "This visual-only round has no sweep measurement and contributes no deletion evidence.",
+    ].join("\n"),
+  );
   return file;
 }
 
@@ -387,5 +482,48 @@ describe("round:next", () => {
       command: "stop round 1",
       reason: "Stop condition recorded: blocked. Resolve it before resuming the round.",
     });
+  });
+
+  it("closes a visual-only round when screenshot evidence and measurement exist", async () => {
+    const root = await fixture();
+    const file = await writeVisualOnlyLedger(root);
+
+    expect(nextRoundAction(root, file)).toEqual({
+      command: "close round 11",
+      reason: "All evidence and dispositions are recorded; close the round.",
+    });
+  });
+
+  it.each([
+    ["corrupt", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])],
+    ["empty", Buffer.alloc(0)],
+    ["text", Buffer.from("not an image\n")],
+  ])("rejects %s bytes even when the file has a PNG name", async (_label, bytes) => {
+    const root = await fixture();
+    const file = await writeVisualOnlyLedger(root, { beforeBytes: bytes });
+
+    expect(() => nextRoundAction(root, file)).toThrow(/invalid image bytes|screenshot evidence/u);
+  });
+
+  it.each(["before", "after"] as const)(
+    "rejects a visual-only round when the %s archive lacks a visual-delta counterpart",
+    async (missingArm) => {
+      const root = await fixture();
+      const file = await writeVisualOnlyLedger(root, {
+        afterTemplate: missingArm === "after" ? "other" : "starter",
+        beforeTemplate: missingArm === "before" ? "other" : "starter",
+      });
+
+      expect(() => nextRoundAction(root, file)).toThrow(
+        new RegExp(`missing ${missingArm}.*starter`, "u"),
+      );
+    },
+  );
+
+  it("fails closed when a visual-only measurement is missing", async () => {
+    const root = await fixture();
+    const file = await writeVisualOnlyLedger(root, { measurement: false });
+
+    expect(() => nextRoundAction(root, file)).toThrow(/visual-only.*measurement/u);
   });
 });

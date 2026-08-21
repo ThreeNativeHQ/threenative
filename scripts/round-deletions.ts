@@ -27,6 +27,7 @@ export interface RoundDeletionReport {
   readonly currentRound: number;
   readonly noFrameworkArms: readonly number[];
   readonly previousRound: number;
+  readonly visualOnlyRounds: readonly number[];
 }
 
 interface RoundFile {
@@ -76,6 +77,7 @@ function currentAndPreviousLedgers(repo: string): { current: RoundLedger; previo
 }
 
 function frameworkArms(ledger: RoundLedger, round: number, repo: string): DeletionArchive[] {
+  if (ledger.declaresVisualOnly) return [];
   const arms = ledger.arms.filter(
     (arm): arm is RoundArm & { arm: "framework" } => arm.arm === "framework",
   );
@@ -127,7 +129,12 @@ export function findPersistentUnusedExports(repo = REPO): RoundDeletionReport {
   const previousUnused = intersection(previousArchives.map((archive) => archive.unusedExports));
   const persistent = [...intersection([[...currentUnused], [...previousUnused]])].sort();
   const noFrameworkArms = [current, previous]
-    .filter((ledger) => ledger.declaresNoArms && ledger.arms.length === 0)
+    .filter(
+      (ledger) => (ledger.declaresNoArms && ledger.arms.length === 0) || ledger.declaresVisualOnly,
+    )
+    .map((ledger) => ledger.round);
+  const visualOnlyRounds = [current, previous]
+    .filter((ledger) => ledger.declaresVisualOnly)
     .map((ledger) => ledger.round);
   const candidates = persistent.map((exportName) => ({
     archives: archivesChecked
@@ -142,16 +149,23 @@ export function findPersistentUnusedExports(repo = REPO): RoundDeletionReport {
     currentRound: current.round,
     noFrameworkArms,
     previousRound: previous.round,
+    visualOnlyRounds,
   };
 }
 
 export function renderDeletionTable(report: RoundDeletionReport): string {
   const lines = [
     `Persistent unused exports: rounds ${report.previousRound} and ${report.currentRound}`,
-    ...report.noFrameworkArms.map(
+    ...report.visualOnlyRounds.map(
       (round) =>
-        `Round ${round}: declared no-arms round; no framework archive rows, so no deletion candidate can be supported from it.`,
+        `Round ${round}: visual-only round contributes no deletion candidates; no framework archive rows are measured.`,
     ),
+    ...report.noFrameworkArms
+      .filter((round) => !report.visualOnlyRounds.includes(round))
+      .map(
+        (round) =>
+          `Round ${round}: declared no-arms round; no framework archive rows, so no deletion candidate can be supported from it.`,
+      ),
     "| Export | Rounds unreached | Archives checked |",
     "| --- | ---: | --- |",
   ];

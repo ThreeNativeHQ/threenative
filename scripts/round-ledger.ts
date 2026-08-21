@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export type RoundDisposition = "framework change" | "user space" | "rejected";
-export type RoundArmName = "framework" | "vanilla";
+export type RoundArmName = "after" | "before" | "framework" | "vanilla";
 
 export interface RoundArm {
   readonly archive: string;
@@ -63,6 +63,8 @@ export interface RoundLedger {
   readonly date: string;
   /** True only when the ledger's `Genres` field explicitly declares a no-arms round. */
   readonly declaresNoArms: boolean;
+  /** True only when the ledger explicitly marks its condition rows as visual-only. */
+  readonly declaresVisualOnly: boolean;
   readonly dispositions: readonly RoundDispositionRow[];
   readonly gaps: readonly RoundGap[];
   readonly gates: readonly RoundGate[];
@@ -114,6 +116,18 @@ function hasSection(markdown: string, title: string): boolean {
  */
 function declaresNoGenres(markdown: string): boolean {
   return /^none\b/iu.test(value(markdown, "Genres"));
+}
+
+function optionalValue(markdown: string, label: string): string | undefined {
+  const line = markdown.split(/\r?\n/u).find((candidate) => candidate.startsWith(`${label}:`));
+  return line
+    ?.slice(label.length + 1)
+    .trim()
+    .replaceAll("`", "");
+}
+
+function declaresVisualOnly(markdown: string): boolean {
+  return optionalValue(markdown, "Round kind")?.toLowerCase() === "visual-only";
 }
 
 function section(markdown: string, title: string): string {
@@ -208,6 +222,7 @@ function required(markdown: string, label: string): string {
 
 function parseArms(markdown: string): RoundArm[] {
   if (!hasSection(markdown, "Arms") && declaresNoGenres(markdown)) return [];
+  const visualOnly = declaresVisualOnly(markdown);
   const parsed = table(markdown, "Arms");
   const genre = column(parsed.header, "Genre");
   const armIndex = column(parsed.header, "Arm");
@@ -219,9 +234,17 @@ function parseArms(markdown: string): RoundArm[] {
   return parsed.rows.map((row, index) => {
     if (row.length !== parsed.header.length)
       throw new Error(`Round ledger Arms row ${index + 1} has the wrong number of cells.`);
-    const arm = rowValue(row, armIndex, "Arm");
-    if (arm !== "framework" && arm !== "vanilla")
-      throw new Error(`Round ledger Arms row ${index + 1} has invalid arm '${arm}'.`);
+    const rawArm = rowValue(row, armIndex, "Arm");
+    let arm: RoundArmName;
+    if (visualOnly) {
+      if (rawArm !== "before" && rawArm !== "after")
+        throw new Error(`Round ledger Arms row ${index + 1} has invalid arm '${rawArm}'.`);
+      arm = rawArm;
+    } else {
+      if (rawArm !== "framework" && rawArm !== "vanilla")
+        throw new Error(`Round ledger Arms row ${index + 1} has invalid arm '${rawArm}'.`);
+      arm = rawArm;
+    }
     return {
       archive: rowValue(row, archive, "Archive"),
       arm,
@@ -346,6 +369,7 @@ export function parseRoundLedger(markdown: string, ledgerPath?: string): RoundLe
   const round = Number.parseInt(value(markdown, "Round"), 10);
   if (!Number.isInteger(round)) throw new Error("Round ledger field 'Round' is not an integer.");
   const declaresNoArms = declaresNoGenres(markdown);
+  const declaresVisual = declaresVisualOnly(markdown);
   return {
     visualDeltas: parseVisualDeltas(markdown),
     visualMde: parseVisualMde(markdown),
@@ -353,6 +377,7 @@ export function parseRoundLedger(markdown: string, ledgerPath?: string): RoundLe
     columns: parseColumns(markdown),
     date: value(markdown, "Date"),
     declaresNoArms,
+    declaresVisualOnly: declaresVisual,
     dispositions: parseDispositions(markdown),
     gaps: parseGaps(markdown),
     gates: parseGates(markdown),
@@ -390,10 +415,16 @@ export function validateRoundLedger(markdown: string, filename = "round.md"): Ro
   if (ledger.arms.length === 0) throw new Error(`${filename}: Arms table has no rows.`);
 
   const genres = new Set(ledger.arms.map((arm) => arm.genre));
+  const expectedArms = ledger.declaresVisualOnly ? ["after", "before"] : ["framework", "vanilla"];
   for (const genre of genres) {
     const arms = ledger.arms.filter((arm) => arm.genre === genre);
-    if (arms.length !== 2 || new Set(arms.map((arm) => arm.arm)).size !== 2)
-      throw new Error(`${filename}: genre '${genre}' must have framework and vanilla arms.`);
+    if (
+      arms.length !== expectedArms.length ||
+      expectedArms.some((name) => !arms.some((arm) => arm.arm === name))
+    )
+      throw new Error(
+        `${filename}: genre '${genre}' must have ${ledger.declaresVisualOnly ? "before and after" : "framework and vanilla"} arms.`,
+      );
     if (new Set(arms.map((arm) => arm.briefHash)).size !== 1)
       throw new Error(`${filename}: genre '${genre}' has mismatched brief hashes.`);
     if (new Set(arms.map((arm) => arm.proofHash)).size !== 1)
@@ -500,6 +531,20 @@ export function assertVisualDeltasResolvable(ledger: RoundLedger, filename: stri
 
 export function readRoundLedger(file: string): RoundLedger {
   const ledger = parseRoundLedger(fs.readFileSync(file, "utf8"), file);
+  if (ledger.declaresVisualOnly) {
+    const genres = new Set(ledger.arms.map((arm) => arm.genre));
+    if (ledger.arms.length === 0 || genres.size === 0)
+      throw new Error(`${file}: visual-only round has no before/after archive rows.`);
+    for (const genre of genres) {
+      const arms = ledger.arms.filter((arm) => arm.genre === genre);
+      if (
+        arms.length !== 2 ||
+        !arms.some((arm) => arm.arm === "before") ||
+        !arms.some((arm) => arm.arm === "after")
+      )
+        throw new Error(`${file}: visual-only genre '${genre}' must have before and after rows.`);
+    }
+  }
   assertVisualDeltasResolvable(ledger, file);
   return ledger;
 }
