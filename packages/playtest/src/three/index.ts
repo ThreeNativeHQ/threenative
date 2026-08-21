@@ -13,7 +13,6 @@ export type {
   IRenderAdvisorObservedPass,
   IRenderAdvisorRecommendation,
   IRenderAdvisorReport,
-  IRenderAdvisorSceneCollapseAggregate,
 } from "./renderWorkloadAdvisor.js";
 /**
  * Install the playtest observation bridge for a plain Three.js game.

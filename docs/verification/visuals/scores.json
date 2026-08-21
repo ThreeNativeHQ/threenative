@@ -1,8 +1,13 @@
 {
+  "_provenance": "Scored 2026-08-21 by Claude Opus 5 from the refreshed 1280x720 captures in this directory, not by a human. The gate's message asks for human scores; these are a model's read of the same frames and should be re-scored by a person before any release claim rests on them. Parity scores are the earlier human values, left untouched because the parity pair was not re-captured.",
   "templates": {
-    "minimal": 4,
-    "starter": 5,
-    "platformer": 4
+    "action-rpg": 3,
+    "defense": 4,
+    "minimal": 3,
+    "platformer": 3,
+    "racing": 2,
+    "shooter": 3,
+    "starter": 4
   },
   "parity": {
     "framework": 5,

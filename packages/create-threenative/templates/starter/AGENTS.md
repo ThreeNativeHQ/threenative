@@ -86,7 +86,7 @@ table above covers only ctx properties; this index covers the public exports sca
 
 | Import surface | Public class/function exports |
 |---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones` |
+| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
 | `@threenative/core/playtest` | `playtest` |
 | `@threenative/core/hot` | `acceptHotUpdate` |
 | `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |
@@ -137,7 +137,11 @@ browser-only boundary under the current native portability rule:
 1. **The native host has no DOM and does not run React.** The starter's single HUD is the
    web-only `src/ui/Hud.tsx`; native builds ship `src/scenes/` and `src/render/` without
    `src/ui/`. Gameplay, scoring and state transitions live in the scene; add a native HUD in
-   your game-owned render code only if your game needs one.
+   your game-owned render code only if your game needs one. The win and game-over *decisions*
+   are in `Play.ts` for exactly this reason — only the banner that draws them is React, so a
+   desktop build still ends its runs, it just ends them without a caption. Pause is the one
+   that is genuinely web-only here: it is `game.pause()` from the React menu and there is no
+   portable seam for it, so a native build cannot pause.
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
@@ -148,6 +152,21 @@ Writing against `ctx`, `three`, and the Godot-named physics nodes keeps all four
 correct without thinking about it. The navigation package carries WASM and must not be imported
 by a portable game. If you only ever ship to the web, ignore this section.
 
+## The game this ships with
+
+One ledge over a chasm, a pickup on it, a crate that drops onto it, and a gap with a flag on
+the far side. Reaching the flag sets `state.status` to `"won"`; falling past the kill plane
+costs one of three `state.lives` and returns the character to the spawn, and the third fall
+sets `"lost"`. Either ending stops the scene from simulating the character and the React HUD
+paints a banner over it; `R` and the restart button rebuild the scene from `initialState`.
+
+That is a whole game loop in about forty lines of `src/scenes/Play.ts`, and it is there to be
+replaced. Keep the shape — an outcome in `ctx.state`, the scene stopping itself, a React
+component reading the outcome — and change everything else. The flag's pennant is the packaged
+`native-proof.glb` and its checker is `native-proof.png`: they are loaded in `Play.load()` and
+the console marker that follows is what the desktop asset gate greps for, so if you delete the
+flag, keep the load.
+
 ## The layout
 
 ```mermaid
@@ -156,8 +175,8 @@ flowchart TD
     src["src/"]
     main["main.ts<br/>defineGame(...) + React mount"]
     play["scenes/Play.ts<br/>gameplay: load, enter, update, exit"]
-    entities["entities/<br/>Player.ts, Crate.ts — plain classes, not an ECS"]
-    render["render/<br/>palette, camera, sky, lighting,<br/>materials, post — YOURS"]
+    entities["entities/<br/>Player.ts, Crate.ts, Goal.ts — plain classes, not an ECS"]
+    render["render/<br/>palette, camera, sky, lighting, materials,<br/>post, shapes, scenery — YOURS"]
     ui["ui/<br/>App.tsx, Hud.tsx, Menu.tsx — React 19 + Tailwind 4"]
     state["state.ts<br/>state shape the HUD subscribes to"]
     scenarios["playtests/*.playtest.json<br/>committed browser scenarios, run by pnpm test"]
@@ -228,6 +247,14 @@ node explicitly only when removing it during play. **The id is the name a scenar
 
 `input.vector("move").y` is +up; map it to world-space -z for forward with one explicit
 `-move.y` conversion in the player movement code.
+
+**A gamepad already drives this game and the bindings do not say so.** `vector` adds the left
+stick to the action literally named `move`, and `jump: { buttons: [0] }` in `src/game.ts` is
+that pad's south face button — `buttons` is the gamepad, `mouseButtons` is the mouse. Two
+consequences worth knowing before you debug either: the stick reaches **only** an action called
+`move`, so renaming that action or adding a second stick-driven one (a `look` axis, say) gets
+you nothing, and there is no deadzone, so a worn stick's resting drift is added every frame and
+the character creeps. Subtract your own deadzone in the entity if that shows up.
 
 `CharacterBody3D.moveAndSlide(dt)` owns gravity through `body.velocity` and queues motion for the
 shared bulk physics step rather than moving its object immediately. Because `THREE.Vector3` is
@@ -471,8 +498,14 @@ What is already there, so you do not rebuild it:
 - `lighting.ts` — key, sky/ground bounce, **rim**, ambient, with soft shadows and a
   `normalBias` tuned for rounded geometry. The rim is what stops silhouettes reading as
   flat cut-outs; do not delete it while "simplifying".
-- `camera.ts` — `createSpringArm`, a frame-rate-independent follow camera.
+- `camera.ts` — `createSpringArm`, a frame-rate-independent follow camera. Its offset and its
+  **lead** are the framing: the default aims ahead of the character rather than centring it,
+  because a level that runs one way puts half the picture behind the player otherwise.
 - `postprocessing.ts` — ACES tone mapping and the WebGPU render pipeline.
+- `scenery.ts` — `createScenery`, the collider-free half of the world: columns under the
+  ledge, spires in the middle distance, an unlit ridge on the horizon. **Keep something in
+  all three bands.** A lit floor alone in black reads as a test fixture no matter how good
+  the floor is, and it is the single cheapest thing to fix in a first screenshot.
 
 Three traps, all of which cost real debugging time before they were written down:
 
@@ -529,8 +562,13 @@ guessing from pixels.
 starter gameplay: it checks boot, diagnostics, a nonblank frame, and player movement without
 depending on pickups, score, coyote time, or respawns. `playtests/odometer.playtest.json` is the
 deferred-motion example: it asserts `state.odometer`, which only increases when the player compares
-the cloned pre-step position on a later update. `playtests/play.playtest.json` and the other
-scenarios are starter-game examples that you may delete or rewrite. Steps count fixed-step ticks,
+the cloned pre-step position on a later update. `playtests/goal.playtest.json` and
+`playtests/gameover.playtest.json` are the two outcome proofs — one runs at the gap, jumps, and
+asserts `state.status` reaches `"won"`; the other walks off the edge until `state.lives` reaches
+zero and asserts `"lost"`. Rewrite both when you replace the win and fail conditions, and keep the
+pairing: an outcome nothing asserts is an outcome that quietly stops happening.
+`playtests/play.playtest.json` and the other scenarios are starter-game examples that you may
+delete or rewrite. Steps count fixed-step ticks,
 not milliseconds — use `holdTicks`, `waitTicks`. The deprecated `holdFrames` and `waitFrames` aliases
 remain accepted for compatibility and are treated as ticks on a fixed-step bridge;
 `warmupFrames` remains a genuine requestAnimationFrame warmup.

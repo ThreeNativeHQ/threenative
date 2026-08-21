@@ -31,23 +31,12 @@ export interface IRenderAdvisorObservedInput {
   readonly renderer?: IRenderAdvisorObservedRendererCounters;
 }
 
-export interface IRenderAdvisorSceneCollapseAggregate {
-  readonly mergedMaterialIdentities?: number;
-  readonly mergedMeshes: number;
-  readonly reasonCode: string;
-  readonly schemaVersion: number;
-  readonly sourceMaterialIdentities?: number;
-  readonly sourceMeshes: number;
-  readonly status: "applied" | "deferred" | "rejected" | string;
-}
-
 export interface IRenderAdvisorInput {
   readonly camera?: Camera;
   readonly materialMutationSafety?: "caller-declared-stable" | "unknown";
   readonly observed?: IRenderAdvisorObservedInput;
   readonly particleWorkload?: "caller-declared-many-independent-objects" | "unknown";
   readonly scene: Scene;
-  readonly sceneCollapse?: IRenderAdvisorSceneCollapseAggregate;
   readonly spriteWorkload?: "caller-declared-camera-overlay" | "unknown";
   readonly topN?: number;
   readonly transformSafety?: RenderAdvisorTransformSafety;
@@ -89,7 +78,6 @@ export interface IRenderAdvisorReport {
     readonly reasonCode: string;
   }[];
   readonly recommendations: readonly IRenderAdvisorRecommendation[];
-  readonly sceneCollapse?: IRenderAdvisorSceneCollapseAggregate;
   readonly snapshot: {
     readonly geometryIdentityCount: number;
     readonly instancedRenderableCount: number;
@@ -132,18 +120,6 @@ const MAX_OBSERVED_PASSES = 64;
 const GROUP_FLOOR = 16;
 const SPRITE_FLOOR = 32;
 const POINT_OBJECT_FLOOR = 16;
-const SAFE_SCENE_COLLAPSE_REASONS = new Set([
-  "applied",
-  "belowMeshFloorStillWatching",
-  "belowMeshFloorAfterCameraExclusion",
-  "missingMaterial",
-  "missingGeometry",
-  "mergeGroupMissingPosition",
-  "mergeRefused",
-  "mergeLostNormals",
-  "movingGroupLostOwnerId",
-]);
-const SAFE_SCENE_COLLAPSE_STATUS = new Set(["applied", "deferred", "rejected"]);
 const VERIFIED_EXAMPLE_PATHS: IRenderAdvisorExamplePaths = {
   gpuParticles: "examples/abyss-framework/src/scenes/Abyss.ts",
   hudInstancing: "packages/create-threenative/templates/minimal/src/render/hud.ts",
@@ -234,45 +210,38 @@ export function adviseThreeRenderWorkload(input: IRenderAdvisorInput): IRenderAd
   };
   const passObservations = observePasses(observedPasses);
   const recommendations: IRenderAdvisorRecommendation[] = [];
-  const sanitizedSceneCollapse = input.sceneCollapse === undefined ? undefined : sanitizeSceneCollapse(input.sceneCollapse);
-  const collapseDescribesCurrentGraph = sanitizedSceneCollapse?.status === "applied" && renderableCount <= sanitizedSceneCollapse.mergedMeshes;
-
-  if (!collapseDescribesCurrentGraph) {
-    const compatibleGroups = allGroupsWithMinimum(allGroups, GROUP_FLOOR);
-    const compatibleCount = compatibleGroups.reduce((sum, group) => sum + group.memberCount, 0);
-    const expectedGroups = compatibleGroups.length;
-    const firstCompatible = compatibleGroups[0];
-    if (firstCompatible !== undefined && instancedRenderableCount === 0) {
-      const staleCollapseCaveat = sanitizedSceneCollapse?.status === "applied" ? ["scene-collapse-report-must-describe-current-graph"] : [];
+  const compatibleGroups = allGroupsWithMinimum(allGroups, GROUP_FLOOR);
+  const compatibleCount = compatibleGroups.reduce((sum, group) => sum + group.memberCount, 0);
+  const expectedGroups = compatibleGroups.length;
+  const firstCompatible = compatibleGroups[0];
+  if (firstCompatible !== undefined && instancedRenderableCount === 0) {
+    recommendations.push({
+      caveats: [
+        "dynamic-transforms-use-instancing",
+        "generated-source-remedy-only",
+        "static-merge-requires-caller-declared-static-transforms",
+      ],
+      code: "TN_RENDER_ADVISE_INSTANCE_COMPATIBLE",
+      constraints: firstCompatible.constraintReasonCounts,
+      evidence: { metric: "snapshot.compatibleGroups.memberCount", path: "topGroups.memberCount" },
+      examplePath: examplePaths.staticMerge,
+      expectedReducedCount: expectedGroups,
+      observedCount: compatibleCount,
+      owner: "generated-src",
+      severity: "warning",
+    });
+    if ((input.transformSafety ?? "unknown") === "caller-declared-static") {
       recommendations.push({
-        caveats: [
-          "dynamic-transforms-use-instancing",
-          "generated-source-remedy-only",
-          "static-merge-requires-caller-declared-static-transforms",
-          ...staleCollapseCaveat,
-        ],
-        code: "TN_RENDER_ADVISE_INSTANCE_COMPATIBLE",
+        caveats: ["caller-declared-static-transforms", "preserve-pickability-and-animation-semantics"],
+        code: "TN_RENDER_ADVISE_STATIC_MERGE_COMPATIBLE",
         constraints: firstCompatible.constraintReasonCounts,
-        evidence: { metric: "snapshot.compatibleGroups.memberCount", path: "topGroups.memberCount" },
+        evidence: { metric: "snapshot.compatibleGroups.eligibleStaticCount", path: "topGroups.eligibleStaticCount" },
         examplePath: examplePaths.staticMerge,
         expectedReducedCount: expectedGroups,
         observedCount: compatibleCount,
         owner: "generated-src",
         severity: "warning",
       });
-      if ((input.transformSafety ?? "unknown") === "caller-declared-static") {
-        recommendations.push({
-          caveats: ["caller-declared-static-transforms", "preserve-pickability-and-animation-semantics"],
-          code: "TN_RENDER_ADVISE_STATIC_MERGE_COMPATIBLE",
-          constraints: firstCompatible.constraintReasonCounts,
-          evidence: { metric: "snapshot.compatibleGroups.eligibleStaticCount", path: "topGroups.eligibleStaticCount" },
-          examplePath: examplePaths.staticMerge,
-          expectedReducedCount: expectedGroups,
-          observedCount: compatibleCount,
-          owner: "generated-src",
-          severity: "warning",
-        });
-      }
     }
   }
 
@@ -338,7 +307,6 @@ export function adviseThreeRenderWorkload(input: IRenderAdvisorInput): IRenderAd
     observed,
     passObservations,
     recommendations,
-    ...(sanitizedSceneCollapse === undefined ? {} : { sceneCollapse: sanitizedSceneCollapse }),
     snapshot: {
       geometryIdentityCount: geometries.size,
       instancedRenderableCount,
@@ -595,22 +563,3 @@ function observePasses(passes: readonly IRenderAdvisorObservedPass[]): Array<{ c
   return observations;
 }
 
-function sanitizeSceneCollapse(report: IRenderAdvisorSceneCollapseAggregate): IRenderAdvisorSceneCollapseAggregate {
-  const reasonCode = SAFE_SCENE_COLLAPSE_REASONS.has(report.reasonCode) ? report.reasonCode : "unknown";
-  const status = SAFE_SCENE_COLLAPSE_STATUS.has(report.status) ? (report.status as "applied" | "deferred" | "rejected") : "rejected";
-  return {
-    ...(safeCount(report.mergedMaterialIdentities) === undefined ? {} : { mergedMaterialIdentities: safeCount(report.mergedMaterialIdentities) }),
-    mergedMeshes: safeCount(report.mergedMeshes) ?? 0,
-    reasonCode,
-    schemaVersion: 1,
-    ...(safeCount(report.sourceMaterialIdentities) === undefined ? {} : { sourceMaterialIdentities: safeCount(report.sourceMaterialIdentities) }),
-    sourceMeshes: safeCount(report.sourceMeshes) ?? 0,
-    status,
-  };
-}
-
-function safeCount(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (!Number.isSafeInteger(value) || value < 0) return 0;
-  return value;
-}

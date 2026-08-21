@@ -178,20 +178,12 @@ describe("render workload advisor", () => {
           },
         ],
       },
-      sceneCollapse: {
-        schemaVersion: 1,
-        status: "applied-with-/private/path" as never,
-        reasonCode: "secret-/private/path" as never,
-        sourceMeshes: 32,
-        mergedMeshes: 1,
-      },
     });
     const text = JSON.stringify(report);
     expect(report.schemaVersion).toBe(1);
     expect(text).not.toMatch(/secret|uuid|https|asset\.glb|private-game|Object3D|Material|Geometry/u);
     expect(text.length).toBeLessThan(64_000);
     expect(report.observed.passes).toEqual({ recorded: 1, truncated: 0 });
-    expect(report.sceneCollapse).toMatchObject({ status: "rejected", reasonCode: "unknown" });
     for (const item of before) {
       expect(item.child.parent).toBe(item.parent);
       expect((item.child as Mesh).geometry).toBe(item.geometry);
@@ -370,35 +362,16 @@ describe("render workload advisor", () => {
     expect(report.observed.passes).toEqual({ recorded: 64, truncated: 16 });
   });
 
-  test("SceneCollapse aggregate outcome is included and applied reductions only suppress current collapsed result", () => {
-    const stale = advice(independent(4_000), {
-      sceneCollapse: {
-        schemaVersion: 1,
-        status: "applied",
-        reasonCode: "applied",
-        sourceMeshes: 4_000,
-        mergedMeshes: 2,
-        sourceMaterialIdentities: 1,
-        mergedMaterialIdentities: 1,
-      },
-    });
-    expect(stale.recommendations.map((r) => r.code)).toContain("TN_RENDER_ADVISE_INSTANCE_COMPATIBLE");
-    expect(stale.recommendations.flatMap((r) => r.caveats)).toContain("scene-collapse-report-must-describe-current-graph");
-
-    const current = new Scene();
-    current.add(new Mesh(new BoxGeometry(40, 40, 1), new MeshBasicMaterial()));
-    const collapsed = advice(current, {
-      sceneCollapse: {
-        schemaVersion: 1,
-        status: "applied",
-        reasonCode: "applied",
-        sourceMeshes: 4_000,
-        mergedMeshes: 1,
-        sourceMaterialIdentities: 1,
-        mergedMaterialIdentities: 1,
-      },
-    });
-    expect(collapsed.sceneCollapse?.status).toBe("applied");
-    expect(collapsed.recommendations.map((r) => r.code)).not.toContain("TN_RENDER_ADVISE_INSTANCE_COMPATIBLE");
+  // `SceneCollapse` was deleted on 2026-08-21 with the technical-debt audit. An advisor input no
+  // producer can fill is worse than dead code: the report still carries a `sceneCollapse` field,
+  // and a caller reading it would be reasoning about a mechanism that no longer runs.
+  test("carries no input or report surface for the deleted SceneCollapse mechanism", () => {
+    const advisor = readFileSync(
+      path.resolve("packages/playtest/src/three/renderWorkloadAdvisor.ts"),
+      "utf8",
+    );
+    expect(advisor).not.toMatch(/sceneCollapse|SceneCollapse|SCENE_COLLAPSE/u);
+    const surface = readFileSync(path.resolve("packages/playtest/src/three/index.ts"), "utf8");
+    expect(surface).not.toMatch(/SceneCollapse/u);
   });
 });

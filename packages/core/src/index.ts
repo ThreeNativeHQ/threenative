@@ -71,6 +71,25 @@ export type {
  */
 export { GPUParticles3D } from "./particles.js";
 /**
+ * Build a soft round sprite as pixel data instead of painting a canvas.
+ * @situation give smoke, flash, or glow sprites a radial alpha falloff
+ * @situation generate sprite images that render identically under every backend
+ * @constraint canvas-painted images sample black under WebGPURenderer; write sprites as pixel data there
+ * @example const puff = softCircleDataTexture(64, 0.25);
+ */
+export { softCircleDataTexture } from "./textures.js";
+/**
+ * Pool travelling bullet-streak meshes for hitscan shots.
+ * @situation show where a hitscan round went
+ * @situation draw incoming fire without spawning projectiles
+ * @constraint the surface comes from the game; pooling, travel, and fading belong to the engine
+ * @constraint update once per frame and dispose with the owning scene
+ * @example const tracers = new TracerPool3D(ctx.scene, tracerOptions);
+ * tracers.spawn(muzzle, shotDirection, hit.distance);
+ */
+export { TracerPool3D } from "./tracers.js";
+export type { ITracerPool3DOptions } from "./tracers.js";
+/**
  * Move an object along a Three.js curve with Godot-style path following.
  * @situation move an enemy or prop along a patrol path
  * @situation sample a racing line from a curve

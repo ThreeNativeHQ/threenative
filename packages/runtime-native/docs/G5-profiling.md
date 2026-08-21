@@ -99,5 +99,8 @@ brackets the game's own compile.
 
 Largest stall in the session is not launch. `SceneCollapse` bakes inside one frame, measured at
 **3,608 ms**, now **1,845 ms** after replacing `BufferGeometry.applyMatrix4` with a direct
-typed-array transform; it is reported as `SceneCollapseReport.bakeMs`. Keeping indices instead of
+typed-array transform; it is reported as `SceneCollapseReport.bakeMs`. (`SceneCollapse` was
+deleted on 2026-08-21 — PRD-152's `SceneRenderProjection` is the shipping mechanism, and it
+never rewrites the authored graph, so this stall no longer exists to measure. The numbers
+below are kept as the record of the session that measured them.) Keeping indices instead of
 expanding to non-indexed geometry was tried and **measured worse** (2,658 ms), and reverted.

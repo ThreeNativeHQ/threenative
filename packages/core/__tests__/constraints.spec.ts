@@ -14,7 +14,10 @@ describe("core constraints", () => {
       .filter((file) => file.endsWith(".ts"))
       .filter(
         (file) =>
-          file !== "particles.ts" && file !== "renderProjection.ts" && file !== "renderer.ts",
+          file !== "particles.ts" &&
+          file !== "renderProjection.ts" &&
+          file !== "renderer.ts" &&
+          file !== "tracers.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
@@ -45,6 +48,15 @@ describe("core constraints", () => {
     // surfaces to compile them early. It does not construct a surface or choose its appearance.
     const renderer = readFileSync(path.join(sourceDirectory, "renderer.ts"), "utf8");
     expect(renderer).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+
+    // `tracers.ts` is exempted on the same terms: a pooled travelling streak must name and fade
+    // the surface it moves. It constructs none — the surface comes from the game (required),
+    // cloned per slot so each streak can fade independently — and any geometry beyond the
+    // neutral unit cylinder is the game's too.
+    const tracers = readFileSync(path.join(sourceDirectory, "tracers.ts"), "utf8");
+    expect(tracers).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
   });

@@ -28,7 +28,7 @@
       {
         "id": "state",
         "path": "entityCount",
-        "atSteps": [{ "label": "collected", "equals": 2 }, { "label": "restarted", "equals": 3 }]
+        "atSteps": [{ "label": "collected", "equals": 3 }, { "label": "restarted", "equals": 4 }]
       }
     ],
     "visibility": [

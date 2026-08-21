@@ -21,7 +21,7 @@ export function Menu({ game }: { game: IGame<GameState, IPhysicsContext> }) {
 
   return (
     <div className="pointer-events-none absolute bottom-6 left-6 flex items-center gap-3 border border-line bg-panel/75 px-4 py-3 text-[11px] uppercase tracking-[0.14em] text-dim">
-      <span>WASD / arrows to move · collect the pickup</span>
+      <span>WASD / arrows to move · space to jump the gap · reach the flag</span>
       <button
         className="pointer-events-auto border border-line px-2 py-1 text-text hover:border-lume"
         aria-pressed={paused}

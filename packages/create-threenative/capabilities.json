@@ -350,6 +350,41 @@
       "symbol": "skeletonBones"
     },
     {
+      "constraints": [
+        "canvas-painted images sample black under WebGPURenderer; write sprites as pixel data there"
+      ],
+      "example": "const puff = softCircleDataTexture(64, 0.25);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function softCircleDataTexture(size = 64, hardness = 0.25): DataTexture { … }",
+      "situations": [
+        "give smoke, flash, or glow sprites a radial alpha falloff",
+        "generate sprite images that render identically under every backend"
+      ],
+      "summary": "Build a soft round sprite as pixel data instead of painting a canvas.",
+      "symbol": "softCircleDataTexture"
+    },
+    {
+      "constraints": [
+        "the surface comes from the game; pooling, travel, and fading belong to the engine",
+        "update once per frame and dispose with the owning scene"
+      ],
+      "example": "const tracers = new TracerPool3D(ctx.scene, tracerOptions);\ntracers.spawn(muzzle, shotDirection, hit.distance);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class TracerPool3D { … }",
+      "situations": [
+        "show where a hitscan round went",
+        "draw incoming fire without spawning projectiles"
+      ],
+      "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
+      "symbol": "TracerPool3D"
+    },
+    {
       "constraints": ["use only in the web development entry"],
       "example": "acceptHotUpdate(game, import.meta.hot);",
       "importPath": "@threenative/core/hot",

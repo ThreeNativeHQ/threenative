@@ -22,7 +22,10 @@
       "pathLength": 4,
       "reachesPositionWithin": { "position": [-2, 0.5, 0], "maxDistance": 0.35 }
     },
-    "resources": [{ "id": "state", "path": "respawns", "gte": 1, "changed": true }],
+    "resources": [
+      { "id": "state", "path": "respawns", "gte": 1, "changed": true },
+      { "id": "state", "path": "lives", "equals": 2, "changed": true }
+    ],
     "visibility": [
       {
         "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the respawn assertion.",

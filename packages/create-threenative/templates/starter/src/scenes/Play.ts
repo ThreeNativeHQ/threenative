@@ -1,13 +1,23 @@
 import { AudioBus, type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { DoubleSide, Group, Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
+import {
+  BufferAttribute,
+  DoubleSide,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  NearestFilter,
+  type PerspectiveCamera,
+} from "three";
 import { Crate } from "../entities/Crate.js";
+import { Goal } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { createScenery } from "../render/scenery.js";
 import { ball, block, makeRandom, roundedBox, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
@@ -15,6 +25,7 @@ import type { GameState } from "../state.js";
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const KILL_PLANE = -4;
+const STARTING_LIVES = 3;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Group | undefined;
@@ -24,11 +35,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     entityCount: 0,
     jumps: 0,
     levelX: -99,
+    lives: STARTING_LIVES,
     odometer: 0,
     peakRise: 0,
     playerX: -2,
     respawns: 0,
     score: 0,
+    status: "playing",
   };
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -36,9 +49,22 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
     ]);
+    // A 16-pixel check filtered smoothly is a grey smear at flag size; nearest keeps the
+    // squares square, which is the whole reason the finish flag is legible from the ledge.
+    texture.magFilter = NearestFilter;
     model.scene.traverse((object) => {
       if (object instanceof Mesh) {
         object.material = new MeshBasicMaterial({ map: texture, side: DoubleSide });
+        // The packaged proof carries positions and indices only. Without UVs the sampler
+        // reads one corner texel for every fragment and the flag renders as flat white —
+        // a loaded texture that proves nothing you can see. Plane-project the triangle.
+        const position = object.geometry.getAttribute("position");
+        const uv = new Float32Array(position.count * 2);
+        for (let index = 0; index < position.count; index += 1) {
+          uv[index * 2] = (position.getX(index) + 0.8) / 1.6;
+          uv[index * 2 + 1] = (position.getY(index) + 0.6) / 1.4;
+        }
+        object.geometry.setAttribute("uv", new BufferAttribute(uv, 2));
       }
     });
     model.scene.name = "native-proof-assets";
@@ -48,8 +74,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     if (this.#assetProof === undefined) throw new Error("Starter proof assets did not load.");
-    this.#assetProof.position.set(0, 1.7, -1.5);
-    ctx.add(this.#assetProof);
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.ogg");
     void pickupAudio.catch(() => undefined);
@@ -58,11 +82,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, ctx.camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
-    const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
-      lookAhead: new Vector3(0, 0.9, -0.4),
-    });
+    // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
+    const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
     const materials = createMaterials();
+    ctx.add(createScenery(materials.rock, materials.ridge));
     // Keep the initial -99 sentinel until seed.playtest samples it. If this draw is replaced with
     // Math.random, the unchanged seeded state reports an out-of-range value and seed.playtest
     // identifies the bypass instead of silently accepting an unseeded level.
@@ -104,6 +128,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
     springArm.snap(player.mesh.position);
     ctx.entities.add("player", player);
+    // The packaged proof asset earns its place here: it is the pennant on the finish flag,
+    // not a debug object parked over the level. The texture and the glTF still load in
+    // `load()` above, which is what the native asset gate greps for.
+    const goal = ctx.entities.add("goal", new Goal(ctx, materials, this.#assetProof));
+    // The area says the character is over the island; the run is only won once it is also
+    // standing on it. Ending on the overlap alone freezes the character in mid-air at the
+    // lip of the island, half a metre short of a landing, which is what it looks like.
+    let overGoal = false;
+    goal.area.on("bodyEntered", (body) => {
+      if (body === player.body) overGoal = true;
+    });
     ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
     const pickup = new Area3D({
       physics: ctx.physics,
@@ -142,19 +177,32 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         void frameCtx.goto("play");
         return;
       }
+      const previous = frameCtx.state.getState();
+      // A finished run stops simulating the character and keeps drawing the world behind
+      // the banner. R, or the restart button, rebuilds the scene from `initialState`.
+      if (previous.status !== "playing") return;
       player.update(frameCtx, dt);
       let respawned = false;
+      let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {
+        lives -= 1;
         player.respawn();
         springArm.snap(player.mesh.position);
         respawned = true;
       }
       springArm.follow(player.mesh.position, dt);
       const debug = player.debug();
-      const previous = frameCtx.state.getState();
+      // `status` is written only on the frame that ends the run, and never in the bulk
+      // write below, which would stamp this frame's stale copy back over it.
+      if (lives <= 0) frameCtx.state.set({ status: "lost" });
+      else if (overGoal && debug.grounded) {
+        frameCtx.state.set({ status: "won" });
+        frameCtx.state.flush();
+      }
       frameCtx.state.set({
         coyoteJumps: debug.coyoteJumps,
         jumps: debug.jumps,
+        lives,
         odometer: debug.odometer,
         peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
         playerX: player.mesh.position.x,

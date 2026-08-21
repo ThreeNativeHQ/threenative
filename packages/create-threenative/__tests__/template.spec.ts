@@ -414,10 +414,12 @@ describe("template contracts", () => {
       ],
     });
     expect(score?.changed).toBeUndefined();
+    // audio, player and goal survive the collect; the pickup is the fourth and is removed
+    // when it is taken, so the restart puts the count back up rather than down.
     expect(restart.assert.resources).toContainEqual({
       atSteps: [
-        { equals: 2, label: "collected" },
-        { equals: 3, label: "restarted" },
+        { equals: 3, label: "collected" },
+        { equals: 4, label: "restarted" },
       ],
       id: "state",
       path: "entityCount",

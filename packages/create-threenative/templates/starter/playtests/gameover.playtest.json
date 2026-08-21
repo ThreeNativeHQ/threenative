@@ -1,0 +1,33 @@
+{
+  "name": "starter-game-over",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk-off-three-times",
+      "press": "ArrowDown",
+      "holdTicks": 420,
+      "release": true
+    },
+    { "kind": "wait", "label": "game-over", "waitTicks": 60, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "lives", "equals": 0, "changed": true },
+      { "id": "state", "path": "status", "equals": "lost", "changed": true },
+      { "id": "state", "path": "respawns", "gte": 3, "changed": true }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The player is visible from the first tick and is returned to the spawn pad on the last life, so this row holds while the resource rows carry the game-over proof.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}
