@@ -1,0 +1,1748 @@
+{
+  "entries": [
+    {
+      "constraints": [],
+      "example": "const player = new AnimationPlayer(model);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AnimationPlayer { … }",
+      "situations": [
+        "play an animation on a character",
+        "switch a character between idle and attack clips"
+      ],
+      "summary": "Play a skinned or sprite animation from game code.",
+      "symbol": "AnimationPlayer"
+    },
+    {
+      "constraints": [
+        "when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle",
+        "if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting"
+      ],
+      "example": "import { attachToBone } from \"@threenative/core\";\nattachToBone(character, \"RightHand\", rifle);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function attachToBone(root: Object3D, boneName: string, child: Object3D): Object3D { … }",
+      "situations": [
+        "put a weapon in a character's hand",
+        "hold a rifle in a character's right hand",
+        "add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand",
+        "attach an accessory to a skinned model"
+      ],
+      "summary": "Attach a game-owned object to a named skeleton bone.",
+      "symbol": "attachToBone"
+    },
+    {
+      "constraints": ["create buses before playing clips and dispose them with the game"],
+      "example": "const effects = new AudioBus({ name: \"effects\" });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AudioBus { … }",
+      "situations": [
+        "play a sound effect with a volume bus",
+        "mute or adjust a category of game audio"
+      ],
+      "summary": "Route effects through a named audio bus.",
+      "symbol": "AudioBus"
+    },
+    {
+      "constraints": [],
+      "example": "const hud = new CanvasLayer({ camera });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class CanvasLayer { … }",
+      "situations": [
+        "place a HUD layer above the Three.js scene",
+        "attach a canvas layer to a camera"
+      ],
+      "summary": "Manage a camera or screen-facing canvas layer.",
+      "symbol": "CanvasLayer"
+    },
+    {
+      "constraints": ["use the returned source instead of Math.random for replayable behavior"],
+      "example": "const random = createRandom(42);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createRandom(seed?: number): IRandom { … }",
+      "situations": [
+        "seed enemy patrol choices",
+        "reproduce the same procedural level in a playtest"
+      ],
+      "summary": "Create a deterministic random source for portable gameplay.",
+      "symbol": "createRandom"
+    },
+    {
+      "constraints": [
+        "use a seeded random source and fixed-step simulation for meaningful replays"
+      ],
+      "example": "const driver = createReplayDriver({ recording });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createReplayDriver( recording: Recording, target: EventTarget, pointerTarget = target, ) { … }",
+      "situations": [
+        "reproduce a gameplay bug from recorded input",
+        "run a deterministic replay in a playtest"
+      ],
+      "summary": "Record or replay deterministic game input and state.",
+      "symbol": "createReplayDriver"
+    },
+    {
+      "constraints": ["keep DOM and React mounting in src/main.ts"],
+      "example": "const game = defineGame({ scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>( config: IGameConfig<TState, TPhysics>, ): IGame<TState, TPhysics> { … }",
+      "situations": [
+        "start a ThreeNative game from src/game.ts",
+        "register physics and gameplay plugins"
+      ],
+      "summary": "Define the portable game entry shared by web and native.",
+      "symbol": "defineGame"
+    },
+    {
+      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "example": "if (isMobile()) showTouchControls();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function getPlatform(): Readonly<IPlatformInfo> { … }",
+      "situations": [
+        "branch a portable game on web or native",
+        "choose touch controls for a mobile device"
+      ],
+      "summary": "Read the host platform without reaching for browser globals.",
+      "symbol": "getPlatform"
+    },
+    {
+      "constraints": ["geometry, color, and timing remain supplied by the game"],
+      "example": "const particles = new GPUParticles3D(particleOptions);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class GPUParticles3D extends Sprite { … }",
+      "situations": [
+        "emit sparks, smoke, or other transient effects",
+        "update many small visual particles"
+      ],
+      "summary": "Dispatch a game-owned particle surface and process function through a pooled system.",
+      "symbol": "GPUParticles3D"
+    },
+    {
+      "constraints": [
+        "import from `@threenative/core`; this moves the rendered model, not its physics collider"
+      ],
+      "example": "import { GroundSnap } from \"@threenative/core\";\nconst snap = new GroundSnap(character, { enabled: true });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "enabled controls whether correction is applied while clearance is still measured"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class GroundSnap { … }",
+      "situations": [
+        "keep a character's feet on the floor",
+        "correct visual grounding after an animation update"
+      ],
+      "summary": "Keep a rendered model's feet on a surface while preserving an auditable override.",
+      "symbol": "GroundSnap"
+    },
+    {
+      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "example": "if (isMobile()) showTouchControls();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isMobile(): boolean { … }",
+      "situations": [
+        "branch a portable game on web or native",
+        "choose touch controls for a mobile device"
+      ],
+      "summary": "Read the host platform without reaching for browser globals.",
+      "symbol": "isMobile"
+    },
+    {
+      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "example": "if (isMobile()) showTouchControls();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isNative(): boolean { … }",
+      "situations": [
+        "branch a portable game on web or native",
+        "choose touch controls for a mobile device"
+      ],
+      "summary": "Read the host platform without reaching for browser globals.",
+      "symbol": "isNative"
+    },
+    {
+      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "example": "if (isMobile()) showTouchControls();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isTouchscreenAvailable(): boolean { … }",
+      "situations": [
+        "branch a portable game on web or native",
+        "choose touch controls for a mobile device"
+      ],
+      "summary": "Read the host platform without reaching for browser globals.",
+      "symbol": "isTouchscreenAvailable"
+    },
+    {
+      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "example": "if (isMobile()) showTouchControls();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isWeb(): boolean { … }",
+      "situations": [
+        "branch a portable game on web or native",
+        "choose touch controls for a mobile device"
+      ],
+      "summary": "Read the host platform without reaching for browser globals.",
+      "symbol": "isWeb"
+    },
+    {
+      "constraints": [
+        "skinned height uses a crown bone; game-specific asset expectations stay in render code"
+      ],
+      "example": "normaliseToMetres(character, { metres: 1.8, axis: \"height\" });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function normaliseToMetres(object: Object3D, options: INormaliseToMetresOptions): number { … }",
+      "situations": [
+        "make a character exactly 1.8 metres tall",
+        "normalize a prop or weapon to a known longest axis"
+      ],
+      "summary": "Scale an asset to a real-world measurement and return the applied factor.",
+      "symbol": "normaliseToMetres"
+    },
+    {
+      "constraints": [],
+      "example": "const follower = new PathFollow3D(curve, { loop: true });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class PathFollow3D { … }",
+      "situations": [
+        "move an enemy or prop along a patrol path",
+        "sample a racing line from a curve"
+      ],
+      "summary": "Move an object along a Three.js curve with Godot-style path following.",
+      "symbol": "PathFollow3D"
+    },
+    {
+      "constraints": [
+        "keep the surface visible with zero opacity; do not hide it with `visible = false`"
+      ],
+      "example": "prewarm(tracerPool);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function prewarm(object: Object3D | readonly Object3D[]): void { … }",
+      "situations": [
+        "prewarm a projectile, tracer, particle, or other transient effect",
+        "avoid a long first-use frame for a newly visible effect"
+      ],
+      "summary": "Keep transient render surfaces in the renderer's pipeline cache before first use.",
+      "symbol": "prewarm"
+    },
+    {
+      "constraints": [
+        "use a seeded random source and fixed-step simulation for meaningful replays"
+      ],
+      "example": "const driver = createReplayDriver({ recording });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IReplayOptions = { … }",
+      "situations": [
+        "reproduce a gameplay bug from recorded input",
+        "run a deterministic replay in a playtest"
+      ],
+      "summary": "Record or replay deterministic game input and state.",
+      "symbol": "replay"
+    },
+    {
+      "constraints": ["scene code must stay portable across web and native"],
+      "example": "class Play extends Scene { update(ctx, dt) {} }",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export abstract class Scene< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, > { … }",
+      "situations": [
+        "add a playable level or menu scene",
+        "move scene setup and per-frame gameplay out of the entry point"
+      ],
+      "summary": "Implement a portable Godot-shaped game scene lifecycle.",
+      "symbol": "Scene"
+    },
+    {
+      "constraints": [],
+      "example": "const picker = new ScenePicker({ camera, scene });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class ScenePicker { … }",
+      "situations": [
+        "select an object under the pointer",
+        "interact with the first collider or mesh hit"
+      ],
+      "summary": "Raycast the game scene using the framework's picker.",
+      "symbol": "ScenePicker"
+    },
+    {
+      "constraints": ["dispose returned handles when the owning scene exits"],
+      "example": "const scheduler = new Scheduler();",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Scheduler { … }",
+      "situations": ["delay an enemy patrol transition", "run a callback every simulation tick"],
+      "summary": "Schedule delayed and repeating callbacks with game-owned cleanup.",
+      "symbol": "Scheduler"
+    },
+    {
+      "constraints": [
+        "when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle",
+        "if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting"
+      ],
+      "example": "import { attachToBone } from \"@threenative/core\";\nattachToBone(character, \"RightHand\", rifle);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function skeletonBones(root: Object3D): readonly string[] { … }",
+      "situations": [
+        "put a weapon in a character's hand",
+        "hold a rifle in a character's right hand",
+        "add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand",
+        "attach an accessory to a skinned model"
+      ],
+      "summary": "Attach a game-owned object to a named skeleton bone.",
+      "symbol": "skeletonBones"
+    },
+    {
+      "constraints": [
+        "canvas-painted images sample black under WebGPURenderer; write sprites as pixel data there"
+      ],
+      "example": "const puff = softCircleDataTexture(64, 0.25);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function softCircleDataTexture(size = 64, hardness = 0.25): DataTexture { … }",
+      "situations": [
+        "give smoke, flash, or glow sprites a radial alpha falloff",
+        "generate sprite images that render identically under every backend"
+      ],
+      "summary": "Build a soft round sprite as pixel data instead of painting a canvas.",
+      "symbol": "softCircleDataTexture"
+    },
+    {
+      "constraints": [
+        "the surface comes from the game; pooling, travel, and fading belong to the engine",
+        "update once per frame and dispose with the owning scene"
+      ],
+      "example": "const tracers = new TracerPool3D(ctx.scene, tracerOptions);\ntracers.spawn(muzzle, shotDirection, hit.distance);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class TracerPool3D { … }",
+      "situations": [
+        "show where a hitscan round went",
+        "draw incoming fire without spawning projectiles"
+      ],
+      "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
+      "symbol": "TracerPool3D"
+    },
+    {
+      "constraints": ["use only in the web development entry"],
+      "example": "acceptHotUpdate(game, import.meta.hot);",
+      "importPath": "@threenative/core/hot",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>( game: IGame<TState, TPhysics>, hot: IImportMeta[\"hot\"], ): void { … }",
+      "situations": [
+        "keep game state while editing source in development",
+        "diagnose state shape changes during hot reload"
+      ],
+      "summary": "Register hot-reload state preservation for a game.",
+      "symbol": "acceptHotUpdate"
+    },
+    {
+      "constraints": ["state must contain finite numbers and plain objects only"],
+      "example": "assertPortableState(game.state.getState());",
+      "importPath": "@threenative/core/hot",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function assertPortableState(state: unknown): void { … }",
+      "situations": [
+        "preserve JSON-shaped state during hot reload",
+        "reject a non-portable game state before reload"
+      ],
+      "summary": "Validate that hot-reload state can cross the Vite boundary.",
+      "symbol": "assertPortableState"
+    },
+    {
+      "constraints": ["install once in the game's plugin list"],
+      "example": "const game = defineGame({ plugins: [playtest()] });",
+      "importPath": "@threenative/core/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function playtest< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IPlaytestOptions = { … }",
+      "situations": [
+        "expose movement and world observations to a playtest",
+        "connect a game to the ThreeNative scenario runner"
+      ],
+      "summary": "Install the playtest bridge into a portable game.",
+      "symbol": "playtest"
+    },
+    {
+      "constraints": ["add the area to the physics context before stepping the world"],
+      "example": "const area = new Area3D({ context, shape });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class Area3D { … }",
+      "situations": [
+        "detect when an enemy enters a trigger area",
+        "react to a player entering a zone"
+      ],
+      "summary": "Detect overlaps without turning the body into a moving collider.",
+      "symbol": "Area3D"
+    },
+    {
+      "constraints": ["use moveAndSlide inside the physics update"],
+      "example": "const body = new CharacterBody3D({ context, object });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class CharacterBody3D { … }",
+      "situations": [
+        "move an enemy or player through a level",
+        "keep a character from walking through walls"
+      ],
+      "summary": "Move a character body with collision-aware sliding.",
+      "symbol": "CharacterBody3D"
+    },
+    {
+      "constraints": ["create shapes through the owning physics context"],
+      "example": "const shape = new CollisionShape3D({ context, shape: \"capsule\" });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class CollisionShape3D { … }",
+      "situations": [
+        "add a capsule or box collider to a character",
+        "configure the shape used by a rigid body"
+      ],
+      "summary": "Give a physics body a Three.js collision shape.",
+      "symbol": "CollisionShape3D"
+    },
+    {
+      "constraints": [],
+      "example": "const groups = interactionGroups(1, 3);",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function interactionGroups(layer: number, mask: number): number { … }",
+      "situations": [
+        "make an enemy collide with the world but not pickups",
+        "configure which physics layers interact"
+      ],
+      "summary": "Encode collision layers and masks for Rapier groups.",
+      "symbol": "interactionGroups"
+    },
+    {
+      "constraints": ["both bodies must belong to the same physics context"],
+      "example": "const joint = new Joint3D({ context, kind: \"hinge\" });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class Joint3D { … }",
+      "situations": ["constrain a rigid body to another body", "build a hinge or pin mechanism"],
+      "summary": "Connect two physics bodies with a Godot-style joint.",
+      "symbol": "Joint3D"
+    },
+    {
+      "constraints": ["query results are bounded by the configured result limit"],
+      "example": "const space = new PhysicsDirectSpaceState3D(context);",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class PhysicsDirectSpaceState3D { … }",
+      "situations": [
+        "raycast for visibility or aiming",
+        "find bodies inside a shape or point query"
+      ],
+      "summary": "Query the physics world without creating a body.",
+      "symbol": "PhysicsDirectSpaceState3D"
+    },
+    {
+      "constraints": ["place rapier() before recast() in the plugin list"],
+      "example": "const game = defineGame({ plugins: [rapier()] });",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function rapier(options: IPhysicsOptions = { … }",
+      "situations": [
+        "add physics to a portable game",
+        "provide the context used by character and rigid bodies"
+      ],
+      "summary": "Install the Rapier physics plugin and simulation backend.",
+      "symbol": "rapier"
+    },
+    {
+      "constraints": ["register rapier() in the game plugin list before using bodies"],
+      "example": "const crate = new RigidBody3D({ context, object, mode: \"dynamic\" });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class RigidBody3D { … }",
+      "situations": [
+        "give a crate or prop physical motion",
+        "create a body that collides with a character"
+      ],
+      "summary": "Simulate a dynamic or static rigid body.",
+      "symbol": "RigidBody3D"
+    },
+    {
+      "constraints": [
+        "import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D"
+      ],
+      "example": "import { NavigationAgent3D } from \"@threenative/physics/navigation\";\nconst agent = new NavigationAgent3D({ navigation, object });\nagent.setTargetPosition(player.position);\nconst next = agent.getNextPathPosition();",
+      "importPath": "@threenative/physics/navigation",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class NavigationAgent3D { … }",
+      "situations": [
+        "enemy walks around a wall",
+        "enemy patrols a level and chases the player",
+        "enemy walks around a patrol path and chases the player when it sees them",
+        "enemy patrols and chases while avoiding obstacles",
+        "enemy chases the player with line of sight and obstacle avoidance",
+        "NPC walks to a destination"
+      ],
+      "summary": "Move an agent along a baked navmesh toward a target.",
+      "symbol": "NavigationAgent3D"
+    },
+    {
+      "constraints": ["create it after recast() and dispose it with the scene"],
+      "example": "const obstacle = new NavigationObstacle3D({ navigation, object });",
+      "importPath": "@threenative/physics/navigation",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class NavigationObstacle3D { … }",
+      "situations": [
+        "keep navigation agents away from a blocking prop",
+        "make a stationary character affect crowd avoidance"
+      ],
+      "summary": "Add a non-moving crowd obstacle to a navmesh.",
+      "symbol": "NavigationObstacle3D"
+    },
+    {
+      "constraints": ["bake before creating agents or obstacles"],
+      "example": "const region = new NavigationRegion3D({ navigation, meshes: [floor] });",
+      "importPath": "@threenative/physics/navigation",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export class NavigationRegion3D { … }",
+      "situations": [
+        "let enemies walk around level geometry",
+        "create the baked navmesh required by NavigationAgent3D"
+      ],
+      "summary": "Bake walkable Three.js geometry into a navigation region.",
+      "symbol": "NavigationRegion3D"
+    },
+    {
+      "constraints": ["requires rapier() earlier in the plugins array"],
+      "example": "const game = defineGame({ plugins: [rapier(), recast()] });",
+      "importPath": "@threenative/physics/navigation",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function recast(): NavigationPlugin { … }",
+      "situations": ["enemy walks around a wall", "NPC patrols a level and chases a player"],
+      "summary": "Install navmesh pathfinding and crowd avoidance.",
+      "symbol": "recast"
+    },
+    {
+      "constraints": ["bridge values must be JSON-shaped"],
+      "example": "assertJsonSafe({ score: 10 });",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
+      "situations": [
+        "send a safe observation over the playtest bridge",
+        "reject an oversized or cyclic playtest payload"
+      ],
+      "summary": "Validate JSON-safe bridge messages and protocol sizes.",
+      "symbol": "assertJsonSafe"
+    },
+    {
+      "constraints": ["malformed or empty assertions fail closed"],
+      "example": "const result = evaluateRichPlaytestAssertions(input);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function evaluateRichPlaytestAssertions(input: { … }",
+      "situations": [
+        "assert movement, visibility, or diagnostics in a playtest",
+        "turn a scenario observation into a pass or failure"
+      ],
+      "summary": "Evaluate rich semantic assertions against captured observations.",
+      "symbol": "evaluateRichPlaytestAssertions"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "invalidScenario"
+    },
+    {
+      "constraints": ["bridge values must be JSON-shaped"],
+      "example": "assertJsonSafe({ score: 10 });",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function jsonByteLength(value: JsonValue): number { … }",
+      "situations": [
+        "send a safe observation over the playtest bridge",
+        "reject an oversized or cyclic playtest payload"
+      ],
+      "summary": "Validate JSON-safe bridge messages and protocol sizes.",
+      "symbol": "jsonByteLength"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function loadPlaytestScenario(projectPath: string, scenarioPath: string): Promise<IPlaytestScenario> { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "loadPlaytestScenario"
+    },
+    {
+      "constraints": [],
+      "example": "const missing = missingPlaytestCapabilities(required, available);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function missingPlaytestCapabilities(required: readonly string[], available: readonly string[]): string[] { … }",
+      "situations": [
+        "check whether a scenario's required capabilities are installed",
+        "report unknown or missing playtest capabilities"
+      ],
+      "summary": "Validate and inspect playtest capability declarations.",
+      "symbol": "missingPlaytestCapabilities"
+    },
+    {
+      "constraints": ["malformed recordings throw instead of becoming empty input"],
+      "example": "const recording = parseReplayRecording(rawRecording);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",
+      "situations": [
+        "load recorded input for deterministic playback",
+        "validate a replay fixture before running it"
+      ],
+      "summary": "Parse a recorded playtest replay into a validated recording.",
+      "symbol": "parseReplayRecording"
+    },
+    {
+      "constraints": [],
+      "example": "playtestDiagnostic(\"physics\", \"body missing\");",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function playtestDiagnostic( code: PlaytestDiagnosticCode, message: string, instruction: string, details: Pick<IPlaytestProtocolDiagnostic, \"capability\" | \"path\"> & { … }",
+      "situations": [
+        "report a named runtime diagnostic to a scenario",
+        "explain why a playtest assertion cannot pass"
+      ],
+      "summary": "Create a structured playtest diagnostic.",
+      "symbol": "playtestDiagnostic"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class PlaytestScenarioError extends Error { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "PlaytestScenarioError"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "playtestStepHoldTicks"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function playtestStepWaitTicks(step: IPlaytestStep): number { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "playtestStepWaitTicks"
+    },
+    {
+      "constraints": ["unknown scenario keys fail closed"],
+      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function rejectUnknownKeys( value: Record<string, unknown>, allowedKeys: readonly string[], scenarioPath: string, objectPath: string, ): void { … }",
+      "situations": [
+        "create a browser or device playtest scenario",
+        "wait or hold a game for a deterministic number of ticks"
+      ],
+      "summary": "Load and validate a scenario, then control its tick steps.",
+      "symbol": "rejectUnknownKeys"
+    },
+    {
+      "constraints": ["malformed or empty assertions fail closed"],
+      "example": "const result = evaluateRichPlaytestAssertions(input);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): PlaytestCapability[] { … }",
+      "situations": [
+        "assert movement, visibility, or diagnostics in a playtest",
+        "turn a scenario observation into a pass or failure"
+      ],
+      "summary": "Evaluate rich semantic assertions against captured observations.",
+      "symbol": "requiredPlaytestCapabilities"
+    },
+    {
+      "constraints": ["malformed or empty assertions fail closed"],
+      "example": "const result = evaluateRichPlaytestAssertions(input);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, ): IPlaytestDiagnosticsPolicy { … }",
+      "situations": [
+        "assert movement, visibility, or diagnostics in a playtest",
+        "turn a scenario observation into a pass or failure"
+      ],
+      "summary": "Evaluate rich semantic assertions against captured observations.",
+      "symbol": "resolveDiagnosticsPolicy"
+    },
+    {
+      "constraints": [],
+      "example": "const missing = missingPlaytestCapabilities(required, available);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function unknownPlaytestCapabilities(capabilities: readonly string[]): string[] { … }",
+      "situations": [
+        "check whether a scenario's required capabilities are installed",
+        "report unknown or missing playtest capabilities"
+      ],
+      "summary": "Validate and inspect playtest capability declarations.",
+      "symbol": "unknownPlaytestCapabilities"
+    },
+    {
+      "constraints": ["the assertion throws instead of returning a false pass"],
+      "example": "assertCaptureNotBlank(png, \"first frame\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
+      "situations": [
+        "guard a visual playtest against a blank frame",
+        "prove a screenshot contains more than a loading surface"
+      ],
+      "summary": "Fail closed when a screenshot is blank or uniform.",
+      "symbol": "assertCaptureNotBlank"
+    },
+    {
+      "constraints": [],
+      "example": "throw new CaptureGuardError(\"menu\", \"no bright pixels\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class CaptureGuardError extends Error { … }",
+      "situations": [
+        "fail a visual test when the rendered frame is blank",
+        "include capture statistics in a playtest error"
+      ],
+      "summary": "Explain why a captured frame failed the non-blank guard.",
+      "symbol": "CaptureGuardError"
+    },
+    {
+      "constraints": [],
+      "example": "const stats = inspectFrame(png);",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function inspectFrame(png: Buffer): ICaptureFrameStats { … }",
+      "situations": [
+        "measure whether a screenshot contains a rendered game",
+        "diagnose a uniform or blank capture"
+      ],
+      "summary": "Inspect a PNG frame for visible pixels and luminance variation.",
+      "symbol": "inspectFrame"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class AdbAndroidDriver implements IAndroidDriver { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "symbol": "AdbAndroidDriver"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, ): Promise<void> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "advanceFixedStep"
+    },
+    {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function androidMailboxPaths( packageName: string, root = `/sdcard/Android/data/$ { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "androidMailboxPaths"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function androidTouchBatches( identity: readonly string[], positions: readonly string[], ): string[][] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "symbol": "androidTouchBatches"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function boundedTeardownStep( step: Promise<unknown> | undefined, timeoutMs: number, ): Promise<boolean> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "boundedTeardownStep"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function buildReport( config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, beforeSnapshot: IPlaytestObservationSnapshot | undefined, afterSnapshot: IPlaytestObservationSnapshot | undefined, consoleEntries: RunnerConsoleEntry[], networkEntries: Array< { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "buildReport"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function captureVisualSurface( page: Page, artifactPath?: string, ): Promise<Buffer | undefined> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "captureVisualSurface"
+    },
+    {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function connectPlaytestBridge( page: Page, scenario: IPlaytestScenario, timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): Promise<IPlaytestBridgeClient | undefined> { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "symbol": "connectPlaytestBridge"
+    },
+    {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): Promise<IPlaytestBridgeClient | undefined> { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "symbol": "connectPlaytestBridgeTransport"
+    },
+    {
+      "constraints": ["the mailbox lifecycle must be disposed after the run"],
+      "example": "const driver = new DesktopPlaytestDriver(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class DesktopPlaytestDriver implements IDevicePlaytestDriver { … }",
+      "situations": [
+        "run a desktop target through the playtest protocol",
+        "exchange observations with a native desktop host"
+      ],
+      "summary": "Drive a local desktop playtest mailbox.",
+      "symbol": "DesktopPlaytestDriver"
+    },
+    {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class DeviceBridgeTransport implements IDevicePlaytestTransport { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "DeviceBridgeTransport"
+    },
+    {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function deviceMailboxPaths(root: string): IDeviceMailboxPaths { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "deviceMailboxPaths"
+    },
+    {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class DeviceMailboxTransport implements IDevicePlaytestTransport { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "DeviceMailboxTransport"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function discoverAdb(environment: NodeJS.ProcessEnv = process.env): string { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "symbol": "discoverAdb"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): IPlaytestAssertionResult { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "failedDiagnosticsAssertion"
+    },
+    {
+      "constraints": ["invalid flags throw a named usage error"],
+      "example": "const config = parseStandalonePlaytestArgs(argv);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function formatUsage(): string { … }",
+      "situations": [
+        "invoke the playtest CLI from a scaffold",
+        "validate runner flags before launching a browser"
+      ],
+      "summary": "Parse standalone playtest runner configuration.",
+      "symbol": "formatUsage"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function handlePlaytestSignal( teardown: (stopManagedServer: boolean) => Promise<void>, setExitCode: (code: number) => void = (code) => { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "handlePlaytestSignal"
+    },
+    {
+      "constraints": ["generated scenarios must contain real assertions"],
+      "example": "await initStandalonePlaytest(projectPath);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function initStandalonePlaytest(projectPath = process.cwd()): Promise< { … }",
+      "situations": ["add the runner contract to a new game", "create a starter scenario fixture"],
+      "summary": "Initialize the standalone playtest files for a project.",
+      "symbol": "initStandalonePlaytest"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function isRuntimeReadout(entry: unknown): boolean { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "isRuntimeReadout"
+    },
+    {
+      "constraints": ["the mailbox lifecycle must be disposed after the run"],
+      "example": "const driver = new DesktopPlaytestDriver(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class LocalDeviceMailbox { … }",
+      "situations": [
+        "run a desktop target through the playtest protocol",
+        "exchange observations with a native desktop host"
+      ],
+      "summary": "Drive a local desktop playtest mailbox.",
+      "symbol": "LocalDeviceMailbox"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function openPageAndConnectBridge( page: Page, config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, ): Promise<IPlaytestBridgeClient | undefined> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "openPageAndConnectBridge"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function pageLifecycleDiagnostic( error: unknown, lifecycle: IPageLifecycle, url: string, ): IPlaytestProtocolDiagnostic | undefined { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "pageLifecycleDiagnostic"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseAndroidConsole(output: string): Array< { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "symbol": "parseAndroidConsole"
+    },
+    {
+      "constraints": ["simulator evidence does not claim physical-device proof"],
+      "example": "const driver = new XcrunIosDriver(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseLaunchedPid(output: string): string { … }",
+      "situations": [
+        "run a scenario on the iOS simulator",
+        "parse the launched native process identifier"
+      ],
+      "summary": "Drive and inspect iOS simulator playtest transport.",
+      "symbol": "parseLaunchedPid"
+    },
+    {
+      "constraints": ["invalid flags throw a named usage error"],
+      "example": "const config = parseStandalonePlaytestArgs(argv);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = process.cwd()): IStandalonePlaytestConfig { … }",
+      "situations": [
+        "invoke the playtest CLI from a scaffold",
+        "validate runner flags before launching a browser"
+      ],
+      "summary": "Parse standalone playtest runner configuration.",
+      "symbol": "parseStandalonePlaytestArgs"
+    },
+    {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class PlaytestBridgeError extends Error { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "symbol": "PlaytestBridgeError"
+    },
+    {
+      "constraints": ["invalid flags throw a named usage error"],
+      "example": "const config = parseStandalonePlaytestArgs(argv);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class PlaytestCliUsageError extends Error { … }",
+      "situations": [
+        "invoke the playtest CLI from a scaffold",
+        "validate runner flags before launching a browser"
+      ],
+      "summary": "Parse standalone playtest runner configuration.",
+      "symbol": "PlaytestCliUsageError"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function playtestStepDrivesMovement( step: IPlaytestScenario[\"steps\"][number], hasHeldInput: boolean, ): boolean { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "playtestStepDrivesMovement"
+    },
+    {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class PlaywrightTransport implements IBridgeTransport { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "symbol": "PlaywrightTransport"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function preflightDisplay( config: Pick<IStandalonePlaytestConfig, \"headless\">, scenario: Pick<IPlaytestScenario, \"artifacts\" | \"assert\" | \"steps\">, environment: NodeJS.ProcessEnv = process.env, platform = process.platform, ): IPlaytestDiagnostic | undefined { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "preflightDisplay"
+    },
+    {
+      "constraints": ["inspect the adapter name before claiming GPU proof"],
+      "example": "const args = resolveBrowserArguments(undefined);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function reconcileBrowserPointers( previous: ReadonlyMap<number, Required<IPlaytestPointer>>, next: readonly IPlaytestPointer[], ): IBrowserPointerChange[] { … }",
+      "situations": [
+        "run a browser playtest with Vulkan WebGPU",
+        "reject a SwiftShader adapter as evidence"
+      ],
+      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "symbol": "reconcileBrowserPointers"
+    },
+    {
+      "constraints": ["an empty assertion set is a failure"],
+      "example": "const scenario = recordToScenario(recording);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function recordToScenario( value: unknown, scenarioPath = \"recording.json\", oracleValue?: unknown, ): IPlaytestScenario { … }",
+      "situations": [
+        "preserve a failing playtest as a replay fixture",
+        "require assertions before recording a scenario"
+      ],
+      "summary": "Convert captured runner observations into a replay scenario.",
+      "symbol": "recordToScenario"
+    },
+    {
+      "constraints": ["an empty assertion set is a failure"],
+      "example": "const scenario = recordToScenario(recording);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function requireAssertions( value: IPlaytestScenario[\"assert\"], scenarioPath: string, ): NonNullable<IPlaytestScenario[\"assert\"]> { … }",
+      "situations": [
+        "preserve a failing playtest as a replay fixture",
+        "require assertions before recording a scenario"
+      ],
+      "summary": "Convert captured runner observations into a replay scenario.",
+      "symbol": "requireAssertions"
+    },
+    {
+      "constraints": ["inspect the adapter name before claiming GPU proof"],
+      "example": "const args = resolveBrowserArguments(undefined);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] { … }",
+      "situations": [
+        "run a browser playtest with Vulkan WebGPU",
+        "reject a SwiftShader adapter as evidence"
+      ],
+      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "symbol": "resolveBrowserArguments"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function resolveManagedServerCommand( config: IStandalonePlaytestConfig, dynamicPort?: number, ): string { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "resolveManagedServerCommand"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function rotatedTouchPosition(x: number, y: number, rotation: number): [number, number] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "symbol": "rotatedTouchPosition"
+    },
+    {
+      "constraints": ["the app bundle and device transport must be prepared"],
+      "example": "await runAndroidPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runAndroidPlaytest( config: IStandalonePlaytestConfig, dependencies: IAndroidPlaytestDependencies = { … }",
+      "situations": [
+        "execute a scenario on an Android target",
+        "collect Android playtest artifacts"
+      ],
+      "summary": "Run a playtest on Android through the configured device transport.",
+      "symbol": "runAndroidPlaytest"
+    },
+    {
+      "constraints": ["the desktop host must be built before launching"],
+      "example": "await runDesktopPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runDesktopPlaytest( config: IStandalonePlaytestConfig, dependencies: IDesktopPlaytestDependencies = { … }",
+      "situations": [
+        "execute a scenario against the desktop host",
+        "verify native desktop behavior from the same scenario"
+      ],
+      "summary": "Run a desktop playtest and collect its report.",
+      "symbol": "runDesktopPlaytest"
+    },
+    {
+      "constraints": ["the app bundle and device transport must be prepared"],
+      "example": "await runAndroidPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runDevicePlaytest( config: IStandalonePlaytestConfig, target: IDevicePlaytestTarget, ): Promise<IStandalonePlaytestReport> { … }",
+      "situations": [
+        "execute a scenario on an Android target",
+        "collect Android playtest artifacts"
+      ],
+      "summary": "Run a playtest on Android through the configured device transport.",
+      "symbol": "runDevicePlaytest"
+    },
+    {
+      "constraints": ["identify simulator versus physical transport in evidence"],
+      "example": "await runIosPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runIosPlaytest( config: IStandalonePlaytestConfig, dependencies: IIosPlaytestDependencies = { … }",
+      "situations": ["execute a scenario on an iOS target", "collect iOS playtest artifacts"],
+      "summary": "Run a playtest on the iOS simulator or device transport.",
+      "symbol": "runIosPlaytest"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runStandalonePlaytest( config: IStandalonePlaytestConfig, options: IStandalonePlaytestRunOptions = { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "runStandalonePlaytest"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function runStandalonePlaytests( config: IStandalonePlaytestConfig, ): Promise<readonly IStandalonePlaytestReport[]> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "runStandalonePlaytests"
+    },
+    {
+      "constraints": ["inspect the adapter name before claiming GPU proof"],
+      "example": "const args = resolveBrowserArguments(undefined);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function softwareAdapterName(adapter: Readonly<Record<string, string>> | undefined): string | undefined { … }",
+      "situations": [
+        "run a browser playtest with Vulkan WebGPU",
+        "reject a SwiftShader adapter as evidence"
+      ],
+      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "symbol": "softwareAdapterName"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function substituteManagedPort(command: string, port: number): string { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "substituteManagedPort"
+    },
+    {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function validateDeviceEndpoint(value: string): URL { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "validateDeviceEndpoint"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function writeCaptureProvenance( artifactDirectory: string, provenance: IPlaytestCaptureProvenance, ): Promise<void> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "writeCaptureProvenance"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function writeObservationArtifacts( artifactDirectory: string, requested: IPlaytestArtifactRequest | undefined, observations: { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "writeObservationArtifacts"
+    },
+    {
+      "constraints": ["simulator evidence does not claim physical-device proof"],
+      "example": "const driver = new XcrunIosDriver(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class XcrunIosDriver implements IDevicePlaytestDriver { … }",
+      "situations": [
+        "run a scenario on the iOS simulator",
+        "parse the launched native process identifier"
+      ],
+      "summary": "Drive and inspect iOS simulator playtest transport.",
+      "symbol": "XcrunIosDriver"
+    },
+    {
+      "constraints": ["use measured input rather than visual guesses"],
+      "example": "const advice = adviseThreeRenderWorkload(input);",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function adviseThreeRenderWorkload(input: IRenderAdvisorInput): IRenderAdvisorReport { … }",
+      "situations": [
+        "diagnose a slow Three.js scene",
+        "choose a render optimization from observed workload data"
+      ],
+      "summary": "Explain which render workloads should be collapsed or retained.",
+      "symbol": "adviseThreeRenderWorkload"
+    },
+    {
+      "constraints": ["use the device transport selected by the runner"],
+      "example": "const connection = await connectDevicePlaytestBridge();",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function connectDevicePlaytestBridge( bridge: IPlaytestBridgeV1, endpoint: string, ): IDeviceBridgeInstallation { … }",
+      "situations": [
+        "run the same playtest on an Android or iOS target",
+        "read the device bridge endpoint"
+      ],
+      "summary": "Connect a device-hosted game to the playtest bridge.",
+      "symbol": "connectDevicePlaytestBridge"
+    },
+    {
+      "constraints": ["install once before the runner connects"],
+      "example": "const bridge = installThreePlaytestBridge(options);",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions): IThreePlaytestBridgeInstallation { … }",
+      "situations": [
+        "expose a non-ThreeNative game to the scenario runner",
+        "add semantic observations to a browser playtest"
+      ],
+      "summary": "Install the playtest observation bridge for a plain Three.js game.",
+      "symbol": "installThreePlaytestBridge"
+    },
+    {
+      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
+      "example": "const measurement = measureThreePose(model);",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
+      "situations": [
+        "inspect a skinned model's posed bounds",
+        "verify a character's visual pose in a playtest"
+      ],
+      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "symbol": "measureThreePose"
+    },
+    {
+      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
+      "example": "const measurement = measureThreePose(model);",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function posedBounds( root: Object3D, meshes?: readonly Object3D[], ): IThreePoseBounds { … }",
+      "situations": [
+        "inspect a skinned model's posed bounds",
+        "verify a character's visual pose in a playtest"
+      ],
+      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "symbol": "posedBounds"
+    },
+    {
+      "constraints": ["use the device transport selected by the runner"],
+      "example": "const connection = await connectDevicePlaytestBridge();",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function readPlaytestEndpoint(): string | undefined { … }",
+      "situations": [
+        "run the same playtest on an Android or iOS target",
+        "read the device bridge endpoint"
+      ],
+      "summary": "Connect a device-hosted game to the playtest bridge.",
+      "symbol": "readPlaytestEndpoint"
+    },
+    {
+      "constraints": ["keep recorder limits within the documented caps"],
+      "example": "const physics = new ThreePlaytestPhysicsRecorder();",
+      "importPath": "@threenative/playtest/three",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class ThreePlaytestPhysicsRecorder { … }",
+      "situations": [
+        "assert physics contacts in a plain Three.js game",
+        "capture bounded body state for a scenario"
+      ],
+      "summary": "Record Three.js physics bodies for playtest observations.",
+      "symbol": "ThreePlaytestPhysicsRecorder"
+    },
+    {
+      "constraints": [],
+      "example": "<DebugOverlay game={game} />",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function DebugOverlay() { … }",
+      "situations": [
+        "display runtime and playtest diagnostics in a React HUD",
+        "inspect a game without changing its scene"
+      ],
+      "summary": "Show framework diagnostics while developing a game.",
+      "symbol": "DebugOverlay"
+    },
+    {
+      "constraints": ["keep the portable game entry free of React DOM code"],
+      "example": "<GameCanvas game={game} />",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { … }",
+      "situations": [
+        "add a game viewport to a React application",
+        "connect a game canvas to the web UI shell"
+      ],
+      "summary": "Mount a ThreeNative game in a React canvas.",
+      "symbol": "GameCanvas"
+    },
+    {
+      "constraints": ["use this hook only from the web UI entry"],
+      "example": "const score = useGameState(game, (state) => state.score);",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function useGameState<TState extends Record<string, unknown>, TPhysics, TSelected>( game: IGame<TState, TPhysics>, selector: GameSelector<TState, TSelected>, ): TSelected;",
+      "situations": [
+        "bind a HUD component to game state",
+        "select a slice of state for a React panel"
+      ],
+      "summary": "Read throttled game state from React.",
+      "symbol": "useGameState"
+    }
+  ],
+  "version": 1
+}

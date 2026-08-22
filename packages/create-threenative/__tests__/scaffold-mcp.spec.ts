@@ -17,6 +17,7 @@ const templates = [
 ] as const;
 const engineMcp = "threenative-engine-mcp";
 const enginePackageRoot = path.resolve("packages/engine-mcp");
+const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 
@@ -30,6 +31,14 @@ async function linkEngineMcp(target: string): Promise<void> {
   const destination = path.join(target, "node_modules", engineMcp);
   await mkdir(path.dirname(destination), { recursive: true });
   await symlink(enginePackageRoot, destination, "dir");
+}
+
+// The scaffold launches every MCP server through a shim inside `@threenative/core`, so the probe
+// only proves anything with core present — the shim is the code that finds and starts the server.
+async function linkCore(target: string): Promise<void> {
+  const destination = path.join(target, "node_modules", "@threenative", "core");
+  await mkdir(path.dirname(destination), { recursive: true });
+  await symlink(corePackageRoot, destination, "dir");
 }
 
 async function linkPhysics(target: string): Promise<void> {
@@ -121,6 +130,7 @@ describe("scaffolded engine MCP", () => {
       temporaryRoots.push(root);
       const { target } = await createProject({ install: false, target: "game", template }, root);
       await linkEngineMcp(target);
+      await linkCore(target);
       await linkPhysics(target);
 
       const project = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {

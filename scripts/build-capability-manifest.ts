@@ -4,6 +4,9 @@ import path from "node:path";
 import ts from "typescript";
 
 export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
+// `@threenative/core` ships the same manifest so the capability MCP server still answers in a
+// project that was not scaffolded and therefore has no committed copy of its own.
+export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
 
 const CAPABILITY_PACKAGE_DIRECTORIES = ["core", "physics", "playtest", "ui"] as const;
 const MANIFEST_VERSION = 1 as const;
@@ -480,6 +483,10 @@ function manifestPath(root: string): string {
   return path.join(root, CAPABILITY_MANIFEST_RELATIVE_PATH);
 }
 
+function manifestPaths(root: string): readonly string[] {
+  return [manifestPath(root), path.join(root, CAPABILITY_MANIFEST_MIRROR_PATH)];
+}
+
 const JSON_LINE_WIDTH = 100;
 
 function jsonIndent(level: number): string {
@@ -513,30 +520,34 @@ function serialiseManifest(manifest: ICapabilityManifest): string {
 
 export async function writeCapabilityManifest(root: string): Promise<ICapabilityManifest> {
   const manifest = buildCapabilityManifest(root);
-  const file = manifestPath(root);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, serialiseManifest(manifest));
+  const serialised = serialiseManifest(manifest);
+  for (const file of manifestPaths(root)) {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, serialised);
+  }
   return manifest;
 }
 
 export async function checkCapabilityManifest(root: string): Promise<ICapabilityManifest> {
-  const file = manifestPath(root);
-  let actual: string;
-  try {
-    actual = await readFile(file, "utf8");
-  } catch (error) {
-    throw new Error(`Capability manifest is missing or unreadable at ${file}: ${String(error)}`);
+  const expected = serialiseManifest(buildCapabilityManifest(root));
+  let parsed: ICapabilityManifest | undefined;
+  for (const file of manifestPaths(root)) {
+    let actual: string;
+    try {
+      actual = await readFile(file, "utf8");
+    } catch (error) {
+      throw new Error(`Capability manifest is missing or unreadable at ${file}: ${String(error)}`);
+    }
+    try {
+      parsed = JSON.parse(actual) as ICapabilityManifest;
+    } catch (error) {
+      throw new Error(`Capability manifest is unparseable at ${file}: ${String(error)}`);
+    }
+    if (actual !== expected) {
+      throw new Error(`Capability manifest is stale at ${file}; run pnpm build to regenerate it.`);
+    }
   }
-  let parsed: ICapabilityManifest;
-  try {
-    parsed = JSON.parse(actual) as ICapabilityManifest;
-  } catch (error) {
-    throw new Error(`Capability manifest is unparseable at ${file}: ${String(error)}`);
-  }
-  const expected = buildCapabilityManifest(root);
-  if (actual !== serialiseManifest(expected)) {
-    throw new Error(`Capability manifest is stale at ${file}; run pnpm build to regenerate it.`);
-  }
+  if (parsed === undefined) throw new Error("Capability manifest has no destination to check.");
   return parsed;
 }
 

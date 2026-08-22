@@ -232,11 +232,15 @@ async function copyCapabilityManifest(
 }
 
 const NODE_MODULES_PREFIX = "./node_modules/";
-const REQUIRED_MCP_SERVERS = [
-  "threenative-assets",
-  "threenative-sculpt",
-  "threenative-engine",
-] as const;
+// Every server launches through a shim inside `@threenative/core`, the one package a ThreeNative
+// project always has as a direct dependency. Pointing straight at `threenative-asset-mcp` only
+// works where the package manager hoists, so a project that installed the library without
+// scaffolding — or one on pnpm whose lockfile nests differently — silently lost its asset tools.
+const REQUIRED_MCP_SERVERS = {
+  "threenative-assets": `${NODE_MODULES_PREFIX}@threenative/core/mcp/assets.mjs`,
+  "threenative-sculpt": `${NODE_MODULES_PREFIX}@threenative/core/mcp/sculpt.mjs`,
+  "threenative-engine": `${NODE_MODULES_PREFIX}@threenative/core/mcp/engine.mjs`,
+} as const;
 
 function mcpPackageName(entry: string): string {
   const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");
@@ -261,7 +265,7 @@ async function assertMcpConfig(target: string): Promise<void> {
   if (mcpServers === undefined || Object.keys(mcpServers).length === 0) {
     throw new Error(`'${configPath}' declares no mcpServers.`);
   }
-  for (const name of REQUIRED_MCP_SERVERS) {
+  for (const name of Object.keys(REQUIRED_MCP_SERVERS)) {
     if (mcpServers[name] === undefined) {
       throw new Error(`'${configPath}' is missing required MCP server '${name}'.`);
     }
@@ -297,6 +301,13 @@ async function assertMcpConfig(target: string): Promise<void> {
           `MCP server '${name}' sets ${key}='${value}'; it must be a './' path inside the project.`,
         );
       }
+    }
+  }
+  for (const [name, entry] of Object.entries(REQUIRED_MCP_SERVERS)) {
+    if (mcpServers[name]?.args?.[0] !== entry) {
+      throw new Error(
+        `MCP server '${name}' must launch '${entry}', not '${mcpServers[name]?.args?.[0] ?? "nothing"}'.`,
+      );
     }
   }
 }

@@ -28,12 +28,13 @@ convention off must not turn its measurement off, and a convention missing from 
    complete list of the public surface, searchable by plain-words situation — *"enemy walks around a
    wall"*, *"put a weapon in a character's hand"*. Several exports are subpath imports
    (`@threenative/physics/navigation`) that grepping will never reveal, and its constraints are
-   binding. A scaffolded project reaches the same manifest through the `engine_search_capabilities`
+   binding. A project reaches the same manifest through the `engine_search_capabilities`
    and `engine_capability_detail` MCP tools its `.mcp.json` wires up. A game once hand-wrote 446
-   lines that were already installed, and ran at 9 FPS. The asset and sculpt MCP servers are
-   project-scoped — their `.mcp.json` lives in the generated game project, so a session launched
-   from a parent directory never registers them; launch from the game-project root when you need
-   asset tools.
+   lines that were already installed, and ran at 9 FPS. Installing `@threenative/core` writes that
+   `.mcp.json` — the asset, sculpt and capability servers arrive with the library rather than with
+   the scaffold, so a project that added ThreeNative by hand has them too. It is still read from
+   the directory the session was launched in, so a session started in a parent of the game
+   directory registers nothing; launch from the game-project root, or write a `.mcp.json` there.
 2. **Name the layer before you fix the bug.** Engine bug (fix in `packages/`) or game bug (fix in
    the example or template)? Say which and why. Fixing an engine bug inside game code buys one green
    screenshot and leaves every other game broken.

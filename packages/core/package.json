@@ -4,7 +4,7 @@
   "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
-  "files": ["dist", "README.md"],
+  "files": ["dist", "mcp", "scripts", "capabilities.json", "README.md"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,6 +33,7 @@
     "zustand": "catalog:"
   },
   "scripts": {
+    "postinstall": "node ./scripts/ensure-mcp.mjs",
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build && publint --strict"

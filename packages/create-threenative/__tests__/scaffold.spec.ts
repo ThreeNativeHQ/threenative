@@ -19,6 +19,10 @@ const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ENGINE_MCP = "threenative-engine-mcp";
+// Every server launches through a shim in `@threenative/core`, the one package a ThreeNative
+// project always depends on directly, so the path resolves whatever the package manager did with
+// the server packages themselves.
+const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
 /** Stages a broken template in a throwaway copy of the template tree and hands the body its
@@ -356,7 +360,7 @@ describe("create-threenative", () => {
     }
   });
 
-  it("should launch all three MCP servers from the project's own node_modules", async () => {
+  it("should launch all three MCP servers through the core shims", async () => {
     const root = await makeTempDir("threenative-mcp-");
     try {
       const result = await createProject(
@@ -370,13 +374,13 @@ describe("create-threenative", () => {
       };
       const assetServer = config.mcpServers["threenative-assets"];
       expect(assetServer?.command).toBe("node");
-      expect(assetServer?.args[0]).toBe(`./node_modules/${ASSET_MCP}/dist/index.js`);
+      expect(assetServer?.args[0]).toBe(`${CORE_SHIM}/assets.mjs`);
       const sculptServer = config.mcpServers["threenative-sculpt"];
       expect(sculptServer?.command).toBe("node");
-      expect(sculptServer?.args[0]).toBe(`./node_modules/${SCULPT_MCP}/dist/server.js`);
+      expect(sculptServer?.args[0]).toBe(`${CORE_SHIM}/sculpt.mjs`);
       const engineServer = config.mcpServers["threenative-engine"];
       expect(engineServer?.command).toBe("node");
-      expect(engineServer?.args[0]).toBe(`./node_modules/${ENGINE_MCP}/dist/index.js`);
+      expect(engineServer?.args[0]).toBe(`${CORE_SHIM}/engine.mjs`);
       const manifest = JSON.parse(
         await readFile(path.join(result.target, "package.json"), "utf8"),
       ) as { devDependencies?: Record<string, string> };
@@ -462,7 +466,7 @@ describe("create-threenative", () => {
         mcpServers: {
           "threenative-assets": {
             command: "node",
-            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/assets.mjs`],
           },
         },
       });
@@ -489,11 +493,11 @@ describe("create-threenative", () => {
         mcpServers: {
           "threenative-assets": {
             command: "node",
-            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/assets.mjs`],
           },
           "threenative-sculpt": {
             command: "node",
-            args: [`./node_modules/${SCULPT_MCP}/dist/server.js`],
+            args: [`${CORE_SHIM}/sculpt.mjs`],
           },
         },
       });
@@ -518,7 +522,7 @@ describe("create-threenative", () => {
         mcpServers: {
           "threenative-assets": {
             command: "node",
-            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/assets.mjs`],
           },
           "threenative-sculpt": {
             command: "node",
@@ -526,7 +530,7 @@ describe("create-threenative", () => {
           },
           "threenative-engine": {
             command: "node",
-            args: [`./node_modules/${ENGINE_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/engine.mjs`],
           },
         },
       });
@@ -553,12 +557,12 @@ describe("create-threenative", () => {
         mcpServers: {
           "threenative-assets": {
             command: "node",
-            args: [`./node_modules/${ASSET_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/assets.mjs`],
           },
           "threenative-sculpt": { command: "npx", args: ["-y", SCULPT_MCP] },
           "threenative-engine": {
             command: "node",
-            args: [`./node_modules/${ENGINE_MCP}/dist/index.js`],
+            args: [`${CORE_SHIM}/engine.mjs`],
           },
         },
       });

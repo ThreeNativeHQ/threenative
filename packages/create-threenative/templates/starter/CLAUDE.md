@@ -394,8 +394,9 @@ default — `pnpm add miniplex` if a game genuinely needs it.
 When in doubt, build it programmatically. A fetched asset has to match what the game needs,
 not merely exist.
 
-`.mcp.json` in this project launches `threenative-asset-mcp` from `node_modules`, so your host
-lists its tools alongside your own. It advertises 32; these 8 are the loop you will use for
+Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
+your host lists its tools alongside your own. Your host reads that file from the directory it was
+launched in: start the session in this project, not in a parent of it. It advertises 32; these 8 are the loop you will use for
 nearly everything:
 
 1. `asset_search_sources` — start here, never at a provider. It returns every catalogued
