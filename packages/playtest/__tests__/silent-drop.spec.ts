@@ -264,3 +264,122 @@ test("rejects a bridge advertising an unregistered capability", async () => {
   expect((caught as PlaytestBridgeError).diagnostic.code).toBe("TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN");
   expect((caught as PlaytestBridgeError).diagnostic.capability).toBe("runtime.audio.fake");
 });
+
+// The same §8 failure mode survived in four array-entry validators that predate the
+// requireRecord toolkit: a malformed ENTRY was mapped to undefined and filtered out of
+// the array, so the declared assertion count shrank silently. Each test below was
+// observed RED against the pre-fix parser: the scenario loaded with the junk entry
+// gone and no diagnostic anywhere.
+
+test("rejects a non-record contacts entry instead of dropping it", async () => {
+  const error = await loadError({
+    contacts: [{ entity: "player", minCount: 1, with: "coin" }, "oops"],
+  });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/contacts\[1\]/u);
+});
+
+test("rejects a wrong-typed requiredOn target instead of filtering it out", async () => {
+  // A typo'd target ("android") silently widened the assertion to every target.
+  const error = await loadError({
+    contacts: [{ entity: "player", minCount: 1, requiredOn: ["android"], with: "coin" }],
+  });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/requiredOn\[0\]/u);
+});
+
+test("rejects a hud entry that is not an object and one that names no path", async () => {
+  const untyped = await loadError({ hud: ["score"] });
+  expect(untyped).toBeInstanceOf(PlaytestScenarioError);
+  expect((untyped as PlaytestScenarioError).diagnostic.message).toMatch(/hud\[0\]/u);
+
+  const idless = await loadError({ hud: [{ gte: 1 }] });
+  expect(idless).toBeInstanceOf(PlaytestScenarioError);
+  expect((idless as PlaytestScenarioError).diagnostic.message).toMatch(/hud\[0\]\.id/u);
+});
+
+test("rejects a resource atSteps entry that is not a labeled sample", async () => {
+  // atSteps belongs to resource and component series, never to hud entries.
+  const error = await loadError({ resources: [{ atSteps: ["nope"], id: "score" }] });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/atSteps\[0\]/u);
+});
+
+test("rejects a visual entry that is not an object instead of dropping it", async () => {
+  const error = await loadError({
+    visual: [{ region: { height: 10, width: 10, x: 0, y: 0 } }, 7],
+  });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/visual\[1\]/u);
+});
+
+test("rejects an empty visual assertion that can never fail", async () => {
+  // With every key absent (or mistyped into omission) the row evaluated to nothing
+  // while still reporting pass — an unevidenced green in the report.
+  const error = await loadError({ visual: [{}] });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/visual\[0\]/u);
+});
+
+test("rejects an aerodynamics entry without an entity", async () => {
+  const error = await loadError({ aerodynamics: [{ minForceSamples: 2 }] });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/aerodynamics\[0\]\.entity/u);
+});
+
+test("rejects a wrong-typed aerodynamics control instead of emptying controls", async () => {
+  // `controls` flattened to [], whose .every() is vacuously true — the control check
+  // passed without ever running on web targets where minForceSamples alone satisfies
+  // the final guard.
+  const error = await loadError({
+    aerodynamics: [{
+      controls: [{ sign: "positive", surface: 42 }],
+      entity: "wing",
+      minForceSamples: 1,
+    }],
+  });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/aerodynamics\[0\]\.controls\[0\]/u);
+});
+
+test("still accepts valid contacts, hud, visual, and aerodynamics assertions unchanged", async () => {
+  const directory = await writeScenario(
+    {
+      aerodynamics: [{
+        controls: [{ minAbs: 0.5, sign: "positive", surface: "elevator" }],
+        entity: "wing",
+        minForceSamples: 2,
+        torques: [{ axis: "z", label: "pitch-up", sign: "negative" }],
+      }],
+      contacts: [{ entity: "player", minCount: 1, requiredOn: ["web", "desktop"], with: "coin" }],
+      hud: [{ gte: 1, id: "score" }],
+      resources: [{ atSteps: [{ equals: "3/3", label: "done" }], id: "state" }],
+      visual: [{ region: { height: 64, width: 64, x: 10, y: 10 } }],
+    },
+    [{ label: "done", release: true, waitFrames: 1 }],
+  );
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.assert?.contacts).toEqual([{
+    atStep: undefined,
+    entity: "player",
+    kind: undefined,
+    maxCount: undefined,
+    minCount: 1,
+    requiredOn: ["web", "desktop"],
+    with: "coin",
+  }]);
+  expect(parsed.assert?.hud).toEqual([{ gte: 1, id: "score" }]);
+  expect(parsed.assert?.resources).toEqual([{
+    atSteps: [{ equals: "3/3", label: "done" }],
+    id: "state",
+  }]);
+});

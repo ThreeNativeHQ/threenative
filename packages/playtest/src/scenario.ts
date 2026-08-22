@@ -891,7 +891,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
     }
   }
   return {
-    ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map(validateAerodynamicsAssertion).filter((item): item is IPlaytestAerodynamicsAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map((entry, index) => validateAerodynamicsAssertion(entry, scenarioPath, `assert.aerodynamics[${index}]`)) } : {}),
     ...(Array.isArray(value.animation) ? { animation: value.animation.map((entry, index) => validateAnimationAssertion(entry, scenarioPath, `assert.animation[${index}]`)) } : {}),
     ...(camera === undefined
       ? {}
@@ -910,7 +910,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
           ),
         }
       : {}),
-    ...(Array.isArray(value.contacts) ? { contacts: value.contacts.map(validateContactAssertion).filter((item): item is IPlaytestContactAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.contacts) ? { contacts: value.contacts.map((entry, index) => validateContactAssertion(entry, scenarioPath, `assert.contacts[${index}]`)) } : {}),
     ...(diagnostics === undefined
       ? {}
       : {
@@ -927,8 +927,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
     ...(Array.isArray(value.hud)
       ? {
           hud: value.hud
-            .map((entry, index) => validatePathAssertion(entry, scenarioPath, `assert.hud[${index}]`))
-            .filter((item): item is IPlaytestPathAssertion => item !== undefined),
+            .map((entry, index) => validatePathAssertion(entry, scenarioPath, `assert.hud[${index}]`)),
         }
       : {}),
     ...(performance === undefined ? {} : { performance }),
@@ -1005,7 +1004,7 @@ function validateAssertions(value: Record<string, unknown>, scenarioPath: string
     ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map((entry, index) => validateVisibilityAssertion(entry, scenarioPath, `assert.visibility[${index}]`)) } : {}),
-    ...(Array.isArray(value.visual) ? { visual: value.visual.map(validateVisualAssertion).filter((item): item is IPlaytestVisualAssertion => item !== undefined) } : {}),
+    ...(Array.isArray(value.visual) ? { visual: value.visual.map((entry, index) => validateVisualAssertion(entry, scenarioPath, `assert.visual[${index}]`)) } : {}),
     ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
   };
 }
@@ -1140,37 +1139,48 @@ function validateAssertionShapes(value: Record<string, unknown>, scenarioPath: s
   }
 }
 
-function validateAerodynamicsAssertion(value: unknown): IPlaytestAerodynamicsAssertion | undefined {
-  if (!isRecord(value) || typeof value.entity !== "string") return undefined;
-  const controls: IPlaytestAerodynamicsAssertion["controls"] = Array.isArray(value.controls)
-    ? value.controls.flatMap((control) => isRecord(control)
-      && typeof control.surface === "string"
-      && (control.sign === "negative" || control.sign === "positive")
-      ? [{
-          ...(typeof control.minAbs === "number" && Number.isFinite(control.minAbs) && control.minAbs >= 0 ? { minAbs: control.minAbs } : {}),
-          sign: control.sign as "negative" | "positive",
-          surface: control.surface,
-        }]
-      : [])
+function validateAerodynamicsAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAerodynamicsAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  // A wrong-typed entry used to be dropped from the array and an absent entity
+  // dropped the whole assertion, so the control check could shrink to [] whose
+  // .every() passes vacuously. Every declared entry must load or nothing loads.
+  const controls: IPlaytestAerodynamicsAssertion["controls"] = Array.isArray(record.controls)
+    ? record.controls.map((control, index) => {
+        const entryPath = `${objectPath}.controls[${index}]`;
+        const entry = requireRecord(control, scenarioPath, entryPath);
+        if (entry.sign !== "negative" && entry.sign !== "positive") {
+          throw invalidScenario(scenarioPath, `'${entryPath}.sign' must be "negative" or "positive", received ${describeValue(entry.sign)}.`);
+        }
+        return {
+          ...present("minAbs", optionalNonNegativeNumber(entry, "minAbs", scenarioPath, entryPath)),
+          sign: entry.sign as "negative" | "positive",
+          surface: requireString(entry, "surface", scenarioPath, entryPath),
+        };
+      })
     : undefined;
-  const torques: IPlaytestAerodynamicsAssertion["torques"] = Array.isArray(value.torques)
-    ? value.torques.flatMap((torque) => isRecord(torque)
-      && (torque.axis === "x" || torque.axis === "y" || torque.axis === "z")
-      && typeof torque.label === "string"
-      && (torque.sign === "negative" || torque.sign === "positive")
-      ? [{
-          axis: torque.axis,
-          label: torque.label,
-          ...(typeof torque.minAbs === "number" && Number.isFinite(torque.minAbs) && torque.minAbs >= 0 ? { minAbs: torque.minAbs } : {}),
-          ...(typeof torque.relativeToLabel === "string" ? { relativeToLabel: torque.relativeToLabel } : {}),
-          sign: torque.sign as "negative" | "positive",
-        }]
-      : [])
+  const torques: IPlaytestAerodynamicsAssertion["torques"] = Array.isArray(record.torques)
+    ? record.torques.map((torque, index) => {
+        const entryPath = `${objectPath}.torques[${index}]`;
+        const entry = requireRecord(torque, scenarioPath, entryPath);
+        if (entry.axis !== "x" && entry.axis !== "y" && entry.axis !== "z") {
+          throw invalidScenario(scenarioPath, `'${entryPath}.axis' must be one of x, y, z, received ${describeValue(entry.axis)}.`);
+        }
+        if (entry.sign !== "negative" && entry.sign !== "positive") {
+          throw invalidScenario(scenarioPath, `'${entryPath}.sign' must be "negative" or "positive", received ${describeValue(entry.sign)}.`);
+        }
+        return {
+          axis: entry.axis as "x" | "y" | "z",
+          label: requireString(entry, "label", scenarioPath, entryPath),
+          ...present("minAbs", optionalNonNegativeNumber(entry, "minAbs", scenarioPath, entryPath)),
+          ...present("relativeToLabel", optionalString(entry, "relativeToLabel", scenarioPath, entryPath)),
+          sign: entry.sign as "negative" | "positive",
+        };
+      })
     : undefined;
   return {
     ...(controls === undefined ? {} : { controls }),
-    entity: value.entity,
-    ...(typeof value.minForceSamples === "number" && Number.isInteger(value.minForceSamples) && value.minForceSamples > 0 ? { minForceSamples: value.minForceSamples } : {}),
+    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("minForceSamples", optionalPositiveInteger(record, "minForceSamples", scenarioPath, objectPath)),
     ...(torques === undefined ? {} : { torques }),
   };
 }
@@ -1185,29 +1195,74 @@ function validateOccludedAssertion(value: unknown, scenarioPath: string, objectP
   };
 }
 
-function validateVisualAssertion(value: unknown): IPlaytestVisualAssertion | undefined {
-  if (!isRecord(value)) return undefined;
-  const frameDiff = isRecord(value.frameDiff) ? value.frameDiff : undefined;
-  const region = isRecord(value.region) ? value.region : undefined;
-  const entityVisible = isRecord(value.entityVisible) ? value.entityVisible : undefined;
-  const validRegion = region !== undefined && [region.x, region.y, region.width, region.height].every((item) => typeof item === "number" && Number.isFinite(item));
+function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  // A non-record entry used to be dropped from the array, and a mistyped key
+  // collapsed its sub-object to nothing, so an entry could evaluate to an empty
+  // row that reported pass without ever observing a pixel. Sub-objects validate
+  // strictly and at least one of them must remain.
+  const frameDiff = record.frameDiff === undefined
+    ? undefined
+    : validateVisualFrameDiff(requireRecord(record.frameDiff, scenarioPath, `${objectPath}.frameDiff`), scenarioPath, `${objectPath}.frameDiff`);
+  const regionRecord = record.region === undefined
+    ? undefined
+    : requireRecord(record.region, scenarioPath, `${objectPath}.region`);
+  let region: IPlaytestVisualAssertion["region"] | undefined;
+  if (regionRecord !== undefined) {
+    const edges: Record<"height" | "width" | "x" | "y", number> = { height: 0, width: 0, x: 0, y: 0 };
+    for (const key of ["height", "width", "x", "y"] as const) {
+      const item = regionRecord[key];
+      if (typeof item !== "number" || !Number.isFinite(item)) {
+        throw invalidScenario(scenarioPath, `'${objectPath}.region.${key}' must be a finite number, received ${describeValue(item)}.`);
+      }
+      edges[key] = item;
+    }
+    region = {
+      ...edges,
+      ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
+      ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+      ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
+    };
+  }
+  const entityVisibleRecord = record.entityVisible === undefined
+    ? undefined
+    : requireRecord(record.entityVisible, scenarioPath, `${objectPath}.entityVisible`);
+  let entityVisible: IPlaytestVisualAssertion["entityVisible"] | undefined;
+  if (entityVisibleRecord !== undefined) {
+    if (typeof entityVisibleRecord.minProjectedPixels !== "number") {
+      throw invalidScenario(scenarioPath, `'${objectPath}.entityVisible.minProjectedPixels' must be a number, received ${describeValue(entityVisibleRecord.minProjectedPixels)}.`);
+    }
+    entityVisible = {
+      entity: requireString(entityVisibleRecord, "entity", scenarioPath, `${objectPath}.entityVisible`),
+      minProjectedPixels: entityVisibleRecord.minProjectedPixels,
+      ...present("throughoutFrames", optionalBoolean(entityVisibleRecord, "throughoutFrames", scenarioPath, `${objectPath}.entityVisible`)),
+    };
+  }
+  if (frameDiff === undefined && region === undefined && entityVisible === undefined) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must declare 'entityVisible', 'frameDiff', or 'region'; an empty visual assertion evaluates nothing.`,
+    );
+  }
   return {
-    ...(frameDiff === undefined ? {} : { frameDiff: {
-      ...(isSafeProjectRelativePng(frameDiff.baselineImage) ? { baselineImage: frameDiff.baselineImage } : {}),
-      ...(typeof frameDiff.minChangedPixelRatio === "number" ? { minChangedPixelRatio: frameDiff.minChangedPixelRatio } : {}),
-      ...(typeof frameDiff.maxChangedPixelRatio === "number" ? { maxChangedPixelRatio: frameDiff.maxChangedPixelRatio } : {}),
-    } }),
-    ...(validRegion ? { region: {
-      height: Number(region.height), width: Number(region.width), x: Number(region.x), y: Number(region.y),
-      ...(typeof region.minNonblankPixelRatio === "number" ? { minNonblankPixelRatio: region.minNonblankPixelRatio } : {}),
-      ...(typeof region.maxLuminance === "number" ? { maxLuminance: region.maxLuminance } : {}),
-      ...(typeof region.minDarkPixelRatio === "number" ? { minDarkPixelRatio: region.minDarkPixelRatio } : {}),
-    } } : {}),
-    ...(entityVisible !== undefined && typeof entityVisible.entity === "string" && typeof entityVisible.minProjectedPixels === "number" ? { entityVisible: {
-      entity: entityVisible.entity,
-      minProjectedPixels: entityVisible.minProjectedPixels,
-      ...(typeof entityVisible.throughoutFrames === "boolean" ? { throughoutFrames: entityVisible.throughoutFrames } : {}),
-    } } : {}),
+    ...(frameDiff === undefined ? {} : { frameDiff }),
+    ...(entityVisible === undefined ? {} : { entityVisible }),
+    ...(region === undefined ? {} : { region }),
+  };
+}
+
+function validateVisualFrameDiff(
+  record: Record<string, unknown>,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestVisualAssertion["frameDiff"] {
+  if (record.baselineImage !== undefined && !isSafeProjectRelativePng(record.baselineImage)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.baselineImage' must be a project-relative .png path without '..' or absolute segments, received ${describeValue(record.baselineImage)}.`);
+  }
+  return {
+    ...present("baselineImage", optionalString(record, "baselineImage", scenarioPath, objectPath)),
+    ...present("maxChangedPixelRatio", optionalNumber(record, "maxChangedPixelRatio", scenarioPath, objectPath)),
+    ...present("minChangedPixelRatio", optionalNumber(record, "minChangedPixelRatio", scenarioPath, objectPath)),
   };
 }
 
@@ -1451,18 +1506,19 @@ function validateTagCountAssertion(value: unknown, scenarioPath: string, objectP
   };
 }
 
-function validateContactAssertion(value: unknown): IPlaytestContactAssertion | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
+function validateContactAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestContactAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  // A non-record entry used to be filtered out of the array and a typo'd
+  // requiredOn target was silently dropped, widening the assertion to every
+  // target. Both must fail at load.
   return {
-    ...(typeof value.atStep === "string" ? { atStep: value.atStep } : {}),
-    ...(typeof value.entity === "string" ? { entity: value.entity } : {}),
-    ...(typeof value.kind === "string" ? { kind: value.kind } : {}),
-    ...(typeof value.maxCount === "number" && Number.isInteger(value.maxCount) && value.maxCount >= 0 ? { maxCount: value.maxCount } : {}),
-    ...(typeof value.minCount === "number" && Number.isFinite(value.minCount) ? { minCount: value.minCount } : {}),
-    ...(Array.isArray(value.requiredOn) ? { requiredOn: value.requiredOn.filter((item): item is PlaytestTarget => item === "web" || item === "desktop" || item === "bevy") } : {}),
-    ...(typeof value.with === "string" ? { with: value.with } : {}),
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    ...present("kind", optionalString(record, "kind", scenarioPath, objectPath)),
+    ...present("maxCount", optionalNonNegativeInteger(record, "maxCount", scenarioPath, objectPath)),
+    ...present("minCount", optionalNumber(record, "minCount", scenarioPath, objectPath)),
+    ...present("requiredOn", optionalTargetArray(record, "requiredOn", scenarioPath, objectPath)),
+    ...present("with", optionalString(record, "with", scenarioPath, objectPath)),
   };
 }
 
@@ -1503,25 +1559,31 @@ function validateVisibilityAssertion(value: unknown, scenarioPath: string, objec
   };
 }
 
-function validatePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPathAssertion | undefined {
-  if (!isRecord(value) || typeof value.id !== "string") {
-    return undefined;
-  }
-  const gte = optionalNumber(value, "gte", scenarioPath, objectPath);
-  const lte = optionalNumber(value, "lte", scenarioPath, objectPath);
+function validatePathAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPathAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  // An entry without an id used to be filtered out of the array and a wrong-typed
+  // atSteps entry dropped from the labeled series, so the assertion silently
+  // evaluated fewer samples than the author declared.
+  const gte = optionalNumber(record, "gte", scenarioPath, objectPath);
+  const lte = optionalNumber(record, "lte", scenarioPath, objectPath);
   return {
-    ...(Array.isArray(value.atSteps) ? { atSteps: value.atSteps.flatMap((step) => isRecord(step) && typeof step.label === "string"
-      ? [{ ...(hasKey(step, "equals") ? { equals: step.equals } : {}), label: step.label, ...(typeof step.textIncludes === "string" ? { textIncludes: step.textIncludes } : {}) }]
-      : []) } : {}),
-    ...(typeof value.changed === "boolean" ? { changed: value.changed } : {}),
-    ...present("allowTrivial", optionalTrivialityReason(value, "allowTrivial", scenarioPath, objectPath)),
-    ...(hasKey(value, "equals") ? { equals: value.equals } : {}),
+    ...(Array.isArray(record.atSteps) ? { atSteps: record.atSteps.map((step, index) => {
+      const entry = requireRecord(step, scenarioPath, `${objectPath}.atSteps[${index}]`);
+      return {
+        ...(hasKey(entry, "equals") ? { equals: entry.equals } : {}),
+        label: requireString(entry, "label", scenarioPath, `${objectPath}.atSteps[${index}]`),
+        ...present("textIncludes", optionalString(entry, "textIncludes", scenarioPath, `${objectPath}.atSteps[${index}]`)),
+      };
+    }) } : {}),
+    ...present("changed", optionalBoolean(record, "changed", scenarioPath, objectPath)),
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...(hasKey(record, "equals") ? { equals: record.equals } : {}),
     ...present("gte", gte),
-    id: value.id,
+    id: requireString(record, "id", scenarioPath, objectPath),
     ...present("lte", lte),
-    ...(typeof value.path === "string" ? { path: value.path } : {}),
-    ...(typeof value.textIncludes === "string" ? { textIncludes: value.textIncludes } : {}),
-    ...(typeof value.throughoutSteps === "boolean" ? { throughoutSteps: value.throughoutSteps } : {}),
+    ...present("path", optionalString(record, "path", scenarioPath, objectPath)),
+    ...present("textIncludes", optionalString(record, "textIncludes", scenarioPath, objectPath)),
+    ...present("throughoutSteps", optionalBoolean(record, "throughoutSteps", scenarioPath, objectPath)),
   };
 }
 
