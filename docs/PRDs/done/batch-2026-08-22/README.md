@@ -1,6 +1,6 @@
 # Batch — performance night: stop paying for what nothing asked for, 2026-08-22
 
-**Status: ARCHIVED 2026-08-23 on owner instruction. Eight PRDs filed; seven executed end to end and
+**Status: ARCHIVED AND COMPLETE, 2026-08-23. Eight PRDs filed; seven executed end to end and
 one (175) done in its code half with its device half attempted and honestly unobtained.** Every item in this batch is an unconditional per-frame cost paid by games
 that never asked for it: a framebuffer copied nobody requested, a scene re-judged whose verdict
 was already no, arrays thrown away per body per step, a navmesh path computed twice, render
@@ -36,7 +36,7 @@ bottom so they are decisions rather than oversights. Two facts set the prioritie
 | [172](./PRD-172-diagnostics-cost-nothing-until-asked.md) | `renderer.info` unexposed (PRD-069 crit. 7); render metrics sampled every frame for a reader that is usually absent | 3 | **DONE** incl. end-to-end scenario |
 | [173](./PRD-173-framework-hot-path-churn-sweep.md) | Six small per-step allocation/scans in core (queueFree, scheduler, input.tick, replay rect, GroundSnap, picker) | 5 | **DONE**; replay cache rejected with its red test |
 | [174](./PRD-174-templates-model-zero-allocation.md) | Template-generated source rebuilding HUD glyphs / cloning vectors per frame | 3 | **DONE**; test:templates exit 0 |
-| [175](./PRD-175-present-instrument-truth-and-missing-rungs.md) | Present counted ~4.3x per frame in the js-engine measurement report; ladder rungs 500/4000 unmeasured | code 3, device 7 | code **DONE**; rungs UNMEASURED — two disciplined attempts recorded, blocker is screen/keyguard over adb alone |
+| [175](./PRD-175-present-instrument-truth-and-missing-rungs.md) | Present counted ~4.3x per frame in the js-engine measurement report; ladder rungs 500/4000 unmeasured | code 3, device 7 | **DONE in full** — rungs measured 2026-08-23: 500=3.62 ms, 4000=5.41 ms |
 
 ## Order
 

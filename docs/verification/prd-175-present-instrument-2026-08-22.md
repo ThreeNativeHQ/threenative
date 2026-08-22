@@ -74,4 +74,30 @@ The corrected instrument ran live: `presentCountedOncePerFrame: true`, 301 prese
 a 301-frame window — PRD-175's LOW-lane fix producing honest numbers in a real measurement.
 Report artifact (untracked, local): `artifacts/engine-load-test/prd175-rung-500-2026-08-23.json`.
 
-Rung 4000: cooling-watcher running; row appended when measured.
+### Rung 4000 — measured 11:29-11:33 local
+
+After one failed attempt (the app stalled ~4 s into its window while the display dozed between
+no-op WAKEUP pulses; rendering resumed only in fragments), an instrumented retry with a 3 s
+wake-pulse loop held the device awake for the whole window. Battery temp 30.1 °C at preflight,
+discharging, thermal NONE, uncapped mailbox present:
+
+| meshes | ms/frame | fps | draws/frame | native submit+present | js+uninstrumented |
+|---|---|---|---|---|---|
+| 4000 | 5.413 | 184.7 | 6 | 0.571 ms (301 presentEvents) | 4.810 ms |
+
+## The completed ladder under the shipped engine
+
+Same subject and protocol as `prd-069-phase-0-v8-draw-ladder-2026-08-21.md` (shared geometry +
+material lattice; draws/frame stay ~4-6 because the subject is frustum-culled — per-object
+costs, not per-draw):
+
+| meshes | 2026-08-21 | 2026-08-23 |
+|---|---|---|
+| 500 | UNMEASURED | 3.622 ms |
+| 1000 | 4.013 ms | — |
+| 2000 | 4.711 ms | — |
+| 4000 | UNMEASURED | 5.413 ms |
+
+Marginals: 500→1000 ≈ 0.78 µs/object, 2000→4000 ≈ 0.35 µs/object — the flat-to-gently-rising
+curve Phase 0 described, no threshold anywhere. Both rows acceptance-eligible on the named
+serial; nothing here claims any platform or build other than what executed.
