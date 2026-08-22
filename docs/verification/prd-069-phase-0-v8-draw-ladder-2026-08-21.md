@@ -59,24 +59,35 @@ frames then a 300-frame window, uncapped present mode. `jsAndUninstr` is the rep
 | meshes | submitted draws/frame | ms/frame | fps | jsAndUninstr | native submit+poll | present (1×) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 100 | 51 | 3.899 | 256.4 | 0.353 | 0.523 | 0.754 |
-| 250 | 4 | 4.027 | 248.3 | 0.617 | 0.517 | 0.706 |
+| 250 | 4 | 4.027 | 248.3 | 0.617† | 0.517 | 0.706 |
+| 1000 | n/a‡ | 4.013 | 249.2 | 2.586 | — | — |
+| 2000 | n/a‡ | 4.711 | 212.3 | 3.482 | — | — |
 
-Corrected reading (`artifacts/android/knee-sweep-2026-08-21/analyze-corrected.js`): at 100–250
-scene objects the Pixel 8 frame under V8 is roughly **2.55–2.77 ms of JavaScript** plus a
-**~1.25–1.30 ms true native floor** (~0.52 ms submit+poll across ~4 submits, ~0.71–0.75 ms one
-present) plus ≤0.08 ms of instrumented binding time. The historical "~3.4 ms fixed native wall"
-was the present double-count. Per-object marginal from 100→250 objects ≈ **0.85 µs/object**
-across the whole frame — no sign of any threshold this low.
+† pre-fix binary: `jsAndUninstr` carries the inflated present; corrected ≈ 2.77 via
+`analyze-corrected.js`.
+‡ these rungs ran on the post-fix binary where the report's native split is truthful; their
+native share reads directly as `total − jsAndUninstr − boundary` ≈ 1.40 / 1.20 ms.
 
-Pure-JS matrix control shipped in every run: **0.233–0.380 µs/object** under V8
-(`TN_ANDROID_JS_PURE.medianUsPerObject`) against QuickJS-era figures an order of magnitude
-higher, consistent with PRD-118's 22× script-time ratio.
+## Verdict on the knee
 
-Rungs 500/750/1000/2000/4000 were attempted repeatedly but the phone entered thermal LIGHT on
-every launch past the first two (see §Thermal discipline) and was then plugged into wall power
-by the household mid-session (AC powered, level 100%) — the discharging gate correctly refuses
-that state, so those rungs are **UNMEASURED**, not failed. The sweep resumes automatically when
-the device runs on battery (`watch-and-resume.sh`); rows land above when they do.
+**No QuickJS-style knee exists under the shipped engine up to 2,000 scene objects.** Frame time
+is flat at ~4.0 ms from 100 through 1,000 objects (the 250→1000 marginal is indistinguishable
+from zero), then rises with a marginal cost of ≈ **0.70 µs per additional scene object** into
+2,000 (4.71 ms). Nothing resembling the historical step — a fixed ~20 ms/frame engaging between
+500 and 1,000 draws at 13.5→76.4 µs/mesh marginals — survives the engine swap. The §2.2 knee is
+an artifact of two things at once: it was measured under an interpreter that PRD-130 replaced,
+and its subject was frustum-culled so its x-axis was never draws.
+
+Where the shipped frame goes instead (Pixel 8, uncapped, shared-material boxes): a ~2.6–3.5 ms
+JavaScript term that scales with scene objects, plus a ~1.2–1.4 ms true native floor
+(~0.52 ms submit+poll across ~4 submits/frame, ~0.7 ms one present), plus ≤0.08 ms inside the
+six instrumented bindings. Pure-JS matrix control: 0.233–0.380 µs/object under V8.
+
+The remaining rungs are recorded **UNMEASURED**: 500 and 4000 exhausted their cooled retries —
+4000 against thermal LIGHT trips and a cooldown target the phone stopped reaching (idle battery
+temp settled at 32.0–32.3 °C late in the session, above the 31.5 °C margin the launch heat
+needs), 500 the same. The tooling reruns them in one command when the device is cooler
+(`sweep.sh "500 4000"`).
 
 <!-- LADDER_ROWS -->
 

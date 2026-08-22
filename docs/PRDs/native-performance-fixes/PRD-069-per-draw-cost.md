@@ -4,19 +4,22 @@ prd_contract: v1
 
 # PRD-069 — Per-draw cost: make each submitted draw cheaper, whatever engine is running
 
-**Status: PHASE 0 IN PROGRESS, 2026-08-21.** The 2026-08-10 numbers below were measured under
-**QuickJS**, which PRD-130 replaced with V8 as the Android default on 2026-08-16; and this
-session found the §2.2 sweep's subject was **frustum-culled** — at 250 scene meshes the render
-path submits 4 `drawIndexed`/frame (camera z=3, portrait aspect, lattice half-extent ≈ 2 units),
-so that sweep varied scene *object* count, not submitted draws. Its per-mesh costs are real
-per-object costs under QuickJS; its label was wrong, and the "knee" attribution is confounded by
-both facts. Re-measurement under V8 with per-submit attribution has begun:
-`docs/verification/prd-069-phase-0-v8-draw-ladder-2026-08-21.md` carries the corrected method
-(wireless transport identity, logcat ring sizing, present counted once per frame) and the
-partial ladder. Early corrected shape at low object counts: ~2.5–2.8 ms JS + ~1.3 ms true
-native (submit+poll ~0.52, one present ~0.71) at 100–250 objects on the Pixel 8 under V8 —
-the previously reported ~3.4 ms native floor was the present double-count, now fixed in
-`bindings.cpp`. Nothing else in this PRD is implemented. The frame-time numbers in §2 were
+**Status: PHASE 0 ANSWERED FOR THE SHIPPED ENGINE, 2026-08-21; levers reassessed.** The §2.2
+"knee" does not exist under the shipped engine: re-measured on the same Pixel 8 under V8, frame
+time is flat ~4.0 ms from 100 through 1,000 scene objects and rises at ≈0.70 µs/object into
+2,000 (4.71 ms) — no threshold step anywhere. The historical knee was an artifact of two stacked
+facts: it was measured under QuickJS, which PRD-130 replaced as the Android default, and its
+subject was frustum-culled (250 "draws" submitted 4 `drawIndexed`/frame), so its x-axis was
+never draws. The shipped Pixel 8 frame decomposes as ~2.6–3.5 ms of object-scaling JavaScript +
+~1.2–1.4 ms true native floor (submit+poll ~0.52 across ~4 submits, one present ~0.7 ms); the
+previously reported "~3.4 ms fixed native wall" was a present-per-submit double-count in the
+instrument, now fixed. Full method, corrections and ladder:
+`docs/verification/prd-069-phase-0-v8-draw-ladder-2026-08-21.md`.
+§3.1's BundleGroup lever additionally measured dead for moving geometry on three 0.185.1
+(static bundles freeze moved children; static=false still refreshes at most one render object
+per material per frame) — see the same record. What remains open in this PRD is the linear JS
+term itself (~0.7 µs/object across projectObject/render-list/nodes/bindings), whose attack is
+now ordinary optimisation rather than threshold hunting. The 2026-08-10 numbers below were
 executed on a physical Pixel 8 (`shiba`, serial `37251FDJH0037Z`, arm64-v8a, Android 17,
 Mali-G715) on 2026-08-10 and are reused here, not re-derived. **The attribution of those
 numbers to a cause is not measured**, and Phase 0 exists to measure it before anything is
