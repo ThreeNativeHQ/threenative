@@ -32,3 +32,20 @@ device; the 2026-08-21 discipline ran over Wi-Fi adb precisely so the phone disc
 unplugging the cable is a physical action nobody present can take. The rungs stay explicitly
 **UNMEASURED** — the tooling reruns them in one command when the phone is on Wi-Fi adb and cool:
 `sweep.sh "500 4000"`.
+
+## HIGH lane — second attempt session, 2026-08-23 morning (cable out)
+
+Three automated attempts under the full discipline (discharging over Wi-Fi adb, thermal NONE,
+battery temp <=31.5 degC, --cold-start-runs 0): the first tripped the screen-off preflight
+(no USB means no stay-awake); the second fixed screen wake but exposed a stale baked APK
+(subject marker never emitted -> rebuilt clean); the third built cleanly, cooled from a
+38 degC heat soak left by the runaway first app, and still lost the race between wake and
+launch -- `screen: expected on, observed off`, then a first-proof timeout on rung 4000 whose
+APK reuse would also have baked the wrong mesh count. Logs:
+`artifacts/engine-load-test/prd175-rung-{500,4000}-2026-08-23.logcat.txt`.
+
+Verdict unchanged: the rungs stay **UNMEASURED**. The remaining blocker is screen/keyguard
+management over adb alone -- plausibly the lock screen, which adb cannot cross. Next session
+should start here: unlock the phone by hand once, leave the cable out, and rerun
+`measure-android-js-engine.mjs --expected-engine V8 --meshes <N> --cold-start-runs 0`
+per rung (each rung needs its own build; the mesh count is baked at build time).
