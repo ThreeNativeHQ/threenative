@@ -1,8 +1,14 @@
+import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { archiveSandbox } from "../sweep-archive";
+import {
+  EVIDENCE_MANIFEST_FILE,
+  type IEvidenceManifest,
+  verifyEvidenceManifest,
+} from "../sweep-evidence";
 
 const temporaryRoots: string[] = [];
 
@@ -35,6 +41,9 @@ async function writeSandbox(root: string, name = "sandbox"): Promise<string> {
   await writeFile(path.join(sandbox, "vite.config.ts"), "export default {};\n");
   await writeFile(path.join(sandbox, "public", "favicon.svg"), "<svg />\n");
   await writeFile(path.join(sandbox, "package.json"), '{"name":"fixture"}\n');
+  // The archiver refuses to certify an archive without its proof result (P2-5), so the fixture
+  // represents a build that ran its proof: every real archived sandbox carries this file.
+  await writeFile(path.join(sandbox, "proof.json"), '{"passed":1}\n');
   await writeFile(
     path.join(sandbox, "sweep.json"),
     JSON.stringify({
@@ -313,5 +322,45 @@ describe("sweep archive", () => {
       }),
     );
     expect(() => archiveSandbox(sandbox, root)).toThrow(/lowercase slug/);
+  });
+
+  // P2-5 phase 1 revert check: remove the writeEvidenceManifest/verifyEvidenceManifest calls
+  // from sweep-archive.ts and this test fails — an archive without a manifest has no
+  // verifiable identity.
+  it("writes a verifiable evidence manifest into every new archive", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    const archive = archiveSandbox(sandbox, root);
+    const manifestPath = path.join(archive, EVIDENCE_MANIFEST_FILE);
+    await expect(access(manifestPath)).resolves.toBeUndefined();
+    const result = verifyEvidenceManifest(archive);
+    expect(result.status).toBe("verified");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as IEvidenceManifest;
+    expect(manifest.sweep.genre).toBe("fixture");
+    expect(manifest.sweep.arm).toBe("framework");
+    // The manifest hashes the archived copy of sweep.json, not the sandbox original:
+    const sweepEntry = manifest.files.find((entry) => entry.path === "sweep.json");
+    const archivedSweep = await readFile(path.join(archive, "sweep.json"));
+    expect(sweepEntry?.sha256).toBe(createHash("sha256").update(archivedSweep).digest("hex"));
+    expect(manifest.sourceCommit).toBeNull(); // the fixture root is not a git checkout
+  });
+
+  it("classifies proof as git-retained and captures as bulk candidates without removing either", async () => {
+    const root = await fixtureRoot();
+    const sandbox = await writeSandbox(root);
+    await mkdir(path.join(sandbox, "screenshots"), { recursive: true });
+    await writeFile(path.join(sandbox, "screenshots", "final.png"), "png\n");
+    const archive = archiveSandbox(sandbox, root);
+    const manifest = JSON.parse(
+      await readFile(path.join(archive, EVIDENCE_MANIFEST_FILE), "utf8"),
+    ) as IEvidenceManifest;
+    const byPath = new Map(manifest.files.map((entry) => [entry.path, entry]));
+    expect(byPath.get("proof.json")?.retention).toBe("git");
+    expect(byPath.get("sweep.json")?.retention).toBe("git");
+    expect(byPath.get("src/main.ts")?.retention).toBe("git");
+    expect(byPath.get("screenshots/final.png")?.retention).toBe("bulk-candidate");
+    // Classification only labels; nothing is moved or removed in phase 1:
+    await expect(access(path.join(archive, "proof.json"))).resolves.toBeUndefined();
+    await expect(access(path.join(archive, "screenshots/final.png"))).resolves.toBeUndefined();
   });
 });

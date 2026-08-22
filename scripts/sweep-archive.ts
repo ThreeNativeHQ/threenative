@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type SweepManifest, readManifest } from "./make-sandbox.js";
+import { verifyEvidenceManifest, writeEvidenceManifest } from "./sweep-evidence.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_SANDBOX = path.resolve(REPO, "../sandbox");
@@ -231,6 +232,12 @@ export function archiveSandbox(sandbox = DEFAULT_SANDBOX, repo = REPO): string {
     copyFrameworkTypes(source, destination);
     copyStarterBaseline(destination, manifest, repo);
     assertArchiveResolves(destination);
+    // P2-5 phase 1: every new archive leaves with an immutable evidence manifest, and the
+    // archiver refuses to report success until that manifest verifies against the bytes on
+    // disk. An archive without its proof result is refused outright — it is not evidence.
+    // Archives that predate manifests are never touched by this: they stay exactly as they are.
+    writeEvidenceManifest(destination, { repo });
+    verifyEvidenceManifest(destination);
   } catch (error) {
     fs.rmSync(destination, { recursive: true, force: true });
     throw error;
