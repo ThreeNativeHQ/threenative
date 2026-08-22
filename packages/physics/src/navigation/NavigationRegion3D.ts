@@ -149,8 +149,15 @@ export class NavigationRegion3D {
     this.navigation.query = nextQuery;
     this.navigation.navMesh = result.navMesh;
     this.navigationMesh = result.navMesh;
+    // Queries are owned by no region, so the superseded one always dies here; the superseded
+    // mesh may still belong to another live region, whose own dispose() frees it — destroying
+    // it here too was a double-free that corrupted the WASM heap ("memory access out of
+    // bounds") on any scene with two regions.
     previousQuery.destroy();
-    previousMesh.destroy();
+    const supersededElsewhere = [...this.navigation.regions].some(
+      (region) => region !== this && region.navigationMesh === previousMesh,
+    );
+    if (!supersededElsewhere) previousMesh.destroy();
     return result.navMesh;
   }
 

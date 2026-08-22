@@ -83,6 +83,27 @@ describe("NavigationRegion3D", () => {
     expect(Math.abs(closest.point.y - 2.6)).toBeLessThan(0.3);
   });
 
+  it("should dispose two regions without double-destroying a superseded mesh", async () => {
+    const { ctx } = await setup();
+    const first = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const second = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+
+    // Either order must hold: baking the second region frees the first region's mesh only if
+    // no live region still owns it, and each dispose destroys what it alone still references.
+    expect(() => {
+      second.dispose();
+      first.dispose();
+    }).not.toThrow();
+
+    const again = await setup();
+    const one = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(again.ctx) });
+    const two = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(again.ctx) });
+    expect(() => {
+      one.dispose();
+      two.dispose();
+    }).not.toThrow();
+  });
+
   it("should throw when the bake fails", async () => {
     const { ctx } = await setup();
 
