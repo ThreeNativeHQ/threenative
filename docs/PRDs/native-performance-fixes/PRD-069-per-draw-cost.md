@@ -4,7 +4,19 @@ prd_contract: v1
 
 # PRD-069 — Per-draw cost: make each submitted draw cheaper, whatever engine is running
 
-**Status: SCOPING. Nothing in this PRD is implemented.** The frame-time numbers in §2 were
+**Status: PHASE 0 IN PROGRESS, 2026-08-21.** The 2026-08-10 numbers below were measured under
+**QuickJS**, which PRD-130 replaced with V8 as the Android default on 2026-08-16; and this
+session found the §2.2 sweep's subject was **frustum-culled** — at 250 scene meshes the render
+path submits 4 `drawIndexed`/frame (camera z=3, portrait aspect, lattice half-extent ≈ 2 units),
+so that sweep varied scene *object* count, not submitted draws. Its per-mesh costs are real
+per-object costs under QuickJS; its label was wrong, and the "knee" attribution is confounded by
+both facts. Re-measurement under V8 with per-submit attribution has begun:
+`docs/verification/prd-069-phase-0-v8-draw-ladder-2026-08-21.md` carries the corrected method
+(wireless transport identity, logcat ring sizing, present counted once per frame) and the
+partial ladder. Early corrected shape at low object counts: ~2.5–2.8 ms JS + ~1.3 ms true
+native (submit+poll ~0.52, one present ~0.71) at 100–250 objects on the Pixel 8 under V8 —
+the previously reported ~3.4 ms native floor was the present double-count, now fixed in
+`bindings.cpp`. Nothing else in this PRD is implemented. The frame-time numbers in §2 were
 executed on a physical Pixel 8 (`shiba`, serial `37251FDJH0037Z`, arm64-v8a, Android 17,
 Mali-G715) on 2026-08-10 and are reused here, not re-derived. **The attribution of those
 numbers to a cause is not measured**, and Phase 0 exists to measure it before anything is

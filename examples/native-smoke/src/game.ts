@@ -11,10 +11,10 @@ import {
 import { playtest } from "@threenative/core/playtest";
 import {
   BoxGeometry,
-  type PerspectiveCamera,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  type PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
   Vector3,
@@ -155,12 +155,16 @@ class NativeSmoke extends Scene<ISmokeState> {
       // 2026-08-21: 250 meshes, 4 drawIndexed/frame). Pulled back until the widest row fits the
       // horizontal half-angle, every filler box submits. fov 60 default; aspect from viewport.
       const perspective = ctx.camera as PerspectiveCamera;
-      const aspect = Number.isFinite(perspective.aspect) && perspective.aspect > 0
-        ? perspective.aspect
-        : ctx.viewport.size.width / ctx.viewport.size.height;
+      const aspect =
+        Number.isFinite(perspective.aspect) && perspective.aspect > 0
+          ? perspective.aspect
+          : ctx.viewport.size.width / ctx.viewport.size.height;
       const halfWidthTan = Math.tan(((perspective.fov ?? 60) / 2) * (Math.PI / 180)) * aspect;
-      const halfExtent = ((Math.ceil(Math.cbrt(Math.max(1, profile.meshes))) - 1) /
-        Math.ceil(Math.cbrt(Math.max(1, profile.meshes)))) * 2 + 0.1;
+      const halfExtent =
+        ((Math.ceil(Math.cbrt(Math.max(1, profile.meshes))) - 1) /
+          Math.ceil(Math.cbrt(Math.max(1, profile.meshes)))) *
+          2 +
+        0.1;
       ctx.camera.position.z = Math.max(3, halfExtent / halfWidthTan + 0.5);
     }
     // The canvas-layer overlay is part of the native contract, so the bundle that proves the
