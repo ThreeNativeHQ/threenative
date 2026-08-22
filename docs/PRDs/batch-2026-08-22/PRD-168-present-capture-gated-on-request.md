@@ -139,3 +139,11 @@ logging on) no `[Screenshot] Copying` line appears per frame anymore.
 
 Record exact commands, exit codes, the consumer inventory, and the A/B artifacts. A green-only
 checkpoint with no measured delta is UNVERIFIED and blocks delivery.
+
+## Results — 2026-08-22
+
+EXECUTED on desktop Linux. Request gate landed; playtest mailbox became a bounded pending
+state machine; early-exit wait descoped and recorded. `pnpm native:verify:desktop` exit 0;
+desktop ladder −3.0/−3.2 ms p50 at 164/629 draws, ≥2 469 unresolvable under machine contention
+drift. Evidence: `docs/verification/prd-168-present-capture-2026-08-22.md`. Device lanes
+unverified.

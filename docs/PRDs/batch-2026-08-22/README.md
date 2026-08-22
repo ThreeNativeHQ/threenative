@@ -1,7 +1,7 @@
 # Batch — performance night: stop paying for what nothing asked for, 2026-08-22
 
-**Status: ACTIVE, filed 2026-08-22 evening. Eight new PRDs, PRD-168 through PRD-175, all
-`NOT STARTED`.** Every item in this batch is an unconditional per-frame cost paid by games
+**Status: EXECUTED OVERNIGHT, 2026-08-22/23. Eight PRDs filed; seven executed and recorded,
+one (175 HIGH lane) attempted and honestly unobtained.** Every item in this batch is an unconditional per-frame cost paid by games
 that never asked for it: a framebuffer copied nobody requested, a scene re-judged whose verdict
 was already no, arrays thrown away per body per step, a navmesh path computed twice, render
 metrics collected for a reader that is usually absent. None reopens a settled question: the
@@ -29,14 +29,14 @@ bottom so they are decisions rather than oversights. Two facts set the prioritie
 
 | PRD | What it closes | Complexity | Lane |
 | --- | --- | --- | --- |
-| [168](./PRD-168-present-capture-gated-on-request.md) | Per-frame framebuffer readback + 100-iteration spin in every presented native frame | 6 | local (native build + desktop gates) |
-| [169](./PRD-169-projection-declines-without-rescanning.md) | The render projection forces a full-scene matrix pass and classification walk every frame even while permanently declined | 5 | local |
-| [170](./PRD-170-physics-hot-paths-allocate-nothing.md) | Per-body-per-step allocations on the physics transform/input paths | 4 | local |
-| [171](./PRD-171-navigation-one-path-per-retarget.md) | Double `computePath` per retarget; crowd sync teleporting stationary agents every frame | 4 | local |
-| [172](./PRD-172-diagnostics-cost-nothing-until-asked.md) | `renderer.info` unexposed (PRD-069 crit. 7); render metrics sampled every frame for a reader that is usually absent | 3 | local |
-| [173](./PRD-173-framework-hot-path-churn-sweep.md) | Six small per-step allocation/scans in core (queueFree, scheduler, input.tick, replay rect, GroundSnap, ScenePicker) | 5 | local |
+| [168](./PRD-168-present-capture-gated-on-request.md) | Per-frame framebuffer readback + 100-iteration spin in every presented native frame | 6 | **DONE** desktop −3 ms p50; device unverified |
+| [169](./PRD-169-projection-declines-without-rescanning.md) | The render projection forces a full-scene matrix pass and classification walk every frame even while permanently declined | 5 | **DONE** cadence-only Cut B |
+| [170](./PRD-170-physics-hot-paths-allocate-nothing.md) | Per-body-per-step allocations on the physics transform/input paths | 4 | **DONE**, claimed as hygiene only |
+| [171](./PRD-171-navigation-one-path-per-retarget.md) | Double `computePath` per retarget; crowd sync teleporting stationary agents every frame | 4 | **DONE**; browser red pre-existing at HEAD |
+| [172](./PRD-172-diagnostics-cost-nothing-until-asked.md) | `renderer.info` unexposed (PRD-069 crit. 7); render metrics sampled every frame for a reader that is usually absent | 3 | **DONE** incl. end-to-end scenario |
+| [173](./PRD-173-framework-hot-path-churn-sweep.md) | Six small per-step allocation/scans in core (queueFree, scheduler, input.tick, replay rect, GroundSnap, picker) | 5 | **DONE**; replay cache rejected with its red test |
 | [174](./PRD-174-templates-model-zero-allocation.md) | Template-generated source rebuilding HUD glyphs / cloning vectors per frame | 3 | local |
-| [175](./PRD-175-present-instrument-truth-and-missing-rungs.md) | Present counted ~4.3x per frame in the js-engine measurement report; ladder rungs 500/4000 unmeasured | code 3, device 7 | code local; rungs need the cooled phone |
+| [175](./PRD-175-present-instrument-truth-and-missing-rungs.md) | Present counted ~4.3x per frame in the js-engine measurement report; ladder rungs 500/4000 unmeasured | code 3, device 7 | code **DONE**; rungs UNMEASURED — phone charging over USB |
 
 ## Order
 

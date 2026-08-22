@@ -117,3 +117,12 @@ NOT claimed (the native backend already bulk-caches; this PRD is the JS side).
 
 Bench numbers before/after per row, red observations for each revert check, suite outputs. A row
 whose allocation claim is not measured is UNVERIFIED.
+
+## Results — 2026-08-22
+
+EXECUTED (`2c772580`). All four rows landed; determinism + parity byte-identical, 136/136.
+Measured verdict recorded honestly: hot-path allocations were already ~0.12 MB per 6,000 steps
+and sit below instrument resolution end-to-end — claimed as hygiene, not frame time. Numeric
+contact keys rejected (Uint32 pairs exceed safe integer range; BigInt allocates more than the
+string). Evidence incl. bench numbers:
+`docs/verification/prd-170-physics-allocations-2026-08-22.md`.

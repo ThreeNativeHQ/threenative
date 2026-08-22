@@ -138,3 +138,14 @@ artifacts saved). Existing projection playtests/conformance rows stay green.
 
 Each phase: paste the red observation (exact assertion failure) before the fix, the green after,
 and the bench artifact. A phase whose negative control was never observed red blocks delivery.
+
+## Results — 2026-08-22
+
+EXECUTED (`a8893660`). Cut A: scan-before-force; declined frames run no matrix pass. Cut B
+simplified to a bounded rescan cadence only — three's `added`/`removed` events fire on the
+child, not the root, so per-object listeners would be their own per-frame cost; documented in
+the reconcile doc comment. Recovery from settled decline is cadence-bounded; the existing
+reversibility test was updated to that contract with its reasoning inline. Core suite green.
+Ledger row 3's load-test bench was NOT run: the removed pass is the same per-frame-churn class
+PRD-170 measured below instrument resolution, and the structural skip is proven by the spy
+tests; an end-to-end reconcile-cost bench remains available if wanted.

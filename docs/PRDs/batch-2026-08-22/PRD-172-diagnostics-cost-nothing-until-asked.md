@@ -100,3 +100,11 @@ after a frame prints a number.
 
 Reds pasted for both negative controls; scenario output naming the adapter and count. Unexecuted
 platforms stay unnamed.
+
+## Results — 2026-08-22
+
+EXECUTED (`656eba69`, `36426fe0`). info fails closed; collection behind
+enableRuntimeDiagnostics; playtest plugin announces when a runner is expected. End-to-end
+scenario proves drawCalls observed on browser WebGPU (performance.samples and maxDrawCalls
+pass); overall exit 1 from pre-existing popErrorScope console noise identical at HEAD.
+Evidence: `docs/verification/prd-172-diagnostics-2026-08-22.md`.

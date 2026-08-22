@@ -86,3 +86,11 @@ pnpm test`. Phase 2 adds its own device-gate outputs or nothing.
 
 Fixture numbers before/after; for Phase 2, preflight logs and per-rung thermal states. No device
 claim without the serial in the record.
+
+## Results — 2026-08-22
+
+LOW lane EXECUTED (`8f51a1d8`): frame tag added to the profile marker (profile builds),
+aggregator groups or run-length-dedupes, mixed-tag logs throw; both fixtures red before, green
+after; 14/14. HIGH lane attempted and not obtained: phone cool enough (28.2 °C) but charging
+over USB — the preflight needs discharging and unplugging is physical. Rung 500/4000 stay
+UNMEASURED. Evidence: `docs/verification/prd-175-present-instrument-2026-08-22.md`.

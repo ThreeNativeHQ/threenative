@@ -106,3 +106,11 @@ one navigation playtest on browser. No native claim (Recast stays browser-only b
 
 Paste spy-count outputs and both negative-control reds. An avoidance change justified only by
 argument ("should be fine") blocks delivery.
+
+## Results — 2026-08-22
+
+EXECUTED (`8a5104cc`). Both rows landed; both negative controls observed red first. Crowd
+separation spec caught a real semantic during review: teleport drops the crowd agent's move
+state, so the target is re-sent atomically in the same sync. 138/138 physics. Browser scenario
+red identically at HEAD on this machine (pre-existing) — recorded, not caused here:
+`docs/verification/prd-171-navigation-2026-08-22.md`.

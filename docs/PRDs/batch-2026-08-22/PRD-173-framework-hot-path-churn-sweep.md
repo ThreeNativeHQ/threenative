@@ -78,3 +78,12 @@ and one replay scenario (row 5) green under xvfb webgpu recipe.
 ## Checkpoint Protocol
 
 Per row: red paste, green paste, bench delta. A row without its red is UNVERIFIED even if green.
+
+## Results — 2026-08-22
+
+EXECUTED (`01dd5f3e`, `6f55cdc2`). Six rows landed; scheduler semantics pinned by a test written
+before its rewrite; bridge drain's first identity-keyed attempt caught red by the contact spec.
+Replay viewport cache REJECTED with its failing test as evidence — a canvas can move without an
+observable signal, and a stale offset corrupts recordings; only string joins became numeric.
+Core 315/315, root 1587/1587. Evidence:
+`docs/verification/prd-173-churn-2026-08-22.md`.
