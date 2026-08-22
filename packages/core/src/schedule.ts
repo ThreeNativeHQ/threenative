@@ -92,7 +92,13 @@ export class Scheduler {
   tick(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new TypeError("Tick duration must be finite and non-negative.");
-    for (const entry of [...this.#entries]) {
+    // Bounded direct iteration instead of a copy per tick: the bound keeps mid-tick additions
+    // firing on the next tick, exactly what the old snapshot copy did (pinned by a test).
+    const bound = this.#entries.size;
+    let visited = 0;
+    for (const entry of this.#entries) {
+      if (visited >= bound) break;
+      visited += 1;
       if (entry.active) entry.tick(dt);
     }
   }

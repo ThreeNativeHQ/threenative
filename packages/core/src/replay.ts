@@ -19,6 +19,9 @@ const event = (type: string, init: object): Event => Object.assign(new Event(typ
 const pointerEvent = (type: string, [clientX, clientY, buttons]: Point) =>
   event(type, { buttons, clientX, clientY, pointerId: 0 });
 function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer {
+  // Read every tick on purpose: a canvas can move or resize with no observable signal, and a
+  // stale offset would silently corrupt recorded pointer coordinates. Only the comparisons
+  // below are optimised — tuple fields, not joined strings.
   const canvas = ctx.renderer?.domElement;
   const rect = canvas?.getBoundingClientRect();
   return [
@@ -28,6 +31,23 @@ function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer 
     canvas?.clientWidth || globalThis.innerWidth || 1,
     canvas?.clientHeight || globalThis.innerHeight || 1,
   ];
+}
+
+function samePointer(previous: Pointer, next: Pointer): boolean {
+  return (
+    previous[0] === next[0] &&
+    previous[1] === next[1] &&
+    previous[2] === next[2] &&
+    previous[3] === next[3] &&
+    previous[4] === next[4]
+  );
+}
+
+function sameKeys(previous: string[], next: string[]): boolean {
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1)
+    if (previous[index] !== next[index]) return false;
+  return true;
 }
 const pointerType = (previous: number, next: number) =>
   previous && !next ? "pointerup" : !previous && next ? "pointerdown" : "pointermove";
@@ -109,8 +129,8 @@ export function replay<
       const keys = [...ctx.input.raw.keys].sort();
       const { position, buttons } = ctx.input.raw.pointer;
       const pointer = pointerViewport(ctx, [position.x, position.y, buttons]);
-      const pointerChanged = pointer.join() !== previousPointer.join();
-      if (pointerChanged || keys.join() !== previousKeys.join()) {
+      const pointerChanged = !samePointer(previousPointer, pointer);
+      if (pointerChanged || !sameKeys(previousKeys, keys)) {
         samples.push({ keys, ...(pointerChanged ? { pointer } : {}), tick: ticks });
         [previousKeys, previousPointer] = [keys, pointer];
       }

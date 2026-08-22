@@ -36,10 +36,17 @@ export class Registry {
   #named = new Map<string, object>();
   #pendingFree = new Set<string>();
   #iterating = false;
+  // Object→names side index: queueFree(object) used to linear-scan the whole named map, and
+  // templates call it per entity death. Insertion order per object preserves the old rule that
+  // an object registered under several names queues under the first.
+  readonly #namesOf = new WeakMap<object, string[]>();
 
   add<T extends object>(name: string, entity: T): T {
     if (this.#named.has(name)) throw new Error(`Entity "${name}" already registered.`);
     this.#named.set(name, entity);
+    const names = this.#namesOf.get(entity);
+    if (names === undefined) this.#namesOf.set(entity, [name]);
+    else names.push(name);
     return entity;
   }
 
@@ -52,7 +59,14 @@ export class Registry {
     this.#pendingFree.delete(name);
     const entity = this.#named.get(name);
     this.#named.delete(name);
-    if (entity !== undefined) disposeEntity(entity);
+    if (entity !== undefined) {
+      const names = this.#namesOf.get(entity);
+      if (names !== undefined) {
+        const at = names.indexOf(name);
+        if (at >= 0) names.splice(at, 1);
+      }
+      disposeEntity(entity);
+    }
   }
 
   queueFree(target: string | object): void {
@@ -64,6 +78,7 @@ export class Registry {
 
   sweep(): void {
     this.#assertNotIterating("sweep");
+    if (this.#pendingFree.size === 0) return;
     const pending = [...this.#pendingFree];
     this.#pendingFree.clear();
     for (const name of pending) {
@@ -104,10 +119,7 @@ export class Registry {
   }
 
   #nameOf(entity: object): string | undefined {
-    for (const [name, registered] of this.#named) {
-      if (registered === entity) return name;
-    }
-    return undefined;
+    return this.#namesOf.get(entity)?.[0];
   }
 
   #assertNotIterating(operation: string): void {

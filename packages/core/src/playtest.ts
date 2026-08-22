@@ -306,10 +306,23 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   ctx: ICtx<TState, TPhysics>,
   history: IPlaytestContactObservation[],
 ): IPlaytestContactObservation[] {
-  for (const id of Object.keys(ctx.entities.snapshot())) {
+  // One snapshot and one value→id index per drain: findEntityId rebuilt both per contact event,
+  // O(n*c) field extractions on every runner sample. First id wins per value, matching the
+  // insertion-order find it replaced.
+  const snapshot = ctx.entities.snapshot();
+  const idsByEntity = new Map<object, string>();
+  for (const id of Object.keys(snapshot)) {
+    const registered = ctx.entities.get(id) as Record<string, unknown> | undefined;
+    if (registered === undefined) continue;
+    for (const value of Object.values(registered)) {
+      if (value !== null && typeof value === "object" && !idsByEntity.has(value))
+        idsByEntity.set(value, id);
+    }
+  }
+  for (const id of Object.keys(snapshot)) {
     for (const source of entitySources(ctx.entities.get(id))) {
       for (const event of source.drainContacts()) {
-        const entity = findEntityId(ctx, event.body);
+        const entity = idsByEntity.get(event.body);
         if (entity === undefined || event.entity === undefined) continue;
         history.push({
           entity,
@@ -331,15 +344,6 @@ function entitySources(entity: object | undefined): IContactSource[] {
       "drainContacts" in value &&
       typeof (value as { drainContacts?: unknown }).drainContacts === "function",
   );
-}
-function findEntityId<TState extends Record<string, unknown>, TPhysics>(
-  ctx: ICtx<TState, TPhysics>,
-  target: object,
-): string | undefined {
-  return Object.keys(ctx.entities.snapshot()).find((id) => {
-    const entity = ctx.entities.get(id) as Record<string, unknown> | undefined;
-    return entity !== undefined && Object.values(entity).some((value) => value === target);
-  });
 }
 
 function tagCounts(snapshot: EntitySnapshot): Record<string, { count: number }> {

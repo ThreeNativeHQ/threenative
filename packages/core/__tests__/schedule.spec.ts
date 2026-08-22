@@ -154,3 +154,22 @@ describe("Scheduler", () => {
     expect(scheduler.size).toBe(0);
   });
 });
+
+describe("Scheduler tick ordering", () => {
+  it("runs entries added during a tick starting on the next tick", () => {
+    // Pinned before the copy-free iteration lands (PRD-173): a direct Set iteration would
+    // otherwise visit mid-tick additions same-tick and silently change when they first fire.
+    const fired: number[] = [];
+    let tickCount = 0;
+    const scheduler = new Scheduler();
+    scheduler.every((dt) => {
+      tickCount += 1;
+      if (tickCount === 1) {
+        scheduler.after(0, () => fired.push(tickCount));
+      }
+    });
+    scheduler.tick(1 / 60);
+    scheduler.tick(1 / 60);
+    expect(fired).toEqual([2]);
+  });
+});

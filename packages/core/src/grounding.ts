@@ -54,8 +54,9 @@ export class GroundSnap {
     if (this.enabled) this.applyWorldCorrection(group, correction);
 
     // Re-read after the move. The group may be under a scaled or rotated parent, so the local
-    // correction is not always one world metre for one local metre.
-    group.updateWorldMatrix(true, true);
+    // correction is not always one world metre for one local metre. posedBounds forces its own
+    // whole-subtree matrix pass, so no explicit update here — that was a second full pass per
+    // grounded character per frame buying nothing the measurement below does not redo.
     const after = posedBounds(this.model, this.meshes);
     this.clearance = after.min[1] - surfaceY;
   }

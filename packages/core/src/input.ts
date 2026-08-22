@@ -135,6 +135,7 @@ const browserGamepads: InputPlatformSource = () =>
 export class InputMap {
   readonly raw: IRawInputState;
   #bindings: InputBindings;
+  #bindingNames: string[] = [];
   #target: EventTarget;
   #heldKeys = new Set<string>();
   #pointerPosition = new Vector2();
@@ -170,6 +171,9 @@ export class InputMap {
     contextMenu: ContextMenuPolicy = "suppress",
   ) {
     this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
+    // Bindings are fixed at construction; freezing the key list keeps tick() from calling
+    // Object.keys every step.
+    this.#bindingNames = Object.keys(this.#bindings);
     this.#target = target;
     this.#pointerTarget = pointerTarget;
     this.#source = source;
@@ -311,13 +315,21 @@ export class InputMap {
     this.#relativeSample.copy(this.#pointerRelative);
     this.#pointerRelative.set(0, 0);
     const gamepad = this.#source().find((item) => item !== null);
-    this.#gamepadAxes = gamepad?.axes ? Array.from(gamepad.axes) : [];
-    this.#gamepadButtons = gamepad?.buttons.map((button) => button.pressed) ?? [];
+    // Reused buffers: fresh arrays here were four allocations per update step, device or not.
+    this.#gamepadAxes.length = 0;
+    this.#gamepadButtons.length = 0;
+    if (gamepad?.axes) {
+      const axes = gamepad.axes;
+      for (let axis = 0; axis < axes.length; axis += 1)
+        this.#gamepadAxes.push(axes[axis] as number);
+    }
+    if (gamepad?.buttons)
+      for (const button of gamepad.buttons) this.#gamepadButtons.push(button.pressed);
     this.raw.gamepad.axes = this.#gamepadAxes;
     this.raw.gamepad.buttons = this.#gamepadButtons;
     this.#justPressed.clear();
     this.#justReleased.clear();
-    for (const name of Object.keys(this.#bindings)) {
+    for (const name of this.#bindingNames) {
       // A press that came and went inside this frame still counts as a press. `pressed()` stays
       // instantaneous — it answers "is it down right now" — while the edge is latched, so a tap
       // reports justPressed on this frame and justReleased on the next one.
