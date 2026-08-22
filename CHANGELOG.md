@@ -20,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Projects without an `assets/models/` directory are unaffected. Requires the template's
   new `@gltf-transform/cli` dev dependency only when a model is actually stale.
 - `create-threenative` bumped to 0.2.3 for the above; templates pin 0.2.3.
+- `TracerPool3D.spawn` accepts per-shot `widthScale`, `segmentLength` and `lifetime`
+  overrides, so a game's shot-to-shot variation survives migration onto the pool.
 
 ## [0.2.0] - 2026-08-16
 

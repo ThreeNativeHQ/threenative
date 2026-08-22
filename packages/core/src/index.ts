@@ -88,7 +88,7 @@ export { softCircleDataTexture } from "./textures.js";
  * tracers.spawn(muzzle, shotDirection, hit.distance);
  */
 export { TracerPool3D } from "./tracers.js";
-export type { ITracerPool3DOptions } from "./tracers.js";
+export type { ITracerPool3DOptions, ITracerSpawnOptions } from "./tracers.js";
 /**
  * Move an object along a Three.js curve with Godot-style path following.
  * @situation move an enemy or prop along a patrol path

@@ -108,6 +108,44 @@ describe("TracerPool3D", () => {
     expect(surfaceOf(parent, 0).opacity).toBeCloseTo(0.4, 6);
   });
 
+  it("takes per-shot width, length and lifetime overrides from the game", () => {
+    // A game jitters every shot so two rounds never read as one drawn line, and near shots
+    // die faster than far ones. Those numbers stay the game's; the pool just applies them.
+    const { parent, tracers } = makePool(2);
+    tracers.spawn(origin, forward, 10, { widthScale: 1.35, segmentLength: 2, lifetime: 0.06 });
+    const live = parent.children[0] as Mesh;
+    expect(live.scale.x).toBeCloseTo(1.35, 6);
+    expect(live.scale.z).toBeCloseTo(1.35, 6);
+    expect(live.scale.y).toBeCloseTo(2, 6);
+    expect(live.position.z).toBeCloseTo(-0.16, 6);
+
+    // Fade runs on the shot's own lifetime, not the pool's.
+    tracers.update(0.01);
+    expect(surfaceOf(parent, 0).opacity).toBeCloseTo((0.05 / 0.06) * 1, 3);
+
+    // The next shot keeps the pool defaults.
+    tracers.spawn(origin, forward, 10);
+    const plain = parent.children[1] as Mesh;
+    expect(plain.scale.x).toBe(1);
+    expect(plain.scale.z).toBe(1);
+    expect(plain.scale.y).toBeCloseTo(3.2, 6);
+  });
+
+  it("fails closed for invalid per-shot overrides", () => {
+    const { tracers } = makePool(1);
+    expect(() => tracers.spawn(origin, forward, 10, { widthScale: 0 })).toThrow(/widthScale/);
+    expect(() => tracers.spawn(origin, forward, 10, { widthScale: Number.NaN })).toThrow(
+      /widthScale/,
+    );
+    expect(() => tracers.spawn(origin, forward, 10, { segmentLength: -1 })).toThrow(
+      /segmentLength/,
+    );
+    expect(() => tracers.spawn(origin, forward, 10, { lifetime: -0.5 })).toThrow(/lifetime/);
+    expect(() =>
+      tracers.spawn(origin, forward, 10, { lifetime: Number.POSITIVE_INFINITY }),
+    ).toThrow(/lifetime/);
+  });
+
   it("draws with a game-supplied geometry when given one", () => {
     const parent = new Group();
     const geometry = new BoxGeometry(0.05, 1, 0.05);
