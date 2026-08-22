@@ -139,6 +139,25 @@ test('clean desktop consumer provisions software Vulkan and prints its log on fa
   expect(launch).toContain('trap - ERR');
 });
 
+test('worker idle wake gate ships in the native package suite without requiring CMake', () => {
+  // PRD P2-1: the worker wake regression is a source-level gate so the default
+  // repository lane executes it; native compilation stays opt-in.
+  const vitestConfig = readFileSync(
+    fileURLToPath(new URL('../vitest.config.ts', import.meta.url)),
+    'utf8',
+  );
+  expect(vitestConfig).toContain('tests/**/*.test.{ts,mjs}');
+  const workerGate = readFileSync(
+    fileURLToPath(new URL('./worker-idle.test.mjs', import.meta.url)),
+    'utf8',
+  );
+  expect(workerGate).toContain('RED observed: idle wake bound exceeded');
+  expect(workerGate).toContain('RED observed: worker join timeout');
+  expect(workerGate).toContain('TN_WORKER_WAKE_BIN');
+  // The desktop lane that would carry the runtime measurement still builds the host.
+  expect(workflow).toContain('pnpm --filter @threenative/runtime-native native:build');
+});
+
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
   const desktop = smokeScenario('physics-desktop.playtest.json');

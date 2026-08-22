@@ -31,6 +31,14 @@ WorkerThread::~WorkerThread() {
     }
 }
 
+WorkerThread::WaitStats WorkerThread::waitStats() const {
+    WaitStats stats;
+    stats.loopEvals = loopEvals_.load();
+    stats.idleWaits = idleWaits_.load();
+    stats.idleWakes = idleWakes_.load();
+    return stats;
+}
+
 void WorkerThread::start() {
     if (running_.load()) {
         return;
@@ -365,6 +373,8 @@ globalThis.console = {
 
     // Main worker loop
     while (!terminated_.load()) {
+        loopEvals_.fetch_add(1, std::memory_order_relaxed);
+
         // Process messages via JS
         auto processResult = engine->evalWithResult("__processMessages()", "worker-loop.js");
         if (engine->hasException()) {
@@ -376,8 +386,19 @@ globalThis.console = {
             break;  // Worker requested close
         }
 
-        // Small sleep to prevent busy-waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Block until input, termination, or close. postMessage() and
+        // terminate() push under inMutex_ and notify inCondition_, so the
+        // predicate cannot miss a wake between the empty-queue check above
+        // (inside __processMessages) and this wait: the check and the wait
+        // share the mutex the notifiers hold while queueing.
+        {
+            idleWaits_.fetch_add(1, std::memory_order_relaxed);
+            std::unique_lock<std::mutex> lock(inMutex_);
+            inCondition_.wait(lock, [this] {
+                return terminated_.load() || !inQueue_.empty();
+            });
+            idleWakes_.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     // Cleanup

@@ -106,6 +106,21 @@ public:
     bool isRunning() const { return running_.load(); }
 
     /**
+     * Observable wait-state counters for the idle loop. Test instrumentation
+     * only - never exposed to JavaScript.
+     */
+    struct WaitStats {
+        uint64_t loopEvals = 0;  // times the main loop evaluated __processMessages()
+        uint64_t idleWaits = 0;  // times the loop entered a blocking wait on inCondition_
+        uint64_t idleWakes = 0;  // times a blocking wait returned because the predicate held
+    };
+
+    /**
+     * Snapshot of this worker's wait-state counters
+     */
+    WaitStats waitStats() const;
+
+    /**
      * Get the worker ID
      */
     int getId() const { return id_; }
@@ -124,6 +139,11 @@ private:
 
     std::atomic<bool> running_{false};
     std::atomic<bool> terminated_{false};
+
+    // Idle-loop instrumentation (see WaitStats)
+    std::atomic<uint64_t> loopEvals_{0};
+    std::atomic<uint64_t> idleWaits_{0};
+    std::atomic<uint64_t> idleWakes_{0};
 
     void threadMain();
     void processMessages(void* engine);  // void* is js::Engine*
