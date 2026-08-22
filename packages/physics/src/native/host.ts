@@ -14,6 +14,7 @@ import type {
   IPhysicsVector3,
 } from "../simulation.js";
 import {
+  requireFiniteRotation,
   requireFiniteVector,
   requirePhysicsBodySensor,
   requirePhysicsEventBuffer,
@@ -305,6 +306,10 @@ export function createNativePhysicsSimulation(
     rawEventQueue: raw,
     rawWorld: raw,
     createBody: (options: IPhysicsBodyCreateOptions) => {
+      // Same seam rule as web: a NaN placement corrupts the body for the rest of
+      // the run instead of throwing, and a zero-length rotation normalizes to NaN.
+      requireFiniteVector(options.position, "body position");
+      requireFiniteRotation(options.rotation, "body rotation");
       const shape = primitiveShape(options.shape);
       const sensor = requirePhysicsBodySensor(options);
       const id = raw.createBody({

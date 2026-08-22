@@ -718,6 +718,10 @@ export function createWebPhysicsSimulation(
       const sensor = requirePhysicsBodySensor(bodyOptions);
       if (!Number.isFinite(bodyOptions.mass) || bodyOptions.mass < 0)
         throw new Error("Physics body mass must be a finite non-negative number.");
+      // A NaN reaching Rapier corrupts the body for the rest of the run and surfaces
+      // frames later as a body that vanished; reject it here like every other seam.
+      requireFiniteVector(bodyOptions.position, "body position");
+      requireFiniteRotation(bodyOptions.rotation, "body rotation");
       const id = nextId;
       nextId += 1;
       const rawShape = createWebPhysicsShape(options.rapier, bodyOptions.shape, sensor);

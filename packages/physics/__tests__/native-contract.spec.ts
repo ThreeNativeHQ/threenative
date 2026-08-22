@@ -386,4 +386,41 @@ describe("native physics contract", () => {
     expect(() => native.applyBodyForce(7, { x: 1, y: 0, z: 0 })).toThrow(/disposed/i);
     expect(() => native.readBodyLinearVelocity(7)).toThrow(/disposed/i);
   });
+
+  it("rejects non-finite or zero-length body placement at both seams before the backend", async () => {
+    // Impulse, force, and velocity already reject non-finite values at this seam;
+    // createBody did not, so a NaN spawn position reached Rapier and surfaced
+    // frames later as a body that silently vanished. A zero-length quaternion on
+    // a kinematic input normalizes to NaN inside Rapier for the same reason.
+    await RAPIER.init();
+    const web = createWebPhysicsSimulation({
+      eventQueue: new RAPIER.EventQueue(true),
+      rapier: RAPIER,
+      version: RAPIER.version(),
+      world: new RAPIER.World({ x: 0, y: -9.81, z: 0 }),
+    });
+    expect(() =>
+      web.createBody({ ...bodyOptions(), position: { x: Number.NaN, y: 0, z: 0 } }),
+    ).toThrow(/TN_PHYSICS_NON_FINITE.*position/u);
+    expect(() =>
+      web.createBody({ ...bodyOptions(), rotation: { w: 0, x: 0, y: 0, z: 0 } }),
+    ).toThrow(/TN_PHYSICS_INVALID.*rotation/u);
+    web.dispose();
+
+    const createBody = vi.fn(() => 1);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(() =>
+      native.createBody({
+        ...bodyOptions(),
+        position: { x: Number.POSITIVE_INFINITY, y: 0, z: 0 },
+      }),
+    ).toThrow(/TN_PHYSICS_NON_FINITE.*position/u);
+    expect(() => native.createBody({ ...bodyOptions(), rotation: { w: 0, x: 0, y: 0, z: 0 } })).toThrow(
+      /TN_PHYSICS_INVALID.*rotation/u,
+    );
+    expect(createBody).not.toHaveBeenCalled();
+  });
 });
