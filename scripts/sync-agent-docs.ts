@@ -62,7 +62,7 @@ export function mirrorContent(agents: string): string {
   return `${BANNER}\n${agents}`;
 }
 
-async function readSharedFragments(root: string): Promise<Map<string, string>> {
+export async function readSharedFragments(root: string): Promise<Map<string, string>> {
   const directory = path.join(root, SHARED_FRAGMENT_DIRECTORY);
   if (!existsSync(directory)) return new Map();
 

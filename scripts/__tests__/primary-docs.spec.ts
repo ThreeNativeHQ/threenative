@@ -1,0 +1,204 @@
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { threenativeCommands } from "../../packages/create-threenative/src/commands.js";
+import { cliHelp as scaffoldCliHelp } from "../../packages/create-threenative/src/index.js";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/** The primary docs an authoring agent reads before it can find the code. Generated CLAUDE.md
+ * mirrors are deliberately absent: they follow their AGENTS.md sources, enforced by
+ * scripts/__tests__/sync-agent-docs.spec.ts instead. */
+const PRIMARY_DOCS = [
+  "README.md",
+  "AGENTS.md",
+  path.join("docs", "architecture", "AGENT-INTERFACE.md"),
+  path.join("packages", "create-threenative", "AGENTS.md"),
+] as const;
+
+async function readRepoFile(relative: string): Promise<string> {
+  return readFile(path.join(repoRoot, relative), "utf8");
+}
+
+interface IShippedPackage {
+  readonly public: boolean;
+  readonly version: string;
+}
+
+async function shippedPackages(): Promise<Map<string, IShippedPackage>> {
+  const packages = new Map<string, IShippedPackage>();
+  const entries = await readdir(path.join(repoRoot, "packages"), { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifest = JSON.parse(
+      await readFile(path.join(repoRoot, "packages", entry.name, "package.json"), "utf8"),
+    ) as { name?: string; publishConfig?: { access?: string }; version?: string };
+    if (manifest.name === undefined || manifest.version === undefined) continue;
+    packages.set(manifest.name, {
+      public: manifest.publishConfig?.access === "public",
+      version: manifest.version,
+    });
+  }
+  return packages;
+}
+
+/** External ThreeNative packages the templates pin (the asset MCP server is one; it lives on npm,
+ * not in this workspace) — real shipped surfaces a doc may name. */
+async function templatePinnedPackages(): Promise<Set<string>> {
+  const pinned = new Set<string>();
+  const templates = path.join(repoRoot, "packages", "create-threenative", "templates");
+  for (const entry of await readdir(templates, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = JSON.parse(
+      await readFile(path.join(templates, entry.name, "package.json"), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    for (const source of [
+      manifest.dependencies ?? {},
+      manifest.devDependencies ?? {},
+      manifest.optionalDependencies ?? {},
+    ]) {
+      for (const name of Object.keys(source)) {
+        if (/^(?:@threenative\/|threenative-|create-)/u.test(name)) pinned.add(name);
+      }
+    }
+  }
+  return pinned;
+}
+
+/** Server names written into every generated project's `.mcp.json` by installing core. */
+async function shippedMcpServerNames(): Promise<string[]> {
+  const config = JSON.parse(
+    await readRepoFile(
+      path.join("packages", "create-threenative", "templates", "starter", ".mcp.json"),
+    ),
+  ) as { mcpServers?: Record<string, unknown> };
+  return Object.keys(config.mcpServers ?? {});
+}
+
+function packageTokens(rawDoc: string): Set<string> {
+  // A Markdown link destination names a file path, not a surface (`PRD-084-threenative-studio.md`
+  // is history, not a shipped package), so only labels and prose are scanned.
+  const doc = rawDoc.replace(/\]\([^)]*\)/gu, "]()");
+  return new Set(
+    [
+      ...doc.matchAll(
+        /@threenative\/[a-z0-9-]+|\b(?:create-threenative|threenative-[a-z][a-z-]*)\b/gu,
+      ),
+    ].map((match) => match[0]),
+  );
+}
+
+/** `threenative <word>` invocations in prose or code. The scaffolder form (`pnpm create
+ * threenative my-game`) names a directory, not a command, so it is skipped here and checked as
+ * `create-threenative <subcommand>` separately. */
+function threenativeCommandClaims(doc: string): Set<string> {
+  const claims = new Set<string>();
+  for (const match of doc.matchAll(/(?<![\w.@/-])threenative\s+([a-z][a-z0-9]*)/gu)) {
+    const start = match.index ?? 0;
+    if (/create\s*$/u.test(doc.slice(Math.max(0, start - 7), start))) continue;
+    claims.add(match[1] ?? "");
+  }
+  return claims;
+}
+
+function scaffolderCommandClaims(doc: string): Set<string> {
+  return new Set(
+    [...doc.matchAll(/(?<![\w@/-])create-threenative\s+([a-z][a-z0-9]*)/gu)].map(
+      (match) => match[1] ?? "",
+    ),
+  );
+}
+
+function scaffoldSubcommands(help: string): Set<string> {
+  const commands = new Set<string>();
+  const body = help.slice(help.indexOf("Commands:")).split("\n").slice(1);
+  for (const line of body) {
+    if (line.trim().length === 0) break;
+    const match = /^ {2}([a-z][a-z0-9-]*)\b/u.exec(line);
+    if (match?.[1] !== undefined) commands.add(match[1]);
+  }
+  return commands;
+}
+
+describe("primary documentation agrees with the shipped surfaces", () => {
+  it("should name only packages that a shipped manifest declares", async () => {
+    const allowed = new Set([
+      ...(await shippedPackages()).keys(),
+      ...(await templatePinnedPackages()),
+      ...(await shippedMcpServerNames()),
+    ]);
+    for (const docPath of PRIMARY_DOCS) {
+      const unknown = [...packageTokens(await readRepoFile(docPath))].filter(
+        (token) => !allowed.has(token),
+      );
+      expect(unknown, `${docPath} names packages no shipped manifest declares`).toEqual([]);
+    }
+  });
+
+  it("should list every published package in the README at its manifest version", async () => {
+    const readme = await readRepoFile("README.md");
+    const tokens = packageTokens(readme);
+    for (const [name, shipped] of [...(await shippedPackages()).entries()].sort()) {
+      if (!shipped.public) continue;
+      expect(tokens.has(name), `README omits the shipped package ${name}`).toBe(true);
+      const row = readme
+        .split("\n")
+        .find((line) => line.startsWith("| ") && line.includes(`\`${name}\``));
+      expect(row, `README has no Packages table row for ${name}`).toBeDefined();
+      expect(
+        row?.includes(`\`${shipped.version}\``),
+        `README row for ${name} states a version other than the manifest's ${shipped.version}`,
+      ).toBe(true);
+    }
+  });
+
+  it("should advertise only commands the executable CLIs dispatch", async () => {
+    const canonicalCommands = new Set<string>(threenativeCommands);
+    const canonicalScaffoldCommands = scaffoldSubcommands(scaffoldCliHelp());
+    expect(canonicalScaffoldCommands.size).toBeGreaterThan(0);
+    for (const docPath of PRIMARY_DOCS) {
+      const doc = await readRepoFile(docPath);
+      const phantom = [...threenativeCommandClaims(doc)].filter(
+        (command) => !canonicalCommands.has(command),
+      );
+      expect(
+        phantom,
+        `${docPath} advertises a threenative command the CLI does not dispatch`,
+      ).toEqual([]);
+      const phantomScaffold = [...scaffolderCommandClaims(doc)].filter(
+        (command) => !canonicalScaffoldCommands.has(command),
+      );
+      expect(
+        phantomScaffold,
+        `${docPath} advertises a create-threenative subcommand that does not exist`,
+      ).toEqual([]);
+    }
+  });
+
+  it("should keep the engine capability route discoverable", async () => {
+    const engineServerSource = await readRepoFile(
+      path.join("packages", "engine-mcp", "src", "index.ts"),
+    );
+    const tools = [
+      ...new Set(
+        [...engineServerSource.matchAll(/"(engine_[a-z_]+)"/gu)].map((match) => match[1] ?? ""),
+      ),
+    ].sort();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const docPath of ["AGENTS.md", path.join("docs", "architecture", "AGENT-INTERFACE.md")]) {
+      const doc = await readRepoFile(docPath);
+      for (const tool of tools) {
+        expect(doc.includes(tool), `${docPath} never names the shipped tool ${tool}`).toBe(true);
+      }
+      expect(
+        doc.includes("threenative-engine-mcp"),
+        `${docPath} never names the shipped engine MCP server`,
+      ).toBe(true);
+    }
+  });
+});

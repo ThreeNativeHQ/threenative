@@ -1,8 +1,15 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
-import { agentsFiles, syncAgentDocs } from "../sync-agent-docs.js";
+import {
+  agentsFiles,
+  expandSharedRegions,
+  mirrorContent,
+  readSharedFragments,
+  syncAgentDocs,
+} from "../sync-agent-docs.js";
 
 async function fixture(): Promise<string> {
   const root = await makeTempDir("threenative-agent-docs-");
@@ -114,6 +121,25 @@ describe("sync-agent-docs", () => {
       await expect(syncAgentDocs(root)).rejects.toThrow("Unclosed shared fragment 'rule'");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should generate every primary instruction mirror from its AGENTS source", async () => {
+    // The primary instruction pairs — the docs an agent reads before any other — are pinned
+    // individually so that loosening the repo-wide walk below cannot quietly let a hand-edited
+    // CLAUDE.md pose as the rule. `syncAgentDocs` remains the only mirror writer.
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const fragments = await readSharedFragments(repoRoot);
+    for (const agentsRelative of [
+      "AGENTS.md",
+      path.join("packages", "create-threenative", "AGENTS.md"),
+    ]) {
+      const agentsPath = path.join(repoRoot, agentsRelative);
+      const claudePath = path.join(path.dirname(agentsPath), "CLAUDE.md");
+      const expected = mirrorContent(
+        expandSharedRegions(await readFile(agentsPath, "utf8"), fragments, agentsRelative),
+      );
+      await expect(readFile(claudePath, "utf8")).resolves.toBe(expected);
     }
   });
 

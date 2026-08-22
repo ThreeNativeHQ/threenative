@@ -55,14 +55,18 @@ claiming the scaffold works.
 
 ## CLI surface
 
-Four commands, ever: `dev`, `build`, `test`, `ship`, plus `doctor`, which reports rather than
-builds and is borrowed whole from `npm doctor` and `flutter doctor` (added 2026-08-19 by owner
-request; `__tests__/cli.spec.ts` pins the advertised list, so a sixth needs that decision made
-again). v1 shipped 178 command forms and a
-2,477-word root help, in a product whose founding constraint is that models are bad at
-discovering novel APIs. Flags stay boring: `--template`, `--no-install`, and the
-`--*-package` overrides CI uses to test against local tarballs.
+Two `threenative` commands, ever: `build` (`--target web|desktop|android|ios`) and `doctor`
+(`--text` prints the person-readable report; it checks rather than builds, borrowed whole from
+`npm doctor` and `flutter doctor`). `__tests__/cli.spec.ts` derives the advertised list from the
+real executable and rejects anything else, so this document cannot outgrow the binary. A third
+command needs the owner decision made again — v1 shipped 178 command forms and a 2,477-word root
+help, in a product whose founding constraint is that models are bad at discovering novel APIs.
+The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]`; its flags stay
+boring: `--template`, `--no-install`, and the `--*-package` overrides CI uses to test against
+local tarballs. `pnpm dev` inside a generated project is a package script, never a CLI command.
 
-`threenative-asset-mcp` is pinned by each template and installed into each generated project
-as an external process. Never vendor it. Its recorded surface is `asset-mcp-tools.json`,
-updated by running the pinned server — never by reading its docs.
+The MCP servers reach a generated project through the `.mcp.json` that installing
+`@threenative/core` writes — asset, sculpt and capability servers, each launching through a shim
+inside core. The asset server itself remains the externally pinned `threenative-asset-mcp`;
+never vendor it. Its recorded surface is `asset-mcp-tools.json`, updated by running the pinned
+server — never by reading its docs.

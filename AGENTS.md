@@ -29,7 +29,8 @@ convention off must not turn its measurement off, and a convention missing from 
    wall"*, *"put a weapon in a character's hand"*. Several exports are subpath imports
    (`@threenative/physics/navigation`) that grepping will never reveal, and its constraints are
    binding. A project reaches the same manifest through the `engine_search_capabilities`
-   and `engine_capability_detail` MCP tools its `.mcp.json` wires up. A game once hand-wrote 446
+   and `engine_capability_detail` tools of the shipped `threenative-engine-mcp` server, which
+   the `.mcp.json` wires up. A game once hand-wrote 446
    lines that were already installed, and ran at 9 FPS. Installing `@threenative/core` writes that
    `.mcp.json` — the asset, sculpt and capability servers arrive with the library rather than with
    the scaffold, so a project that added ThreeNative by hand has them too. It is still read from
@@ -43,6 +44,10 @@ convention off must not turn its measurement off, and a convention missing from 
 4. **Never claim a gate you did not run.** Paste the output. "Unverified" is an acceptable answer.
 5. **Surgical and simple.** Touch only what the task needs; unrelated tidying is its own change. Ask
    when the request is ambiguous — a silent interpretation costs more than a question.
+6. **Primary docs follow the executables.** The README, `docs/architecture/`, and package AGENTS
+   files may only name commands and packages the CLIs and package manifests actually ship;
+   `scripts/__tests__/primary-docs.spec.ts` fails the suite when they drift. When prose and code
+   disagree, the code is the source of truth — fix the prose, not the meaning.
 
 Diagrams are Mermaid, never ASCII.
 

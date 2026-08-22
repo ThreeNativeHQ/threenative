@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -58,6 +59,18 @@ describe("create-threenative CLI", () => {
       await expect(
         run(process.execPath, [threenativeCli, command, "--help"]),
       ).rejects.toMatchObject({ code: 1 });
+    }
+
+    // The package's own AGENTS.md must describe exactly the surface this executable advertises,
+    // derived here from what the binary printed rather than restated by hand. The v1 vocabulary
+    // (`dev`, `test`, `ship`) never returns as a command claim.
+    const agentsDoc = await readFile(path.join(__dirname, "../AGENTS.md"), "utf8");
+    const cliSurface = agentsDoc.slice(agentsDoc.indexOf("## CLI surface"));
+    for (const command of advertised) {
+      expect(cliSurface, command).toContain(`\`${command}\``);
+    }
+    for (const command of ["dev", "test", "ship"]) {
+      expect(cliSurface, command).not.toContain(`\`${command}\``);
     }
   });
 });

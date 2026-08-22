@@ -73,8 +73,8 @@ export default game;
 | `@threenative/physics` | `0.2.1` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | `0.2.0` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | `0.2.0` | Owned C++ host for desktop, Android, and iOS |
-| `@threenative/studio` | `0.2.0` | Local browser Studio for project work |
 | `@threenative/ui` | `0.2.1` | React bindings for HUD and game state |
+| `threenative-engine-mcp` | `0.2.0` | Offline MCP capability discovery for authoring agents |
 
 ## Status
 

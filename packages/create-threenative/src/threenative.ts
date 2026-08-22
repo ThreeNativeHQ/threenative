@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { build, buildHelp, parseBuildArgs } from "./build.js";
+import { type PublicCommand, commandSummaries, threenativeCommands } from "./commands.js";
 import { diagnoseProject, formatDoctorReport, readProject } from "./doctor.js";
-
-type PublicCommand = "build" | "doctor";
 
 export function cliHelp(command?: PublicCommand): string {
   if (command === "build") return buildHelp();
@@ -23,8 +22,7 @@ export function cliHelp(command?: PublicCommand): string {
     "Usage: threenative <command> [options]",
     "",
     "Commands:",
-    "  build   Build web or native output.",
-    "  doctor  Check this project and report what would break a build.",
+    ...threenativeCommands.map((command) => `  ${command.padEnd(6)}  ${commandSummaries[command]}`),
     "",
     "Run 'threenative <command> --help' for command-specific help.",
   ].join("\n")}\n`;

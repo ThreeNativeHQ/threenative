@@ -1,17 +1,21 @@
 # Agent interface
 
-**Status:** proposal, 2026-08-02; re-checked 2026-08-16. The public CLI stays limited to four
-familiar commands, with no bespoke vocabulary.
+**Status:** proposal, 2026-08-02; reconciled with the shipped surfaces 2026-08-21. The public CLI
+stays limited to two familiar commands (`build`, `doctor`) plus the scaffolder, with no bespoke
+vocabulary.
 
-**What exists now that this file was written before.** `@threenative/studio` shipped (PRD-084,
-PRD-085) — a local server plus one self-contained page where an agent edits the project's plain
-TypeScript and the game reloads beside it. It is the surface this document argues for, minus the
-MCP layer, and the owner's amendment that allowed it is explicit that it stays *an agent editing
-plain TypeScript*: a GUI that writes a scene is still closed. `scripts/studio-probe.ts`,
-`studio-inspect.ts` and `studio-loop.ts` are its check/observe/next-action harness, and
-[PRD-086](../PRDs/PRD-086-studio-self-improvement-loop.md) is the standing brief handed to the
-agent iterating on it. **No ThreeNative MCP server exists** — the only MCP in the project is the
-external `threenative-asset-mcp`, for asset discovery.
+**What exists now that this file was written before.** The read-only half of the MCP layer this
+document argues for has shipped: [`threenative-engine-mcp`](../../packages/engine-mcp/) serves
+`engine_search_capabilities` and `engine_capability_detail` over the committed capability
+manifest, and installing `@threenative/core` writes every project a `.mcp.json` wiring three
+servers — `threenative-assets` (the externally pinned `threenative-asset-mcp`, launched through
+a shim inside core), `threenative-sculpt`, and `threenative-engine`. What left is Studio: it
+moved to a separate private repository (recorded in [`docs/README.md`](../README.md); PRDs
+[084](../PRDs/done/PRD-084-threenative-studio.md),
+[085](../PRDs/done/PRD-085-studio-wiring.md) and
+[086](../PRDs/PRD-086-studio-self-improvement-loop.md) remain as history), and its
+`scripts/studio-*` probes went with it. The owner's amendment stands either way: an agent edits
+plain TypeScript — a GUI that writes a scene is still closed.
 
 ## The workflow this replaces
 
@@ -66,7 +70,7 @@ models are bad at discovering novel APIs.
 | `profile.assertBudget(...)` | playtest observations + frame timing | **Yes**, as a scenario assertion: `performance: { maxDrawCalls, maxFrameMsP95, maxTriangles }` (`packages/playtest/src/assertions.ts`). It fails closed — a run with no performance bridge is a failure, not a pass. What is *not* built is a per-device budget profile, see [../product/PERFORMANCE-BUDGETS.md](../product/PERFORMANCE-BUDGETS.md) |
 | `scene.addEntity(...)` | writes an entity class into `src/entities/` | No — and it should stay a **file edit**, not a runtime mutation |
 | `assets.import(...)` | asset compiler | No — [../product/ASSET-PIPELINE.md](../product/ASSET-PIPELINE.md) |
-| `release.build(...)` | `threenative ship` | No — Cloud, ROADMAP Phase 4 |
+| `release.build(...)` | `threenative build` today; a hosted release flow later | No — Cloud, ROADMAP Phase 4 |
 
 The rule: an agent tool is a **stable, validated, auditable name for an operation the
 user could do by hand**. When the operation is "write a TypeScript file," the tool writes
