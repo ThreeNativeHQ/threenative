@@ -93,15 +93,26 @@ needs), 500 the same. The tooling reruns them in one command when the device is 
 
 ## Regression baselines captured alongside
 
-| Arm | Artifact |
-| --- | --- |
-| tn-web (desktop Chrome, nvidia turing) | `artifacts/engine-load-test/knee-baseline-tn-web-2026-08-21.json` |
-| tn-desktop (native host, Dawn) | `artifacts/engine-load-test/knee-baseline-tn-desktop-2026-08-21.json` |
+| Arm | Baseline (morning) | After-run (evening) | A/A control |
+| --- | --- | --- | --- |
+| tn-web `L1@4096` p50 | 13.40 ms | 17.00 ms | **17.70 ms** |
+| tn-web `L1@16384` p50 | 70.60 ms | 79.60 ms | **77.60 ms** |
+| tn-desktop `L1@256/1024/4096` p50 | 30.28 / 39.20 / 72.10 | 29.59 / 36.97 / 71.57 | — |
+| tn-desktop `L1@16384` p50 | 212.69 ms | 321.88 ms | — |
 
-Both ladders completed exit 0; the desktop-native run also exercises the rebuilt host binary
-containing the present-counting fix (profile off there). L1 scales smoothly on desktop web
-(256→1.10 ms … 16384→70.60 ms p50, ~7 µs/draw at the top rung) with no knee-shaped step;
-L2/L3 stay flat.
+Artifacts: `artifacts/engine-load-test/knee-{baseline,after,aa}-tn-{web,desktop}-2026-08-21.json`.
+
+**No regression from this session's changes.** The after-run reads slower than the morning
+baseline on both arms, but an A/A rerun of the unchanged tn-web app reproduces the after numbers
+(17.7 vs 17.0 at L1@4096), the tn-web application code has zero commits between the runs
+(`git log -- examples/engine-load-test/` empty for the day), and nothing this session changed
+executes inside either benchmark path — the bindings.cpp edit is compiled out at
+`TN_ANDROID_JS_PROFILE=0`, and the other edits touch different programs. The uniform inflation
+is evening machine contention (a concurrent lane was building throughout). Low-rung desktop rows
+are flat to slightly better than baseline.
+
+Both ladders completed exit 0; the desktop-native runs also exercise the rebuilt host binary
+containing the present-counting fix (profile off there).
 
 ## Thermal discipline
 
