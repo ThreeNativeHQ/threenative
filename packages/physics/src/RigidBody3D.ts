@@ -5,6 +5,7 @@ import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
 import type { IPhysicsContext } from "./plugin.js";
 import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import { bulkTransformValue } from "./transformRecord.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
@@ -26,15 +27,6 @@ export interface IRigidBody3DOptions {
   readonly collisionMask?: number;
 }
 
-type TransformRecord = [number, number, number, number, number, number, number, number];
-
-function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
-  const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
-  if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("IPhysicsSimulation returned a malformed transform.");
-  return result as TransformRecord;
-}
-
 export class RigidBody3D {
   readonly body: IPhysicsBodyHandle;
   readonly collider: IPhysicsColliderHandle;
@@ -45,6 +37,9 @@ export class RigidBody3D {
   readonly #physics: IPhysicsContext | undefined;
   readonly #object: Object3D | undefined;
   #lastPosition: { x: number; y: number; z: number };
+  // Scratch returned by kinematicMotion(); the plugin retains it only within one update pass.
+  readonly #motion = { x: 0, y: 0, z: 0 };
+  readonly #zeroMotion: { readonly x: 0; readonly y: 0; readonly z: 0 } = { x: 0, y: 0, z: 0 };
   #disposed = false;
 
   constructor(options: IRigidBody3DOptions) {
@@ -87,30 +82,26 @@ export class RigidBody3D {
   writeKinematic(buffer: Float32Array, offset: number): void {
     const object = this.#object;
     if (this.#disposed || object === undefined) return;
-    buffer.set(
-      [
-        this.body.id,
-        object.position.x,
-        object.position.y,
-        object.position.z,
-        object.quaternion.x,
-        object.quaternion.y,
-        object.quaternion.z,
-        object.quaternion.w,
-      ],
-      offset,
-    );
+    // Scalar writes: an array literal here was one more thrown-away object per body per step.
+    buffer[offset] = this.body.id;
+    buffer[offset + 1] = object.position.x;
+    buffer[offset + 2] = object.position.y;
+    buffer[offset + 3] = object.position.z;
+    buffer[offset + 4] = object.quaternion.x;
+    buffer[offset + 5] = object.quaternion.y;
+    buffer[offset + 6] = object.quaternion.z;
+    buffer[offset + 7] = object.quaternion.w;
   }
 
   /** Displacement since the last backend transform, used for moving-platform carry. */
   kinematicMotion(): { readonly x: number; readonly y: number; readonly z: number } {
     const object = this.#object;
-    if (object === undefined) return { x: 0, y: 0, z: 0 };
-    return {
-      x: object.position.x - this.#lastPosition.x,
-      y: object.position.y - this.#lastPosition.y,
-      z: object.position.z - this.#lastPosition.z,
-    };
+    if (object === undefined) return this.#zeroMotion;
+    // Reused per body: the plugin keeps this value only until the end of the update pass.
+    this.#motion.x = object.position.x - this.#lastPosition.x;
+    this.#motion.y = object.position.y - this.#lastPosition.y;
+    this.#motion.z = object.position.z - this.#lastPosition.z;
+    return this.#motion;
   }
 
   syncToPhysics(): void {
@@ -161,16 +152,27 @@ export class RigidBody3D {
       transform.rotation.z,
       transform.rotation.w,
     );
-    this.#lastPosition = { ...transform.position };
+    this.#lastPosition.x = transform.position.x;
+    this.#lastPosition.y = transform.position.y;
+    this.#lastPosition.z = transform.position.z;
   }
 
   applyTransform(values: Readonly<Float32Array>, offset: number): void {
-    const [, x, y, z, qx, qy, qz, qw] = finiteTransform(values, offset);
+    // Indexed reads with the same slot-order validation the old array-building helper performed.
+    const x = bulkTransformValue(values, offset + 1);
+    const y = bulkTransformValue(values, offset + 2);
+    const z = bulkTransformValue(values, offset + 3);
+    const qx = bulkTransformValue(values, offset + 4);
+    const qy = bulkTransformValue(values, offset + 5);
+    const qz = bulkTransformValue(values, offset + 6);
+    const qw = bulkTransformValue(values, offset + 7);
     const object = this.#object;
     if (object === undefined) return;
     object.position.set(x, y, z);
     object.quaternion.set(qx, qy, qz, qw);
-    this.#lastPosition = { x, y, z };
+    this.#lastPosition.x = x;
+    this.#lastPosition.y = y;
+    this.#lastPosition.z = z;
   }
 
   dispose(): void {

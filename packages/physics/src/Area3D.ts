@@ -4,6 +4,7 @@ import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
 import type { IPhysicsContext, PhysicsBody3D } from "./plugin.js";
 import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import { bulkTransformValue } from "./transformRecord.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
 export type AreaHandler = (body: PhysicsBody3D) => void;
@@ -60,15 +61,6 @@ export function resolveInitialTransform(
   if (fallbackPosition !== undefined)
     return { position: fallbackPosition, rotation: IDENTITY_ROTATION };
   throw new Error("A physics node requires either object or position.");
-}
-
-type TransformRecord = [number, number, number, number, number, number, number, number];
-
-function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
-  const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
-  if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("IPhysicsSimulation returned a malformed transform.");
-  return result as TransformRecord;
 }
 
 export class Area3D {
@@ -139,15 +131,25 @@ export class Area3D {
   /** Called by the shared plugin before a bulk step. */
   writeKinematic(buffer: Float32Array, offset: number): void {
     if (this.#disposed) return;
-    buffer.set(
-      [this.body.id, this.#position.x, this.#position.y, this.#position.z, 0, 0, 0, 1],
-      offset,
-    );
+    // Scalar writes: an array literal here was one more thrown-away object per area per step.
+    buffer[offset] = this.body.id;
+    buffer[offset + 1] = this.#position.x;
+    buffer[offset + 2] = this.#position.y;
+    buffer[offset + 3] = this.#position.z;
+    buffer[offset + 4] = 0;
+    buffer[offset + 5] = 0;
+    buffer[offset + 6] = 0;
+    buffer[offset + 7] = 1;
   }
 
   applyTransform(values: Readonly<Float32Array>, offset: number): void {
-    const [, x, y, z] = finiteTransform(values, offset);
-    Object.assign(this.#position, { x, y, z });
+    // Indexed reads with the same slot-order validation the old array-building helper performed.
+    const x = bulkTransformValue(values, offset + 1);
+    const y = bulkTransformValue(values, offset + 2);
+    const z = bulkTransformValue(values, offset + 3);
+    this.#position.x = x;
+    this.#position.y = y;
+    this.#position.z = z;
   }
 
   handleCollision(body: PhysicsBody3D, started: boolean): void {

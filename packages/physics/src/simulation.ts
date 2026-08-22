@@ -401,6 +401,21 @@ export function requirePhysicsBodySensor(
   return options.sensor;
 }
 
+// Reused across kinematic input records in `step`: per-body-per-step object literals here were
+// pure garbage handed to the collector at frame rate. Rapier reads each of them synchronously
+// within the same call that receives it.
+const kinematicScratch = {
+  target: { x: 0, y: 0, z: 0 },
+  rotation: { x: 0, y: 0, z: 0, w: 1 },
+  desired: { x: 0, y: 0, z: 0 },
+  nextTranslation: { x: 0, y: 0, z: 0 },
+};
+// One closure instead of one per character per step; the layers it tests are set right before
+// computeColliderMovement, which consumes it synchronously.
+let oneWayFilterLayers = 0;
+const oneWayFilterPredicate = (collider: rapier.Collider): boolean =>
+  ((collider.collisionGroups() >>> 16) & oneWayFilterLayers) === 0;
+
 const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
   "box",
   "sphere",
@@ -646,7 +661,9 @@ export function createWebPhysicsSimulation(
     { readonly handle: number; readonly bodyA: number; readonly bodyB: number }
   >();
   const dirtyBodies = new Set<ISimulationBody>();
-  const pendingCollisionEvents: number[][] = [];
+  // Flat stride-4 records instead of one array per event: contact-heavy scenes
+  // drained hundreds of short-lived tuples per step into the collector.
+  const pendingCollisionEvents: number[] = [];
   let nextId = 0;
   let nextJointId = 0;
   let disposed = false;
@@ -870,41 +887,37 @@ export function createWebPhysicsSimulation(
           const id = inputSnapshot.kinematicTransforms[offset] as number;
           const entry = bodies.get(id);
           if (entry === undefined) throw new Error("IPhysicsSimulation input body disappeared.");
-          const target = {
-            x: inputSnapshot.kinematicTransforms[offset + 1] as number,
-            y: inputSnapshot.kinematicTransforms[offset + 2] as number,
-            z: inputSnapshot.kinematicTransforms[offset + 3] as number,
-          };
-          const rotation = {
-            x: inputSnapshot.kinematicTransforms[offset + 4] as number,
-            y: inputSnapshot.kinematicTransforms[offset + 5] as number,
-            z: inputSnapshot.kinematicTransforms[offset + 6] as number,
-            w: inputSnapshot.kinematicTransforms[offset + 7] as number,
-          };
+          const { target, rotation } = kinematicScratch;
+          target.x = inputSnapshot.kinematicTransforms[offset + 1] as number;
+          target.y = inputSnapshot.kinematicTransforms[offset + 2] as number;
+          target.z = inputSnapshot.kinematicTransforms[offset + 3] as number;
+          rotation.x = inputSnapshot.kinematicTransforms[offset + 4] as number;
+          rotation.y = inputSnapshot.kinematicTransforms[offset + 5] as number;
+          rotation.z = inputSnapshot.kinematicTransforms[offset + 6] as number;
+          rotation.w = inputSnapshot.kinematicTransforms[offset + 7] as number;
           if (entry.type === "character") {
             const controller = entry.controller;
             const config = entry.character;
             if (controller === undefined || config === undefined)
               throw new Error("Physics character was not configured before stepping.");
             const current = entry.body.translation();
-            const desired = {
-              x: target.x - current.x,
-              y: target.y - current.y,
-              z: target.z - current.z,
-            };
+            const desired = kinematicScratch.desired;
+            desired.x = target.x - current.x;
+            desired.y = target.y - current.y;
+            desired.z = target.z - current.z;
             const characterGroups = entry.collider.collisionGroups();
-            const filterGroups =
-              config.oneWayLayers !== 0 && desired.y > 0
-                ? interactionGroups(
-                    characterGroups >>> 16,
-                    characterGroups & 0xffff & (0xffff ^ config.oneWayLayers),
-                  )
-                : characterGroups;
-            const filterPredicate =
-              config.oneWayLayers !== 0 && desired.y > 0
-                ? (collider: rapier.Collider) =>
-                    ((collider.collisionGroups() >>> 16) & config.oneWayLayers) === 0
-                : undefined;
+            const oneWayActive = config.oneWayLayers !== 0 && desired.y > 0;
+            const filterGroups = oneWayActive
+              ? interactionGroups(
+                  characterGroups >>> 16,
+                  characterGroups & 0xffff & (0xffff ^ config.oneWayLayers),
+                )
+              : characterGroups;
+            let filterPredicate: ((collider: rapier.Collider) => boolean) | undefined;
+            if (oneWayActive) {
+              oneWayFilterLayers = config.oneWayLayers;
+              filterPredicate = oneWayFilterPredicate;
+            }
             controller.computeColliderMovement(
               entry.collider,
               desired,
@@ -913,11 +926,11 @@ export function createWebPhysicsSimulation(
               filterPredicate,
             );
             const movement = controller.computedMovement();
-            entry.body.setNextKinematicTranslation({
-              x: current.x + movement.x,
-              y: current.y + movement.y,
-              z: current.z + movement.z,
-            });
+            const nextTranslation = kinematicScratch.nextTranslation;
+            nextTranslation.x = current.x + movement.x;
+            nextTranslation.y = current.y + movement.y;
+            nextTranslation.z = current.z + movement.z;
+            entry.body.setNextKinematicTranslation(nextTranslation);
           } else {
             if (!entry.body.isKinematic())
               throw new Error("IPhysicsSimulation received kinematic input for a dynamic body.");
@@ -1119,15 +1132,15 @@ export function createWebPhysicsSimulation(
       options.eventQueue.drainCollisionEvents((first, second, started) => {
         const left = byCollider.get(first)?.id;
         const right = byCollider.get(second)?.id;
-        if (left !== undefined && right !== undefined)
-          pendingCollisionEvents.push([left, right, Number(started), 1]);
+        if (left !== undefined && right !== undefined) {
+          pendingCollisionEvents.push(left, right, Number(started), 1);
+        }
       });
-      if (buffer.length < pendingCollisionEvents.length * PHYSICS_COLLISION_EVENT_STRIDE)
+      const count = pendingCollisionEvents.length / PHYSICS_COLLISION_EVENT_STRIDE;
+      if (buffer.length < pendingCollisionEvents.length)
         throw new Error("IPhysicsSimulation collision event buffer is too small.");
-      pendingCollisionEvents.forEach((event, index) =>
-        buffer.set(event, index * PHYSICS_COLLISION_EVENT_STRIDE),
-      );
-      const count = pendingCollisionEvents.length;
+      for (let index = 0; index < pendingCollisionEvents.length; index += 1)
+        buffer[index] = pendingCollisionEvents[index] as number;
       pendingCollisionEvents.length = 0;
       return count;
     },

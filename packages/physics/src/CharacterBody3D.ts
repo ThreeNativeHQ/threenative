@@ -13,6 +13,7 @@ import {
   type IPhysicsSimulation,
   requirePhysicsSimulation,
 } from "./simulation.js";
+import { bulkTransformValue } from "./transformRecord.js";
 
 export interface ICharacterBody3DOptions {
   readonly object: Object3D;
@@ -53,15 +54,6 @@ export interface ICharacterBody3DOptions {
    * which reads as a physics bug rather than a default.
    */
   readonly pushesDynamicBodies?: boolean;
-}
-
-type TransformRecord = [number, number, number, number, number, number, number, number];
-
-function finiteTransform(values: Readonly<Float32Array>, offset: number): TransformRecord {
-  const result = Array.from({ length: 8 }, (_, index) => values[offset + index]);
-  if (result.some((value) => value === undefined || !Number.isFinite(value)))
-    throw new Error("IPhysicsSimulation returned a malformed transform.");
-  return result as TransformRecord;
 }
 
 export class CharacterBody3D {
@@ -140,7 +132,9 @@ export class CharacterBody3D {
   }
 
   move(desiredTranslation: Pick<Vector3, "x" | "y" | "z">): void {
-    this.#desired = { x: desiredTranslation.x, y: desiredTranslation.y, z: desiredTranslation.z };
+    this.#desired.x = desiredTranslation.x;
+    this.#desired.y = desiredTranslation.y;
+    this.#desired.z = desiredTranslation.z;
     this.#sliding = false;
   }
 
@@ -159,11 +153,9 @@ export class CharacterBody3D {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");
     this.velocity.y = Math.max(this.velocity.y + this.gravity * dt, -this.maxFallSpeed);
-    this.#desired = {
-      x: this.velocity.x * dt,
-      y: this.velocity.y * dt,
-      z: this.velocity.z * dt,
-    };
+    this.#desired.x = this.velocity.x * dt;
+    this.#desired.y = this.velocity.y * dt;
+    this.#desired.z = this.velocity.z * dt;
     this.#sliding = true;
   }
 
@@ -176,19 +168,18 @@ export class CharacterBody3D {
       this.#sliding && this.grounded && this.velocity.y <= 0 && this.#groundCollider !== undefined
         ? this.#physics?.kinematicMotion?.(this.#groundCollider)
         : undefined;
-    buffer.set(
-      [
-        this.body.id,
-        this.object.position.x + this.#desired.x + (carry?.x ?? 0),
-        this.object.position.y + this.#desired.y + (carry?.y ?? 0),
-        this.object.position.z + this.#desired.z + (carry?.z ?? 0),
-        this.object.quaternion.x,
-        this.object.quaternion.y,
-        this.object.quaternion.z,
-        this.object.quaternion.w,
-      ],
-      offset,
-    );
+    const carryX = carry?.x ?? 0;
+    const carryY = carry?.y ?? 0;
+    const carryZ = carry?.z ?? 0;
+    // Scalar writes: an array literal here was one more thrown-away object per body per step.
+    buffer[offset] = this.body.id;
+    buffer[offset + 1] = this.object.position.x + this.#desired.x + carryX;
+    buffer[offset + 2] = this.object.position.y + this.#desired.y + carryY;
+    buffer[offset + 3] = this.object.position.z + this.#desired.z + carryZ;
+    buffer[offset + 4] = this.object.quaternion.x;
+    buffer[offset + 5] = this.object.quaternion.y;
+    buffer[offset + 6] = this.object.quaternion.z;
+    buffer[offset + 7] = this.object.quaternion.w;
   }
 
   syncToPhysics(): void {
@@ -204,14 +195,23 @@ export class CharacterBody3D {
     this.#simulation.setBodyTransform(this.body.id, position);
     this.object.position.set(position.x, position.y, position.z);
     this.velocity.set(0, 0, 0);
-    this.#desired = { x: 0, y: 0, z: 0 };
+    this.#desired.x = 0;
+    this.#desired.y = 0;
+    this.#desired.z = 0;
     this.#sliding = false;
     this.#groundCollider = undefined;
     this.grounded = false;
   }
 
   applyTransform(values: Readonly<Float32Array>, offset: number): void {
-    const [, x, y, z, qx, qy, qz, qw] = finiteTransform(values, offset);
+    // Indexed reads with the same slot-order validation the old array-building helper performed.
+    const x = bulkTransformValue(values, offset + 1);
+    const y = bulkTransformValue(values, offset + 2);
+    const z = bulkTransformValue(values, offset + 3);
+    const qx = bulkTransformValue(values, offset + 4);
+    const qy = bulkTransformValue(values, offset + 5);
+    const qz = bulkTransformValue(values, offset + 6);
+    const qw = bulkTransformValue(values, offset + 7);
     const state = this.#simulation.readCharacterState?.(this.body.id);
     this.grounded =
       state?.grounded ??
@@ -220,7 +220,9 @@ export class CharacterBody3D {
     if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
     this.object.position.set(x, y, z);
     this.object.quaternion.set(qx, qy, qz, qw);
-    this.#desired = { x: 0, y: 0, z: 0 };
+    this.#desired.x = 0;
+    this.#desired.y = 0;
+    this.#desired.z = 0;
     this.#sliding = false;
   }
 
