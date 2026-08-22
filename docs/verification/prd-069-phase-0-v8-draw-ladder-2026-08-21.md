@@ -58,12 +58,39 @@ frames then a 300-frame window, uncapped present mode. `jsAndUninstr` is the rep
 
 | meshes | submitted draws/frame | ms/frame | fps | jsAndUninstr | native submit+poll | present (1×) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 100 | 51 | 3.899 | 256.4 | 0.353 | — | — |
-| 250 | 4 | 4.027 | 248.3 | 0.617 | — | — |
+| 100 | 51 | 3.899 | 256.4 | 0.353 | 0.523 | 0.754 |
+| 250 | 4 | 4.027 | 248.3 | 0.617 | 0.517 | 0.706 |
 
-(rows land here as rungs complete)
+Corrected reading (`artifacts/android/knee-sweep-2026-08-21/analyze-corrected.js`): at 100–250
+scene objects the Pixel 8 frame under V8 is roughly **2.55–2.77 ms of JavaScript** plus a
+**~1.25–1.30 ms true native floor** (~0.52 ms submit+poll across ~4 submits, ~0.71–0.75 ms one
+present) plus ≤0.08 ms of instrumented binding time. The historical "~3.4 ms fixed native wall"
+was the present double-count. Per-object marginal from 100→250 objects ≈ **0.85 µs/object**
+across the whole frame — no sign of any threshold this low.
+
+Pure-JS matrix control shipped in every run: **0.233–0.380 µs/object** under V8
+(`TN_ANDROID_JS_PURE.medianUsPerObject`) against QuickJS-era figures an order of magnitude
+higher, consistent with PRD-118's 22× script-time ratio.
+
+Rungs 500/750/1000/2000/4000 were attempted repeatedly but the phone entered thermal LIGHT on
+every launch past the first two (see §Thermal discipline) and was then plugged into wall power
+by the household mid-session (AC powered, level 100%) — the discharging gate correctly refuses
+that state, so those rungs are **UNMEASURED**, not failed. The sweep resumes automatically when
+the device runs on battery (`watch-and-resume.sh`); rows land above when they do.
 
 <!-- LADDER_ROWS -->
+
+## Regression baselines captured alongside
+
+| Arm | Artifact |
+| --- | --- |
+| tn-web (desktop Chrome, nvidia turing) | `artifacts/engine-load-test/knee-baseline-tn-web-2026-08-21.json` |
+| tn-desktop (native host, Dawn) | `artifacts/engine-load-test/knee-baseline-tn-desktop-2026-08-21.json` |
+
+Both ladders completed exit 0; the desktop-native run also exercises the rebuilt host binary
+containing the present-counting fix (profile off there). L1 scales smoothly on desktop web
+(256→1.10 ms … 16384→70.60 ms p50, ~7 µs/draw at the top rung) with no knee-shaped step;
+L2/L3 stay flat.
 
 ## Thermal discipline
 
