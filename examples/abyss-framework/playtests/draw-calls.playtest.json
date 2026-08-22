@@ -1,0 +1,15 @@
+{
+  "name": "abyss-framework-draw-calls-observed",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "waitTicks": 30 }
+  ],
+  "assert": {
+    "performance": { "maxDrawCalls": 5000 }
+  }
+}
