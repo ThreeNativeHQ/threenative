@@ -15,10 +15,10 @@ considered, and a KEEP/DELETE verdict.
 
 | Counted area | Lines | Owner | Live proof or caller | Alternative considered | Verdict |
 | --- | ---: | --- | --- | --- | --- |
-| `src/` | 38,822 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143, PRD-153, PRD-154, PRD-155 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
+| `src/` | 38,836 | PRD-045, PRD-047, PRD-048, PRD-050, PRD-053, PRD-116, PRD-143, PRD-153, PRD-154, PRD-155 | `src/physics/native_bindings.cpp:586`; desktop V8 and native runtime commands | Move host shims into each game or delete the native host | **KEEP** — this is the owned native host and its physics boundary. |
 | `conformance/` | 6,341 | PRD-053, PRD-054, PRD-055, PRD-076 | `conformance/run-conformance.mjs`; root `pnpm parity` | Replace cross-target registry/proofs with untested per-game scripts | **KEEP** — shared executable conformance evidence. |
-| `tests/` | 9,516 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127, PRD-143, PRD-153, PRD-154, PRD-155 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
-| `scripts/` | 12,158 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127, PRD-153, PRD-155 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
+| `tests/` | 9,540 | PRD-045, PRD-046, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-055, PRD-076, PRD-116, PRD-127, PRD-143, PRD-153, PRD-154, PRD-155 | `tests/physics_actuation_bindings_test.cpp:141`; runtime-native Vitest and native tests | Delete fail-closed tests to reduce the trigger | **KEEP** — removal would conceal regressions. |
+| `scripts/` | 12,179 | PRD-045, PRD-048, PRD-049, PRD-050, PRD-053, PRD-054, PRD-116, PRD-127, PRD-153, PRD-155 | `scripts/verify-desktop-physics.mjs:206-228`; build, platform, and device-condition verifiers | Make every game own packaging, device, and verifier orchestration | **KEEP** — no smaller shared alternative preserves the proof. |
 | `include/` | 3,816 | PRD-046, PRD-047, PRD-053, PRD-116, PRD-143, PRD-153 | `include/threenative/physics_native.h:131`; C ABI consumed at `src/physics/native_bindings.cpp:586` | Add per-game native headers or remove the C boundary | **KEEP** — the coarse host ABI is the shared boundary. |
 | `android/` | 1,973 | PRD-045, PRD-048, PRD-050, PRD-053, PRD-054, PRD-153 | Android host sources and `scripts/verify-android-physics-parity.mjs` | Require each game to rebuild Android lifecycle and transport | **KEEP** — required Android packaging and execution plumbing. |
 | `native/` | 3,276 | PRD-046, PRD-049, PRD-116, PRD-143 | `native/physics/src/lib.rs:463`; `native/physics/tests/actuation.rs:324` | Use the web WASM/Rapier backend on native or move physics into games | **KEEP** — this is the native Rust implementation behind the shared API. |
@@ -29,7 +29,7 @@ considered, and a KEEP/DELETE verdict.
 | `package.json` | 63 | PRD-048, PRD-050, PRD-054, PRD-116 | `native:build`, `native:physics:parity`, and `native:verify:desktop` scripts | Hide opt-in native commands in per-game manifests | **KEEP** — package-level command contract. |
 | `vitest.config.ts` | 10 | PRD-048, PRD-050 | Runtime-native Vitest command and parity producer | Drop native package test collection | **KEEP** — declares the native package test boundary. |
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
-| **Total** | **78,347** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
+| **Total** | **78,406** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
 
 **Updated 2026-08-19 by [PRD-160](../PRDs/done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md): +58 lines, 78,289 → 78,347.**
 `conformance/` gained 10 lines (6,331 → 6,341) for `androidWindowDump` and the docblock recording
@@ -46,12 +46,21 @@ gate now enforces what the census exists for: one judged verdict per counted are
 equality against the measured walk. Line drift shows up in `pnpm budgets` output as a trigger
 naming the drifted rows and the regeneration command.
 
+**Updated 2026-08-21 by [PRD-069](../PRDs/native-performance-fixes/PRD-069-per-draw-cost.md): +59 lines, 78,347 → 78,406.**
+`src/` gained 14 lines (38,822 → 38,836) for the `TN_ANDROID_JS_PROFILE` flag that reports each
+frame's present on its first submit only, which removed a phantom ~2.6 ms/frame of native cost from
+the Pixel 8 profile; `scripts/` gained 21 (12,158 → 12,179) so the measurement script accepts the
+wireless adb transport the discharging-battery preflight requires and sizes the logcat ring large
+enough that markers survive a full window; `tests/` gained 24 (9,516 → 9,540) for the fail-closed
+regression tests covering both. All three are measurement-instrument repairs: without them the
+per-draw-cost ladder reports numbers the device did not produce.
+
 The current measurement uses the same native extensions and exclusions as `scripts/check-budgets.ts`:
 `third_party/`, `build/`, `.runtime/`, `artifacts/`, `.cxx/`, `.gradle/`, `.test-tmp/`, and
 `target/` are excluded, as are global `node_modules/`, `dist/`, and `.git/` directories. The
 generated Android bundle `android/app/src/main/assets/scripts/main.js` and its `.meta.json` are
 also excluded. This tree has no tracked `third_party/` files and no generated Android bundle, so
-the current `78,347` total contains **0 vendored-but-tracked dependency lines** and **0 excluded
+the current `78,406` total contains **0 vendored-but-tracked dependency lines** and **0 excluded
 generated-output lines**. One tracked generated input remains counted: the pre-compiled
 `src/raytracing/shaders/rt_shaders_spirv.h` contributes 189 budget-counted lines (188 physical
 newline separators plus its final non-empty line).
@@ -81,7 +90,7 @@ PRD-154 adds 102 lines across `src/` and `tests/`: the host publishes its own ru
 factor and touch capacity to the bundle instead of leaving a portable game to sniff browser globals
 that the native host only stubs.
 
-The measured native review trigger remains visible at **78,347 / 50,000** (**+28,347**). Physical
+The measured native review trigger remains visible at **78,406 / 50,000** (**+28,406**). Physical
 Android, iOS, and hardware evidence remains unverified.
 
 ## Current gate summaries
