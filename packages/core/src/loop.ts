@@ -35,8 +35,20 @@ export class FixedStepLoop {
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
 
   constructor(options: IFixedStepLoopOptions) {
-    this.step = options.step ?? 1 / 60;
-    this.maxSteps = options.maxSteps ?? 5;
+    const step = options.step ?? 1 / 60;
+    if (!Number.isFinite(step) || step <= 0) {
+      throw new Error(
+        `FixedStepLoop step must be a finite number of seconds greater than zero, received ${String(options.step)}.`,
+      );
+    }
+    this.step = step;
+    // A maxSteps below one passed the while-loop bound `updates < maxSteps` zero
+    // times per frame: the game rendered but never simulated, silently.
+    const maxSteps = options.maxSteps ?? 5;
+    if (!Number.isInteger(maxSteps) || maxSteps < 1) {
+      throw new Error(`FixedStepLoop maxSteps must be an integer of at least one, received ${String(options.maxSteps)}.`);
+    }
+    this.maxSteps = maxSteps;
     this.#onUpdate = options.onUpdate;
     this.#onRender = options.onRender ?? (() => undefined);
     this.#requestFrame =
