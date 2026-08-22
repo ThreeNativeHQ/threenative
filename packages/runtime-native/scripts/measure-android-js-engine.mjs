@@ -728,12 +728,19 @@ async function waitForMarker(adbExecutable, serial, marker, timeoutMs = 180_000)
   throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_TIMEOUT:${marker}`);
 }
 
+// The per-submit TN_ANDROID_JS_NATIVE lines flood logcat's default 256 KB main buffer in a few
+// hundred frames, evicting the early SUBJECT and WINDOW_START markers the analysis requires
+// (seen on the Pixel 8 under V8, 2026-08-21: 7,030 native lines, both early markers gone).
+// The measurement buffer is sized so a full window plus cold starts cannot wrap it.
+export const MEASUREMENT_LOGBUFFER_BYTES = 16 * 1024 * 1024;
+
 async function installAndLaunchMeasuredSubject(adbExecutable, serial, apk) {
   const install = adb(adbExecutable, serial, "install", "-r", "-t", apk);
   if (!/Success/iu.test(install)) {
     throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_INSTALL_FAILED:${install.trim()}`);
   }
   adb(adbExecutable, serial, "shell", "am", "force-stop", APP_ID);
+  adb(adbExecutable, serial, "logcat", "-G", String(MEASUREMENT_LOGBUFFER_BYTES));
   adb(adbExecutable, serial, "logcat", "-c");
   const launch = adb(
     adbExecutable,
