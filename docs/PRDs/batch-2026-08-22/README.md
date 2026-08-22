@@ -102,6 +102,14 @@ Recorded so the next round does not rediscover them; none blocks this batch.
 7. **Playtest bridge rebuilds registry snapshots per contact event**
    (`playtest.ts:330-338`). Harness-time only; folded into PRD-173 as its seventh row.
 
+## Waiting on an owner (from the 2026-08-23 perf-PRD survey)
+
+PRD-073 Phase 2 (compressed decoders — design choice), PRD-058 thresholds
+(BLOCKED/requires-physical-proof; five PRDs now hold numbers it needs), PRD-130's tag/publish
+decision and its discharging conformance retake, PRD-128 (Apple signing identity nobody has).
+Bookkeeping drift left as found: PRD-070 reads EXECUTED with thirteen unticked boxes; batch
+folder moves belong to the lane reorganizing them today.
+
 ## What this batch does not claim
 
 Nothing here claims mobile-ready, a device win, or a platform it did not execute. Desktop
