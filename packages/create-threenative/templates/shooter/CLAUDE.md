@@ -163,6 +163,10 @@ Steps count fixed-step ticks, not milliseconds — use `holdTicks` and `waitTick
 `holdFrames` and `waitFrames` aliases remain accepted for compatibility and are treated as ticks
 on a fixed-step bridge; `warmupFrames` remains a genuine requestAnimationFrame warmup.
 
+The assertion vocabulary — every kind the validator accepts, its fields, and when to reach for
+it — is generated into `agent-docs/assertion-reference.md`; open it before inventing a new
+assertion shape.
+
 The bridge registers exactly one resource id for the JSON-safe game state: `state`; resource
 paths address fields from `ctx.state`. (`GameState` is a deprecated compatibility alias kept
 until published scenarios migrate.)
