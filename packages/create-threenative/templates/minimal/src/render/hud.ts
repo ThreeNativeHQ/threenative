@@ -34,7 +34,15 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
   return {
     glyphs: 0,
     update(values: HudValues): void {
+      // The HUD changes at most once a second, but update runs per frame — skip the glyph
+      // rebuild and the instance upload when the text is unchanged. Placement still recomputes:
+      // a resize moves the anchor even when the text has not changed.
       const text = formatHudText(primaryLabel, counterLabel, values);
+      const height = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2));
+      root.position.set(-height * camera.aspect * 0.46, height * 0.42, -1);
+      root.scale.setScalar(height / 160);
+      if (text === this.lastText) return;
+      this.lastText = text;
       let instance = 0;
       for (const [y, line] of text.split("\n").entries()) {
         for (let x = 0; x < line.length; x += 1) {
@@ -50,10 +58,8 @@ export function createHud(camera: PerspectiveCamera, primaryLabel: string, count
       }
       root.count = this.glyphs = instance;
       root.instanceMatrix.needsUpdate = true;
-      const height = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2));
-      root.position.set(-height * camera.aspect * 0.46, height * 0.42, -1);
-      root.scale.setScalar(height / 160);
     },
+    lastText: "",
     dispose(): void {
       root.removeFromParent();
       root.geometry.dispose();

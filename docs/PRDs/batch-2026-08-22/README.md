@@ -1,7 +1,7 @@
 # Batch — performance night: stop paying for what nothing asked for, 2026-08-22
 
-**Status: EXECUTED OVERNIGHT, 2026-08-22/23. Eight PRDs filed; seven executed and recorded,
-one (175 HIGH lane) attempted and honestly unobtained.** Every item in this batch is an unconditional per-frame cost paid by games
+**Status: EXECUTED OVERNIGHT, 2026-08-22/23. Eight PRDs filed; seven executed end to end and
+one (175) done in its code half with its device half attempted and honestly unobtained.** Every item in this batch is an unconditional per-frame cost paid by games
 that never asked for it: a framebuffer copied nobody requested, a scene re-judged whose verdict
 was already no, arrays thrown away per body per step, a navmesh path computed twice, render
 metrics collected for a reader that is usually absent. None reopens a settled question: the
@@ -35,7 +35,7 @@ bottom so they are decisions rather than oversights. Two facts set the prioritie
 | [171](./PRD-171-navigation-one-path-per-retarget.md) | Double `computePath` per retarget; crowd sync teleporting stationary agents every frame | 4 | **DONE**; browser red pre-existing at HEAD |
 | [172](./PRD-172-diagnostics-cost-nothing-until-asked.md) | `renderer.info` unexposed (PRD-069 crit. 7); render metrics sampled every frame for a reader that is usually absent | 3 | **DONE** incl. end-to-end scenario |
 | [173](./PRD-173-framework-hot-path-churn-sweep.md) | Six small per-step allocation/scans in core (queueFree, scheduler, input.tick, replay rect, GroundSnap, picker) | 5 | **DONE**; replay cache rejected with its red test |
-| [174](./PRD-174-templates-model-zero-allocation.md) | Template-generated source rebuilding HUD glyphs / cloning vectors per frame | 3 | local |
+| [174](./PRD-174-templates-model-zero-allocation.md) | Template-generated source rebuilding HUD glyphs / cloning vectors per frame | 3 | **DONE**; test:templates exit 0 |
 | [175](./PRD-175-present-instrument-truth-and-missing-rungs.md) | Present counted ~4.3x per frame in the js-engine measurement report; ladder rungs 500/4000 unmeasured | code 3, device 7 | code **DONE**; rungs UNMEASURED — phone charging over USB |
 
 ## Order

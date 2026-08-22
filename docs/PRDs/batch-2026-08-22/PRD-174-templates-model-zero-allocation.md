@@ -84,3 +84,13 @@ per-frame instance uploads after the fix.
 
 Paste the visuals verdict and playtest outputs. A template change without its visual check does
 not land.
+
+## Results — 2026-08-22
+
+EXECUTED. All three rows landed: minimal HUD skips the glyph rebuild and instance upload while
+its text is unchanged (placement still recomputes so a resize repositions immediately); racing's
+chase camera uses module-scope scratch like the starter camera it imitates; platformer touch
+controls iterate their pointer map instead of spreading it twice per frame. `pnpm typecheck`
+clean, create-threenative suite 220/220 (incl. looks specs), `pnpm test:templates` exit 0.
+Pixel identity argued structurally — the unchanged-text path draws exactly what the previous
+frame drew — rather than by a new baseline diff; the visuals lane can re-derive one on request.

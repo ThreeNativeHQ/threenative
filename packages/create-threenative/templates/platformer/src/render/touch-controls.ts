@@ -75,9 +75,13 @@ export class TouchControls {
     const dashCenter = touchControlPoint(size, "dash");
     const jump = this.#at(pointers, jumpCenter, BUTTON_RADIUS);
     const dash = this.#at(pointers, dashCenter, BUTTON_RADIUS);
-    const left = [...pointers.values()].find((pointer) =>
-      this.#isMovementPointer(pointer, size, dashCenter, jumpCenter),
-    );
+    let left: ITouchPointer | undefined;
+    for (const pointer of pointers.values()) {
+      if (this.#isMovementPointer(pointer, size, dashCenter, jumpCenter)) {
+        left = pointer;
+        break;
+      }
+    }
     const resting = touchControlPoint(size, "move");
     const move = this.#input.move;
     if (left === undefined) {
@@ -151,8 +155,9 @@ export class TouchControls {
 
   #at(pointers: ReadonlyMap<number, ITouchPointer>, center: Vector2, radius: number): boolean {
     const radiusSquared = radius * radius;
-    return [...pointers.values()].some(
-      (pointer) => pointer.position.distanceToSquared(center) <= radiusSquared,
-    );
+    for (const pointer of pointers.values()) {
+      if (pointer.position.distanceToSquared(center) <= radiusSquared) return true;
+    }
+    return false;
   }
 }
