@@ -90,7 +90,7 @@ What the batch moved, and what it did not:
 | Beta row | Before | After |
 |---|---|---|
 | 3 | A Phase 2 exit gate that could not be passed as written | A three-part gate adopted by the owner; its first execution is **RED** and claims no score points. Row still open, now on shipping a capability |
-| 4 | Two contradicting Android ledgers, lane red on a bisected commit | One number: `67/0/0` reproduces, `27/40/0` retired. Row still **not green** — the lane exits `1` on [PRD-166](../../PRD-166-camera-parented-overlay-never-marks-on-android.md) |
+| 4 | Two contradicting Android ledgers, lane red on a bisected commit | One number: `67/0/0` reproduces, `27/40/0` retired. Row still **not green** — the lane exits `1` on [PRD-166](../../batch-2026-08-22/PRD-166-camera-parented-overlay-never-marks-on-android.md) |
 | 5 | Untouched by design | Untouched. [PRD-078](../../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md) still needs a hosted run |
 
 Two instruments were also repaired: `pnpm round:deletions` runs again after being dead since round

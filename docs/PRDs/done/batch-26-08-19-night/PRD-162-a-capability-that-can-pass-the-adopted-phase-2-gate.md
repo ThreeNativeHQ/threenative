@@ -12,7 +12,7 @@ and both consumer legs executed to `stateHash = 1884960806`; the gate is red on 
 condition, because a plain-Three.js arm has no desktop runtime and lending it the framework's host
 voids the run. Evidence: [phase-2-2026-08-20](../../../verification/phase-2-2026-08-20.md). The
 desktop instrument's flake is filed as
-[PRD-167](../../PRD-167-desktop-playtest-mailbox-goes-silent.md).
+[PRD-167](../../batch-2026-08-22/PRD-167-desktop-playtest-mailbox-goes-silent.md).
 
 **Outcome:** beta row 3 has a **post-adoption** capability shipped, proven by an outcome a consumer
 observes, on an instrument that does not hand the control arm the capability, with a same-subject

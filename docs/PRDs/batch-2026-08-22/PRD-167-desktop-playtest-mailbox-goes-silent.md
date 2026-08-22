@@ -14,7 +14,7 @@ not evidence, and a gate that hangs without a cause is worse than one that fails
 
 `examples/prd162-replay/playtests/replay-desktop.playtest.json` was run four consecutive times on
 the desktop host during PRD-162
-([phase-2-2026-08-20.md](../verification/phase-2-2026-08-20.md)). Two runs exited `0` with
+([phase-2-2026-08-20.md](../../verification/phase-2-2026-08-20.md)). Two runs exited `0` with
 `pass: true`. Two exited `2` with:
 
 ```text
