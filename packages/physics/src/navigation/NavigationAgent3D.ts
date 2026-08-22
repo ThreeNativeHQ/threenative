@@ -137,18 +137,32 @@ export class NavigationAgent3D {
     this.#target = new Vector3(position.x, position.y, position.z);
     this.#pathIndex = 0;
     this.#finished = false;
-    if (this.isTargetReachable()) {
-      const result = this.navigation.query.computePath(
-        toNavigationVector(this.object.position),
-        toNavigationVector(position),
-      );
-      this.#path = result.success
-        ? result.path.map((point) => new Vector3(point.x, point.y, point.z))
-        : [];
-      if (this.#path.length > 0) this.#crowdAgent?.requestMoveTarget(toNavigationVector(position));
-    } else {
+    // One path computation serves both storage and reachability: retargeting used to run
+    // computePath twice — once inside isTargetReachable and once to store #path — which doubled
+    // the most expensive navigation call for chase AI that retargets every frame.
+    const target = this.#target;
+    const start = this.navigation.query.findClosestPoint(toNavigationVector(this.object.position));
+    const end = this.navigation.query.findClosestPoint(toNavigationVector(target));
+    if (!this.#hasEnabledRegion() || !start.success || !end.success) {
       this.#path = [];
       this.#crowdAgent?.resetMoveTarget();
+    } else if (start.polyRef === end.polyRef) {
+      // Same polygon as today: judged from the closest point, with one computation for storage.
+      this.#storeComputedPath(target);
+      if (
+        !navigationPointMatchesTarget(end.point, target, this.targetDesiredDistance, this.height)
+      ) {
+        this.#crowdAgent?.resetMoveTarget();
+      } else if (this.#path.length > 0) {
+        this.#crowdAgent?.requestMoveTarget(toNavigationVector(target));
+      }
+    } else {
+      const reachable = this.#storeComputedPath(target);
+      if (!reachable) {
+        this.#crowdAgent?.resetMoveTarget();
+      } else if (this.#path.length > 0) {
+        this.#crowdAgent?.requestMoveTarget(toNavigationVector(target));
+      }
     }
     for (const handler of this.#listeners.pathChanged) handler();
   }
@@ -170,6 +184,27 @@ export class NavigationAgent3D {
 
   isNavigationFinished(): boolean {
     return this.#target !== undefined && this.#finished;
+  }
+
+  /**
+   * Computes the path from the current object position to `target` once, stores it, and reports
+   * whether its final waypoint lands within tolerance. The one place both `setTargetPosition`
+   * and reachability judgments get their path from.
+   */
+  #storeComputedPath(target: Vector3): boolean {
+    const result = this.navigation.query.computePath(
+      toNavigationVector(this.object.position),
+      toNavigationVector(target),
+    );
+    this.#path = result.success
+      ? result.path.map((point) => new Vector3(point.x, point.y, point.z))
+      : [];
+    const final = this.#path.at(-1);
+    return (
+      result.success &&
+      final !== undefined &&
+      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
+    );
   }
 
   isTargetReachable(position?: Pick<Vector3, "x" | "y" | "z">): boolean {
@@ -207,11 +242,34 @@ export class NavigationAgent3D {
       : Math.sqrt(distanceSquared(this.object.position, this.#target));
   }
 
+  // Teleport forces Recast to re-localise the agent on the navmesh, so it is paid only when the
+  // object actually moved since the last sync; NaN starts make the first sync always localise.
+  #lastSyncX = Number.NaN;
+  #lastSyncY = Number.NaN;
+  #lastSyncZ = Number.NaN;
+  #lastRequestedTarget: Vector3 | undefined;
+
   syncCrowd(): void {
     if (this.#disposed || this.#crowdAgent === undefined) return;
-    this.#crowdAgent.teleport(toNavigationVector(this.object.position));
-    if (this.#target !== undefined && this.#path.length > 0)
+    const { x, y, z } = this.object.position;
+    const moved = x !== this.#lastSyncX || y !== this.#lastSyncY || z !== this.#lastSyncZ;
+    const retargeted =
+      this.#target !== undefined &&
+      this.#target !== this.#lastRequestedTarget &&
+      this.#path.length > 0;
+    if (!moved && !retargeted) return;
+    this.#lastSyncX = x;
+    this.#lastSyncY = y;
+    this.#lastSyncZ = z;
+    if (moved) {
+      // Teleport re-localises the agent and drops its move state, so the target is re-sent in
+      // the same sync — the pair is atomic, which the every-frame version got by doing both.
+      this.#crowdAgent.teleport(toNavigationVector(this.object.position));
+    }
+    if (this.#target !== undefined && this.#path.length > 0) {
+      this.#lastRequestedTarget = this.#target;
       this.#crowdAgent.requestMoveTarget(toNavigationVector(this.#target));
+    }
   }
 
   advance(): void {

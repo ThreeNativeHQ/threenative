@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import "../src/index.js";
 import { NavigationAgent3D } from "../src/navigation/NavigationAgent3D.js";
 import { NavigationRegion3D } from "../src/navigation/NavigationRegion3D.js";
@@ -163,5 +163,61 @@ describe("NavigationAgent3D", () => {
     });
 
     expect(() => agent.getNextPathPosition()).toThrow(/requires a target/);
+  });
+});
+
+describe("NavigationAgent3D hot-path cost", () => {
+  it("computes the path once per retarget", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object,
+    });
+    const spy = vi.spyOn(navigation(ctx).query, "computePath");
+    try {
+      agent.setTargetPosition(new Vector3(0, 0.75, 0));
+      expect(spy).toHaveBeenCalledTimes(1);
+      // The stored path and reachability are unchanged by who computed them.
+      expect(agent.getFinalPosition().x).toBeCloseTo(0, 1);
+      expect(agent.isNavigationFinished()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("crowd sync leaves a stationary agent alone and still localizes a moved one", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      navigation: navigation(ctx),
+      object,
+    });
+    const crowdAgent = agent.crowdAgent;
+    if (crowdAgent === undefined) throw new Error("Test setup produced no crowd agent.");
+    agent.setTargetPosition(new Vector3(0, 0.75, 0));
+    const teleportSpy = vi.spyOn(crowdAgent, "teleport");
+    try {
+      agent.syncCrowd();
+      const initialTeleports = teleportSpy.mock.calls.length;
+      expect(initialTeleports).toBeGreaterThan(0);
+
+      // Stationary frames: gameplay did not move the object, so re-localising it every frame
+      // was a fixed WASM tax per agent regardless of motion.
+      for (let frame = 0; frame < 10; frame += 1) agent.syncCrowd();
+      expect(teleportSpy.mock.calls.length).toBe(initialTeleports);
+
+      // A moved object must still re-localise.
+      object.position.x += 0.5;
+      agent.syncCrowd();
+      expect(teleportSpy.mock.calls.length).toBeGreaterThan(initialTeleports);
+    } finally {
+      teleportSpy.mockRestore();
+    }
   });
 });

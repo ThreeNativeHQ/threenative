@@ -65,10 +65,22 @@ export class NavigationObstacle3D {
     else this.#disableAvoidance();
   }
 
+  // Teleport forces Recast to re-localise on the navmesh; a stationary obstacle pays it once,
+  // not per frame. NaN starts make the first sync always localise.
+  #lastSyncX = Number.NaN;
+  #lastSyncY = Number.NaN;
+  #lastSyncZ = Number.NaN;
+
   syncCrowd(): void {
     if (this.#disposed || this.crowdAgent === undefined) return;
-    this.crowdAgent.teleport(toNavigationVector(this.object.position));
-    this.crowdAgent.requestMoveVelocity({ x: 0, y: 0, z: 0 });
+    const { x, y, z } = this.object.position;
+    if (x !== this.#lastSyncX || y !== this.#lastSyncY || z !== this.#lastSyncZ) {
+      this.#lastSyncX = x;
+      this.#lastSyncY = y;
+      this.#lastSyncZ = z;
+      this.crowdAgent.teleport(toNavigationVector(this.object.position));
+      this.crowdAgent.requestMoveVelocity({ x: 0, y: 0, z: 0 });
+    }
   }
 
   dispose(): void {
