@@ -6,9 +6,7 @@
   "warmupFrames": 10,
   "subject": "player",
   "artifacts": { "screenshots": false },
-  "steps": [
-    { "waitTicks": 30 }
-  ],
+  "steps": [{ "waitTicks": 30 }],
   "assert": {
     "performance": { "maxDrawCalls": 5000 }
   }

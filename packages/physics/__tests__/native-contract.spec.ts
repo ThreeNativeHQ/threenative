@@ -418,9 +418,9 @@ describe("native physics contract", () => {
         position: { x: Number.POSITIVE_INFINITY, y: 0, z: 0 },
       }),
     ).toThrow(/TN_PHYSICS_NON_FINITE.*position/u);
-    expect(() => native.createBody({ ...bodyOptions(), rotation: { w: 0, x: 0, y: 0, z: 0 } })).toThrow(
-      /TN_PHYSICS_INVALID.*rotation/u,
-    );
+    expect(() =>
+      native.createBody({ ...bodyOptions(), rotation: { w: 0, x: 0, y: 0, z: 0 } }),
+    ).toThrow(/TN_PHYSICS_INVALID.*rotation/u);
     expect(createBody).not.toHaveBeenCalled();
   });
 

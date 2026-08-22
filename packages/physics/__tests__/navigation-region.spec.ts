@@ -96,8 +96,14 @@ describe("NavigationRegion3D", () => {
     }).not.toThrow();
 
     const again = await setup();
-    const one = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(again.ctx) });
-    const two = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(again.ctx) });
+    const one = new NavigationRegion3D({
+      meshes: levelMeshes(),
+      navigation: navigation(again.ctx),
+    });
+    const two = new NavigationRegion3D({
+      meshes: levelMeshes(),
+      navigation: navigation(again.ctx),
+    });
     expect(() => {
       one.dispose();
       two.dispose();
