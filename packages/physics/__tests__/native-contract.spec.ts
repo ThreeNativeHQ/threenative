@@ -423,4 +423,23 @@ describe("native physics contract", () => {
     );
     expect(createBody).not.toHaveBeenCalled();
   });
+
+  it("refuses body creation and removal on a disposed native adapter like the web adapter", () => {
+    // Every other native-adapter entry point guards with requireLive(); createBody
+    // and removeBody let calls through after dispose(), so teardown ordering that
+    // the web backend rejects with a clean throw reached the native host past its
+    // lifetime instead — one bug, two platforms, two different outcomes.
+    const createBody = vi.fn(() => 1);
+    const removeBody = vi.fn();
+    const native = createNativePhysicsSimulation(
+      { createBody, dispose: vi.fn(), removeBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    native.dispose();
+
+    expect(() => native.createBody(bodyOptions())).toThrow(/disposed/i);
+    expect(() => native.removeBody(1)).toThrow(/disposed/i);
+    expect(createBody).not.toHaveBeenCalled();
+    expect(removeBody).not.toHaveBeenCalled();
+  });
 });

@@ -306,6 +306,7 @@ export function createNativePhysicsSimulation(
     rawEventQueue: raw,
     rawWorld: raw,
     createBody: (options: IPhysicsBodyCreateOptions) => {
+      requireLive();
       // Same seam rule as web: a NaN placement corrupts the body for the rest of
       // the run instead of throwing, and a zero-length rotation normalizes to NaN.
       requireFiniteVector(options.position, "body position");
@@ -358,6 +359,7 @@ export function createNativePhysicsSimulation(
       invalidateObservations();
     },
     removeBody: (id) => {
+      requireLive();
       raw.removeBody(id);
       bodyIds.delete(id);
       bodyHandles.delete(id);
