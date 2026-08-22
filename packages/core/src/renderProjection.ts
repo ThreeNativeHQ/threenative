@@ -98,6 +98,15 @@ export interface IRenderProjectionOptions {
 
 export { exactLaneReason } from "./projection-plan.js";
 
+/**
+ * How many settled-declined frames pass between classification re-walks.
+ *
+ * Growth past the mesh floor is noticed within this window; a scene that never changes pays one
+ * walk per window instead of one per frame. Sub-second at frame rate, and invisible — the
+ * alternative state it delays is "the optimizer has not engaged yet", not a wrong frame.
+ */
+const DECLINE_RESCAN_FRAMES = 60;
+
 export class SceneRenderProjection {
   readonly #source: Scene;
   readonly #minMeshes: number;
@@ -112,6 +121,7 @@ export class SceneRenderProjection {
   #maxReconcileMs = 0;
   #reported = false;
   #lastAnnounced: ProjectionReasonCode | undefined;
+  #framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
 
   constructor(source: Scene, options: IRenderProjectionOptions = {}) {
     const minMeshes = options.minMeshes ?? 200;
@@ -141,12 +151,15 @@ export class SceneRenderProjection {
    * Everything the mirror asserts about a source is re-derived here rather than remembered from
    * startup: where it is, whether it is visible, what geometry and material it has, and whether it
    * is still in the scene at all. A source that did not change costs a compare.
+   *
+   * A settled decline costs almost nothing: the classification walk re-runs on a bounded cadence
+   * rather than every frame, and the whole-scene matrix pass does not run at all — the frames the
+   * authored scene draws are exactly the frames three's renderer refreshes its world matrices
+   * anyway. The pass stays mandatory on any frame this class projects, because then the authored
+   * scene is not what renders and nothing else refreshes it.
    */
   reconcile(): void {
     const startedAt = globalThis.performance?.now() ?? 0;
-    // The authored scene is not what the renderer is given, so nothing else refreshes its world
-    // matrices. Every world transform the mirror copies is read after this call.
-    this.#source.updateMatrixWorld(true);
     // Re-read every frame, not once at construction: a game that swaps its sky or turns fog on
     // mid-level would otherwise keep the look it happened to have when the mirror was built.
     const mirrorScene = this.#mirror.scene;
@@ -158,14 +171,28 @@ export class SceneRenderProjection {
     mirrorScene.environmentIntensity = this.#source.environmentIntensity;
     mirrorScene.overrideMaterial = this.#source.overrideMaterial;
 
+    // A settled decline re-judges on a cadence, not per frame: most agent-built scenes sit below
+    // the floor forever, and re-walking one every frame bought nothing. The counter starts at the
+    // interval so the first reconcile always scans, and a deoptimization resets it.
+    if (this.#deoptimized) {
+      this.#framesSinceDeclineScan += 1;
+      if (this.#framesSinceDeclineScan < DECLINE_RESCAN_FRAMES) return;
+    }
+
     // Scan and decide without touching the mirror; then either build the plan or decline whole.
+    // The scan reads no world matrices, so it runs before the forced pass and the pass only runs
+    // when its result is actually needed.
     const scan = scanProjection(this.#source, this.#minMeshes);
     this.#sourceRenderables = scan.renderables;
-    this.#mirror.prepare(scan.exactEntries);
+    this.#framesSinceDeclineScan = 0;
     if (scan.plan.action === "decline") {
       this.#mirror.releaseAll();
       this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
     } else {
+      // The authored scene is not what the renderer is given while projecting, so nothing else
+      // refreshes its world matrices. Every world transform the mirror copies is read after this.
+      this.#source.updateMatrixWorld(true);
+      this.#mirror.prepare(scan.exactEntries);
       const lightFailure = this.#mirror.apply(scan.plan);
       if (lightFailure !== undefined) {
         this.#deoptimize("unsupportedLight", lightFailure);
@@ -290,6 +317,7 @@ export class SceneRenderProjection {
     this.#reasonCode = "belowMeshFloor";
     this.#reason = "the projection was disposed";
     this.#reported = false;
+    this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
   }
 }
 

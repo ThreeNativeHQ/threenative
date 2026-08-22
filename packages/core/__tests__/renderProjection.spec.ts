@@ -24,7 +24,7 @@ import {
   Sprite,
   SpriteMaterial,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -993,9 +993,10 @@ describe("SceneRenderProjection refuses to make a scene worse", () => {
     expect(projection.deoptimized).toBe(true);
     expect(projection.root).toBe(scene);
     // Removed, not nulled: the scan tests Object.hasOwn, so an own undefined property would
-    // still count as a hook.
+    // still count as a hook. Recovery from a settled decline is bounded by the rescan cadence
+    // (PRD-169), not immediate — the delayed state is "not yet optimized", never a wrong frame.
     Reflect.deleteProperty(traveller, "onBeforeRender");
-    projection.reconcile();
+    for (let frame = 0; frame < 61 && projection.deoptimized; frame += 1) projection.reconcile();
     expect(projection.deoptimized).toBe(false);
     expect(projection.report.projectedObjects).toBe(settled.projectedObjects);
     expect(projection.report.resultDrawCandidates).toBe(settled.resultDrawCandidates);
@@ -1022,5 +1023,66 @@ describe("SceneRenderProjection refuses to make a scene worse", () => {
     // And the authored scene never changed shape of its own accord.
     expect(graphSnapshot(scene)).not.toBe(beforeGraph);
     for (const mesh of meshes) expect(mesh.geometry.getAttribute("position")).toBeDefined();
+  });
+});
+
+describe("SceneRenderProjection declined-frame cost", () => {
+  it("forces no whole-scene matrix pass while settled below the floor", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 4);
+    const projection = projected(scene, 2, 200);
+    expect(projection.deoptimized).toBe(true);
+
+    // The renderer refreshes the authored scene itself on the frames it draws it, so the
+    // reconciler forcing one too is duplicate whole-scene work on every declined frame.
+    const updateSpy = vi.spyOn(scene, "updateMatrixWorld");
+    try {
+      projection.reconcile();
+      projection.reconcile();
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("still forces the matrix pass on frames it projects", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    const updateSpy = vi.spyOn(scene, "updateMatrixWorld");
+    try {
+      projection.reconcile();
+      expect(updateSpy).toHaveBeenCalledWith(true);
+    } finally {
+      updateSpy.mockRestore();
+    }
+  });
+
+  it("re-judges a scene that grew past the floor within the bounded cadence", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    fill(scene, material, 4);
+    const projection = projected(scene, 2, 200);
+    expect(projection.deoptimized).toBe(true);
+
+    fill(scene, material, 200);
+    // Settled declines rescan on a cadence; growth must be noticed within one window.
+    for (let frame = 0; frame < 61 && projection.deoptimized; frame += 1) projection.reconcile();
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.reasonCode).toBe("projected");
+  });
+
+  it("keeps re-scanning every frame while projecting", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    (meshes[10] as Mesh).onBeforeRender = () => undefined;
+    projection.reconcile();
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("renderHook");
   });
 });
