@@ -1,0 +1,294 @@
+[
+  {
+    "text": "=== ThreeNative Native Runtime ===",
+    "type": "log"
+  },
+  {
+    "text": "Version: 0.2.0",
+    "type": "log"
+  },
+  {
+    "text": "Script: .threenative/game.js",
+    "type": "log"
+  },
+  {
+    "text": "Window: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Initializing runtime...",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Window: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Creating window: shooter (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] SDL initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Brand icon unavailable in embedded bundle; using compositor default",
+    "type": "error"
+  },
+  {
+    "text": "[Window] Actual window size: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Window created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Actual window size: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Initializing...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Instance created",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using X11 display: 0x55d2067b00c0 window: 2097198",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating surface for platform type 4 with display pointer",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating X11 surface with display: 0x55d2067b00c0 window: 0x20002e",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface created",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter: NVIDIA GeForce RTX 2080",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Vendor: nvidia",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Backend: Vulkan",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Device acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Queue acquired",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] configureSurface called: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] surface_=0x55d206864460, device_=0x55d206bd8020, adapter_=0x55d206853220",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Getting surface capabilities...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Got capabilities: formatCount=2",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Available surface formats:",
+    "type": "log"
+  },
+  {
+    "text": "  [0] = 27",
+    "type": "log"
+  },
+  {
+    "text": "  [1] = 28",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Using surface format: 27",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface configured: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Present mode: fifo (vsync=true)",
+    "type": "log"
+  },
+  {
+    "text": "[JS] Creating V8 engine (platform default)",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Creating engine...",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Initializing V8 JavaScript engine...",
+    "type": "log"
+  },
+  {
+    "text": "[V8] V8 initialized successfully",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Version: 13.1.201.22",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Engine created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using JS engine: V8",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Fetch API initialized (file://, http://, https://)",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] URL and Worker polyfills initialized",
+    "type": "log"
+  },
+  {
+    "text": "[DOM] Canvas element created with addEventListener, style, etc.",
+    "type": "log"
+  },
+  {
+    "text": "[log] [Mystral] WebP format support: YES",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] DOM event system initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/shooter.json",
+    "type": "log"
+  },
+  {
+    "text": "[Audio] Web Audio API bindings initialized",
+    "type": "log"
+  },
+  {
+    "text": "[EventLoop] libuv 1.51.0 initialized",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncHttp] Initialized with curl_multi + libuv",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncFile] Initialized with libuv thread pool",
+    "type": "log"
+  },
+  {
+    "text": "[FileWatcher] Initialized with libuv fs_event",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Runtime initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Evaluating script: threenative-playtest-mailbox.js (246 bytes)",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Desktop playtest mailbox configured",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Loading script: .threenative/game.js",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Starting main loop...",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_NATIVE_SMOKE_READY:webgpu",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_NATIVE_SMOKE_FIRST_FRAME",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":45,\"resultDrawCandidates\":45,\"batches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"first_frame\",\"atMs\":0.000}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PRESENTS_TICK:{\"frames\":60,\"presents\":12}",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":45,\"resultDrawCandidates\":45,\"batches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{}}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 51 31 26 255 51 31 26 255 51 31 26 255 51 31 26 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 3 5 21 255 3 5 21 255 3 5 21 255 3 5 21 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /tmp/tn-p27-manual/shooter/artifacts/desktop-final/input-look-right.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_NATIVE_SMOKE_300_FRAMES:300",
+    "type": "log"
+  },
+  {
+    "text": "TN_PRESENTS_TICK:{\"frames\":120,\"presents\":72}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 51 30 17 255 51 30 17 255 51 30 17 255 51 30 17 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 157 168 117 255 158 169 117 255 159 171 118 255 161 172 119 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /tmp/tn-p27-manual/shooter/artifacts/desktop-final/after.png (1280x720)",
+    "type": "log"
+  }
+]

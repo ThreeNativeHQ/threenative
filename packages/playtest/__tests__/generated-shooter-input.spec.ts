@@ -1,11 +1,11 @@
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { WEBGPU_BROWSER_ARGS } from "../src/runner/browser.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import { runStandalonePlaytest } from "../src/runner/runner.js";
@@ -62,7 +62,7 @@ let projectPath: string | undefined;
 
 describe.skipIf(needsDisplay)("generated shooter input proof", () => {
   beforeAll(async () => {
-    workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "generated-shooter-input-"));
+    workspaceRoot = await makeTempDir("generated-shooter-input-");
     const packageDirectory = path.join(workspaceRoot, "packages");
     await mkdir(packageDirectory, { recursive: true });
     const packageSources: Record<string, string> = {};
@@ -87,7 +87,44 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       [SCAFFOLDER_ENTRY, projectPath, "--template", "shooter", ...flags],
       { cwd: REPO_ROOT },
     );
+    await warmDevServer(projectPath);
   }, 900_000);
+
+  /** First vite boot optimizes dependencies and can reload the page mid-scenario; get that
+   * reload out of the way here so both scenario runs meet an already-warm server. */
+  async function warmDevServer(directory: string): Promise<void> {
+    const port = 49_000 + (process.pid % 1_000);
+    const server = spawn(
+      "pnpm",
+      ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+      { cwd: directory, detached: process.platform !== "win32", stdio: "ignore" },
+    );
+    try {
+      const deadline = Date.now() + 120_000;
+      while (true) {
+        if (Date.now() > deadline) throw new Error("warm dev server never became ready");
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/`);
+          if (response.ok) {
+            await response.text();
+            // The optimization pass can trigger one page reload; let that window close.
+            await new Promise((resolve) => setTimeout(resolve, 4_000));
+            await fetch(`http://127.0.0.1:${port}/`);
+            return;
+          }
+        } catch {
+          // not listening yet
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } finally {
+      if (server.pid !== undefined && process.platform !== "win32") {
+        process.kill(-server.pid, "SIGTERM");
+      } else {
+        server.kill();
+      }
+    }
+  }
 
   afterAll(async () => {
     if (workspaceRoot !== undefined) {
@@ -96,6 +133,13 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       await rm(root, { force: true, recursive: true }).catch(() => undefined);
     }
   });
+
+
+  /** The scaffolded project directory; every test depends on the beforeAll having run. */
+  function projectDirectory(): string {
+    if (projectPath === undefined) throw new Error("scaffold did not produce a project");
+    return projectPath;
+  }
 
   async function runScenario(
     scenarioPath: string,
@@ -115,9 +159,10 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       server: {
         command: "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
         cwd: projectPath,
-        timeoutMs: 120_000,
+        // Generous because this spec often runs while the rest of pnpm test loads the machine.
+        timeoutMs: 240_000,
       },
-      timeoutMs: 60_000,
+      timeoutMs: 150_000,
       trace: false,
       url: "http://127.0.0.1/",
     };
@@ -126,13 +171,32 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
 
   test("should turn, aim, and fire the generated shooter", async () => {
     expect(projectPath).toBeDefined();
-    const report = await runScenario(SCENARIO_PATH, path.join(projectPath!, "artifacts-positive"));
+    const report = await runScenario(SCENARIO_PATH, path.join(projectDirectory(), "artifacts-positive"));
 
+    if (!report.pass) {
+      // Forensics survive the temp-project cleanup only through this output.
+      const observations = (report as { observations?: { resourceSeries?: Array<{ label: string; snapshots: { state: Record<string, number> } }> } }).observations;
+      console.info(
+        "positive-run diagnostics:",
+        JSON.stringify(report.diagnostics),
+      );
+      console.info(
+        "positive-run series:",
+        JSON.stringify(
+          (observations?.resourceSeries ?? []).map(({ label, snapshots }) => [
+            label,
+            snapshots.state.yawDegrees,
+            snapshots.state.aiming,
+            snapshots.state.shotsFired,
+          ]),
+        ),
+      );
+    }
     expect(report.pass).toBe(true);
     expect(exitCodeForReport(report)).toBe(0);
     // The adapter must be named hardware: the runner fails TN_PLAYTEST_SOFTWARE_ADAPTER otherwise.
     const capture = JSON.parse(
-      await readFile(path.join(projectPath!, "artifacts-positive", "capture.json"), "utf8"),
+      await readFile(path.join(projectDirectory(), "artifacts-positive", "capture.json"), "utf8"),
     ) as { adapter?: Record<string, string>; rendererKind?: string };
     console.info(`webgpu adapter: ${JSON.stringify(capture.adapter ?? {})}`);
     expect(capture.rendererKind).toBe("webgpu");
@@ -154,13 +218,16 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       expect(results.get(id), `${id} must be evaluated`).toBeDefined();
       expect(results.get(id), `${id} must pass`).toBe(true);
     }
-    const after = report.after as { state?: Record<string, unknown> } | undefined;
+    const after = report.after as
+      | { resources?: { state?: Record<string, number> } }
+      | undefined;
     console.info(
       "raw observations:",
       JSON.stringify({
-        demoDamage: after?.state?.demoDamage,
-        demoTargetAlive: after?.state?.demoTargetAlive,
-        shotsFired: after?.state?.shotsFired,
+        demoDamage: after?.resources?.state?.demoDamage,
+        demoTargetAlive: after?.resources?.state?.demoTargetAlive,
+        shotsFired: after?.resources?.state?.shotsFired,
+        yawDegrees: after?.resources?.state?.yawDegrees,
       }),
     );
   }, 600_000);
@@ -170,15 +237,31 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     const scenario = JSON.parse(await readFile(SCENARIO_PATH, "utf8")) as {
       steps: Array<{ label?: string; pointerPosition?: { buttons?: number; x: number; y: number } }>;
     };
-    // The named mutation: strip right-button delivery from the aim step, leaving everything else
-    // byte-identical. Aim must never engage, so the aimed shot can never be counted.
-    const aimStep = scenario.steps.find(({ label }) => label === "aim-down");
+    // The named mutation: strip right-button delivery everywhere the scenario delivers it —
+    // the aim step loses its press and the fire step keeps only the left bit — so aim can never
+    // engage while left-button fire still works. Everything else stays byte-identical.
+    type PointerStep = NonNullable<
+      Array<{ label?: string; pointerPosition?: { buttons?: number; x: number; y: number } }>
+    >[number];
+    const byLabel = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
+    const aimStep = byLabel.get("aim-down") as PointerStep | undefined;
+    const fireStep = byLabel.get("fire-while-aiming") as PointerStep | undefined;
     expect(aimStep?.pointerPosition?.buttons).toBe(2);
-    delete aimStep!.pointerPosition!.buttons;
-    const mutatedPath = path.join(projectPath!, "input-control-negative.playtest.json");
-    await writeFile(mutatedPath, JSON.stringify(scenario));
+    expect(fireStep?.pointerPosition?.buttons).toBe(3);
+    const mutatedSteps: Array<Record<string, unknown>> = scenario.steps.map((step) => {
+      if (step.label === "aim-down" && step.pointerPosition !== undefined) {
+        const position = { x: step.pointerPosition.x, y: step.pointerPosition.y };
+        return { ...step, pointerPosition: position };
+      }
+      if (step.label === "fire-while-aiming" && step.pointerPosition !== undefined) {
+        return { ...step, pointerPosition: { ...step.pointerPosition, buttons: 1 } };
+      }
+      return step;
+    });
+    const mutatedPath = path.join(projectDirectory(), "input-control-negative.playtest.json");
+    await writeFile(mutatedPath, JSON.stringify({ ...scenario, steps: mutatedSteps }));
 
-    const report = await runScenario(mutatedPath, path.join(projectPath!, "artifacts-negative"));
+    const report = await runScenario(mutatedPath, path.join(projectDirectory(), "artifacts-negative"));
 
     console.info("RED observed: generated shooter input state unchanged");
     console.info(
@@ -203,11 +286,11 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       steps: Array<{ kind?: string; label?: string }>;
     };
     expect(scenario.steps[0]).toMatchObject({ kind: "wait", label: "no-input-control" });
-    // The aiming row's control leg pins the initial unaimed value at the no-input label, so the
-    // scenario cannot pass from initial state.
+    // The aiming row's engaged leg pins a value only real input can produce, evaluated after a
+    // settle drain so the scenario cannot pass from initial state or from event skew.
     const aiming = scenario.assert?.resources?.find((row) =>
-      row.atSteps?.some(({ label }) => label === "aim-down"),
+      row.atSteps?.some(({ label }) => label === "aim-settle"),
     );
-    expect(aiming?.atSteps).toContainEqual({ label: "aim-down", equals: 1 });
+    expect(aiming?.atSteps).toContainEqual({ label: "aim-settle", equals: 1 });
   });
 });

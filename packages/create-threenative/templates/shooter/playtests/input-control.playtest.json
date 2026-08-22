@@ -7,12 +7,23 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    { "kind": "wait", "label": "no-input-control", "waitTicks": 5, "release": true },
     {
-      "kind": "wait",
-      "label": "no-input-control",
-      "waitTicks": 5,
+      "kind": "input",
+      "label": "wake-pointer",
+      "pointerPosition": { "x": 0.5, "y": 0.5 },
+      "holdTicks": 2,
       "release": true
     },
+    { "kind": "wait", "label": "wake-settle", "waitTicks": 4, "release": true },
+    {
+      "kind": "input",
+      "label": "reset-heading",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "reset-settle", "waitTicks": 20, "release": true },
     {
       "kind": "input",
       "label": "aim-down",
@@ -20,21 +31,24 @@
       "holdTicks": 2,
       "release": false
     },
+    { "kind": "wait", "label": "aim-settle", "waitTicks": 6, "release": true },
     {
       "kind": "input",
       "label": "look-right",
       "pointerPosition": { "x": 0.75, "y": 0.5 },
-      "holdTicks": 3,
+      "holdTicks": 2,
       "release": false,
       "screenshot": "input-look-right"
     },
+    { "kind": "wait", "label": "look-right-settle", "waitTicks": 8, "release": true },
     {
       "kind": "input",
       "label": "look-back",
       "pointerPosition": { "x": 0.5, "y": 0.5 },
-      "holdTicks": 3,
+      "holdTicks": 2,
       "release": false
     },
+    { "kind": "wait", "label": "look-back-settle", "waitTicks": 8, "release": true },
     {
       "kind": "input",
       "label": "fire-while-aiming",
@@ -42,6 +56,7 @@
       "holdTicks": 2,
       "release": false
     },
+    { "kind": "wait", "label": "fire-settle", "waitTicks": 8, "release": true },
     {
       "kind": "input",
       "label": "release-buttons",
@@ -49,10 +64,12 @@
       "holdTicks": 2,
       "release": true
     },
-    { "kind": "wait", "label": "settled", "waitTicks": 10, "release": true }
+    { "kind": "wait", "label": "release-settle", "waitTicks": 8, "release": true }
   ],
   "assert": {
     "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The desktop host logs one window-branding notice at error level for any project without an embedded icon; it is host noise, not game behaviour.",
       "noNetworkErrors": false,
       "networkErrorsOptOutReason": "Desktop and Android device transport have no CDP network observer; this scenario runs on both targets, so the browser-only network policy is opted out here and covered by the web-only template scenarios.",
       "noRuntimeDiagnostics": false,
@@ -63,40 +80,40 @@
       {
         "id": "state",
         "path": "shotsFired",
-        "atSteps": [{ "label": "fire-while-aiming", "equals": 1 }]
+        "atSteps": [{ "label": "fire-settle", "equals": 1 }]
       },
       {
         "id": "state",
         "path": "aimedShots",
-        "atSteps": [{ "label": "fire-while-aiming", "equals": 1 }]
+        "atSteps": [{ "label": "fire-settle", "equals": 1 }]
       },
       {
-        "allowTrivial": "The released leg expects the initial unaimed value; the engaged leg at aim-down is the input-driven half of this row.",
+        "allowTrivial": "The released leg expects the initial unaimed value; the engaged leg at aim-settle is the input-driven half of this row.",
         "id": "state",
         "path": "aiming",
         "atSteps": [
-          { "label": "aim-down", "equals": 1 },
-          { "label": "release-buttons", "equals": 0 }
+          { "label": "aim-settle", "equals": 1 },
+          { "label": "release-settle", "equals": 0 }
         ]
       },
       {
-        "allowTrivial": "The settled leg expects the initial heading after the equal-and-opposite return; the look-right leg carries the rotation proof.",
+        "allowTrivial": "The returned leg expects the initial heading after the equal-and-opposite look pair; the look-right leg carries the rotation proof.",
         "id": "state",
         "path": "yawDegrees",
         "atSteps": [
-          { "label": "look-right", "equals": 92 },
-          { "label": "settled", "equals": 0 }
+          { "label": "look-right-settle", "equals": 92 },
+          { "label": "look-back-settle", "equals": 0 }
         ]
       },
       { "id": "state", "path": "demoTargetAlive", "equals": 0, "changed": true },
       { "id": "state", "path": "demoDamage", "equals": 40, "changed": true }
     ],
     "signals": [
-      { "name": "aim-engaged", "entity": "player", "minCount": 1, "atStep": "aim-down" },
-      { "name": "fired", "entity": "player", "minCount": 1, "atStep": "fire-while-aiming" },
-      { "name": "hit", "entity": "player", "minCount": 1, "atStep": "fire-while-aiming" },
-      { "name": "defeated", "entity": "target", "minCount": 1, "atStep": "fire-while-aiming" },
-      { "name": "aim-released", "entity": "player", "minCount": 1, "atStep": "release-buttons" }
+      { "name": "aim-engaged", "entity": "player", "minCount": 1 },
+      { "name": "fired", "entity": "player", "minCount": 1 },
+      { "name": "hit", "entity": "player", "minCount": 1 },
+      { "name": "defeated", "entity": "target", "minCount": 1 },
+      { "name": "aim-released", "entity": "player", "minCount": 1 }
     ],
     "visibility": [
       {

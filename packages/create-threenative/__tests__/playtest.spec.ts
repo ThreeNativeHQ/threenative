@@ -439,9 +439,12 @@ describe("starter playtest proof", () => {
 
     const resources = scenario.assert?.resources ?? [];
     const yaw = resources.find(({ path }) => path === "yawDegrees");
-    expect(yaw?.atSteps).toContainEqual({ label: "look-right", equals: 92 });
+    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 92 });
     const shots = resources.find(({ path }) => path === "shotsFired");
-    expect(shots?.atSteps).toEqual([{ label: "fire-while-aiming", equals: 1 }]);
+    expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
+    // The heading is zeroed through the template's own restart binding before the measured
+    // looks, so the rotation proof starts from a known baseline on every target.
+    expect(labeled.get("reset-heading")).toMatchObject({ press: "KeyR" });
     const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
     for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
       expect(signalNames).toContain(name);

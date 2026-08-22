@@ -284,20 +284,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     waveDirector.start(spawnWave);
     rig.snap(player.mesh.position);
 
-    const fireHitscan = (whileAiming: boolean): void => {
-      const state = ctx.state.getState();
-      const originOffset = player
-        .aimOrigin()
-        .sub(player.mesh.position)
-        .applyAxisAngle(UP, -lookState.yaw)
-        .add(player.mesh.position);
-      const hit = hitscan.fire(ctx.physics, originOffset, aimForward(), HOSTILE_LAYER);
-      ctx.state.set({
-        aimedShots: whileAiming ? state.aimedShots + 1 : state.aimedShots,
-        shotsFired: state.shotsFired + 1,
-      });
-      emitPlaytestEvent({ entity: "player", name: "fired", aimed: whileAiming ? 1 : 0 });
-      if (hit === undefined) return;
+    const resolveHitscanImpact = (
+      hit: NonNullable<ReturnType<typeof hitscan.fire>>,
+      state: GameState,
+    ): void => {
       const target = targets.get(hit.body.id);
       if (target !== undefined) applyDirectDamage(targets, hit.body.id, 40);
       const demoHit = hit.body.id === demo.body.body.id;
@@ -320,6 +310,22 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         distanceTenths: Math.round(hit.distance * 10),
       });
       if (target?.alive === false) emitPlaytestEvent({ entity: "target", name: "defeated" });
+    };
+
+    const fireHitscan = (whileAiming: boolean): void => {
+      const state = ctx.state.getState();
+      const originOffset = player
+        .aimOrigin()
+        .sub(player.mesh.position)
+        .applyAxisAngle(UP, -lookState.yaw)
+        .add(player.mesh.position);
+      const hit = hitscan.fire(ctx.physics, originOffset, aimForward(), HOSTILE_LAYER);
+      ctx.state.set({
+        aimedShots: whileAiming ? state.aimedShots + 1 : state.aimedShots,
+        shotsFired: state.shotsFired + 1,
+      });
+      emitPlaytestEvent({ entity: "player", name: "fired", aimed: whileAiming ? 1 : 0 });
+      if (hit !== undefined) resolveHitscanImpact(hit, state);
     };
 
     const fireProjectile = (): void => {
@@ -384,7 +390,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       return true;
     };
 
-    const handleInput = (frameCtx: GameCtx): void => {
+    const handleAimEdges = (frameCtx: GameCtx): void => {
       if (frameCtx.input.justPressed("aim")) {
         ctx.state.set({ aiming: 1 });
         emitPlaytestEvent({ entity: "player", name: "aim-engaged" });
@@ -393,6 +399,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ctx.state.set({ aiming: 0 });
         emitPlaytestEvent({ entity: "player", name: "aim-released" });
       }
+    };
+
+    const handleInput = (frameCtx: GameCtx): void => {
+      handleAimEdges(frameCtx);
       if (frameCtx.input.justPressed("fire")) fireHitscan(frameCtx.input.pressed("aim"));
       if (frameCtx.input.justPressed("projectile")) fireProjectile();
       if (frameCtx.input.justPressed("blast")) fireRadius();
@@ -441,17 +451,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       });
     };
 
+    // Relative mouse pixels accumulate here once per frame; the same yaw drives both the
+    // camera orbit and the aim direction, and the total is published for playtests.
+    const applyLook = (frameCtx: GameCtx): void => {
+      const look = frameCtx.input.vector("look");
+      if (look.x === 0) return;
+      lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
+      ctx.state.set({ yawDegrees: Math.round((lookState.yaw * 180) / Math.PI) });
+    };
+
     return (frameCtx, dt) => {
       loading.update();
       elapsed.value += dt;
       if (restart(frameCtx)) return;
       handleInput(frameCtx);
-
-      const look = frameCtx.input.vector("look");
-      if (look.x !== 0) {
-        lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
-        ctx.state.set({ yawDegrees: Math.round((lookState.yaw * 180) / Math.PI) });
-      }
+      applyLook(frameCtx);
 
       player.update(frameCtx, dt);
       hitscan.update(dt);

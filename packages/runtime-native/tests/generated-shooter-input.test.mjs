@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, test } from "vitest";
+import { test } from "vitest";
+
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import {
   PLAYTEST_PROTOCOL_LIMITS,
@@ -29,11 +30,6 @@ import { connectDevicePlaytestBridge } from "../../playtest/src/three/device.js"
 const runtimeRoot = fileURLToPath(new URL("../", import.meta.url));
 const registryPath = join(runtimeRoot, "conformance/registry.json");
 const PROOF_ID = "generated-shooter-input-control";
-
-const roots = [];
-afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
-});
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -108,16 +104,31 @@ function stubBridge() {
       return { clock: { mode: "fixed-step", tick }, ticks };
     },
     describe: () => ({
-      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep"],
+      capabilities: [
+        "entity.bounds",
+        "entity.observe",
+        "runtime.diagnostics",
+        "runtime.events",
+        "runtime.fixedStep",
+        "runtime.resources",
+      ],
       limits: PLAYTEST_PROTOCOL_LIMITS,
       name: "generated-shooter-input-stub",
       protocolVersion: PLAYTEST_PROTOCOL_VERSION,
     }),
+    drainEvents: async () => [],
     ready: () => ({ ready: true }),
     sample: () => ({
       clock: { mode: "fixed-step", tick },
       diagnostics: [],
-      entities: [],
+      entities: [
+        {
+          bounds: { height: 200, width: 200, x: 100, y: 100 },
+          id: "player",
+          transform: { position: [0, 0.85, 5] },
+          visible: true,
+        },
+      ],
       resources: {},
     }),
   };
@@ -167,15 +178,10 @@ async function availablePort() {
 }
 
 /**
- * Drives the COMMITTED scenario through the real desktop runner over the real mailbox transport,
- * recording every pointer/keyboard delivery the runner emits toward the native host seam.
+ * Installs a native-host seam that records every keyboard/pointer delivery the runner emits.
+ * Returns the delivery log and the restore function.
  */
-async function runCommittedScenarioOnDesktop() {
-  const { scenarioPath } = assertScenarioRegistered();
-  const projectPath = await mkdtemp(join(tmpdir(), "tn-generated-shooter-"));
-  roots.push(projectPath);
-  await mkdir(join(projectPath, "artifacts"), { recursive: true });
-  const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
+function installDeliveryRecorder() {
   const deliveries = [];
   const host = globalThis;
   const previousHost = host.__THREENATIVE_NATIVE__;
@@ -185,7 +191,26 @@ async function runCommittedScenarioOnDesktop() {
       pointer: (type, x, y, buttons) => deliveries.push({ buttons, kind: "pointer", type, x, y }),
     },
   };
-  const driver = new StubNativeDriver(stubBridge());
+  return {
+    deliveries,
+    restore: () => {
+      if (previousHost === undefined) delete host.__THREENATIVE_NATIVE__;
+      else host.__THREENATIVE_NATIVE__ = previousHost;
+    },
+  };
+}
+
+/**
+ * Drives the COMMITTED scenario through the real desktop runner over the real mailbox transport,
+ * recording every pointer/keyboard delivery the runner emits toward the native host seam.
+ */
+async function runCommittedScenarioOnDesktop(driverOverride, prefix = "tn-generated-shooter-") {
+  const { scenarioPath } = assertScenarioRegistered();
+  const projectPath = await makeTempDir(prefix);
+  await mkdir(join(projectPath, "artifacts"), { recursive: true });
+  const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
+  const recorder = installDeliveryRecorder();
+  const driver = driverOverride ?? new StubNativeDriver(stubBridge());
   try {
     const report = await runDesktopPlaytest(
       {
@@ -202,47 +227,57 @@ async function runCommittedScenarioOnDesktop() {
       },
       { driver, transport: new DeviceBridgeTransport(endpoint) },
     );
-    return { deliveries, driver, report };
+    return { deliveries: recorder.deliveries, driver, report };
   } finally {
-    if (previousHost === undefined) delete host.__THREENATIVE_NATIVE__;
-    else host.__THREENATIVE_NATIVE__ = previousHost;
+    recorder.restore();
     driver.stopped = true;
     driver.installation?.close();
   }
 }
 
 test("should preserve button order on the native target", async () => {
-  const { deliveries, report } = await runCommittedScenarioOnDesktop();
-  console.info("DEBUG report:", JSON.stringify({ diagnostics: report.diagnostics, pass: report.pass, assertionResults: report.assertionResults }));
+  const { deliveries } = await runCommittedScenarioOnDesktop();
 
   // The runner owns the down/move/up state machine; these are the exact deliveries its steps
-  // must produce for this scenario's mouse contract, in arrival order.
+  // must produce for this scenario's mouse contract, in arrival order, after device.ts maps
+  // them onto DOM PointerEvent type names at the native host seam. The wake-pointer step
+  // absorbs the browser's one-off pointer warp; reset-heading (KeyR) zeroes the view heading
+  // through the template's own restart binding before the measured looks.
   const pointers = deliveries.filter((delivery) => delivery.kind === "pointer");
   assert.deepEqual(
     pointers.map(({ buttons, type, x }) => ({ buttons, type, x })),
     [
-      { buttons: 2, type: "down", x: 640 },   // aim-down: right button press
-      { buttons: 2, type: "move", x: 960 },   // look-right: relative move while aiming
-      { buttons: 2, type: "move", x: 640 },   // look-back: equal and opposite
-      { buttons: 3, type: "move", x: 640 },   // fire-while-aiming: left joins the held right
-      { buttons: 0, type: "up", x: 640 },     // release-buttons
-      { buttons: 0, type: "up", x: 0 },       // end-of-step release re-send
+      { buttons: 0, type: "pointermove", x: 640 },   // wake-pointer: absorb the first-move warp
+      { buttons: 2, type: "pointerdown", x: 640 },   // aim-down: right button press
+      { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
+      { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
+      { buttons: 3, type: "pointermove", x: 640 },   // fire-while-aiming: left joins the held right
+      { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
+      { buttons: 0, type: "pointerup", x: 0 },       // end-of-step release closes the pointer
     ],
     "native delivery must preserve the right-hold -> left-while-held -> release order",
   );
-  assert.deepEqual(deliveries.filter(({ kind }) => kind === "key"), []);
+  assert.deepEqual(
+    deliveries.filter(({ kind }) => kind === "key"),
+    [
+      // device.ts derives the DOM key from the scenario code: KeyR arrives as "r".
+      { kind: "key", key: "r", type: "keydown" },
+      { kind: "key", key: "r", type: "keyup" },
+    ],
+  );
 
   // Negative control: drop the right-button event from delivery and the same proof must reject.
   const withoutAimPress = pointers.filter(
-    ({ buttons, type }) => !(type === "down" && buttons === 2),
+    ({ buttons, type }) => !(type === "pointerdown" && buttons === 2),
   );
   const expectedOrder = [
-    { buttons: 2, type: "down", x: 640 },
-    { buttons: 2, type: "move", x: 960 },
-    { buttons: 2, type: "move", x: 640 },
-    { buttons: 3, type: "move", x: 640 },
-    { buttons: 0, type: "up", x: 640 },
-    { buttons: 0, type: "up", x: 0 },
+    { buttons: 0, type: "pointermove", x: 640 },
+    { buttons: 2, type: "pointerdown", x: 640 },
+    { buttons: 2, type: "pointermove", x: 960 },
+    { buttons: 2, type: "pointermove", x: 640 },
+    { buttons: 3, type: "pointermove", x: 640 },
+    { buttons: 0, type: "pointermove", x: 640 },
+    { buttons: 0, type: "pointerup", x: 0 },
   ];
   const matches = (sequence) =>
     JSON.stringify(sequence.map(({ buttons, type }) => [type, buttons])) ===
@@ -254,31 +289,12 @@ test("should preserve button order on the native target", async () => {
 });
 
 test("a dead desktop process reports TN_PLAYTEST_DEVICE_FAILED instead of passing", async () => {
-  assertScenarioRegistered();
-  const projectPath = await mkdtemp(join(tmpdir(), "tn-generated-shooter-dead-"));
-  roots.push(projectPath);
-  const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   class DeadDriver extends StubNativeDriver {
     async isAlive() {
       return false;
     }
   }
-  const driver = new DeadDriver(stubBridge());
-  const report = await runDesktopPlaytest(
-    {
-      artifactDirectory: join(projectPath, "artifacts"),
-      desktop: { executable: "/stub/generated-shooter-host" },
-      endpoint,
-      headless: true,
-      projectPath,
-      scenarioPath: assertScenarioRegistered().scenarioPath,
-      target: "desktop",
-      timeoutMs: 15_000,
-      trace: false,
-      url: "http://127.0.0.1:5173",
-    },
-    { driver, transport: new DeviceBridgeTransport(endpoint) },
-  );
+  const { report } = await runCommittedScenarioOnDesktop(new DeadDriver(stubBridge()), "tn-generated-shooter-dead-");
   assert.equal(report.pass, false);
   // Exit 2: the process died before assertions were ever evaluated.
   assert.equal(exitCodeForReport(report), 2);
