@@ -112,6 +112,23 @@ public:
     bool saveScreenshot(const char* filename);
 
     /**
+     * Ask for the next presented frame to be captured into the screenshot buffer. Without this,
+     * the frame copy and its completion wait are skipped entirely.
+     */
+    void requestFrameScreenshot();
+
+    /**
+     * True once a requested capture has landed in the screenshot buffer.
+     */
+    bool isFrameScreenshotReady();
+
+    /**
+     * Drop the ready flag so the next request waits for a fresh capture instead of reading a
+     * consumed one.
+     */
+    void clearFrameScreenshotReady();
+
+    /**
      * Capture the current frame as RGBA pixel data
      * @param outData Output vector to receive RGBA data (width * height * 4 bytes)
      * @param outWidth Output parameter for frame width

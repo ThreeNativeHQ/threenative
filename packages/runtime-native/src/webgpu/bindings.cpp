@@ -165,6 +165,11 @@ static uint32_t g_canvasWidth = 800;
 static uint32_t g_canvasHeight = 600;
 static bool g_contextConfigured = false;
 
+// Completed frames, counted where the frame ends. Paired with g_presentCount so the device gates
+// can assert the ratio rather than a bare count. Defined unguarded because reportPresentTick and
+// the (profile-gated) submit marker both tag frames with it.
+static uint64_t g_frameEndCount = 0;
+
 #if TN_ANDROID_JS_PROFILE
 enum class ProfiledRenderCommand : size_t {
     SetPipeline,
@@ -220,6 +225,7 @@ static void emitAndroidJsNativeProfile(uint64_t submitPollNs, uint64_t presentNs
            << ",\"bindingNs\":" << g_androidJsNativeProfile.bindingNs
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
+           << ",\"frame\":" << g_frameEndCount
            << ",\"commands\":{\"setPipeline\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetPipeline)]
            << ",\"setBindGroup\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
            << ",\"draw\":" << counts[static_cast<size_t>(ProfiledRenderCommand::Draw)]
@@ -278,11 +284,10 @@ static bool g_presentReportedSinceLastPresent = false;
 #endif
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
 static uint64_t g_presentCount = 0;
-// Completed frames, counted where the frame ends. Paired with g_presentCount so the device gates
-// can assert the ratio rather than a bare count. See reportPresentTick().
-static uint64_t g_frameEndCount = 0;
 static WGPUCommandEncoder g_surfaceRenderEncoder = nullptr;
-static bool g_screenshotPending = false;
+// Set only by a consumer about to read a capture (requestFrameScreenshot). The frame copy and its
+// wait are paid on requested frames only — every unrequested presented frame skips both.
+static bool g_screenshotRequested = false;
 static bool g_screenshotReady = false;
 // Prevent capturing multiple screenshots per frame (Three.js does multiple queue.submit() per frame)
 static bool g_screenshotCapturedThisFrame = false;
@@ -5659,6 +5664,10 @@ void clearScreenshotReady() {
     g_screenshotReady = false;
 }
 
+void requestFrameScreenshot() {
+    g_screenshotRequested = true;
+}
+
 void setOffscreenTexture(void* texture, void* textureView) {
     g_offscreenTexture = (WGPUTexture)texture;
     g_offscreenTextureView = (WGPUTextureView)textureView;
@@ -6017,7 +6026,9 @@ static void captureFrameScreenshot() {
     // Only capture when the surface render pass has ended, matching the present condition
     // Also ensure we only capture once per frame (Three.js does multiple queue.submit() per frame)
     WGPUTexture screenshotTexture = g_currentViewSourceTexture ? g_currentViewSourceTexture : g_currentTexture;
-    if (g_surfaceRenderPassEnded && !g_screenshotCapturedThisFrame && screenshotTexture && g_device && g_queue) {
+    // Requested only: a frame nobody asked to capture performs no copy and pays none of the
+    // completion wait below. Consumers raise the flag via requestFrameScreenshot() before reading.
+    if (g_screenshotRequested && g_surfaceRenderPassEnded && !g_screenshotCapturedThisFrame && screenshotTexture && g_device && g_queue) {
         // Calculate buffer requirements
         uint32_t bytesPerPixel = 4;  // BGRA8
         uint32_t unalignedBytesPerRow = g_canvasWidth * bytesPerPixel;
@@ -6084,6 +6095,7 @@ static void captureFrameScreenshot() {
         }
 
         g_screenshotReady = true;
+        g_screenshotRequested = false;
         g_screenshotCapturedThisFrame = true;
     }
 }

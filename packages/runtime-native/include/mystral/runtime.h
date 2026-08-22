@@ -172,6 +172,13 @@ public:
     virtual bool saveScreenshot(const std::string& filename) = 0;
 
     /**
+     * Ask for the next presented frame to be captured into the screenshot buffer. Frames nobody
+     * requested skip the framebuffer copy and its completion wait entirely, so callers must
+     * raise this before waiting on saveScreenshot/captureFrame.
+     */
+    virtual void requestFrameScreenshot() = 0;
+
+    /**
      * Capture the current frame as RGBA pixel data (for video recording)
      * @param outData Output vector to receive RGBA data (width * height * 4 bytes)
      * @param outWidth Output parameter for frame width

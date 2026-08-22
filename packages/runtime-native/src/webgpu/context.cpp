@@ -1143,6 +1143,7 @@ uint32_t getScreenshotBytesPerRow();
 uint32_t getScreenshotFormat();
 bool isScreenshotReady();
 void clearScreenshotReady();
+void requestFrameScreenshot();
 
 static bool copyScreenshotPixels(
     const uint8_t* source,
@@ -1172,6 +1173,19 @@ static bool copyScreenshotPixels(
         }
     }
     return true;
+}
+
+void Context::requestFrameScreenshot() {
+    // Qualified: the member name shadows the mystral::webgpu free function.
+    mystral::webgpu::requestFrameScreenshot();
+}
+
+bool Context::isFrameScreenshotReady() {
+    return mystral::webgpu::isScreenshotReady();
+}
+
+void Context::clearFrameScreenshotReady() {
+    mystral::webgpu::clearScreenshotReady();
 }
 
 bool Context::saveScreenshot(const char* filename) {

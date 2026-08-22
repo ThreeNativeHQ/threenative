@@ -736,23 +736,58 @@ private:
         nextTimerId_ = 1;
     }
 
+    // A screenshot the mailbox asked for, waiting for its requested frame to be captured.
+    std::string pendingScreenshotPath_;
+    int pendingScreenshotTicks_ = 0;
+
     void processPlaytestScreenshotRequest() {
         const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
         if (configuredRoot == nullptr || configuredRoot[0] == '\0') return;
 
-        const std::filesystem::path requestPath =
-            std::filesystem::path(configuredRoot) / "tn-playtest-screenshot-request.txt";
-        std::ifstream request(requestPath, std::ios::binary);
-        if (!request.is_open()) return;
-        std::stringstream contents;
-        contents << request.rdbuf();
-        request.close();
-        std::remove(requestPath.string().c_str());
+        // Resolved once per root; the per-frame cost is one getenv plus one stat instead of an
+        // ifstream open attempt inside every frame of a measurement run.
+        static std::string cachedRequestPath;
+        static std::string cachedRoot;
+        if (cachedRoot != configuredRoot) {
+            cachedRoot = configuredRoot;
+            cachedRequestPath =
+                (std::filesystem::path(cachedRoot) / "tn-playtest-screenshot-request.txt").string();
+        }
 
-        const std::string screenshotPath = contents.str();
-        if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
+        if (pendingScreenshotPath_.empty()) {
+            std::error_code ec;
+            if (!std::filesystem::exists(cachedRequestPath, ec)) return;
+            std::ifstream request(cachedRequestPath, std::ios::binary);
+            if (!request.is_open()) return;
+            std::stringstream contents;
+            contents << request.rdbuf();
+            request.close();
+            std::remove(cachedRequestPath.c_str());
+
+            const std::string screenshotPath = contents.str();
+            if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
+            pendingScreenshotPath_ = screenshotPath;
+            pendingScreenshotTicks_ = 0;
+        }
+
+        // The capture lands at a present boundary after the request below; poll briefly rather
+        // than failing on the first not-yet-captured tick. Bounded so a dead surface errors once,
+        // like the single-shot failure this replaced.
+        if (!webgpu_->isFrameScreenshotReady()) {
+            webgpu_->requestFrameScreenshot();
+            if (++pendingScreenshotTicks_ > 120) {
+                std::cerr << "[Playtest] Native screenshot request failed: " << pendingScreenshotPath_ << std::endl;
+                pendingScreenshotPath_.clear();
+            }
+            return;
+        }
+        const std::string screenshotPath = pendingScreenshotPath_;
+        pendingScreenshotPath_.clear();
         if (!saveScreenshot(screenshotPath)) {
             std::cerr << "[Playtest] Native screenshot request failed: " << screenshotPath << std::endl;
+        } else {
+            // Consumed: the next request must wait for its own capture, not read this one.
+            webgpu_->clearFrameScreenshotReady();
         }
     }
 
@@ -993,6 +1028,11 @@ public:
             return false;
         }
         return webgpu_->saveScreenshot(filename.c_str());
+    }
+
+    void requestFrameScreenshot() override {
+        if (!webgpu_) return;
+        webgpu_->requestFrameScreenshot();
     }
 
     bool captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, uint32_t& outHeight) override {

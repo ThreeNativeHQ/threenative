@@ -1530,6 +1530,10 @@ int runScript(const CLIOptions& opts) {
         auto startTime = std::chrono::high_resolution_clock::now();
 
         for (int frame = 0; frame < opts.frames; frame++) {
+            // Raised before each frame of a screenshot run so the final presented frame is the
+            // one in the capture buffer at save time. Non-screenshot runs never raise it and
+            // pay neither the framebuffer copy nor its wait.
+            runtime->requestFrameScreenshot();
             if (!runtime->pollEvents()) {
                 if (!opts.quiet) {
                     std::cerr << "Warning: Runtime quit early at frame " << frame << std::endl;
