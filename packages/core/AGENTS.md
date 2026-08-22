@@ -9,7 +9,10 @@ fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, as
 animation playback, hot-reload state preservation, the throttled state store, accelerated
 scene ray queries, and the entity registry that makes a running game inspectable.
 
-That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`.
+That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`. Pooled tracer streaks
+(`TracerPool3D`) and sprite pixel-data generation (`softCircleDataTexture`) are admitted under
+that rule — see `docs/architecture/CHARTER.md`'s "Tracer streaks and sprite pixel data are
+mechanism" and `docs/PRDs/done/PRD-162-tracer-streaks-and-sprite-pixel-data-are-mechanism.md`.
 
 `picking.ts` is the one place a third-party dependency other than `three` and `zustand`
 reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,

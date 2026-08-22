@@ -292,6 +292,17 @@ failure it guards against is unchanged: v1's output looked bad because the model
 express what the schema allowed. A mechanism with every appearance parameter supplied by the
 game truncates nothing, because there is no vocabulary to be truncated to.
 
+### Tracer streaks and sprite pixel data are mechanism
+
+A shipped FPS game wrote both inside its own render folder, which is how the engine learns what
+core is missing. `TracerPool3D` owns pooling, travel, fading and orientation for hitscan streaks;
+the surface must come from the game and is cloned per slot so each streak fades independently, any
+geometry beyond a neutral unit cylinder is the game's, and no colour, blending or fade feel is
+decided in the package. `softCircleDataTexture` writes radial-alpha sprite pixels straight into a
+`DataTexture` because canvas-painted images sample black under `WebGPURenderer` — the framework
+owns the trap and the way around it, never where the sprite appears or what it shows. Both clear
+the same veto as every mechanism above.
+
 ### "Looks good by default" and "never owns the look" are the same rule
 
 These sound contradictory. They aren't — and reconciling them is the core design move.
