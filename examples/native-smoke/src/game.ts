@@ -11,6 +11,7 @@ import {
 import { playtest } from "@threenative/core/playtest";
 import {
   BoxGeometry,
+  type PerspectiveCamera,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -43,6 +44,7 @@ declare const __TN_PLAYTEST_ENABLED__: boolean;
 declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   extraDrawControl: boolean;
   frameWindow: number;
+  frustum: "contain" | "default";
   materials: "distinct" | "shared";
   meshes: number;
   pureJsIterations: number;
@@ -147,6 +149,20 @@ class NativeSmoke extends Scene<ISmokeState> {
 
   override enter(ctx: ICtx<ISmokeState>) {
     ctx.camera.position.z = 3;
+    if (profile.frustum === "contain") {
+      // The lattice spans roughly ±2 units, so at z=3 a portrait frustum culled all but a few
+      // boxes and a mesh ladder measured scene objects, not submitted draws (observed
+      // 2026-08-21: 250 meshes, 4 drawIndexed/frame). Pulled back until the widest row fits the
+      // horizontal half-angle, every filler box submits. fov 60 default; aspect from viewport.
+      const perspective = ctx.camera as PerspectiveCamera;
+      const aspect = Number.isFinite(perspective.aspect) && perspective.aspect > 0
+        ? perspective.aspect
+        : ctx.viewport.size.width / ctx.viewport.size.height;
+      const halfWidthTan = Math.tan(((perspective.fov ?? 60) / 2) * (Math.PI / 180)) * aspect;
+      const halfExtent = ((Math.ceil(Math.cbrt(Math.max(1, profile.meshes))) - 1) /
+        Math.ceil(Math.cbrt(Math.max(1, profile.meshes)))) * 2 + 0.1;
+      ctx.camera.position.z = Math.max(3, halfExtent / halfWidthTan + 0.5);
+    }
     // The canvas-layer overlay is part of the native contract, so the bundle that proves the
     // contract has to draw one. The framework renders `ctx.canvasLayer` in a second pass after
     // the world, and on the native host that second pass used to be thrown away: it acquired its

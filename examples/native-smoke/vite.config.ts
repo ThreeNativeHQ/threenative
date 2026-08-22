@@ -35,9 +35,17 @@ function materialSetting(): "distinct" | "shared" {
   return value;
 }
 
+function frustumSetting(): "contain" | "default" {
+  const value = process.env.THREENATIVE_JS_PROFILE_FRUSTUM ?? "default";
+  if (value !== "contain" && value !== "default")
+    throw new Error("THREENATIVE_JS_PROFILE_FRUSTUM must be 'contain' or 'default'.");
+  return value;
+}
+
 const jsEngineProfile = {
   extraDrawControl: booleanSetting("THREENATIVE_JS_PROFILE_EXTRA_DRAW_CONTROL", false),
   frameWindow: integerSetting("THREENATIVE_JS_PROFILE_FRAME_WINDOW", 300),
+  frustum: frustumSetting(),
   materials: materialSetting(),
   meshes: integerSetting("THREENATIVE_JS_PROFILE_MESHES", 0),
   pureJsIterations: integerSetting("THREENATIVE_JS_PROFILE_PURE_JS_ITERATIONS", 0),
