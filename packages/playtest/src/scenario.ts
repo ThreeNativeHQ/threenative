@@ -440,25 +440,32 @@ function reachabilityEnvelope(value: unknown): IPlaytestReachabilityAssertion["e
     : undefined;
 }
 
+/**
+ * Keys the scenario root accepts, exported for the documentation-drift gate: what the
+ * validator accepts and what the docs teach must be checked against one list, or they
+ * drift apart silently again (the holdFrames incident).
+ */
+export const PLAYTEST_ROOT_KEYS = [
+  "acceptanceId",
+  "artifacts",
+  "assert",
+  "inputDelivery",
+  "name",
+  "parity",
+  "schemaVersion",
+  "setup",
+  "steps",
+  "subject",
+  "target",
+  "viewport",
+  "warmupFrames",
+] as const;
+
 function validatePlaytestScenario(value: unknown, scenarioPath: string, absolutePath?: string): IPlaytestScenario {
   if (!isRecord(value)) {
     throw invalidScenario(scenarioPath, "Scenario root must be a JSON object.");
   }
-  rejectUnknownKeys(value, [
-    "acceptanceId",
-    "artifacts",
-    "assert",
-    "inputDelivery",
-    "name",
-    "parity",
-    "schemaVersion",
-    "setup",
-    "steps",
-    "subject",
-    "target",
-    "viewport",
-    "warmupFrames",
-  ], scenarioPath, "scenario root");
+  rejectUnknownKeys(value, PLAYTEST_ROOT_KEYS, scenarioPath, "scenario root");
   if (value.schemaVersion !== 1) {
     throw invalidScenario(scenarioPath, "Scenario schemaVersion must be 1.");
   }
@@ -599,25 +606,28 @@ function validateSetupEntity(value: unknown, scenarioPath: string, index: number
   };
 }
 
+/** Keys one step accepts; exported for the documentation-drift gate alongside {@link PLAYTEST_ROOT_KEYS}. */
+export const PLAYTEST_STEP_KEYS = [
+  "holdFrames",
+  "holdTicks",
+  "kind",
+  "label",
+  "overlayMessage",
+  "pointerPosition",
+  "pointers",
+  "press",
+  "release",
+  "screenshot",
+  "waitFrames",
+  "waitTicks",
+  "window",
+] as const;
+
 function validateStep(value: unknown, scenarioPath: string, index: number): IPlaytestStep {
   if (!isRecord(value)) {
     throw invalidStep(scenarioPath, `Scenario step ${index} must be a JSON object.`);
   }
-  rejectUnknownKeys(value, [
-    "holdFrames",
-    "holdTicks",
-    "kind",
-    "label",
-    "overlayMessage",
-    "pointerPosition",
-    "pointers",
-    "press",
-    "release",
-    "screenshot",
-    "waitFrames",
-    "waitTicks",
-    "window",
-  ], scenarioPath, `steps[${index}]`);
+  rejectUnknownKeys(value, PLAYTEST_STEP_KEYS, scenarioPath, `steps[${index}]`);
   const press = typeof value.press === "string" && value.press.length > 0
     ? value.press
     : Array.isArray(value.press)
