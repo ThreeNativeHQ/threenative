@@ -402,7 +402,11 @@ describe("starter playtest proof", () => {
       ),
     ) as {
       assert?: {
-        resources?: Array<{ atSteps?: Array<{ equals: unknown; label: string }>; id: string; path: string }>;
+        resources?: Array<{
+          atSteps?: Array<{ equals: unknown; label: string }>;
+          id: string;
+          path: string;
+        }>;
         signals?: Array<{ atStep?: string; name: string }>;
       };
       name: string;
