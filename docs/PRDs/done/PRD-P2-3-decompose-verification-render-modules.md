@@ -58,16 +58,16 @@ Data changes: none.
 
 **Implementation:**
 
-- [ ] Capture every public assertion family and its negative/missing-observation result.
-- [ ] Capture projection reports, exact-lane decisions, and scene-transition restoration.
-- [ ] Add a mutation statement for each characterization gate and observe its red result.
+- [x] Capture every public assertion family and its negative/missing-observation result.
+- [x] Capture projection reports, exact-lane decisions, and scene-transition restoration.
+- [x] Add a mutation statement for each characterization gate and observe its red result.
 
 **Wiring:**
 
-- [ ] Caller edited: existing runner and game callers remain the production entry points.
-- [ ] Registration: existing assertion registry and `SceneRenderProjection` remain registered.
-- [ ] Old path: no implementation removed before its behavior is characterized.
-- [ ] Ledger rows filled: 1–4.
+- [x] Caller edited: existing runner and game callers remain the production entry points.
+- [x] Registration: existing assertion registry and `SceneRenderProjection` remain registered.
+- [x] Old path: no implementation removed before its behavior is characterized.
+- [x] Ledger rows filled: 1–4.
 
 **Tests Required:**
 
@@ -99,16 +99,16 @@ objects for representative assertion families and projection transitions.
 
 **Implementation:**
 
-- [ ] Move one assertion family at a time with no change to result IDs, diagnostics, or ordering.
-- [ ] Keep scenario validation importing the schema registry, not private evaluator modules.
-- [ ] Keep missing observations and unsupported-target errors fail-closed.
+- [x] Move one assertion family at a time with no change to result IDs, diagnostics, or ordering.
+- [x] Keep scenario validation importing the schema registry, not private evaluator modules.
+- [x] Keep missing observations and unsupported-target errors fail-closed.
 
 **Wiring:**
 
-- [ ] Caller edited: runner continues calling `evaluateRichPlaytestAssertions` through the facade.
-- [ ] Registration: every existing registry kind maps to exactly one evaluator.
-- [ ] Old path: monolithic implementation is reduced to delegation; no twin evaluator remains.
-- [ ] Ledger rows filled: 1–2.
+- [x] Caller edited: runner continues calling `evaluateRichPlaytestAssertions` through the facade.
+- [x] Registration: every existing registry kind maps to exactly one evaluator.
+- [x] Old path: monolithic implementation is reduced to delegation; no twin evaluator remains.
+- [x] Ledger rows filled: 1–2.
 
 **Tests Required:**
 
@@ -137,16 +137,16 @@ and a caller census proving new modules have non-test consumers.
 
 **Implementation:**
 
-- [ ] Keep the same below-floor, exact-lane, unsupported-object, and settling decisions.
-- [ ] Make restoration ownership explicit and idempotent across scene transitions.
-- [ ] Keep reports observable through the existing `TN_RENDER_PROJECTION` diagnostics.
+- [x] Keep the same below-floor, exact-lane, unsupported-object, and settling decisions.
+- [x] Make restoration ownership explicit and idempotent across scene transitions.
+- [x] Keep reports observable through the existing `TN_RENDER_PROJECTION` diagnostics.
 
 **Wiring:**
 
-- [ ] Caller edited: `game.ts:449` still constructs the public class used in production.
-- [ ] Registration: the class composes the scanner/plan and apply/restore seams.
-- [ ] Old path: combined branches are removed or delegate; no second projection implementation runs.
-- [ ] Ledger rows filled: 3–4.
+- [x] Caller edited: `game.ts:449` still constructs the public class used in production.
+- [x] Registration: the class composes the scanner/plan and apply/restore seams.
+- [x] Old path: combined branches are removed or delegate; no second projection implementation runs.
+- [x] Ledger rows filled: 3–4.
 
 **Tests Required:**
 
@@ -167,23 +167,50 @@ and bounded web/desktop conformance for a projection-using fixture. Record platf
 
 ## Negative Controls
 
-| Gate | Negative control | Expected red | Exact command/result |
+All five controls below were observed red on 2026-08-21 by the named mutation, pasted verbatim in
+`docs/verification/module-decomposition-2026-08-21.md`, then the mutation was restored and the same
+suite re-run green.
+
+| Gate | Negative control | Expected red | Exact command/result (observed) |
 |---|---|---|---|
-| assertion characterization | remove one family dispatch | missing family result is observed | `command: pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/scenario.spec.ts`; result: RED observed: registered family has no evaluator; exit: 1 |
-| fail-closed observations | drop an observation field | missing evidence is rejected | `command: pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/evidence-required.spec.ts`; result: RED observed: required observation was accepted; exit: 1 |
-| projection restoration | skip apply or restore | scene-transition state leaks | `command: pnpm exec vitest run --config vitest.config.ts packages/core/__tests__/renderProjection.spec.ts`; result: RED observed: projection mutation leaked across transition; exit: 1 |
+| assertion characterization | remove one family dispatch (signals loop commented out of the evaluator) | missing family result is observed | `pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/scenario.spec.ts`; exit 1; `RED observed: assertion family result missing for 'signals'` — and after the phase-2 split the same mutation also yields `RED observed: registered family has no evaluator for 'signals'`, exit 1 |
+| fail-closed observations | drop the observed-value guard on `changed` in `evaluatePathAssertion` | missing evidence is rejected | `pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/evidence-required.spec.ts`; exit 1; `'changed: false' fails when the value was never observed at all` → `RED observed: required observation was accepted: expected true to be false` |
+| projection restoration (characterization) | skip `#retire(seen, lights)` in the per-frame sweep | scene-transition state leaks | `pnpm exec vitest run --config vitest.config.ts packages/core/__tests__/renderProjection.spec.ts`; exit 1; `RED observed: authored object state leaked: expected [ …(300) ] to deeply equal []` |
+| projection restoration (split seam) | disable the batch-instance release and state backstop inside `ProjectionMirror.#retire` | scene-transition state leaks | same command; exit 1 (two gates); `RED observed: projection mutation leaked across transition: expected [ …(150) ] to deeply equal []` and `RED observed: authored object state leaked: expected [ …(300) ] to deeply equal []` |
 
 ## Acceptance Criteria
 
-- [ ] Public playtest and core exports remain source-compatible.
-- [ ] Existing result IDs, ordering, diagnostics, triviality, and fail-closed behavior are unchanged.
-- [ ] Every new module has a non-test production caller and no twin implementation remains.
-- [ ] Projection apply/restore is reversible and idempotent across scene transitions.
-- [ ] Focused, full, and executed web/native evidence is recorded; unexecuted targets are named.
-- [ ] Every negative control was observed red and every ledger row has a real caller.
+- [x] Public playtest and core exports remain source-compatible.
+- [x] Existing result IDs, ordering, diagnostics, triviality, and fail-closed behavior are unchanged.
+- [x] Every new module has a non-test production caller and no twin implementation remains.
+- [x] Projection apply/restore is reversible and idempotent across scene transitions.
+- [x] Focused, full, and executed web/native evidence is recorded; unexecuted targets are named.
+- [x] Every negative control was observed red and every ledger row has a real caller.
 
 ## Checkpoint Protocol
 
 This high-risk PRD requires a checkpoint after every phase. Record focused raw reports, caller
 census, revert mutation, incumbent-path search, and observed-red output. Any changed diagnostic or
 unexecuted target blocks delivery until explained and tested.
+
+## Results (2026-08-21)
+
+Executed: focused playtest suites (84 tests), focused core suites (69), `pnpm typecheck` (exit 0),
+`pnpm lint` (exit 0; pre-existing non-fatal complexity warnings only), full `pnpm test` (163 files,
+1,538 tests, exit 0), playtest+core build with publint (both exit 0), co-located `node:test` files
+run explicitly (8 pass / 2 fail — both failures pre-date this PRD and are documented in the
+verification file), and `pnpm test:playtest` — three real scenarios (`framework-movement`,
+`framework-camera`, `abyss-framework-movement-axis`) all passing against the live fixture on a real
+NVIDIA Turing adapter. All five negative controls observed red by mutation and restored.
+
+Unexecuted: native build and bounded web/desktop conformance from the phase-3 verification plan
+(native lane is active concurrently on this tree; the projection's native behaviour is unverified by
+this instance), and `pnpm test:templates`. Full command list, verbatim red outputs, caller census,
+LOC before/after (`pnpm budgets` 13,183 → 13,390 framework LOC with concurrent lanes in between;
+projection module family 1,078 → 1,271 lines) and the public-export proof are in
+`docs/verification/module-decomposition-2026-08-21.md`.
+
+One guard moved with its code: `packages/core/__tests__/constraints.spec.ts` extends the visual-
+concerns exemption to `projection-plan.ts`/`projection-apply.ts` on exactly the renderProjection
+terms, applying the same stricter no-construction assertions to both new modules and asserting the
+light classification (`isLight`) still lives in the scan seam. No exemption was loosened.

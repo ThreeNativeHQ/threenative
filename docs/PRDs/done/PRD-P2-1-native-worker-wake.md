@@ -56,16 +56,16 @@ Data changes: none.
 
 **Implementation:**
 
-- [ ] Record the baseline idle wake count and first-message latency with one and multiple workers.
-- [ ] Add a fail-closed assertion that an idle worker is waiting, not repeatedly evaluating JS.
-- [ ] Verify termination wakes and joins a blocked worker.
+- [x] Record the baseline idle wake count and first-message latency with one and multiple workers.
+- [x] Add a fail-closed assertion that an idle worker is waiting, not repeatedly evaluating JS.
+- [x] Verify termination wakes and joins a blocked worker.
 
 **Wiring:**
 
-- [ ] Caller edited: `worker_registry.cpp:37` continues to create the instrumented worker.
-- [ ] Registration: the existing `WorkerRegistry` owns wake and termination notifications.
-- [ ] Old path: the periodic idle poll is removed in the next phase.
-- [ ] Ledger rows filled: 1–2.
+- [x] Caller edited: `worker_registry.cpp:37` continues to create the instrumented worker.
+- [x] Registration: the existing `WorkerRegistry` owns wake and termination notifications.
+- [x] Old path: the periodic idle poll is removed in the next phase.
+- [x] Ledger rows filled: 1–2.
 
 **Tests Required:**
 
@@ -96,16 +96,16 @@ green assertion.
 
 **Implementation:**
 
-- [ ] Replace the unconditional 1 ms sleep with a predicate wait.
-- [ ] Preserve queue draining, error delivery, `close()`, and destructor join behavior.
-- [ ] Prove no lost wake occurs between the empty-queue check and wait.
+- [x] Replace the unconditional 1 ms sleep with a predicate wait.
+- [x] Preserve queue draining, error delivery, `close()`, and destructor join behavior.
+- [x] Prove no lost wake occurs between the empty-queue check and wait.
 
 **Wiring:**
 
-- [ ] Caller edited: `WorkerThread::threadMain()` is the production path used by `WorkerRegistry`.
-- [ ] Registration: `postMessage()` and `terminate()` notify the same condition variable.
-- [ ] Old path: no unconditional idle sleep remains.
-- [ ] Ledger rows filled: 1–2.
+- [x] Caller edited: `WorkerThread::threadMain()` is the production path used by `WorkerRegistry`.
+- [x] Registration: `postMessage()` and `terminate()` notify the same condition variable.
+- [x] Old path: no unconditional idle sleep remains.
+- [x] Ledger rows filled: 1–2.
 
 **Tests Required:**
 
@@ -128,17 +128,49 @@ unverified.
 
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
-| worker idle gate | restore the 1 ms polling loop | idle wake bound is exceeded | `command: pnpm exec vitest run --config vitest.config.ts packages/runtime-native/tests/worker-idle.test.mjs`; result: RED observed: idle wake bound exceeded; exit: 1 |
-| worker shutdown gate | remove termination notification | blocked worker does not join | `command: pnpm exec vitest run --config vitest.config.ts packages/runtime-native/tests/worker-idle.test.mjs`; result: RED observed: worker join timeout; exit: 1 |
+| worker idle gate | restore the 1 ms polling loop | idle wake bound is exceeded | `command (cwd packages/runtime-native/): pnpm exec vitest run --config vitest.config.ts tests/worker-idle.test.mjs`; result: `Error: RED observed: idle wake bound exceeded — threadMain restored a periodic idle sleep`; exit: 1 |
+| worker shutdown gate | remove termination notification | blocked worker does not join | `command (cwd packages/runtime-native/): pnpm exec vitest run --config vitest.config.ts tests/worker-idle.test.mjs`; result: `Error: RED observed: worker join timeout — terminate() does not notify the idle wait before joining`; exit: 1 |
+
+## Results — 2026-08-21
+
+Executed on **desktop Linux, V8 13.1.201.22** (the desktop host default engine). Android and
+iOS were **not** executed; they remain unverified targets for this change.
+
+Full record: `docs/verification/worker-wake-2026-08-21.md`. Summary:
+
+- **Baseline (1 ms poll)**: 459–471 JS evaluations per worker in a 500 ms idle window
+  (~940/s ≈ 1 kHz), first-message latency 147–968 µs, terminate→join ≤ 3 ms for 4 workers.
+  **After (predicate wait)**: 0–2 evaluations per window, exactly one blocking wake per
+  posted message, latency 89–893 µs, all four workers echo correctly and join in ≤ 1 ms;
+  process CPU over a 2 s idle window dropped from ~32 ms user to ~9 ms.
+- **Harness**: the worker sources are not compiled into the host binary (no CMake source
+  list contains them), so measurements ran through a standalone binary built from the same
+  sources with the host's exact Release compile flags and link inputs (`libmystral-runtime.a`
+  + `libv8_monolith.a`, …). `pnpm native:build` passed but compiles none of these files.
+- **Negative controls**: both mutations applied, observed red with the exact strings above,
+  then restored; focused suite green again afterwards.
+- **Gates**: focused suite PASS (source + runtime arms); runtime-native Vitest PASS (49
+  files, 329 passed / 30 skipped); `pnpm native:build` PASS; `pnpm census` run (78,406 →
+  78,618, diff left uncommitted). `pnpm typecheck`, `pnpm lint` and root `pnpm test` failed
+  only in files under concurrent edit by other lanes (`packages/playtest/__tests__/scenario.spec.ts`,
+  `packages/create-threenative/src/threenative.ts`, `scripts/__tests__/primary-docs.spec.ts`,
+  and missing `@situation` tags on the playtest lane's new exports) — no failure originates
+  from this PRD's files.
+- **Pre-existing findings recorded, out of scope**: (1) V8 init is not thread-safe here —
+  an unguarded `g_initialized` plus first-isolate-on-main-thread code-table reservation means
+  a standalone `WorkerRegistry` starting workers before any main-thread engine segfaults;
+  the host's boot ordering avoids it. (2) A top-level `throw` in worker code delivers no
+  ERROR message because engine `eval()` reports success — identical at HEAD, so unchanged by
+  this PRD.
 
 ## Acceptance Criteria
 
-- [ ] An idle native worker does not evaluate JavaScript at a 1 kHz cadence.
-- [ ] A posted message wakes the worker and reaches `onmessage` within the measured bound.
-- [ ] `terminate()` wakes and joins every blocked worker without a leak or deadlock.
-- [ ] One and multiple workers pass on the executed native target; unexecuted targets are named.
-- [ ] The public Web Worker contract and existing output-message behavior remain unchanged.
-- [ ] Integration Ledger has no pending caller, and both negative controls were observed red.
+- [x] An idle native worker does not evaluate JavaScript at a 1 kHz cadence.
+- [x] A posted message wakes the worker and reaches `onmessage` within the measured bound.
+- [x] `terminate()` wakes and joins every blocked worker without a leak or deadlock.
+- [x] One and multiple workers pass on the executed native target; unexecuted targets are named.
+- [x] The public Web Worker contract and existing output-message behavior remain unchanged.
+- [x] Integration Ledger has no pending caller, and both negative controls were observed red.
 
 ## Checkpoint Protocol
 

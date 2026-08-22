@@ -39,7 +39,7 @@ deleted by this PRD.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | Evidence manifest and hash verifier | `scripts/sweep-archive.ts:202` archives a sandbox | implicit directory-only evidence | old archive remains readable; manifest becomes required | alter one archived file; verify must fail |
+| 1 | Evidence manifest and hash verifier — **delivered 2026-08-21 (phase 1)** | `scripts/sweep-archive.ts` `archiveSandbox` writes + verifies the manifest for every new archive | implicit directory-only evidence | old archive remains readable; manifest becomes required | alter one archived file; verify must fail — **observed red** |
 | 2 | Provider-neutral bulk artifact adapter | `scripts/sweep-archive.ts:202` invokes archive policy | unbounded Git-only bulk retention | only after owner-approved provider | configure a missing object; restore must fail |
 | 3 | Restore/retrieval command | `package.json:41` exposes sweep tooling | no reproducible retrieval path | no old command removed | delete the retrieved object; restore must fail closed |
 
@@ -56,16 +56,16 @@ deleted by this PRD.
 
 **Implementation:**
 
-- [ ] Hash every retained file and record size, role, source commit, sweep identity, and generator version.
-- [ ] Distinguish critical Git proof from bulk candidates without removing either.
-- [ ] Reject path traversal, duplicate identities, missing required proof, and malformed manifests.
+- [x] Hash every retained file and record size, role, source commit, sweep identity, and generator version. *(delivered 2026-08-21)*
+- [x] Distinguish critical Git proof from bulk candidates without removing either. *(roles + per-file retention; nothing moved or removed)*
+- [x] Reject path traversal, duplicate identities, missing required proof, and malformed manifests. *(all four observed in `scripts/__tests__/sweep-evidence.spec.ts`)*
 
 **Wiring:**
 
-- [ ] Caller edited: `archiveSandbox` writes the manifest for every new archive.
-- [ ] Registration: existing sweep archive command calls the verifier before reporting success.
-- [ ] Old path: existing archives remain readable and are not rewritten in place.
-- [ ] Ledger rows filled: 1.
+- [x] Caller edited: `archiveSandbox` writes the manifest for every new archive. *(2026-08-21)*
+- [x] Registration: existing sweep archive command calls the verifier before reporting success. *(verify runs inside the archiver's cleanup guard, before the success line)*
+- [x] Old path: existing archives remain readable and are not rewritten in place. *(store verify: 107 archives legacy, 0 failed, git-clean)*
+- [x] Ledger rows filled: 1. *(row 1 delivered 2026-08-21; rows 2–3 are Phase 2)*
 
 **Tests Required:**
 
@@ -129,17 +129,44 @@ full test and package checks, then one clean-machine restore drill.
 
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
-| manifest integrity | alter an archived file | verifier rejects drift | `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/sweep-evidence.spec.ts`; result: RED observed: evidence hash mismatch; exit: 1 |
-| restore completeness | remove a provider object | restore refuses partial output | `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/evidence-store.spec.ts`; result: RED observed: incomplete evidence restore; exit: 1 |
+| manifest integrity | alter an archived file | verifier rejects drift | **OBSERVED RED 2026-08-21.** Mutation: hash comparison in `verifyEvidenceManifest` disabled (`if (false && …)`). `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/sweep-evidence.spec.ts`; result: `Error: RED observed: evidence hash mismatch — the verifier did not reject the altered archive; it accepted it silently`; exit: 1. Mutation reverted, suite green (38 passed). Full log: `docs/verification/evidence-manifests-2026-08-21.md` |
+| restore completeness | remove a provider object | restore refuses partial output | `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/evidence-store.spec.ts`; result: RED observed: incomplete evidence restore; exit: 1 — **not yet executable; Phase 2 is BLOCKED on the owner checkpoint** |
 
 ## Acceptance Criteria
 
-- [ ] Every new archive has an immutable, verifiable manifest.
-- [ ] Existing evidence is not deleted or silently capped.
-- [ ] Bulk storage is provider-neutral in code and explicit in configuration.
-- [ ] A clean restore verifies every required hash and reports missing objects.
-- [ ] Provider, retention, cost, and restore ownership are approved and recorded before migration.
-- [ ] Both negative controls were observed red.
+- [x] Every new archive has an immutable, verifiable manifest. *(2026-08-21)*
+- [x] Existing evidence is not deleted or silently capped. *(2026-08-21: 107 archives, ~268 MB, git-clean, all readable)*
+- [ ] Bulk storage is provider-neutral in code and explicit in configuration. *(Phase 2)*
+- [ ] A clean restore verifies every required hash and reports missing objects. *(Phase 2)*
+- [ ] Provider, retention, cost, and restore ownership are approved and recorded before migration. *(Phase 2 — owner checkpoint not held)*
+- [ ] Both negative controls were observed red. *(manifest integrity observed red 2026-08-21; restore completeness requires the Phase 2 adapter and cannot run until it exists)*
+
+## Results — 2026-08-21
+
+**Phase 1 delivered, Git-only.** `scripts/sweep-evidence.ts` renders and verifies immutable
+evidence manifests (SHA-256 + size + role + retention per retained file; sweep identity, source
+commit and generator version as provenance); `archiveSandbox` emits and verifies a manifest for
+every NEW archive before reporting success and refuses to certify an archive without its proof
+result. Nothing under `docs/benchmark/` was deleted, moved, capped or rewritten.
+
+Gates: focused specs `sweep-evidence.spec.ts` + `sweep-archive.spec.ts` → 38 passed, exit 0;
+`pnpm typecheck` exit 0; `pnpm lint` exit 0 (pre-existing warnings only — the one at
+`sweep-archive.ts:113` reproduces on the HEAD version of the file). Negative control "manifest
+integrity" was observed red with the exact mutation and output pasted in
+`docs/verification/evidence-manifests-2026-08-21.md`; the revert check (manifest generation
+disabled → archive test fails with ENOENT on `evidence-manifest.json`) was also observed red and
+reverted. Dry run: manifest rendered and verified for a copy of a real archive; altering a proof
+screenshot in the copy made verification name the path and exit 1; restoring the bytes returned it
+to green. `verify-store docs/benchmark/sweeps`: 107 legacy (untouched), 0 failed, exit 0.
+Full `pnpm test` did not reach test execution — it fails in capability-manifest generation over
+two `@threenative/playtest` exports being refactored by the concurrent P2-3 lane; not fixed here
+per lane boundaries.
+
+**Phase 2 awaits the owner checkpoint required by this PRD's checkpoint protocol.** No provider,
+credentials source, retention policy, cost envelope or restore owner has been approved and
+recorded, so no adapter (`evidence-store.ts`), no upload/download, no `sweep-restore.ts` and no
+package.json wiring was built. Git-only retention remains the fallback by design; per the protocol
+this PRD is BLOCKED pending that checkpoint, not green by default.
 
 ## Checkpoint Protocol
 
