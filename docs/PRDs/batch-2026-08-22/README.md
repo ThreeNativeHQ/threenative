@@ -63,6 +63,19 @@ Another lane is editing shooter-input proof files right now
 `packages/runtime-native/tests/generated-shooter-input.test.mjs`). No PRD here touches those
 files; if a gate fails inside them, it belongs to that lane — record it and move on.
 
+## Cross-references the late survey added
+
+- **PRD-071's `info` and draw-count items are closed by this batch's PRD-172**, not by 071
+  itself; its remaining bindings.cpp wrapper work is item 3 below. Reconciled in place.
+- **PRD-069's acceptance criteria 1–3 target the knee model its own Phase 0 refuted**;
+  a dated reconciliation note now says so, and the missing rungs' ownership points at
+  PRD-175's record.
+- **Top candidate for the next device session: PRD-074's Pixel 8 leg.** Its "only emulator
+  seen" blocker was stale since 2026-08-16 (corrected in place tonight); one
+  preflight-disciplined run closes the framework's biggest proven renderer win. Same session
+  could take EXP-002's Android stage report (its "adb not installed" blocker corrected too)
+  and PRD-075's device comparison.
+
 ## Deliberately left out
 
 Recorded so the next round does not rediscover them; none blocks this batch.

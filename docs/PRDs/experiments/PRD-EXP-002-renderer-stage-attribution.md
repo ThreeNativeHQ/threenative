@@ -66,7 +66,7 @@ Port only counters/hooks that work under the real ThreeNative runtime. Run the e
 - [x] Every stage declares whether timing is inclusive or exclusive; overlapping totals are never summed as attribution.
 - [x] Hook installation is pinned to the exact Three.js version and restoration leaves original method identities intact, including lazy render-list wrappers.
 - [x] Software WebGPU reports are labeled diagnostic and cannot satisfy the Android gate.
-- [ ] At least one physical Android report includes total render time, draw count, pass count, render-object count and every reachable stage. Open: `adb devices -l` could not run because `adb` is not installed on this host.
+- [ ] At least one physical Android report includes total render time, draw count, pass count, render-object count and every reachable stage. Open. Blocker note corrected 2026-08-23: `adb` IS installed on this host off PATH (`platform-tools/adb`), and physical-device lanes ran on 2026-08-16 and 2026-08-21; the criterion awaits its preflight-disciplined device report, not a tool install.
 - [x] No upstream source, public Three.js class or renderer semantics are copied or replaced.
 - [x] Targeted tests, sandbox build, typecheck and `git diff --check` pass.
 

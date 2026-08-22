@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-071 — The cheap bundle: make the frame observable, and stop paying for what nothing uses
 
-**Status: OPEN, filed 2026-08-10. Nothing here is implemented.** Four small changes that share
+**Status: OPEN, filed 2026-08-10. Nothing here is implemented.** Four small changes that share **Reconciled 2026-08-23:** the `info` passthrough this PRD asked for and a real-build draw-count playtest landed via PRD-172 (`renderer.info` fails closed; examples/abyss-framework/playtests/draw-calls.playtest.json proves draw calls observed on browser WebGPU) — those items are closed there, not here. The bindings.cpp wrapper rebuild and the 2000-mesh no-regression row remain open here, tracked as the native wrapper-churn item in docs/PRDs/batch-2026-08-22/README.md's left-out list.
 one property: **none of them is a performance bet, so none of them waits on a profile.** Two are
 contract fixes on a wrapper the framework already owns, one closes a fail-open defect, and one
 deletes allocations that nothing needs. They are bundled because they are individually too small

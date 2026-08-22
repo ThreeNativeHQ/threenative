@@ -75,7 +75,7 @@ Re-run the known HUD-heavy subject on the same physical device/build class. Reco
 - [x] Palette-scale fixtures prove equal-looking color variants merge without material-semantic loss.
 - [x] Unsupported transparency, hooks, layers or render ordering are preserved or rejected explicitly, never flattened silently.
 - [x] A real WebGPU playtest observes draw reduction, not merely an estimated count.
-- [ ] Pixel 8 verification records draw counts plus render/collapse/refresh timings and does not regress materially. Open: ADB saw only `emulator-5554` x86_64, not a physical Pixel 8; no device mutation performed.
+- [ ] Pixel 8 verification records draw counts plus render/collapse/refresh timings and does not regress materially. Open. Blocker note corrected 2026-08-23: "ADB saw only emulator-5554" was true on 2026-08-11 and is false since — the physical Pixel 8 ran full measurement lanes on 2026-08-16 and 2026-08-21 (see docs/verification/prd-069-phase-0-v8-draw-ladder-2026-08-21.md). The remaining requirement is one preflight-disciplined device run (thermal NONE, battery temp <=31.5 degC, discharging over Wi-Fi adb per that record's discipline); an attempt on 2026-08-22 found the phone charging over USB, so it stays open.
 - [x] No auto-instancer, static-scene analyzer or new user-facing performance preset is introduced.
 - [x] Tests, typecheck, lint, budgets and `git diff --check` pass.
 

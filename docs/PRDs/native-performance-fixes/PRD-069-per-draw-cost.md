@@ -33,6 +33,8 @@ came before it. So "per-command JS→C++ FFI is the top bottleneck", the top-ran
 `NATIVE-PERF-BOTTLENECKS.md`, is treated throughout this PRD as **UNCONFIRMED**, and finding
 the threshold is now this PRD's first-class objective (§2.3, Phase 0 measurement 1).
 
+**Reconciled 2026-08-23:** acceptance criteria 1–3 above are written against the §2.2 knee model that this PRD's own Phase 0 refuted under the shipped engine (no threshold exists under V8); read them as answered-by-verdict rather than pending, with criterion 1's fine-sweep obligation reduced to the two UNMEASURED rungs (500, 4000). Those rungs were attempted 2026-08-22 and recorded unmeasured — device cool enough but charging over USB — in `docs/verification/prd-175-present-instrument-2026-08-22.md`, which also landed the present-counting instrument fix this PRD's evidence relied on hand-corrections for.
+
 **Complexity: 8 → HIGH mode.** One instrumentation phase that has to land before any decision,
 an unexplained threshold with six candidate mechanisms and no owner, three candidate levers
 with very different costs, and a framework/game boundary that is easy to get wrong in the
