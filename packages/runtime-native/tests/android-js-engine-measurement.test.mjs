@@ -94,8 +94,12 @@ test("measurement parser splits a complete frame and records engine identity", (
   assert.equal(result.native.callsPerFrame, 441);
   assert.equal(result.native.commandsPerFrame.drawIndexed, 1);
   assert.equal(result.split.boundaryMsPerFrame, 0.2);
-  assert.equal(result.split.nativeSubmitPresentMsPerFrame, 0.15);
-  assert.equal(result.split.javascriptAndUninstrumentedMsPerFrame, 19.65);
+  // 300 identical submits with no frame tag: run-length dedupe counts one present event, so the
+  // frame figure is (30_000_000 + 50_000) ns / 300 — not the old per-submit sum's 0.15, which
+  // counted the single repeated present 300 times.
+  assert.equal(result.split.nativeSubmitPresentMsPerFrame, 30_050_000 / 300 / 1_000_000);
+  assert.equal(result.native.presentEvents, 1);
+  assert.equal(result.split.javascriptAndUninstrumentedMsPerFrame, 20 - 0.2 - 30_050_000 / 300 / 1_000_000);
 });
 
 test("measurement markers fail closed when missing, duplicate, or malformed", () => {
@@ -559,4 +563,76 @@ test("optimization provenance is tied to the exact packaged runtime", () => {
     () => validateOptimizationProvenance("packaged", [optimized, { ...optimized, optimization: "other" }]),
     /O2_PROVENANCE_AMBIGUOUS/u,
   );
+});
+
+test("present time counts once per frame when the host tags each submit with its frame", () => {
+  // Three frames, four submits each; every submit of a frame reports the same (previous)
+  // present. Grouped by the frame tag, present contributes once per frame, not once per submit.
+  const native = {
+    bindingNs: 200_000,
+    calls: 441,
+    commands: {
+      draw: 1,
+      drawIndexed: 1,
+      setBindGroup: 1,
+      setIndexBuffer: 436,
+      setPipeline: 1,
+      setVertexBuffer: 1,
+    },
+    engine: "V8",
+    submitPollNs: 100_000,
+  };
+  const testSubject = { ...subject, frameWindow: 3 };
+  const lines = [
+    `I/TN TN_ANDROID_JS_SUBJECT:${JSON.stringify(testSubject)}`,
+    `I/TN TN_ANDROID_JS_PURE:${JSON.stringify({ iterations: 20, medianUsPerObject: 2, objects: 2358, samplesMs: [1, 2, 3, 4, 5] })}`,
+    `I/TN TN_ANDROID_JS_WINDOW_START:${JSON.stringify({ frameWindow: 3 })}`,
+  ];
+  let sample = 0;
+  for (const [frame, presentNs] of [[7, 500_000], [8, 600_000], [9, 700_000]]) {
+    for (let submit = 0; submit < 4; submit += 1) {
+      lines.push(`I/TN TN_ANDROID_JS_NATIVE:${JSON.stringify({ ...native, presentNs, frame })}`);
+      sample += 1;
+    }
+  }
+  lines.push(`I/TN TN_ANDROID_JS_FRAME:${JSON.stringify({ elapsedMs: 60, frames: 3, msPerFrame: 20 })}`);
+  const result = analyzeMeasurementLog(lines.join("\n"), testSubject);
+  // submit+poll sums across all 12 submits; present counted once per frame: 0.5+0.6+0.7 = 1.8ms
+  // total across 3 frames = 0.6ms/frame; submitPoll = 1.2ms/12 submits * ... per frame = 0.4.
+  assert.equal(result.split.nativeSubmitPresentMsPerFrame, 1.0);
+});
+
+test("legacy logs without a frame tag count a run of identical present values as one present", () => {
+  const base = {
+    bindingNs: 200_000,
+    calls: 441,
+    commands: {
+      draw: 1,
+      drawIndexed: 1,
+      setBindGroup: 1,
+      setIndexBuffer: 436,
+      setPipeline: 1,
+      setVertexBuffer: 1,
+    },
+    engine: "QuickJS",
+    submitPollNs: 100_000,
+  };
+  const testSubject = { ...subject, frameWindow: 6 };
+  const lines = [
+    `I/TN TN_ANDROID_JS_SUBJECT:${JSON.stringify(testSubject)}`,
+    `I/TN TN_ANDROID_JS_PURE:${JSON.stringify({ iterations: 20, medianUsPerObject: 2, objects: 2358, samplesMs: [1, 2, 3, 4, 5] })}`,
+    `I/TN TN_ANDROID_JS_WINDOW_START:${JSON.stringify({ frameWindow: 6 })}`,
+  ];
+  const presents = [500_000, 500_000, 700_000, 700_000, 900_000, 900_000];
+  for (let frame = 0; frame < 6; frame += 1) {
+    for (let submit = 0; submit < 2; submit += 1) {
+      lines.push(
+        `I/TN TN_ANDROID_JS_NATIVE:${JSON.stringify({ ...base, presentNs: presents[frame] })}`,
+      );
+    }
+  }
+  lines.push(`I/TN TN_ANDROID_JS_FRAME:${JSON.stringify({ elapsedMs: 120, frames: 6, msPerFrame: 20 })}`);
+  const result = analyzeMeasurementLog(lines.join("\n"), testSubject);
+  // Present events: 0.5+0.7+0.9 = 2.1ms over 6 frames = 0.35; submit+poll = 1.2ms/6 = 0.2.
+  assert.equal(result.split.nativeSubmitPresentMsPerFrame, 0.55);
 });

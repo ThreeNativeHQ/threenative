@@ -604,13 +604,44 @@ export function analyzeMeasurementLog(log, expected = {}) {
     engines.add(sample.engine);
   }
   if (engines.size !== 1) throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ENGINE_IDENTITY_MIXED");
+  // Present time belongs to a frame, but each submit reports the PREVIOUS present, so summing
+  // `presentNs` across submits counted it once per submit — ~4x per frame at four submits/frame.
+  // A host that tags each marker with its frame count gets exact per-frame grouping; legacy
+  // markers without the tag fall back to run-length dedupe of identical consecutive values,
+  // which is exact except when two consecutive frames present in the same nanosecond.
+  const taggedSamples = native.filter((sample) => sample.frame !== undefined);
+  if (taggedSamples.length !== 0 && taggedSamples.length !== native.length) {
+    throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_FRAME_TAG_MISMATCH");
+  }
+  let presentTotalNs = 0;
+  let presentEvents = 0;
+  if (taggedSamples.length !== 0) {
+    const perFrame = new Map();
+    for (const sample of native) {
+      const tag = finiteNonNegative(sample.frame, "native.frame");
+      perFrame.set(tag, Math.max(perFrame.get(tag) ?? 0, sample.presentNs));
+    }
+    for (const value of perFrame.values()) {
+      presentTotalNs += value;
+      presentEvents += 1;
+    }
+  } else {
+    let previous;
+    for (const sample of native) {
+      if (sample.presentNs !== previous) {
+        previous = sample.presentNs;
+        presentTotalNs += sample.presentNs;
+        presentEvents += 1;
+      }
+    }
+  }
   const sampleCount = native.length;
   const boundaryMsPerSubmit = totals.bindingNs / sampleCount / 1_000_000;
-  const nativeMsPerSubmit = (totals.submitPollNs + totals.presentNs) / sampleCount / 1_000_000;
+  const nativeMsPerSubmit = totals.submitPollNs / sampleCount / 1_000_000;
   const submitsPerFrame = sampleCount / frame.frames;
   const boundaryMsPerFrame = (totals.bindingNs / frame.frames) / 1_000_000;
   const nativeMsPerFrame =
-    ((totals.submitPollNs + totals.presentNs) / frame.frames) / 1_000_000;
+    ((totals.submitPollNs + presentTotalNs) / frame.frames) / 1_000_000;
   const attributedMsPerFrame = boundaryMsPerFrame + nativeMsPerFrame;
   return {
     frame,
@@ -623,6 +654,8 @@ export function analyzeMeasurementLog(log, expected = {}) {
       ),
       engine: [...engines][0],
       nativeMsPerSubmit,
+      presentCountedOncePerFrame: true,
+      presentEvents,
       samples: sampleCount,
       submitsPerFrame,
     },
