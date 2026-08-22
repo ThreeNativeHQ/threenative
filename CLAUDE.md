@@ -32,7 +32,10 @@ convention off must not turn its measurement off, and a convention missing from 
    (`@threenative/physics/navigation`) that grepping will never reveal, and its constraints are
    binding. A scaffolded project reaches the same manifest through the `engine_search_capabilities`
    and `engine_capability_detail` MCP tools its `.mcp.json` wires up. A game once hand-wrote 446
-   lines that were already installed, and ran at 9 FPS.
+   lines that were already installed, and ran at 9 FPS. The asset and sculpt MCP servers are
+   project-scoped — their `.mcp.json` lives in the generated game project, so a session launched
+   from a parent directory never registers them; launch from the game-project root when you need
+   asset tools.
 2. **Name the layer before you fix the bug.** Engine bug (fix in `packages/`) or game bug (fix in
    the example or template)? Say which and why. Fixing an engine bug inside game code buys one green
    screenshot and leaves every other game broken.
