@@ -261,6 +261,37 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.batches).toBe(1);
     expect(projection.report.exact.tooFewToBatch).toBe(1);
   });
+
+  /**
+   * P2-3 Phase 1 characterization. A scene transition swaps the level's population underneath a
+   * live projection; after the next reconcile the mirror must agree with the authored scene
+   * exactly, and nothing the game removed may still be held or drawn.
+   */
+  it("should restore authored objects after projection changes", () => {
+    const scene = new Scene();
+    const level = new Group();
+    scene.add(level);
+    const material = new MeshStandardMaterial({ color: 0x4488cc });
+    const first = fill(level, material, 300);
+    const projection = projected(scene, 2, 8);
+    expect(projection.deoptimized).toBe(false);
+
+    // The game swaps the level's contents in one frame, as a scene transition does.
+    for (const mesh of first) level.remove(mesh);
+    const second = fill(level, material, 120);
+    projection.reconcile();
+
+    // The authored scene holds exactly what the game put in it.
+    expect(level.children.length).toBe(120);
+    for (const mesh of second) expect(mesh.parent).toBe(level);
+    // Nothing the game removed is still held by the mirror.
+    const stale = first.filter((mesh) => projection.inspect(mesh) !== undefined);
+    expect(stale, "RED observed: authored object state leaked").toEqual([]);
+    expect(projection.report.sourceRenderables).toBe(120);
+    expect(projection.report.projectedObjects).toBe(120);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+    expect(projection.deoptimized).toBe(false);
+  });
 });
 
 /**
@@ -924,5 +955,72 @@ describe("SceneRenderProjection refuses to make a scene worse", () => {
       const report = projection.report;
       expect(report.resultDrawCandidates).toBeLessThanOrEqual(report.sourceRenderables);
     }
+  });
+
+  /**
+   * P2-3 Phase 3. Apply and restore must be reversible: a lane change that reverts lands back on
+   * exactly the same draw counts, a decline followed by recovery reconverges without residue,
+   * disposing one projection and building another over the same scene reproduces the same mirror,
+   * and a mid-flight population swap leaves nothing of the outgoing set behind.
+   */
+  it("should keep projection and authored scene reversible", () => {
+    const scene = new Scene();
+    const level = new Group();
+    scene.add(level);
+    const material = new MeshStandardMaterial();
+    const meshes = fill(level, material, 300);
+    const beforeGraph = graphSnapshot(scene);
+    const projection = projected(scene, 2, 8);
+    expect(projection.deoptimized).toBe(false);
+    const settled = projection.report;
+
+    // Lane-change round trip: an object that leaves its batch and comes back costs nothing.
+    const traveller = meshes[4] as Mesh;
+    traveller.castShadow = true;
+    projection.reconcile();
+    expect(projection.report.batches).toBe(settled.batches);
+    expect(projection.inspect(traveller)?.lane).toBe("exact");
+    traveller.castShadow = false;
+    projection.reconcile();
+    expect(projection.report.projectedObjects).toBe(settled.projectedObjects);
+    expect(projection.report.resultDrawCandidates).toBe(settled.resultDrawCandidates);
+    expect(projection.inspect(traveller)?.lane).toBe("batched");
+
+    // Decline and recover: the hook sends the frame to the authored scene, removing it returns
+    // the mirror, and both directions are counted from the scene actually handed over.
+    traveller.onBeforeRender = () => undefined;
+    projection.reconcile();
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    // Removed, not nulled: the scan tests Object.hasOwn, so an own undefined property would
+    // still count as a hook.
+    Reflect.deleteProperty(traveller, "onBeforeRender");
+    projection.reconcile();
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.projectedObjects).toBe(settled.projectedObjects);
+    expect(projection.report.resultDrawCandidates).toBe(settled.resultDrawCandidates);
+
+    // Dispose and rebuild across a scene transition: restoration has one owner, so a fresh
+    // projection over the same scene reproduces the same numbers exactly.
+    projection.dispose();
+    expect(projection.root).toBe(scene);
+    const rebuilt = new SceneRenderProjection(scene, { minMeshes: 8 });
+    rebuilt.reconcile();
+    expect(rebuilt.report.projectedObjects).toBe(settled.projectedObjects);
+    expect(rebuilt.report.resultDrawCandidates).toBe(settled.resultDrawCandidates);
+
+    // A population swap under the rebuilt projection leaves none of the outgoing set behind.
+    const outgoing = meshes.slice(0, 150);
+    for (const mesh of outgoing) level.remove(mesh);
+    fill(level, material, 150);
+    rebuilt.reconcile();
+    expect(rebuilt.report.sourceRenderables).toBe(300);
+    expect(rebuilt.report.projectedObjects).toBe(300);
+    const stale = outgoing.filter((mesh) => rebuilt.inspect(mesh) !== undefined);
+    expect(stale, "RED observed: projection mutation leaked across transition").toEqual([]);
+    expect(drawCandidates(rebuilt.root).length).toBe(1);
+    // And the authored scene never changed shape of its own accord.
+    expect(graphSnapshot(scene)).not.toBe(beforeGraph);
+    for (const mesh of meshes) expect(mesh.geometry.getAttribute("position")).toBeDefined();
   });
 });

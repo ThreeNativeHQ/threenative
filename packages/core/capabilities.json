@@ -805,18 +805,15 @@
       "symbol": "requiredPlaytestCapabilities"
     },
     {
-      "constraints": ["malformed or empty assertions fail closed"],
-      "example": "const result = evaluateRichPlaytestAssertions(input);",
+      "constraints": ["absent policy fields default to rejecting errors"],
+      "example": "const policy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, ): IPlaytestDiagnosticsPolicy { … }",
-      "situations": [
-        "assert movement, visibility, or diagnostics in a playtest",
-        "turn a scenario observation into a pass or failure"
-      ],
-      "summary": "Evaluate rich semantic assertions against captured observations.",
+      "situations": ["judge captured console, network, or runtime diagnostics for a playtest"],
+      "summary": "Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.",
       "symbol": "resolveDiagnosticsPolicy"
     },
     {

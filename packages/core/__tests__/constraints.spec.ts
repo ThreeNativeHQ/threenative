@@ -15,6 +15,8 @@ describe("core constraints", () => {
       .filter(
         (file) =>
           file !== "particles.ts" &&
+          file !== "projection-plan.ts" &&
+          file !== "projection-apply.ts" &&
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "tracers.ts",
@@ -40,9 +42,23 @@ describe("core constraints", () => {
     expect(projection).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
-    // It must recognise a light: the mirror is a separate
-    // graph, and a mirror with no lights in it renders every lit surface black.
-    expect(projection).toMatch(/isLight/u);
+    // It must recognise a light: the mirror is a separate graph, and a mirror with no lights in
+    // it renders every lit surface black. Since P2-3 the recognition lives in the scan seam.
+
+    // The P2-3 split moved the scan/plan and the mirror into `projection-plan.ts` and
+    // `projection-apply.ts`; the renderProjection exemption follows the code, on exactly the
+    // same terms. The plan names lights only to classify them; the apply seam clones the game's
+    // own lights and passes the game's own geometry and material by reference. Neither may
+    // originate an appearance, and the light classification must stay somewhere.
+    for (const splitModule of ["projection-plan.ts", "projection-apply.ts"] as const) {
+      const projectionPart = readFileSync(path.join(sourceDirectory, splitModule), "utf8");
+      expect(projectionPart).not.toMatch(
+        /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+    }
+    expect(readFileSync(path.join(sourceDirectory, "projection-plan.ts"), "utf8")).toMatch(
+      /isLight/u,
+    );
 
     // `renderer.ts` is exempted because `prewarm` must inspect and clone the game's own render
     // surfaces to compile them early. It does not construct a surface or choose its appearance.

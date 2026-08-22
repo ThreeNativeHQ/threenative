@@ -18,16 +18,29 @@ export {
  */
 export {
   PLAYTEST_ASSERTION_REGISTRY,
-  evaluateRichPlaytestAssertions,
-  resolveDiagnosticsPolicy,
   requiredPlaytestCapabilities,
-} from "./assertions.js";
+} from "./assertion-schema.js";
+/**
+ * Evaluate rich semantic assertions against captured observations.
+ * @situation assert movement, visibility, or diagnostics in a playtest
+ * @situation turn a scenario observation into a pass or failure
+ * @constraint malformed or empty assertions fail closed
+ * @example const result = evaluateRichPlaytestAssertions(input);
+ */
+export { evaluateRichPlaytestAssertions } from "./assertion-evaluators.js";
+/**
+ * Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.
+ * @situation judge captured console, network, or runtime diagnostics for a playtest
+ * @constraint absent policy fields default to rejecting errors
+ * @example const policy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
+ */
+export { resolveDiagnosticsPolicy } from "./assertion-report.js";
 export type {
   IPlaytestAssertionResult,
   IPlaytestDiagnostic,
   IPlaytestFramebufferCoverageObservation,
   IPlaytestObservations,
-} from "./assertions.js";
+} from "./assertion-report.js";
 /**
  * Create a structured playtest diagnostic.
  * @situation report a named runtime diagnostic to a scenario

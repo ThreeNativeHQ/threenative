@@ -61,7 +61,7 @@ test("'changed: false' fails when the value was never observed at all", async ()
   // hud changed:false assertion in existence was green.
   const evaluated = await evaluate({ hud: [{ id: "score-label", changed: false }] });
 
-  expect(evaluated.assertions.find(({ id }) => id === "hud.score-label")?.pass).toBe(false);
+  expect(evaluated.assertions.find(({ id }) => id === "hud.score-label")?.pass, "RED observed: required observation was accepted").toBe(false);
 });
 
 test("a resource anyOf passes one observed alternative under the same resource id", async () => {

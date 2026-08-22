@@ -1,5 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -461,4 +461,293 @@ test("preflight requirements derive from the registries", () => {
   });
 
   expect(required).toEqual(["browser.input", "browser.screenshot", "entity.observe", "entity.setup"]);
+});
+
+/**
+ * P2-3 Phase 1 characterization.
+ *
+ * Every registered assertion family is declared in one scenario and evaluated twice: once against
+ * observations crafted so each family passes, once against empty observations. The pinned result
+ * ids, their order, the pass/fail verdicts, and the fail-closed diagnostic codes are the contract
+ * the P2-3 module split must reproduce without observable change. `camera` produces its result in
+ * runner.ts (evaluateCamera), so its coverage here is the base-probe exemption the evaluator
+ * already honours (report.follow set).
+ */
+const FAMILY_SCENARIO_ASSERTS = {
+  aerodynamics: [{ controls: [{ sign: "positive", surface: "elevator" }], entity: "aircraft", minForceSamples: 1 }],
+  animation: [{ advancedFrames: 2, clip: "run", entity: "player" }],
+  camera: { entity: "camera.main", follows: "player", targetInViewport: true },
+  components: [{ changed: true, component: "health", entity: "player", equals: 2 }],
+  contacts: [{ entity: "fox", kind: "trigger", minCount: 1, with: "coin" }],
+  diagnostics: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true },
+  framebufferCoverage: { backdrop: [5, 7, 11], tolerance: 8, window: { endStep: "loading-end", startStep: "loading-start" } },
+  hud: [{ id: "score-label", textIncludes: "Score" }],
+  movement: { entity: "player", minDistance: 0.5 },
+  occluded: [{ entity: "listener", target: "emitter" }],
+  overlayNodes: [{ equals: "true", overlayId: "game-ui", selector: "[data-testid=fps-crosshair]" }],
+  performance: { maxDrawCalls: 10, maxFrameMsP95: 33, maxTriangles: 10_000 },
+  reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
+  resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
+  settled: [{ entity: "crate", minBodies: 2 }],
+  signals: [{ minCount: 1, name: "collected" }],
+  states: [{ entity: "player", equals: "won" }],
+  tags: [{ gte: 1, tag: "coin" }],
+  visibility: [{ entity: "player", minProjectedPixels: 10 }],
+  visual: [{ frameDiff: { minChangedPixelRatio: 0.01 }, region: { height: 10, minNonblankPixelRatio: 0.1, width: 10, x: 0, y: 0 } }],
+  world: { seed: 90210 },
+} as const;
+
+/** Result ids of the all-families scenario when every family's evidence arrived. */
+const FAMILY_PASS_IDS = [
+  "framebufferCoverage",
+  "reachability.0.platform.a.platform.b",
+  "overlayNode.game-ui:[data-testid=fps-crosshair]",
+  "visual.0.frameDiff",
+  "visual.0.region",
+  "performance.samples",
+  "performance.maxFrameMsP95",
+  "performance.maxDrawCalls",
+  "performance.maxTriangles",
+  "resource.GameState.coins",
+  "signal.collected",
+  "world.seed",
+  "component.player.health.value",
+  "aerodynamics.0",
+  "hud.score-label",
+  "tags.coin",
+  "states.player",
+  "diagnostics",
+  "movement.distance",
+  "visibility.player",
+  "contact.fox",
+  "settled.crate",
+  "occluded.listener",
+  "animation.player",
+] as const;
+
+async function loadFamilyScenario() {
+  const directory = await makeTempDir("playtest-family-contract-");
+  await mkdir(join(directory, "artifacts"), { recursive: true });
+  await writeFile(
+    join(directory, "artifacts", "envelope.json"),
+    JSON.stringify({ jump: { fallDistanceToGround: 4, forwardReach: 3, maxRise: 1.2 } }),
+  );
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: FAMILY_SCENARIO_ASSERTS,
+    name: "family-contract",
+    schemaVersion: 1,
+    steps: [
+      { label: "loading-start", release: true, waitFrames: 1 },
+      { label: "loading-end", release: true, waitFrames: 1 },
+    ],
+    subject: "player",
+    target: "web",
+    viewport: { height: 720, width: 1280 },
+  }));
+  return loadPlaytestScenario(directory, "scenario.json");
+}
+
+function familyReportObservations(fulfilled: boolean) {
+  if (!fulfilled) {
+    return {
+      console: [],
+      hud: {},
+      network: [],
+      resources: {},
+    };
+  }
+  const physicsSample = (primitives: unknown[]) => ({ artifact: { primitives }, label: undefined });
+  return {
+    components: { player: { health: { after: 2, before: 3 } } },
+    console: [],
+    effectLog: {
+      entries: [
+        { kind: "service", payload: { request: { entity: "aircraft", inputs: { surfaces: { elevator: 0.5 } } } }, service: "physics.aerodynamics.setInputs" },
+        { kind: "service", payload: { request: { entity: "listener", target: "emitter" }, result: { hit: true } }, service: "physics.raycast" },
+      ],
+    },
+    entityTransforms: {
+      "platform.a": { halfExtents: [1, 1, 1], position: [0, 0, 0] },
+      "platform.b": { halfExtents: [1, 1, 1], position: [1, 0.5, 0] },
+    },
+    framebufferCoverage: { boundarySource: "scenario-steps", frameCount: 3, windowCompleted: true, windowStarted: true },
+    hud: { "score-label": { after: { text: "Score: 10" }, before: { text: "—" } } },
+    network: [],
+    overlayNodes: { "game-ui:[data-testid=fps-crosshair]": { after: { text: "true", visible: true } } },
+    performanceSeries: [{ drawCalls: 5, frameMs: 10, triangles: 100 }],
+    physicsDebugBefore: physicsSample([
+      { category: "sleep", entity: "crate.1", value: 0 },
+      { category: "sleep", entity: "crate.2", value: 0 },
+    ]),
+    physicsDebugSeries: [{
+      label: "loading-end",
+      snapshot: { artifact: { primitives: [
+        { category: "aero", entity: "aircraft", from: [0, 0, 0], to: [0, 1, 0], value: 1.5 },
+        { category: "sleep", entity: "crate.1", value: 1 },
+        { category: "sleep", entity: "crate.2", value: 1 },
+      ] } },
+      tick: 2,
+    }],
+    resourceSeries: [],
+    resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
+    runtimeDiagnostics: { scene: { renderedEntities: [{ id: "player", projectedBounds: { max: [0.5, 0.5], min: [-0.5, -0.5] }, visible: true }] } },
+    runtimeObservations: {
+      gameplay: {
+        animation: { player: { advancedFrames: 5, clip: "run", finished: true } },
+        contacts: [{ entity: "fox", kind: "trigger", with: "coin" }],
+        states: { player: "won" },
+        tags: { coin: { count: 3 } },
+        world: { seed: 90210 },
+      },
+    },
+    signalSeries: [{ label: "loading-end", signals: [{ entity: "player", name: "collected" }], tick: 1 }],
+    signals: [{ entity: "player", name: "collected" }],
+    visual: {
+      changedPixelRatio: 0.5,
+      comparisonSource: "after.png",
+      nonblankRegions: [{ height: 10, nonblankPixelRatio: 0.5, width: 10, x: 0, y: 0 }],
+    },
+  };
+}
+
+test("should preserve every assertion family's result contract", async () => {
+  const scenario = await loadFamilyScenario();
+  const evaluate = async (observations: Record<string, unknown>) => evaluateRichPlaytestAssertions({
+    report: {
+      diagnostics: [],
+      distance: 5,
+      // occluded reads the retained effect log from the report, not from observations.
+      effectLog: (observations as { effectLog?: unknown }).effectLog,
+      entity: "player",
+      expectMoved: false,
+      follow: { entity: "camera.main", within: 10 },
+      frames: 10,
+      observations: observations as never,
+      trivialityOptOuts: [],
+    },
+    scenario,
+  });
+
+  const fulfilled = await evaluate(familyReportObservations(true));
+
+  // Family coverage first: every declared registry kind produced at least one result under its
+  // own prefix (camera rides the base probe via report.follow).
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    if ((scenario.assert as Record<string, unknown>)[entry.kind] === undefined) continue;
+    const covered = fulfilled.assertions.some(({ id }) => id.startsWith(entry.resultIdPrefix))
+      || (entry.kind === "movement" && (fulfilled.assertions.some(({ id }) => id.startsWith("movement."))))
+      || (entry.kind === "camera");
+    expect(covered, `RED observed: assertion family result missing for '${entry.kind}'`).toBe(true);
+  }
+
+  expect(fulfilled.assertions.map(({ id }) => id), "RED observed: assertion family result ordering changed").toEqual([...FAMILY_PASS_IDS]);
+  expect(fulfilled.assertions.every(({ pass }) => pass === true), "RED observed: assertion family verdict changed").toBe(true);
+  expect(fulfilled.diagnostics, "RED observed: assertion family diagnostics changed").toEqual([]);
+
+  // Fail-closed pin: with no evidence at all every family still emits exactly one failing result
+  // (visual collapses to its not-evaluated placeholder) and names a diagnostic code.
+  const empty = await evaluate(familyReportObservations(false));
+  expect(empty.assertions.map(({ id }) => id), "RED observed: assertion family result ordering changed").toEqual([
+    "framebufferCoverage",
+    "reachability.0.platform.a.platform.b",
+    "overlayNode.game-ui:[data-testid=fps-crosshair]",
+    "visual.0",
+    "performance.samples",
+    "performance.maxFrameMsP95",
+    "performance.maxDrawCalls",
+    "performance.maxTriangles",
+    "resource.GameState.coins",
+    "signal.collected",
+    "world.seed",
+    "component.player.health.value",
+    "aerodynamics.0",
+    "hud.score-label",
+    "tags.coin",
+    "states.player",
+    "diagnostics",
+    "movement.distance",
+    "visibility.player",
+    "contact.fox",
+    "settled.crate",
+    "occluded.listener",
+    "animation.player",
+  ]);
+  // Exactly two results survive with no evidence: `diagnostics` is the health check whose clean
+  // channels are empty channels, and `movement.distance` reads the report-level aggregate, which
+  // this harness still reports. Everything else must fail closed.
+  expect(empty.assertions.filter(({ pass }) => pass).map(({ id }) => id), "RED observed: fail-closed families passed on missing evidence").toEqual([
+    "diagnostics",
+    "movement.distance",
+  ]);
+  expect(empty.diagnostics.map(({ code }) => code), "RED observed: fail-closed diagnostic codes changed").toEqual([
+    "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
+    "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
+    "TN_PLAYTEST_OVERLAY_NODE_ASSERTION_FAILED",
+    "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+    "TN_PLAYTEST_PERFORMANCE_SAMPLES_MISSING",
+    "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_SIGNAL_NOT_OBSERVED",
+    "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+    "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+    "TN_PLAYTEST_AERODYNAMICS_ASSERTION_FAILED",
+    "TN_PLAYTEST_HUD_ASSERTION_FAILED",
+    "TN_PLAYTEST_TAG_COUNT_ASSERTION_FAILED",
+    "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+    "TN_PLAYTEST_VISIBILITY_FAILED",
+    "TN_PLAYTEST_CONTACT_NOT_OBSERVED",
+    "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
+    "TN_PLAYTEST_OCCLUSION_NOT_OBSERVED",
+    "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
+  ]);
+  expect(empty.diagnostics.every(({ severity }) => severity === "error"), "RED observed: diagnostic severity changed").toBe(true);
+});
+
+/**
+ * P2-3 Phase 2. Each registered family is evaluated on its own, through the package's public
+ * entry, so the split modules cannot hide a family whose dispatch mapping went missing. `camera`
+ * evaluates in runner.ts, so its exemption here is the base probe (report.follow).
+ */
+test("should evaluate all registered families through the public entry", async () => {
+  const directory = await makeTempDir("playtest-family-dispatch-");
+  await mkdir(join(directory, "artifacts"), { recursive: true });
+  await writeFile(
+    join(directory, "artifacts", "envelope.json"),
+    JSON.stringify({ jump: { fallDistanceToGround: 4, forwardReach: 3, maxRise: 1.2 } }),
+  );
+  const observations = familyReportObservations(true);
+
+  for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
+    await writeFile(join(directory, "scenario.json"), JSON.stringify({
+      assert: { [entry.kind]: (FAMILY_SCENARIO_ASSERTS as Record<string, unknown>)[entry.kind] },
+      name: "family-dispatch",
+      schemaVersion: 1,
+      steps: [
+        { label: "loading-start", release: true, waitFrames: 1 },
+        { label: "loading-end", release: true, waitFrames: 1 },
+      ],
+      subject: "player",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }));
+    const scenario = await loadPlaytestScenario(directory, "scenario.json");
+    const evaluated = evaluateRichPlaytestAssertions({
+      report: {
+        diagnostics: [],
+        distance: 5,
+        effectLog: (observations as { effectLog?: unknown }).effectLog,
+        entity: "player",
+        expectMoved: false,
+        follow: { entity: "camera.main", within: 10 },
+        frames: 10,
+        observations: observations as never,
+        trivialityOptOuts: [],
+      },
+      scenario,
+    });
+    const mapped = evaluated.assertions.some(({ id }) => id.startsWith(entry.resultIdPrefix));
+    expect(mapped || entry.kind === "camera", `RED observed: registered family has no evaluator for '${entry.kind}'`).toBe(true);
+  }
 });
