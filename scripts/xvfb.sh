@@ -1,6 +1,13 @@
 #!/bin/sh
 # Run a command under a virtual X display and exit with *that command's* status.
 #
+# Compatibility path: since the capture-environment bake-in (abstraction report §2.10), the
+# playtest runner provisions its own private Xvfb per run and strips the Wayland variables,
+# so wrapping a playtest in this script is OPTIONAL — `threenative-playtest ... --headed`
+# works bare on a headless Linux box with Xvfb installed. This wrapper remains the general
+# answer for any OTHER command that needs an X display (gates, profilers, one-off scripts)
+# and keeps working unchanged for callers that still use it.
+#
 # `xvfb-run` cannot be used for this. In xorg-server-xvfb 21.1.24 it captures the
 # command's status into RETVAL, re-enables `set -e`, and only then runs its cleanup
 # `kill $XVFBPID`. When Xvfb has already exited on its own the kill fails, errexit
@@ -9,7 +16,7 @@
 # every gate wrapped in it reports failure whether it passed or not.
 #
 # Screen geometry comes from TN_XVFB_SCREEN and defaults to the repository's usual
-# 1600x900x24.
+# 1600x900x24 (the same variable the runner's private-Xvfb path honours).
 #
 # Only Linux needs this. Xvfb is an X11 server, so it does not exist on macOS or Windows,
 # where the OS already provides a display and the wrapper is a no-op that must still hand

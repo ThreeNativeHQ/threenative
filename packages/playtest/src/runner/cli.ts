@@ -11,6 +11,7 @@ import {
   type IStandalonePlaytestConfig,
 } from "./config.js";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
+import { CaptureLockTimeoutError, formatLockTimeoutLine } from "./captureLock.js";
 import { diagnoseHarness, formatDoctorReport, readHarnessEnvironment } from "./doctor.js";
 import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
@@ -203,6 +204,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     process.exitCode = exitCode;
     return exitCode;
   } catch (error) {
+    // A capture-lock timeout is the queue saying "wait", not the game saying "broken" — it
+    // must never be classified as a runner failure or an assertion failure.
+    if (error instanceof CaptureLockTimeoutError) {
+      process.stderr.write(`${formatLockTimeoutLine(error)}\n`);
+      process.exitCode = 75;
+      return 75;
+    }
     const diagnostic = classifyRunnerError(error, {
       cwd: config?.projectPath,
       scenarioPath: config?.scenarioPath,

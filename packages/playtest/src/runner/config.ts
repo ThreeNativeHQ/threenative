@@ -107,6 +107,7 @@ export function formatUsage(): string {
     "  0  playtest passed",
     "  1  assertions failed",
     "  2  the run never reached assertions",
+    "  75  the capture lock timed out — not a test failure; rerun when the queue clears",
     "",
   ].join("\n");
 }
