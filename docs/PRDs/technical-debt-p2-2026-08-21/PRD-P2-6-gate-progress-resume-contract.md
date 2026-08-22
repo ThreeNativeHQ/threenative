@@ -38,9 +38,9 @@ Data changes: local JSON status artifacts only; no database.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | Atomic gate status record | `scripts/run-test-suite.sh:32` runs named phases | unstructured stdout-only progress | old child commands delegate through status writer | corrupt the status file; status must fail closed |
-| 2 | Stable status/resume CLI | `package.json:27-51` exposes long gates | ad-hoc polling instructions | old commands remain, with status wrapper | resume a changed HEAD; command must refuse |
-| 3 | Heartbeat and stale-owner policy | `scripts/worktree-lifecycle.ts:300` verifies phase ownership | unbounded waiting | lifecycle guard remains the authority | stop heartbeat; status becomes stale |
+| 1 | Atomic gate status record | `scripts/run-test-suite.sh:108` runs named phases | unstructured stdout-only progress | old child commands delegate through status writer | corrupt the status file; status must fail closed |
+| 2 | Stable status/resume CLI | `package.json:24-28` exposes long gates | ad-hoc polling instructions | old commands remain, with status wrapper | resume a changed HEAD; command must refuse |
+| 3 | Heartbeat and stale-owner policy | `scripts/worktree-lifecycle.ts:351` verifies phase ownership (ships NEW on main — see Results) | unbounded waiting | lifecycle guard remains the authority | stop heartbeat; status becomes stale |
 
 ## 4. Execution Phases
 
@@ -55,16 +55,16 @@ Data changes: local JSON status artifacts only; no database.
 
 **Implementation:**
 
-- [ ] Use an atomic temporary file + rename and include command, phase, PID, lease, timestamps, and exit code.
-- [ ] Emit heartbeats without changing child stdout or swallowing its exit code.
-- [ ] Treat malformed, future, or owner-drifted state as an error.
+- [x] Use an atomic temporary file + rename and include command, phase, PID, lease, timestamps, and exit code.
+- [x] Emit heartbeats without changing child stdout or swallowing its exit code.
+- [x] Treat malformed, future, or owner-drifted state as an error.
 
 **Wiring:**
 
-- [ ] Caller edited: root test phases write status records through the new helper.
-- [ ] Registration: existing worktree lease guards own the run.
-- [ ] Old path: stdout remains human-readable but is no longer the only state source.
-- [ ] Ledger rows filled: 1 and 3.
+- [x] Caller edited: root test phases write status records through the new helper.
+- [x] Registration: existing worktree lease guards own the run.
+- [x] Old path: stdout remains human-readable but is no longer the only state source.
+- [x] Ledger rows filled: 1 and 3.
 
 **Tests Required:**
 
@@ -94,16 +94,16 @@ before/after each phase. Record child exit preservation.
 
 **Implementation:**
 
-- [ ] Make `status` read-only and bounded; it must never delete or repair worktrees.
-- [ ] Require explicit resume and verify lease path, branch, HEAD, PID, and artifact identity first.
-- [ ] Report a concrete next probe when a phase is stale or blocked.
+- [x] Make `status` read-only and bounded; it must never delete or repair worktrees.
+- [x] Require explicit resume and verify lease path, branch, HEAD, PID, and artifact identity first.
+- [x] Report a concrete next probe when a phase is stale or blocked.
 
 **Wiring:**
 
-- [ ] Caller edited: package scripts and AGENTS expose the CLI to cold agents.
-- [ ] Registration: resume delegates to the same phase command, not a second implementation.
-- [ ] Old path: ad-hoc polling guidance is replaced by the status command.
-- [ ] Ledger rows filled: 1–3.
+- [x] Caller edited: package scripts and AGENTS expose the CLI to cold agents.
+- [x] Registration: resume delegates to the same phase command, not a second implementation.
+- [x] Old path: ad-hoc polling guidance is replaced by the status command.
+- [x] Ledger rows filled: 1–3.
 
 **Tests Required:**
 
@@ -125,17 +125,37 @@ interrupted/resumed local phase. No destructive cleanup is part of this PRD.
 
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
-| status integrity | corrupt or stale the JSON record | status fails closed | `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/gate-status.spec.ts`; result: RED observed: invalid or stale gate status; exit: 1 |
-| resume safety | change worktree HEAD after recording | resume refuses to execute | `command: pnpm exec vitest run --config vitest.config.ts scripts/__tests__/gate-cli.spec.ts`; result: RED observed: resume refused for drifted worktree; exit: 1 |
+| status integrity | corrupt or stale the JSON record | status fails closed | `pnpm exec vitest run --config vitest.config.ts scripts/__tests__/gate-status.spec.ts` with the fail-closed validation removed from `readRawStatus`; observed: 3 failed / 3, `expected … 'RED observed: invalid or stale gate s…' but got 'The "paths[0]" argument must be of type string'`, exit 1; restored byte-identical → 3 passed, exit 0 (full output in `docs/verification/gate-status-contract-2026-08-21.md`) |
+| resume safety | change worktree HEAD after recording | resume refuses to execute | `pnpm exec vitest run --config vitest.config.ts scripts/__tests__/gate-cli.spec.ts` with `assessResumeRecord` bypassed in `resumeGate`; observed: `× should refuse resume after worktree HEAD drift`, `AssertionError: promise resolved "+0" instead of rejecting` — the child started on drifted HEAD, exit 1; restored byte-identical → 3 passed, exit 0 |
 
 ## Acceptance Criteria
 
-- [ ] Every long default gate phase emits an atomic status and heartbeat.
-- [ ] Status is read-only, stable, and fails closed on malformed/stale ownership.
-- [ ] Resume preserves child exit codes and refuses path/HEAD/artifact drift.
-- [ ] Agents have one documented status command and one next diagnostic probe.
-- [ ] No destructive cleanup is introduced.
-- [ ] Both negative controls were observed red.
+- [x] Every long default gate phase emits an atomic status and heartbeat.
+- [x] Status is read-only, stable, and fails closed on malformed/stale ownership.
+- [x] Resume preserves child exit codes and refuses path/HEAD/artifact drift.
+- [x] Agents have one documented status command and one next diagnostic probe.
+- [x] No destructive cleanup is introduced.
+- [x] Both negative controls were observed red.
+
+## Results (2026-08-22 execution)
+
+Executed on `main` at `a6ac7652`; full evidence with verbatim outputs, status JSON samples
+(running/succeeded/failed/stale), and caller census in
+`docs/verification/gate-status-contract-2026-08-21.md`. Highlights:
+
+- Premise correction: `scripts/worktree-lifecycle.ts` (Batch C phase leases) never landed on
+  `main` — it exists only on unmerged branch `linchpin/technical-debt-c`, and a prior complete
+  P2-6 implementation sits unmerged on `linchpin/technical-debt-p2-6-gates`. This execution
+  adopted that lane's files onto main after review; the lifecycle module ships **NEW** here, so
+  ledger row 3's citation points at the shipped file rather than the PRD's assumed line number.
+- Gates: focused specs 6/6 exit 0; full `pnpm test` exit 0 with live per-phase status records and
+  advancing heartbeats; typecheck 0; lint 0; `pnpm sync:agents --check` 0 ("16 CLAUDE.md mirrors").
+- Exit preservation: controlled scratch-copy run recorded child exit 7 end-to-end with child
+  stdout/stderr untouched; an observed direct-invocation failure recorded exit 127 faithfully;
+  `pnpm gate:resume` re-ran only the interrupted unit phase through the production script
+  (vitest 1544 passed, exit 0, run id preserved).
+- Both negative controls observed red then restored green (outputs in the table above and the
+  evidence doc).
 
 ## Checkpoint Protocol
 

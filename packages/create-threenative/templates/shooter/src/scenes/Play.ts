@@ -29,6 +29,10 @@ import { Projectile } from "../weapons/Projectile.js";
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const AIM = new Vector3(0, 0, -1);
+const UP = new Vector3(0, 1, 0);
+// Relative mouse pixels to radians. Mouse look is applied per pixel moved, not per second —
+// the delta is already frame-rate independent, so no dt scaling.
+const LOOK_RADIANS_PER_PIXEL = 0.005;
 const DEMO_POSITION = new Vector3(0, 0.85, -4);
 const WAVE_POSITION = new Vector3(0, 0.9, -9);
 const SCAN_POSITION = new Vector3(3, 0.9, 0);
@@ -43,8 +47,11 @@ type TargetEntry = { readonly id: string; readonly target: Target };
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
+    aimedShots: 0,
+    aiming: 0,
     armor: 0,
     deaths: 0,
+    demoDamage: 0,
     demoTargetAlive: 1,
     friendlyPassed: 0,
     gameOver: 0,
@@ -63,10 +70,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     respawns: 0,
     scanCount: 0,
     score: 0,
+    shotsFired: 0,
     targetsRemaining: 1,
     wave: 1,
     wavesCleared: 0,
     wallBlocked: 0,
+    yawDegrees: 0,
     phase: "playing",
   };
 
@@ -108,6 +117,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const hitscan = new Hitscan();
     const spawnPoints = SPAWN_POINTS;
     const elapsed = { value: 0 };
+    // Look state: relative mouse pixels accumulate here, the camera rig orbits by it, and the
+    // aim direction rotates with it. Reported through ctx.state so a playtest can observe the
+    // rotation after the real input path.
+    const lookState = { yaw: 0 };
+    const aimForward = (): Vector3 => AIM.clone().applyAxisAngle(UP, -lookState.yaw);
 
     const createEnemyProjectile = (origin: Vector3): void => {
       const direction = getPlayer().mesh.position.clone().sub(origin).normalize();
@@ -270,10 +284,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     waveDirector.start(spawnWave);
     rig.snap(player.mesh.position);
 
-    const fireHitscan = (): void => {
-      const hit = hitscan.fire(ctx.physics, player.aimOrigin(), AIM, HOSTILE_LAYER);
-      if (hit === undefined) return;
+    const fireHitscan = (whileAiming: boolean): void => {
       const state = ctx.state.getState();
+      const originOffset = player
+        .aimOrigin()
+        .sub(player.mesh.position)
+        .applyAxisAngle(UP, -lookState.yaw)
+        .add(player.mesh.position);
+      const hit = hitscan.fire(ctx.physics, originOffset, aimForward(), HOSTILE_LAYER);
+      ctx.state.set({
+        aimedShots: whileAiming ? state.aimedShots + 1 : state.aimedShots,
+        shotsFired: state.shotsFired + 1,
+      });
+      emitPlaytestEvent({ entity: "player", name: "fired", aimed: whileAiming ? 1 : 0 });
+      if (hit === undefined) return;
       const target = targets.get(hit.body.id);
       if (target !== undefined) applyDirectDamage(targets, hit.body.id, 40);
       const demoHit = hit.body.id === demo.body.body.id;
@@ -282,6 +306,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         friendlyPassed: demoHit && friendlyBody.body.id !== hit.body.id ? 1 : state.friendlyPassed,
         ...(demoHit
           ? {
+              demoDamage: state.demoDamage + 40,
               hitDistanceTenths: Math.round(hit.distance * 10),
               hitNormalXPercent: Math.round(hit.normal.x * 100),
               hitNormalYPercent: Math.round(hit.normal.y * 100),
@@ -360,7 +385,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const handleInput = (frameCtx: GameCtx): void => {
-      if (frameCtx.input.justPressed("fire")) fireHitscan();
+      if (frameCtx.input.justPressed("aim")) {
+        ctx.state.set({ aiming: 1 });
+        emitPlaytestEvent({ entity: "player", name: "aim-engaged" });
+      }
+      if (frameCtx.input.justReleased("aim")) {
+        ctx.state.set({ aiming: 0 });
+        emitPlaytestEvent({ entity: "player", name: "aim-released" });
+      }
+      if (frameCtx.input.justPressed("fire")) fireHitscan(frameCtx.input.pressed("aim"));
       if (frameCtx.input.justPressed("projectile")) fireProjectile();
       if (frameCtx.input.justPressed("blast")) fireRadius();
       if (frameCtx.input.justPressed("probe")) probeWall();
@@ -414,6 +447,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (restart(frameCtx)) return;
       handleInput(frameCtx);
 
+      const look = frameCtx.input.vector("look");
+      if (look.x !== 0) {
+        lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
+        ctx.state.set({ yawDegrees: Math.round((lookState.yaw * 180) / Math.PI) });
+      }
+
       player.update(frameCtx, dt);
       hitscan.update(dt);
       updateProjectiles(frameCtx, dt);
@@ -422,7 +461,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       removeDeadTargets();
       updateWaves(frameCtx);
       syncStateAndHud(frameCtx);
-      rig.follow(player.mesh.position, dt);
+      rig.follow(player.mesh.position, dt, lookState.yaw);
     };
   }
 }

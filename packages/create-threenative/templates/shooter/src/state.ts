@@ -1,8 +1,11 @@
 export type GamePhase = "playing" | "dead" | "won" | "lost";
 
 export type GameState = {
+  aimedShots: number;
+  aiming: number;
   armor: number;
   deaths: number;
+  demoDamage: number;
   demoTargetAlive: number;
   friendlyPassed: number;
   gameOver: number;
@@ -21,9 +24,11 @@ export type GameState = {
   respawns: number;
   scanCount: number;
   score: number;
+  shotsFired: number;
   targetsRemaining: number;
   wave: number;
   wavesCleared: number;
   wallBlocked: number;
+  yawDegrees: number;
   phase: GamePhase;
 };

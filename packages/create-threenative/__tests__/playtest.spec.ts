@@ -391,4 +391,75 @@ describe("starter playtest proof", () => {
       ),
     ).rejects.toThrow();
   });
+
+  it("should drive the generated shooter through one committed input-control scenario", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/shooter/playtests/input-control.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert?: {
+        resources?: Array<{ atSteps?: Array<{ equals: unknown; label: string }>; id: string; path: string }>;
+        signals?: Array<{ atStep?: string; name: string }>;
+      };
+      name: string;
+      parity?: { targets: string[] };
+      schemaVersion: number;
+      steps: Array<{
+        kind?: string;
+        label?: string;
+        pointerPosition?: { buttons?: number; x: number; y: number };
+        waitTicks?: number;
+      }>;
+      target: string;
+    };
+
+    expect(scenario.name).toBe("input-control");
+    expect(scenario.schemaVersion).toBe(1);
+    // One scenario, two targets: the desktop run executes this same file, no fork.
+    expect(scenario.parity?.targets).toEqual(["web", "desktop"]);
+    // The control comes first, so a pass from initial state is impossible.
+    expect(scenario.steps[0]).toMatchObject({ kind: "wait", label: "no-input-control" });
+
+    const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
+    expect(labeled.get("aim-down")?.pointerPosition).toMatchObject({ buttons: 2, x: 0.5 });
+    expect(labeled.get("look-right")?.pointerPosition).not.toHaveProperty("buttons");
+    expect(labeled.get("fire-while-aiming")?.pointerPosition).toMatchObject({
+      buttons: 3,
+      x: 0.5,
+    });
+    expect(labeled.get("release-buttons")?.pointerPosition).toMatchObject({ buttons: 0 });
+
+    const resources = scenario.assert?.resources ?? [];
+    const yaw = resources.find(({ path }) => path === "yawDegrees");
+    expect(yaw?.atSteps).toContainEqual({ label: "look-right", equals: 92 });
+    const shots = resources.find(({ path }) => path === "shotsFired");
+    expect(shots?.atSteps).toEqual([{ label: "fire-while-aiming", equals: 1 }]);
+    const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
+    for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
+      expect(signalNames).toContain(name);
+    }
+  });
+
+  it("should bind mouse look, right-button aim, and left-button fire in the shooter template", async () => {
+    const game = await readFile(
+      path.resolve("packages/create-threenative/templates/shooter/src/game.ts"),
+      "utf8",
+    );
+    const scene = await readFile(
+      path.resolve("packages/create-threenative/templates/shooter/src/scenes/Play.ts"),
+      "utf8",
+    );
+
+    expect(game).toContain("aim: { mouseButtons: [2] }");
+    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF"], mouseButtons: [0] }');
+    expect(game).toContain("look: { pointerRelative: true }");
+    // The scene consumes all three through the real input map after the bridge path.
+    expect(scene).toContain('frameCtx.input.vector("look")');
+    expect(scene).toContain('fireHitscan(frameCtx.input.pressed("aim"))');
+    expect(scene).toContain('emitPlaytestEvent({ entity: "player", name: "fired", aimed:');
+  });
 });

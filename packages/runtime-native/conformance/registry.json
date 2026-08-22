@@ -923,5 +923,18 @@
       "desktopGate": false,
       "required": true
     }
+  ],
+  "generatedPlaytestProofs": [
+    {
+      "id": "generated-shooter-input-control",
+      "title": "generated shooter relative look, right-button aim, left-button fire",
+      "category": "input",
+      "status": "implemented",
+      "scenario": "../create-threenative/templates/shooter/playtests/input-control.playtest.json",
+      "runner": "packages/playtest CLI --target desktop|android against the scaffolded project",
+      "proof": "packages/runtime-native/tests/generated-shooter-input.test.mjs",
+      "owner": "PRD-P2-7",
+      "reason": "This proof drives a scaffolded generated game, not a conformance scene: registry tests[] rows are executed by the visual-parity lanes and must export startScene scenes, so a playtest scenario cannot live there without breaking those lanes. It is registered here so the versioned public registry still records it; the owning runner executes it on web and desktop, and an unreachable device lane is reported blocked, never passed."
+    }
   ]
 }

@@ -1,0 +1,109 @@
+{
+  "name": "input-control",
+  "target": "web",
+  "schemaVersion": 1,
+  "parity": { "targets": ["web", "desktop"] },
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "no-input-control",
+      "waitTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim-down",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 2 },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": { "x": 0.75, "y": 0.5 },
+      "holdTicks": 3,
+      "release": false,
+      "screenshot": "input-look-right"
+    },
+    {
+      "kind": "input",
+      "label": "look-back",
+      "pointerPosition": { "x": 0.5, "y": 0.5 },
+      "holdTicks": 3,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "fire-while-aiming",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 3 },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "release-buttons",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 },
+      "holdTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "settled", "waitTicks": 10, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Desktop and Android device transport have no CDP network observer; this scenario runs on both targets, so the browser-only network policy is opted out here and covered by the web-only template scenarios.",
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU buffer diagnostic; gameplay and visibility assertions remain authoritative.",
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shotsFired",
+        "atSteps": [{ "label": "fire-while-aiming", "equals": 1 }]
+      },
+      {
+        "id": "state",
+        "path": "aimedShots",
+        "atSteps": [{ "label": "fire-while-aiming", "equals": 1 }]
+      },
+      {
+        "allowTrivial": "The released leg expects the initial unaimed value; the engaged leg at aim-down is the input-driven half of this row.",
+        "id": "state",
+        "path": "aiming",
+        "atSteps": [
+          { "label": "aim-down", "equals": 1 },
+          { "label": "release-buttons", "equals": 0 }
+        ]
+      },
+      {
+        "allowTrivial": "The settled leg expects the initial heading after the equal-and-opposite return; the look-right leg carries the rotation proof.",
+        "id": "state",
+        "path": "yawDegrees",
+        "atSteps": [
+          { "label": "look-right", "equals": 92 },
+          { "label": "settled", "equals": 0 }
+        ]
+      },
+      { "id": "state", "path": "demoTargetAlive", "equals": 0, "changed": true },
+      { "id": "state", "path": "demoDamage", "equals": 40, "changed": true }
+    ],
+    "signals": [
+      { "name": "aim-engaged", "entity": "player", "minCount": 1, "atStep": "aim-down" },
+      { "name": "fired", "entity": "player", "minCount": 1, "atStep": "fire-while-aiming" },
+      { "name": "hit", "entity": "player", "minCount": 1, "atStep": "fire-while-aiming" },
+      { "name": "defeated", "entity": "target", "minCount": 1, "atStep": "fire-while-aiming" },
+      { "name": "aim-released", "entity": "player", "minCount": 1, "atStep": "release-buttons" }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The shooter scene begins with the player visible and in frame; this held visibility row accompanies the input assertions.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}

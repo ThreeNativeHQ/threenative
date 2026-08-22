@@ -162,6 +162,12 @@ is a no-op on platforms that already have a display; and a WebGPU run that does 
 may be SwiftShader, so use `--browser-recipe webgpu` and check `adapter.info`. To free a dev server,
 kill by port (`lsof -ti tcp:<port> | xargs -r kill`) — `pkill -f vite` matches your own shell.
 
+Long gates write one read-only local record at `artifacts/gates/status.json`. Inspect it with
+`pnpm gate:status`; the output names the run, phase, heartbeat, owner, command, and artifact. If
+the phase is stale or blocked, run `pnpm gate:doctor` as the next diagnostic probe. `pnpm
+gate:resume` is explicit and resumes only after the recorded worktree path, branch, HEAD, lease,
+and status artifact still match. These commands never repair or remove a worktree.
+
 ## Working outside the repo
 
 `pnpm sandbox` builds a sandbox that behaves like a user's machine: packages installed from
