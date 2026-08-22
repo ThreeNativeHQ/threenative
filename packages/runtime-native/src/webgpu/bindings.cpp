@@ -269,6 +269,13 @@ static bool g_surfaceRenderPassEnded = false;
 // display. See presentPendingSurface().
 static bool g_framePresentPending = false;
 static uint64_t g_lastPresentNs = 0;
+#if TN_ANDROID_JS_PROFILE
+// Present happens once per frame but submits happen several times; without this flag every
+// submit marker carried the same previous-frame presentNs and the profile summed it once per
+// submit — on the Pixel 8 that read as a phantom ~2.6 ms/frame of native cost at 4.3
+// submits/frame. Cleared by each present so the next frame's first submit reports it.
+static bool g_presentReportedSinceLastPresent = false;
+#endif
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
 static uint64_t g_presentCount = 0;
 // Completed frames, counted where the frame ends. Paired with g_presentCount so the device gates
@@ -1733,9 +1740,13 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             }
 
 #if TN_ANDROID_JS_PROFILE
-                            // The present now happens after this submit returns, so this reports the
-                            // previous frame's present rather than one this call performed.
-                            presentNs = g_lastPresentNs;
+                            // The present happens after this submit returns, from
+                            // presentPendingSurface(); report the previous frame's present on this
+                            // frame's first submit only, so per-frame sums count it once.
+                            if (!g_presentReportedSinceLastPresent) {
+                                presentNs = g_lastPresentNs;
+                                g_presentReportedSinceLastPresent = true;
+                            }
 #endif
 
 #if TN_ANDROID_JS_PROFILE
@@ -6110,6 +6121,9 @@ static void presentPendingSurface() {
             std::chrono::steady_clock::now() - presentStart
         ).count()
     );
+#if TN_ANDROID_JS_PROFILE
+    g_presentReportedSinceLastPresent = false;
+#endif
 
     if (presented) {
         // The last cold-start segment. Emitted from the present that actually reached the
