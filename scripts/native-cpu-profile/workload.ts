@@ -6,6 +6,8 @@ export type Hierarchy = "deep" | "flat";
  * deleted with the technical-debt audit; the comparison lives in that PRD's archived evidence.
  */
 export type RenderMode =
+  | "bundled"
+  | "bundled-dynamic"
   | "distinct-materials"
   | "independent"
   | "instanced"
