@@ -15,7 +15,8 @@ on a fixed-step bridge; `warmupFrames` remains a genuine requestAnimationFrame w
 
 The assertion vocabulary — every kind the validator accepts, its fields, and when to reach for
 it — is generated into `agent-docs/assertion-reference.md`; open it before inventing a new
-assertion shape.
+assertion shape. To probe a running game by hand, every bridge global and its shape is
+documented in `agent-docs/debug-surface.md`.
 
 The bridge registers exactly one resource id for the JSON-safe game state: `state`; resource
 paths address fields from `ctx.state`. (`GameState` is a deprecated compatibility alias kept

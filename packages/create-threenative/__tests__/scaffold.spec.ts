@@ -96,8 +96,10 @@ const STARTER_PATHS = [
   "public/icon.png",
   "public/pickup.ogg",
   // P2-2: the searchable reference bundle every generated project must ship.
+  "agent-docs/assertion-reference.md",
   "agent-docs/capture-the-frame.md",
   "agent-docs/ctx-cookbook.md",
+  "agent-docs/debug-surface.md",
   "agent-docs/finding-assets.md",
   "agent-docs/gameplay-recipes.md",
   "agent-docs/sculpt-from-a-reference.md",
@@ -197,8 +199,10 @@ describe("create-threenative", () => {
       const bundleDirectory = path.join(result.target, "agent-docs");
       const shipped = (await readdir(bundleDirectory)).sort();
       expect(shipped).toEqual([
+        "assertion-reference.md",
         "capture-the-frame.md",
         "ctx-cookbook.md",
+        "debug-surface.md",
         "finding-assets.md",
         "gameplay-recipes.md",
         "sculpt-from-a-reference.md",
