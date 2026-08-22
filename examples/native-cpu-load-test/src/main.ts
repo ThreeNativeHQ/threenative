@@ -1,6 +1,7 @@
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   BoxGeometry,
+  BundleGroup,
   Color,
   ConeGeometry,
   CylinderGeometry,
@@ -44,6 +45,8 @@ type Visibility = "all-visible" | "mostly-culled";
  * live in that PRD's verification record, not in a live arm.
  */
 type RenderMode =
+  | "bundled"
+  | "bundled-dynamic"
   | "distinct-materials"
   | "independent"
   | "instanced"
@@ -148,9 +151,15 @@ function scenarioFromLocation(): IScenario {
     throw new Error("visibility is invalid");
   if (![0, 10, 100].includes(dirtyPercent)) throw new Error("dirty is invalid");
   if (
-    !["independent", "distinct-materials", "instanced", "merged", "scene-projection"].includes(
-      renderMode,
-    )
+    ![
+      "bundled",
+      "bundled-dynamic",
+      "independent",
+      "distinct-materials",
+      "instanced",
+      "merged",
+      "scene-projection",
+    ].includes(renderMode)
   )
     throw new Error("renderMode is invalid");
   if (preset !== null && preset !== "fox-scale") throw new Error("scenario is invalid");
@@ -453,6 +462,18 @@ function buildFoxScaleScene(): void {
 if (scenario.scenario === "fox-scale") {
   buildFoxScaleScene();
 } else {
+  // PRD-069 §3.1: the bundle arms answer the two gates the PRD names — does a bundled object
+  // that moves actually move on screen, and does the cached bundle path really skip the
+  // per-object project/encode work. `bundled` keeps BundleGroup's default static=true, which
+  // three's NodeMaterialObserver.needsRefresh short-circuits to "never refresh" for every
+  // object inside (measured 2026-08-21: teleported meshes never reached the screen);
+  // `bundled-dynamic` sets static=false so the cached command buffer stays but uniforms refresh.
+  const isBundleArm =
+    scenario.renderMode === "bundled" || scenario.renderMode === "bundled-dynamic";
+  const bundleGroup = isBundleArm ? new BundleGroup() : undefined;
+  if (scenario.renderMode === "bundled-dynamic" && bundleGroup !== undefined) {
+    bundleGroup.static = false;
+  }
   for (let id = 0; id < scenario.objectCount; id += 1) {
     const meshMaterial = scenario.renderMode === "distinct-materials" ? material.clone() : material;
     const mesh = trackMesh(new Mesh(geometry, meshMaterial));
@@ -470,15 +491,19 @@ if (scenario.scenario === "fox-scale") {
     if (
       scenario.renderMode === "independent" ||
       scenario.renderMode === "scene-projection" ||
-      scenario.renderMode === "distinct-materials"
+      scenario.renderMode === "distinct-materials" ||
+      isBundleArm
     ) {
       if (scenario.hierarchy === "deep" && id % 64 !== 0) {
         meshes[id - 1]?.add(mesh);
+      } else if (bundleGroup !== undefined) {
+        bundleGroup.add(mesh);
       } else {
         scene.add(mesh);
       }
     }
   }
+  if (bundleGroup !== undefined) scene.add(bundleGroup);
 
   if (scenario.renderMode === "instanced") {
     const instanced = new InstancedMesh(geometry, material, meshes.length);
@@ -616,6 +641,19 @@ function oneFrame(
   }
 }
 
+function snapshotCanvas(): string {
+  // Same-task copy of the renderer's canvas: WebGPU canvases are cleared at composite, so the
+  // read must happen before yielding. A 2D copy sidesteps toBlob's async readback entirely.
+  const source = renderer.domElement;
+  const copy = document.createElement("canvas");
+  copy.width = source.width;
+  copy.height = source.height;
+  const context = copy.getContext("2d");
+  if (!context) throw new Error("TN_CANVAS_CAPTURE_FAILED");
+  context.drawImage(source, 0, 0);
+  return copy.toDataURL();
+}
+
 async function run(): Promise<IProfileResult> {
   for (let frame = 0; frame < scenario.warmupFrames; frame += 1) await oneFrame(false);
   rendererStageHooks?.reset();
@@ -736,6 +774,39 @@ async function run(): Promise<IProfileResult> {
   }
   const samples = createSamples();
   for (let frame = 0; frame < scenario.samples; frame += 1) await oneFrame(true, samples);
+  if (scenario.renderMode === "bundled" || scenario.renderMode === "bundled-dynamic") {
+    // PRD-069 §3.1's gate: a fast bundle that froze its moving objects would be a wrong picture,
+    // and no timing number shows that. The dirty loop's per-frame drift is sub-pixel at this
+    // camera distance and cannot be told apart from a frozen scene (observed 2026-08-21: a
+    // 409-mesh drift reported FROZEN while the same path with visible motion passed), so the
+    // gate teleports three meshes half a view height — a change no rasterisation can miss —
+    // and requires the screen to follow both ways. Nothing animates between the two captures:
+    // only the probes move, so a difference is attributable to them alone.
+    //
+    // The control first: two captures of the same rendered frame must agree, else the capture
+    // instrument is what is broken and no verdict about the scene may be drawn.
+    await renderer.render(scene, camera);
+    const controlA = snapshotCanvas();
+    const controlB = snapshotCanvas();
+    if (controlA !== controlB) throw new Error("TN_CANVAS_CAPTURE_UNSTABLE");
+    const probes = [meshes[0], meshes[1], meshes[2]] as Mesh[];
+    const savedPositions = probes.map((mesh) => mesh.position.clone());
+    for (let frame = 0; frame < 5; frame += 1) await oneFrame(false);
+    await renderer.render(scene, camera);
+    const before = snapshotCanvas();
+    probes.forEach((mesh, index) => mesh.position.setY((index - 1) * 60));
+    await renderer.render(scene, camera);
+    const moved = snapshotCanvas();
+    probes.forEach((mesh, index) => mesh.position.copy(savedPositions[index] as Vector3));
+    for (let frame = 0; frame < 5; frame += 1) await oneFrame(false);
+    await renderer.render(scene, camera);
+    const after = snapshotCanvas();
+    if (moved === before || moved === after) {
+      throw new Error(
+        "TN_BUNDLE_FROZEN: bundled meshes teleported 60 units and the screen did not follow",
+      );
+    }
+  }
   statusElement.textContent = `complete\n${scenario.scenario ?? "matrix"}\nobjects ${meshes.length}\n${scenario.renderMode} · passes ${scenario.passes}\nmaterials ${materialIdentities.size}\nvisible ${samples.visibleCount.at(-1)?.toFixed(0) ?? "n/a"}`;
   const rendererStages = rendererStageHooks?.snapshot({ measuredFrameCount: scenario.samples });
   rendererStageHooks?.dispose();

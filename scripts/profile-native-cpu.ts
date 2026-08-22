@@ -236,7 +236,15 @@ export function parseProfileArgs(args: readonly string[]): IProfileArgs {
     renderModes: enumList(
       value("--render-mode"),
       ["independent"],
-      ["independent", "distinct-materials", "instanced", "merged", "scene-projection"],
+      [
+        "independent",
+        "distinct-materials",
+        "instanced",
+        "merged",
+        "scene-projection",
+        "bundled",
+        "bundled-dynamic",
+      ],
       "--render-mode",
     ),
     outputDir: value("--output-dir") ?? "artifacts/native-cpu-profile",
