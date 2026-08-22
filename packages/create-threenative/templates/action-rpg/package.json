@@ -31,18 +31,22 @@
     "@types/react-dom": "19.2.0",
     "@types/three": "0.185.3",
     "@vitejs/plugin-react": "6.0.5",
-    "create-threenative": "0.2.2",
+    "create-threenative": "0.2.3",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",
     "threenative-asset-mcp": "0.4.0",
     "threenative-sculpt-mcp": "0.1.0",
     "typescript": "5.9.3",
-    "vite": "8.2.0"
+    "vite": "8.2.0",
+    "@gltf-transform/cli": "4.4.2"
   },
   "optionalDependencies": {
     "@threenative/runtime-native": "0.2.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"]
+    "onlyBuiltDependencies": [
+      "@threenative/core",
+      "@threenative/runtime-native"
+    ]
   }
 }

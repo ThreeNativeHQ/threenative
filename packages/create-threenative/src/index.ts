@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
 
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
+export { optimizeModels } from "./optimize-models.js";
+export type { IOptimizeModelsOptions, IOptimizeModelsVitePlugin } from "./optimize-models.js";
 
 export type ScaffoldTemplate = string;
 
