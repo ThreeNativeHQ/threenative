@@ -6,9 +6,15 @@ describe("FixedStepLoop", () => {
     // A maxSteps of zero (or negative, or NaN) made the catch-up while-loop run
     // zero updates every frame, forever: the game rendered but never simulated,
     // with no error anywhere to name the cause.
-    expect(() => new FixedStepLoop({ maxSteps: 0, onUpdate: () => undefined })).toThrow(/maxSteps/u);
-    expect(() => new FixedStepLoop({ maxSteps: -3, onUpdate: () => undefined })).toThrow(/maxSteps/u);
-    expect(() => new FixedStepLoop({ maxSteps: Number.NaN, onUpdate: () => undefined })).toThrow(/maxSteps/u);
+    expect(() => new FixedStepLoop({ maxSteps: 0, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
+    expect(() => new FixedStepLoop({ maxSteps: -3, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
+    expect(() => new FixedStepLoop({ maxSteps: Number.NaN, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
   });
 
   it("should reject a step that cannot make progress", () => {
@@ -16,7 +22,9 @@ describe("FixedStepLoop", () => {
     // ran the full catch-up budget against time that had not passed.
     expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: 0 })).toThrow(/step/u);
     expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: -1 / 60 })).toThrow(/step/u);
-    expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: Number.NaN })).toThrow(/step/u);
+    expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: Number.NaN })).toThrow(
+      /step/u,
+    );
   });
 
   it("should call update exactly 60 times per simulated second", () => {
@@ -65,6 +73,8 @@ describe("FixedStepLoop", () => {
 
   it("should record frame timing and renderer metrics after each rendered frame", () => {
     const loop = new FixedStepLoop({
+      // The collector itself under test — a diagnostics consumer's view.
+      collectMetrics: true,
       onRender: () => ({ drawCalls: 3, triangles: 24 }),
       onUpdate: () => undefined,
     });
@@ -132,5 +142,55 @@ describe("FixedStepLoop", () => {
     loop.advance(2);
 
     expect(loop.tick()).toBe(3);
+  });
+});
+
+describe("FixedStepLoop metrics collection", () => {
+  function makeLoop(collectMetrics?: boolean) {
+    const state = { renders: 0 };
+    const loop = new FixedStepLoop({
+      collectMetrics,
+      onUpdate: () => undefined,
+      onRender: () => {
+        state.renders += 1;
+        return { drawCalls: state.renders, triangles: state.renders * 3 };
+      },
+    });
+    return { loop, state };
+  }
+
+  it("collects no samples by default - nothing reads them outside a diagnostics consumer", () => {
+    const { loop } = makeLoop();
+    loop.start(0);
+    for (let index = 1; index <= 5; index += 1) loop.stepFrame(index * 16);
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(0);
+  });
+
+  it("still calls onRender every frame while collecting nothing", () => {
+    const { loop, state } = makeLoop();
+    loop.start(0);
+    for (let index = 1; index <= 3; index += 1) loop.stepFrame(index * 16);
+    expect(state.renders).toBe(3);
+  });
+
+  it("collects one sample per rendered frame when collectMetrics is true", () => {
+    const { loop } = makeLoop(true);
+    loop.start(0);
+    // The first rendered frame only establishes the previous-render timestamp; sampling starts
+    // with the second, exactly as the always-on collector behaved.
+    for (let index = 1; index <= 5; index += 1) loop.stepFrame(index * 16);
+    const series = loop.runtimeDiagnosticsSeries();
+    expect(series).toHaveLength(4);
+    expect(series[0]?.drawCalls).toBeGreaterThan(0);
+  });
+
+  it("starts collecting only from enablement when enabled mid-run", () => {
+    const { loop } = makeLoop(false);
+    loop.start(0);
+    loop.stepFrame(16);
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(0);
+    loop.setCollectMetrics(true);
+    loop.stepFrame(32);
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(1);
   });
 });

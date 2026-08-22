@@ -21,6 +21,7 @@ function renderer(canvas: HTMLCanvasElement) {
     compileAsync: async () => undefined,
     compute: () => undefined,
     domElement: canvas,
+    info: {},
     kind: "webgl2" as const,
     raw: {},
     render: () => undefined,

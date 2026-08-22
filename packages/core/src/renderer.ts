@@ -82,6 +82,13 @@ export interface IRendererLike {
   readonly kind: RendererKind;
   readonly raw: unknown;
   /**
+   * The underlying renderer's statistics (`render.drawCalls`, `render.triangles`, …).
+   *
+   * Throws when the running renderer has none — the same fail-closed shape as `setOutputNode` —
+   * because a game that cannot count its own draws cannot apply a draw-count lever on evidence.
+   */
+  get info(): unknown;
+  /**
    * Builds and compiles a scene's pipelines before anything draws it.
    *
    * On a phone each distinct shader is compiled the first time something using it is drawn, which
@@ -160,6 +167,12 @@ function wrapRenderer(raw: RendererInstance, kind: RendererKind): IRendererLike 
     domElement: raw.domElement,
     kind,
     raw,
+    get info() {
+      const info = (raw as { info?: unknown }).info;
+      if (info === undefined || info === null)
+        throw new Error(`info is unavailable on the ${kind} renderer.`);
+      return info;
+    },
     compileAsync: async (scene, camera) => {
       // WebGL has no equivalent and needs none — it compiles on first draw either way. Resolving
       // rather than throwing keeps one warm-up call working on every renderer a game may get.

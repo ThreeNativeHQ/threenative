@@ -149,7 +149,17 @@ async function renderControl(
   }
   const game = defineGame({
     initialState: {},
-    plugins: [playtest()],
+    // A runner-announced plugin plays the diagnostics consumer: collection stays off until
+    // something says it will read the series.
+    plugins: [
+      playtest(),
+      {
+        setup: (_ctx, runtime) => {
+          runtime?.enableRuntimeDiagnostics?.();
+          return undefined;
+        },
+      },
+    ],
     renderer: {
       canvas,
       preferWebGPU: false,

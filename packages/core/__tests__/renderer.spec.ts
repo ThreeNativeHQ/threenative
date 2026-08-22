@@ -269,3 +269,47 @@ describe("createRenderer", () => {
     }
   });
 });
+
+describe("renderer info", () => {
+  it("exposes the underlying renderer's info through the wrapper", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      const info = { render: { drawCalls: 7, triangles: 12 } };
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+          info,
+        }),
+      });
+      expect(renderer.info).toBe(info);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("throws when the underlying renderer has no info instead of returning undefined", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(() => renderer.info).toThrow(/info is unavailable on the webgl2 renderer/u);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+});

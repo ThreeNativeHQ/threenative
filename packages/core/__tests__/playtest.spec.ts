@@ -180,7 +180,18 @@ describe("playtest plugin", () => {
     });
     const game = defineGame({
       initialState: {},
-      plugins: [playtest()],
+      // A second plugin plays the diagnostics consumer: announcing through
+      // enableRuntimeDiagnostics turns collection on without the runner-expected global,
+      // which would also put the bridge into hold-until-attached.
+      plugins: [
+        playtest(),
+        {
+          setup: (_ctx, runtime) => {
+            runtime?.enableRuntimeDiagnostics?.();
+            return undefined;
+          },
+        },
+      ],
       renderer: {
         canvas,
         preferWebGPU: false,

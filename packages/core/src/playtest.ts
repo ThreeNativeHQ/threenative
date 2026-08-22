@@ -63,6 +63,11 @@ export function playtest<
         scene: ctx.scene,
       });
       installRuntimeChannels(installation.bridge, runtime);
+      // A runner announced itself before the page loaded: it is the one consumer of per-frame
+      // render samples, so collection turns on exactly for playtest runs and stays off for
+      // every plain `pnpm dev` frame.
+      if ((globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true)
+        runtime?.enableRuntimeDiagnostics?.();
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options);
       const cleanup = () => {

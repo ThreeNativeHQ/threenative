@@ -1,6 +1,8 @@
 export interface IFixedStepLoopOptions {
   readonly step?: number;
   readonly maxSteps?: number;
+  /** Collect per-frame render samples for diagnostics consumers. Default false. */
+  readonly collectMetrics?: boolean;
   readonly onUpdate: (dt: number) => void;
   readonly onRender?: () => undefined | IRenderPerformanceMetrics;
   readonly requestFrame?: (callback: (time: number) => void) => number;
@@ -33,6 +35,9 @@ export class FixedStepLoop {
   #fps = 0;
   #lastRenderTime: number | undefined;
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
+  // Sample collection is opt-in because nothing outside a diagnostics consumer reads the series:
+  // collecting unconditionally spent allocations on every rendered frame of every game.
+  #collectMetrics: boolean;
 
   constructor(options: IFixedStepLoopOptions) {
     const step = options.step ?? 1 / 60;
@@ -46,9 +51,12 @@ export class FixedStepLoop {
     // times per frame: the game rendered but never simulated, silently.
     const maxSteps = options.maxSteps ?? 5;
     if (!Number.isInteger(maxSteps) || maxSteps < 1) {
-      throw new Error(`FixedStepLoop maxSteps must be an integer of at least one, received ${String(options.maxSteps)}.`);
+      throw new Error(
+        `FixedStepLoop maxSteps must be an integer of at least one, received ${String(options.maxSteps)}.`,
+      );
     }
     this.maxSteps = maxSteps;
+    this.#collectMetrics = options.collectMetrics ?? false;
     this.#onUpdate = options.onUpdate;
     this.#onRender = options.onRender ?? (() => undefined);
     this.#requestFrame =
@@ -73,6 +81,10 @@ export class FixedStepLoop {
   }
   runtimeDiagnosticsSeries(): readonly IRenderPerformanceSample[] {
     return this.#renderPerformanceSamples.map((sample) => ({ ...sample }));
+  }
+  /** Turns sample collection on for the rest of the run; a diagnostics consumer asking for the series is the only caller. */
+  setCollectMetrics(enabled: boolean): void {
+    this.#collectMetrics = enabled;
   }
   readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
@@ -113,8 +125,9 @@ export class FixedStepLoop {
       }
       this.#lastRenderTime = now;
     }
+    // onRender does the rendering itself; only its metrics return value is optional.
     const metrics = this.#onRender();
-    if (frameMs !== undefined && frameMs > 0) {
+    if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,
         ...(metrics === undefined || metrics.drawCalls === undefined

@@ -26,6 +26,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
     compute: (node) => dispatched.push(node),
     dispose: () => undefined,
     domElement: canvas,
+    info: {},
     kind: "webgpu",
     raw: {},
     render: () => undefined,

@@ -40,6 +40,13 @@ export interface IGameRuntimeObservations {
 export interface IGamePluginRuntime {
   readonly fixedStep: (ticks: number) => number;
   /**
+   * Announces that a diagnostics consumer is going to read render metrics, turning per-frame
+   * sample collection on for the rest of the run. Optional: a runtime without collection
+   * support just never enables. Games collect nothing until this fires — the samples exist for
+   * assertions, not for every frame of every game.
+   */
+  readonly enableRuntimeDiagnostics?: () => void;
+  /**
    * Hold the frame loop until `gate` settles, after the start scene has entered.
    *
    * A plugin that blocks its own `setup` blocks it too early: entity-derived capabilities are
@@ -292,6 +299,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #sceneEntered = false;
   #paused = false;
   #started = false;
+  // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
+  #renderMetricsEnabled = false;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
     this.#config = config;
@@ -539,16 +548,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // second optional render path to leave untested.
           renderer.render(this.#projection?.root ?? threeScene, camera);
           this.#scene?.render(ctx);
-          worldMetrics = rendererPerformanceMetrics(renderer.raw);
+          if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }
         if (canvasLayer.scene.children.length > 0) {
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+          if (!this.#renderMetricsEnabled) return {};
           const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
           return worldMetrics === undefined
             ? overlayMetrics
             : addRenderPerformanceMetrics(worldMetrics, overlayMetrics);
         }
-        return worldMetrics ?? {};
+        return this.#renderMetricsEnabled ? (worldMetrics ?? {}) : {};
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
@@ -570,6 +580,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startGates: Promise<void>[] = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      enableRuntimeDiagnostics: () => {
+        this.#renderMetricsEnabled = true;
+        gameLoop.setCollectMetrics(true);
+      },
       holdStart: (gate) => startGates.push(gate),
       observations: createRuntimeObservations(),
       tick: gameLoop.tick,

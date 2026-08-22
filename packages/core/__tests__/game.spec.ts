@@ -81,6 +81,8 @@ describe("IGame", () => {
       plugins: [
         {
           setup: (_ctx, runtime) => {
+            // This plugin is the diagnostics consumer; say so or nothing is collected.
+            runtime?.enableRuntimeDiagnostics?.();
             diagnostics = runtime?.runtimeDiagnosticsSeries;
             return undefined;
           },
