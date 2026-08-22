@@ -49,3 +49,29 @@ management over adb alone -- plausibly the lock screen, which adb cannot cross. 
 should start here: unlock the phone by hand once, leave the cable out, and rerun
 `measure-android-js-engine.mjs --expected-engine V8 --meshes <N> --cold-start-runs 0`
 per rung (each rung needs its own build; the mesh count is baked at build time).
+
+## HIGH lane — third attempt session, 2026-08-23 (~10:45-11:00 local): RUNG 500 MEASURED
+
+Root causes of every earlier failure, fixed this session:
+1. **Logcat ring reset to 256 KiB** (device rebooted since 2026-08-21 lost the `logcat -G 16M`
+   sizing) — at ~1,100 marker lines/s uncapped, SUBJECT/PURE/WINDOW_START evicted within a
+   second while later lines survived. Restored `logcat -G 16M`; verified against the device
+   bundle pulled off the phone (subject marker and meshes:500 both present).
+2. **Screen/keyguard over adb**: wake-pulse loop every 5 s for the script's duration; screen
+   timeout raised to 30 min; brightness dimmed to cut display heat.
+3. **Stale APK reuse**: each rung's mesh count is baked into the bundle at build time; rung
+   4000 must build its own APK (an early attempt reused a first-proof APK).
+
+Rung 500 row — device Pixel 8 `37251FDJH0037Z` via Wi-Fi adb `192.168.1.192:5555`, V8,
+uncapped present, discharging (status 3), battery temp ~31.5 °C falling, thermal NONE,
+300-frame window after 60 warmup, `-O2`, acceptance-eligible:
+
+| meshes | ms/frame | fps | calls/frame | submits/frame | native submit+present (present counted once) | js+uninstrumented |
+|---|---|---|---|---|---|---|
+| 500 | 3.622 | 276.1 | 32 | 4 | 1.427 ms (301 presentEvents) | 2.169 ms |
+
+The corrected instrument ran live: `presentCountedOncePerFrame: true`, 301 present events for
+a 301-frame window — PRD-175's LOW-lane fix producing honest numbers in a real measurement.
+Report artifact (untracked, local): `artifacts/engine-load-test/prd175-rung-500-2026-08-23.json`.
+
+Rung 4000: cooling-watcher running; row appended when measured.
