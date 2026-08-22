@@ -60,16 +60,16 @@ Data changes: none.
 
 **Implementation:**
 
-- [ ] Use the existing scenario input schema; do not add a template-only input protocol.
-- [ ] Ensure right-button aim state and left-button fire are observable after the actual event path.
-- [ ] Add a no-input/disabled control so the scenario cannot pass from initial state.
+- [x] Use the existing scenario input schema; do not add a template-only input protocol.
+- [x] Ensure right-button aim state and left-button fire are observable after the actual event path.
+- [x] Add a no-input/disabled control so the scenario cannot pass from initial state.
 
 **Wiring:**
 
-- [ ] Caller edited: generated `main.ts` boots the game that the scenario drives.
-- [ ] Registration: template playtest discovery includes `input-control.playtest.json`.
-- [ ] Old path: package-only tests remain unit evidence, while this scenario is the integration proof.
-- [ ] Ledger rows filled: 1–2.
+- [x] Caller edited: generated `main.ts` boots the game that the scenario drives.
+- [x] Registration: template playtest discovery includes `input-control.playtest.json`.
+- [x] Old path: package-only tests remain unit evidence, while this scenario is the integration proof.
+- [x] Ledger rows filled: 1–2.
 
 **Tests Required:**
 
@@ -99,16 +99,16 @@ display wrapper, and the template smoke suite. Record raw observations and scree
 
 **Implementation:**
 
-- [ ] Reuse the same scenario and observations; do not fork gameplay assertions by platform.
-- [ ] Verify right-button and left-button ordering on the selected native target.
-- [ ] If the target is unavailable, report BLOCKED with the exact device prerequisite rather than green.
+- [x] Reuse the same scenario and observations; do not fork gameplay assertions by platform.
+- [x] Verify right-button and left-button ordering on the selected native target.
+- [x] If the target is unavailable, report BLOCKED with the exact device prerequisite rather than green. *(Desktop was executed, so no block fired; Android is recorded not-executed with its exact prerequisite in the evidence doc — a device is attached but the APK packaging lane is out of this PRD's scope.)*
 
 **Wiring:**
 
-- [ ] Caller edited: native conformance runner loads the same generated scenario.
-- [ ] Registration: registry row points at the committed template scenario.
-- [ ] Old path: web and native do not carry duplicate scenario definitions.
-- [ ] Ledger rows filled: 1–3.
+- [x] Caller edited: native conformance runner loads the same generated scenario.
+- [x] Registration: registry row points at the committed template scenario.
+- [x] Old path: web and native do not carry duplicate scenario definitions.
+- [x] Ledger rows filled: 1–3.
 
 **Tests Required:**
 
@@ -131,20 +131,43 @@ full template suite. Include adapter/target identity and blocked reasons.
 
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
-| generated web input | remove an input event | real shooter state does not change | `command: pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/generated-shooter-input.spec.ts`; result: RED observed: generated shooter input state unchanged; exit: 1 |
-| native registration | remove the conformance row | empty native proof is rejected | `command: pnpm exec vitest run --config vitest.config.ts packages/runtime-native/tests/generated-shooter-input.test.mjs`; result: RED observed: native scenario missing; exit: 1 |
+| generated web input | remove an input event | real shooter state does not change | `sh scripts/xvfb.sh pnpm exec vitest run --config vitest.config.ts packages/playtest/__tests__/generated-shooter-input.spec.ts` with right-button delivery stripped from the scenario copy (aim step loses its press, fire step reduced to left-only); result: `RED observed: generated shooter input state unchanged` — failed rows `resource.state.aimedShots.atSteps`, `resource.state.aiming.atSteps`, `signal.aim-engaged`, `signal.aim-released`; exit: 1 |
+| native registration | remove the conformance row | empty native proof is rejected | `cd packages/runtime-native && pnpm exec vitest run --config vitest.config.ts tests/generated-shooter-input.test.mjs` with the `generated-shooter-input-control` entry deleted from `registry.json`; result: `Error: RED observed: native scenario missing (generated-shooter-input-control is not registered)`; exit: 1. Restored; the committed suite also asserts the same rejection against an in-memory mutated copy |
 
 ## Acceptance Criteria
 
-- [ ] One committed generated-shooter scenario drives relative look, right-button aim, and left-button fire.
-- [ ] Assertions observe real camera, aim, and damage/fire state after the bridge path.
-- [ ] The scenario cannot pass from initial state or with a missing input event.
-- [ ] The same scenario is executed on web and one native target, or the native prerequisite is recorded as BLOCKED.
-- [ ] No duplicate platform-specific gameplay scenario is introduced.
-- [ ] Both negative controls were observed red.
+- [x] One committed generated-shooter scenario drives relative look, right-button aim, and left-button fire.
+- [x] Assertions observe real camera, aim, and damage/fire state after the bridge path.
+- [x] The scenario cannot pass from initial state or with a missing input event.
+- [x] The same scenario is executed on web and one native target, or the native prerequisite is recorded as BLOCKED.
+- [x] No duplicate platform-specific gameplay scenario is introduced.
+- [x] Both negative controls were observed red.
 
 ## Checkpoint Protocol
 
 Record the generated project identity, scenario path, event sequence, raw observations, target and
 adapter identity, screenshot/provenance paths, and observed-red output. A unit-only or empty-target
 green result is UNVERIFIED.
+
+## Results — 2026-08-22
+
+Done, with two registered deviations. Full record:
+[`docs/verification/generated-shooter-input-2026-08-21.md`](../../verification/generated-shooter-input-2026-08-21.md).
+
+- **Web executed**: scaffolded shooter project (local tarballs, /tmp), hardware WebGPU adapter
+  (`turing/nvidia`), scenario exit 0 with 20/20 assertion rows; focused vitest arm 3/3.
+- **Desktop executed**: same project built `--target desktop` against the stable host binary,
+  exit 0 with 20/20; identical yaw/aim/damage numbers to web (`yawDegrees` 92 exact on both).
+- **Both negative controls observed red** with the named mutations, outputs pasted above and in
+  the evidence doc; mutations reverted.
+- Deviation A: the registry row lives in a new versioned `generatedPlaytestProofs` section rather
+  than `tests[]`, because parity-lane rows must be executable `startScene` scenes and either shape
+  would turn the web/android CI lanes permanently red; the runtime-native test fails closed on the
+  row's absence, preserving the revert check.
+- Deviation B: `packages/playtest/src/three/device.ts` was **not** edited — the runner's existing
+  pointer state machine already preserves right-hold → left-while-held → release order, proven by
+  the recorded native delivery sequence in the evidence doc. `playtest-events.ts` also needed no
+  edit: the existing drain bridge already carries the new events.
+- Finding handed to template owners: action-rpg, defense and racing templates lack the `esbuild`
+  devDependency starter/minimal/platformer/shooter ship; cold scaffolds of those three cannot boot
+  `pnpm dev` (`TN_CONFIG_TRANSPILER_MISSING`).
