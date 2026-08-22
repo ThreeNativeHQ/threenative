@@ -4,7 +4,7 @@
   "license": "MIT",
   "description": "Scaffold a readable ThreeNative game project.",
   "type": "module",
-  "files": ["dist", "templates", "capabilities.json", "README.md"],
+  "files": ["dist", "templates", "agent-docs", "capabilities.json", "README.md"],
   "bin": {
     "create-threenative": "./dist/index.js",
     "threenative": "./dist/threenative.js"

@@ -95,6 +95,13 @@ const STARTER_PATHS = [
   "public/native-proof.png",
   "public/icon.png",
   "public/pickup.ogg",
+  // P2-2: the searchable reference bundle every generated project must ship.
+  "agent-docs/capture-the-frame.md",
+  "agent-docs/ctx-cookbook.md",
+  "agent-docs/finding-assets.md",
+  "agent-docs/gameplay-recipes.md",
+  "agent-docs/sculpt-from-a-reference.md",
+  "agent-docs/visual-baseline.md",
 ];
 
 const MINIMAL_RENDER_PATHS = [
@@ -173,6 +180,43 @@ describe("create-threenative", () => {
       expect(help).toContain(
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
+    }
+  });
+
+  // P2-2: the bounded instructions name long recipes by their shipped path. This is the
+  // generated-project check behind the "omit reference copying" negative control: with
+  // `copyReferenceBundle` removed from `createProject`, the scaffold itself throws
+  // `RED observed: referenced recipe missing` before this body ever runs.
+  it("should copy bounded references with project placeholders", async () => {
+    const root = await makeTempDir("threenative-reference-bundle-");
+    try {
+      const result = await createProject(
+        { install: false, target: "my-game", template: "starter" },
+        root,
+      );
+      const bundleDirectory = path.join(result.target, "agent-docs");
+      const shipped = (await readdir(bundleDirectory)).sort();
+      expect(shipped).toEqual([
+        "capture-the-frame.md",
+        "ctx-cookbook.md",
+        "finding-assets.md",
+        "gameplay-recipes.md",
+        "sculpt-from-a-reference.md",
+        "visual-baseline.md",
+      ]);
+      for (const file of shipped) {
+        const page = await readFile(path.join(bundleDirectory, file), "utf8");
+        expect(page, file).not.toContain("__PROJECT_NAME__");
+        expect(page, file).not.toContain("__PROJECT_ID__");
+      }
+      const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
+      expect(agents).toContain("`agent-docs/finding-assets.md`");
+      for (const file of shipped) {
+        // Every path the instructions name must resolve inside the generated project.
+        expect(agents, file).toContain(`agent-docs/${file}`);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
     }
   });
 

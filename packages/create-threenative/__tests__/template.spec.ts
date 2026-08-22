@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createProject } from "../src/index.js";
 
@@ -30,6 +31,7 @@ const requiredSharedFragments = [
   "sculpt-loop",
   "look-at-it-and-budget-the-look",
   "ctx-surface",
+  "playtest-fail-closed",
 ] as const;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
@@ -540,6 +542,26 @@ describe("template contracts", () => {
       for (const fragment of requiredSharedFragments) {
         expect(agents, `${template}/${fragment}`).toContain(`<!-- shared: ${fragment} -->`);
       }
+    }
+  });
+
+  // P2-2: the same checker the scripts-side spec exercises on fixtures, run over the real
+  // template tree. A template that grows past its measured word budget, drops a mandatory
+  // inline section, names a reference page the bundle does not ship, or whose CLAUDE.md
+  // mirror drifted, fails here with a diagnostic naming the defect.
+  it("should keep every generated instruction pair bounded", async () => {
+    const audits = await auditAllTemplates(path.resolve("."));
+    expect(audits).toHaveLength(7);
+    for (const audit of audits) {
+      expect(
+        audit.violations,
+        `${audit.template}: ${audit.violations.map(({ message }) => message).join("; ")}`,
+      ).toEqual([]);
+    }
+    for (const audit of audits) {
+      // The bundle pages a template's instructions name must be exactly the ones the
+      // scaffolder ships, so discovery cannot silently rot.
+      expect(audit.references.length, `${audit.template} references nothing`).toBeGreaterThan(0);
     }
   });
 

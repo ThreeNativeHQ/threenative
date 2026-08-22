@@ -60,3 +60,17 @@ implementation sitting beside a framework API is a supported outcome, not a hack
 
 Never contort the game to flatter the framework, and never stall on a framework bug. A
 finished game carrying a plain Three.js patch beats a blocked one every time.
+
+### Where the long recipes live
+
+This file and the sections around it are the mandatory inline instructions: the first-use
+capability search, the fallback rules, the platform constraints, and the fail-closed playtest
+rules. The step-by-step recipes are separate searchable pages shipped into this project under
+`agent-docs/` — open the one a pointer names when you need it:
+
+- `agent-docs/finding-assets.md` — the full asset-MCP loop: sources, licenses, downloads, ZIPs.
+- `agent-docs/sculpt-from-a-reference.md` — the sculpt gate loop and branch definitions.
+- `agent-docs/capture-the-frame.md` — how to screenshot a WebGPU game that actually renders.
+- `agent-docs/ctx-cookbook.md` — `ctx.raycast()`, scene rebuild, and seeded-randomness recipes.
+- `agent-docs/gameplay-recipes.md` — movement mapping, gamepad bindings, physics-step timing.
+- `agent-docs/visual-baseline.md` — the `src/render/` per-file baseline and its traps.

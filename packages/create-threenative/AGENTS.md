@@ -36,6 +36,14 @@ Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. A
 placeholder needs the same treatment in `renderTemplate`. `pnpm budgets` reports each
 template's LOC but no longer caps it.
 
+Long recipes live in `agent-docs/references/*.md`, not in the templates. The scaffolder copies
+that bundle to `<project>/agent-docs/` with the same placeholder substitution and fails closed
+when a template names a page it does not ship; `scripts/instruction-budget.ts` bounds every
+template's rendered word count and validates its references and `CLAUDE.md` mirror. Keep
+mandatory rules (first-use capability search, platform constraints, fail-closed playtest
+rules) inline; move only step-by-step recipes out, and link them by their generated path
+(`agent-docs/<page>.md`).
+
 **A template's platform claims must match what was executed.** The status paragraph under
 each template's Commands block is a fail-closed statement, not marketing; narrow it when a
 dependency (like Recast WASM on QuickJS) rules a target out.

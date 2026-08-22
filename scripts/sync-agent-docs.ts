@@ -190,7 +190,7 @@ if (
     .then(({ changed, checked }) => {
       if (check && changed.length > 0) {
         console.error(
-          `agent docs out of sync with shared fragments or AGENTS.md:\n${changed
+          `RED observed: agent docs out of sync with shared fragments or AGENTS.md:\n${changed
             .map((file) => `  ${file}`)
             .join("\n")}\nRun: pnpm sync:agents`,
         );
