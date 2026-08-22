@@ -306,6 +306,16 @@ whether `WebGPURenderer` at the catalog version ever passes dynamic offsets on t
 this is recorded as a finding to settle, not as a live bug. Any batched ABI must not carry the
 asymmetry forward.
 
+**Measured 2026-08-21 (browser WebGPU hardware, three 0.185.1): both gates of this lever fail.**
+With `BundleGroup` defaults, `NodeMaterialObserver.needsRefresh` returns false for every object
+in a static bundle, so a moved child never reaches the screen; with `static=false`, the
+per-frame `renderId` check refreshes only the first render object per shared material observer,
+so a 4,096-mesh bundle still froze teleported meshes. The cached path is genuinely cheap
+(1,024 all-moving meshes: 0.10 ms vs 3.60 ms independent, 1 draw vs 1,025) — but it is only
+correct for scenery that never moves. Evidence and the teleport motion gate:
+`docs/verification/prd-069-phase-0-v8-draw-ladder-2026-08-21.md`. What remains of this lever is
+a game-side static-scenery option with a correctness cliff, not a framework feature.
+
 **Honest ranking note, revised after the sweep.** This is the *most* expensive lever, and the
 sweep weakened rather than strengthened the case for it. A batched ABI removes crossings; the
 knee in §2.3 cannot be made of crossings. So even a perfect batched ABI leaves the ~20 ms step
