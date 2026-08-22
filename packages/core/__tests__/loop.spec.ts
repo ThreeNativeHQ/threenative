@@ -6,9 +6,15 @@ describe("FixedStepLoop", () => {
     // A maxSteps of zero (or negative, or NaN) made the catch-up while-loop run
     // zero updates every frame, forever: the game rendered but never simulated,
     // with no error anywhere to name the cause.
-    expect(() => new FixedStepLoop({ maxSteps: 0, onUpdate: () => undefined })).toThrow(/maxSteps/u);
-    expect(() => new FixedStepLoop({ maxSteps: -3, onUpdate: () => undefined })).toThrow(/maxSteps/u);
-    expect(() => new FixedStepLoop({ maxSteps: Number.NaN, onUpdate: () => undefined })).toThrow(/maxSteps/u);
+    expect(() => new FixedStepLoop({ maxSteps: 0, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
+    expect(() => new FixedStepLoop({ maxSteps: -3, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
+    expect(() => new FixedStepLoop({ maxSteps: Number.NaN, onUpdate: () => undefined })).toThrow(
+      /maxSteps/u,
+    );
   });
 
   it("should reject a step that cannot make progress", () => {
@@ -16,7 +22,9 @@ describe("FixedStepLoop", () => {
     // ran the full catch-up budget against time that had not passed.
     expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: 0 })).toThrow(/step/u);
     expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: -1 / 60 })).toThrow(/step/u);
-    expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: Number.NaN })).toThrow(/step/u);
+    expect(() => new FixedStepLoop({ onUpdate: () => undefined, step: Number.NaN })).toThrow(
+      /step/u,
+    );
   });
 
   it("should call update exactly 60 times per simulated second", () => {
