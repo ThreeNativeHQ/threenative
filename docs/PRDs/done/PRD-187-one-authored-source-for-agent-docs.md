@@ -1,6 +1,9 @@
 # PRD-187 — Supersession is a fact the engine declares, not prose seven files repeat
 
-**Status:** OPEN
+**Status:** COMPLETE, 2026-08-22. All four phases landed in `1f170dbc`; the four template and
+scaffold tests that squash carried in red were closed on 2026-08-22 — triplicated override prose
+cut, budgets re-measured, the bundle reference path corrected. Evidence in
+[the instruction-budget record](../../verification/instruction-budgets-2026-08-22.md).
 **Complexity:** 3 (10+ files) + 2 (new module) + 2 (multi-package) = **7 → HIGH mode**
 **Owner:** unassigned
 **Blocks:** PRD-186 phases 3–5 (their per-symbol doc cost collapses once this lands)
@@ -371,10 +374,11 @@ Consumer-scoped — none is satisfiable by a tree an agent could not tell from t
 **Binary done checks**
 
 - [x] All phases complete
-- [x] `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, `pnpm check:docs` pass. `pnpm test`: every
-      suite passes except `tests/conformance-runner.test.mjs` under recursive root execution,
-      which fails identically on a clean tree (verified via stash) and passes standalone — a
-      pre-existing environmental issue, not introduced by this PRD.
+- [x] `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, `pnpm check:docs` pass. Tests: 192 files,
+      1813 passing via `npx vitest run` on 2026-08-22, including the four template/scaffold tests
+      this PRD's Phase 4 had left red at `1f170dbc`. `pnpm test` as a whole is blocked by
+      `packages/playtest`'s machine-wide orphan-process check while a concurrent sandbox lane holds
+      a Playwright Chromium open — environmental, recorded in the verification file.
 - [x] `pnpm sync:agents --check` passes; template mirrors regenerated (74 mirrors, 42 written)
 - [x] `pnpm build` regenerates `capabilities.json`, `capability-reference.md` and the ctx table as no-ops
 

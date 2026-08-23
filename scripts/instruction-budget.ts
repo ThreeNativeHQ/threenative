@@ -32,14 +32,20 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // The four genre kits fit the default once their duplicated recipes moved to the reference
   // bundle. The three overrides are not slack: each names the mandatory inline content that
   // keeps its template above the default after two reduction passes.
-  defaultMaxWords: 2600,
+  //
+  // Every number carries a uniform +60 re-measured on 2026-08-22 (PRD-187): the generated
+  // superseded-constructs region became mandatory inline content in all seven templates, and
+  // survives the triplication cut that paid for most of it (the same override rule had been
+  // stated in the ctx-surface prose, the generated trailer, and the engine-capabilities
+  // fragment). See docs/verification/instruction-budgets-2026-08-22.md.
+  defaultMaxWords: 2660,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
-    platformer: 2900,
+    platformer: 2960,
     // The no-React DOM HUD contract and its accessible-DOM native rules have no genre-kit peer.
-    minimal: 3300,
+    minimal: 3360,
     // React state bridge, native-proof game contract, and the four-difference portability list.
-    starter: 3650,
+    starter: 3710,
   },
 };
 

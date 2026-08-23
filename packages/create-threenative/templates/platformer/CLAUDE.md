@@ -247,18 +247,9 @@ definitions and environment-splitting guidance are `agent-docs/sculpt-from-a-ref
 ## Engine capabilities — look it up before writing a replacement
 
 <!-- shared: engine-capabilities -->
-Before writing anything engine-shaped, look the capability up. Two routes, and the second
-needs no MCP server:
-
-1. Ask the MCP: `engine_search_capabilities("pool decals on surfaces")` — plain situations work.
-2. Read the generated index:
-   `packages/create-threenative/agent-docs/references/capability-reference.md`.
-
-`ctx` conveniences (`ctx.raycast`, `ctx.random`, `ctx.tween`, …) are **properties on `ctx`,
-never imports** — grepping imports will never surface them; the ctx table in this document
-covers them. Writing a superseded raw construct (`new Raycaster(`, `Math.random(`, …) fails
-`pnpm budgets`; when the raw construct is genuinely right, annotate that exact line
-`// engine-override: <reason>`.
+Two routes to look a capability up, and the second needs no MCP server:
+`engine_search_capabilities("pool decals on surfaces")` — plain situations work — or the
+generated index at `agent-docs/capability-reference.md`.
 <!-- /shared -->
 
 
@@ -344,21 +335,11 @@ if (player.dead) {
 **`ctx.random` is deterministic only when `defineGame({ seed })` is configured.** Never use
 `Math.random()` for a value the scenario must reproduce.
 
-**Reinvention fails CI.** `pnpm budgets` scans this project's `src/` for the raw constructs the
-engine's capabilities supersede (`new Raycaster(`, `Math.random(`, a hand-written A*, …) and
-fails, naming the capability to use instead. When a raw construct is genuinely right — measuring
-world bounds rather than scaling an asset, hiding geometry for good — annotate that exact line:
-
-```ts
-const bounds = new Box3().setFromObject(viewmodel); // engine-override: measuring, not scaling
-```
-
-The reason must be non-empty; a bare `// engine-override:` still fails.
-
 <!-- generated: superseded-constructs -->
 
-Writing any of these in game source fails `pnpm budgets`. The list and the gate are
-generated from the capabilities' own doc tags — they cannot disagree:
+**Reinvention fails CI.** `pnpm budgets` scans this project's `src/` for these raw
+constructs and fails, naming the capability instead. The list and the gate are generated
+from the capabilities' own doc tags, so they cannot disagree:
 
 | Rather than write | Use instead | Import from |
 |---|---|---|
@@ -368,7 +349,12 @@ generated from the capabilities' own doc tags — they cannot disagree:
 | `.visible = false` | `prewarm` | `@threenative/core` |
 | `new Raycaster(` | `ScenePicker` | `@threenative/core` |
 
-Annotate a genuinely-correct line `// engine-override: <reason>` to pass.
+When the raw construct is genuinely right, annotate that exact line with a non-empty
+reason — a bare `// engine-override:` still fails:
+
+```ts
+const bounds = new Box3().setFromObject(viewmodel); // engine-override: measuring, not scaling
+```
 
 <!-- /generated -->
 <!-- /shared -->

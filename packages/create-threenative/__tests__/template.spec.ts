@@ -31,6 +31,7 @@ const requiredSharedFragments = [
   "sculpt-loop",
   "look-at-it-and-budget-the-look",
   "ctx-surface",
+  "engine-capabilities",
   "playtest-fail-closed",
 ] as const;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;

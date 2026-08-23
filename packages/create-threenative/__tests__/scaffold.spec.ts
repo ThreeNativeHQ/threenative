@@ -204,6 +204,7 @@ describe("create-threenative", () => {
       const shipped = (await readdir(bundleDirectory)).sort();
       expect(shipped).toEqual([
         "assertion-reference.md",
+        "capability-reference.md",
         "capture-the-frame.md",
         "ctx-cookbook.md",
         "debug-surface.md",
