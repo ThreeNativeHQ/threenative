@@ -1,6 +1,8 @@
 # Framework LOC attribution — 2026-08-19
 
-> Superseded on 2026-08-20 by [the reconciled active attribution](loc-attribution-2026-08-20.md).
+> Superseded on 2026-08-20 by the reconciled active attribution
+> (`loc-attribution-2026-08-20.md`, itself deleted on 2026-08-22 when PRD-188 retired the
+> attribution machinery; see `budgets-decommission-2026-08-22.md`).
 > The historical measurement and package dispositions below are retained unchanged; the active
 > verifier no longer consumes this record.
 

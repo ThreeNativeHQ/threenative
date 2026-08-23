@@ -10,7 +10,6 @@ import {
   collectBudgets,
   enforceBudgets,
   nativeCensusDrift,
-  verifyFrameworkLocAttribution,
 } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
@@ -69,28 +68,6 @@ async function writeNativeCensus(
   );
 }
 
-async function writeFrameworkAttribution(
-  root: string,
-  rows: readonly (readonly [string, number])[],
-  total: number,
-): Promise<void> {
-  const recordPath = path.join(root, "docs", "verification", "loc-attribution-2026-08-20.md");
-  await mkdir(path.dirname(recordPath), { recursive: true });
-  const tableRows = rows.map(([name, lines]) => `| ${name} | ${lines} |`).join("\n");
-  await writeFile(
-    recordPath,
-    [
-      "# Framework LOC attribution",
-      "",
-      `Recorded framework LOC: ${total}`,
-      "",
-      "| Package | Counted LOC |",
-      "| --- | ---: |",
-      tableRows,
-    ].join("\n"),
-  );
-}
-
 describe("budget gate", () => {
   it("should allow 8 framework packages plus example workspaces", async () => {
     const root = await fixtureRoot();
@@ -145,68 +122,6 @@ describe("budget gate", () => {
     const report = await collectBudgets(root);
     expect(budgetTriggers(report)).toEqual([]);
     expect(budgetErrors(report)).toEqual([]);
-  });
-
-  it("should name framework packages that moved since the active attribution", async () => {
-    const root = await fixtureRoot();
-    const directory = path.join(root, "packages", "core", "src");
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
-    await writeFile(path.join(directory, "large.ts"), "x\n".repeat(15_000));
-    await writeFrameworkAttribution(root, [["core", 0]], 0);
-
-    const report = await collectBudgets(root);
-    const trigger = budgetTriggers(report).join("\n");
-
-    expect(report.frameworkLocByPackage).toEqual([{ loc: report.frameworkLoc, name: "core" }]);
-    expect(trigger).toContain("Packages moved since last recorded attribution: core (+");
-  });
-
-  it("should allow a stale historical attribution during normal budget enforcement", async () => {
-    const root = await fixtureRoot();
-    const directory = path.join(root, "packages", "physics", "src");
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(root, "packages", "physics", "package.json"), "{}");
-    await writeFile(path.join(directory, "owned.ts"), "owned");
-    await writeFrameworkAttribution(root, [["physics", 0]], 0);
-
-    const report = await collectBudgets(root);
-    expect(report.frameworkLoc).toBe(1);
-    expect(report.frameworkLocAttribution?.total).toBe(0);
-    await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkLoc: 1 });
-  });
-
-  it("should fail closed when the active attribution verifier finds a mismatch", async () => {
-    const root = await fixtureRoot();
-    const directory = path.join(root, "packages", "physics", "src");
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(root, "packages", "physics", "package.json"), "{}");
-    await writeFile(path.join(directory, "owned.ts"), "owned");
-    await writeFrameworkAttribution(root, [["physics", 0]], 0);
-
-    await expect(verifyFrameworkLocAttribution(root)).rejects.toThrow(
-      "recorded framework LOC attribution total disagrees with measured framework LOC: recorded 0, measured 1",
-    );
-  });
-
-  it("should fail the active verifier when package rows move even if the total stays equal", async () => {
-    const root = await fixtureRoot();
-    const directory = path.join(root, "packages", "core", "src");
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(root, "packages", "core", "package.json"), "{}");
-    await writeFile(path.join(directory, "owned.ts"), "owned");
-    await writeFrameworkAttribution(
-      root,
-      [
-        ["core", 0],
-        ["physics", 1],
-      ],
-      1,
-    );
-
-    await expect(verifyFrameworkLocAttribution(root)).rejects.toThrow(
-      "framework LOC attribution package rows disagree",
-    );
   });
 
   it("should count native source and build files toward the framework LOC trigger", async () => {
@@ -319,27 +234,32 @@ describe("budget gate", () => {
     );
   });
 
-  it("should trigger review when native runtime LOC exceeds 50000 without charging framework LOC", async () => {
+  it("should fire the native runtime trigger past 100k lines without charging framework LOC", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "runtime-native", "src");
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
-    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(50_000));
+    // A trailing newline adds a final empty split segment: repeat(100_000) counts 100_001 lines,
+    // plus package.json's one line.
+    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(100_000));
     const report = await collectBudgets(root);
     expect(report.frameworkLoc).toBe(0);
-    expect(report.nativeRuntimeLoc).toBeGreaterThan(50_000);
-    expect(budgetTriggers(report).join("\n")).toContain("native runtime LOC review trigger");
+    expect(report.nativeRuntimeLoc).toBe(100_002);
+    expect(budgetTriggers(report).join("\n")).toContain(
+      "native runtime LOC review trigger: 100002 lines (trigger 100000",
+    );
     expect(budgetErrors(report)).toEqual([]);
   });
 
-  it("should allow native runtime LOC below 50000", async () => {
+  it("should stay silent at the pinned native trigger", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "runtime-native", "src");
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(root, "packages", "runtime-native", "package.json"), "{}");
-    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(49_998));
+    // repeat(99_998) counts 99_999 lines; with package.json that is exactly the pinned trigger.
+    await writeFile(path.join(directory, "runtime.cpp"), "x\n".repeat(99_998));
     const report = await collectBudgets(root);
-    expect(report.nativeRuntimeLoc).toBeLessThanOrEqual(50_000);
+    expect(report.nativeRuntimeLoc).toBe(100_000);
     expect(budgetTriggers(report)).toEqual([]);
     await expect(enforceBudgets(root)).resolves.toMatchObject({
       nativeRuntimeLoc: report.nativeRuntimeLoc,

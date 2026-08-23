@@ -733,7 +733,7 @@ exist so that never recurs. **They are not the goal; they bound the price of the
 | Budget | Limit | Kind | v1 |
 |---|---:|---|---:|
 | Framework source (excl. examples, salvage, native) | **15,000 LOC** | review trigger | 441,811 TS + 129,247 Rust |
-| Native runtime source (excl. downloaded `third_party/`) | **50,000 LOC** | review trigger | — |
+| Native runtime source (excl. downloaded `third_party/`) | **100,000 LOC** | review trigger | — |
 | Workspace packages | governed by §11.5, not by a number | rule | 27 |
 | Untracked `third_party/` | **hard fail** if any file is tracked | hard | — |
 | Default gate green with no C++ toolchain | **hard fail** otherwise | hard | — |

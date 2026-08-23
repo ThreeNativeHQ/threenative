@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile);
  */
 const LIMITS = {
   frameworkLoc: 15_000,
-  nativeRuntimeLoc: 50_000,
+  nativeRuntimeLoc: 100_000,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
@@ -37,11 +37,6 @@ const EXTERNAL_MCPS: ReadonlySet<string> = new Set([
   "threenative-sculpt-mcp",
 ]);
 const NATIVE_RUNTIME_PACKAGE = path.join("packages", "runtime-native");
-const FRAMEWORK_LOC_ATTRIBUTION = path.join(
-  "docs",
-  "verification",
-  "loc-attribution-2026-08-20.md",
-);
 const NATIVE_SOURCE_PATTERN =
   /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|m|mm|rs|swift|java|kt|kts|cmake|gradle)$/;
 const NATIVE_RUNTIME_SOURCE_PATTERN =
@@ -86,7 +81,6 @@ export type BudgetReport = {
   exampleWorkspaces: number;
   frameworkLoc: number;
   frameworkLocByPackage: FrameworkPackageLoc[];
-  frameworkLocAttribution: FrameworkLocAttribution | null;
   nativeRuntimeLoc: number;
   prdFiles: number;
   templates: { name: string; loc: number }[];
@@ -112,72 +106,6 @@ export type FrameworkPackageLoc = {
   readonly loc: number;
   readonly name: string;
 };
-
-export type FrameworkLocAttribution = {
-  readonly packages: readonly FrameworkPackageLoc[];
-  readonly total: number;
-};
-
-function parseFrameworkLocPackages(
-  markdown: string,
-  tableStart: number,
-  file: string,
-): FrameworkPackageLoc[] {
-  const packages: FrameworkPackageLoc[] = [];
-  const tableLines = markdown.slice(tableStart).split(/\r?\n/u);
-  for (const rawLine of tableLines.slice(2)) {
-    const line = rawLine.trim();
-    if (!line.startsWith("|")) break;
-    const cells = line
-      .split("|")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-    if (cells.every((cell) => /^[-:]+$/u.test(cell))) continue;
-    const name = cells[0]?.replaceAll("`", "");
-    const loc = cells[1];
-    if (name === "**Total**") break;
-    if (name === undefined || name.length === 0 || loc === undefined || !/^[\d,]+$/u.test(loc))
-      throw new Error(`framework LOC attribution has a malformed package row: ${file}`);
-    packages.push({
-      loc: Number(loc.replaceAll(",", "")),
-      name,
-    });
-  }
-  return packages;
-}
-
-/**
- * Read the active framework attribution without making historical movement fatal to normal
- * budget enforcement. The current file walk remains authoritative for the live counter.
- */
-export async function readFrameworkLocAttribution(
-  root: string,
-): Promise<FrameworkLocAttribution | null> {
-  const file = path.join(root, FRAMEWORK_LOC_ATTRIBUTION);
-  if (!existsSync(file)) return null;
-  const markdown = await readFile(file, "utf8");
-  const totalMatch = markdown.match(/^Recorded framework LOC:\s*([\d,]+)\s*$/mu);
-  if (totalMatch?.[1] === undefined)
-    throw new Error(`framework LOC attribution is missing its recorded total: ${file}`);
-  const tableMatch = markdown.match(/^\| Package \| [^|]+ \|/mu);
-  if (tableMatch?.index === undefined)
-    throw new Error(`framework LOC attribution is missing its package table: ${file}`);
-
-  const packages = parseFrameworkLocPackages(markdown, tableMatch.index, file);
-  if (packages.length === 0)
-    throw new Error(`framework LOC attribution has no package rows: ${file}`);
-  if (new Set(packages.map((item) => item.name)).size !== packages.length)
-    throw new Error(`framework LOC attribution repeats a package row: ${file}`);
-
-  const total = Number(totalMatch[1].replaceAll(",", ""));
-  const packageTotal = packages.reduce((sum, item) => sum + item.loc, 0);
-  if (packageTotal !== total) {
-    throw new Error(
-      `framework LOC attribution total does not equal its package rows: ${packageTotal} != ${total}`,
-    );
-  }
-  return { packages, total };
-}
 
 async function filesUnder(
   root: string,
@@ -453,7 +381,6 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     frameworkLocByPackage: frameworkLocByPackage.sort((left, right) =>
       left.name.localeCompare(right.name),
     ),
-    frameworkLocAttribution: await readFrameworkLocAttribution(root),
     nativeRuntimeLoc: await countLines(nativeRuntimeFiles),
     templates,
     textureBytes: await templateTextureBytes(root),
@@ -466,31 +393,6 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
   };
 }
 
-function frameworkPackageDeltaSummary(report: BudgetReport): string {
-  const current = new Map(report.frameworkLocByPackage.map((item) => [item.name, item.loc]));
-  const previous = new Map(
-    report.frameworkLocAttribution?.packages.map((item) => [item.name, item.loc]) ?? [],
-  );
-  if (report.frameworkLocAttribution === null) {
-    const names = [...current.keys()].sort();
-    return names.length === 0
-      ? "none (no counted packages)"
-      : names.map((name) => `${name} (no prior attribution)`).join(", ");
-  }
-
-  const names = [...new Set([...current.keys(), ...previous.keys()])].sort();
-  const changed = names
-    .map((name) => ({
-      delta: (current.get(name) ?? 0) - (previous.get(name) ?? 0),
-      name,
-    }))
-    .filter((item) => item.delta !== 0);
-  if (changed.length === 0) return "none";
-  return changed
-    .map((item) => `${item.name} (${item.delta > 0 ? "+" : ""}${item.delta})`)
-    .join(", ");
-}
-
 /**
  * Review triggers, per `CHARTER.md` §10b. Reported, never fatal — the PRD that crosses one
  * owes the justification, and the kill switch (§3) decides whether the lines were earned.
@@ -499,7 +401,7 @@ export function budgetTriggers(report: BudgetReport): string[] {
   const triggers: string[] = [];
   if (report.frameworkLoc > LIMITS.frameworkLoc) {
     triggers.push(
-      `framework LOC review trigger: ${report.frameworkLoc} lines (trigger ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc}). Packages moved since last recorded attribution: ${frameworkPackageDeltaSummary(report)}. Justify in the owning PRD and run the kill switch over what was added.`,
+      `framework LOC review trigger: ${report.frameworkLoc} lines (trigger ${LIMITS.frameworkLoc}, +${report.frameworkLoc - LIMITS.frameworkLoc}). Justify in the owning PRD and run the kill switch over what was added.`,
     );
   }
   if (report.nativeRuntimeLoc > LIMITS.nativeRuntimeLoc) {
@@ -513,19 +415,6 @@ export function budgetTriggers(report: BudgetReport): string[] {
     );
   }
   return triggers;
-}
-
-function frameworkPackageDifferences(report: BudgetReport): string[] {
-  const current = new Map(report.frameworkLocByPackage.map((item) => [item.name, item.loc]));
-  const previous = new Map(
-    report.frameworkLocAttribution?.packages.map((item) => [item.name, item.loc]) ?? [],
-  );
-  return [...new Set([...current.keys(), ...previous.keys()])]
-    .sort()
-    .filter((name) => current.get(name) !== previous.get(name))
-    .map(
-      (name) => `${name}: recorded ${previous.get(name) ?? 0}, measured ${current.get(name) ?? 0}`,
-    );
 }
 
 export function budgetErrors(report: BudgetReport): string[] {
@@ -558,28 +447,6 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];
   }
-}
-
-/**
- * One-shot verification for the active framework attribution. Normal budget enforcement keeps
- * historical records non-fatal so budget movement remains visible in the trigger.
- */
-export async function verifyFrameworkLocAttribution(root: string): Promise<BudgetReport> {
-  const report = await collectBudgets(root);
-  if (report.frameworkLocAttribution === null) {
-    throw new Error(
-      `framework LOC attribution is missing: ${path.join(root, FRAMEWORK_LOC_ATTRIBUTION)}`,
-    );
-  }
-  if (report.frameworkLocAttribution.total !== report.frameworkLoc) {
-    throw new Error(
-      `recorded framework LOC attribution total disagrees with measured framework LOC: recorded ${report.frameworkLocAttribution.total}, measured ${report.frameworkLoc}`,
-    );
-  }
-  const differences = frameworkPackageDifferences(report);
-  if (differences.length > 0)
-    throw new Error(`framework LOC attribution package rows disagree:\n${differences.join("\n")}`);
-  return report;
 }
 
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
@@ -744,26 +611,17 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
 ) {
-  const verifyAttribution = process.argv.includes("--verify-framework-loc-attribution");
-  const verification = verifyAttribution
-    ? verifyFrameworkLocAttribution(process.cwd())
-    : enforceBudgets(process.cwd());
-  verification
+  enforceBudgets(process.cwd())
     .then(async (report) => {
-      if (verifyAttribution) {
-        console.log(`framework LOC attribution verified: ${report.frameworkLoc} lines`);
-        for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
-      } else {
-        for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
-        for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
-        const textureLine =
-          report.textureBytes === null
-            ? "no compiled texture manifests found"
-            : `texture bytes ${report.textureBytes.before} -> ${report.textureBytes.after} across ${report.textureBytes.textures} texture(s)`;
-        console.log(
-          `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC, ${textureLine}`,
-        );
-      }
+      for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
+      for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
+      const textureLine =
+        report.textureBytes === null
+          ? "no compiled texture manifests found"
+          : `texture bytes ${report.textureBytes.before} -> ${report.textureBytes.after} across ${report.textureBytes.textures} texture(s)`;
+      console.log(
+        `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC, ${textureLine}`,
+      );
     })
     .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : error);

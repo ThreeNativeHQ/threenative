@@ -8,8 +8,10 @@ prd_contract: v1
 `HEAD` (`21960efd`) while assembling this batch.
 
 **Closed 2026-08-20 — the counter is back under its trigger.** `pnpm budgets` on integrated main
-reports 14,989/15,000 framework LOC with `LIMITS` unchanged, and the `ui` row reads `Earned` in
-[loc-attribution-2026-08-20](../../../verification/loc-attribution-2026-08-20.md).
+reports 14,989/15,000 framework LOC with `LIMITS` unchanged, and the `ui` row read `Earned` in the
+then-active attribution snapshot (`loc-attribution-2026-08-20.md`, deleted on 2026-08-22 by
+PRD-188; decommission evidence in
+[the budgets-decommission record](../../../verification/budgets-decommission-2026-08-22.md)).
 
 **Outcome:** the framework LOC line is either back under 15,000 by deletion, or over it with a
 written kill-switch verdict naming what was added and why it is earned — and the `ui` package's
