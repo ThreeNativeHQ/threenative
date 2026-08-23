@@ -245,6 +245,16 @@ public:
         return true;
     }
 
+    // The runtime pumps microtasks once a frame (`runtime.cpp`), and this engine did not
+    // implement that pump — the base class default is an empty body, so on QuickJS the per-frame
+    // checkpoint did nothing. Promise jobs still ran, but only as a side effect of `evalScript`,
+    // `evalScriptWithResult` and `call`, so anything resolved from a native callback outside a JS
+    // call waited for the next one. A settled Promise handed back from a binding — which is what
+    // `decodeAudioData` now returns — is exactly that shape.
+    //
+    // QuickJS is the documented Android rollback, so this was a silent one-engine difference.
+    void processMicrotasks() override { executePendingJobs(); }
+
     JSValueHandle evalWithResult(const char* code, const char* filename) override {
         // Use JS_EVAL_TYPE_MODULE to support import.meta
         JSValue result = JS_Eval(context_, code, strlen(code), filename, JS_EVAL_TYPE_MODULE);

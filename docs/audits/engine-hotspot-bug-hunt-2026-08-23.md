@@ -34,7 +34,8 @@ native V8 lane (`e1908a3d`, plus `audio_decode_promise_test.cpp`).
 | C4 | Scheduler fired mid-tick additions same-tick after a cancellation | core | **FIXED** | `25071734`, pin repaired in `2de34249` |
 | P5 | Simulation owning unregistered bodies killed plugin.update every frame | physics | **FIXED** | `abac8aa9`, cleanup `61b8675b` |
 | C2 | Default picking feed fed window-relative pointer into canvas-relative NDC math | core | **FIXED** | `fd62e9e7`, typing `8f02d33b` |
-| A5 | Native `decodeAudioData` broke on the second chained link | runtime-native | **FIXED** on the native lane | `e1908a3d` — see `docs/bug-hunt-2026-08-23.md` |
+| A5 | Native `decodeAudioData` broke on the second chained link | runtime-native | **FIXED** on the native lane, executed on V8 and QuickJS | `e1908a3d` — see `docs/bug-hunt-2026-08-23.md` |
+| A6 | QuickJS never overrode `processMicrotasks`, so the runtime's per-frame pump was a no-op on the Android rollback engine | runtime-native | **FIXED** — found by running A5's proof on QuickJS | see `docs/bug-hunt-2026-08-23.md` |
 
 ## Fixed findings — evidence per finding
 
@@ -167,8 +168,21 @@ config-boundary typing corrected in `8f02d33b`.
 
 Filed independently by two sessions: the hand-rolled thenable returned undefined from `then`,
 so any second chained link threw TypeError, contradicting its own comment. Fixed by the parallel
-session as a real Promise with red→green executed through the installed JS engine on the native
-V8 lane — see `docs/bug-hunt-2026-08-23.md` and `audio_decode_promise_test.cpp`.
+session as a real Promise with red→green executed through the installed JS engine — see
+`docs/bug-hunt-2026-08-23.md` and `audio_decode_promise_test.cpp`.
+
+### A6 — QuickJS had no microtask pump (found by running A5's proof on a second engine)
+
+The A5 proof passed on V8 and, on QuickJS, never reached its report at all. `Engine::processMicrotasks`
+has an empty default body and QuickJS never overrode it, so the per-frame checkpoint the runtime
+calls did nothing on the engine that is the documented Android rollback. Promise jobs still drained
+as a side effect of `evalScript`, `evalScriptWithResult` and `call`, which is why games appeared to
+work — but a Promise settled from a native callback outside a JS call waited for the next one, and a
+binding handing back a settled Promise is exactly that shape.
+
+The lesson generalizes past audio: a proof that only ever runs on the default engine cannot see a
+per-engine gap. The proof now enumerates every engine the build carries and fails when a build
+carries none, so a skipped engine can never read as a pass.
 
 ## Dead ends verified (so nobody spends a round)
 

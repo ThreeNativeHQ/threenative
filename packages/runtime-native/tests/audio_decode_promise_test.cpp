@@ -132,18 +132,33 @@ constexpr const char *kScript = R"JS((() => {
 
 }  // namespace
 
-int main() {
-#if defined(_WIN32)
-    _putenv_s("SDL_AUDIO_DRIVER", "dummy");
-#else
-    setenv("SDL_AUDIO_DRIVER", "dummy", 1);
-#endif
+namespace {
 
-    auto engine = mystral::js::createEngine();
+// Every engine this build compiles in, not just the platform default: the Promise the binding
+// hands back comes from the engine's own global, and QuickJS (the Android rollback) and JSC (iOS)
+// are different implementations of it. An engine that is not compiled in is reported skipped, not
+// counted as a pass.
+struct EngineCase {
+    mystral::js::EngineType type;
+    const char *label;
+};
+
+constexpr EngineCase kEngines[] = {
+    {mystral::js::EngineType::V8, "V8"},
+    {mystral::js::EngineType::QuickJS, "QuickJS"},
+    {mystral::js::EngineType::JavaScriptCore, "JavaScriptCore"},
+};
+
+// Returns true when the contract held, false when it failed. `ran` distinguishes a failure from
+// an engine this build does not carry.
+bool runContract(const EngineCase &engineCase, bool &ran) {
+    ran = false;
+    auto engine = mystral::js::createEngine(engineCase.type);
     if (engine == nullptr) {
-        std::cerr << "could not create a JavaScript engine\n";
-        return 1;
+        std::cout << "SKIP " << engineCase.label << ": not compiled into this build\n";
+        return true;
     }
+    ran = true;
     std::cout << "engine: " << engine->getName() << '\n';
 
     auto *raw = engine.get();
@@ -163,26 +178,59 @@ int main() {
     engine->evalWithResult(kScript, "audio_decode_promise_test.js");
 
     // Settling runs on the microtask queue. QuickJS drains pending jobs after each eval and V8
-    // needs the explicit pump, so do both rather than assume which engine this build selected.
+    // needs the explicit pump, so do both rather than assume which engine this is.
     for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_promise_drain.js");
     }
 
+    bool ok = true;
     if (report.empty()) {
-        std::cerr << "the script did not reach its report";
+        std::cerr << engineCase.label << ": the script did not reach its report";
         if (engine->hasException()) std::cerr << ": " << engine->getException();
         std::cerr << '\n';
-        mystral::audio::cleanupAudioBindings();
-        return 1;
-    }
-    if (report != "ok") {
-        std::cerr << "native decodeAudioData Promise contract failed:\n" << report << '\n';
-        mystral::audio::cleanupAudioBindings();
-        return 1;
+        ok = false;
+    } else if (report != "ok") {
+        std::cerr << "native decodeAudioData Promise contract failed on " << engineCase.label
+                  << ":\n"
+                  << report << '\n';
+        ok = false;
+    } else {
+        std::cout << "PASS " << engineCase.label << '\n';
     }
 
-    std::cout << "native decodeAudioData Promise contract passed\n";
     mystral::audio::cleanupAudioBindings();
+    return ok;
+}
+
+}  // namespace
+
+int main() {
+#if defined(_WIN32)
+    _putenv_s("SDL_AUDIO_DRIVER", "dummy");
+#else
+    setenv("SDL_AUDIO_DRIVER", "dummy", 1);
+#endif
+
+    bool allPassed = true;
+    int executed = 0;
+    std::string proven;
+    for (const EngineCase &engineCase : kEngines) {
+        bool ran = false;
+        if (!runContract(engineCase, ran)) allPassed = false;
+        if (!ran) continue;
+        executed += 1;
+        if (!proven.empty()) proven += ", ";
+        proven += engineCase.label;
+    }
+
+    // An empty run is a failure, not a pass: a build carrying no engine proves nothing.
+    if (executed == 0) {
+        std::cerr << "no JavaScript engine was compiled into this build\n";
+        return 1;
+    }
+    if (!allPassed) return 1;
+
+    std::cout << "native decodeAudioData Promise contract passed on " << proven << '\n';
     return 0;
 }

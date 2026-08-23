@@ -54,3 +54,30 @@ test("the decodeAudioData Promise proof is built and run by a lane that needs no
     /verify-desktop-audio\.mjs/u,
   );
 });
+
+test("the proof covers every engine the build carries and fails closed on none", () => {
+  const proof = read("tests/audio_decode_promise_test.cpp");
+  for (const engine of ["EngineType::V8", "EngineType::QuickJS", "EngineType::JavaScriptCore"])
+    assert.match(proof, new RegExp(engine.replace(/[:]/gu, "[:]"), "u"));
+  assert.match(
+    proof,
+    /if \(executed == 0\)/u,
+    "a build carrying no engine must fail, not report a pass",
+  );
+  assert.match(
+    read("scripts/verify-desktop-audio.mjs"),
+    /-DMYSTRAL_USE_V8=ON", "-DMYSTRAL_USE_QUICKJS=ON/u,
+    "--dual must build the engine pair the QuickJS result came from",
+  );
+});
+
+test("QuickJS implements the per-frame microtask pump the runtime calls", () => {
+  // `Engine::processMicrotasks` has an empty default body, so an engine that does not override it
+  // makes the runtime's frame pump a silent no-op — and a binding that hands back a settled
+  // Promise depends on that pump. QuickJS is the documented Android rollback engine.
+  assert.match(
+    read("src/js/quickjs_engine.cpp"),
+    /void processMicrotasks\(\) override \{ executePendingJobs\(\); \}/u,
+  );
+  assert.match(read("src/runtime.cpp"), /processMicrotasks\(\);/u);
+});
