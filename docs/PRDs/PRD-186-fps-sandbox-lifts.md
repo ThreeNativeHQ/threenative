@@ -196,6 +196,30 @@ GATE_PORT=4300 sh tools/gate.sh frame-smoothness
   delete `BoxOccluders` from the game and close row 1 with no lift. Otherwise open a follow-up
   to lift it, and name the 108 lines' budget source.
 
+**RE-MEASURED 2026-08-22, on the `prd186p1` core. Decision: `BoxOccluders` stays.**
+
+`Play.ts` was patched to drop the box pre-filter and answer `lineOfSight` with a single
+`ctx.raycast()` against `town.hittable` — a fair test of the Phase 1 code, and equivalent to the
+committed two-stage check because the only members of `occluders` carrying `userData.target` are
+the plate meshes the old loop skipped anyway.
+
+| Sight-line implementation | `canSee` peak |
+|---|---|
+| box pre-filter + `raycastAll` fallback (committed) | **1.5–2.0 ms** over four runs |
+| fixed single-hit `ctx.raycast`, no pre-filter | **15.7 ms** |
+
+**15.7 ms against a 3 ms bar, so the pre-filter is not redundant and the deletion is refused.**
+
+Why the fix does not help this call site, which is the part worth carrying forward: `firstHitOnly`
+lets a BVH stop at its own nearest triangle *within one geometry*. It does not let the query skip a
+target. This sight line is slow because it walks several hundred town meshes, and a nearest-hit
+query still visits every one of them — it only avoids the per-object multi-hit collection and the
+final sort. Phase 1 is still worth having; it is simply not a substitute for not asking the
+question, which is what the box pre-filter buys.
+
+Row 1 therefore does **not** close with no lift. `BoxOccluders` is load-bearing, and a follow-up
+must either lift it or state why every future game re-writes it.
+
 **Revert check:** restore `firstHitOnly = false` in `raycast` → the single-hit collection test fails.
 
 ---
@@ -214,6 +238,48 @@ batches at `MIN_BATCH_MEMBERS = 4`.
 - `packages/core/__tests__/renderProjection.spec.ts` — EDIT
 - `packages/playtest/…` visual fixture — NEW or EDIT
 - `sandbox/fps-framework/src/render/decals.ts` — EDIT: drop the per-slot material clone
+
+> **CORRECTION, 2026-08-22 — the defect below does not reproduce, and this phase needs rewriting
+> before anyone implements it.**
+>
+> A probe rebuilt the real decal shape against the current projection: 224 slots, one
+> `PlaneGeometry`, one shared `MeshBasicMaterial` (`depthWrite:false`, `DoubleSide`), 64 filler
+> meshes around them, settled three frames, then one slot moved to the logged failure position and
+> one more `reconcile()`. Result:
+>
+> ```
+> CASE opaque + renderOrder 0 + shared material
+>   projecting=true reason=projected batches=2 exactObjects=0
+>   lane=batched visible=true drawnAt=0.00,0.01,30.84   (expected 0.00,0.01,30.84)
+> ```
+>
+> **The batched lane delivers post-settle instance writes correctly.** `#syncBatched` compares
+> `mesh.matrixWorld` against cached state and calls `setMatrixAt` + `needsUpdate`; the batch mesh is
+> built with `frustumCulled = false`. `renderProjection.spec.ts` already covers this as *"shows a
+> transform changed on frame 600 on frame 601"*, and it passes. So *"geometry a game writes after
+> the mirror batches it does not render"* is false at the projection-logic level, and the fix this
+> phase describes has nothing to fix.
+>
+> **What the probe did find, and what this phase should become:** the other three configurations —
+> every one with `transparent: true` or `renderOrder !== 0` — declined the *whole* projection with
+> `reasonCode: "notWorthwhile"`. Both properties are exact-lane reasons in `exactLaneReason()`, and
+> correctly so: a batch is one object with one place in the transparency sort. But a 224-slot
+> transparent pool then contributes 224 to `predictedDraws`, which pushes the total past
+> `WORTHWHILE_DRAW_RATIO` and turns the mirror off for the entire scene. A game that adds a decal
+> field silently deoptimizes everything else it draws. **That** is the defect worth a phase, and it
+> is a planning bug in `projection-plan.ts`, not a reconcile bug in `projection-apply.ts`.
+>
+> Two consequences for the file list above:
+> - `sandbox/fps-framework/src/render/decals.ts` must **keep** `transparent: true`. Setting it false
+>   was a step in the original investigation, not a candidate shipping state: with no blending the
+>   texture's alpha is ignored and every bullet hole renders as an opaque black square.
+> - Because transparent materials never batch, the per-slot `material.clone()` may already be
+>   unnecessary on this engine — the marks reach the exact lane on the transparency rule alone.
+>   Confirm that with a capture before deleting 224 material clones; the class comment in
+>   `decals.ts` still asserts the old reasoning and must be corrected in the same commit.
+>
+> The probe is preserved at `sandbox/.../scratchpad/decal-lane-probe.spec.ts`. The original
+> observation is kept below because the *pixels* were real; only its explanation was wrong.
 
 **The defect, as observed:**
 > A game-authored `InstancedMesh` in `ctx.scene` did not draw. Placement counters rose, logged
