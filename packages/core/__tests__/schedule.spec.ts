@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
 import { Scene } from "../src/scene.js";
-import { Scheduler } from "../src/schedule.js";
+import { type ScheduleHandle, Scheduler } from "../src/schedule.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -180,15 +180,18 @@ describe("Scheduler tick ordering", () => {
     const fired: number[] = [];
     let tickCount = 0;
     const scheduler = new Scheduler();
-    let victim: ScheduleHandle | undefined;
+    // Registration order is the point: the actor has to be visited first so the entry it
+    // cancels is still unvisited. A holder keeps that order while the callback closes over a
+    // handle that does not exist yet.
+    const pending: { victim?: ScheduleHandle } = {};
     const actor = scheduler.every(() => {
       tickCount += 1;
       if (tickCount === 1) {
-        victim?.cancel();
+        pending.victim?.cancel();
         scheduler.after(0, () => fired.push(tickCount));
       }
     });
-    victim = scheduler.every(() => undefined);
+    pending.victim = scheduler.every(() => undefined);
 
     scheduler.tick(1 / 60);
     expect(actor.active ?? true).toBeDefined();
