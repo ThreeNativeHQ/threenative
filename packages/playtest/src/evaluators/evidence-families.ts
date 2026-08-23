@@ -34,11 +34,20 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
   const hasVisualSamples = input.report.observations?.visual !== undefined && captureFailure === undefined;
   if ((scenarioAssertions.visual?.length ?? 0) > 0 && captureFailure !== undefined) {
     for (const [index] of scenarioAssertions.visual!.entries()) {
+      // A missing observation fails: a green row for an assertion that never ran is the v1
+      // dropped-assertion shape, even though the composite verdict already carries
+      // TN_CAPTURE_BLANK as its own diagnostic.
       assertions.push({
         details: { captureFailure, reason: "not-evaluated" },
         id: `visual.${index}`,
-        pass: true,
+        pass: false,
       });
+      diagnostics.push(
+        assertionNotEvaluatedDiagnostic(
+          `visual.${index}`,
+          `the screenshot could not be captured (${captureFailure.code}: ${captureFailure.reason})`,
+        ),
+      );
     }
   } else if ((scenarioAssertions.visual?.length ?? 0) > 0 && !hasVisualSamples) {
     for (const [index] of scenarioAssertions.visual!.entries()) {

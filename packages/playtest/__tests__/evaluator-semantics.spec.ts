@@ -131,6 +131,34 @@ describe("evaluator semantics (characterization)", () => {
     expect(result.diagnostics.map(({ code }) => code)).toEqual(["TN_PLAYTEST_ASSERTION_NOT_EVALUATED"]);
   });
 
+  test("a blank capture fails the declared visual rows instead of passing them", () => {
+    // Decided 2026-08-23: green rows for unevaluated assertions are the v1 dropped-assertion
+    // shape this package fails closed against; a capture failure is a missing observation.
+    const result = evaluate(
+      { visual: [{ frameDiff: { minChangedPixelRatio: 0.01 } }] } as never,
+      {
+        observations: {
+          console: [],
+          hud: {},
+          network: [],
+          resources: {},
+          visual: {
+            captureFailure: { code: "TN_CAPTURE_BLANK", label: "after.png", reason: "uniform" },
+          },
+        },
+      },
+    );
+    const row = result.assertions.find(({ id }) => id === "visual.0");
+    expect(row?.pass).toBe(false);
+    expect(row?.details).toMatchObject({
+      captureFailure: { code: "TN_CAPTURE_BLANK" },
+      reason: "not-evaluated",
+    });
+    expect(result.diagnostics.map(({ code }) => code)).toContain(
+      "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+    );
+  });
+
   test("empty assertion arrays register as not-evaluated per family, in family order", () => {
     const result = evaluate({ hud: [], resources: [], visual: [] } as never);
     const summary = result.assertions.map((entry) => ({ id: entry.id, pass: entry.pass }));

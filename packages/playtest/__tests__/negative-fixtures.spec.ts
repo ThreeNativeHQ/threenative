@@ -97,17 +97,22 @@ test("the clean lifecycle control exercises the fixture detector without a leak"
   expect(report.observations?.runtimeDiagnostics).toMatchObject({ recentRuntimeErrors: [] });
 });
 
-test("seeded visual-capture failure is infrastructure-red while visual assertions stay not evaluated", async () => {
+test("seeded visual-capture failure is infrastructure-red and fails its visual rows", async () => {
   const report = await runFixture("good", "visual-capture-failure.playtest.json");
 
   expect(report.pass).toBe(false);
   expect(exitCodeForReport(report)).toBe(1);
   expect(report.capture).toBeDefined();
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_CAPTURE_BLANK");
+  // Decided 2026-08-23: a capture failure is a missing observation, so the row fails closed
+  // rather than landing green with a not-evaluated stamp.
   expect(report.assertionResults).toContainEqual(expect.objectContaining({
     details: expect.objectContaining({ reason: "not-evaluated" }),
     id: "visual.0",
-    pass: true,
+    pass: false,
   }));
+  expect(report.diagnostics.map(({ code }) => code)).toContain(
+    "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+  );
   expect(report.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_REGION_BLANK");
 });
