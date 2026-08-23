@@ -294,7 +294,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const pickupAudio = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/public/pickup.ogg"),
+      path.resolve("packages/create-threenative/templates/starter/assets/pickup.ogg"),
     );
 
     expect(game).toContain("seed: 90210");
@@ -344,10 +344,10 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const texture = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/public/native-proof.png"),
+      path.resolve("packages/create-threenative/templates/starter/assets/native-proof.png"),
     );
     const model = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/public/native-proof.glb"),
+      path.resolve("packages/create-threenative/templates/starter/assets/native-proof.glb"),
     );
 
     expect(play).toContain('ctx.assets.texture("native-proof.png")');

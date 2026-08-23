@@ -33,9 +33,18 @@
     "test": "publint --strict"
   },
   "dependencies": {
+    "@gltf-transform/core": "catalog:",
+    "@gltf-transform/extensions": "catalog:",
+    "@gltf-transform/functions": "catalog:",
+    "draco3dgltf": "^1.5.7",
+    "ktx-parse": "^1.1.0",
+    "ktx2-encoder": "0.6.0",
+    "meshoptimizer": "1.1.1",
     "three": "catalog:"
   },
   "devDependencies": {
+    "@gltf-transform/core": "catalog:",
+    "@threenative/assets": "workspace:*",
     "@threenative/core": "workspace:*",
     "@threenative/physics": "workspace:*",
     "@types/node": "20.19.43",

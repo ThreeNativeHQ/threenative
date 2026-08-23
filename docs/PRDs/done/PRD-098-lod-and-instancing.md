@@ -4,8 +4,12 @@ prd_contract: v1
 
 # PRD-098 — Distant and repeated objects stop costing full price
 
-**Status: PROPOSAL, 2026-08-12. OPTIONAL.** Nothing has run. No platform readiness is claimed.
-**Parent:** [the series README](./README.md).
+**Status: DECLINED 2026-08-22 under its own Phase 0 exit.** The census measured every
+shipped scene on a real GPU: the worst carries 183,855 triangles at ~1.9 ms/frame — an
+8x budget margin with nothing triangle-bound. Evidence:
+[docs/verification/asset-cost-census-2026-08-22.md](../../verification/asset-cost-census-2026-08-22.md).
+Nothing was built; nothing is stranded. Reopening conditions are recorded there.
+**Parent:** [the series README](./asset-pipeline/README.md).
 **Depends on:** [PRD-096](./PRD-096-mesh-optimization.md),
 [PRD-097](./PRD-097-native-decode-path.md).
 

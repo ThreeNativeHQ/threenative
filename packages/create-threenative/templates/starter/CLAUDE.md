@@ -102,7 +102,7 @@ table above covers only ctx properties; this index covers the public exports sca
 
 | Import surface | Public class/function exports |
 |---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
+| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createAssetLoader`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
 | `@threenative/core/playtest` | `playtest` |
 | `@threenative/core/hot` | `acceptHotUpdate` |
 | `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |
@@ -192,8 +192,8 @@ scene from `initialState`.
 That is a whole game loop in about forty lines of `src/scenes/Play.ts`, there to be replaced.
 Keep the shape — an outcome in `ctx.state`, the scene stopping itself, a React component
 reading the outcome — and change everything else. The flag's pennant is the packaged
-`native-proof.glb`: it is loaded in `Play.load()` and the console marker that follows is what
-the desktop asset gate greps for, so if you delete the flag, keep the load.
+`assets/native-proof.glb`: it is loaded in `Play.load()` and the console marker that follows
+is what the desktop asset gate greps for, so if you delete the flag, keep the load.
 
 ## The layout
 
@@ -281,15 +281,20 @@ if (player.dead) {
 
 ## Assets and animation
 
-`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
-`.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
-and update the `AnimationPlayer` beside the entity that owns the loaded model. This starter
-does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
+Files the game loads live in `assets/`; the dev server and `threenative build` compile them
+into hashed outputs in `public/` plus `public/assets.manifest.json`, and
+`ctx.assets.model("hero.glb")` resolves the logical name through that manifest. Favicon and
+launcher icons stay hand-owned in `public/`. This starter ships
+`assets/native-proof.glb`, `assets/native-proof.png` and `assets/pickup.ogg`; compiled
+outputs are gitignored — dev or build compiles them first.
 
-Before placing an unfamiliar model, inspect what the file already contains with
-`npx create-threenative inspect public/assets/hero.glb` (`--json` for machine output). The
-report is observational: it does not rescale, convert, or rewrite the asset. Treat its
-units and forward-axis lines as labelled heuristics, then choose the game-owned placement.
+For clips from a rigged asset, drop the `.glb` in `assets/`, await
+`ctx.assets.model("hero.glb")` in `Scene.load()`, then drive an `AnimationPlayer` beside the
+owning entity.
+
+Before placing an unfamiliar model, inspect it with
+`npx create-threenative inspect assets/hero.glb` (`--json` for machine output): observational
+heuristics — units, forward axis — never a rewrite.
 
 Entities are plain classes. There is no ECS, and adding one is a real decision, not a
 default — `pnpm add miniplex` if a game genuinely needs it.

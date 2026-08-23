@@ -6,6 +6,10 @@ const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
+  [
+    "packages/assets/src/watch.ts",
+    "The dev watcher stages each changed input through a scratch project removed in finally.",
+  ],
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
   [
     "packages/playtest/src/runner/captureLock.ts",

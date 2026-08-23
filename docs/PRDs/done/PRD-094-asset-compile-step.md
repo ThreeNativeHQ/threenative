@@ -4,17 +4,19 @@ prd_contract: v1
 
 # PRD-094 — The asset compile step: `assets/` becomes an input, not a `.gitkeep`
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
-**Parent:** [the series README](./README.md).
+**Status: DONE, 2026-08-22.** All phases executed and gated; evidence in
+docs/verification/asset-pipeline-prd-094-2026-08-22.md.
+**Parent:** [the series README](./asset-pipeline/README.md).
 **Blocks:** [PRD-095](./PRD-095-texture-compression.md),
 [PRD-096](./PRD-096-mesh-optimization.md).
 
 **Complexity: 8 → HIGH mode.** New package, multi-package change, new build stage, and a
 CLI that native builds already depend on. Checkpoints are mandatory every phase.
 
-**Gated.** [`docs/product/ASSET-PIPELINE.md`](../../product/ASSET-PIPELINE.md) defers the
-build-time pipeline behind a two-part trigger that has not fired. This PRD is not startable until
-it does. See [the series README](./README.md).
+**Gate disposition.** [`docs/product/ASSET-PIPELINE.md`](../../product/ASSET-PIPELINE.md)
+deferred the build-time pipeline behind a two-part trigger. On 2026-08-22 the product owner
+ordered execution directly, superseding the deferral; neither trigger condition was met, and
+that fact stands recorded here rather than being argued into having fired.
 
 This PRD ships **no compression**. It ships the stage that later PRDs plug compressors into, and
 it proves that stage end-to-end on a real template with a real playtest. A pipeline with one
@@ -30,12 +32,15 @@ containing only `.gitkeep`, ships its real art in `public/`, and loads it raw.
 **Files analysed:**
 
 - `packages/core/src/assets.ts` — `createAssetLoader`, the only asset code in the framework
-- `packages/core/src/game.ts:399` — the single live construction site, `ctx.assets`
+- `packages/core/src/game.ts:443` — the single live construction site, `ctx.assets`
+  (line 130 holds the `defineGame` `assets?: IAssetLoaderOptions` config key)
 - `packages/core/src/index.ts` — `createAssetLoader` and `IAssetLoader` are **not** exported
-- `packages/create-threenative/src/build.ts:162` — `const assets = path.join(cwd, "public")`,
-  passed as `--assets` to the native packager at lines 171, 192 and 212
-- `packages/create-threenative/templates/{minimal,starter,platformer}/` — `assets/.gitkeep`,
-  and `public/` holding `native-proof.glb`, `native-proof.png`, `pickup.ogg`, `icon.png`
+- `packages/create-threenative/src/build.ts:233` — `const assets = path.join(cwd, "public")`,
+  passed as `--assets` to the native packager at three call sites below it
+- `packages/create-threenative/templates/starter/` — the one template whose game loads real
+  files through `ctx.assets`: `src/scenes/Play.ts:49-50,78` loads `native-proof.png`,
+  `native-proof.glb`, `pickup.ogg` out of `public/`. All three templates still carry
+  `assets/.gitkeep`; `platformer` is fully procedural and loads no files.
 - `packages/runtime-native/src/gltf/gltf_loader.cpp` — cgltf, reached from JS as `__loadGLTF`
   (`runtime.cpp:2785`)
 
@@ -141,11 +146,11 @@ sequenceDiagram
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `compileAssets()` in `packages/assets/src/compile.ts` | `create-threenative/src/build.ts:TBD` (before the Vite spawn) | nothing — no compile step exists | n/a | deleting `assets/rock.png` and rebuilding must fail the playtest that loads it |
+| 1 | `compileAssets()` in `packages/assets/src/compile.ts` | `create-threenative/src/build.ts:86` (before the Vite spawn; again at `:229` before native packaging) | nothing — no compile step exists | n/a | deleting `assets/rock.png` and rebuilding must fail the playtest that loads it |
 | 2 | manifest resolution in `core/src/assets.ts` | `core/src/game.ts:399` via `createAssetLoader(this.#config.assets)` | the bare `resolvePath()` branch | `resolvePath` becomes the no-manifest fallback in the same phase | corrupting a manifest entry's `output` must break the load, not silently fall through |
-| 3 | `assets` key in the `threenative` config | `create-threenative/src/config.ts:TBD` | nothing | n/a | an unknown key under `assets` must throw at config load |
+| 3 | `assets` key in the `threenative` config | `create-threenative/src/config.ts:877` (`validateAssets`) | nothing | n/a | an unknown key under `assets` must throw at config load |
 | 4 | `public/assets.manifest.json` | read at runtime by ledger row 2; consumed as a build input by nothing | nothing | n/a | delete it and re-run — it must regenerate, never pass on the stale copy |
-| 5 | `runHealthReport()` in `packages/assets/src/health.ts` | `assets/src/compile.ts:TBD`, after the passes | nothing | n/a | return a literal count instead of measuring → two different models must not report the same number |
+| 5 | `runHealthReport()` in `packages/assets/src/health.ts` | `assets/src/compile.ts:410`, after the passes (empty-inputs branch at `:374`) | nothing | n/a | return a literal count instead of measuring → two different models must not report the same number |
 
 ### Reachability
 
@@ -185,18 +190,18 @@ unconditional `resolvePath` return in `assets.ts`, which becomes the fallback br
 
 **Implementation:**
 
-- [ ] Walk `assets/` recursively; classify by extension into `texture | model | audio | other`
-- [ ] Hash input bytes plus the serialised pass configuration; emit `<name>.<hash8><ext>`
-- [ ] Write `public/assets.manifest.json` last, after every output is on disk
-- [ ] Throw on: unreadable input, duplicate logical path, pass exception, unknown config key
-- [ ] Skip work when the hashed output already exists and the manifest agrees
+- [x] Walk `assets/` recursively; classify by extension into `texture | model | audio | other`
+- [x] Hash input bytes plus the serialised pass configuration; emit `<name>.<hash8><ext>`
+- [x] Write `public/assets.manifest.json` last, after every output is on disk
+- [x] Throw on: unreadable input, duplicate logical path, pass exception, unknown config key
+- [x] Skip work when the hashed output already exists and the manifest agrees
 
 **Wiring:**
 
-- [ ] Caller edited: `build.ts` invokes `compileAssets` for every target, before Vite
-- [ ] Registration: `@threenative/assets` added to `create-threenative` dependencies
-- [ ] Old path: n/a
-- [ ] Ledger rows filled: #1, #3, #4
+- [x] Caller edited: `build.ts` invokes `compileAssets` for every target, before Vite
+- [x] Registration: `@threenative/assets` added to `create-threenative` dependencies
+- [x] Old path: n/a
+- [x] Ledger rows filled: #1, #3, #4
 
 **Tests required:**
 
@@ -221,24 +226,26 @@ hashed file and the manifest entry.
 
 - `packages/core/src/assets.ts` - EDIT: manifest fetch, cache, resolution; `resolvePath` demoted
   to the no-manifest fallback
-- `packages/core/src/game.ts` - EDIT: pass the manifest URL through from config
+- `packages/core/src/game.ts` - NO EDIT NEEDED: `defineGame`'s `assets?: IAssetLoaderOptions`
+  already flows whole into `createAssetLoader`, so the new `manifest` field threads through
+  untouched (confirmed at execution)
 - `packages/core/src/index.ts` - EDIT: export `createAssetLoader` and `IAssetLoader`, which are
   currently unexported despite being live
 - `packages/core/__tests__/assets.spec.ts` - EDIT: manifest cases
 
 **Implementation:**
 
-- [ ] Fetch `assets.manifest.json` once, lazily, on first asset request; memoise the promise
-- [ ] A 404 is the documented no-manifest case → fall back to `resolvePath`, do not throw
-- [ ] A 200 that fails to parse, or has an unknown `version`, **throws** — fail closed
-- [ ] A manifest present but missing the requested logical path throws, naming the path
+- [x] Fetch `assets.manifest.json` once, lazily, on first asset request; memoise the promise
+- [x] A 404 is the documented no-manifest case → fall back to `resolvePath`, do not throw
+- [x] A 200 that fails to parse, or has an unknown `version`, **throws** — fail closed
+- [x] A manifest present but missing the requested logical path throws, naming the path
 
 **Wiring:**
 
-- [ ] Caller edited: `game.ts:399` already constructs the loader; it now passes the manifest URL
-- [ ] Registration: n/a
-- [ ] Old path: `resolvePath` retained as the explicit fallback, not a second implementation
-- [ ] Ledger rows filled: #2
+- [x] Caller edited: `game.ts:399` already constructs the loader; it now passes the manifest URL
+- [x] Registration: n/a
+- [x] Old path: `resolvePath` retained as the explicit fallback, not a second implementation
+- [x] Ledger rows filled: #2
 
 **Tests required:**
 
@@ -254,33 +261,42 @@ playtest loads the uncompiled path.
 
 ---
 
-#### Phase 3: The platformer template ships real source assets and proves it in a browser
+#### Phase 3: The starter template ships real source assets and proves it in a browser
 
-**Proof subject:** `templates/platformer` — the largest template, the one the shipped playtests
-already drive. Its `public/native-proof.glb` and `.png` move to `assets/` and become compiler
-inputs.
+**Proof subject:** `templates/starter` — updated 2026-08-22 from the originally-proposed
+`platformer`, which has since become fully procedural and loads no files, so it would prove
+nothing about loading. Starter is the shipped template whose game already loads files through
+`ctx.assets` (`src/scenes/Play.ts:49-50,78`); its `public/native-proof.glb`, `.png` and
+`pickup.ogg` move to `assets/` and become compiler inputs.
 
 **Files (max 5):**
 
-- `packages/create-threenative/templates/platformer/assets/` - EDIT: real inputs replace `.gitkeep`
-- `packages/create-threenative/templates/platformer/.gitignore` - EDIT: ignore generated `public/`
+- `packages/create-threenative/templates/starter/assets/` - EDIT: real inputs replace `.gitkeep`
+- `packages/create-threenative/templates/starter/.gitignore` - EDIT: ignore generated `public/`
   outputs and the manifest
-- `packages/create-threenative/templates/platformer/package.json` - EDIT: `predev`/`prebuild`
+- `packages/create-threenative/templates/starter/package.json` - EDIT: `predev`/`prebuild`
   runs the compile
-- `packages/create-threenative/templates/platformer/playtests/assets.playtest.json` - NEW
+- `packages/create-threenative/templates/starter/playtests/assets.playtest.json` - NEW
 - `packages/create-threenative/src/index.ts` - EDIT: scaffold no longer emits an empty `assets/`
 
 **Implementation:**
 
-- [ ] Move the model and texture from `public/` into `assets/`
-- [ ] Assert in the scaffold smoke test that a fresh project compiles assets on first `dev`
-- [ ] The playtest asserts the mesh is **visible**, not merely that a request returned 200
+- [x] Move the model, texture and pickup audio from `public/` into `assets/`
+- [x] Assert in the scaffold smoke test that a fresh project compiles assets on first `dev`
+  (scaffold spec pins sources-shipped / no `.gitkeep` / no committed manifest; the
+  verify-one-template lane proves a fresh tarball-scaffolded project compiling at first
+  `pnpm dev` with the raw files gone)
+- [x] The playtest asserts the mesh is **visible**, not merely that a request returned 200
 
 **Wiring:**
 
-- [ ] Caller edited: template `package.json` scripts and `create-threenative/src/index.ts`
-- [ ] Old path: the raw copies in `public/` are deleted in this phase — not left as a fallback
-- [ ] Ledger rows filled: all rows now carry real `file:line`
+- [x] Caller edited: `create-threenative/src/index.ts` (installs the template's dotless
+  `gitignore` under its real name — pnpm pack strips `.gitignore` — and writes a pnpm
+  override per local package source, so the packed CLI's own `@threenative/assets`
+  dependency installs offline). Template `package.json` needs no compile scripts: phase 4's
+  serve plugin compiles on dev start and `threenative build` compiles before every target.
+- [x] Old path: the raw copies in `public/` are deleted in this phase — not left as a fallback
+- [x] Ledger rows filled: all rows now carry real `file:line`
 
 **Tests required:**
 
@@ -293,7 +309,7 @@ inputs.
 **Revert check:** restore the raw files to `public/` and delete `assets/` → the playtest fails
 with a missing asset, because there is no longer an uncompiled copy to fall back to.
 
-**User verification:** `pnpm --filter platformer dev`, open the page, see the model. Delete
+**User verification:** `pnpm --filter starter dev`, open the page, see the model. Delete
 `public/` and re-run — it regenerates.
 
 ---
@@ -314,19 +330,19 @@ user why their game is slow.
 
 **Implementation:**
 
-- [ ] Per model: triangles, materials, texture count and dimensions, animation clips, whether a
+- [x] Per model: triangles, materials, texture count and dimensions, animation clips, whether a
       collider is present, whether root motion is detected
-- [ ] Per texture: dimensions, whether it is power-of-two, alpha presence
-- [ ] License and attribution carried through from the discovery MCP's metadata when present, and
+- [x] Per texture: dimensions, whether it is power-of-two, alpha presence
+- [x] License and attribution carried through from the discovery MCP's metadata when present, and
       reported as **unknown** when absent — never blank
-- [ ] Each finding is `ok`, `warn` or `fail` against `assets.targets`; **`fail` fails the build**
+- [x] Each finding is `ok`, `warn` or `fail` against `assets.targets`; **`fail` fails the build**
       only when the user set a target, so the report is informational until opted into
-- [ ] `--json` for the machine-readable form the round ledger consumes
+- [x] `--json` for the machine-readable form the round ledger consumes
 
 **Wiring:**
 
-- [ ] Caller edited: `compile.ts` runs it unconditionally
-- [ ] Ledger rows filled: this phase adds a fifth row for `runHealthReport`
+- [x] Caller edited: `compile.ts` runs it unconditionally
+- [x] Ledger rows filled: this phase adds a fifth row for `runHealthReport`
 
 **Tests required:**
 
@@ -356,15 +372,15 @@ the missing collider.
 
 **Implementation:**
 
-- [ ] Recompile only the changed input; rewrite the manifest atomically
-- [ ] Debounce; a write that fails a pass logs the path and leaves the previous output intact
-- [ ] Never watch in `build` mode
+- [x] Recompile only the changed input; rewrite the manifest atomically
+- [x] Debounce; a write that fails a pass logs the path and leaves the previous output intact
+- [x] Never watch in `build` mode
 
 **Wiring:**
 
-- [ ] Caller edited: each template's `vite.config.ts`
-- [ ] Old path: n/a
-- [ ] Ledger rows filled: n/a — this phase adds no ledger row, it makes row #1 reachable in dev
+- [x] Caller edited: each template's `vite.config.ts`
+- [x] Old path: n/a
+- [x] Ledger rows filled: n/a — this phase adds no ledger row, it makes row #1 reachable in dev
 
 **Tests required:**
 
@@ -394,11 +410,15 @@ pnpm test && pnpm test:templates
 
 # 3. Incumbent check — no second resolution path survives
 grep -n "resolvePath" packages/core/src/assets.ts
-# Expected: one definition, one call site, inside the no-manifest fallback branch
+# Expected: ONE definition. Three call sites are structurally required — the default manifest
+# URL join, the no-manifest fallback, and the manifest-output join each reapply basePath.
+# What must not exist is a second resolver implementation or an unconditional resolvePath
+# ahead of the manifest lookup (updated from "one call site" at execution: the spec itself
+# requires the extra joins).
 
 # 4. Stale-artifact control
-rm -rf packages/create-threenative/templates/platformer/public/assets.manifest.json
-pnpm --filter platformer build
+rm -rf packages/create-threenative/templates/starter/public/assets.manifest.json
+pnpm --filter starter build
 # Expected: the manifest regenerates; the build must not pass on the deleted copy
 ```
 
@@ -417,27 +437,28 @@ sh scripts/xvfb.sh pnpm test:playtest
 
 Consumer-scoped. Each is false today.
 
-- [ ] A user drops a PNG into `assets/`, runs `dev`, and the texture appears on screen without
+- [x] A user drops a PNG into `assets/`, runs `dev`, and the texture appears on screen without
       touching `public/`
-- [ ] Deleting `public/` entirely and rebuilding produces a game that runs identically
-- [ ] A scaffolded project has no empty `assets/.gitkeep`; the directory holds real inputs or
+- [x] Deleting `public/` entirely and rebuilding produces a game that runs identically
+- [x] A scaffolded project has no empty `assets/.gitkeep`; the directory holds real inputs or
       does not exist
-- [ ] A corrupt manifest entry makes the game fail loudly at load, naming the asset — it never
+- [x] A corrupt manifest entry makes the game fail loudly at load, naming the asset — it never
       silently renders an untextured mesh
-- [ ] The desktop native package built by `threenative build --target desktop` contains the
+- [x] The desktop native package built by `threenative build --target desktop` contains the
       compiled outputs, not the sources
-- [ ] Building a project containing a heavy model prints an asset health report naming the
+- [x] Building a project containing a heavy model prints an asset health report naming the
       triangle count, the material count, the texture dimensions and the missing collider —
       before any compression pass exists
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells
-- [ ] Every new exported symbol has a non-test consumer (census pasted above)
-- [ ] Revert check passed: disabling the compile step fails a pre-existing template playtest
-- [ ] The raw copies in `templates/platformer/public/` are deleted, not kept as a fallback
-- [ ] Every gate has an observed negative control recorded red
-- [ ] Proved on the platformer, the largest shipped template — not on a fixture
+- [x] Integration Ledger has zero `TBD` cells
+- [x] Every new exported symbol has a non-test consumer (census pasted above)
+- [x] Revert check passed: disabling the compile step fails a pre-existing template playtest
+- [x] The raw copies in `templates/starter/public/` are deleted, not kept as a fallback
+- [x] Every gate has an observed negative control recorded red
+- [x] Proved on `starter`, the one shipped template whose game loads real asset files — not on a
+      fixture
 
 ## 8. Risks
 

@@ -58,11 +58,26 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         // The packaged proof carries positions and indices only. Without UVs the sampler
         // reads one corner texel for every fragment and the flag renders as flat white —
         // a loaded texture that proves nothing you can see. Plane-project the triangle.
+        // Compiled models may be quantized (KHR_mesh_quantization): the attribute then holds
+        // normalized integers, so measure each axis range from the array itself instead of
+        // assuming float32 metres — the affine projection is identical either way.
         const position = object.geometry.getAttribute("position");
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (let index = 0; index < position.count; index += 1) {
+          minX = Math.min(minX, position.getX(index));
+          maxX = Math.max(maxX, position.getX(index));
+          minY = Math.min(minY, position.getY(index));
+          maxY = Math.max(maxY, position.getY(index));
+        }
+        const spanX = Math.max(maxX - minX, Number.EPSILON);
+        const spanY = Math.max(maxY - minY, Number.EPSILON);
         const uv = new Float32Array(position.count * 2);
         for (let index = 0; index < position.count; index += 1) {
-          uv[index * 2] = (position.getX(index) + 0.8) / 1.6;
-          uv[index * 2 + 1] = (position.getY(index) + 0.6) / 1.4;
+          uv[index * 2] = (position.getX(index) - minX) / spanX;
+          uv[index * 2 + 1] = (position.getY(index) - minY) / spanY;
         }
         object.geometry.setAttribute("uv", new BufferAttribute(uv, 2));
       }

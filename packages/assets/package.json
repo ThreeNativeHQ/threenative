@@ -1,0 +1,45 @@
+{
+  "name": "@threenative/assets",
+  "version": "0.3.0",
+  "license": "MIT",
+  "description": "Content-addressed asset compile step for ThreeNative games.",
+  "type": "module",
+  "files": ["dist", "README.md"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build && pnpm --dir ../.. exec vitest run --config vitest.config.ts packages/assets && publint --strict"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/pngjs": "6.0.5",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "catalog:",
+    "@gltf-transform/extensions": "catalog:",
+    "@gltf-transform/functions": "catalog:",
+    "draco3dgltf": "^1.5.7",
+    "jpeg-js": "0.4.4",
+    "ktx-parse": "^1.1.0",
+    "ktx2-encoder": "0.6.0",
+    "meshoptimizer": "1.1.1",
+    "pngjs": "7.0.0"
+  }
+}

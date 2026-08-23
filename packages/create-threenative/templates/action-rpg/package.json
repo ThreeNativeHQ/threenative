@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
+    "@threenative/assets": "0.3.0",
     "@threenative/playtest": "0.3.0",
     "threenative-engine-mcp": "0.2.0",
     "@types/react": "19.2.0",

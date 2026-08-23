@@ -4,9 +4,10 @@ prd_contract: v1
 
 # PRD-095 — Textures reach the GPU compressed: KTX2/Basis in, `KTX2Loader` auto-wired out
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
-**Parent:** [the series README](./README.md).
-**Depends on:** [PRD-094](./PRD-094-asset-compile-step.md) — the compile stage and the manifest.
+**Status: DONE, 2026-08-22.** Executed on the lane; evidence in
+docs/verification/asset-pipeline-prd-095-2026-08-22.md. No native claim is made — decode is PRD-097.
+**Parent:** [the series README](./asset-pipeline/README.md).
+**Depends on:** [PRD-094](../done/PRD-094-asset-compile-step.md) — the compile stage and the manifest.
 **Blocks:** [PRD-097](./PRD-097-native-decode-path.md),
 [PRD-099](./PRD-099-vector-textures.md).
 
@@ -110,10 +111,12 @@ per case, never two.
 
 ## 4. Execution phases
 
-#### Phase 1: One real texture compiles to KTX2 and renders — the platformer's ground texture, in the browser
+#### Phase 1: One real texture compiles to KTX2 and renders — the starter's pennant texture, in the browser
 
-**Proof subject:** the platformer's largest texture, the one already on screen in the shipped
-playtest. Not a generated test pattern.
+**Proof subject:** `starter`'s `assets/native-proof.png` — updated 2026-08-22 from the
+originally-proposed platformer, which is fully procedural today and ships no textures. Starter
+is the one template whose game loads and displays a texture through `ctx.assets`
+(`src/scenes/Play.ts:49`). Not a generated test pattern.
 
 **Files (max 5):**
 
@@ -125,19 +128,19 @@ playtest. Not a generated test pattern.
 
 **Implementation:**
 
-- [ ] Choose UASTC vs ETC1S from alpha presence, a `*_normal.*`/`*_nrm.*` filename convention,
+- [x] Choose UASTC vs ETC1S from alpha presence, a `*_normal.*`/`*_nrm.*` filename convention,
       and the config override — override always wins
-- [ ] Generate the full mip chain at encode time
-- [ ] Copy the `three` Basis transcoder into the output directory once per build
-- [ ] `detectSupport(renderer)` once per loader, memoised; **throw** when no compressed format is
+- [x] Generate the full mip chain at encode time
+- [x] Copy the `three` Basis transcoder into the output directory once per build
+- [x] `detectSupport(renderer)` once per loader, memoised; **throw** when no compressed format is
       supported, naming the renderer and the platform
-- [ ] Record `bytesBefore`/`bytesAfter` in the manifest
+- [x] Record `bytesBefore`/`bytesAfter` in the manifest
 
 **Wiring:**
 
-- [ ] Caller edited: `compile.ts` registry and the `texture()` branch in `assets.ts`
-- [ ] Old path: identity pass removed for textures in this phase
-- [ ] Ledger rows filled: #1, #2, #3, #4
+- [x] Caller edited: `compile.ts` registry and the `texture()` branch in `assets.ts`
+- [x] Old path: identity pass removed for textures in this phase
+- [x] Ledger rows filled: #1, #2, #3, #4
 
 **Tests required:**
 
@@ -158,16 +161,16 @@ Phase 2 playtest fails, because the PNG is no longer in `public/`.
 
 **Files (max 5):**
 
-- `templates/platformer/playtests/textures.playtest.json` - NEW
+- `templates/starter/playtests/textures.playtest.json` - NEW
 - `packages/assets/src/report.ts` - NEW: the size report printed by the compile step
 - `packages/assets/src/compile.ts` - EDIT: print the report
 - `scripts/budgets.ts` - EDIT: surface texture bytes in the budget report
 
 **Implementation:**
 
-- [ ] The playtest takes a screenshot and asserts a `visual` comparison against the pre-KTX2
+- [x] The playtest takes a screenshot and asserts a `visual` comparison against the pre-KTX2
       baseline within threshold — a texture that compressed to mush must fail
-- [ ] The compile step prints one line per texture and a total, before/after
+- [x] The compile step prints one line per texture and a total, before/after
 
 **Tests required:**
 
@@ -197,9 +200,9 @@ texture against a screenshot from before.
 
 **Implementation:**
 
-- [ ] Textures embedded in a `.glb` are extracted, encoded, and re-referenced through the
+- [x] Textures embedded in a `.glb` are extracted, encoded, and re-referenced through the
       extension — never left as raw PNG next to compressed siblings
-- [ ] `GLTFLoader.setKTX2Loader()` uses the same memoised loader instance as `texture()`
+- [x] `GLTFLoader.setKTX2Loader()` uses the same memoised loader instance as `texture()`
 
 **Tests required:**
 
@@ -210,7 +213,7 @@ texture against a screenshot from before.
 | `playtests/textures.playtest.json` | the model's own texture is visible | `visibility` + `visual` | leave the extension undeclared → load throws, exit 1 |
 
 **Revert check:** revert the `setKTX2Loader` call → the compiled `.glb` fails to load, breaking
-the pre-existing platformer playtest from PRD-094 Phase 3.
+the pre-existing starter asset playtest from PRD-094 Phase 3.
 
 ---
 
@@ -226,11 +229,11 @@ git stash && pnpm --filter @threenative/assets test; git stash pop
 # Expected: the texture-pass specs do not exist / fail. A pass here means the gate measures nothing.
 
 # 3. Real-implementation control — prove the encoder ran, not a mock
-node -e "const m=require('./templates/platformer/public/assets.manifest.json');console.log(m.entries)"
+node -e "const m=require('./templates/starter/public/assets.manifest.json');console.log(m.entries)"
 # Expected: format uastc|etc1s and bytesAfter < bytesBefore for every texture entry
 
 # 4. Stale-artifact control
-rm templates/platformer/public/*.ktx2 && pnpm --filter platformer build
+rm templates/starter/public/*.ktx2 && pnpm --filter starter build
 # Expected: regenerated, not served from cache
 ```
 
@@ -245,23 +248,23 @@ sh scripts/xvfb.sh pnpm test:templates
 
 ## 6. Acceptance criteria
 
-- [ ] The platformer's ground looks the same as it did before compression, judged by the visual
+- [x] The starter pennant looks the same as it did before compression, judged by the visual
       playtest against the pre-KTX2 baseline
-- [ ] The build prints a total texture size that is smaller than the sources, and the number is
+- [x] The build prints a total texture size that is smaller than the sources, and the number is
       in the round ledger
-- [ ] A `.glb` whose textures were compressed loads and renders in the browser
-- [ ] Running on a target with no compressed-texture support fails at construction with a message
+- [x] A `.glb` whose textures were compressed loads and renders in the browser
+- [x] Running on a target with no compressed-texture support fails at construction with a message
       naming the platform — it never silently ships a 16 MB upload
-- [ ] Setting `assets.textures` to `"none"` produces a game identical to today's
+- [x] Setting `assets.textures` to `"none"` produces a game identical to today's
 
 **Integration gates:**
 
-- [ ] Ledger has zero `TBD` cells
-- [ ] Caller census pasted
-- [ ] Revert check passed on Phase 3 (a pre-existing playtest breaks)
-- [ ] `TextureLoader` is live only in the no-manifest fallback branch
-- [ ] Every gate observed red once
-- [ ] Proved on the platformer's real textures, not a generated pattern
+- [x] Ledger has zero `TBD` cells
+- [x] Caller census pasted
+- [x] Revert check passed on Phase 3 (a pre-existing playtest breaks)
+- [x] `TextureLoader` is live only in the no-manifest fallback branch
+- [x] Every gate observed red once
+- [x] Proved on the starter's real texture, not a generated pattern
 
 ## 7. Risks
 

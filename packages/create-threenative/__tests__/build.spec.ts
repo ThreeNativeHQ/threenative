@@ -228,6 +228,7 @@ describe("threenative build", () => {
   it("fails closed when the declared native entry is missing", async () => {
     const root = await makeTempDir("threenative-missing-entry-");
     roots.push(root);
+    await mkdir(path.join(root, "assets"), { recursive: true });
     await writeFile(
       path.join(root, "package.json"),
       JSON.stringify({ name: "missing-entry", threenative: { nativeEntry: "src/portable.ts" } }),

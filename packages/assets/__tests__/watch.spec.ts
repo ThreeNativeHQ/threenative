@@ -1,0 +1,212 @@
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import {
+  type IAssetPass,
+  type IAssetWatchHandle,
+  type IAssetWatchSummary,
+  watchAssets,
+} from "../src/index.js";
+
+const DEBOUNCE_MS = 25;
+
+interface IBurstRecorder {
+  onChange(summary: IAssetWatchSummary): void;
+  readonly summaries: IAssetWatchSummary[];
+  waitForCount(target: number): Promise<void>;
+}
+
+/** Collects burst summaries and lets tests await a deterministic burst count instead of sleeps. */
+function createBurstRecorder(): IBurstRecorder {
+  const summaries: IAssetWatchSummary[] = [];
+  const waiters: Array<() => void> = [];
+  return {
+    onChange: (summary) => {
+      summaries.push(summary);
+      for (const waiter of waiters.splice(0)) waiter();
+    },
+    summaries,
+    waitForCount: (target) =>
+      summaries.length >= target
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            waiters.push(() => {
+              if (summaries.length >= target) resolve();
+            });
+          }),
+  };
+}
+
+const openHandles: IAssetWatchHandle[] = [];
+
+afterEach(() => {
+  for (const handle of openHandles.splice(0)) handle.close();
+});
+
+interface IManifestEntry {
+  readonly format?: string;
+  readonly output: string;
+}
+
+function requireEntry(
+  entries: Record<string, IManifestEntry | undefined>,
+  logical: string,
+): IManifestEntry {
+  const entry = entries[logical];
+  if (entry === undefined || entry.output === undefined) {
+    throw new Error(`manifest has no usable '${logical}' entry`);
+  }
+  return entry;
+}
+
+function readManifestEntries(manifestPath: string): Promise<Record<string, IManifestEntry>> {
+  return readFile(manifestPath, "utf8").then((raw): Record<string, IManifestEntry> => {
+    const entries = (JSON.parse(raw) as { entries?: Record<string, IManifestEntry> }).entries;
+    return entries ?? {};
+  });
+}
+
+describe("watchAssets", () => {
+  it("should recompile only the changed input", async () => {
+    const root = await makeTempDir("threenative-watch-changed-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({ height: 64, red: (x) => x * 4, width: 64 }),
+    );
+    await writeFile(
+      path.join(root, "assets", "shield.png"),
+      rgbaPng({ blue: () => 90, green: () => 200, height: 32, width: 32 }),
+    );
+    const recorder = createBurstRecorder();
+    openHandles.push(
+      watchAssets({
+        cwd: root,
+        debounceMs: DEBOUNCE_MS,
+        onChange: recorder.onChange,
+        transcoder: basisTranscoderPaths(),
+      }),
+    );
+    await openHandles[0]?.ready;
+
+    const publicDirectory = path.join(root, "public");
+    const manifestPath = path.join(publicDirectory, "assets.manifest.json");
+    const initialEntries = await readManifestEntries(manifestPath);
+    expect(requireEntry(initialEntries, "rock.png").format).toBe("etc1s");
+    const knightPath = path.join(
+      publicDirectory,
+      requireEntry(initialEntries, "shield.png").output,
+    );
+    const knightMtimeBefore = (await stat(knightPath)).mtimeMs;
+
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({ height: 64, red: (x) => 255 - x * 4, width: 64 }),
+    );
+    await recorder.waitForCount(1);
+
+    expect(recorder.summaries[0]).toEqual({ compiled: ["rock.png"], failed: [] });
+    const updatedEntries = await readManifestEntries(manifestPath);
+    expect(requireEntry(updatedEntries, "rock.png").output).not.toBe(
+      requireEntry(initialEntries, "rock.png").output,
+    );
+    const recompiled = await readFile(
+      path.join(publicDirectory, requireEntry(updatedEntries, "rock.png").output),
+    );
+    // The dev save produced what a build would: KTX2 bytes, not the raw source.
+    expect([...recompiled.subarray(1, 7)].map((byte) => String.fromCharCode(byte)).join("")).toBe(
+      "KTX 20",
+    );
+    expect(requireEntry(updatedEntries, "rock.png").format).toBe("etc1s");
+    expect(updatedEntries["shield.png"]).toEqual(initialEntries["shield.png"]);
+    expect((await stat(knightPath)).mtimeMs).toBe(knightMtimeBefore);
+  });
+
+  it("should keep the previous output when compilation throws", async () => {
+    const root = await makeTempDir("threenative-watch-throws-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), "good png");
+    const explode: IAssetPass = {
+      name: "explode",
+      apply: (input) => {
+        if (input.toString("utf8").includes("corrupt")) throw new Error("boom");
+        return input;
+      },
+    };
+    const recorder = createBurstRecorder();
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((() => true) as never);
+    try {
+      openHandles.push(
+        watchAssets({
+          cwd: root,
+          debounceMs: DEBOUNCE_MS,
+          onChange: recorder.onChange,
+          passes: [explode],
+        }),
+      );
+      await openHandles[0]?.ready;
+
+      const publicDirectory = path.join(root, "public");
+      const manifestPath = path.join(publicDirectory, "assets.manifest.json");
+      const manifestRaw = await readFile(manifestPath, "utf8");
+      const rockOutput = requireEntry(await readManifestEntries(manifestPath), "rock.png").output;
+      const outputPath = path.join(publicDirectory, rockOutput);
+      const bytesBefore = await readFile(outputPath);
+
+      await writeFile(path.join(root, "assets", "rock.png"), "corrupt png");
+      await recorder.waitForCount(1);
+
+      expect(recorder.summaries[0]).toEqual({ compiled: [], failed: ["rock.png"] });
+      const logged = stderrSpy.mock.calls.map((call) => String(call[0])).join("");
+      expect(logged).toMatch(/TN_ASSETS_WATCH_FAILED/u);
+      expect(logged).toMatch(/rock\.png/u);
+      expect(await readFile(manifestPath, "utf8")).toBe(manifestRaw);
+      expect((await readFile(outputPath)).equals(bytesBefore)).toBe(true);
+      expect(await readdir(publicDirectory)).toEqual(["assets.manifest.json", rockOutput].sort());
+
+      // Fixing the input heals the deviation: the next burst recompiles and updates the manifest.
+      await writeFile(path.join(root, "assets", "rock.png"), "fixed png");
+      await recorder.waitForCount(2);
+      expect(recorder.summaries[1]).toEqual({ compiled: ["rock.png"], failed: [] });
+      expect(await readFile(manifestPath, "utf8")).not.toBe(manifestRaw);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("should debounce a burst of writes into one recompile", async () => {
+    const root = await makeTempDir("threenative-watch-debounce-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), "before burst");
+    const recorder = createBurstRecorder();
+    // Identity compilation keeps the assertion on coalescing itself rather than on encoding.
+    openHandles.push(
+      watchAssets({
+        cwd: root,
+        config: { textures: "none" },
+        debounceMs: 60,
+        onChange: recorder.onChange,
+      }),
+    );
+    await openHandles[0]?.ready;
+
+    for (let index = 1; index <= 5; index += 1) {
+      await writeFile(path.join(root, "assets", "rock.png"), `burst write ${index}`);
+    }
+    await recorder.waitForCount(1);
+    // Any straggler event outside the debounced burst would have fired well within 3 windows.
+    await new Promise((resolve) => setTimeout(resolve, 180));
+
+    expect(recorder.summaries).toHaveLength(1);
+    expect(recorder.summaries[0]).toEqual({ compiled: ["rock.png"], failed: [] });
+    const entries = await readManifestEntries(path.join(root, "public", "assets.manifest.json"));
+    const compiled = await readFile(
+      path.join(root, "public", requireEntry(entries, "rock.png").output),
+      "utf8",
+    );
+    expect(compiled).toBe("burst write 5");
+  });
+});

@@ -1,0 +1,40 @@
+{
+  "name": "starter-models",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-toward-the-flag",
+      "press": "ArrowRight",
+      "holdTicks": 205,
+      "release": false
+    },
+    { "kind": "input", "label": "jump-the-gap", "press": "Space", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "land-beside-the-pennant", "waitTicks": 120, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minDistance": 0.5 },
+    "resources": [{ "id": "state", "path": "status", "equals": "won", "changed": true }],
+    "visibility": [
+      {
+        "allowTrivial": "The pennant is authored in frame from the first tick so the player can see where to jump; this row proves the quantized, meshopt-compressed glb still draws once the run reaches it.",
+        "entity": "goal",
+        "minProjectedPixels": 20
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "maxChangedPixelRatio": 0.6,
+          "minChangedPixelRatio": 0.01,
+          "baselineImage": "playtests/models-baseline.png"
+        }
+      }
+    ]
+  }
+}

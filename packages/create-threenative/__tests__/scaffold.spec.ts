@@ -50,6 +50,8 @@ async function withBrokenTemplateFile<T>(
 }
 
 const STARTER_PATHS = [
+  // Ignores the asset compile step's generated outputs; the sources in assets/ ship.
+  ".gitignore",
   ".mcp.json",
   "AGENTS.md",
   "CLAUDE.md",
@@ -82,6 +84,7 @@ const STARTER_PATHS = [
   "src/ui/App.tsx",
   "src/state.ts",
   "playtests/survives.playtest.json",
+  "playtests/assets.playtest.json",
   "playtests/play.playtest.json",
   "playtests/forward.playtest.json",
   "playtests/coyote.playtest.json",
@@ -92,10 +95,10 @@ const STARTER_PATHS = [
   "playtests/goal.playtest.json",
   "playtests/gameover.playtest.json",
   "playtests/seed.playtest.json",
-  "public/native-proof.glb",
-  "public/native-proof.png",
+  "assets/native-proof.glb",
+  "assets/native-proof.png",
   "public/icon.png",
-  "public/pickup.ogg",
+  "assets/pickup.ogg",
   // P2-2: the searchable reference bundle every generated project must ship.
   "agent-docs/assertion-reference.md",
   "agent-docs/capture-the-frame.md",
@@ -241,7 +244,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      const pickupAudio = await readFile(path.join(result.target, "public/pickup.ogg"));
+      const pickupAudio = await readFile(path.join(result.target, "assets/pickup.ogg"));
       expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
       const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
       expect(agents).toContain("my-game");
@@ -261,6 +264,50 @@ describe("create-threenative", () => {
         ),
       );
       expect(renderFiles.join("\n")).not.toContain("@threenative/");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // The compile step owns public/'s generated outputs; the sources ship in assets/. With no
+  // raw copy left in public/, any dev server or build must compile first — which is what
+  // playtests/assets.playtest.json proves against a served game.
+  it("should ship source assets and never scaffold an empty assets directory", async () => {
+    const root = await makeTempDir("threenative-scaffold-assets-");
+    try {
+      const result = await createProject(
+        { install: false, target: "my-game", template: "starter" },
+        root,
+      );
+      await expect(
+        readFile(path.join(result.target, "assets/native-proof.glb")),
+      ).resolves.toBeTruthy();
+      const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
+      expect(gitignore).toContain("public/assets.manifest.json");
+      for (const absent of ["assets/.gitkeep", "public/assets.manifest.json"]) {
+        await expect(stat(path.join(result.target, absent))).rejects.toThrow();
+      }
+      // The packed CLI itself depends on @threenative/assets, so a local-pack install needs a
+      // pnpm override per provided source, not just a rewritten direct pin.
+      const sourced = await createProject(
+        {
+          install: false,
+          packageSources: {
+            "@threenative/assets": "/tmp/assets.tgz",
+            "create-threenative": "/tmp/cli.tgz",
+          },
+          target: "sourced-game",
+          template: "starter",
+        },
+        root,
+      );
+      const sourcedManifest = JSON.parse(
+        await readFile(path.join(sourced.target, "package.json"), "utf8"),
+      ) as { pnpm?: { overrides?: Record<string, string> } };
+      expect(sourcedManifest.pnpm?.overrides).toMatchObject({
+        "@threenative/assets": "file:/tmp/assets.tgz",
+        "create-threenative": "file:/tmp/cli.tgz",
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -314,6 +361,9 @@ describe("create-threenative", () => {
       await mkdir(scope, { recursive: true });
       await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
       await symlink(path.resolve("packages/physics"), path.join(scope, "physics"), "dir");
+      // The template vite.config.ts imports watchAssets from @threenative/assets in serve
+      // mode; a build that resolves the config needs the package present to reject it.
+      await symlink(path.resolve("packages/assets"), path.join(scope, "assets"), "dir");
       await symlink(
         path.resolve("packages/create-threenative"),
         path.join(result.target, "node_modules", "create-threenative"),

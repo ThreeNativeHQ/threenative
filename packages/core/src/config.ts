@@ -23,6 +23,17 @@ export interface IThreeNativeBootSplash {
   readonly image?: string;
 }
 
+/** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
+export interface IThreeNativeTexturesConfig {
+  readonly overrides?: readonly {
+    readonly codec: "etc1s" | "none" | "uastc";
+    readonly glob: string;
+    readonly quality?: number;
+  }[];
+  /** ETC1S encoder quality 1–255. Ignored for UASTC. */
+  readonly quality?: number;
+}
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -42,6 +53,17 @@ export interface IThreeNativeConfig {
     readonly width?: number;
     readonly height?: number;
     readonly resizable?: boolean;
+  };
+  readonly assets?: {
+    readonly output?: string;
+    readonly source?: string;
+    readonly targets?: {
+      readonly maxMaterials?: number;
+      readonly maxTriangles?: number;
+      readonly maxTextureDimension?: number;
+    };
+    /** Texture compression options, or `"none"` to ship every texture exactly as committed. */
+    readonly textures?: "none" | IThreeNativeTexturesConfig;
   };
   readonly bootSplash?: IThreeNativeBootSplash;
   readonly nativeEntry?: string;

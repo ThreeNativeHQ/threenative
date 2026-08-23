@@ -127,6 +127,9 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   };
   await linkDependency(target, "@threenative/core", path.resolve("packages/core"));
   await linkDependency(target, "@threenative/physics", path.resolve("packages/physics"));
+  // Every template's vite.config.ts imports watchAssets from here since PRD-094 phase 4;
+  // tsc reads vite.config.ts through the root-level *.ts include.
+  await linkDependency(target, "@threenative/assets", path.resolve("packages/assets"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
   await linkDependency(target, "create-threenative", path.resolve("packages/create-threenative"));
   await linkDependency(target, "three", path.resolve("packages/core/node_modules/three"));
@@ -495,7 +498,7 @@ describe("template contracts", () => {
     for (const template of templates) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
       expect(agents).toContain("AnimationPlayer");
-      expect(agents).toContain(".glb` in `public/");
+      expect(agents).toContain(".glb` in `assets/");
       expect(agents).toContain("ctx.assets.model");
     }
   });

@@ -108,6 +108,7 @@ static bool g_verboseLogging = false;  // Disabled by default, enable with --deb
 
 // Store references to WebGPU objects
 static WGPUDevice g_device = nullptr;
+static WGPUAdapter g_adapter = nullptr;
 static WGPUQueue g_queue = nullptr;
 static WGPUSurface g_surface = nullptr;
 static WGPUPresentMode g_presentMode = WGPUPresentMode_Fifo;
@@ -986,10 +987,23 @@ static WGPUTexture getCurrentSwapchainTexture() {
 #endif
 }
 
+// Maps JS WebGPU feature names onto this header's WGPUFeatureName values for the
+// adapter/device feature sets. Returns 0 (never a valid value) when unmapped: either a
+// name this build does not model or one whose backing bindings are not implemented.
+static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
+    if (featureName == "depth-clip-control") return WGPUFeatureName_DepthClipControl;
+    if (featureName == "depth32float-stencil8") return WGPUFeatureName_Depth32FloatStencil8;
+    if (featureName == "texture-compression-bc") return WGPUFeatureName_TextureCompressionBC;
+    if (featureName == "texture-compression-etc2") return WGPUFeatureName_TextureCompressionETC2;
+    if (featureName == "texture-compression-astc") return WGPUFeatureName_TextureCompressionASTC;
+    if (featureName == "float32-filterable") return WGPUFeatureName_Float32Filterable;
+    return static_cast<WGPUFeatureName>(0);
+}
+
 /**
  * Initialize WebGPU bindings in the JS engine
  */
-bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug) {
+bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug, void* wgpuAdapter) {
     if (!engine) {
         std::cerr << "[WebGPU] No JS engine provided for bindings" << std::endl;
         return false;
@@ -1002,6 +1016,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
     g_engine = engine;
     g_instance = (WGPUInstance)wgpuInstance;
     g_device = (WGPUDevice)wgpuDevice;
+    g_adapter = (WGPUAdapter)wgpuAdapter;
     g_queue = (WGPUQueue)wgpuQueue;
     g_surface = (WGPUSurface)wgpuSurface;
     g_presentMode = static_cast<WGPUPresentMode>(presentMode);
@@ -2280,8 +2295,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     g_engine->setProperty(deviceLimits, "minStorageBufferOffsetAlignment", g_engine->newNumber(256));
                     g_engine->setProperty(device, "limits", deviceLimits);
 
-                    // device.features - Set-like object with enabled features
-                    // These should match the features exposed in adapter.features that were requested
+                    // device.features - Set-like object with enabled features, answered from the
+                    // real device so consumers (three's KTX2Loader.detectSupport among them)
+                    // pick transcode targets from actual hardware capability.
                     auto deviceFeatures = g_engine->newArray(0);
                     g_engine->setProperty(deviceFeatures, "has",
                         g_engine->newFunction("has", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
@@ -2292,7 +2308,14 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 return g_engine->newBoolean(true);
                             }
                             // timestamp-query is NOT supported yet - bindings not implemented
-                            return g_engine->newBoolean(false);
+                            if (featureName == "timestamp-query") {
+                                return g_engine->newBoolean(false);
+                            }
+                            // This Dawn has no Undefined member; 0 is outside the enum's values
+                            // and never a valid feature, so it stands in as the sentinel.
+                            WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
+                            if (feature == static_cast<WGPUFeatureName>(0)) return g_engine->newBoolean(false);
+                            return g_engine->newBoolean(wgpuDeviceHasFeature(g_device, feature) != 0);
                         })
                     );
                     g_engine->setProperty(device, "features", deviceFeatures);
@@ -5031,7 +5054,14 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                         return g_engine->newBoolean(true);
                     }
                     // timestamp-query is NOT supported yet - bindings not implemented
-                    return g_engine->newBoolean(false);
+                    if (featureName == "timestamp-query") {
+                        return g_engine->newBoolean(false);
+                    }
+                    // Answered from the real adapter so feature-dependent consumers (three's
+                    // KTX2Loader.detectSupport among them) request what the hardware has.
+                    WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
+                    if (feature == static_cast<WGPUFeatureName>(0)) return g_engine->newBoolean(false);
+                    return g_engine->newBoolean(wgpuAdapterHasFeature(g_adapter, feature) != 0);
                 })
             );
             g_engine->setProperty(features, "size", g_engine->newNumber(1));

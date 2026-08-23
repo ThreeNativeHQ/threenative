@@ -443,7 +443,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
     const canvasLayer = new CanvasLayer(viewport);
     this.#viewport = viewport;
-    const assets = createAssetLoader(this.#config.assets);
+    // The renderer goes to the asset loader so compiled KTX2 textures detect transcoding
+    // support against the real backend; a target that supports none fails right here.
+    const assets = createAssetLoader({ ...this.#config.assets, renderer: renderer.raw });
+    if (assets.compressedTextures !== undefined) await assets.compressedTextures.ready;
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
     const scheduler = new Scheduler();

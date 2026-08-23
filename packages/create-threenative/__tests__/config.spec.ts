@@ -217,6 +217,151 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
   });
 
+  it("parses the assets group and omits it from resolved configs that do not declare it", async () => {
+    const configured = await project();
+    await config(configured, 'export default { assets: { source: "art", output: "web" } };');
+    const resolved = await loadConfig(configured);
+    expect(resolved.assets).toEqual({ output: "web", source: "art" });
+
+    const bare = await project();
+    expect((await loadConfig(bare)).assets).toBeUndefined();
+  });
+
+  it("parses declared asset targets into the resolved config", async () => {
+    const root = await project();
+    await config(
+      root,
+      `export default { assets: { source: "art", targets: { maxTriangles: 100000, maxTextureDimension: 2048 } } };`,
+    );
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      assets: {
+        source: "art",
+        targets: { maxTriangles: 100000, maxTextureDimension: 2048 },
+      },
+    });
+  });
+
+  it("rejects an unknown key under the assets group with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { bogus: true } };");
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_UNKNOWN_KEY",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
+  });
+
+  it("rejects an unknown key under assets.targets with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { targets: { bogus: 1 } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.targets\.bogus/u);
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
+  });
+
+  it("parses the textures block and the none shorthand into the resolved config", async () => {
+    const configured = await project();
+    await config(
+      configured,
+      `export default {
+        assets: {
+          textures: {
+            quality: 200,
+            overrides: [{ glob: "**/*_nrm.png", codec: "uastc" }, { glob: "ui/**", codec: "none" }],
+          },
+        },
+      };`,
+    );
+    await expect(loadConfig(configured)).resolves.toMatchObject({
+      assets: {
+        textures: {
+          quality: 200,
+          overrides: [
+            { codec: "uastc", glob: "**/*_nrm.png" },
+            { codec: "none", glob: "ui/**" },
+          ],
+        },
+      },
+    });
+
+    const disabled = await project();
+    await config(disabled, `export default { assets: { textures: "none" } };`);
+    expect((await loadConfig(disabled)).assets).toEqual({ textures: "none" });
+  });
+
+  it("rejects an unknown texture codec with the named code", async () => {
+    const root = await project();
+    // The negative control for ledger row 4: an unknown codec name must fail config load.
+    await config(
+      root,
+      `export default { assets: { textures: { overrides: [{ glob: "**/*.png", codec: "supercompressed" }] } } };`,
+    );
+    await expectActionableFailure(
+      root,
+      "TN_CONFIG_ASSETS_INVALID",
+      "config validation",
+      path.join(root, "threenative.config.ts"),
+    );
+    await expect(loadConfig(root)).rejects.toThrow(/supercompressed/u);
+  });
+
+  it("rejects a bad texture quality with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { textures: { quality: 900 } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/between 1 and 255/u);
+  });
+
+  it("parses the models block and the none shorthand into the resolved config", async () => {
+    const configured = await project();
+    await config(
+      configured,
+      `export default {
+        assets: {
+          models: {
+            passes: { dedup: true, prune: false },
+            quantize: { positionBits: 14, normalBits: 10, uvBits: 12 },
+          },
+        },
+      };`,
+    );
+    await expect(loadConfig(configured)).resolves.toMatchObject({
+      assets: {
+        models: {
+          passes: { dedup: true, prune: false },
+          quantize: { normalBits: 10, positionBits: 14, uvBits: 12 },
+        },
+      },
+    });
+
+    const disabled = await project();
+    await config(disabled, `export default { assets: { models: "none" } };`);
+    expect((await loadConfig(disabled)).assets).toEqual({ models: "none" });
+  });
+
+  it("rejects an unknown model pass name with the named code", async () => {
+    const root = await project();
+    // The negative control for ledger row 4: an unknown sub-pass must fail config load,
+    // never run silently.
+    await config(root, "export default { assets: { models: { passes: { decimate: true } } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.passes\.decimate/u);
+  });
+
+  it("rejects an unknown key under assets.models with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { models: { bogus: 1 } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.bogus/u);
+  });
+
+  it("rejects an out-of-range quantize depth with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { models: { quantize: { positionBits: 0 } } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/between 1 and 16 bits/u);
+  });
+
   it("rejects bad orientation with the named code", async () => {
     const root = await project();
     await config(root, 'export default { display: { orientation: "sideways" } };');

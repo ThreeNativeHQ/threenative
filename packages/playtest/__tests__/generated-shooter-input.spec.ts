@@ -34,6 +34,7 @@ const SCAFFOLDER_ENTRY = path.join(REPO_ROOT, "packages/create-threenative/dist/
 const LOCAL_PACKAGES = [
   ["@threenative/playtest", "threenative-playtest-"],
   ["@threenative/core", "threenative-core-"],
+  ["@threenative/assets", "threenative-assets-"],
   ["@threenative/physics", "threenative-physics-"],
   ["@threenative/runtime-native", "threenative-runtime-native-"],
   ["@threenative/ui", "threenative-ui-"],
@@ -43,6 +44,7 @@ const LOCAL_PACKAGES = [
 
 const PACKAGE_FLAG_BY_NAME: Record<string, string> = {
   "@threenative/core": "--core-package",
+  "@threenative/assets": "--assets-package",
   "@threenative/physics": "--physics-package",
   "@threenative/playtest": "--playtest-package",
   "@threenative/runtime-native": "--runtime-native-package",

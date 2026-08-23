@@ -207,7 +207,7 @@ static void installCrashHandlers() {
 
 // Forward declaration for WebGPU bindings
 namespace webgpu {
-    bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug = false);
+    bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug = false, void* wgpuAdapter = nullptr);
     void setOffscreenTexture(void* texture, void* textureView);
     void beginDawnFrame();
     void endDawnFrame();
@@ -504,7 +504,7 @@ public:
         // Set up WebGPU bindings in JS
         // For no-SDL mode, pass nullptr for surface (offscreen rendering uses texture directly)
         WGPUSurface surface = config_.noSdl ? nullptr : webgpu_->getSurface();
-        if (!webgpu::initBindings(jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug)) {
+        if (!webgpu::initBindings(jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
             return false;
         }
@@ -2709,6 +2709,10 @@ if (typeof Worker === 'undefined') {
             this.onerror = null;
             this._terminated = false;
             this._workerSelf = null;
+            // Browser semantics: messages posted before the worker script has registered
+            // its handler are queued, not dropped. KTX2Loader posts 'init' immediately
+            // after constructing the worker and registers handlers inside that script.
+            this._pendingMessages = [];
 
             // Extract code from blob URL
             let code = '';
@@ -2730,15 +2734,52 @@ if (typeof Worker === 'undefined') {
 
             // Build a worker-like scope with self, postMessage, etc.
             const worker = this;
+            const messageListeners = [];
             const workerSelf = {
                 onmessage: null,
+                // Emscripten worker builds read self.location.href for scriptDirectory
+                // during init; without it BASIS()/Draco setup rejects silently.
+                location: { href: "blob:threenative-worker.js" },
+                addEventListener: function(type, handler) {
+                    // DedicatedWorkerGlobalScope API; KTX2Loader's transcoder workers
+                    // register their message handler through this instead of onmessage.
+                    if (type === 'message' && typeof handler === 'function') {
+                        messageListeners.push(handler);
+                    }
+                    setTimeout(() => worker._flushPending(), 0);
+                },
+                removeEventListener: function(type, handler) {
+                    if (type === 'message') {
+                        const index = messageListeners.indexOf(handler);
+                        if (index >= 0) messageListeners.splice(index, 1);
+                    }
+                },
+                hasMessageHandler: function() {
+                    return workerSelf.onmessage !== null || messageListeners.length > 0;
+                },
+                _deliverFromMain: function(event) {
+                    if (workerSelf.onmessage !== null) {
+                        try { workerSelf.onmessage(event); }
+                        catch (e) { console.error('[Worker] message handler error:', e); }
+                    }
+                    for (const listener of messageListeners) {
+                        try { listener(event); }
+                        catch (e) { console.error('[Worker] message listener error:', e); }
+                    }
+                },
                 postMessage: function(data) {
                     if (worker._terminated) return;
-                    // Async delivery to main thread's onmessage handler
+                    // Async delivery to main thread's onmessage handler and listeners
                     setTimeout(() => {
-                        if (worker.onmessage && !worker._terminated) {
-                            try { worker.onmessage({ data }); }
+                        if (worker._terminated) return;
+                        const event = { data };
+                        if (worker.onmessage) {
+                            try { worker.onmessage(event); }
                             catch (e) { console.error('[Worker] onmessage error:', e); }
+                        }
+                        for (const listener of messageListeners) {
+                            try { listener(event); }
+                            catch (e) { console.error('[Worker] listener error:', e); }
                         }
                     }, 0);
                 }
@@ -2794,21 +2835,23 @@ if (typeof Worker === 'undefined') {
             }
 
             this._workerSelf = workerSelf;
+            // The worker script may register handlers in a task after this one.
+            setTimeout(() => this._flushPending(), 0);
         }
 
         postMessage(data) {
-            if (this._terminated) return;
+            if (this._terminated || !this._workerSelf) return;
+            this._pendingMessages.push({ data });
+            setTimeout(() => this._flushPending(), 0);
+        }
+
+        _flushPending() {
+            if (this._terminated || !this._workerSelf) return;
             const ws = this._workerSelf;
-            if (!ws || !ws.onmessage) return;
-            // Async delivery to worker's onmessage handler
-            const terminated = () => this._terminated;
-            const handler = ws.onmessage;
-            setTimeout(() => {
-                if (!terminated() && handler) {
-                    try { handler({ data }); }
-                    catch (e) { console.error('[Worker] message handler error:', e); }
-                }
-            }, 0);
+            while (this._pendingMessages.length > 0 && ws.hasMessageHandler()) {
+                const message = this._pendingMessages.shift();
+                ws._deliverFromMain({ data: message.data });
+            }
         }
 
         terminate() {

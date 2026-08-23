@@ -68,6 +68,7 @@ export default game;
 
 | Package | Version | Purpose |
 | --- | --- | --- |
+| `@threenative/assets` | `0.3.0` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | `0.3.0` | Bootstrap, scenes, lifecycle, input, and renderer integration |
 | `create-threenative` | `0.2.3` | Scaffold a readable game project from seven templates |
 | `@threenative/physics` | `0.3.0` | Rapier-backed Godot-shaped physics and navigation |

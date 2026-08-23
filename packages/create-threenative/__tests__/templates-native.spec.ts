@@ -160,6 +160,7 @@ export default { start: async () => console.info(marker) };
       'export default { display: { orientation: "portrait" } };\n',
     );
     await mkdir(path.join(project, "public"), { recursive: true });
+    await mkdir(path.join(project, "assets"), { recursive: true });
     await mkdir(path.join(runtime, "scripts"), { recursive: true });
     await writeFile(
       path.join(project, "src/game.ts"),
@@ -205,6 +206,7 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       path.join(project, "src/game.ts"),
       "export default { start: async () => {} };\n",
     );
+    await mkdir(path.join(project, "assets"), { recursive: true });
     const runtime = path.join(project, "node_modules/@threenative/runtime-native");
     await mkdir(path.join(runtime, "scripts"), { recursive: true });
     await writeFile(

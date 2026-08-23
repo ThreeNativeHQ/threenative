@@ -249,7 +249,7 @@ table above covers only ctx properties; this index covers the public exports sca
 
 | Import surface | Public class/function exports |
 |---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
+| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createAssetLoader`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
 | `@threenative/core/playtest` | `playtest` |
 | `@threenative/core/hot` | `acceptHotUpdate` |
 | `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |
@@ -265,10 +265,11 @@ truthful when `enabled = false`, `normaliseToMetres` measures a skinned crown fo
 
 ## Assets and animation
 
-`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
-`.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
+`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Drop a
+rigged `.glb` in `assets/` — sources there are compiled into `public/` and resolved through
+the asset manifest — await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
 and update the `AnimationPlayer` beside the entity that owns the loaded model. This minimal
-template does not ship a rigged asset; adding one belongs in `public/`, not in the framework.
+template does not ship a rigged asset.
 
 <!-- shared: asset-mcp-loop -->
 ## Finding assets — you have an MCP server for this

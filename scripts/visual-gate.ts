@@ -35,6 +35,7 @@ export const VISUAL_SCORE_FLOOR = 4;
 export const LOCAL_FRAMEWORK_PACKAGES = [
   ["@threenative/playtest", "threenative-playtest-"],
   ["@threenative/core", "threenative-core-"],
+  ["@threenative/assets", "threenative-assets-"],
   ["@threenative/physics", "threenative-physics-"],
   ["@threenative/runtime-native", "threenative-runtime-native-"],
   ["@threenative/ui", "threenative-ui-"],

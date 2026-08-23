@@ -405,12 +405,25 @@ bool Context::initializeHeadless() {
     WGPULimits requiredLimits = adapterLimits;
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesDawn[1];
+    // Compression features are requested when the adapter supports them so JS-side
+    // consumers (three's KTX2Loader.detectSupport among them) see the formats this
+    // GPU can actually upload; a format the hardware lacks stays unrequested and
+    // therefore truthfully absent from the device's feature set.
+    static WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
         hasIndirectFirstInstance_ = true;
+    }
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        if (featureCount >= 4) break;
+        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
+                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesDawn[featureCount++] = compression;
+        }
     }
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
@@ -421,12 +434,19 @@ bool Context::initializeHeadless() {
     requiredLimits.limits = adapterLimits.limits;
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesWGPU[1];
+    static WGPUFeatureName requiredFeaturesWGPU[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
+        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
         hasIndirectFirstInstance_ = true;
+    }
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        if (featureCount >= 4) break;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesWGPU[featureCount++] = compression;
+        }
     }
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
@@ -693,16 +713,26 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     // Check if IndirectFirstInstance is supported before requesting it
     // This feature allows instance_index in shaders to include firstInstance offset
-    static WGPUFeatureName requiredFeaturesDawn[1];
+    // Compression features are likewise requested when supported so JS-side consumers
+    // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
+    static WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
         hasIndirectFirstInstance_ = true;
         std::cout << "[WebGPU] Requesting IndirectFirstInstance feature (supported)" << std::endl;
     } else {
         hasIndirectFirstInstance_ = false;
         std::cout << "[WebGPU] IndirectFirstInstance feature NOT supported (continuing without)" << std::endl;
+    }
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        if (featureCount >= 4) break;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesDawn[featureCount++] = compression;
+            std::cout << "[WebGPU] Requesting texture compression feature " << compression << std::endl;
+        }
     }
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
@@ -901,12 +931,23 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     }
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesDawn[1];
+    // Compression features are requested when the adapter supports them so JS-side
+    // consumers (three's KTX2Loader.detectSupport among them) see the formats this
+    // GPU can actually upload; a format the hardware lacks stays unrequested and
+    // therefore truthfully absent from the device's feature set.
+    static WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
         hasIndirectFirstInstance_ = true;
+    }
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        if (featureCount >= 4) break;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesDawn[featureCount++] = compression;
+        }
     }
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;

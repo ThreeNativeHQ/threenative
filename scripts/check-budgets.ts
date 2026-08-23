@@ -90,9 +90,22 @@ export type BudgetReport = {
   nativeRuntimeLoc: number;
   prdFiles: number;
   templates: { name: string; loc: number }[];
+  textureBytes: TextureByteBudget | null;
   vendoredExternalMcp: string[];
   vendoredNativeRuntime: string[];
   trackedNativeThirdParty: string[];
+};
+
+/**
+ * Aggregate over the compiled manifests that happen to exist under the templates (they are
+ * gitignored, so this is whatever the last local build produced). Reported, never fatal —
+ * PRD-095's byte gate lives in the asset compile step's own printed report; here it only has
+ * to stay visible.
+ */
+export type TextureByteBudget = {
+  readonly after: number;
+  readonly before: number;
+  readonly textures: number;
 };
 
 export type FrameworkPackageLoc = {
@@ -209,6 +222,28 @@ async function packageCount(root: string, group: "examples" | "packages"): Promi
       count += 1;
   }
   return count;
+}
+
+async function templateTextureBytes(root: string): Promise<TextureByteBudget | null> {
+  const templateRoot = path.join(root, "packages", "create-threenative", "templates");
+  let before = 0;
+  let after = 0;
+  let textures = 0;
+  for (const template of await readdir(templateRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!template.isDirectory()) continue;
+    const manifestPath = path.join(templateRoot, template.name, "public", "assets.manifest.json");
+    if (!existsSync(manifestPath)) continue;
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      entries?: Record<string, { bytes?: number; bytesBefore?: number }>;
+    };
+    for (const entry of Object.values(manifest.entries ?? {})) {
+      if (entry.bytesBefore === undefined || entry.bytes === undefined) continue;
+      before += entry.bytesBefore;
+      after += entry.bytes;
+      textures += 1;
+    }
+  }
+  return textures === 0 ? null : { after, before, textures };
 }
 
 function normalizedDirectoryName(name: string): string {
@@ -421,6 +456,7 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     frameworkLocAttribution: await readFrameworkLocAttribution(root),
     nativeRuntimeLoc: await countLines(nativeRuntimeFiles),
     templates,
+    textureBytes: await templateTextureBytes(root),
     vendoredExternalMcp: await vendoredExternalMcp(root),
     vendoredNativeRuntime: await vendoredNativeRuntime(root),
     trackedNativeThirdParty: await trackedNativeThirdParty(root),
@@ -469,6 +505,11 @@ export function budgetTriggers(report: BudgetReport): string[] {
   if (report.nativeRuntimeLoc > LIMITS.nativeRuntimeLoc) {
     triggers.push(
       `native runtime LOC review trigger: ${report.nativeRuntimeLoc} lines (trigger ${LIMITS.nativeRuntimeLoc}, +${report.nativeRuntimeLoc - LIMITS.nativeRuntimeLoc}). Justify in the owning PRD and run the kill switch over what was added.`,
+    );
+  }
+  if (report.textureBytes !== null && report.textureBytes.after > report.textureBytes.before) {
+    triggers.push(
+      `texture bytes review trigger: compiled textures are larger than their sources (${report.textureBytes.before} -> ${report.textureBytes.after} across ${report.textureBytes.textures}). The KTX2 pass is supposed to shrink them; justify or fix in the owning PRD.`,
     );
   }
   return triggers;
@@ -715,8 +756,12 @@ if (
       } else {
         for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
         for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
+        const textureLine =
+          report.textureBytes === null
+            ? "no compiled texture manifests found"
+            : `texture bytes ${report.textureBytes.before} -> ${report.textureBytes.after} across ${report.textureBytes.textures} texture(s)`;
         console.log(
-          `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC`,
+          `budgets ok: ${report.frameworkPackages} framework packages, ${report.exampleWorkspaces} example workspaces, ${report.frameworkLoc}/${LIMITS.frameworkLoc} framework LOC, ${report.nativeRuntimeLoc}/${LIMITS.nativeRuntimeLoc} native runtime LOC, ${report.prdFiles} PRD files, largest template ${Math.max(0, ...report.templates.map((template) => template.loc))} LOC, ${textureLine}`,
         );
       }
     })

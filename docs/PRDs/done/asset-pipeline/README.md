@@ -1,7 +1,10 @@
 # The asset pipeline series
 
-**Status: PROPOSAL, 2026-08-12.** Nothing here has run. No PRD in this folder has been
-implemented, and no platform readiness is claimed by any of them.
+**Status: COMPLETE — executed 2026-08-22 on the product owner's order of that date.** The
+deferral below was written honestly when it was true and was superseded by an explicit owner
+instruction, not by either trigger having fired. Outcomes: 094/095/096/097 executed and gated;
+098/099 declined under their own Phase 0 exits with census evidence. No platform readiness is
+claimed beyond what each PRD's gates prove.
 
 Six PRDs, PRD-094 through PRD-099. They exist because ThreeNative currently ships **no asset
 optimisation at all** — `ctx.assets` loads raw `.glb` and `.png` through stock Three.js loaders,
@@ -10,12 +13,12 @@ directory the scaffold creates in every template contains a single `.gitkeep`.
 
 | PRD | What a user gets | Depends on |
 |---|---|---|
-| [094](./PRD-094-asset-compile-step.md) | `threenative build` compiles `assets/` into `public/` and the game loads the compiled result | — |
-| [095](./PRD-095-texture-compression.md) | Textures ship as KTX2/Basis and reach the GPU in a native compressed format | 094 |
-| [096](./PRD-096-mesh-optimization.md) | Models ship quantized and Meshopt-compressed | 094 |
-| [097](./PRD-097-native-decode-path.md) | Desktop and Android decode both formats in C++, not WASM | 095, 096 |
-| [098](./PRD-098-lod-and-instancing.md) | Distant and repeated objects stop costing full price | 096, 097 |
-| [099](./PRD-099-vector-textures.md) | Flat and stylized art stays crisp at any magnification, at a fraction of the bytes | 095 |
+| [094](../PRD-094-asset-compile-step.md) | `threenative build` compiles `assets/` into `public/` and the game loads the compiled result | — |
+| [095](../PRD-095-texture-compression.md) | Textures ship as KTX2/Basis and reach the GPU in a native compressed format | 094 |
+| [096](../PRD-096-mesh-optimization.md) | Models ship quantized and Meshopt-compressed | 094 |
+| [097](../PRD-097-native-decode-path.md) | Desktop and Android decode both formats in C++, not WASM | 095, 096 |
+| [098](../PRD-098-lod-and-instancing.md) **DECLINED** | Declined at Phase 0: no shipped scene is triangle-bound; see the census | 096, 097 |
+| [099](../PRD-099-vector-textures.md) **DECLINED** | Declined at Phase 0: no shipped art qualifies; see the census | 095 |
 
 094 through 097 are the series. 098 and 099 are optional and are written so they can be
 declined without stranding anything.
@@ -24,12 +27,12 @@ declined without stranding anything.
 
 ## This series does not start work. It is what starting looks like when the trigger fires.
 
-[`docs/product/ASSET-PIPELINE.md`](../../product/ASSET-PIPELINE.md) defers the build-time
+[`docs/product/ASSET-PIPELINE.md`](../../../product/ASSET-PIPELINE.md) defers the build-time
 pipeline, last re-checked 2026-08-09, with a two-part trigger that **has not fired**:
 
 1. the five-minute stranger test has closed — defined in
-   [`STRANGER-TEST-PROTOCOL.md`](../../product/STRANGER-TEST-PROTOCOL.md), open as
-   [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md);
+   [`STRANGER-TEST-PROTOCOL.md`](../../../product/STRANGER-TEST-PROTOCOL.md), open as
+   [PRD-080](../../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md);
 2. a reference game fails a device performance budget **for asset reasons**, measured.
 
 **Both are still open, and nothing in this folder may be implemented until both are true.**
@@ -40,7 +43,7 @@ correct answer to "my textures are too big" remains `gltf-transform` on the comm
 Two things the deferral doc asks for and this series must honour:
 
 - **The asset health report is the part with value on day one.** It is folded into
-  [PRD-094](./PRD-094-asset-compile-step.md) Phase 2 as the compile step's report — triangles,
+  [PRD-094](../PRD-094-asset-compile-step.md) Phase 2 as the compile step's report — triangles,
   materials, texture dimensions, missing colliders, license, each against a target — rather than
   left as a later idea.
 - **`smithsonian_*` is what the pipeline unlocks.** Scan-resolution photogrammetry is currently

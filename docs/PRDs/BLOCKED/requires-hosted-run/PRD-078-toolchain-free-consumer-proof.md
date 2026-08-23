@@ -422,7 +422,7 @@ scaffolded, with no file replaced.
 ships and the subject of every performance claim in `VALUE-PROPOSITION.md`.
 **Requirements the previous subject did not exercise:** the generated `src/render/` layer,
 the template's asset staging, `Ctx.startup` and the loading screen shipped by
-[PRD-070](../../native-performance-fixes/PRD-070-startup-and-hitches.md), and `SceneCollapse`.
+[PRD-070](../../done/PRD-070-startup-and-hitches.md), and `SceneCollapse`.
 **The Android physics leg keeps `native-smoke/src/physics.ts`** because its four negative
 controls (`wrong-height`, `mask`, `mask`-with-control, `wrong-gravity`) are written against
 that scene. Two subjects, each proving what it is good for, both stated.

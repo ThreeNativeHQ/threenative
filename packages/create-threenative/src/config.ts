@@ -36,6 +36,49 @@ export interface IResolvedThreeNativeConfig {
   readonly renderer: {
     readonly preferWebGPU: boolean;
   };
+  readonly assets?: {
+    readonly models?: "none" | IThreeNativeModelsConfig;
+    readonly output?: string;
+    readonly source?: string;
+    readonly targets?: {
+      readonly maxMaterials?: number;
+      readonly maxTriangles?: number;
+      readonly maxTextureDimension?: number;
+    };
+    /** Texture compression options, or `"none"` to ship every texture exactly as committed. */
+    readonly textures?: "none" | IThreeNativeTexturesConfig;
+  };
+}
+
+/** Model optimization sub-pass switches; absent means every pass runs. */
+export interface IThreeNativeModelPassesConfig {
+  readonly dedup?: boolean;
+  readonly meshopt?: boolean;
+  readonly prune?: boolean;
+  readonly quantize?: boolean;
+  readonly reorder?: boolean;
+}
+
+export interface IThreeNativeModelsConfig {
+  readonly passes?: IThreeNativeModelPassesConfig;
+  readonly quantize?: {
+    /** Normal precision in bits, default 8. */
+    readonly normalBits?: number;
+    /** Position precision in bits, default 16. */
+    readonly positionBits?: number;
+    /** UV precision in bits, default 12. */
+    readonly uvBits?: number;
+  };
+}
+
+export interface IThreeNativeTexturesConfig {
+  readonly overrides?: readonly {
+    readonly codec: "etc1s" | "none" | "uastc";
+    readonly glob: string;
+    readonly quality?: number;
+  }[];
+  /** ETC1S encoder quality 1–255. Ignored for UASTC. */
+  readonly quality?: number;
 }
 
 interface IPackageManifest {
@@ -820,6 +863,186 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
   };
 }
 
+const ASSET_TARGET_KEYS: readonly string[] = [
+  "maxMaterials",
+  "maxTriangles",
+  "maxTextureDimension",
+];
+
+function validateAssetTargets(
+  raw: unknown,
+): NonNullable<IResolvedThreeNativeConfig["assets"]>["targets"] {
+  const targets = assertRecord(raw, "assets.targets");
+  assertKeys(targets, "assets.targets", ASSET_TARGET_KEYS);
+  return {
+    ...(targets.maxMaterials === undefined
+      ? {}
+      : {
+          maxMaterials: positiveInteger(
+            targets.maxMaterials,
+            1,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.targets.maxMaterials",
+          ),
+        }),
+    ...(targets.maxTriangles === undefined
+      ? {}
+      : {
+          maxTriangles: positiveInteger(
+            targets.maxTriangles,
+            1,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.targets.maxTriangles",
+          ),
+        }),
+    ...(targets.maxTextureDimension === undefined
+      ? {}
+      : {
+          maxTextureDimension: positiveInteger(
+            targets.maxTextureDimension,
+            1,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.targets.maxTextureDimension",
+          ),
+        }),
+  };
+}
+
+const ASSET_TEXTURE_KEYS: readonly string[] = ["overrides", "quality"];
+const TEXTURE_OVERRIDE_KEYS: readonly string[] = ["codec", "glob", "quality"];
+const TEXTURE_CODECS: readonly string[] = ["etc1s", "none", "uastc"];
+
+function textureQuality(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 255) {
+    fail("TN_CONFIG_ASSETS_INVALID", `${label} must be an integer between 1 and 255.`);
+  }
+  return value;
+}
+
+function validateTextureOverrides(
+  raw: unknown,
+): NonNullable<IThreeNativeTexturesConfig["overrides"]> {
+  if (!Array.isArray(raw)) {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.textures.overrides must be an array.");
+  }
+  return raw.map((item, index) => {
+    if (!isRecord(item)) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `assets.textures.overrides[${String(index)}] must be an object.`,
+      );
+    }
+    assertKeys(item, `assets.textures.overrides[${String(index)}]`, TEXTURE_OVERRIDE_KEYS);
+    const glob = nonEmptyString(
+      item.glob,
+      "TN_CONFIG_ASSETS_INVALID",
+      `assets.textures.overrides[${String(index)}].glob`,
+    );
+    if (typeof item.codec !== "string" || !TEXTURE_CODECS.includes(item.codec)) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `assets.textures.overrides[${String(index)}].codec must be one of ${TEXTURE_CODECS.join(", ")}; received '${String(item.codec)}'.`,
+      );
+    }
+    return {
+      codec: item.codec as "etc1s" | "none" | "uastc",
+      glob,
+      ...(item.quality === undefined
+        ? {}
+        : {
+            quality: textureQuality(
+              item.quality,
+              `assets.textures.overrides[${String(index)}].quality`,
+            ),
+          }),
+    };
+  });
+}
+
+function validateTextures(
+  raw: unknown,
+): NonNullable<IResolvedThreeNativeConfig["assets"]>["textures"] {
+  if (raw === "none") return "none";
+  const textures = assertRecord(raw, "assets.textures");
+  assertKeys(textures, "assets.textures", ASSET_TEXTURE_KEYS);
+  return {
+    ...(textures.quality === undefined
+      ? {}
+      : { quality: textureQuality(textures.quality, "assets.textures.quality") }),
+    ...(textures.overrides === undefined
+      ? {}
+      : { overrides: validateTextureOverrides(textures.overrides) }),
+  };
+}
+
+const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
+const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
+
+function bitDepth(value: unknown, label: string): number {
+  // Depths low enough to warp a model are accepted, not rejected: the compile step's own
+  // self-verification fails the build naming the drift instead of a config rule guessing.
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 16) {
+    fail("TN_CONFIG_ASSETS_INVALID", `${label} must be an integer between 1 and 16 bits.`);
+  }
+  return value;
+}
+
+function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["models"] {
+  if (raw === "none") return "none";
+  const models = assertRecord(raw, "assets.models");
+  assertKeys(models, "assets.models", ["passes", "quantize"]);
+  let passes: IThreeNativeModelPassesConfig | undefined;
+  if (models.passes !== undefined) {
+    const rawPasses = assertRecord(models.passes, "assets.models.passes");
+    assertKeys(rawPasses, "assets.models.passes", MODEL_PASS_KEYS);
+    passes = {};
+    for (const key of MODEL_PASS_KEYS) {
+      const value = rawPasses[key];
+      if (value === undefined) continue;
+      if (typeof value !== "boolean")
+        fail("TN_CONFIG_ASSETS_INVALID", `assets.models.passes.${key} must be true or false.`);
+      passes = { ...passes, [key]: value } as IThreeNativeModelPassesConfig;
+    }
+  }
+  let quantize: IThreeNativeModelsConfig["quantize"];
+  if (models.quantize !== undefined) {
+    const rawQuantize = assertRecord(models.quantize, "assets.models.quantize");
+    assertKeys(rawQuantize, "assets.models.quantize", MODEL_QUANTIZE_KEYS);
+    quantize = {};
+    for (const key of MODEL_QUANTIZE_KEYS) {
+      const value = rawQuantize[key];
+      if (value === undefined) continue;
+      quantize = {
+        ...quantize,
+        [key]: bitDepth(value, `assets.models.quantize.${key}`),
+      } as IThreeNativeModelsConfig["quantize"];
+    }
+  }
+  return {
+    ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
+    ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
+  };
+}
+
+function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
+  const assets = assertRecord(raw, "assets");
+  assertKeys(assets, "assets", ["models", "source", "output", "targets", "textures"]);
+  const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
+  const models = assets.models === undefined ? undefined : validateModels(assets.models);
+  const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
+  return {
+    ...(assets.source === undefined
+      ? {}
+      : { source: nonEmptyString(assets.source, "TN_CONFIG_ASSETS_INVALID", "assets.source") }),
+    ...(assets.output === undefined
+      ? {}
+      : { output: nonEmptyString(assets.output, "TN_CONFIG_ASSETS_INVALID", "assets.output") }),
+    ...(targets === undefined ? {} : { targets }),
+    ...(models === undefined ? {} : { models }),
+    ...(textures === undefined ? {} : { textures }),
+  };
+}
+
 async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeConfig> {
   const packagePath = path.join(root, "package.json");
   const sourcePath = path.join(root, CONFIG_FILE);
@@ -848,6 +1071,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
           "window",
           "nativeEntry",
           "renderer",
+          "assets",
         ]);
       }
       const configuredEntry = raw?.nativeEntry;
@@ -859,6 +1083,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
       }
       const app = await validateApp(raw?.app, name, root);
       const bootSplash = await validateBootSplash(raw?.bootSplash, root);
+      const assets = raw?.assets === undefined ? undefined : validateAssets(raw.assets);
       return {
         app,
         display: validateDisplay(raw?.display),
@@ -866,6 +1091,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
         renderer: validateRenderer(raw?.renderer),
         ...(bootSplash === undefined ? {} : { bootSplash }),
+        ...(assets === undefined ? {} : { assets }),
       };
     },
   );

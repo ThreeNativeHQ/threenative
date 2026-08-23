@@ -163,8 +163,9 @@ platformer playable without a keyboard on a touch target.
 mobile orientation and display flags, desktop window, renderer preference, native entry.
 `package.json` may retain only `threenative.nativeEntry` as a compatibility fallback.
 
-`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Put a
-`.glb` in `public/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
+`AnimationPlayer` is exported by `@threenative/core` for clips from a rigged asset. Drop a
+rigged `.glb` in `assets/` — sources there are compiled into `public/` and resolved through
+the asset manifest — await `ctx.assets.model("hero.glb")` in `Scene.load()`, then construct
 and update the player beside the entity that owns the loaded model.
 
 Use Godot names for physics nodes: `CharacterBody3D`, `Area3D`, `RigidBody3D`, and
@@ -249,7 +250,7 @@ conveniences are documented separately; this index covers the public exports sca
 
 | Import surface | Public class/function exports |
 |---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
+| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createAssetLoader`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
 | `@threenative/core/playtest` | `playtest` |
 | `@threenative/core/hot` | `acceptHotUpdate` |
 | `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |

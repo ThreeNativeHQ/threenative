@@ -1,8 +1,9 @@
-# Asset pipeline — still deferred, with a trigger
+# Asset pipeline — deferred until 2026-08-22, now executing on owner instruction
 
-**Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-16 — **still
-deferred, neither trigger fired.** Nothing in `packages/` or `scripts/` implements a
-build-time asset pipeline, and that is the intended state. Asset discovery is retained by
+**Status:** build-time pipeline deferred 2026-08-02, re-checked 2026-08-16; **on 2026-08-22 the
+product owner ordered execution directly**, superseding the deferral. Neither trigger below had
+fired at that moment — the override is recorded rather than argued away. Execution proceeds
+through [the PRD series](../PRDs/done/asset-pipeline/README.md). Asset discovery is retained by
 product-owner decision after its 2026-08-09 live-agent gate failed. The package budget is a
 review trigger, anything a competent developer can write in under 20 lines stays out of the framework, and a package exists only when
 it carries a dependency the others must not inherit.

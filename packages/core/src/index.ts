@@ -15,6 +15,16 @@ export const version = "0.3.0";
  * @example const player = new AnimationPlayer(model);
  */
 export { AnimationPlayer } from "./animation.js";
+/**
+ * Create the portable asset loader a scene also receives as `ctx.assets`.
+ * @situation preload models, textures, or audio before a scene enters
+ * @situation load assets from a nonstandard base path or a compiled asset manifest
+ * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+ * @example const assets = createAssetLoader({ basePath: "/assets" });
+ * const rock = await assets.texture("rock.png");
+ */
+export { createAssetLoader } from "./assets.js";
+export type { IAssetLoader, IAssetLoaderOptions } from "./assets.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
 /**
  * Route effects through a named audio bus.
@@ -37,6 +47,7 @@ export type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
+  IThreeNativeTexturesConfig,
   ThreeNativeOrientation,
 } from "./config.js";
 /**

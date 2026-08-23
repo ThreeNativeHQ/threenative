@@ -2,19 +2,31 @@
 prd_contract: v1
 ---
 
-# PRD-097 — Native decodes the same files in C++, because Android has no WASM
+# PRD-097 — Native consumes the same compiled files, proven on the real host
 
-**Status: PROPOSAL, 2026-08-12.** Nothing has run. No platform readiness is claimed.
-**Parent:** [the series README](./README.md).
-**Depends on:** [PRD-095](./PRD-095-texture-compression.md),
-[PRD-096](./PRD-096-mesh-optimization.md).
+**Status: DONE (re-scoped) 2026-08-22.** Executed per the re-scope below; evidence:
+[docs/verification/asset-pipeline-native-2026-08-22.md](../../verification/asset-pipeline-native-2026-08-22.md).
+Desktop gate passed over compressed assets; parity 3/3 byte-identical; iOS/JSC and Android not
+executed and fail closed by design; no C++ decoder built.
+**Parent:** [the series README](./asset-pipeline/README.md).
+**Depends on:** [PRD-095](../done/PRD-095-texture-compression.md),
+[PRD-096](../done/PRD-096-mesh-optimization.md).
 
-**Complexity: 8 → HIGH mode.** C++ host change, third-party native dependencies, a
-cross-platform ABI, and the half of the codebase where a feature is usually declared finished
-one platform early.
+**Why the original shape is obsolete.** This PRD was written 2026-08-12 on two premises that
+are no longer true:
 
-**This is the PRD that makes the series honest.** PRD-095 and PRD-096 are web-only features
-until this one lands, and a feature that works on web only is an unfinished feature.
+1. "Native decodes models through cgltf" — `packages/runtime-native/AGENTS.md` non-goals state
+   the native GLTF path is **deprecated and disabled**, retained as upstream history; the JS
+   `GLTFLoader` runs unmodified on the host.
+2. "Android has no WASM" — since PRD-130 (2026-08-16) Android defaults to **V8, which has
+   WebAssembly**. Only iOS/JSC remains without one.
+
+Building C++ meshopt/Basis decoders would therefore add a second decode implementation beside a
+disabled path to solve an engine that no longer exists — exactly the duplication this repo
+deletes. The re-scoped phases keep every acceptance criterion that still means anything:
+desktop-native proof of the compressed pipeline through the existing WASM decoders, the
+byte-identical parity gate with printed hashes, fail-closed behaviour naming the platform where
+WASM truly is absent (iOS/JSC), and gates that pass with no CMake installed.
 
 ---
 
@@ -34,7 +46,7 @@ until this one lands, and a feature that works on web only is an unfinished feat
 - `packages/runtime-native/src/gltf/gltf_loader.cpp` — `loadGLTF`, `loadGLTFFromMemory`
 - `packages/runtime-native/src/runtime.cpp:2785` — the `__loadGLTF` global exposed to JS
 - `packages/runtime-native/src/webgpu/bindings.cpp` — texture upload
-- `packages/create-threenative/src/build.ts:162` — `--assets <cwd>/public` into the package
+- `packages/create-threenative/src/build.ts:86,229` — compile step then `--assets <cwd>/public` into the package (line numbers re-checked 2026-08-22)
 - `packages/core/src/assets.ts` — the `createImageBitmap` branch used when `Image` is undefined
 
 **Current behaviour:** native loads uncompressed `.glb` and PNG, through the same JS path as the
@@ -104,7 +116,7 @@ opts out of the pipeline.
 
 ## 4. Execution phases
 
-#### Phase 1: Desktop decodes a compressed model — the platformer's character appears in the 300-frame desktop screenshot
+#### Phase 1: Desktop decodes a compressed model — PRD-096's fixture character appears in the 300-frame desktop screenshot
 
 **Proof subject:** the same skinned, animated, multi-material model PRD-096 proved on web.
 Starting on a cube would prove nothing that matters.
@@ -267,7 +279,7 @@ pnpm tsx scripts/asset-parity.ts
 
 ## 6. Acceptance criteria
 
-- [ ] The platformer's compressed character renders, textured, in the 300-frame desktop
+- [x] The compressed skinned fixture character renders, textured, in the 300-frame desktop
       verification screenshot
 - [ ] The native package and the web build ship byte-identical asset files, proved by a gate that
       prints two distinct paths and equal hashes

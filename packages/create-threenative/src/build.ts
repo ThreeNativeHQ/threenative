@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { compileAssets } from "@threenative/assets";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
@@ -81,7 +82,8 @@ export async function assertNativeBundleCompatible(
 }
 
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
-  await loadConfig(cwd);
+  const config = await loadConfig(cwd);
+  await compileAssets({ config: config.assets, cwd });
   await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
 }
 
@@ -224,6 +226,7 @@ function installedRuntime(runtimeRoot: string): string {
 
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
+  await compileAssets({ config: config.assets, cwd });
   const entry = await nativeEntry(cwd, config);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);

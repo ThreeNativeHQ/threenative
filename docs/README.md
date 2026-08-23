@@ -38,10 +38,12 @@ binding document.
   evidence.
 
 The repository currently records 148 done PRD files and 17 blocked PRD files. Active batches are
-[`agent-leverage/`](PRDs/agent-leverage/), [`asset-pipeline/`](PRDs/asset-pipeline/),
+[`agent-leverage/`](PRDs/agent-leverage/),
 [`batch-26-08-16/`](PRDs/batch-26-08-16/README.md), [`experiments/`](PRDs/experiments/),
 [`native-performance-fixes/`](PRDs/native-performance-fixes/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
+The asset-pipeline series closed on 2026-08-22 as
+[`done/asset-pipeline/`](PRDs/done/asset-pipeline/README.md).
 `batch-2026-08-22-defects/` closed on 2026-08-22 as
 [`done/batch-2026-08-22-defects/`](PRDs/done/batch-2026-08-22-defects/README.md).
 `batch-26-08-18/`, `native/` and `production-readiness-26-08-14/` were deleted on 2026-08-22 as

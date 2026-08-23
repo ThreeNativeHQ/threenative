@@ -199,6 +199,19 @@ if (typeof globalThis.requestAnimationFrame === "function") {
 }`;
   const virtualEntry = 'virtual:threenative-native-entry';
   const resolvedVirtualEntry = `\0${virtualEntry}`;
+  // The bundle is wrapped in a classic-script IIFE, where `import.meta` is a parse-time
+  // SyntaxError. Dependencies like three's KTX2Loader build default asset URLs from
+  // import.meta.url at module scope; on native those defaults are never the real loader
+  // path (the compile step copies the transcoder into public/ and core points at it), so
+  // any constructible URL is correct. Rewritten textually before Rollup parses.
+  const importMetaPlugin = {
+    name: 'threenative-import-meta-url',
+    enforce: 'pre',
+    transform(code) {
+      if (!code.includes('import.meta.url')) return null;
+      return code.replaceAll('import.meta.url', '"file:///threenative-bundle/"');
+    },
+  };
   const nativeEntryPlugin = {
     name: 'threenative-native-entry',
     enforce: 'pre',
@@ -222,7 +235,7 @@ void game.start().catch((error) => console.error(
   mkdirSync(dirname(absoluteOutput), { recursive: true });
   await build({
     root: absoluteProject,
-    plugins: [nativeEntryPlugin],
+    plugins: [importMetaPlugin, nativeEntryPlugin],
     resolve: target === 'desktop' ? undefined : { conditions: ['threenative-native'] },
     configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
       ? join(absoluteProject, 'vite.config.ts')

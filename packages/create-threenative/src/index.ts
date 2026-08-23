@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -24,6 +24,7 @@ export interface IScaffoldOptions {
   install?: boolean;
   packageSources?: Partial<
     Record<
+      | "@threenative/assets"
       | "@threenative/core"
       | "@threenative/physics"
       | "@threenative/playtest"
@@ -286,11 +287,12 @@ async function applyPackageSources(
       packageJson.dependencies ??= {};
       packageJson.dependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
     }
-    if (name === "create-threenative") {
-      packageJson.pnpm ??= {};
-      packageJson.pnpm.overrides ??= {};
-      packageJson.pnpm.overrides[name] = source.startsWith("file:") ? source : `file:${source}`;
-    }
+    // Every local source also overrides transitive resolution: the packed CLI itself depends
+    // on @threenative/assets, which no direct pin in this manifest reaches — and which is not
+    // on the registry, so an install without the override 404s.
+    packageJson.pnpm ??= {};
+    packageJson.pnpm.overrides ??= {};
+    packageJson.pnpm.overrides[name] = source.startsWith("file:") ? source : `file:${source}`;
   }
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
@@ -413,6 +415,11 @@ export async function createProject(
   await mkdir(target, { recursive: true });
   const source = path.join(root, template);
   await cp(source, target, { recursive: true, errorOnExist: true });
+  // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
+  // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
+  if (existsSync(path.join(target, "gitignore"))) {
+    await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
+  }
   const projectName = packageName(target);
   const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
   const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
@@ -451,6 +458,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   const packageSources: Record<string, string> = {};
   for (const [name, flag] of [
     ["@threenative/core", "--core-package"],
+    ["@threenative/assets", "--assets-package"],
     ["@threenative/physics", "--physics-package"],
     ["@threenative/playtest", "--playtest-package"],
     ["@threenative/runtime-native", "--runtime-native-package"],

@@ -82,9 +82,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/playtest build
           pnpm --filter @threenative/core build
+          pnpm --filter @threenative/assets build
           pnpm --filter @threenative/physics build
           pnpm --filter @threenative/ui build
           pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm --filter @threenative/assets pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           pnpm --filter @threenative/ui pack --pack-destination "$RUNNER_TEMP/threenative-packages"
@@ -94,13 +96,14 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-starter"
           core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
+          assets_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
           runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --core-package "$core_package" --physics-package "$physics_package" \
+            --core-package "$core_package" --assets-package "$assets_package" --physics-package "$physics_package" \
             --playtest-package "$playtest_package" --ui-package "$ui_package" \
             --runtime-native-package "$runtime_package" --cli-package "$cli_package"
           pnpm --dir "$target" install

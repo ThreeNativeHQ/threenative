@@ -26,15 +26,21 @@ describe("published physics portability documentation", () => {
   });
 
   // The old index was docs/PRDs/native/README.md, deleted as outdated on 2026-08-22
-  // (d2ca4f0f). The pin follows the surviving native-runtime doc so the divergence
-  // report cannot go unlinked again.
-  it("keeps the parity evidence linked from the native runtime doc", async () => {
-    const [report, nativeDoc] = await Promise.all([
+  // (d2ca4f0f). The pins follow the surviving records so the divergence report cannot
+  // go unlinked again: the native runtime doc AND the archived PRD both point at the
+  // verification evidence.
+  it("keeps the parity evidence linked from the surviving native records", async () => {
+    const [report, nativeDoc, archived] = await Promise.all([
       readFile(new URL("../../../docs/verification/PRD-049.md", import.meta.url), "utf8"),
       readFile(new URL("../../../docs/architecture/NATIVE-RUNTIME.md", import.meta.url), "utf8"),
+      readFile(
+        new URL("../../../docs/PRDs/done/PRD-049-physics-parity-verification.md", import.meta.url),
+        "utf8",
+      ),
     ]);
 
     expect(report).toContain("# PRD-049 — physics parity verification");
     expect(nativeDoc).toContain("../verification/PRD-049.md");
+    expect(archived).toContain("docs/verification/PRD-049.md");
   });
 });

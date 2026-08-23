@@ -21,6 +21,7 @@
     "three": "0.185.1"
   },
   "devDependencies": {
+    "@threenative/assets": "0.3.0",
     "@threenative/playtest": "0.3.0",
     "threenative-engine-mcp": "0.2.0",
     "@types/three": "0.185.3",

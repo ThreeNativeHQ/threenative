@@ -14,6 +14,7 @@ describe("core constraints", () => {
       .filter((file) => file.endsWith(".ts"))
       .filter(
         (file) =>
+          file !== "config.ts" &&
           file !== "particles.ts" &&
           file !== "projection-plan.ts" &&
           file !== "projection-apply.ts" &&
@@ -25,6 +26,9 @@ describe("core constraints", () => {
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+
+    // `config.ts` is exempted on the same terms: it declares option NAMES a game types
+    // (`assets.targets.maxMaterials`), measures nothing, and originates no visual concern.
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(

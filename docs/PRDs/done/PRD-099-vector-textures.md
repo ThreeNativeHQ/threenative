@@ -4,10 +4,12 @@ prd_contract: v1
 
 # PRD-099 — Vector textures: the open answer to the problem Rixels solves
 
-**Status: PROPOSAL, 2026-08-12. OPTIONAL, and the most speculative PRD in the series.**
-Nothing has run. No platform readiness is claimed.
-**Parent:** [the series README](./README.md).
-**Depends on:** [PRD-095](./PRD-095-texture-compression.md).
+**Status: DECLINED 2026-08-22 under its own Phase 0 exit.** The census found no shipped
+in-game art for MSDF to improve — evidence:
+[docs/verification/vector-texture-census-2026-08-22.md](../../verification/vector-texture-census-2026-08-22.md).
+Nothing was built; nothing is stranded. Reopening conditions are recorded there.
+**Parent:** [the series README](./asset-pipeline/README.md).
+**Depends on:** [PRD-095](../done/PRD-095-texture-compression.md).
 
 **Complexity: 6 → MEDIUM mode.**
 
@@ -242,7 +244,7 @@ git stash && pnpm tsx scripts/asset-quality.ts; git stash pop
 ## 7. Acceptance criteria
 
 - [ ] The census names at least one shipped asset that KTX2 handles measurably worse — **or this
-      PRD is declined and nothing is built**
+      PRD is declined and nothing is built** (declined branch taken)
 - [ ] That asset stays sharp at 8× magnification in a running template, where the KTX2 version
       is visibly blurred, judged by a visual playtest
 - [ ] The MSDF decode shader lives in the template's `src/render/` as generated user source, and
