@@ -1,6 +1,6 @@
 # PRD-186 — Lift proven mechanism out of the fps sandbox, and fix the two engine defects that forced it
 
-**Status:** OPEN
+**Status:** PARTIAL — Phase 1 landed in `1f170dbc`; Phases 2–6 open
 **Complexity:** 3 (10+ files) + 2 (new modules) + 2 (multi-package) = **7 → HIGH mode**
 **Owner:** unassigned
 **Depends on:** PRD-187. Phases 3-5 below assume its Phase 4 has landed (one `index.ts` edit per
@@ -163,16 +163,16 @@ row 2 which is a defect fix.
 - `docs/PRDs/PRD-186-fps-sandbox-lifts.md` — EDIT: record the re-measurement
 
 **Implementation:**
-- [ ] `raycastAll` keeps `firstHitOnly = false` — its contract is *every* hit.
-- [ ] `raycast` sets `firstHitOnly = true` for the traversal, collects at most one hit per object,
+- [x] `raycastAll` keeps `firstHitOnly = false` — its contract is *every* hit.
+- [x] `raycast` sets `firstHitOnly = true` for the traversal, collects at most one hit per object,
       returns the minimum by distance without a full sort, and restores the flag.
-- [ ] Confirm the accelerated path honours the flag; `AcceleratedRaycaster` already declares it
+- [x] Confirm the accelerated path honours the flag; `AcceleratedRaycaster` already declares it
       (`picking.ts:41`).
 
 **Wiring:**
-- [ ] Caller: `packages/core/src/game.ts:493` already routes `ctx.raycast` here — no new wiring,
+- [x] Caller: `packages/core/src/game.ts:493` already routes `ctx.raycast` here — no new wiring,
       but confirm the census shows it.
-- [ ] Old path: `raycast()` no longer delegates to `raycastAll()`.
+- [x] Old path: `raycast()` no longer delegates to `raycastAll()`.
 
 **Tests required:**
 
