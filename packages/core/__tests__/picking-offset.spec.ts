@@ -66,7 +66,7 @@ describe("default picking feed", () => {
 
     const game = defineGame({
       initialState: {},
-      inputTarget: canvas,
+      inputTarget: canvas as HTMLCanvasElement,
       plugins: [
         {
           setup: (_ctx, runtime) => {
@@ -76,7 +76,7 @@ describe("default picking feed", () => {
         },
       ],
       renderer: {
-        canvas,
+        canvas: canvas as HTMLCanvasElement,
         preferWebGPU: false,
         webgl2Factory: () => ({
           dispose: () => undefined,
