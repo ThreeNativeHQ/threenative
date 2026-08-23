@@ -135,4 +135,42 @@ describe("capability manifest generator", () => {
       }),
     );
   });
+
+  it("carries @supersedes into the manifest entry as a source construct", async () => {
+    const root = await makeTempDir("threenative-capability-supersedes-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability that replaces a raw three construct.",
+        " * @situation test what the ray hit",
+        " * @supersedes new Raycaster(",
+        " * @example const capability = new DocumentedCapability();",
+        " */",
+        "export class DocumentedCapability {}",
+        "",
+      ].join("\n"),
+    );
+
+    const manifest = buildCapabilityManifest(root);
+    expect(manifest.entries).toContainEqual(
+      expect.objectContaining({
+        symbol: "DocumentedCapability",
+        supersedes: ["new Raycaster("],
+      }),
+    );
+  });
+
+  it("leaves supersedes empty rather than undefined when untagged", async () => {
+    const root = await makeTempDir("threenative-capability-no-supersedes-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+
+    const manifest = buildCapabilityManifest(root);
+    const entry = manifest.entries.find((candidate) => candidate.symbol === "DocumentedCapability");
+    expect(entry?.supersedes).toEqual([]);
+  });
 });

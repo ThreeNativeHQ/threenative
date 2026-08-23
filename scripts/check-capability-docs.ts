@@ -10,20 +10,21 @@ export interface ICapabilityExport {
   readonly entry: string;
 }
 
-export interface ICapabilityDocument {
-  readonly path: string;
-  readonly content: string;
-}
+/**
+ * What complete capability documentation means (PRD-187 phase 4). An export must say what it is,
+ * when to reach for it, and show one working call — checked against the manifest the engine
+ * compiles from those same doc tags, so the gate and `capabilities.json` cannot disagree.
+ */
+export type DocTagRequirement = "@example" | "@situation" | "summary";
 
-export interface ICapabilityDocMiss {
+export interface ICapabilityTagGap {
   readonly capability: ICapabilityExport;
-  readonly missingDocuments: readonly string[];
+  readonly missing: readonly DocTagRequirement[];
 }
 
 export interface ICapabilityDocReport {
   readonly exports: readonly ICapabilityExport[];
-  readonly documents: readonly ICapabilityDocument[];
-  readonly missing: readonly ICapabilityDocMiss[];
+  readonly gaps: readonly ICapabilityTagGap[];
 }
 
 /**
@@ -50,6 +51,16 @@ const PACKAGE_SPECS: readonly IPackageSpec[] = [
   { name: "@threenative/core", directory: "packages/core" },
   { name: "@threenative/physics", directory: "packages/physics" },
 ];
+
+const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+
+interface IManifestEntry {
+  readonly example: string;
+  readonly importPath: string;
+  readonly situations: readonly string[];
+  readonly summary: string;
+  readonly symbol: string;
+}
 
 function moduleSpecifier(capability: ICapabilityExport): string {
   return `${capability.packageName}${capability.subpath === "." ? "" : capability.subpath.slice(1)}`;
@@ -158,10 +169,10 @@ function sourceProgram(root: string, entries: readonly string[]): ts.Program {
  *
  * `export function f() {}` and `export const f = () => {}` are the same capability to a game's
  * agent and were not the same thing to this gate: only the declaration forms were counted, so the
- * day a helper is written as an arrow const it leaves the scan silently and its absence from every
- * template's AGENTS.md stops being a release defect. A gate that quietly narrows what it covers is
- * the failure this repository names as the most dangerous one, so the form is not the test — being
- * a function or a class is.
+ * day a helper is written as an arrow const it leaves the scan silently and its absence stops
+ * being a release defect. A gate that quietly narrows what it covers is the failure this
+ * repository names as the most dangerous one, so the form is not the test — being a function or
+ * a class is.
  */
 function isPublicClassOrFunction(checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
@@ -213,76 +224,62 @@ export async function collectPublicExports(root: string): Promise<readonly ICapa
   );
 }
 
-export async function readCapabilityDocuments(
+/** The doc-tag completeness verdict for one manifest entry. */
+export function missingDocTags(entry: IManifestEntry | undefined): readonly DocTagRequirement[] {
+  if (entry === undefined) return ["@example", "@situation", "summary"];
+  const missing: DocTagRequirement[] = [];
+  // The manifest generator stores `symbol` in place of an empty summary, so a summary equal to
+  // the symbol means nobody wrote one.
+  if (entry.summary.trim().length === 0 || entry.summary.trim() === entry.symbol)
+    missing.push("summary");
+  if (entry.situations.length === 0) missing.push("@situation");
+  if (entry.example.trim().length === 0) missing.push("@example");
+  return missing;
+}
+
+/**
+ * Check every scanned export against the committed manifest's doc tags. The manifest itself is
+ * freshness-gated by `check-budgets.ts`, so these tags are the tree's own words, never stale.
+ */
+export async function findDocTagGaps(
   root: string,
-): Promise<readonly ICapabilityDocument[]> {
-  const templatesRoot = path.join(root, "packages/create-threenative/templates");
-  const entries = await readdir(templatesRoot, { withFileTypes: true });
-  const templateDirectories = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-  if (templateDirectories.length === 0) {
-    throw new Error(`CAPABILITY_DOCS_TEMPLATES_MISSING: ${templatesRoot}`);
-  }
-  const documents = await Promise.all(
-    templateDirectories.map(async (template) => {
-      const absolute = path.join(templatesRoot, template, "AGENTS.md");
-      if (!existsSync(absolute))
-        throw new Error(`CAPABILITY_DOCS_TEMPLATE_DOC_MISSING: ${absolute}`);
-      return {
-        path: path.relative(root, absolute),
-        content: await readFile(absolute, "utf8"),
-      };
-    }),
-  );
-  return documents;
-}
-
-function hasLiteralMention(content: string, symbol: string): boolean {
-  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?:^|[^A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`, "u").test(content);
-}
-
-export function findMissingCapabilities(
   capabilities: readonly ICapabilityExport[],
-  documents: readonly ICapabilityDocument[],
   allowlist: Readonly<Record<string, string>> = INTERNAL_ALLOWLIST,
-): readonly ICapabilityDocMiss[] {
+): Promise<readonly ICapabilityTagGap[]> {
   validateInternalAllowlist(allowlist);
-  return capabilities.flatMap((capability) => {
-    if (allowlist[capabilityKey(capability)] !== undefined) return [];
-    const missingDocuments = documents
-      .filter((document) => !hasLiteralMention(document.content, capability.name))
-      .map((document) => document.path);
-    return missingDocuments.length === 0 ? [] : [{ capability, missingDocuments }];
-  });
+  const manifestFile = path.join(root, MANIFEST_RELATIVE_PATH);
+  const manifest = JSON.parse(await readFile(manifestFile, "utf8")) as {
+    entries: IManifestEntry[];
+  };
+  const byKey = new Map(
+    manifest.entries.map((entry) => [`${entry.importPath}#${entry.symbol}`, entry]),
+  );
+  const gaps: ICapabilityTagGap[] = [];
+  for (const capability of capabilities) {
+    if (allowlist[capabilityKey(capability)] !== undefined) continue;
+    const missing = missingDocTags(byKey.get(capabilityKey(capability)));
+    if (missing.length > 0) gaps.push({ capability, missing });
+  }
+  return gaps;
 }
 
 export async function checkCapabilityDocs(root: string): Promise<ICapabilityDocReport> {
   validateInternalAllowlist();
-  const [exports, documents] = await Promise.all([
-    collectPublicExports(root),
-    readCapabilityDocuments(root),
-  ]);
+  const exports = await collectPublicExports(root);
   if (exports.length === 0) throw new Error("CAPABILITY_DOCS_NO_PUBLIC_EXPORTS: scan was empty");
-  return {
-    documents,
-    exports,
-    missing: findMissingCapabilities(exports, documents),
-  };
+  return { exports, gaps: await findDocTagGaps(root, exports) };
 }
 
 export function formatCapabilityReport(report: ICapabilityDocReport): string {
-  if (report.missing.length === 0) {
-    return `capability docs: ${report.exports.length} public class/function exports documented in ${report.documents.length} templates`;
+  if (report.gaps.length === 0) {
+    return `capability docs: ${report.exports.length} public class/function exports carry complete doc tags`;
   }
   const lines = [
-    `CAPABILITY_DOCS_MISSING: ${report.missing.length} public class/function exports are undocumented`,
+    `CAPABILITY_DOCS_INCOMPLETE: ${report.gaps.length} public class/function exports have incomplete doc tags`,
   ];
-  for (const { capability, missingDocuments } of report.missing) {
+  for (const { capability, missing } of report.gaps) {
     lines.push(
-      `- ${moduleSpecifier(capability)}: ${capability.name}; missing from ${missingDocuments.join(", ")}`,
+      `- ${moduleSpecifier(capability)}: ${capability.name}; missing ${missing.join(", ")}`,
     );
   }
   return lines.join("\n");
@@ -295,7 +292,7 @@ if (
   checkCapabilityDocs(process.cwd())
     .then((report) => {
       const output = formatCapabilityReport(report);
-      if (report.missing.length > 0) {
+      if (report.gaps.length > 0) {
         console.error(output);
         process.exitCode = 1;
       } else {

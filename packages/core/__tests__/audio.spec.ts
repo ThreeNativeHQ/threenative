@@ -1,4 +1,4 @@
-import { AudioContext, PerspectiveCamera } from "three";
+import { AudioContext, Object3D, PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { AudioBus, audioRuntimeSnapshot } from "../src/audio.js";
 
@@ -61,6 +61,11 @@ function audioContext(): globalThis.AudioContext {
 }
 
 const buffer = { duration: 1 } as AudioBuffer;
+
+/** Run a voice out the way the browser does: the source node reports it finished. */
+function endVoice(voice: { source: unknown }): void {
+  (voice.source as { onended?: (() => void) | null } | null)?.onended?.();
+}
 
 describe("AudioBus", () => {
   it("should queue playback before the first user gesture and flush after", async () => {
@@ -217,6 +222,137 @@ describe("AudioBus", () => {
       bus.dispose();
       if (windowDescriptor !== undefined)
         Object.defineProperty(globalThis, "window", windowDescriptor);
+    }
+  });
+
+  it("should take an ended positional voice back out of the scene graph", async () => {
+    audioContext();
+    const camera = new PerspectiveCamera();
+    const scene = new Object3D();
+    scene.add(camera);
+    const bus = new AudioBus({ camera });
+    await bus.unlock();
+
+    try {
+      const voice = bus.playAt(buffer, new Vector3(1, 0, 2));
+      expect(scene.children).toContain(voice);
+      endVoice(voice);
+      // The leak this replaces: the object stayed parented for the rest of the session, so a
+      // game emitting hundreds of cues a minute grew its scene by hundreds of nodes a minute.
+      expect(scene.children).not.toContain(voice);
+      expect(bus.voices).toBe(0);
+      expect(bus.pooled).toBe(1);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should reuse a retired voice rather than build another", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const first = bus.play(buffer);
+      endVoice(first);
+      expect(bus.pooled).toBe(1);
+      const second = bus.play(buffer);
+      expect(second).toBe(first);
+      expect(bus.pooled).toBe(0);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should hold the voice count flat across a long run of cues", async () => {
+    audioContext();
+    const camera = new PerspectiveCamera();
+    const scene = new Object3D();
+    scene.add(camera);
+    const bus = new AudioBus({ camera });
+    await bus.unlock();
+
+    try {
+      for (let index = 0; index < 500; index += 1) {
+        endVoice(bus.playAt(buffer, new Vector3(index, 0, 0)));
+      }
+      // One voice, reused five hundred times. Session length must not be a growth term.
+      expect(bus.pooled).toBe(1);
+      expect(bus.voices).toBe(0);
+      expect(scene.children).toHaveLength(1);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should steal the oldest one-shot once the ceiling is reached", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), maxVoices: 3 });
+    await bus.unlock();
+
+    try {
+      const oldest = bus.play(buffer);
+      bus.play(buffer);
+      bus.play(buffer);
+      expect(bus.voices).toBe(3);
+      bus.play(buffer);
+      expect(bus.voices).toBe(3);
+      expect(oldest.isPlaying).toBe(false);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should never steal a looping voice to make room", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), maxVoices: 2 });
+    await bus.unlock();
+
+    try {
+      const music = bus.music(buffer, { volume: 0.5 });
+      bus.play(buffer);
+      bus.play(buffer);
+      bus.play(buffer);
+      // Ambience cut off by gunfire is the failure this guards; one-shots yield, the bed does not.
+      expect(music.isPlaying).toBe(true);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should fail closed on invalid cue shaping, naming the option", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+
+    try {
+      expect(() => bus.play(buffer, { cutoffSeconds: 0 })).toThrow(/cutoffSeconds/);
+      expect(() => bus.play(buffer, { lowpassHz: -1 })).toThrow(/lowpassHz/);
+      expect(() => bus.play(buffer, { detune: Number.NaN })).toThrow(/detune/);
+      expect(() => new AudioBus({ camera: new PerspectiveCamera(), maxVoices: 0 })).toThrow(
+        /maxVoices/,
+      );
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should restate positional falloff on a recycled voice", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const tuned = bus.playAt(buffer, new Vector3(), { refDistance: 12, rolloffFactor: 0.3 });
+      expect(tuned.getRefDistance()).toBe(12);
+      endVoice(tuned);
+      const plain = bus.playAt(buffer, new Vector3());
+      // Same object, second cue. Carrying the previous cue's curve is how a footstep inherits a
+      // gunshot's reach and every distance in the mix stops meaning anything.
+      expect(plain).toBe(tuned);
+      expect(plain.getRefDistance()).toBe(1);
+      expect(plain.getRolloffFactor()).toBe(1);
+    } finally {
+      bus.dispose();
     }
   });
 });

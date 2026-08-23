@@ -38,3 +38,31 @@ if (player.dead) {
 
 **`ctx.random` is deterministic only when `defineGame({ seed })` is configured.** Never use
 `Math.random()` for a value the scenario must reproduce.
+
+**Reinvention fails CI.** `pnpm budgets` scans this project's `src/` for the raw constructs the
+engine's capabilities supersede (`new Raycaster(`, `Math.random(`, a hand-written A*, …) and
+fails, naming the capability to use instead. When a raw construct is genuinely right — measuring
+world bounds rather than scaling an asset, hiding geometry for good — annotate that exact line:
+
+```ts
+const bounds = new Box3().setFromObject(viewmodel); // engine-override: measuring, not scaling
+```
+
+The reason must be non-empty; a bare `// engine-override:` still fails.
+
+<!-- generated: superseded-constructs -->
+
+Writing any of these in game source fails `pnpm budgets`. The list and the gate are
+generated from the capabilities' own doc tags — they cannot disagree:
+
+| Rather than write | Use instead | Import from |
+|---|---|---|
+| `new Audio(` | `AudioBus` | `@threenative/core` |
+| `Math.random(` | `createRandom` | `@threenative/core` |
+| `new Box3().setFromObject(` | `normaliseToMetres` | `@threenative/core` |
+| `.visible = false` | `prewarm` | `@threenative/core` |
+| `new Raycaster(` | `ScenePicker` | `@threenative/core` |
+
+Annotate a genuinely-correct line `// engine-override: <reason>` to pass.
+
+<!-- /generated -->

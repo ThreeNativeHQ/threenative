@@ -10,7 +10,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "tsx scripts/build-capability-manifest.ts && pnpm -r --if-present run build",
+    "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && pnpm -r --if-present run build",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "bash scripts/run-test-suite.sh",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
@@ -26,7 +26,7 @@
     "gate:doctor": "tsx scripts/gate-cli.ts doctor",
     "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "budgets": "tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts",
+    "budgets": "tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check  && tsx scripts/detect-capability-duplicates.ts examples --strict",
     "census": "tsx scripts/generate-native-census.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",

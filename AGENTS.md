@@ -110,9 +110,10 @@ node packages/playtest/dist/runner/cli.js doctor --url <url> --text   # + the sc
 npx threenative doctor --text              # inside a generated project
 
 # prove one game — usually the sandbox game you are working on, not an in-repo example
-# (flags, four targets and exit codes: packages/playtest/AGENTS.md)
+# (flags, four targets and exit codes: packages/playtest/AGENTS.md; the runner provisions its own
+# Xvfb on headless Linux, so no display wrapper is needed)
 pnpm --filter @threenative/playtest build
-sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js <scenario>.playtest.json \
+node packages/playtest/dist/runner/cli.js <scenario>.playtest.json \
   --url http://127.0.0.1:5173 --server-command "<workspace dev command>" --browser-recipe webgpu
 
 pnpm native:build                          # opt-in; downloads deps, compiles the C++ host
@@ -155,8 +156,9 @@ asserting what happened. Any change with runtime behaviour gets one, re-run on e
 that behaviour. The CLI, its four targets and its exit codes are in `packages/playtest/AGENTS.md`.
 
 Two traps that manufacture false results, both already wrapped for you: never call `xvfb-run`, whose
-exit status is its own failing cleanup kill — `sh scripts/xvfb.sh <cmd>` propagates the real one and
-is a no-op on platforms that already have a display; and a WebGPU run that does not name its adapter
+exit status is its own failing cleanup kill — the runner provisions a private Xvfb for pixel runs
+itself (`sh scripts/xvfb.sh <cmd>` survives as a compatibility wrapper and is a no-op on platforms
+that already have a display); and a WebGPU run that does not name its adapter
 may be SwiftShader, so use `--browser-recipe webgpu` and check `adapter.info`. To free a dev server,
 kill by port (`lsof -ti tcp:<port> | xargs -r kill`) — `pkill -f vite` matches your own shell.
 

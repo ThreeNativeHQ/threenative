@@ -1,59 +1,26 @@
-import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   checkCapabilityDocs,
   collectPublicExports,
-  findMissingCapabilities,
+  findDocTagGaps,
   formatCapabilityReport,
+  missingDocTags,
   validateInternalAllowlist,
 } from "../check-capability-docs.js";
 
-const execFileAsync = promisify(execFile);
-
-async function missingCapabilityBudgetFixture(): Promise<string> {
-  const root = await makeTempDir("threenative-capability-docs-");
-  const packagesRoot = path.join(root, "packages");
-  await mkdir(packagesRoot, { recursive: true });
-  for (const packageName of ["core", "physics", "playtest"]) {
-    await symlink(
-      path.resolve("packages", packageName),
-      path.join(packagesRoot, packageName),
-      "dir",
-    );
-  }
-
-  const sourceTemplatesRoot = path.resolve("packages/create-threenative/templates");
-  const fixtureTemplatesRoot = path.join(packagesRoot, "create-threenative", "templates");
-  await mkdir(fixtureTemplatesRoot, { recursive: true });
-  const templates = await readdir(sourceTemplatesRoot, { withFileTypes: true });
-  for (const template of templates.filter((entry) => entry.isDirectory())) {
-    const destination = path.join(fixtureTemplatesRoot, template.name);
-    await mkdir(destination, { recursive: true });
-    const content =
-      template.name === "minimal"
-        ? ""
-        : await readFile(path.join(sourceTemplatesRoot, template.name, "AGENTS.md"), "utf8");
-    await writeFile(path.join(destination, "AGENTS.md"), content);
-  }
-
-  await symlink(path.resolve("node_modules"), path.join(root, "node_modules"), "dir");
-  const fixtureScriptsRoot = path.join(root, "scripts");
-  await mkdir(fixtureScriptsRoot, { recursive: true });
-  for (const scriptName of ["check-capability-docs.ts", "check-budgets.ts"]) {
-    await writeFile(
-      path.join(fixtureScriptsRoot, scriptName),
-      await readFile(path.resolve("scripts", scriptName), "utf8"),
-    );
-  }
-  await writeFile(
-    path.join(root, "package.json"),
-    await readFile(path.resolve("package.json"), "utf8"),
-  );
-  return root;
+async function writePackage(
+  root: string,
+  directory: string,
+  name: string,
+  source: string,
+): Promise<void> {
+  const packageRoot = path.join(root, "packages", directory);
+  await mkdir(path.join(packageRoot, "src"), { recursive: true });
+  await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name }));
+  await writeFile(path.join(packageRoot, "src", "index.ts"), source);
 }
 
 /** A two-package tree whose capabilities are written in every callable form TypeScript allows. */
@@ -87,38 +54,71 @@ async function arrowExportFixture(): Promise<string> {
 }
 
 describe("capability documentation gate", () => {
-  it("should make root budgets exit nonzero when a template document is missing", async () => {
-    const root = await missingCapabilityBudgetFixture();
-
-    let failure: { code?: number; stderr?: string; stdout?: string } | undefined;
-    try {
-      await execFileAsync("pnpm", ["run", "budgets"], {
-        cwd: root,
-        encoding: "utf8",
-      });
-    } catch (error) {
-      failure = error as { code?: number; stderr?: string; stdout?: string };
-    }
-
-    expect(failure).toBeDefined();
-    expect(failure?.code).not.toBe(0);
-    expect(`${failure?.stdout ?? ""}\n${failure?.stderr ?? ""}`).toContain(
-      "CAPABILITY_DOCS_MISSING",
+  it("should fail an export whose doc tags are incomplete, naming symbol and tag", async () => {
+    const root = await makeTempDir("threenative-capability-tags-");
+    await writePackage(root, "core", "@threenative/core", "");
+    const capabilities = [
+      {
+        entry: path.join(root, "packages/core/src/index.ts"),
+        name: "HalfTagged",
+        packageName: "@threenative/core" as const,
+        subpath: "." as const,
+      },
+    ];
+    const manifest = {
+      entries: [
+        {
+          example: "",
+          importPath: "@threenative/core",
+          situations: ["test a half documented capability"],
+          summary: "A capability with no example.",
+          symbol: "HalfTagged",
+        },
+        {
+          example: "",
+          importPath: "@threenative/core",
+          situations: [],
+          summary: "Untagged",
+          symbol: "Untagged",
+        },
+      ],
+    };
+    await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
+    await writeFile(
+      path.join(root, "packages/create-threenative/capabilities.json"),
+      JSON.stringify(manifest),
     );
-  }, 30_000);
 
-  it("should fail when a public export is missing from a template document", async () => {
-    const capabilities = await collectPublicExports(process.cwd());
-    const missing = findMissingCapabilities(
-      capabilities.filter((capability) => capability.name === "NavigationAgent3D"),
-      [{ path: "packages/create-threenative/templates/minimal/AGENTS.md", content: "" }],
-      {},
+    const gaps = await findDocTagGaps(root, capabilities);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.missing).toEqual(["@example"]);
+    expect(formatCapabilityReport({ exports: capabilities, gaps })).toContain("HalfTagged");
+    expect(formatCapabilityReport({ exports: capabilities, gaps })).toContain("@example");
+  });
+
+  it("should demand every tag when an export is absent from the manifest", () => {
+    expect(missingDocTags(undefined)).toEqual(["@example", "@situation", "summary"]);
+  });
+
+  it("should still honour INTERNAL_ALLOWLIST", async () => {
+    const root = await makeTempDir("threenative-capability-allowlist-");
+    await writePackage(root, "core", "@threenative/core", "");
+    const capabilities = [
+      {
+        entry: path.join(root, "packages/core/src/index.ts"),
+        name: "assertPortableState",
+        packageName: "@threenative/core" as const,
+        subpath: "./hot" as const,
+      },
+    ];
+    await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
+    await writeFile(
+      path.join(root, "packages/create-threenative/capabilities.json"),
+      JSON.stringify({ entries: [] }),
     );
 
-    expect(missing).toHaveLength(1);
-    expect(formatCapabilityReport({ documents: [], exports: capabilities, missing })).toContain(
-      "NavigationAgent3D",
-    );
+    const gaps = await findDocTagGaps(root, capabilities);
+    expect(gaps).toEqual([]);
   });
 
   it("should fail when an INTERNAL allowlist entry has an empty reason", () => {
@@ -144,9 +144,9 @@ describe("capability documentation gate", () => {
   it("should scan a capability written as an arrow const, not only declaration forms", async () => {
     // The gate's job is to make an undocumented capability a release defect. It counted only
     // `class`/`function` declarations, so `export const helper = () => {}` left the scan without a
-    // word — the symbol simply stopped existing as far as every template's AGENTS.md was
-    // concerned. A constant that is not callable must still be ignored, or the gate starts
-    // demanding prose for every exported number.
+    // word — the symbol simply stopped existing as far as documentation was concerned. A constant
+    // that is not callable must still be ignored, or the gate starts demanding prose for every
+    // exported number.
     const root = await arrowExportFixture();
     const capabilities = await collectPublicExports(root);
     const names = capabilities.map((capability) => capability.name);
@@ -157,9 +157,9 @@ describe("capability documentation gate", () => {
     expect(names).not.toContain("VERSION");
   });
 
-  it("should pass against the repaired scaffold documents", async () => {
+  it("should pass against the tagged engine tree", async () => {
     const report = await checkCapabilityDocs(process.cwd());
 
-    expect(report.missing).toEqual([]);
+    expect(report.gaps).toEqual([]);
   });
 });

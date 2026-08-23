@@ -1,10 +1,12 @@
 import {
   BoxGeometry,
   type BufferAttribute,
+  type Intersection,
   Mesh,
   Object3D,
   PerspectiveCamera,
   PlaneGeometry,
+  type Raycaster,
   Sprite,
   SpriteMaterial,
   Vector2,
@@ -84,6 +86,76 @@ describe("ScenePicker", () => {
     expect(hit?.distance).toBeCloseTo(3, 5);
 
     expect(picker.raycast({ screen: new Vector2(0, 0) })).toBeUndefined();
+  });
+
+  it("should return the nearest hit when a farther target is listed first", () => {
+    // Passes on the pre-change baseline too — correctness is not the discriminating gate here;
+    // paired with the collection test below per PRD-186's negative-control rule.
+    const near = box("near", 0);
+    const far = box("far", -3);
+    const { picker } = scenePicker(far, near);
+
+    const hit = picker.raycast({ origin: new Vector3(0, 0, 5), direction: new Vector3(0, 0, -1) });
+    expect(hit?.object.name).toBe("near");
+  });
+
+  it("should not collect hits behind the nearest for a single-hit query", () => {
+    // The discriminating gate (PRD-186 phase 1): each target's raycast receives its own empty
+    // scratch buffer and only one hit per object survives. On the old full-sort path every
+    // object wrote into one shared array, so the second target saw the first's hits already
+    // collected — red there, green here.
+    class MultiHitProbe extends Object3D {
+      seen: number[] = [];
+      constructor(name: string, z: number) {
+        super();
+        this.name = name;
+        this.position.z = z;
+      }
+      override raycast(_raycaster: Raycaster, intersects: Intersection[]): void {
+        this.seen.push(intersects.length);
+        const base = this.position.z === 0 ? 4 : 7;
+        for (const distance of [base + 1, base + 2, base + 3]) {
+          intersects.push({
+            distance,
+            object: this,
+            point: new Vector3(),
+          });
+        }
+      }
+    }
+    const near = new MultiHitProbe("near", 0);
+    const far = new MultiHitProbe("far", -3);
+    const { picker } = scenePicker(far, near);
+
+    const hit = picker.raycast({ origin: new Vector3(0, 0, 5), direction: new Vector3(0, 0, -1) });
+    expect(hit?.object.name).toBe("near");
+    expect(hit?.distance).toBe(5);
+    // One hit kept per object, and no target ever observed another target's hits.
+    expect(near.seen).toEqual([0]);
+    expect(far.seen).toEqual([0]);
+  });
+
+  it("restores the every-hit traversal mode after a single-hit query", () => {
+    const seenFlags: boolean[] = [];
+    const target = plane("target", 0);
+    target.morphTargetInfluences = [0]; // force the stock fallback so we can observe the flag
+    const stock = target.raycast.bind(target);
+    target.raycast = (raycaster, intersects) => {
+      seenFlags.push(raycaster.firstHitOnly === true);
+      return stock(raycaster, intersects);
+    };
+    const { picker } = scenePicker(target);
+
+    expect(picker.raycast()?.object.name).toBe("target");
+    expect(seenFlags).toEqual([true]);
+
+    // raycastAll must still see every hit afterwards.
+    const hits = picker.raycastAll({
+      direction: new Vector3(0, 0, -1),
+      origin: new Vector3(0, 0, 5),
+    });
+    expect(hits.length).toBeGreaterThan(1);
+    expect(seenFlags.at(-1)).toBe(false);
   });
 
   it("takes the accelerated path without patching any three prototype", () => {

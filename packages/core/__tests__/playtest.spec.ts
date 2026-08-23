@@ -289,7 +289,7 @@ describe("playtest plugin", () => {
       expect(snapshot.entities?.find(({ id }) => id === "camera.main")?.transform).toBeDefined();
       expect(snapshot.gameplay).toEqual({
         animation: { player: { advancedFrames: 1, clip: "once", finished: true } },
-        audio: { queued: 0, voices: 0 },
+        audio: { pooled: 0, queued: 0, voices: 0 },
         contacts: [],
         states: {},
         tags: {},

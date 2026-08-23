@@ -57,6 +57,7 @@ export class ScenePicker {
   #raycaster: AcceleratedRaycaster = new Raycaster();
   #ndc = new Vector2();
   #hits: Intersection[] = [];
+  #objectHits: Intersection[] = [];
   #trees = new WeakMap<BufferGeometry, ICachedTree>();
 
   constructor(options: IScenePickerOptions) {
@@ -67,9 +68,41 @@ export class ScenePicker {
     this.#raycaster.firstHitOnly = false;
   }
 
-  /** The closest hit, or `undefined` when the ray hits nothing. */
+  /**
+   * The closest hit, or `undefined` when the ray hits nothing.
+   *
+   * Collects at most one hit per target: the traversal runs with `firstHitOnly` so BVH-backed
+   * meshes stop at their own closest triangle (PRD-186 phase 1), and anything on the stock
+   * fallback path — instanced, skinned, morphed — is reduced to its own nearest before it joins
+   * the candidates. The winner is a running minimum, never a full sort: a game asking "what did
+   * this round hit" should not pay for every wall behind the answer.
+   */
   raycast(options: IRaycastOptions = {}): Intersection | undefined {
-    return this.raycastAll(options)[0];
+    this.#setRay(options);
+    this.#raycaster.far = options.far ?? Number.POSITIVE_INFINITY;
+    const targets = options.targets ?? this.#scene;
+    const roots = Array.isArray(targets) ? targets : [targets as Object3D];
+    const excluded =
+      options.exclude === undefined
+        ? new Set<Object3D>()
+        : new Set(Array.isArray(options.exclude) ? options.exclude : [options.exclude]);
+    this.#hits.length = 0;
+    this.#raycaster.firstHitOnly = true;
+    try {
+      for (const root of roots) {
+        root.updateMatrixWorld();
+        this.#collect(root, excluded, true);
+      }
+    } finally {
+      // `raycastAll` relies on the default of collecting every hit; a query that throws must
+      // not leave the accelerated flag set for it.
+      this.#raycaster.firstHitOnly = false;
+    }
+    let nearest: Intersection | undefined;
+    for (const hit of this.#hits) {
+      if (nearest === undefined || hit.distance < nearest.distance) nearest = hit;
+    }
+    return nearest;
   }
 
   /** Every hit, sorted from the nearest to the farthest. */
@@ -85,7 +118,7 @@ export class ScenePicker {
     this.#hits.length = 0;
     for (const root of roots) {
       root.updateMatrixWorld();
-      this.#collect(root, excluded);
+      this.#collect(root, excluded, false);
     }
     this.#hits.sort((first, second) => first.distance - second.distance);
     return this.#hits.slice();
@@ -120,14 +153,33 @@ export class ScenePicker {
     this.#raycaster.setFromCamera(this.#ndc, this.#camera);
   }
 
-  #collect(object: Object3D, excluded: ReadonlySet<Object3D>): void {
+  #collect(object: Object3D, excluded: ReadonlySet<Object3D>, single: boolean): void {
     if (this.#isExcluded(object, excluded)) return;
     if (object.layers.test(this.#raycaster.layers)) {
-      const tree = this.#treeFor(object);
-      if (tree === undefined) object.raycast(this.#raycaster, this.#hits);
-      else tree.raycastObject3D(object, this.#raycaster, this.#hits);
+      if (single) {
+        // The stock fallback ignores `firstHitOnly`, so one object can still push several
+        // intersections; only that object's own nearest survives. The global answer can only
+        // ever be some object's nearest hit, so nothing behind it is ever needed.
+        this.#objectHits.length = 0;
+        this.#hitTest(object, this.#objectHits);
+        let best = this.#objectHits[0];
+        for (let index = 1; index < this.#objectHits.length; index += 1) {
+          const candidate = this.#objectHits[index];
+          if (candidate !== undefined && (best === undefined || candidate.distance < best.distance))
+            best = candidate;
+        }
+        if (best !== undefined) this.#hits.push(best);
+      } else {
+        this.#hitTest(object, this.#hits);
+      }
     }
-    for (const child of object.children) this.#collect(child, excluded);
+    for (const child of object.children) this.#collect(child, excluded, single);
+  }
+
+  #hitTest(object: Object3D, into: Intersection[]): void {
+    const tree = this.#treeFor(object);
+    if (tree === undefined) object.raycast(this.#raycaster, into);
+    else tree.raycastObject3D(object, this.#raycaster, into);
   }
 
   #isExcluded(object: Object3D, excluded: ReadonlySet<Object3D>): boolean {

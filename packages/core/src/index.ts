@@ -33,7 +33,8 @@ export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
  * @constraint create buses before playing clips and dispose them with the game
  * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
- * @example const effects = new AudioBus({ name: "effects" });
+ * @supersedes new Audio(
+ * @example const effects = new AudioBus({ camera });
  */
 export { AudioBus } from "./audio.js";
 /**
@@ -55,6 +56,7 @@ export type {
  * @situation seed enemy patrol choices
  * @situation reproduce the same procedural level in a playtest
  * @constraint use the returned source instead of Math.random for replayable behavior
+ * @supersedes Math.random(
  * @example const random = createRandom(42);
  */
 export { createRandom } from "./random.js";
@@ -158,6 +160,7 @@ export type {
  * Raycast the game scene using the framework's picker.
  * @situation select an object under the pointer
  * @situation interact with the first collider or mesh hit
+ * @supersedes new Raycaster(
  * @example const picker = new ScenePicker({ camera, scene });
  */
 export { ScenePicker } from "./picking.js";
@@ -206,6 +209,7 @@ export type { ICtx, SceneFrame } from "./scene.js";
  * @situation prewarm a projectile, tracer, particle, or other transient effect
  * @situation avoid a long first-use frame for a newly visible effect
  * @constraint keep the surface visible with zero opacity; do not hide it with `visible = false`
+ * @supersedes .visible = false
  * @example prewarm(tracerPool);
  */
 export { prewarm } from "./renderer.js";
@@ -214,6 +218,7 @@ export { prewarm } from "./renderer.js";
  * @situation make a character exactly 1.8 metres tall
  * @situation normalize a prop or weapon to a known longest axis
  * @constraint skinned height uses a crown bone; game-specific asset expectations stay in render code
+ * @supersedes new Box3().setFromObject(
  * @example normaliseToMetres(character, { metres: 1.8, axis: "height" });
  */
 export { normaliseToMetres } from "./scale.js";

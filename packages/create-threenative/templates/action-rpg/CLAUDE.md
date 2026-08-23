@@ -261,22 +261,54 @@ if (player.dead) {
 
 **`ctx.random` is deterministic only when `defineGame({ seed })` is configured.** Never use
 `Math.random()` for a value the scenario must reproduce.
+
+**Reinvention fails CI.** `pnpm budgets` scans this project's `src/` for the raw constructs the
+engine's capabilities supersede (`new Raycaster(`, `Math.random(`, a hand-written A*, …) and
+fails, naming the capability to use instead. When a raw construct is genuinely right — measuring
+world bounds rather than scaling an asset, hiding geometry for good — annotate that exact line:
+
+```ts
+const bounds = new Box3().setFromObject(viewmodel); // engine-override: measuring, not scaling
+```
+
+The reason must be non-empty; a bare `// engine-override:` still fails.
+
+<!-- generated: superseded-constructs -->
+
+Writing any of these in game source fails `pnpm budgets`. The list and the gate are
+generated from the capabilities' own doc tags — they cannot disagree:
+
+| Rather than write | Use instead | Import from |
+|---|---|---|
+| `new Audio(` | `AudioBus` | `@threenative/core` |
+| `Math.random(` | `createRandom` | `@threenative/core` |
+| `new Box3().setFromObject(` | `normaliseToMetres` | `@threenative/core` |
+| `.visible = false` | `prewarm` | `@threenative/core` |
+| `new Raycaster(` | `ScenePicker` | `@threenative/core` |
+
+Annotate a genuinely-correct line `// engine-override: <reason>` to pass.
+
+<!-- /generated -->
 <!-- /shared -->
 
 
-## Engine capabilities — use the convention before writing a replacement
+## Engine capabilities — look it up before writing a replacement
 
-These public class and function exports are the discoverability index for imports. The `ctx`
-conveniences are documented separately; this index covers the public exports scanned from
-`@threenative/core` and `@threenative/physics`.
+<!-- shared: engine-capabilities -->
+Before writing anything engine-shaped, look the capability up. Two routes, and the second
+needs no MCP server:
 
-| Import surface | Public class/function exports |
-|---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createAssetLoader`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
-| `@threenative/core/playtest` | `playtest` |
-| `@threenative/core/hot` | `acceptHotUpdate` |
-| `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |
-| `@threenative/physics/navigation` | `recast`, `NavigationAgent3D`, `NavigationObstacle3D`, `NavigationRegion3D` |
+1. Ask the MCP: `engine_search_capabilities("pool decals on surfaces")` — plain situations work.
+2. Read the generated index:
+   `packages/create-threenative/agent-docs/references/capability-reference.md`.
+
+`ctx` conveniences (`ctx.raycast`, `ctx.random`, `ctx.tween`, …) are **properties on `ctx`,
+never imports** — grepping imports will never surface them; the ctx table in this document
+covers them. Writing a superseded raw construct (`new Raycaster(`, `Math.random(`, …) fails
+`pnpm budgets`; when the raw construct is genuinely right, annotate that exact line
+`// engine-override: <reason>`.
+<!-- /shared -->
+
 
 `@threenative/physics/navigation` carries WASM and is browser-only under the current native
 portability rule; do not import it in a portable game. For browser-only games, navigation agents

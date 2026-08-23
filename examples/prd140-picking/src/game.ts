@@ -117,6 +117,7 @@ class SemanticStressScene extends Scene<IStressState> {
     // testing visibility rather than accidentally testing which object a ray reaches first.
     const hidden = new Mesh(propGeometry, propMaterial);
     hidden.position.set(0, -8, 0);
+    // engine-override: hiding a pick target permanently; not a transient effect surface
     hidden.visible = false;
     ctx.add(hidden);
 

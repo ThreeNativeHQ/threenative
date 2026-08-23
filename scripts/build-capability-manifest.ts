@@ -24,6 +24,7 @@ export interface ICapabilityManifestEntry {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
+  readonly supersedes: readonly string[];
 }
 
 export interface ICapabilityManifest {
@@ -43,6 +44,7 @@ interface IParsedDocumentation {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
+  readonly supersedes: readonly string[];
 }
 
 interface IRawExport {
@@ -63,6 +65,7 @@ const EMPTY_DOCUMENTATION: IParsedDocumentation = {
   overrides: [],
   situations: [],
   summary: "",
+  supersedes: [],
 };
 
 /**
@@ -203,17 +206,19 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   const situations: string[] = [];
   const constraints: string[] = [];
   const overrides: string[] = [];
+  const supersedes: string[] = [];
   const exampleLines: string[] = [];
   const summaryLines: string[] = [];
   let inExample = false;
   for (const line of lines) {
-    const tag = /^@(situation|constraint|example|override)\b(?:\s+(.*))?$/u.exec(line);
+    const tag = /^@(situation|constraint|example|override|supersedes)\b(?:\s+(.*))?$/u.exec(line);
     if (tag !== null) {
       inExample = tag[1] === "example";
       const value = tag[2]?.trim() ?? "";
       if (tag[1] === "situation" && value.length > 0) situations.push(value);
       if (tag[1] === "constraint" && value.length > 0) constraints.push(value);
       if (tag[1] === "override" && value.length > 0) overrides.push(value);
+      if (tag[1] === "supersedes" && value.length > 0) supersedes.push(value);
       if (tag[1] === "example" && value.length > 0) exampleLines.push(value);
       continue;
     }
@@ -233,6 +238,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
     overrides: [...new Set(overrides)],
     situations: [...new Set(situations)],
     summary: summaryLines.join(" ").trim(),
+    supersedes: [...new Set(supersedes)],
   };
 }
 
@@ -246,6 +252,7 @@ function mergeDocumentation(
     overrides: [...new Set([...primary.overrides, ...fallback.overrides])],
     situations: [...new Set([...primary.situations, ...fallback.situations])],
     summary: primary.summary || fallback.summary,
+    supersedes: [...new Set([...primary.supersedes, ...fallback.supersedes])],
   };
 }
 
@@ -471,6 +478,7 @@ export function buildCapabilityManifest(
       signature: signature(candidate.declaration),
       situations: candidate.documentation.situations,
       summary: candidate.documentation.summary || candidate.symbol,
+      supersedes: candidate.documentation.supersedes,
       symbol: candidate.symbol,
     }))
     .sort((left, right) =>

@@ -707,7 +707,7 @@ async function run(): Promise<IProfileResult> {
 
     moved.position.set(0, 900, 0);
     moved.updateMatrix();
-    hiddenMesh.visible = false;
+    hiddenMesh.visible = false; // engine-override: a culling probe, not a transient effect surface
     removedParent?.remove(removed);
     relocated.add(reparented);
     // A material the game recolours, and a geometry attribute it streams into with the signal

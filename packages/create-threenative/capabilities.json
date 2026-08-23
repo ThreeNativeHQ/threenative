@@ -13,6 +13,7 @@
         "switch a character between idle and attack clips"
       ],
       "summary": "Play a skinned or sprite animation from game code.",
+      "supersedes": [],
       "symbol": "AnimationPlayer"
     },
     {
@@ -33,6 +34,7 @@
         "attach an accessory to a skinned model"
       ],
       "summary": "Attach a game-owned object to a named skeleton bone.",
+      "supersedes": [],
       "symbol": "attachToBone"
     },
     {
@@ -40,7 +42,7 @@
         "create buses before playing clips and dispose them with the game",
         "refDistance and rolloffFactor tune positional falloff and apply to playAt only"
       ],
-      "example": "const effects = new AudioBus({ name: \"effects\" });",
+      "example": "const effects = new AudioBus({ camera });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -52,6 +54,7 @@
         "keep a gunshot audible at 20 metres by tuning positional falloff"
       ],
       "summary": "Route effects through a named audio bus.",
+      "supersedes": ["new Audio("],
       "symbol": "AudioBus"
     },
     {
@@ -67,6 +70,7 @@
         "attach a canvas layer to a camera"
       ],
       "summary": "Manage a camera or screen-facing canvas layer.",
+      "supersedes": [],
       "symbol": "CanvasLayer"
     },
     {
@@ -84,6 +88,7 @@
         "load assets from a nonstandard base path or a compiled asset manifest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
+      "supersedes": [],
       "symbol": "createAssetLoader"
     },
     {
@@ -99,6 +104,7 @@
         "reproduce the same procedural level in a playtest"
       ],
       "summary": "Create a deterministic random source for portable gameplay.",
+      "supersedes": ["Math.random("],
       "symbol": "createRandom"
     },
     {
@@ -116,6 +122,7 @@
         "run a deterministic replay in a playtest"
       ],
       "summary": "Record or replay deterministic game input and state.",
+      "supersedes": [],
       "symbol": "createReplayDriver"
     },
     {
@@ -131,6 +138,7 @@
         "register physics and gameplay plugins"
       ],
       "summary": "Define the portable game entry shared by web and native.",
+      "supersedes": [],
       "symbol": "defineGame"
     },
     {
@@ -146,6 +154,7 @@
         "choose touch controls for a mobile device"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
+      "supersedes": [],
       "symbol": "getPlatform"
     },
     {
@@ -161,6 +170,7 @@
         "update many small visual particles"
       ],
       "summary": "Dispatch a game-owned particle surface and process function through a pooled system.",
+      "supersedes": [],
       "symbol": "GPUParticles3D"
     },
     {
@@ -180,6 +190,7 @@
         "correct visual grounding after an animation update"
       ],
       "summary": "Keep a rendered model's feet on a surface while preserving an auditable override.",
+      "supersedes": [],
       "symbol": "GroundSnap"
     },
     {
@@ -195,6 +206,7 @@
         "choose touch controls for a mobile device"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
+      "supersedes": [],
       "symbol": "isMobile"
     },
     {
@@ -210,6 +222,7 @@
         "choose touch controls for a mobile device"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
+      "supersedes": [],
       "symbol": "isNative"
     },
     {
@@ -225,6 +238,7 @@
         "choose touch controls for a mobile device"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
+      "supersedes": [],
       "symbol": "isTouchscreenAvailable"
     },
     {
@@ -240,6 +254,7 @@
         "choose touch controls for a mobile device"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
+      "supersedes": [],
       "symbol": "isWeb"
     },
     {
@@ -252,6 +267,7 @@
       "signature": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
       "situations": ["inspect a skinned model's posed bounds", "verify a character's visual pose"],
       "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "supersedes": [],
       "symbol": "measureThreePose"
     },
     {
@@ -269,6 +285,7 @@
         "normalize a prop or weapon to a known longest axis"
       ],
       "summary": "Scale an asset to a real-world measurement and return the applied factor.",
+      "supersedes": ["new Box3().setFromObject("],
       "symbol": "normaliseToMetres"
     },
     {
@@ -281,6 +298,7 @@
       "signature": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",
       "situations": ["validate a recording before replaying it in another host"],
       "summary": "Validate and parse a replay recording file.",
+      "supersedes": [],
       "symbol": "parseReplayRecording"
     },
     {
@@ -296,6 +314,7 @@
         "sample a racing line from a curve"
       ],
       "summary": "Move an object along a Three.js curve with Godot-style path following.",
+      "supersedes": [],
       "symbol": "PathFollow3D"
     },
     {
@@ -308,6 +327,7 @@
       "signature": "export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThreePoseBounds { … }",
       "situations": ["inspect a skinned model's posed bounds", "verify a character's visual pose"],
       "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "supersedes": [],
       "symbol": "posedBounds"
     },
     {
@@ -325,6 +345,7 @@
         "avoid a long first-use frame for a newly visible effect"
       ],
       "summary": "Keep transient render surfaces in the renderer's pipeline cache before first use.",
+      "supersedes": [".visible = false"],
       "symbol": "prewarm"
     },
     {
@@ -342,6 +363,7 @@
         "run a deterministic replay in a playtest"
       ],
       "summary": "Record or replay deterministic game input and state.",
+      "supersedes": [],
       "symbol": "replay"
     },
     {
@@ -357,6 +379,7 @@
         "move scene setup and per-frame gameplay out of the entry point"
       ],
       "summary": "Implement a portable Godot-shaped game scene lifecycle.",
+      "supersedes": [],
       "symbol": "Scene"
     },
     {
@@ -372,6 +395,7 @@
         "interact with the first collider or mesh hit"
       ],
       "summary": "Raycast the game scene using the framework's picker.",
+      "supersedes": ["new Raycaster("],
       "symbol": "ScenePicker"
     },
     {
@@ -384,6 +408,7 @@
       "signature": "export class Scheduler { … }",
       "situations": ["delay an enemy patrol transition", "run a callback every simulation tick"],
       "summary": "Schedule delayed and repeating callbacks with game-owned cleanup.",
+      "supersedes": [],
       "symbol": "Scheduler"
     },
     {
@@ -404,6 +429,7 @@
         "attach an accessory to a skinned model"
       ],
       "summary": "Attach a game-owned object to a named skeleton bone.",
+      "supersedes": [],
       "symbol": "skeletonBones"
     },
     {
@@ -421,6 +447,7 @@
         "generate sprite images that render identically under every backend"
       ],
       "summary": "Build a soft round sprite as pixel data instead of painting a canvas.",
+      "supersedes": [],
       "symbol": "softCircleDataTexture"
     },
     {
@@ -439,6 +466,7 @@
         "draw incoming fire without spawning projectiles"
       ],
       "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
+      "supersedes": [],
       "symbol": "TracerPool3D"
     },
     {
@@ -454,6 +482,7 @@
         "diagnose state shape changes during hot reload"
       ],
       "summary": "Register hot-reload state preservation for a game.",
+      "supersedes": [],
       "symbol": "acceptHotUpdate"
     },
     {
@@ -469,6 +498,7 @@
         "reject a non-portable game state before reload"
       ],
       "summary": "Validate that hot-reload state can cross the Vite boundary.",
+      "supersedes": [],
       "symbol": "assertPortableState"
     },
     {
@@ -484,6 +514,7 @@
         "connect a game to the ThreeNative scenario runner"
       ],
       "summary": "Install the playtest bridge into a portable game.",
+      "supersedes": [],
       "symbol": "playtest"
     },
     {
@@ -499,6 +530,7 @@
         "react to a player entering a zone"
       ],
       "summary": "Detect overlaps without turning the body into a moving collider.",
+      "supersedes": [],
       "symbol": "Area3D"
     },
     {
@@ -514,6 +546,7 @@
         "keep a character from walking through walls"
       ],
       "summary": "Move a character body with collision-aware sliding.",
+      "supersedes": [],
       "symbol": "CharacterBody3D"
     },
     {
@@ -529,6 +562,7 @@
         "configure the shape used by a rigid body"
       ],
       "summary": "Give a physics body a Three.js collision shape.",
+      "supersedes": [],
       "symbol": "CollisionShape3D"
     },
     {
@@ -544,6 +578,7 @@
         "configure which physics layers interact"
       ],
       "summary": "Encode collision layers and masks for Rapier groups.",
+      "supersedes": [],
       "symbol": "interactionGroups"
     },
     {
@@ -556,6 +591,7 @@
       "signature": "export class Joint3D { … }",
       "situations": ["constrain a rigid body to another body", "build a hinge or pin mechanism"],
       "summary": "Connect two physics bodies with a Godot-style joint.",
+      "supersedes": [],
       "symbol": "Joint3D"
     },
     {
@@ -571,6 +607,7 @@
         "find bodies inside a shape or point query"
       ],
       "summary": "Query the physics world without creating a body.",
+      "supersedes": [],
       "symbol": "PhysicsDirectSpaceState3D"
     },
     {
@@ -586,6 +623,7 @@
         "provide the context used by character and rigid bodies"
       ],
       "summary": "Install the Rapier physics plugin and simulation backend.",
+      "supersedes": [],
       "symbol": "rapier"
     },
     {
@@ -601,6 +639,7 @@
         "create a body that collides with a character"
       ],
       "summary": "Simulate a dynamic or static rigid body.",
+      "supersedes": [],
       "symbol": "RigidBody3D"
     },
     {
@@ -622,6 +661,7 @@
         "NPC walks to a destination"
       ],
       "summary": "Move an agent along a baked navmesh toward a target.",
+      "supersedes": [],
       "symbol": "NavigationAgent3D"
     },
     {
@@ -637,6 +677,7 @@
         "make a stationary character affect crowd avoidance"
       ],
       "summary": "Add a non-moving crowd obstacle to a navmesh.",
+      "supersedes": [],
       "symbol": "NavigationObstacle3D"
     },
     {
@@ -652,6 +693,7 @@
         "create the baked navmesh required by NavigationAgent3D"
       ],
       "summary": "Bake walkable Three.js geometry into a navigation region.",
+      "supersedes": [],
       "symbol": "NavigationRegion3D"
     },
     {
@@ -664,6 +706,7 @@
       "signature": "export function recast(): NavigationPlugin { … }",
       "situations": ["enemy walks around a wall", "NPC patrols a level and chases a player"],
       "summary": "Install navmesh pathfinding and crowd avoidance.",
+      "supersedes": [],
       "symbol": "recast"
     },
     {
@@ -683,6 +726,7 @@
         "validate entity components and gameplay observations before crossing the bridge"
       ],
       "summary": "Validate JSON-safe bridge messages and protocol sizes.",
+      "supersedes": [],
       "symbol": "assertJsonSafe"
     },
     {
@@ -698,6 +742,7 @@
         "turn a scenario observation into a pass or failure"
       ],
       "summary": "Evaluate rich semantic assertions against captured observations.",
+      "supersedes": [],
       "symbol": "evaluateRichPlaytestAssertions"
     },
     {
@@ -713,6 +758,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "invalidScenario"
     },
     {
@@ -729,6 +775,7 @@
         "check a runtime observation against the protocol payload limit before sampling"
       ],
       "summary": "Validate JSON-safe bridge messages and protocol sizes.",
+      "supersedes": [],
       "symbol": "jsonByteLength"
     },
     {
@@ -744,6 +791,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "loadPlaytestScenario"
     },
     {
@@ -759,6 +807,7 @@
         "report unknown or missing playtest capabilities"
       ],
       "summary": "Validate and inspect playtest capability declarations.",
+      "supersedes": [],
       "symbol": "missingPlaytestCapabilities"
     },
     {
@@ -774,6 +823,7 @@
         "explain why a playtest assertion cannot pass"
       ],
       "summary": "Create a structured playtest diagnostic.",
+      "supersedes": [],
       "symbol": "playtestDiagnostic"
     },
     {
@@ -789,6 +839,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "PlaytestScenarioError"
     },
     {
@@ -804,6 +855,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "playtestStepHoldTicks"
     },
     {
@@ -819,6 +871,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "playtestStepWaitTicks"
     },
     {
@@ -834,6 +887,7 @@
         "wait or hold a game for a deterministic number of ticks"
       ],
       "summary": "Load and validate a scenario, then control its tick steps.",
+      "supersedes": [],
       "symbol": "rejectUnknownKeys"
     },
     {
@@ -849,6 +903,7 @@
         "turn a scenario observation into a pass or failure"
       ],
       "summary": "Evaluate rich semantic assertions against captured observations.",
+      "supersedes": [],
       "symbol": "requiredPlaytestCapabilities"
     },
     {
@@ -861,6 +916,7 @@
       "signature": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, ): IPlaytestDiagnosticsPolicy { … }",
       "situations": ["judge captured console, network, or runtime diagnostics for a playtest"],
       "summary": "Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.",
+      "supersedes": [],
       "symbol": "resolveDiagnosticsPolicy"
     },
     {
@@ -876,6 +932,7 @@
         "report unknown or missing playtest capabilities"
       ],
       "summary": "Validate and inspect playtest capability declarations.",
+      "supersedes": [],
       "symbol": "unknownPlaytestCapabilities"
     },
     {
@@ -891,6 +948,7 @@
         "prove a screenshot contains more than a loading surface"
       ],
       "summary": "Fail closed when a screenshot is blank or uniform.",
+      "supersedes": [],
       "symbol": "assertCaptureNotBlank"
     },
     {
@@ -906,6 +964,7 @@
         "include capture statistics in a playtest error"
       ],
       "summary": "Explain why a captured frame failed the non-blank guard.",
+      "supersedes": [],
       "symbol": "CaptureGuardError"
     },
     {
@@ -921,6 +980,7 @@
         "diagnose a uniform or blank capture"
       ],
       "summary": "Inspect a PNG frame for visible pixels and luminance variation.",
+      "supersedes": [],
       "symbol": "inspectFrame"
     },
     {
@@ -935,6 +995,7 @@
         "validate entity components and gameplay observations before crossing the bridge"
       ],
       "summary": "Reject any value that would not survive JSON serialization.",
+      "supersedes": [],
       "symbol": "assertJsonSafe"
     },
     {
@@ -949,6 +1010,7 @@
         "check a runtime observation against the protocol payload limit before sampling"
       ],
       "summary": "Measure a payload's wire size in bytes.",
+      "supersedes": [],
       "symbol": "jsonByteLength"
     },
     {
@@ -964,6 +1026,7 @@
         "parse Android console diagnostics"
       ],
       "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
       "symbol": "AdbAndroidDriver"
     },
     {
@@ -979,6 +1042,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "advanceFixedStep"
     },
     {
@@ -994,6 +1058,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "androidMailboxPaths"
     },
     {
@@ -1009,6 +1074,7 @@
         "parse Android console diagnostics"
       ],
       "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
       "symbol": "androidTouchBatches"
     },
     {
@@ -1024,6 +1090,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "batchArtifactDirectory"
     },
     {
@@ -1039,6 +1106,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "boundedTeardownStep"
     },
     {
@@ -1054,6 +1122,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "buildReport"
     },
     {
@@ -1069,6 +1138,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "captureVisualSurface"
     },
     {
@@ -1084,6 +1154,7 @@
         "inspect bridge diagnostics from a runner"
       ],
       "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
       "symbol": "connectPlaytestBridge"
     },
     {
@@ -1099,6 +1170,7 @@
         "inspect bridge diagnostics from a runner"
       ],
       "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
       "symbol": "connectPlaytestBridgeTransport"
     },
     {
@@ -1114,6 +1186,7 @@
         "exchange observations with a native desktop host"
       ],
       "summary": "Drive a local desktop playtest mailbox.",
+      "supersedes": [],
       "symbol": "DesktopPlaytestDriver"
     },
     {
@@ -1129,6 +1202,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "DeviceBridgeTransport"
     },
     {
@@ -1144,6 +1218,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "deviceMailboxPaths"
     },
     {
@@ -1159,6 +1234,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "DeviceMailboxTransport"
     },
     {
@@ -1174,6 +1250,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "deviceTimeoutDiagnostic"
     },
     {
@@ -1189,6 +1266,7 @@
         "parse Android console diagnostics"
       ],
       "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
       "symbol": "discoverAdb"
     },
     {
@@ -1204,6 +1282,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "failedDiagnosticsAssertion"
     },
     {
@@ -1219,6 +1298,7 @@
         "validate runner flags before launching a browser"
       ],
       "summary": "Parse standalone playtest runner configuration.",
+      "supersedes": [],
       "symbol": "formatUsage"
     },
     {
@@ -1234,6 +1314,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "handlePlaytestSignal"
     },
     {
@@ -1246,6 +1327,7 @@
       "signature": "export async function initStandalonePlaytest(projectPath = process.cwd()): Promise< { … }",
       "situations": ["add the runner contract to a new game", "create a starter scenario fixture"],
       "summary": "Initialize the standalone playtest files for a project.",
+      "supersedes": [],
       "symbol": "initStandalonePlaytest"
     },
     {
@@ -1261,6 +1343,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "isRuntimeReadout"
     },
     {
@@ -1276,6 +1359,7 @@
         "exchange observations with a native desktop host"
       ],
       "summary": "Drive a local desktop playtest mailbox.",
+      "supersedes": [],
       "symbol": "LocalDeviceMailbox"
     },
     {
@@ -1291,6 +1375,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "ManagedServerError"
     },
     {
@@ -1306,6 +1391,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "openPageAndConnectBridge"
     },
     {
@@ -1321,6 +1407,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "pageLifecycleDiagnostic"
     },
     {
@@ -1336,6 +1423,7 @@
         "parse Android console diagnostics"
       ],
       "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
       "symbol": "parseAndroidConsole"
     },
     {
@@ -1351,6 +1439,7 @@
         "parse the launched native process identifier"
       ],
       "summary": "Drive and inspect iOS simulator playtest transport.",
+      "supersedes": [],
       "symbol": "parseLaunchedPid"
     },
     {
@@ -1366,6 +1455,7 @@
         "validate runner flags before launching a browser"
       ],
       "summary": "Parse standalone playtest runner configuration.",
+      "supersedes": [],
       "symbol": "parseStandalonePlaytestArgs"
     },
     {
@@ -1381,6 +1471,7 @@
         "inspect bridge diagnostics from a runner"
       ],
       "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
       "symbol": "PlaytestBridgeError"
     },
     {
@@ -1396,6 +1487,7 @@
         "validate runner flags before launching a browser"
       ],
       "summary": "Parse standalone playtest runner configuration.",
+      "supersedes": [],
       "symbol": "PlaytestCliUsageError"
     },
     {
@@ -1411,6 +1503,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "playtestStepDrivesMovement"
     },
     {
@@ -1426,6 +1519,7 @@
         "inspect bridge diagnostics from a runner"
       ],
       "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
       "symbol": "PlaywrightTransport"
     },
     {
@@ -1441,6 +1535,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "preflightDisplay"
     },
     {
@@ -1456,6 +1551,7 @@
         "reject a SwiftShader adapter as evidence"
       ],
       "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "supersedes": [],
       "symbol": "reconcileBrowserPointers"
     },
     {
@@ -1471,6 +1567,7 @@
         "require assertions before recording a scenario"
       ],
       "summary": "Convert captured runner observations into a replay scenario.",
+      "supersedes": [],
       "symbol": "recordToScenario"
     },
     {
@@ -1486,6 +1583,7 @@
         "require assertions before recording a scenario"
       ],
       "summary": "Convert captured runner observations into a replay scenario.",
+      "supersedes": [],
       "symbol": "requireAssertions"
     },
     {
@@ -1501,6 +1599,7 @@
         "reject a SwiftShader adapter as evidence"
       ],
       "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "supersedes": [],
       "symbol": "resolveBrowserArguments"
     },
     {
@@ -1516,6 +1615,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "resolveManagedServerCommand"
     },
     {
@@ -1531,6 +1631,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "resolveManagedServerConfig"
     },
     {
@@ -1546,6 +1647,7 @@
         "parse Android console diagnostics"
       ],
       "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
       "symbol": "rotatedTouchPosition"
     },
     {
@@ -1561,6 +1663,7 @@
         "collect Android playtest artifacts"
       ],
       "summary": "Run a playtest on Android through the configured device transport.",
+      "supersedes": [],
       "symbol": "runAndroidPlaytest"
     },
     {
@@ -1576,6 +1679,7 @@
         "verify native desktop behavior from the same scenario"
       ],
       "summary": "Run a desktop playtest and collect its report.",
+      "supersedes": [],
       "symbol": "runDesktopPlaytest"
     },
     {
@@ -1591,6 +1695,7 @@
         "collect Android playtest artifacts"
       ],
       "summary": "Run a playtest on Android through the configured device transport.",
+      "supersedes": [],
       "symbol": "runDevicePlaytest"
     },
     {
@@ -1603,6 +1708,7 @@
       "signature": "export async function runIosPlaytest( config: IStandalonePlaytestConfig, dependencies: IIosPlaytestDependencies = { … }",
       "situations": ["execute a scenario on an iOS target", "collect iOS playtest artifacts"],
       "summary": "Run a playtest on the iOS simulator or device transport.",
+      "supersedes": [],
       "symbol": "runIosPlaytest"
     },
     {
@@ -1618,6 +1724,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "runStandalonePlaytest"
     },
     {
@@ -1633,6 +1740,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "runStandalonePlaytests"
     },
     {
@@ -1648,6 +1756,7 @@
         "reject a SwiftShader adapter as evidence"
       ],
       "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "supersedes": [],
       "symbol": "softwareAdapterName"
     },
     {
@@ -1663,6 +1772,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "substituteManagedPort"
     },
     {
@@ -1678,6 +1788,7 @@
         "validate an Android or iOS device endpoint"
       ],
       "summary": "Resolve a native device transport and its mailbox paths.",
+      "supersedes": [],
       "symbol": "validateDeviceEndpoint"
     },
     {
@@ -1693,6 +1804,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "writeCaptureProvenance"
     },
     {
@@ -1708,6 +1820,7 @@
         "capture diagnostics and screenshots from a managed server"
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "supersedes": [],
       "symbol": "writeObservationArtifacts"
     },
     {
@@ -1723,6 +1836,7 @@
         "parse the launched native process identifier"
       ],
       "summary": "Drive and inspect iOS simulator playtest transport.",
+      "supersedes": [],
       "symbol": "XcrunIosDriver"
     },
     {
@@ -1738,6 +1852,7 @@
         "choose a render optimization from observed workload data"
       ],
       "summary": "Explain which render workloads should be collapsed or retained.",
+      "supersedes": [],
       "symbol": "adviseThreeRenderWorkload"
     },
     {
@@ -1753,6 +1868,7 @@
         "read the device bridge endpoint"
       ],
       "summary": "Connect a device-hosted game to the playtest bridge.",
+      "supersedes": [],
       "symbol": "connectDevicePlaytestBridge"
     },
     {
@@ -1768,6 +1884,7 @@
         "add semantic observations to a browser playtest"
       ],
       "summary": "Install the playtest observation bridge for a plain Three.js game.",
+      "supersedes": [],
       "symbol": "installThreePlaytestBridge"
     },
     {
@@ -1783,6 +1900,7 @@
         "read the device bridge endpoint"
       ],
       "summary": "Connect a device-hosted game to the playtest bridge.",
+      "supersedes": [],
       "symbol": "readPlaytestEndpoint"
     },
     {
@@ -1798,6 +1916,7 @@
         "capture bounded body state for a scenario"
       ],
       "summary": "Record Three.js physics bodies for playtest observations.",
+      "supersedes": [],
       "symbol": "ThreePlaytestPhysicsRecorder"
     },
     {
@@ -1813,6 +1932,7 @@
         "inspect a game without changing its scene"
       ],
       "summary": "Show framework diagnostics while developing a game.",
+      "supersedes": [],
       "symbol": "DebugOverlay"
     },
     {
@@ -1828,6 +1948,7 @@
         "connect a game canvas to the web UI shell"
       ],
       "summary": "Mount a ThreeNative game in a React canvas.",
+      "supersedes": [],
       "symbol": "GameCanvas"
     },
     {
@@ -1843,6 +1964,7 @@
         "select a slice of state for a React panel"
       ],
       "summary": "Read throttled game state from React.",
+      "supersedes": [],
       "symbol": "useGameState"
     }
   ],

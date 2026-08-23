@@ -15,14 +15,17 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
   --browser-recipe webgpu
 ```
 
-Exit `0` passed, `1` assertions failed, `2` never reached assertions. `--server-command` needs a
-workspace that has a `dev` script — an example or a scaffolded project; there is no root `pnpm dev`.
-`--browser-recipe webgpu` supplies the current Chromium WebGPU flags including
-`--enable-features=Vulkan`, without which Chromium silently serves WebGPU from SwiftShader and
-reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape hatch, and a run
-that does not name its adapter is not evidence. For screenshot or `visual` assertions on headless
-Linux, prefix with `sh scripts/xvfb.sh` — never `xvfb-run`, whose exit status is its own failing
-cleanup kill rather than the command's.
+Exit `0` passed, `1` assertions failed, `2` never reached assertions, and `75` when the capture
+lock queue timed out — that one prints the holder and queue depth and is explicitly **not** a test
+failure. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
+project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
+flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
+SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
+hatch, and a run that does not name its adapter is not evidence. On headless Linux the runner now
+provisions its own private Xvfb for pixel-producing runs (stripping Wayland env itself) and takes a
+capture lock only when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is
+printed to stderr either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper —
+never `xvfb-run`, whose exit status is its own failing cleanup kill rather than the command's.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
 network, screenshot and trace assertions work against any URL. The framework template installs the
