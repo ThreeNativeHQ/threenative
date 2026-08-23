@@ -224,12 +224,8 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
           body.applyTransform(visible, offset);
           continue;
         }
-        const area = areas.get(id);
-        if (area !== undefined) {
-          area.applyTransform(visible, offset);
-          continue;
-        }
         // An unregistered body has no node to sync; that is what unregistered means.
+        areas.get(id)?.applyTransform(visible, offset);
       }
 
       events = growEvents(events, bodies.size + areas.size);
