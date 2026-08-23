@@ -358,3 +358,12 @@ const bounds = new Box3().setFromObject(viewmodel); // engine-override: measurin
 
 <!-- /generated -->
 <!-- /shared -->
+
+<!-- shared: performance-default -->
+## Performance default
+
+Refill scratch; pool objects.
+
+`{"performance":{"maxFrameMsP95":33}}`
+`agent-docs/assertion-reference.md#performance`
+<!-- /shared -->

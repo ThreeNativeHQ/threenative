@@ -309,3 +309,12 @@ calculate a path but never move your object: write the steering velocity and cal
 world geometry; changing geometry needs an explicit re-bake. `GroundSnap` keeps `clearance`
 truthful when `enabled = false`, `normaliseToMetres` measures a skinned crown for height, and
 `prewarm` keeps transient meshes renderable with zero opacity so the first-use frame is not a stall.
+
+<!-- shared: performance-default -->
+## Performance default
+
+Refill scratch; pool objects.
+
+`{"performance":{"maxFrameMsP95":33}}`
+`agent-docs/assertion-reference.md#performance`
+<!-- /shared -->

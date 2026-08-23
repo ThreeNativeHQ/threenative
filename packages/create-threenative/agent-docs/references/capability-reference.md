@@ -622,9 +622,11 @@ export class NavigationAgent3D { … }
 
 ```ts
 import { NavigationAgent3D } from "@threenative/physics/navigation";
+import { Vector3 } from "three";
 const agent = new NavigationAgent3D({ navigation, object });
 agent.setTargetPosition(player.position);
-const next = agent.getNextPathPosition();
+const reusableTarget = new Vector3();
+const next = agent.getNextPathPosition(reusableTarget);
 ```
 
 ### `NavigationObstacle3D`

@@ -701,8 +701,8 @@ steering wheel.
 ### 10a. Performance — the target, because "close to native" needs a number
 
 **Reference workload:** the `platformer` template, unmodified, as scaffolded. It is the
-heaviest starter, it already carries 14 playtest scenarios, and it is what a user actually
-receives. A performance claim measured on a spinning cube is not a performance claim.
+reference template with the broadest scenario suite: 22 playtest files, and it is what a user
+actually receives. A performance claim measured on a spinning cube is not a performance claim.
 
 | Lane | Reference hardware | Budget |
 |---|---|---|

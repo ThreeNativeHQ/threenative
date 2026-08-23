@@ -409,3 +409,12 @@ The capture recipes, virtual-display setup, and the silhouette checklist are
 `agent-docs/capture-the-frame.md`. When you think you are done: *would a player screenshot
 this?* If no, you are not finished.
 <!-- /shared -->
+
+<!-- shared: performance-default -->
+## Performance default
+
+Refill scratch; pool objects.
+
+`{"performance":{"maxFrameMsP95":33}}`
+`agent-docs/assertion-reference.md#performance`
+<!-- /shared -->
