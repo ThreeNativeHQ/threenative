@@ -246,9 +246,9 @@ describe("platformer checkpoints", () => {
     };
 
     expect(scenario.assert.performance).toEqual({
-      maxDrawCalls: 180,
+      maxDrawCalls: 70,
       maxFrameMsP95: 33,
-      maxTriangles: 100000,
+      maxTriangles: 3350,
     });
     expect(scenario.steps.map((step) => step.kind)).toEqual(["input", "wait"]);
     expect(scenario.steps).not.toContainEqual(expect.objectContaining({ kind: "performance" }));

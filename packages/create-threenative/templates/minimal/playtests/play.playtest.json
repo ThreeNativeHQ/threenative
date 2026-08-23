@@ -3,15 +3,20 @@
   "target": "web",
   "schemaVersion": 1,
   "viewport": {
-    "width": 1280,
-    "height": 720
+    "width": 1920,
+    "height": 1080
   },
-  "warmupFrames": 10,
+  "warmupFrames": 60,
   "steps": [
     {
       "kind": "input",
       "press": "ArrowRight",
-      "holdTicks": 120,
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
       "release": true
     }
   ],
@@ -27,6 +32,10 @@
         "entity": "hud"
       }
     ],
-    "performance": {}
+    "performance": {
+      "maxDrawCalls": 20,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 1223
+    }
   }
 }

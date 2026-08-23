@@ -1,17 +1,17 @@
 {
-  "acceptanceId": "prd-064-performance",
+  "acceptanceId": "prd-194-performance-racing",
   "artifacts": { "screenshots": "after" },
   "assert": {
     "performance": {
-      "maxDrawCalls": 70,
+      "maxDrawCalls": 84,
       "maxFrameMsP95": 33,
-      "maxTriangles": 3350
+      "maxTriangles": 2070
     }
   },
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 60, "release": true },
+    { "kind": "input", "press": "ArrowUp", "holdTicks": 60, "release": true },
     { "kind": "wait", "waitTicks": 600, "release": true }
   ],
   "subject": "player",

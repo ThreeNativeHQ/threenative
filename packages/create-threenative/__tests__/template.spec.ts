@@ -43,6 +43,12 @@ async function templateNames(): Promise<string[]> {
     .sort();
 }
 
+function performanceScenarioFile(template: string): string {
+  return template === "minimal" || template === "starter"
+    ? "playtests/play.playtest.json"
+    : "playtests/performance.playtest.json";
+}
+
 async function filesUnder(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const files: string[] = [];
@@ -153,6 +159,72 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
 }
 
 describe("template contracts", () => {
+  it("requires every discovered template to ship a bounded performance scenario", async () => {
+    const names = await templateNames();
+    expect(names).toHaveLength(7);
+
+    const performanceAssertions: string[] = [];
+    const emptyPerformanceAssertions: string[] = [];
+    for (const template of names) {
+      const playtestRoot = path.join(templateRoot, template, "playtests");
+      const playtests = (await filesUnder(playtestRoot)).filter((file) =>
+        file.endsWith(".playtest.json"),
+      );
+      for (const playtest of playtests) {
+        const scenario = JSON.parse(await readFile(playtest, "utf8")) as {
+          assert?: { performance?: Record<string, unknown> };
+        };
+        const performance = scenario.assert?.performance;
+        if (performance === undefined) continue;
+        const relative = path.relative(templateRoot, playtest);
+        if (Object.keys(performance).length === 0) emptyPerformanceAssertions.push(relative);
+        else performanceAssertions.push(relative);
+      }
+    }
+    expect(performanceAssertions, "non-empty performance assertions").toHaveLength(7);
+    expect(emptyPerformanceAssertions, "empty performance assertions").toEqual([]);
+
+    for (const template of names) {
+      const scenarioFile = performanceScenarioFile(template);
+      const scenarioPath = path.join(templateRoot, template, scenarioFile);
+      const source = await readFile(scenarioPath, "utf8").catch(() => undefined);
+      expect(source, `${template}/${scenarioFile}`).toBeDefined();
+      if (source === undefined) continue;
+
+      const scenario = JSON.parse(source) as {
+        assert?: {
+          performance?: Record<string, unknown>;
+        };
+        steps?: Array<{ holdTicks?: number; waitTicks?: number }>;
+        viewport?: { height?: number; width?: number };
+        warmupFrames?: number;
+      };
+      const performance = scenario.assert?.performance;
+      expect(performance, `${template} performance assertion`).toBeDefined();
+      if (performance === undefined) continue;
+
+      expect(Object.keys(performance).sort(), template).toEqual([
+        "maxDrawCalls",
+        "maxFrameMsP95",
+        "maxTriangles",
+      ]);
+      expect(performance.maxFrameMsP95, template).toBe(33);
+      expect(typeof performance.maxDrawCalls, template).toBe("number");
+      expect(typeof performance.maxTriangles, template).toBe("number");
+      expect(performance.maxDrawCalls, template).toBeGreaterThan(0);
+      expect(performance.maxTriangles, template).toBeGreaterThan(0);
+      expect(scenario.viewport, template).toEqual({ height: 1080, width: 1920 });
+      expect(scenario.warmupFrames, template).toBe(60);
+      expect(
+        scenario.steps?.reduce(
+          (ticks, step) => ticks + (step.holdTicks ?? 0) + (step.waitTicks ?? 0),
+          0,
+        ),
+        template,
+      ).toBeGreaterThanOrEqual(600);
+    }
+  });
+
   it("wires the brand adapter, launch handoff, and generated loading source in every template", async () => {
     for (const template of brandingTemplates) {
       const root = path.join(templateRoot, template);
