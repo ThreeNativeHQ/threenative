@@ -2,15 +2,19 @@
   "name": "play",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
-  "warmupFrames": 10,
+  "viewport": { "width": 1920, "height": 1080 },
+  "warmupFrames": 60,
   "steps": [
     { "kind": "input", "press": "ArrowRight", "holdTicks": 120, "release": true },
-    { "kind": "wait", "waitTicks": 30, "release": true }
+    { "kind": "wait", "waitTicks": 600, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
-    "performance": {},
+    "performance": {
+      "maxDrawCalls": 53,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 4403
+    },
     "resources": [{ "id": "state", "path": "score", "gte": 1, "changed": true }]
   }
 }

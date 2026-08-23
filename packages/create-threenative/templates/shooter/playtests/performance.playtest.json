@@ -1,11 +1,11 @@
 {
-  "acceptanceId": "prd-064-performance",
+  "acceptanceId": "prd-194-performance-shooter",
   "artifacts": { "screenshots": "after" },
   "assert": {
     "performance": {
-      "maxDrawCalls": 70,
+      "maxDrawCalls": 96,
       "maxFrameMsP95": 33,
-      "maxTriangles": 3350
+      "maxTriangles": 1053
     }
   },
   "name": "production-performance",

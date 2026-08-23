@@ -1,11 +1,11 @@
 {
-  "acceptanceId": "prd-064-performance",
+  "acceptanceId": "prd-194-performance-action-rpg",
   "artifacts": { "screenshots": "after" },
   "assert": {
     "performance": {
-      "maxDrawCalls": 70,
+      "maxDrawCalls": 62,
       "maxFrameMsP95": 33,
-      "maxTriangles": 3350
+      "maxTriangles": 996
     }
   },
   "name": "production-performance",
