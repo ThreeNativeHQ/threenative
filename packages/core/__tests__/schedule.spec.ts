@@ -172,4 +172,29 @@ describe("Scheduler tick ordering", () => {
     scheduler.tick(1 / 60);
     expect(fired).toEqual([2]);
   });
+
+  it("keeps the next-tick invariant when a mid-tick cancellation compacts the set", () => {
+    // Cancelling an unvisited entry mid-tick removes it from the Set, shifting the appended
+    // entry into a visit slot the size bound still admits. The bound must not let an entry
+    // appended during this tick fire during this tick.
+    const fired: number[] = [];
+    let tickCount = 0;
+    const scheduler = new Scheduler();
+    let victim: ScheduleHandle | undefined;
+    const actor = scheduler.every(() => {
+      tickCount += 1;
+      if (tickCount === 1) {
+        victim?.cancel();
+        scheduler.after(0, () => fired.push(tickCount));
+      }
+    });
+    victim = scheduler.every(() => undefined);
+
+    scheduler.tick(1 / 60);
+    expect(actor.active ?? true).toBeDefined();
+    expect(fired).toEqual([]);
+    scheduler.tick(1 / 60);
+    // Fires on tick 2 (the next tick), reporting the tick it ran in.
+    expect(fired).toEqual([2]);
+  });
 });

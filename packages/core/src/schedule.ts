@@ -8,6 +8,8 @@ type TweenProperties<T extends object> = { [K in keyof T]?: number };
 interface IScheduleEntry {
   active: boolean;
   cancel(): void;
+  /** Monotonic registration order; entries added during a tick carry the tick's cutoff. */
+  order: number;
   tick(dt: number): void;
 }
 
@@ -20,6 +22,8 @@ function createHandle(cancel: () => void, active: () => boolean): ScheduleHandle
 
 export class Scheduler {
   readonly #entries = new Set<IScheduleEntry>();
+  /** Monotonic registration order, so a tick can tell pre-tick entries from mid-tick ones. */
+  #nextOrder = 0;
 
   get size(): number {
     return this.#entries.size;
@@ -92,14 +96,19 @@ export class Scheduler {
   tick(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new TypeError("Tick duration must be finite and non-negative.");
-    // Bounded direct iteration instead of a copy per tick: the bound keeps mid-tick additions
-    // firing on the next tick, exactly what the old snapshot copy did (pinned by a test).
+    // Bounded direct iteration instead of a copy per tick. The bound alone is not enough: a
+    // mid-tick cancellation deletes from the Set and shifts later entries down a visit, which
+    // used to let an entry appended during this very tick fire inside this tick. The order
+    // guard closes that hole without paying for a per-tick snapshot copy.
     const bound = this.#entries.size;
+    const addedBeforeTick = this.#nextOrder;
     let visited = 0;
     for (const entry of this.#entries) {
       if (visited >= bound) break;
       visited += 1;
-      if (entry.active) entry.tick(dt);
+      if (!entry.active) continue;
+      if (entry.order >= addedBeforeTick) continue;
+      entry.tick(dt);
     }
   }
 
@@ -120,8 +129,10 @@ export class Scheduler {
         onCancel?.();
       },
       handle: undefined as never,
+      order: this.#nextOrder,
       tick,
     };
+    this.#nextOrder += 1;
     entry.handle = createHandle(entry.cancel, () => entry.active);
     this.#entries.add(entry);
     return entry;
