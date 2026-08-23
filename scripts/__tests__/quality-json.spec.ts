@@ -25,7 +25,7 @@ describe("quality JSON command", () => {
             file: expect.any(String),
             line: expect.any(Number),
             signal: expect.any(String),
-            state: expect.stringMatching(/^(?:new|inherited|waived)$/u),
+            state: expect.stringMatching(/^(?:new|grew|inherited|waived)$/u),
             threshold: expect.anything(),
             value: expect.anything(),
           }),

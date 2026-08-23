@@ -183,4 +183,60 @@ const ignored: any = value;
       ]),
     );
   });
+
+  // scenario.ts-shaped: the same file:signal records a larger measured value than the
+  // baseline's — that is growth, not an inherited coordinate.
+  it("should mark a hotspot grew when its value rises past the baseline", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, `${"const line = 1;\n".repeat(401)}`);
+    await updateQualityBaseline(root);
+
+    await sourceFile(root, `${"const line = 1;\n".repeat(450)}`);
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "file-length", value: 450, state: "grew" }),
+    );
+    expect(findings).not.toContainEqual(
+      expect.objectContaining({ signal: "file-length", state: "inherited" }),
+    );
+  });
+
+  it("should stay inherited when only the line moved", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, "const value = input as unknown as string;\n");
+    await updateQualityBaseline(root);
+
+    await sourceFile(
+      root,
+      "// a comment shifts the finding down one line\nconst value = input as unknown as string;\n",
+    );
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        signal: "suppression/unknown-cast",
+        line: 2,
+        state: "inherited",
+      }),
+    );
+    expect(findings).not.toContainEqual(
+      expect.objectContaining({ signal: "suppression/unknown-cast", state: "new" }),
+    );
+  });
+
+  it("should keep fail-closed baseline validation", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, "const ready = true;\n");
+    const baselinePath = path.join(root, "docs", "verification");
+    await mkdir(baselinePath, { recursive: true });
+    await writeFile(
+      path.join(baselinePath, "quality-baseline.json"),
+      JSON.stringify({
+        version: 1,
+        generatedAt: "2026-08-22",
+        counts: {},
+        findings: [{ file: "packages/core/src/fixture.ts", signal: "file-length" }],
+      }),
+    );
+    await expect(loadQualityBaseline(root)).rejects.toThrow(/every finding needs/u);
+  });
 });

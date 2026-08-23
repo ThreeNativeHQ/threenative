@@ -19,7 +19,7 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   throw error;
 });
 
-export type QualityState = "new" | "inherited" | "waived";
+export type QualityState = "new" | "grew" | "inherited" | "waived";
 
 export type QualityFinding = {
   file: string;
@@ -357,7 +357,16 @@ export async function updateQualityBaseline(root = process.cwd()): Promise<Quali
 
 export async function runQuality(root = process.cwd()): Promise<QualityFinding[]> {
   const baseline = await loadQualityBaseline(root);
-  const baselineKeys = new Set(baseline.findings.map((item) => findingKey(item)));
+  // Classification keys on file:signal, not file:line:signal — a finding that moves lines
+  // without growing is the same fact about the code. Rows are matched with multiplicity:
+  // two suppressions in one file consume two baseline rows, and a third is genuinely new.
+  const baselineRows = new Map<string, BaselineFinding[]>();
+  for (const item of baseline.findings) {
+    const key = `${item.file}:${item.signal}`;
+    const rows = baselineRows.get(key);
+    if (rows === undefined) baselineRows.set(key, [item]);
+    else rows.push(item);
+  }
   const source = await collectSourceFindings(root);
   const findings = applyWaivers(source.findings, source.waivers);
   const waived = waivedFindingKeys(findings, source.waivers);
@@ -368,14 +377,16 @@ export async function runQuality(root = process.cwd()): Promise<QualityFinding[]
         left.line - right.line ||
         left.signal.localeCompare(right.signal),
     )
-    .map((item) => ({
-      ...item,
-      state: waived.has(findingKey(item))
-        ? "waived"
-        : baselineKeys.has(findingKey(item))
-          ? "inherited"
-          : "new",
-    }));
+    .map((item) => {
+      if (waived.has(findingKey(item))) return { ...item, state: "waived" as const };
+      const recorded = baselineRows.get(`${item.file}:${item.signal}`)?.shift();
+      if (recorded === undefined) return { ...item, state: "new" as const };
+      const grew =
+        typeof item.value === "number" && typeof recorded.value === "number"
+          ? item.value > recorded.value
+          : String(item.value) !== String(recorded.value);
+      return { ...item, state: grew ? ("grew" as const) : ("inherited" as const) };
+    });
 }
 
 function printHuman(findings: readonly QualityFinding[]): void {
@@ -384,7 +395,7 @@ function printHuman(findings: readonly QualityFinding[]): void {
     return result;
   }, {});
   console.log(
-    `quality report: ${findings.length} findings (${counts.new ?? 0} new, ${counts.inherited ?? 0} inherited, ${counts.waived ?? 0} waived)`,
+    `quality report: ${findings.length} findings (${counts.new ?? 0} new, ${counts.grew ?? 0} grew, ${counts.inherited ?? 0} inherited, ${counts.waived ?? 0} waived)`,
   );
   for (const item of findings)
     console.log(
