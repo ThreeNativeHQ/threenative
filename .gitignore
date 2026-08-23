@@ -43,3 +43,6 @@ docs/benchmark/sweeps/*/assets/generated/
 .env
 .env.*
 !.env.example
+
+# written by installing @threenative/core (workspace link writes it at the repo root too)
+.mcp.json

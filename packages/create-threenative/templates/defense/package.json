@@ -43,9 +43,6 @@
     "@threenative/runtime-native": "0.2.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "@threenative/core",
-      "@threenative/runtime-native"
-    ]
+    "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"]
   }
 }

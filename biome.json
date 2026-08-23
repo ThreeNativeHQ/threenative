@@ -8,6 +8,7 @@
       "artifacts/**",
       ".worktrees/**",
       ".claude/worktrees/**",
+      ".mcp.json",
       "packages/runtime-native/**",
       "test-results/**",
       "examples/abyss-vanilla/index.html",

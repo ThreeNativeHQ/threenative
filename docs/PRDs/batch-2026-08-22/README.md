@@ -51,7 +51,7 @@ Numbering continues from PRD-176.
 | [179](./PRD-179-instruments-measure-growth.md) | Quality report keys by file:line ignoring values (42 fake-"new"; hotspots grow as "inherited"); six long chains invisible to gate:status/resume | 5 MEDIUM | after or with 178 |
 | [180](../done/PRD-180-core-lifecycle-failure-atomicity.md) | COMPLETE 2026-08-22 — boot throw-paths leak half-booted games (abort path is fine); teardown first-throw-wins; `goto()` wipes state before validating | 4 MEDIUM | core unit lane |
 | [181](./PRD-181-honest-core-packaging-seam.md) | Published core inlines a hidden playtest copy (`noExternal` masking a devDep-only import); hardcoded stale CORE_VERSION | 4 MEDIUM | packaging/consumer lane |
-| [182](./PRD-182-playtest-monolith-containment.md) | Contain the three hottest monoliths (evaluators 2,312 / scenario 1,867 growing / runner 1,800 top-churn) behind facades, characterization-first, zero behavior change | 5 MEDIUM, highest risk | last in the batch |
+| [182](../done/PRD-182-playtest-monolith-containment.md) | COMPLETE 2026-08-22 — contained the three hottest monoliths (evaluators 2,312 / scenario 1,867 growing / runner 1,800 top-churn) behind facades, characterization-first, zero behavior change | 5 MEDIUM, highest risk | last in the batch |
 
 **Suggested order:** 178 → 179 (green gates first, so every later measurement is trusted) →
 180 → 181 (independent) → 177 (longest, needs `pnpm native:build`) → 182 (needs 179's honest

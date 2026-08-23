@@ -46,7 +46,8 @@ function exampleBlock(entry: IPlaytestAssertionSchemaEntry): string {
 }
 
 const sections = PLAYTEST_ASSERTION_REGISTRY.map((entry) => {
-  const capabilities = entry.requiredCapabilities.length > 0 ? entry.requiredCapabilities.join(", ") : "none";
+  const capabilities =
+    entry.requiredCapabilities.length > 0 ? entry.requiredCapabilities.join(", ") : "none";
   const targets = entry.supportedOn.join(", ");
   return [
     `### \`${entry.kind}\``,
@@ -73,6 +74,11 @@ trivially fails \`TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING\`.
 ${sections.join("\n\n")}
 `;
 
-const target = path.join(repoRoot, "packages/create-threenative/agent-docs/references/assertion-reference.md");
+const target = path.join(
+  repoRoot,
+  "packages/create-threenative/agent-docs/references/assertion-reference.md",
+);
 await writeFile(target, page);
-console.log(`assertion reference: ${PLAYTEST_ASSERTION_REGISTRY.length} kinds -> ${path.relative(repoRoot, target)}`);
+console.log(
+  `assertion reference: ${PLAYTEST_ASSERTION_REGISTRY.length} kinds -> ${path.relative(repoRoot, target)}`,
+);
