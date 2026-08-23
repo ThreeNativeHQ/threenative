@@ -21,6 +21,16 @@ async function readRepoFile(relative: string): Promise<string> {
   return readFile(path.join(repoRoot, relative), "utf8");
 }
 
+async function countPlaytestFiles(directory: string): Promise<number> {
+  let count = 0;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) count += await countPlaytestFiles(entryPath);
+    else if (entry.name.endsWith(".playtest.json")) count += 1;
+  }
+  return count;
+}
+
 interface IShippedPackage {
   readonly public: boolean;
   readonly version: string;
@@ -200,5 +210,32 @@ describe("primary documentation agrees with the shipped surfaces", () => {
         `${docPath} never names the shipped engine MCP server`,
       ).toBe(true);
     }
+  });
+
+  it("should keep Charter's reference workload tied to executable scenarios", async () => {
+    const scenarioDirectory = path.join(
+      repoRoot,
+      "packages",
+      "create-threenative",
+      "templates",
+      "platformer",
+      "playtests",
+    );
+    const scenarioCount = await countPlaytestFiles(scenarioDirectory);
+    expect(
+      scenarioCount,
+      "platformer scenario count changed; update the Charter with the tree",
+    ).toBe(22);
+
+    const charter = await readRepoFile(path.join("docs", "architecture", "CHARTER.md"));
+    const start = charter.indexOf("### 10a. Performance");
+    const end = charter.indexOf("### 10b. Cost caps");
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const workload = charter.slice(start, end).replace(/\s+/gu, " ");
+    expect(workload).toContain(
+      `It is the reference template with the broadest scenario suite: ${scenarioCount} playtest files`,
+    );
+    expect(workload).not.toMatch(/heaviest|source LOC/iu);
   });
 });

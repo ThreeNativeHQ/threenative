@@ -32,7 +32,9 @@ const requiredSharedFragments = [
   "look-at-it-and-budget-the-look",
   "ctx-surface",
   "playtest-fail-closed",
+  "performance-default",
 ] as const;
+const performanceBoundPattern = /"performance":\s*\{\s*"maxFrameMsP95":\s*33\s*\}/u;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
 
@@ -542,6 +544,20 @@ describe("template contracts", () => {
       for (const fragment of requiredSharedFragments) {
         expect(agents, `${template}/${fragment}`).toContain(`<!-- shared: ${fragment} -->`);
       }
+    }
+  });
+
+  it("should document a bounded performance assertion in every template", async () => {
+    const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
+    expect(fragment.split(/\s+/u).filter(Boolean).length).toBeLessThan(130);
+    expect(fragment).toContain("agent-docs/references/assertion-reference.md#performance");
+    expect(fragment).toMatch(performanceBoundPattern);
+    for (const template of await templateNames()) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, `${template}/performance-default`).toContain(
+        "agent-docs/references/assertion-reference.md#performance",
+      );
+      expect(agents, `${template}/performance-default`).toMatch(performanceBoundPattern);
     }
   });
 

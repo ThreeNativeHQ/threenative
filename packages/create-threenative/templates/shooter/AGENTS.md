@@ -309,3 +309,19 @@ calculate a path but never move your object: write the steering velocity and cal
 world geometry; changing geometry needs an explicit re-bake. `GroundSnap` keeps `clearance`
 truthful when `enabled = false`, `normaliseToMetres` measures a skinned crown for height, and
 `prewarm` keeps transient meshes renderable with zero opacity so the first-use frame is not a stall.
+
+<!-- shared: performance-default -->
+## Performance default
+
+Keep vector/array scratch outside `update` methods and refill it; avoid ordinary-frame allocation. Pool recurring bounded-lifetime objects. Write HUD state when values change.
+
+Prove it with a bounded `performance` assertion:
+
+```json
+{ "performance": { "maxFrameMsP95": 33 } }
+```
+
+See [`agent-docs/references/assertion-reference.md#performance`](agent-docs/references/assertion-reference.md#performance) for fields.
+
+Name deliberate allocation/look tradeoffs beside the code and keep measurement active; overrides change the choice, not the proof.
+<!-- /shared -->
