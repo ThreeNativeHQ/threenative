@@ -141,7 +141,7 @@ function hasRenderHook(object: Object3D): boolean {
 
 /** Why a source cannot share a batch, or the whole classification for one frame. */
 export interface IProjectionExactEntry {
-  object: Object3D;
+  object: Object3D | undefined;
   reason: ProjectionExactReason;
 }
 
@@ -222,6 +222,32 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     groupsByGeometry: new WeakMap(),
     scanNumber: 0,
   };
+}
+
+/**
+ * Releases source references from the reusable scan storage after its plan is consumed.
+ *
+ * The arrays and identity maps stay reusable, but their members are borrowed from the authored
+ * scene. Keeping those members in an inactive group or pooled exact entry would make a streamed
+ * scene retain every mesh it had ever contained.
+ */
+export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
+    const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
+    entry.object = undefined;
+  }
+  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    group.members.length = 0;
+  }
+  workspace.seen.clear();
+  workspace.eligible.length = 0;
+  workspace.exactLane.length = 0;
+  workspace.lights.length = 0;
+  workspace.batchGroups.length = 0;
+  workspace.belowFloor.length = 0;
+  workspace.activeGroups.length = 0;
+  workspace.walkStack.length = 0;
 }
 
 function addExactEntry(
@@ -378,14 +404,7 @@ export function scanProjection(
   minMeshes: number,
   workspace: IProjectionScanWorkspace,
 ): IProjectionScanResult {
-  workspace.seen.clear();
-  workspace.eligible.length = 0;
-  workspace.exactLane.length = 0;
-  workspace.lights.length = 0;
-  workspace.batchGroups.length = 0;
-  workspace.belowFloor.length = 0;
-  workspace.activeGroups.length = 0;
-  workspace.walkStack.length = 0;
+  releaseProjectionScanWorkspace(workspace);
   workspace.scanNumber += 1;
   const state = walkProjection(source, workspace);
 

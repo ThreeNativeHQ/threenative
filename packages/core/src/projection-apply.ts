@@ -90,6 +90,12 @@ function matrixEquals(a: Matrix4, b: Matrix4): boolean {
   return true;
 }
 
+function exactObject(entry: IProjectionExactEntry): Object3D {
+  if (entry.object === undefined)
+    throw new Error("Projection exact entry was cleared before apply.");
+  return entry.object;
+}
+
 /**
  * A stand-in of the same class as its source, with none of its children.
  *
@@ -257,13 +263,15 @@ export class ProjectionMirror {
     }
     for (let index = 0; index < this.#exactLane.length; index += 1) {
       const entry = this.#exactLane[index] as IProjectionExactEntry;
+      const object = exactObject(entry);
       // An object can change lane while staying in the scene — a material turning transparent, a
       // `renderOrder` being set, a plain mesh swapped for a skinned one. Its batch instance has to
       // go as it acquires a proxy, or the frame draws it twice: once batched and once exactly.
-      this.#release(entry.object);
-      this.#syncProxy(entry.object);
+      this.#release(object);
+      this.#syncProxy(object);
     }
     this.#retire(plan.seen, plan.lights);
+    this.#clearExactScratch();
     return undefined;
   }
 
@@ -305,6 +313,7 @@ export class ProjectionMirror {
         batch.free.push(slot);
         this.#state.delete(object);
       }
+      if (batch.instances.size === 0) this.#disposeBatch(batch);
     }
   }
 
@@ -626,6 +635,20 @@ export class ProjectionMirror {
     this.scene.remove(proxy);
     this.#proxies.delete(object);
   }
+
+  #clearExactScratch(): void {
+    for (let index = 0; index < this.#exactLane.length; index += 1) {
+      const entry = this.#exactLane[index] as IProjectionExactEntry;
+      entry.object = undefined;
+    }
+    for (let index = 0; index < this.#extraExactPool.length; index += 1) {
+      const entry = this.#extraExactPool[index] as IProjectionExactEntry;
+      entry.object = undefined;
+    }
+    this.#exactLane.length = 0;
+    this.#extraExactCount = 0;
+  }
+
   /** Tears the mirror down, leaving the authored scene untouched, as it has been throughout. */
   releaseAll(): void {
     for (const batch of this.#batches.values()) {
@@ -640,8 +663,7 @@ export class ProjectionMirror {
     this.#lightMembership.clear();
     this.#state.clear();
     this.#exact.clear();
-    this.#exactLane.length = 0;
-    this.#extraExactCount = 0;
+    this.#clearExactScratch();
     this.#projectedObjects = 0;
   }
 

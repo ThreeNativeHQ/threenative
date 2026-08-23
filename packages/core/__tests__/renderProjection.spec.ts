@@ -25,6 +25,11 @@ import {
   SpriteMaterial,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createProjectionScanWorkspace,
+  releaseProjectionScanWorkspace,
+  scanProjection,
+} from "../src/projection-plan.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -56,6 +61,20 @@ function drawCandidates(root: Object3D): Object3D[] {
     }
   });
   return found;
+}
+
+function countInstanceMatrices(root: Object3D, expected: Matrix4): number {
+  const actual = new Matrix4();
+  let matches = 0;
+  root.traverse((object) => {
+    const mesh = object as InstancedMesh;
+    if (mesh.isInstancedMesh !== true) return;
+    for (let slot = 0; slot < mesh.count; slot += 1) {
+      mesh.getMatrixAt(slot, actual);
+      if (actual.equals(expected)) matches += 1;
+    }
+  });
+  return matches;
 }
 
 function isLightObject(object: Object3D): boolean {
@@ -360,7 +379,8 @@ describe("SceneRenderProjection", () => {
     const first = new MeshStandardMaterial({ color: 0x446688 });
     const second = new MeshStandardMaterial({ color: 0x886644 });
     const firstMeshes = fill(scene, first, 200);
-    fill(scene, second, 100);
+    const secondMeshes = fill(scene, second, 100);
+    for (const mesh of secondMeshes) mesh.position.x += 1000;
     const projection = projected(scene, 2);
     const changed = firstMeshes[0] as Mesh;
 
@@ -372,6 +392,42 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.projectedObjects).toBe(300);
     expect(projection.inspect(changed)?.lane).toBe("batched");
     expect(projection.drawsWith(second)).toBe(true);
+    expect(countInstanceMatrices(projection.root, changed.matrixWorld)).toBe(1);
+  });
+
+  it("should dispose a batch after every member changes its group", () => {
+    const scene = new Scene();
+    const first = new MeshStandardMaterial({ color: 0x446688 });
+    const second = new MeshStandardMaterial({ color: 0x886644 });
+    const firstMeshes = fill(scene, first, 200);
+    const secondMeshes = fill(scene, second, 100);
+    for (const mesh of secondMeshes) mesh.position.x += 1000;
+    const projection = projected(scene, 2);
+
+    for (const mesh of firstMeshes) mesh.material = second;
+    projection.reconcile();
+
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+    expect(drawCandidates(projection.root)).toHaveLength(1);
+  });
+
+  it("should clear pooled source references after a scan", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 8);
+    const sprite = new Sprite(new SpriteMaterial());
+    scene.add(sprite);
+    const workspace = createProjectionScanWorkspace();
+    const scan = scanProjection(scene, 8, workspace);
+    const group = scan.plan.action === "project" ? scan.plan.batchGroups[0] : undefined;
+    const exactEntry = workspace.exactEntryPool[0];
+
+    expect(exactEntry?.object).toBe(sprite);
+    expect(group?.members).toHaveLength(8);
+    releaseProjectionScanWorkspace(workspace);
+
+    expect(exactEntry?.object).toBeUndefined();
+    expect(group?.members).toHaveLength(0);
   });
 
   it("should retire removed lights with reused membership storage", () => {
