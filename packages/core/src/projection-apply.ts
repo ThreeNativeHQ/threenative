@@ -178,7 +178,9 @@ export class ProjectionMirror {
   readonly #exact = new Map<ProjectionExactReason, number>();
   readonly #exactLane: IProjectionExactEntry[] = [];
   readonly #extraExactPool: IProjectionExactEntry[] = [];
-  readonly #lightMembership = new Set<Light>();
+  readonly #lightMembership = new WeakMap<Light, number>();
+  #lightGeneration = 0;
+  #exactLaneCount = 0;
   #extraExactCount = 0;
   #projectedObjects = 0;
   #compileMs = 0;
@@ -204,11 +206,11 @@ export class ProjectionMirror {
   }
 
   /** Rebuilds exact-lane tallies and scratch from the scan without copying the entry objects. */
-  prepare(exactLane: readonly IProjectionExactEntry[]): void {
+  prepare(exactLane: readonly IProjectionExactEntry[], exactLaneCount: number): void {
     this.#exact.clear();
-    this.#exactLane.length = exactLane.length;
+    this.#exactLaneCount = exactLaneCount;
     this.#extraExactCount = 0;
-    for (let index = 0; index < exactLane.length; index += 1) {
+    for (let index = 0; index < exactLaneCount; index += 1) {
       const entry = exactLane[index] as IProjectionExactEntry;
       this.#exactLane[index] = entry;
       const count = this.#exact.get(entry.reason) ?? 0;
@@ -225,7 +227,7 @@ export class ProjectionMirror {
    * awkward would be the fail-open rule applied at exactly the wrong granularity.
    */
   apply(plan: IProjectionProjectPlan): string | undefined {
-    const lightFailure = this.#syncLights(plan.lights);
+    const lightFailure = this.#syncLights(plan.lights, plan.lightCount);
     if (lightFailure !== undefined) {
       this.releaseAll();
       return lightFailure;
@@ -233,7 +235,7 @@ export class ProjectionMirror {
     // Groups below the floor join the objects that were never eligible. They keep their own draw,
     // which is what they had. The scratch entries are pooled because this is a per-frame path.
     this.#extraExactCount = 0;
-    for (let index = 0; index < plan.belowFloor.length; index += 1) {
+    for (let index = 0; index < plan.belowFloorCount; index += 1) {
       const mesh = plan.belowFloor[index] as Mesh;
       this.#release(mesh);
       this.#appendExact(mesh, "tooFewToBatch");
@@ -242,10 +244,10 @@ export class ProjectionMirror {
     // thousand batched props because one of them was awkward would be the fail-open rule applied
     // at exactly the wrong granularity.
     this.#projectedObjects = 0;
-    for (let index = 0; index < plan.batchGroups.length; index += 1) {
+    for (let index = 0; index < plan.batchGroupCount; index += 1) {
       const group = plan.batchGroups[index] as IProjectionBatchGroup;
       const batch = this.#ensureBatch(group);
-      for (let member = 0; member < group.members.length; member += 1) {
+      for (let member = 0; member < group.memberCount; member += 1) {
         const mesh = group.members[member] as Mesh;
         if (batch !== undefined && this.#syncBatched(batch, mesh)) {
           this.#projectedObjects += 1;
@@ -261,7 +263,7 @@ export class ProjectionMirror {
         this.#appendExact(mesh, reason);
       }
     }
-    for (let index = 0; index < this.#exactLane.length; index += 1) {
+    for (let index = 0; index < this.#exactLaneCount; index += 1) {
       const entry = this.#exactLane[index] as IProjectionExactEntry;
       const object = exactObject(entry);
       // An object can change lane while staying in the scene — a material turning transparent, a
@@ -270,7 +272,7 @@ export class ProjectionMirror {
       this.#release(object);
       this.#syncProxy(object);
     }
-    this.#retire(plan.seen, plan.lights);
+    this.#retire(plan.seen, plan.lights, plan.lightCount);
     this.#clearExactScratch();
     return undefined;
   }
@@ -286,20 +288,25 @@ export class ProjectionMirror {
       entry.object = object;
       entry.reason = reason;
     }
-    this.#exactLane.push(entry);
+    this.#exactLane[this.#exactLaneCount] = entry;
+    this.#exactLaneCount += 1;
     const count = this.#exact.get(reason) ?? 0;
     this.#exact.set(reason, count + 1);
   }
 
   /** Drops sources that have left the authored scene, so nothing draws what the game removed. */
-  #retire(seen: ReadonlySet<Object3D>, lights: readonly Light[]): void {
+  #retire(
+    seen: { has(object: Object3D): boolean },
+    lights: readonly (Light | undefined)[],
+    lightCount: number,
+  ): void {
     this.#retireBatches(seen);
     this.#retireProxies(seen);
-    this.#retireLights(lights);
+    this.#retireLights(lights, lightCount);
     this.#retireState(seen);
   }
 
-  #retireBatches(seen: ReadonlySet<Object3D>): void {
+  #retireBatches(seen: { has(object: Object3D): boolean }): void {
     for (const batch of this.#batches.values()) {
       for (const object of batch.instances.keys()) {
         if (seen.has(object)) continue;
@@ -317,7 +324,7 @@ export class ProjectionMirror {
     }
   }
 
-  #retireProxies(seen: ReadonlySet<Object3D>): void {
+  #retireProxies(seen: { has(object: Object3D): boolean }): void {
     for (const object of this.#proxies.keys()) {
       if (seen.has(object)) continue;
       const proxy = this.#proxies.get(object) as Object3D;
@@ -327,20 +334,21 @@ export class ProjectionMirror {
     }
   }
 
-  #retireLights(lights: readonly Light[]): void {
-    this.#lightMembership.clear();
-    for (let index = 0; index < lights.length; index += 1) {
-      this.#lightMembership.add(lights[index] as Light);
+  #retireLights(lights: readonly (Light | undefined)[], lightCount: number): void {
+    this.#lightGeneration += 1;
+    for (let index = 0; index < lightCount; index += 1) {
+      const light = lights[index] as Light;
+      this.#lightMembership.set(light, this.#lightGeneration);
     }
     for (const light of this.#lightProxies.keys()) {
-      if (this.#lightMembership.has(light)) continue;
+      if (this.#lightMembership.get(light) === this.#lightGeneration) continue;
       const proxy = this.#lightProxies.get(light) as Light;
       this.scene.remove(proxy);
       this.#lightProxies.delete(light);
     }
   }
 
-  #retireState(seen: ReadonlySet<Object3D>): void {
+  #retireState(seen: { has(object: Object3D): boolean }): void {
     for (const object of this.#state.keys()) {
       if (!seen.has(object)) this.#state.delete(object);
     }
@@ -355,8 +363,9 @@ export class ProjectionMirror {
    * recognize returns false and the whole frame goes to the authored scene, because a scene lit
    * differently from the way the game lit it is a wrong picture, not a slow one.
    */
-  #syncLights(lights: readonly Light[]): string | undefined {
-    for (const light of lights) {
+  #syncLights(lights: readonly (Light | undefined)[], lightCount: number): string | undefined {
+    for (let index = 0; index < lightCount; index += 1) {
+      const light = lights[index] as Light;
       let proxy = this.#lightProxies.get(light);
       if (proxy === undefined) {
         const cloned = light.clone() as Light & { target?: Object3D };
@@ -476,8 +485,8 @@ export class ProjectionMirror {
    */
   #ensureBatch(group: IProjectionBatchGroup): IBatch | undefined {
     const existing = this.#batches.get(group);
-    if (existing !== undefined && existing.capacity >= group.members.length) return existing;
-    const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.members.length * BATCH_GROWTH));
+    if (existing !== undefined && existing.capacity >= group.memberCount) return existing;
+    const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH));
     const first = group.members[0] as Mesh;
     if (existing !== undefined) this.#disposeBatch(existing);
     return this.#createBatch(group, first, capacity);
@@ -637,7 +646,7 @@ export class ProjectionMirror {
   }
 
   #clearExactScratch(): void {
-    for (let index = 0; index < this.#exactLane.length; index += 1) {
+    for (let index = 0; index < this.#exactLaneCount; index += 1) {
       const entry = this.#exactLane[index] as IProjectionExactEntry;
       entry.object = undefined;
     }
@@ -645,7 +654,7 @@ export class ProjectionMirror {
       const entry = this.#extraExactPool[index] as IProjectionExactEntry;
       entry.object = undefined;
     }
-    this.#exactLane.length = 0;
+    this.#exactLaneCount = 0;
     this.#extraExactCount = 0;
   }
 
@@ -660,7 +669,6 @@ export class ProjectionMirror {
     this.#proxies.clear();
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
     this.#lightProxies.clear();
-    this.#lightMembership.clear();
     this.#state.clear();
     this.#exact.clear();
     this.#clearExactScratch();

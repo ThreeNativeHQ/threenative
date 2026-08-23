@@ -134,6 +134,17 @@ function countCollectionConstructors(run: () => void): { maps: number; sets: num
   return { maps, sets };
 }
 
+function trackArrayLengthWrites(array: unknown[]): { proxy: unknown[]; writes: () => number } {
+  let writes = 0;
+  const proxy = new Proxy(array, {
+    set(target, property, value, receiver) {
+      if (property === "length") writes += 1;
+      return Reflect.set(target, property, value, receiver);
+    },
+  });
+  return { proxy, writes: () => writes };
+}
+
 describe("SceneRenderProjection", () => {
   it("rejects a mesh floor that cannot be reached", () => {
     expect(() => new SceneRenderProjection(new Scene(), { minMeshes: 0 })).toThrow(
@@ -374,6 +385,63 @@ describe("SceneRenderProjection", () => {
     }
   });
 
+  it("should not churn settled scan storage at the 2,000-mesh workload", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 2000);
+    const workspace = createProjectionScanWorkspace();
+    const warmup = scanProjection(scene, 8, workspace);
+    expect(warmup.plan.action).toBe("project");
+    const group = warmup.plan.action === "project" ? warmup.plan.batchGroups[0] : undefined;
+    expect(group).toBeDefined();
+    releaseProjectionScanWorkspace(workspace);
+
+    const arrayNames = [
+      "eligible",
+      "exactLane",
+      "lights",
+      "batchGroups",
+      "belowFloor",
+      "activeGroups",
+      "walkStack",
+    ] as const;
+    const workspaceRecord = workspace as unknown as Record<string, unknown>;
+    const tracked = arrayNames.map((name) => {
+      const tracking = trackArrayLengthWrites(workspaceRecord[name] as unknown[]);
+      workspaceRecord[name] = tracking.proxy;
+      return tracking;
+    });
+    const memberTracking = trackArrayLengthWrites((group as { members: unknown[] }).members);
+    (group as { members: unknown[] }).members = memberTracking.proxy;
+    const originalSetClear = Set.prototype.clear;
+    const originalSetAdd = Set.prototype.add;
+    let setClears = 0;
+    let setAdds = 0;
+    Set.prototype.clear = function (): void {
+      setClears += 1;
+      originalSetClear.call(this);
+    };
+    Set.prototype.add = function <T>(this: Set<T>, value: T): Set<T> {
+      setAdds += 1;
+      return originalSetAdd.call(this, value);
+    };
+
+    try {
+      for (let frame = 0; frame < 5; frame += 1) {
+        const scan = scanProjection(scene, 8, workspace);
+        expect(scan.plan.action).toBe("project");
+        releaseProjectionScanWorkspace(workspace);
+      }
+    } finally {
+      Set.prototype.clear = originalSetClear;
+      Set.prototype.add = originalSetAdd;
+    }
+
+    const lengthWrites = tracked.reduce((total, tracking) => total + tracking.writes(), 0);
+    expect(lengthWrites + memberTracking.writes()).toBe(0);
+    expect(setClears).toBe(0);
+    expect(setAdds).toBe(0);
+  });
+
   it("should reclassify a material swap in the same frame", () => {
     const scene = new Scene();
     const first = new MeshStandardMaterial({ color: 0x446688 });
@@ -423,11 +491,13 @@ describe("SceneRenderProjection", () => {
     const exactEntry = workspace.exactEntryPool[0];
 
     expect(exactEntry?.object).toBe(sprite);
-    expect(group?.members).toHaveLength(8);
+    expect(group?.memberCount).toBe(8);
     releaseProjectionScanWorkspace(workspace);
 
     expect(exactEntry?.object).toBeUndefined();
-    expect(group?.members).toHaveLength(0);
+    expect(group?.memberCount).toBe(0);
+    expect(group?.members).toHaveLength(8);
+    expect(group?.members.every((member) => member === undefined)).toBe(true);
   });
 
   it("should retire removed lights with reused membership storage", () => {

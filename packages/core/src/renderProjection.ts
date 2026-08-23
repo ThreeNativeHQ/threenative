@@ -199,7 +199,7 @@ export class SceneRenderProjection {
         // The authored scene is not what the renderer is given while projecting, so nothing else
         // refreshes its world matrices. Every world transform the mirror copies is read after this.
         this.#source.updateMatrixWorld(true);
-        this.#mirror.prepare(scan.exactLane);
+        this.#mirror.prepare(scan.exactLane, scan.exactLaneCount);
         const lightFailure = this.#mirror.apply(scan.plan);
         if (lightFailure !== undefined) {
           this.#deoptimize("unsupportedLight", lightFailure);

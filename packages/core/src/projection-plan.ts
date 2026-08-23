@@ -6,10 +6,11 @@ import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjec
  * The scan-and-plan seam of the render projection (P2-3).
  *
  * Reading the authored scene and deciding what the mirror should do does not touch the mirror or
- * allocate a buffer. The scan owns one caller-provided workspace: its collections are cleared and
- * refilled in place, and the returned plan is consumed before the next scan. Keeping the decision
- * here means the kill-switch ratio, the mesh floor and the exact-lane classification are testable
- * without a mirror at all.
+ * allocate a buffer. The scan owns one caller-provided workspace: active counts are reset and
+ * source slots are overwritten in place, while each backing array keeps its high-water length. The
+ * seen index advances by generation, and the returned plan is consumed before the next scan. Keeping
+ * the decision here means the kill-switch ratio, the mesh floor and the exact-lane classification
+ * are testable without a mirror at all.
  */
 
 /**
@@ -145,6 +146,32 @@ export interface IProjectionExactEntry {
   reason: ProjectionExactReason;
 }
 
+export interface IProjectionSeen {
+  has(object: Object3D): boolean;
+}
+
+interface IProjectionSeenWorkspace extends IProjectionSeen {
+  add(object: Object3D): void;
+  begin(): void;
+}
+
+class ProjectionSeen implements IProjectionSeenWorkspace {
+  #generation = 0;
+  #generations = new WeakMap<Object3D, number>();
+
+  begin(): void {
+    this.#generation += 1;
+  }
+
+  add(object: Object3D): void {
+    this.#generations.set(object, this.#generation);
+  }
+
+  has(object: Object3D): boolean {
+    return this.#generations.get(object) === this.#generation;
+  }
+}
+
 /** A reusable identity group for one (geometry, material, flags) combination. */
 export interface IProjectionBatchGroup {
   readonly geometry: BufferGeometry;
@@ -152,21 +179,30 @@ export interface IProjectionBatchGroup {
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
   readonly layersMask: number;
-  readonly members: Mesh[];
+  /** High-water member storage; only the first `memberCount` slots belong to the current scan. */
+  readonly members: Array<Mesh | undefined>;
+  memberCount: number;
   activeScan: number;
 }
 
 /** All scan-owned storage. It never escapes the synchronous reconcile that owns it. */
 export interface IProjectionScanWorkspace {
-  readonly seen: Set<Object3D>;
-  readonly eligible: Mesh[];
+  readonly seen: IProjectionSeenWorkspace;
+  readonly eligible: Array<Mesh | undefined>;
+  eligibleCount: number;
   readonly exactLane: IProjectionExactEntry[];
   readonly exactEntryPool: IProjectionExactEntry[];
-  readonly lights: Light[];
-  readonly batchGroups: IProjectionBatchGroup[];
-  readonly belowFloor: Mesh[];
-  readonly activeGroups: IProjectionBatchGroup[];
-  readonly walkStack: Object3D[];
+  exactLaneCount: number;
+  readonly lights: Array<Light | undefined>;
+  lightCount: number;
+  readonly batchGroups: Array<IProjectionBatchGroup | undefined>;
+  batchGroupCount: number;
+  readonly belowFloor: Array<Mesh | undefined>;
+  belowFloorCount: number;
+  readonly activeGroups: Array<IProjectionBatchGroup | undefined>;
+  activeGroupCount: number;
+  readonly walkStack: Array<Object3D | undefined>;
+  walkStackCount: number;
   readonly groupsByGeometry: WeakMap<
     BufferGeometry,
     WeakMap<Material, Map<number, IProjectionBatchGroup>>
@@ -185,15 +221,19 @@ export interface IProjectionDeclinePlan {
 export interface IProjectionProjectPlan {
   readonly action: "project";
   /** Groups worth batching, sized before anything is built. */
-  readonly batchGroups: readonly IProjectionBatchGroup[];
+  readonly batchGroups: readonly (IProjectionBatchGroup | undefined)[];
+  readonly batchGroupCount: number;
   /** Group members below the batching floor: released from batches, drawn on the exact lane. */
-  readonly belowFloor: readonly Mesh[];
+  readonly belowFloor: readonly (Mesh | undefined)[];
+  readonly belowFloorCount: number;
   /** Objects keeping a draw of their own, with the reason each one did. */
   readonly exactLane: readonly IProjectionExactEntry[];
+  readonly exactLaneCount: number;
   /** The scene's lights, to be mirrored rather than moved out of the game's graph. */
-  readonly lights: readonly Light[];
+  readonly lights: readonly (Light | undefined)[];
+  readonly lightCount: number;
   /** Every object the walk saw, for the retirement sweep against sources that left the scene. */
-  readonly seen: ReadonlySet<Object3D>;
+  readonly seen: IProjectionSeen;
 }
 
 export type IProjectionPlan = IProjectionDeclinePlan | IProjectionProjectPlan;
@@ -201,24 +241,32 @@ export type IProjectionPlan = IProjectionDeclinePlan | IProjectionProjectPlan;
 export interface IProjectionScanResult {
   /** Exact-lane entries from the walk alone, before batching decisions add more. */
   readonly exactLane: readonly IProjectionExactEntry[];
+  readonly exactLaneCount: number;
   /** Decline without touching the mirror, or build what the plan describes. */
   readonly plan: IProjectionPlan;
   /** Renderables the authored scene holds — what an unoptimized frame would walk and draw. */
   readonly renderables: number;
-  readonly seen: ReadonlySet<Object3D>;
+  readonly seen: IProjectionSeen;
 }
 
 export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
   return {
-    seen: new Set(),
+    seen: new ProjectionSeen(),
     eligible: [],
+    eligibleCount: 0,
     exactLane: [],
     exactEntryPool: [],
+    exactLaneCount: 0,
     lights: [],
+    lightCount: 0,
     batchGroups: [],
+    batchGroupCount: 0,
     belowFloor: [],
+    belowFloorCount: 0,
     activeGroups: [],
+    activeGroupCount: 0,
     walkStack: [],
+    walkStackCount: 0,
     groupsByGeometry: new WeakMap(),
     scanNumber: 0,
   };
@@ -227,27 +275,50 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
 /**
  * Releases source references from the reusable scan storage after its plan is consumed.
  *
- * The arrays and identity maps stay reusable, but their members are borrowed from the authored
- * scene. Keeping those members in an inactive group or pooled exact entry would make a streamed
- * scene retain every mesh it had ever contained.
+ * The arrays and identity maps stay reusable at their high-water lengths, but their members are
+ * borrowed from the authored scene. Clearing active slots without truncating them avoids backing
+ * store churn; keeping those members in an inactive group or pooled exact entry would make a
+ * streamed scene retain every mesh it had ever contained.
  */
 export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
   for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
     const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
     entry.object = undefined;
   }
-  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
-    group.members.length = 0;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      group.members[member] = undefined;
+    }
+    group.memberCount = 0;
+    workspace.activeGroups[index] = undefined;
   }
-  workspace.seen.clear();
-  workspace.eligible.length = 0;
-  workspace.exactLane.length = 0;
-  workspace.lights.length = 0;
-  workspace.batchGroups.length = 0;
-  workspace.belowFloor.length = 0;
-  workspace.activeGroups.length = 0;
-  workspace.walkStack.length = 0;
+  for (let index = 0; index < workspace.eligibleCount; index += 1) {
+    workspace.eligible[index] = undefined;
+  }
+  for (let index = 0; index < workspace.exactLaneCount; index += 1) {
+    const entry = workspace.exactLane[index] as IProjectionExactEntry;
+    entry.object = undefined;
+  }
+  for (let index = 0; index < workspace.lightCount; index += 1) {
+    workspace.lights[index] = undefined;
+  }
+  for (let index = 0; index < workspace.batchGroupCount; index += 1) {
+    workspace.batchGroups[index] = undefined;
+  }
+  for (let index = 0; index < workspace.belowFloorCount; index += 1) {
+    workspace.belowFloor[index] = undefined;
+  }
+  for (let index = 0; index < workspace.walkStackCount; index += 1) {
+    workspace.walkStack[index] = undefined;
+  }
+  workspace.eligibleCount = 0;
+  workspace.exactLaneCount = 0;
+  workspace.lightCount = 0;
+  workspace.batchGroupCount = 0;
+  workspace.belowFloorCount = 0;
+  workspace.activeGroupCount = 0;
+  workspace.walkStackCount = 0;
 }
 
 function addExactEntry(
@@ -255,7 +326,7 @@ function addExactEntry(
   object: Object3D,
   reason: ProjectionExactReason,
 ): void {
-  const index = workspace.exactLane.length;
+  const index = workspace.exactLaneCount;
   let entry = workspace.exactEntryPool[index];
   if (entry === undefined) {
     entry = { object, reason };
@@ -264,7 +335,8 @@ function addExactEntry(
     entry.object = object;
     entry.reason = reason;
   }
-  workspace.exactLane.push(entry);
+  workspace.exactLane[index] = entry;
+  workspace.exactLaneCount += 1;
 }
 
 function batchFlagsOf(mesh: Mesh): number {
@@ -298,16 +370,19 @@ function addToBatchGroup(
       receiveShadow: mesh.receiveShadow,
       layersMask: mesh.layers.mask,
       members: [],
+      memberCount: 0,
       activeScan: 0,
     };
     byFlags.set(flags, group);
   }
   if (group.activeScan !== scanNumber) {
     group.activeScan = scanNumber;
-    group.members.length = 0;
-    workspace.activeGroups.push(group);
+    group.memberCount = 0;
+    workspace.activeGroups[workspace.activeGroupCount] = group;
+    workspace.activeGroupCount += 1;
   }
-  group.members.push(mesh);
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
 }
 
 interface IProjectionWalkState {
@@ -329,7 +404,8 @@ function visitProjectionObject(
     };
   }
   if (isLight(object)) {
-    workspace.lights.push(object);
+    workspace.lights[workspace.lightCount] = object;
+    workspace.lightCount += 1;
     return;
   }
   if ((object as { isLOD?: boolean }).isLOD === true) {
@@ -342,39 +418,46 @@ function visitProjectionObject(
   state.renderables += 1;
   workspace.seen.add(object);
   const reason = exactLaneReason(object);
-  if (reason === undefined && isMesh(object)) workspace.eligible.push(object);
-  else addExactEntry(workspace, object, reason ?? "unsupportedGeometry");
+  if (reason === undefined && isMesh(object)) {
+    workspace.eligible[workspace.eligibleCount] = object;
+    workspace.eligibleCount += 1;
+  } else addExactEntry(workspace, object, reason ?? "unsupportedGeometry");
 }
 
 function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IProjectionWalkState {
   const state: IProjectionWalkState = { renderables: 0 };
   for (let index = source.children.length - 1; index >= 0; index -= 1) {
-    workspace.walkStack.push(source.children[index] as Object3D);
+    workspace.walkStack[workspace.walkStackCount] = source.children[index] as Object3D;
+    workspace.walkStackCount += 1;
   }
-  while (workspace.walkStack.length > 0) {
-    const object = workspace.walkStack.pop() as Object3D;
+  while (workspace.walkStackCount > 0) {
+    workspace.walkStackCount -= 1;
+    const object = workspace.walkStack[workspace.walkStackCount] as Object3D;
+    workspace.walkStack[workspace.walkStackCount] = undefined;
     visitProjectionObject(object, workspace, state);
     if (isLight(object) || (object as { isLOD?: boolean }).isLOD === true) continue;
     for (let index = object.children.length - 1; index >= 0; index -= 1) {
-      workspace.walkStack.push(object.children[index] as Object3D);
+      workspace.walkStack[workspace.walkStackCount] = object.children[index] as Object3D;
+      workspace.walkStackCount += 1;
     }
   }
   return state;
 }
 
 function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
-  for (let index = 0; index < workspace.eligible.length; index += 1) {
+  for (let index = 0; index < workspace.eligibleCount; index += 1) {
     addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
   }
 }
 
 function predictDraws(workspace: IProjectionScanWorkspace): number {
-  let predictedDraws = workspace.exactLane.length;
-  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+  let predictedDraws = workspace.exactLaneCount;
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
-    if (group.members.length < MIN_BATCH_MEMBERS) predictedDraws += group.members.length;
+    if (group.memberCount < MIN_BATCH_MEMBERS) predictedDraws += group.memberCount;
     else {
-      workspace.batchGroups.push(group);
+      workspace.batchGroups[workspace.batchGroupCount] = group;
+      workspace.batchGroupCount += 1;
       predictedDraws += 1;
     }
   }
@@ -382,11 +465,12 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
 }
 
 function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
-  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
-    if (group.members.length >= MIN_BATCH_MEMBERS) continue;
-    for (let member = 0; member < group.members.length; member += 1) {
-      workspace.belowFloor.push(group.members[member] as Mesh);
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      workspace.belowFloor[workspace.belowFloorCount] = group.members[member] as Mesh;
+      workspace.belowFloorCount += 1;
     }
   }
 }
@@ -405,12 +489,14 @@ export function scanProjection(
   workspace: IProjectionScanWorkspace,
 ): IProjectionScanResult {
   releaseProjectionScanWorkspace(workspace);
+  workspace.seen.begin();
   workspace.scanNumber += 1;
   const state = walkProjection(source, workspace);
 
   if (state.blocked !== undefined) {
     return {
       exactLane: workspace.exactLane,
+      exactLaneCount: workspace.exactLaneCount,
       plan: {
         action: "decline",
         reasonCode: state.blocked.code,
@@ -420,9 +506,10 @@ export function scanProjection(
       seen: workspace.seen,
     };
   }
-  if (workspace.eligible.length < minMeshes) {
+  if (workspace.eligibleCount < minMeshes) {
     return {
       exactLane: workspace.exactLane,
+      exactLaneCount: workspace.exactLaneCount,
       plan: {
         action: "decline",
         reasonCode: "belowMeshFloor",
@@ -438,6 +525,7 @@ export function scanProjection(
   if (predictedDraws > state.renderables * WORTHWHILE_DRAW_RATIO) {
     return {
       exactLane: workspace.exactLane,
+      exactLaneCount: workspace.exactLaneCount,
       plan: {
         action: "decline",
         reasonCode: "notWorthwhile",
@@ -451,12 +539,17 @@ export function scanProjection(
   collectBelowFloor(workspace);
   return {
     exactLane: workspace.exactLane,
+    exactLaneCount: workspace.exactLaneCount,
     plan: {
       action: "project",
       batchGroups: workspace.batchGroups,
+      batchGroupCount: workspace.batchGroupCount,
       belowFloor: workspace.belowFloor,
+      belowFloorCount: workspace.belowFloorCount,
       exactLane: workspace.exactLane,
+      exactLaneCount: workspace.exactLaneCount,
       lights: workspace.lights,
+      lightCount: workspace.lightCount,
       seen: workspace.seen,
     },
     renderables: state.renderables,
