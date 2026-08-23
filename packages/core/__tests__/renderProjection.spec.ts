@@ -58,6 +58,10 @@ function drawCandidates(root: Object3D): Object3D[] {
   return found;
 }
 
+function isLightObject(object: Object3D): boolean {
+  return (object as { isLight?: boolean }).isLight === true;
+}
+
 /** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
 function graphSnapshot(scene: Scene): string {
   const rows: string[] = [];
@@ -79,6 +83,36 @@ function projected(scene: Scene, frames = 1, minMeshes = 8) {
   const projection = new SceneRenderProjection(scene, { minMeshes });
   for (let frame = 0; frame < frames; frame += 1) projection.reconcile();
   return projection;
+}
+
+function countCollectionConstructors(run: () => void): { maps: number; sets: number } {
+  const originalMap = globalThis.Map;
+  const originalSet = globalThis.Set;
+  let maps = 0;
+  let sets = 0;
+
+  class CountingMap<K, V> extends originalMap<K, V> {
+    constructor(entries?: Iterable<readonly [K, V]> | null) {
+      super(entries);
+      maps += 1;
+    }
+  }
+  class CountingSet<T> extends originalSet<T> {
+    constructor(values?: Iterable<T> | null) {
+      super(values);
+      sets += 1;
+    }
+  }
+
+  globalThis.Map = CountingMap;
+  globalThis.Set = CountingSet;
+  try {
+    run();
+  } finally {
+    globalThis.Map = originalMap;
+    globalThis.Set = originalSet;
+  }
+  return { maps, sets };
 }
 
 describe("SceneRenderProjection", () => {
@@ -291,6 +325,81 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.projectedObjects).toBe(120);
     expect(projection.report.resultDrawCandidates).toBe(1);
     expect(projection.deoptimized).toBe(false);
+  });
+
+  it("should reuse projected-plan storage across settled frames", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 250);
+    const projection = projected(scene, 2);
+    const originalJoin = Array.prototype.join;
+    let batchKeyJoins = 0;
+    const joins = vi.spyOn(Array.prototype, "join").mockImplementation(function (
+      this: unknown[],
+      separator?: string,
+    ) {
+      if (separator === "|" && this.length === 5) batchKeyJoins += 1;
+      return originalJoin.call(this, separator);
+    });
+
+    try {
+      const allocations = countCollectionConstructors(() => {
+        for (let frame = 0; frame < 10; frame += 1) projection.reconcile();
+      });
+
+      expect(batchKeyJoins).toBe(0);
+      expect(allocations).toEqual({ maps: 0, sets: 0 });
+      expect(projection.report.projectedObjects).toBe(250);
+      expect(projection.report.resultDrawCandidates).toBe(1);
+    } finally {
+      joins.mockRestore();
+    }
+  });
+
+  it("should reclassify a material swap in the same frame", () => {
+    const scene = new Scene();
+    const first = new MeshStandardMaterial({ color: 0x446688 });
+    const second = new MeshStandardMaterial({ color: 0x886644 });
+    const firstMeshes = fill(scene, first, 200);
+    fill(scene, second, 100);
+    const projection = projected(scene, 2);
+    const changed = firstMeshes[0] as Mesh;
+
+    changed.material = second;
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.batches).toBe(2);
+    expect(projection.report.projectedObjects).toBe(300);
+    expect(projection.inspect(changed)?.lane).toBe("batched");
+    expect(projection.drawsWith(second)).toBe(true);
+  });
+
+  it("should retire removed lights with reused membership storage", () => {
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 250);
+    const projection = projected(scene, 2);
+
+    scene.remove(light);
+    const allocations = countCollectionConstructors(() => projection.reconcile());
+
+    let mirroredLights = 0;
+    projection.root.traverse((object) => {
+      if (isLightObject(object)) mirroredLights += 1;
+    });
+    expect(allocations.sets).toBe(0);
+    expect(mirroredLights).toBe(0);
+
+    scene.add(light);
+    projection.reconcile();
+    scene.remove(light);
+    projection.reconcile();
+    mirroredLights = 0;
+    projection.root.traverse((object) => {
+      if (isLightObject(object)) mirroredLights += 1;
+    });
+    expect(mirroredLights).toBe(0);
   });
 });
 

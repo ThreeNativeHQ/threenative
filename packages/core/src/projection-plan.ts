@@ -5,11 +5,11 @@ import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjec
 /**
  * The scan-and-plan seam of the render projection (P2-3).
  *
- * Reading the authored scene and deciding what the mirror should do are pure: nothing here
- * touches the mirror, allocates a buffer, or mutates anything. The output is an immutable plan —
- * either a decline naming why the frame goes back to the authored scene, or a project description
- * the apply seam (`projection-apply.ts`) executes. Keeping the decision here means the kill-switch
- * ratio, the mesh floor and the exact-lane classification are testable without a mirror at all.
+ * Reading the authored scene and deciding what the mirror should do does not touch the mirror or
+ * allocate a buffer. The scan owns one caller-provided workspace: its collections are cleared and
+ * refilled in place, and the returned plan is consumed before the next scan. Keeping the decision
+ * here means the kill-switch ratio, the mesh floor and the exact-lane classification are testable
+ * without a mirror at all.
  */
 
 /**
@@ -37,26 +37,6 @@ const MIN_BATCH_MEMBERS = 4;
  */
 const WORTHWHILE_DRAW_RATIO = 0.75;
 
-/**
- * Everything that has to agree before two meshes may share one draw.
- *
- * A batch is a single object to the renderer, so every property the renderer reads per object
- * rather than per vertex has to be identical across the batch or one of them is being overruled.
- * Keying on the material alone merges a shadow caster with a non-caster and silently picks one
- * behaviour for both — a level that set five hundred casters rendering two of them, which is
- * exactly the class of "reports success, draws the wrong thing" this design exists to prevent.
- */
-function batchKeyOf(mesh: Mesh): string {
-  const material = mesh.material as Material;
-  return [
-    mesh.geometry.uuid,
-    material.uuid,
-    mesh.castShadow ? "cast" : "-",
-    mesh.receiveShadow ? "receive" : "-",
-    mesh.layers.mask,
-  ].join("|");
-}
-
 function isMesh(object: Object3D): object is Mesh {
   return (object as Mesh).isMesh === true;
 }
@@ -76,6 +56,53 @@ export function isRenderable(object: Object3D): boolean {
   );
 }
 
+type ProjectionCandidate = Mesh & {
+  isInstancedMesh?: boolean;
+  isBatchedMesh?: boolean;
+  isSkinnedMesh?: boolean;
+  isSprite?: boolean;
+  isPoints?: boolean;
+  isLine?: boolean;
+  isLOD?: boolean;
+  customDepthMaterial?: unknown;
+  customDistanceMaterial?: unknown;
+};
+
+function specializedLaneReason(
+  object: Object3D,
+  candidate: ProjectionCandidate,
+): ProjectionExactReason | undefined {
+  if (candidate.isSprite === true) return "sprite";
+  if (candidate.isPoints === true || candidate.isLine === true) return "points";
+  if (candidate.isInstancedMesh === true || candidate.isBatchedMesh === true) return "instanced";
+  if (candidate.isSkinnedMesh === true) return "skinned";
+  if (Array.isArray(candidate.material)) return "multiMaterial";
+  if (candidate.customDepthMaterial != null || candidate.customDistanceMaterial != null) {
+    return "customDepthMaterial";
+  }
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    if ((node as { isLOD?: boolean }).isLOD === true) return "lod";
+  }
+  return undefined;
+}
+
+function hasMorphAttributes(geometry: BufferGeometry): boolean {
+  for (const name in geometry.morphAttributes) {
+    if (Object.hasOwn(geometry.morphAttributes, name)) return true;
+  }
+  return false;
+}
+
+function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | undefined {
+  if (geometry.getAttribute("position") === undefined) return "unsupportedGeometry";
+  if (hasMorphAttributes(geometry)) return "morph";
+  const range = geometry.drawRange;
+  if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count))) {
+    return "drawRange";
+  }
+  return undefined;
+}
+
 /**
  * Why a renderable cannot join a batch, or `undefined` when it can.
  *
@@ -84,37 +111,13 @@ export function isRenderable(object: Object3D): boolean {
  * ineligible set to be enumerated before a low draw count means anything.
  */
 export function exactLaneReason(object: Object3D): ProjectionExactReason | undefined {
-  const candidate = object as Mesh & {
-    isInstancedMesh?: boolean;
-    isBatchedMesh?: boolean;
-    isSkinnedMesh?: boolean;
-    isSprite?: boolean;
-    isPoints?: boolean;
-    isLine?: boolean;
-    isLOD?: boolean;
-    customDepthMaterial?: unknown;
-    customDistanceMaterial?: unknown;
-  };
-  if (candidate.isSprite === true) return "sprite";
-  if (candidate.isPoints === true || candidate.isLine === true) return "points";
-  if (candidate.isInstancedMesh === true || candidate.isBatchedMesh === true) return "instanced";
-  if (candidate.isSkinnedMesh === true) return "skinned";
-  // An array material has no single batched equivalent, and the geometry's groups are not the
-  // test: three consults them only for array materials, and a stock BoxGeometry carries six.
-  if (Array.isArray(candidate.material)) return "multiMaterial";
-  if (candidate.customDepthMaterial != null || candidate.customDistanceMaterial != null) {
-    return "customDepthMaterial";
-  }
-  for (let node: Object3D | null = object; node !== null; node = node.parent) {
-    if ((node as { isLOD?: boolean }).isLOD === true) return "lod";
-  }
+  const candidate = object as ProjectionCandidate;
+  const specialized = specializedLaneReason(object, candidate);
+  if (specialized !== undefined) return specialized;
   const geometry = candidate.geometry;
   if (geometry === undefined) return "unsupportedGeometry";
-  if (geometry.getAttribute("position") === undefined) return "unsupportedGeometry";
-  if (Object.keys(geometry.morphAttributes ?? {}).length > 0) return "morph";
-  const range = geometry.drawRange;
-  if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count)))
-    return "drawRange";
+  const geometryReason = geometryLaneReason(geometry);
+  if (geometryReason !== undefined) return geometryReason;
   // A batch is one draw, so it has one place in the transparency sort. Objects that asked for a
   // specific place keep their own draw and their own place in it.
   if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
@@ -138,8 +141,37 @@ function hasRenderHook(object: Object3D): boolean {
 
 /** Why a source cannot share a batch, or the whole classification for one frame. */
 export interface IProjectionExactEntry {
-  readonly object: Object3D;
-  readonly reason: ProjectionExactReason;
+  object: Object3D;
+  reason: ProjectionExactReason;
+}
+
+/** A reusable identity group for one (geometry, material, flags) combination. */
+export interface IProjectionBatchGroup {
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly layersMask: number;
+  readonly members: Mesh[];
+  activeScan: number;
+}
+
+/** All scan-owned storage. It never escapes the synchronous reconcile that owns it. */
+export interface IProjectionScanWorkspace {
+  readonly seen: Set<Object3D>;
+  readonly eligible: Mesh[];
+  readonly exactLane: IProjectionExactEntry[];
+  readonly exactEntryPool: IProjectionExactEntry[];
+  readonly lights: Light[];
+  readonly batchGroups: IProjectionBatchGroup[];
+  readonly belowFloor: Mesh[];
+  readonly activeGroups: IProjectionBatchGroup[];
+  readonly walkStack: Object3D[];
+  readonly groupsByGeometry: WeakMap<
+    BufferGeometry,
+    WeakMap<Material, Map<number, IProjectionBatchGroup>>
+  >;
+  scanNumber: number;
 }
 
 /** Gives the frame back to the authored scene, naming why. */
@@ -152,8 +184,8 @@ export interface IProjectionDeclinePlan {
 /** Everything the apply seam needs to build and maintain this frame's mirror. */
 export interface IProjectionProjectPlan {
   readonly action: "project";
-  /** Groups worth batching, keyed by their batch key, sized before anything is built. */
-  readonly batchGroups: ReadonlyMap<string, Mesh[]>;
+  /** Groups worth batching, sized before anything is built. */
+  readonly batchGroups: readonly IProjectionBatchGroup[];
   /** Group members below the batching floor: released from batches, drawn on the exact lane. */
   readonly belowFloor: readonly Mesh[];
   /** Objects keeping a draw of their own, with the reason each one did. */
@@ -167,13 +199,170 @@ export interface IProjectionProjectPlan {
 export type IProjectionPlan = IProjectionDeclinePlan | IProjectionProjectPlan;
 
 export interface IProjectionScanResult {
-  /** Exact-lane tallies from the walk alone, before batching decisions add more. */
-  readonly exactEntries: readonly ProjectionExactReason[];
+  /** Exact-lane entries from the walk alone, before batching decisions add more. */
+  readonly exactLane: readonly IProjectionExactEntry[];
   /** Decline without touching the mirror, or build what the plan describes. */
   readonly plan: IProjectionPlan;
   /** Renderables the authored scene holds — what an unoptimized frame would walk and draw. */
   readonly renderables: number;
   readonly seen: ReadonlySet<Object3D>;
+}
+
+export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
+  return {
+    seen: new Set(),
+    eligible: [],
+    exactLane: [],
+    exactEntryPool: [],
+    lights: [],
+    batchGroups: [],
+    belowFloor: [],
+    activeGroups: [],
+    walkStack: [],
+    groupsByGeometry: new WeakMap(),
+    scanNumber: 0,
+  };
+}
+
+function addExactEntry(
+  workspace: IProjectionScanWorkspace,
+  object: Object3D,
+  reason: ProjectionExactReason,
+): void {
+  const index = workspace.exactLane.length;
+  let entry = workspace.exactEntryPool[index];
+  if (entry === undefined) {
+    entry = { object, reason };
+    workspace.exactEntryPool.push(entry);
+  } else {
+    entry.object = object;
+    entry.reason = reason;
+  }
+  workspace.exactLane.push(entry);
+}
+
+function batchFlagsOf(mesh: Mesh): number {
+  return (mesh.layers.mask >>> 0) * 4 + (mesh.castShadow ? 2 : 0) + (mesh.receiveShadow ? 1 : 0);
+}
+
+function addToBatchGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: Mesh,
+  scanNumber: number,
+): void {
+  const geometry = mesh.geometry;
+  const material = mesh.material as Material;
+  let byMaterial = workspace.groupsByGeometry.get(geometry);
+  if (byMaterial === undefined) {
+    byMaterial = new WeakMap();
+    workspace.groupsByGeometry.set(geometry, byMaterial);
+  }
+  let byFlags = byMaterial.get(material);
+  if (byFlags === undefined) {
+    byFlags = new Map();
+    byMaterial.set(material, byFlags);
+  }
+  const flags = batchFlagsOf(mesh);
+  let group = byFlags.get(flags);
+  if (group === undefined) {
+    group = {
+      geometry,
+      material,
+      castShadow: mesh.castShadow,
+      receiveShadow: mesh.receiveShadow,
+      layersMask: mesh.layers.mask,
+      members: [],
+      activeScan: 0,
+    };
+    byFlags.set(flags, group);
+  }
+  if (group.activeScan !== scanNumber) {
+    group.activeScan = scanNumber;
+    group.members.length = 0;
+    workspace.activeGroups.push(group);
+  }
+  group.members.push(mesh);
+}
+
+interface IProjectionWalkState {
+  renderables: number;
+  blocked?: { code: ProjectionReasonCode; reason: string };
+}
+
+function visitProjectionObject(
+  object: Object3D,
+  workspace: IProjectionScanWorkspace,
+  state: IProjectionWalkState,
+): void {
+  // A hook is handed the object being drawn, and neither a batch nor a proxy can hand back the
+  // game's own object. The frame goes to the authored scene instead.
+  if (state.blocked === undefined && hasRenderHook(object)) {
+    state.blocked = {
+      code: "renderHook",
+      reason: "an object carries its own onBeforeRender/onAfterRender",
+    };
+  }
+  if (isLight(object)) {
+    workspace.lights.push(object);
+    return;
+  }
+  if ((object as { isLOD?: boolean }).isLOD === true) {
+    state.renderables += 1;
+    workspace.seen.add(object);
+    addExactEntry(workspace, object, "lod");
+    return;
+  }
+  if (!isRenderable(object)) return;
+  state.renderables += 1;
+  workspace.seen.add(object);
+  const reason = exactLaneReason(object);
+  if (reason === undefined && isMesh(object)) workspace.eligible.push(object);
+  else addExactEntry(workspace, object, reason ?? "unsupportedGeometry");
+}
+
+function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IProjectionWalkState {
+  const state: IProjectionWalkState = { renderables: 0 };
+  for (let index = source.children.length - 1; index >= 0; index -= 1) {
+    workspace.walkStack.push(source.children[index] as Object3D);
+  }
+  while (workspace.walkStack.length > 0) {
+    const object = workspace.walkStack.pop() as Object3D;
+    visitProjectionObject(object, workspace, state);
+    if (isLight(object) || (object as { isLOD?: boolean }).isLOD === true) continue;
+    for (let index = object.children.length - 1; index >= 0; index -= 1) {
+      workspace.walkStack.push(object.children[index] as Object3D);
+    }
+  }
+  return state;
+}
+
+function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
+  for (let index = 0; index < workspace.eligible.length; index += 1) {
+    addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
+  }
+}
+
+function predictDraws(workspace: IProjectionScanWorkspace): number {
+  let predictedDraws = workspace.exactLane.length;
+  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.members.length < MIN_BATCH_MEMBERS) predictedDraws += group.members.length;
+    else {
+      workspace.batchGroups.push(group);
+      predictedDraws += 1;
+    }
+  }
+  return predictedDraws;
+}
+
+function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.activeGroups.length; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.members.length >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.members.length; member += 1) {
+      workspace.belowFloor.push(group.members[member] as Mesh);
+    }
+  }
 }
 
 /**
@@ -184,120 +373,74 @@ export interface IProjectionScanResult {
  * `Object3D.traverse`, because some subtrees must be mirrored whole and not descended into — an
  * `LOD` chooses one level per frame on itself, so its levels belong to its stand-in.
  */
-export function scanProjection(source: Scene, minMeshes: number): IProjectionScanResult {
-  const seen = new Set<Object3D>();
-  const eligible: Mesh[] = [];
-  const exactLane: IProjectionExactEntry[] = [];
-  const lights: Light[] = [];
-  let renderables = 0;
-  let blocked: { code: ProjectionReasonCode; reason: string } | undefined;
+export function scanProjection(
+  source: Scene,
+  minMeshes: number,
+  workspace: IProjectionScanWorkspace,
+): IProjectionScanResult {
+  workspace.seen.clear();
+  workspace.eligible.length = 0;
+  workspace.exactLane.length = 0;
+  workspace.lights.length = 0;
+  workspace.batchGroups.length = 0;
+  workspace.belowFloor.length = 0;
+  workspace.activeGroups.length = 0;
+  workspace.walkStack.length = 0;
+  workspace.scanNumber += 1;
+  const state = walkProjection(source, workspace);
 
-  const walk = (object: Object3D): void => {
-    // A hook is handed the object being drawn, and neither a batch nor a proxy can hand back the
-    // game's own object. The frame goes to the authored scene instead.
-    if (blocked === undefined && hasRenderHook(object)) {
-      blocked = {
-        code: "renderHook",
-        reason: "an object carries its own onBeforeRender/onAfterRender",
-      };
-    }
-    if (isLight(object)) {
-      lights.push(object);
-      return;
-    }
-    if ((object as { isLOD?: boolean }).isLOD === true) {
-      renderables += 1;
-      seen.add(object);
-      exactLane.push({ object, reason: "lod" });
-      return;
-    }
-    if (isRenderable(object)) {
-      renderables += 1;
-      seen.add(object);
-      const reason = exactLaneReason(object);
-      if (reason === undefined && isMesh(object)) eligible.push(object);
-      else exactLane.push({ object, reason: reason ?? "unsupportedGeometry" });
-    }
-    for (const child of object.children) walk(child);
-  };
-  for (const child of source.children) walk(child);
-
-  const exactEntries = exactLane.map((entry) => entry.reason);
-
-  if (blocked !== undefined) {
+  if (state.blocked !== undefined) {
     return {
-      exactEntries,
-      plan: { action: "decline", reasonCode: blocked.code, reason: blocked.reason },
-      renderables,
-      seen,
+      exactLane: workspace.exactLane,
+      plan: {
+        action: "decline",
+        reasonCode: state.blocked.code,
+        reason: state.blocked.reason,
+      },
+      renderables: state.renderables,
+      seen: workspace.seen,
     };
   }
-  if (eligible.length < minMeshes) {
+  if (workspace.eligible.length < minMeshes) {
     return {
-      exactEntries,
+      exactLane: workspace.exactLane,
       plan: {
         action: "decline",
         reasonCode: "belowMeshFloor",
         reason: `fewer than ${minMeshes} batchable meshes; the mirror would cost more than it saves`,
       },
-      renderables,
-      seen,
+      renderables: state.renderables,
+      seen: workspace.seen,
     };
   }
 
-  // Grouped before anything is built, so each batch is created once at the size it actually
-  // needs. Sizing from the first mesh and growing into the rest rebuilds the batch repeatedly
-  // during the very frame that populates it.
-  const byKey = new Map<string, Mesh[]>();
-  for (const mesh of eligible) {
-    const key = batchKeyOf(mesh);
-    const group = byKey.get(key);
-    if (group === undefined) byKey.set(key, [mesh]);
-    else group.push(mesh);
-  }
-
-  // Predicted before anything is built, because building is the expensive part. A group too small
-  // to be worth an instanced draw contributes one draw per member exactly as it does now; a group
-  // worth batching contributes one.
-  let predictedDraws = exactLane.length;
-  const worthBatching = new Map<string, Mesh[]>();
-  for (const [key, group] of byKey) {
-    if (group.length < MIN_BATCH_MEMBERS) {
-      predictedDraws += group.length;
-      continue;
-    }
-    worthBatching.set(key, group);
-    predictedDraws += 1;
-  }
-
-  // The kill switch, applied per frame rather than per release. An optimizer that does not
-  // measurably reduce the renderer's work has no reason to run, and one that increases it is a
-  // defect however correct its output would have been.
-  if (predictedDraws > renderables * WORTHWHILE_DRAW_RATIO) {
+  groupEligibleMeshes(workspace, workspace.scanNumber);
+  const predictedDraws = predictDraws(workspace);
+  if (predictedDraws > state.renderables * WORTHWHILE_DRAW_RATIO) {
     return {
-      exactEntries,
+      exactLane: workspace.exactLane,
       plan: {
         action: "decline",
         reasonCode: "notWorthwhile",
-        reason: `projecting would draw ${predictedDraws} of ${renderables} candidates, which is not worth its own cost`,
+        reason: `projecting would draw ${predictedDraws} of ${state.renderables} candidates, which is not worth its own cost`,
       },
-      renderables,
-      seen,
+      renderables: state.renderables,
+      seen: workspace.seen,
     };
   }
 
-  // Groups below the floor join the objects that were never eligible. They keep their own draw,
-  // which is what they had.
-  const belowFloor: Mesh[] = [];
-  for (const [key, group] of byKey) {
-    if (worthBatching.has(key)) continue;
-    for (const mesh of group) belowFloor.push(mesh);
-  }
-
+  collectBelowFloor(workspace);
   return {
-    exactEntries,
-    plan: { action: "project", batchGroups: worthBatching, belowFloor, exactLane, lights, seen },
-    renderables,
-    seen,
+    exactLane: workspace.exactLane,
+    plan: {
+      action: "project",
+      batchGroups: workspace.batchGroups,
+      belowFloor: workspace.belowFloor,
+      exactLane: workspace.exactLane,
+      lights: workspace.lights,
+      seen: workspace.seen,
+    },
+    renderables: state.renderables,
+    seen: workspace.seen,
   };
 }
