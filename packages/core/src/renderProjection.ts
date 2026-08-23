@@ -1,7 +1,12 @@
 import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
 
 import { ProjectionMirror } from "./projection-apply.js";
-import { isRenderable, scanProjection } from "./projection-plan.js";
+import {
+  createProjectionScanWorkspace,
+  isRenderable,
+  releaseProjectionScanWorkspace,
+  scanProjection,
+} from "./projection-plan.js";
 
 /**
  * An optimizer that the game never has to know about.
@@ -112,6 +117,7 @@ export class SceneRenderProjection {
   readonly #minMeshes: number;
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
   readonly #mirror = new ProjectionMirror();
+  readonly #scanWorkspace = createProjectionScanWorkspace();
   #deoptimized = true;
   #reasonCode: ProjectionReasonCode = "belowMeshFloor";
   #reason: string | undefined;
@@ -182,25 +188,29 @@ export class SceneRenderProjection {
     // Scan and decide without touching the mirror; then either build the plan or decline whole.
     // The scan reads no world matrices, so it runs before the forced pass and the pass only runs
     // when its result is actually needed.
-    const scan = scanProjection(this.#source, this.#minMeshes);
-    this.#sourceRenderables = scan.renderables;
-    this.#framesSinceDeclineScan = 0;
-    if (scan.plan.action === "decline") {
-      this.#mirror.releaseAll();
-      this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
-    } else {
-      // The authored scene is not what the renderer is given while projecting, so nothing else
-      // refreshes its world matrices. Every world transform the mirror copies is read after this.
-      this.#source.updateMatrixWorld(true);
-      this.#mirror.prepare(scan.exactEntries);
-      const lightFailure = this.#mirror.apply(scan.plan);
-      if (lightFailure !== undefined) {
-        this.#deoptimize("unsupportedLight", lightFailure);
+    try {
+      const scan = scanProjection(this.#source, this.#minMeshes, this.#scanWorkspace);
+      this.#sourceRenderables = scan.renderables;
+      this.#framesSinceDeclineScan = 0;
+      if (scan.plan.action === "decline") {
+        this.#mirror.releaseAll();
+        this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
       } else {
-        this.#deoptimized = false;
-        this.#reasonCode = "projected";
-        this.#reason = undefined;
+        // The authored scene is not what the renderer is given while projecting, so nothing else
+        // refreshes its world matrices. Every world transform the mirror copies is read after this.
+        this.#source.updateMatrixWorld(true);
+        this.#mirror.prepare(scan.exactLane, scan.exactLaneCount);
+        const lightFailure = this.#mirror.apply(scan.plan);
+        if (lightFailure !== undefined) {
+          this.#deoptimize("unsupportedLight", lightFailure);
+        } else {
+          this.#deoptimized = false;
+          this.#reasonCode = "projected";
+          this.#reason = undefined;
+        }
       }
+    } finally {
+      releaseProjectionScanWorkspace(this.#scanWorkspace);
     }
 
     const elapsed = (globalThis.performance?.now() ?? 0) - startedAt;

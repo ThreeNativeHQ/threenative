@@ -17,7 +17,11 @@ import {
 } from "three";
 
 import { isLight } from "./projection-plan.js";
-import type { IProjectionProjectPlan } from "./projection-plan.js";
+import type {
+  IProjectionBatchGroup,
+  IProjectionExactEntry,
+  IProjectionProjectPlan,
+} from "./projection-plan.js";
 import type { ProjectionExactReason } from "./renderProjection.js";
 
 /**
@@ -55,7 +59,7 @@ const SORT_BATCH_OBJECTS = false;
 
 interface IBatch {
   readonly mesh: InstancedMesh;
-  readonly key: string;
+  readonly group: IProjectionBatchGroup;
   readonly geometry: BufferGeometry;
   readonly material: Material;
   /** Source object per instance slot, so a released slot can be reused rather than leaked. */
@@ -72,48 +76,8 @@ interface ISourceState {
   visible: boolean;
   geometry: BufferGeometry | undefined;
   material: Material | Material[] | undefined;
-  /**
-   * The batch this source is an instance of, and the key that batch was chosen by. Both are needed
-   * to notice that a source has stopped belonging where it is — a mesh whose `castShadow` the game
-   * just turned on has not moved and has not changed material, but it can no longer share a draw
-   * with meshes that do not cast.
-   */
-  batchKey: string;
-  /**
-   * Retained for the exact lane's bookkeeping only. Batched geometry needs no revision tracking:
-   * the batch references the game's own `BufferGeometry` rather than copying it, so an attribute
-   * the game streams into and marks `needsUpdate` is uploaded by three.js itself.
-   */
-  geometryVersion: number;
-}
-
-/**
- * Everything that has to agree before two meshes may share one draw.
- *
- * A batch is a single object to the renderer, so every property the renderer reads per object
- * rather than per vertex has to be identical across the batch or one of them is being overruled.
- * Keying on the material alone merges a shadow caster with a non-caster and silently picks one
- * behaviour for both — a level that set five hundred casters rendering two of them, which is
- * exactly the class of "reports success, draws the wrong thing" this design exists to prevent.
- */
-function batchKeyOf(mesh: Mesh): string {
-  const material = mesh.material as Material;
-  return [
-    mesh.geometry.uuid,
-    material.uuid,
-    mesh.castShadow ? "cast" : "-",
-    mesh.receiveShadow ? "receive" : "-",
-    mesh.layers.mask,
-  ].join("|");
-}
-
-/** The revision of a geometry's own data, so a streamed update is noticed and re-uploaded. */
-function geometryVersionOf(geometry: BufferGeometry): number {
-  let version = geometry.getIndex()?.version ?? 0;
-  for (const name of Object.keys(geometry.attributes)) {
-    version += (geometry.attributes[name] as { version?: number } | undefined)?.version ?? 0;
-  }
-  return version;
+  /** The batch this source is an instance of, so a lane change releases the old slot directly. */
+  batch: IBatch;
 }
 
 /** Element-wise equality, which is what "did this object move" reduces to. */
@@ -124,6 +88,12 @@ function matrixEquals(a: Matrix4, b: Matrix4): boolean {
     if (left[index] !== right[index]) return false;
   }
   return true;
+}
+
+function exactObject(entry: IProjectionExactEntry): Object3D {
+  if (entry.object === undefined)
+    throw new Error("Projection exact entry was cleared before apply.");
+  return entry.object;
 }
 
 /**
@@ -200,12 +170,18 @@ function copySpecializedState(source: Object3D, target: Object3D): void {
 export class ProjectionMirror {
   /** Handed to the renderer whenever the projection is faithful. Never shown to the game. */
   readonly scene = new Scene();
-  readonly #batches = new Map<string, IBatch>();
+  readonly #batches = new Map<IProjectionBatchGroup, IBatch>();
   readonly #state = new Map<Object3D, ISourceState>();
   /** Exact-lane stand-ins, keyed by the source they mirror. */
   readonly #proxies = new Map<Object3D, Object3D>();
   readonly #lightProxies = new Map<Light, Light>();
-  #exact = new Map<ProjectionExactReason, number>();
+  readonly #exact = new Map<ProjectionExactReason, number>();
+  readonly #exactLane: IProjectionExactEntry[] = [];
+  readonly #extraExactPool: IProjectionExactEntry[] = [];
+  readonly #lightMembership = new WeakMap<Light, number>();
+  #lightGeneration = 0;
+  #exactLaneCount = 0;
+  #extraExactCount = 0;
   #projectedObjects = 0;
   #compileMs = 0;
 
@@ -229,11 +205,16 @@ export class ProjectionMirror {
     return this.#compileMs;
   }
 
-  /** Rebuilds the per-frame exact-lane tallies from the scan, before any batching decision. */
-  prepare(exactEntries: readonly ProjectionExactReason[]): void {
-    this.#exact = new Map();
-    for (const reason of exactEntries) {
-      this.#exact.set(reason, (this.#exact.get(reason) ?? 0) + 1);
+  /** Rebuilds exact-lane tallies and scratch from the scan without copying the entry objects. */
+  prepare(exactLane: readonly IProjectionExactEntry[], exactLaneCount: number): void {
+    this.#exact.clear();
+    this.#exactLaneCount = exactLaneCount;
+    this.#extraExactCount = 0;
+    for (let index = 0; index < exactLaneCount; index += 1) {
+      const entry = exactLane[index] as IProjectionExactEntry;
+      this.#exactLane[index] = entry;
+      const count = this.#exact.get(entry.reason) ?? 0;
+      this.#exact.set(entry.reason, count + 1);
     }
   }
 
@@ -246,26 +227,28 @@ export class ProjectionMirror {
    * awkward would be the fail-open rule applied at exactly the wrong granularity.
    */
   apply(plan: IProjectionProjectPlan): string | undefined {
-    const lightFailure = this.#syncLights(plan.lights);
+    const lightFailure = this.#syncLights(plan.lights, plan.lightCount);
     if (lightFailure !== undefined) {
       this.releaseAll();
       return lightFailure;
     }
     // Groups below the floor join the objects that were never eligible. They keep their own draw,
-    // which is what they had.
-    const exactLane = [...plan.exactLane];
-    for (const mesh of plan.belowFloor) {
+    // which is what they had. The scratch entries are pooled because this is a per-frame path.
+    this.#extraExactCount = 0;
+    for (let index = 0; index < plan.belowFloorCount; index += 1) {
+      const mesh = plan.belowFloor[index] as Mesh;
       this.#release(mesh);
-      exactLane.push({ object: mesh, reason: "tooFewToBatch" });
-      this.#exact.set("tooFewToBatch", (this.#exact.get("tooFewToBatch") ?? 0) + 1);
+      this.#appendExact(mesh, "tooFewToBatch");
     }
     // A batch that will not take an object gives up that object, not the scene. Dropping several
     // thousand batched props because one of them was awkward would be the fail-open rule applied
     // at exactly the wrong granularity.
     this.#projectedObjects = 0;
-    for (const [key, group] of plan.batchGroups) {
-      const batch = this.#ensureBatch(key, group);
-      for (const mesh of group) {
+    for (let index = 0; index < plan.batchGroupCount; index += 1) {
+      const group = plan.batchGroups[index] as IProjectionBatchGroup;
+      const batch = this.#ensureBatch(group);
+      for (let member = 0; member < group.memberCount; member += 1) {
+        const mesh = group.members[member] as Mesh;
         if (batch !== undefined && this.#syncBatched(batch, mesh)) {
           this.#projectedObjects += 1;
           continue;
@@ -277,26 +260,57 @@ export class ProjectionMirror {
         // and the reason is the whole value of the report.
         const reason = batch === undefined ? "unsupportedGeometry" : "batchOverflow";
         this.#release(mesh);
-        this.#exact.set(reason, (this.#exact.get(reason) ?? 0) + 1);
-        exactLane.push({ object: mesh, reason });
+        this.#appendExact(mesh, reason);
       }
     }
-    for (const entry of exactLane) {
+    for (let index = 0; index < this.#exactLaneCount; index += 1) {
+      const entry = this.#exactLane[index] as IProjectionExactEntry;
+      const object = exactObject(entry);
       // An object can change lane while staying in the scene — a material turning transparent, a
       // `renderOrder` being set, a plain mesh swapped for a skinned one. Its batch instance has to
       // go as it acquires a proxy, or the frame draws it twice: once batched and once exactly.
-      this.#release(entry.object);
-      this.#syncProxy(entry.object);
+      this.#release(object);
+      this.#syncProxy(object);
     }
-    this.#retire(plan.seen, plan.lights);
+    this.#retire(plan.seen, plan.lights, plan.lightCount);
+    this.#clearExactScratch();
     return undefined;
   }
 
+  #appendExact(object: Object3D, reason: ProjectionExactReason): void {
+    const index = this.#extraExactCount;
+    this.#extraExactCount += 1;
+    let entry = this.#extraExactPool[index];
+    if (entry === undefined) {
+      entry = { object, reason };
+      this.#extraExactPool.push(entry);
+    } else {
+      entry.object = object;
+      entry.reason = reason;
+    }
+    this.#exactLane[this.#exactLaneCount] = entry;
+    this.#exactLaneCount += 1;
+    const count = this.#exact.get(reason) ?? 0;
+    this.#exact.set(reason, count + 1);
+  }
+
   /** Drops sources that have left the authored scene, so nothing draws what the game removed. */
-  #retire(seen: ReadonlySet<Object3D>, lights: readonly Light[]): void {
+  #retire(
+    seen: { has(object: Object3D): boolean },
+    lights: readonly (Light | undefined)[],
+    lightCount: number,
+  ): void {
+    this.#retireBatches(seen);
+    this.#retireProxies(seen);
+    this.#retireLights(lights, lightCount);
+    this.#retireState(seen);
+  }
+
+  #retireBatches(seen: { has(object: Object3D): boolean }): void {
     for (const batch of this.#batches.values()) {
-      for (const [object, slot] of batch.instances) {
+      for (const object of batch.instances.keys()) {
         if (seen.has(object)) continue;
+        const slot = batch.instances.get(object) as number;
         // Collapsed and returned to the free list rather than removed: an `InstancedMesh` has a
         // fixed slot count, and recycling is what lets a level stream objects in and out without
         // rebuilding its draws each time.
@@ -306,19 +320,35 @@ export class ProjectionMirror {
         batch.free.push(slot);
         this.#state.delete(object);
       }
+      if (batch.instances.size === 0) this.#disposeBatch(batch);
     }
-    for (const [object, proxy] of this.#proxies) {
+  }
+
+  #retireProxies(seen: { has(object: Object3D): boolean }): void {
+    for (const object of this.#proxies.keys()) {
       if (seen.has(object)) continue;
+      const proxy = this.#proxies.get(object) as Object3D;
       this.scene.remove(proxy);
       this.#proxies.delete(object);
       this.#state.delete(object);
     }
-    const live = new Set(lights);
-    for (const [light, proxy] of this.#lightProxies) {
-      if (live.has(light)) continue;
+  }
+
+  #retireLights(lights: readonly (Light | undefined)[], lightCount: number): void {
+    this.#lightGeneration += 1;
+    for (let index = 0; index < lightCount; index += 1) {
+      const light = lights[index] as Light;
+      this.#lightMembership.set(light, this.#lightGeneration);
+    }
+    for (const light of this.#lightProxies.keys()) {
+      if (this.#lightMembership.get(light) === this.#lightGeneration) continue;
+      const proxy = this.#lightProxies.get(light) as Light;
       this.scene.remove(proxy);
       this.#lightProxies.delete(light);
     }
+  }
+
+  #retireState(seen: { has(object: Object3D): boolean }): void {
     for (const object of this.#state.keys()) {
       if (!seen.has(object)) this.#state.delete(object);
     }
@@ -333,8 +363,9 @@ export class ProjectionMirror {
    * recognize returns false and the whole frame goes to the authored scene, because a scene lit
    * differently from the way the game lit it is a wrong picture, not a slow one.
    */
-  #syncLights(lights: readonly Light[]): string | undefined {
-    for (const light of lights) {
+  #syncLights(lights: readonly (Light | undefined)[], lightCount: number): string | undefined {
+    for (let index = 0; index < lightCount; index += 1) {
+      const light = lights[index] as Light;
       let proxy = this.#lightProxies.get(light);
       if (proxy === undefined) {
         const cloned = light.clone() as Light & { target?: Object3D };
@@ -381,10 +412,10 @@ export class ProjectionMirror {
     const previous = this.#state.get(mesh);
 
     // A geometry, material or flag change moves the object to a different batch entirely, so the
-    // old slot is released and it re-enters as if it were new. The key covers the shadow flags and
-    // layer mask, which change nothing about where an object is but everything about which draw it
-    // may share.
-    if (previous !== undefined && previous.batchKey !== target.key) this.#release(mesh);
+    // old slot is released and it re-enters as if it were new. The group identity covers the
+    // shadow flags and layer mask, which change nothing about where an object is but everything
+    // about which draw it may share.
+    if (previous !== undefined && previous.batch !== target) this.#release(mesh);
     // A mesh that was on the exact lane last frame and is batchable now must not keep its
     // stand-in, or it draws twice.
     this.#releaseProxy(mesh);
@@ -405,8 +436,7 @@ export class ProjectionMirror {
         visible: !mesh.visible,
         geometry,
         material,
-        batchKey: target.key,
-        geometryVersion: 0,
+        batch: target,
       });
     }
 
@@ -427,7 +457,7 @@ export class ProjectionMirror {
     }
     state.geometry = geometry;
     state.material = material;
-    state.batchKey = target.key;
+    state.batch = target;
     return true;
   }
 
@@ -453,16 +483,16 @@ export class ProjectionMirror {
    * level of mixed props therefore gets one draw per distinct prop kind instead of one per
    * material, which on the workloads measured is still the overwhelming majority of the reduction.
    */
-  #ensureBatch(key: string, group: readonly Mesh[]): IBatch | undefined {
-    const existing = this.#batches.get(key);
-    if (existing !== undefined && existing.capacity >= group.length) return existing;
-    const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.length * BATCH_GROWTH));
-    const first = group[0] as Mesh;
+  #ensureBatch(group: IProjectionBatchGroup): IBatch | undefined {
+    const existing = this.#batches.get(group);
+    if (existing !== undefined && existing.capacity >= group.memberCount) return existing;
+    const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH));
+    const first = group.members[0] as Mesh;
     if (existing !== undefined) this.#disposeBatch(existing);
-    return this.#createBatch(key, first, capacity);
+    return this.#createBatch(group, first, capacity);
   }
 
-  #createBatch(key: string, first: Mesh, capacity: number): IBatch | undefined {
+  #createBatch(group: IProjectionBatchGroup, first: Mesh, capacity: number): IBatch | undefined {
     const startedAt = globalThis.performance?.now() ?? 0;
     const material = first.material as Material;
     let mesh: InstancedMesh;
@@ -480,13 +510,13 @@ export class ProjectionMirror {
     // ever answer "visible" and is pure cost.
     mesh.frustumCulled = false;
     // Carried from the sources rather than defaulted. The batch is one object to the renderer, so
-    // these are the batch's, and every mesh in it agreed on them — that is what the key means.
+    // these are the batch's, and every mesh in it agreed on them — that is what the group means.
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;
     mesh.layers.mask = first.layers.mask;
     const batch: IBatch = {
       mesh,
-      key,
+      group,
       geometry: first.geometry,
       material,
       instances: new Map(),
@@ -494,7 +524,7 @@ export class ProjectionMirror {
       used: 0,
       capacity,
     };
-    this.#batches.set(key, batch);
+    this.#batches.set(group, batch);
     this.scene.add(mesh);
     this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
     return batch;
@@ -507,7 +537,7 @@ export class ProjectionMirror {
     // deliberately left alone.
     batch.mesh.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
-    this.#batches.delete(batch.key);
+    this.#batches.delete(batch.group);
   }
 
   /**
@@ -567,13 +597,13 @@ export class ProjectionMirror {
   /**
    * Releases one source's instance without disturbing the rest of its batch.
    *
-   * The batch is looked up by the key the source was last filed under rather than by searching
-   * every batch. Searching is what makes a lane change cost the number of batches in the scene,
-   * and lane changes happen per object per frame.
+   * The batch is retained on the source state rather than found by searching every batch. Searching
+   * is what makes a lane change cost the number of batches in the scene, and lane changes happen
+   * per object per frame.
    */
   #release(object: Object3D): void {
     const state = this.#state.get(object);
-    const batch = state === undefined ? undefined : this.#batches.get(state.batchKey);
+    const batch = state === undefined ? undefined : state.batch;
     const slot = batch?.instances.get(object);
     if (batch !== undefined && slot !== undefined) {
       // Collapsed before the slot is handed back, so a freed slot draws nothing until something
@@ -614,6 +644,20 @@ export class ProjectionMirror {
     this.scene.remove(proxy);
     this.#proxies.delete(object);
   }
+
+  #clearExactScratch(): void {
+    for (let index = 0; index < this.#exactLaneCount; index += 1) {
+      const entry = this.#exactLane[index] as IProjectionExactEntry;
+      entry.object = undefined;
+    }
+    for (let index = 0; index < this.#extraExactPool.length; index += 1) {
+      const entry = this.#extraExactPool[index] as IProjectionExactEntry;
+      entry.object = undefined;
+    }
+    this.#exactLaneCount = 0;
+    this.#extraExactCount = 0;
+  }
+
   /** Tears the mirror down, leaving the authored scene untouched, as it has been throughout. */
   releaseAll(): void {
     for (const batch of this.#batches.values()) {
@@ -626,6 +670,8 @@ export class ProjectionMirror {
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
     this.#lightProxies.clear();
     this.#state.clear();
+    this.#exact.clear();
+    this.#clearExactScratch();
     this.#projectedObjects = 0;
   }
 
@@ -651,7 +697,7 @@ export class ProjectionMirror {
     }
     const state = this.#state.get(object);
     if (state === undefined) return undefined;
-    const batch = this.#batches.get(state.batchKey);
+    const batch = state.batch;
     const slot = batch?.instances.get(object);
     if (batch === undefined || slot === undefined) return undefined;
     const matrixWorld = new Matrix4();

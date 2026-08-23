@@ -25,6 +25,11 @@ import {
   SpriteMaterial,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createProjectionScanWorkspace,
+  releaseProjectionScanWorkspace,
+  scanProjection,
+} from "../src/projection-plan.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -58,6 +63,24 @@ function drawCandidates(root: Object3D): Object3D[] {
   return found;
 }
 
+function countInstanceMatrices(root: Object3D, expected: Matrix4): number {
+  const actual = new Matrix4();
+  let matches = 0;
+  root.traverse((object) => {
+    const mesh = object as InstancedMesh;
+    if (mesh.isInstancedMesh !== true) return;
+    for (let slot = 0; slot < mesh.count; slot += 1) {
+      mesh.getMatrixAt(slot, actual);
+      if (actual.equals(expected)) matches += 1;
+    }
+  });
+  return matches;
+}
+
+function isLightObject(object: Object3D): boolean {
+  return (object as { isLight?: boolean }).isLight === true;
+}
+
 /** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
 function graphSnapshot(scene: Scene): string {
   const rows: string[] = [];
@@ -79,6 +102,47 @@ function projected(scene: Scene, frames = 1, minMeshes = 8) {
   const projection = new SceneRenderProjection(scene, { minMeshes });
   for (let frame = 0; frame < frames; frame += 1) projection.reconcile();
   return projection;
+}
+
+function countCollectionConstructors(run: () => void): { maps: number; sets: number } {
+  const originalMap = globalThis.Map;
+  const originalSet = globalThis.Set;
+  let maps = 0;
+  let sets = 0;
+
+  class CountingMap<K, V> extends originalMap<K, V> {
+    constructor(entries?: Iterable<readonly [K, V]> | null) {
+      super(entries);
+      maps += 1;
+    }
+  }
+  class CountingSet<T> extends originalSet<T> {
+    constructor(values?: Iterable<T> | null) {
+      super(values);
+      sets += 1;
+    }
+  }
+
+  globalThis.Map = CountingMap;
+  globalThis.Set = CountingSet;
+  try {
+    run();
+  } finally {
+    globalThis.Map = originalMap;
+    globalThis.Set = originalSet;
+  }
+  return { maps, sets };
+}
+
+function trackArrayLengthWrites(array: unknown[]): { proxy: unknown[]; writes: () => number } {
+  let writes = 0;
+  const proxy = new Proxy(array, {
+    set(target, property, value, receiver) {
+      if (property === "length") writes += 1;
+      return Reflect.set(target, property, value, receiver);
+    },
+  });
+  return { proxy, writes: () => writes };
 }
 
 describe("SceneRenderProjection", () => {
@@ -291,6 +355,177 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.projectedObjects).toBe(120);
     expect(projection.report.resultDrawCandidates).toBe(1);
     expect(projection.deoptimized).toBe(false);
+  });
+
+  it("should reuse projected-plan storage across settled frames", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 250);
+    const projection = projected(scene, 2);
+    const originalJoin = Array.prototype.join;
+    let batchKeyJoins = 0;
+    const joins = vi.spyOn(Array.prototype, "join").mockImplementation(function (
+      this: unknown[],
+      separator?: string,
+    ) {
+      if (separator === "|" && this.length === 5) batchKeyJoins += 1;
+      return originalJoin.call(this, separator);
+    });
+
+    try {
+      const allocations = countCollectionConstructors(() => {
+        for (let frame = 0; frame < 10; frame += 1) projection.reconcile();
+      });
+
+      expect(batchKeyJoins).toBe(0);
+      expect(allocations).toEqual({ maps: 0, sets: 0 });
+      expect(projection.report.projectedObjects).toBe(250);
+      expect(projection.report.resultDrawCandidates).toBe(1);
+    } finally {
+      joins.mockRestore();
+    }
+  });
+
+  it("should not churn settled scan storage at the 2,000-mesh workload", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 2000);
+    const workspace = createProjectionScanWorkspace();
+    const warmup = scanProjection(scene, 8, workspace);
+    expect(warmup.plan.action).toBe("project");
+    const group = warmup.plan.action === "project" ? warmup.plan.batchGroups[0] : undefined;
+    expect(group).toBeDefined();
+    releaseProjectionScanWorkspace(workspace);
+
+    const arrayNames = [
+      "eligible",
+      "exactLane",
+      "lights",
+      "batchGroups",
+      "belowFloor",
+      "activeGroups",
+      "walkStack",
+    ] as const;
+    const workspaceRecord = workspace as unknown as Record<string, unknown>;
+    const tracked = arrayNames.map((name) => {
+      const tracking = trackArrayLengthWrites(workspaceRecord[name] as unknown[]);
+      workspaceRecord[name] = tracking.proxy;
+      return tracking;
+    });
+    const memberTracking = trackArrayLengthWrites((group as { members: unknown[] }).members);
+    (group as { members: unknown[] }).members = memberTracking.proxy;
+    const originalSetClear = Set.prototype.clear;
+    const originalSetAdd = Set.prototype.add;
+    let setClears = 0;
+    let setAdds = 0;
+    Set.prototype.clear = function (): void {
+      setClears += 1;
+      originalSetClear.call(this);
+    };
+    Set.prototype.add = function <T>(this: Set<T>, value: T): Set<T> {
+      setAdds += 1;
+      return originalSetAdd.call(this, value);
+    };
+
+    try {
+      for (let frame = 0; frame < 5; frame += 1) {
+        const scan = scanProjection(scene, 8, workspace);
+        expect(scan.plan.action).toBe("project");
+        releaseProjectionScanWorkspace(workspace);
+      }
+    } finally {
+      Set.prototype.clear = originalSetClear;
+      Set.prototype.add = originalSetAdd;
+    }
+
+    const lengthWrites = tracked.reduce((total, tracking) => total + tracking.writes(), 0);
+    expect(lengthWrites + memberTracking.writes()).toBe(0);
+    expect(setClears).toBe(0);
+    expect(setAdds).toBe(0);
+  });
+
+  it("should reclassify a material swap in the same frame", () => {
+    const scene = new Scene();
+    const first = new MeshStandardMaterial({ color: 0x446688 });
+    const second = new MeshStandardMaterial({ color: 0x886644 });
+    const firstMeshes = fill(scene, first, 200);
+    const secondMeshes = fill(scene, second, 100);
+    for (const mesh of secondMeshes) mesh.position.x += 1000;
+    const projection = projected(scene, 2);
+    const changed = firstMeshes[0] as Mesh;
+
+    changed.material = second;
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.batches).toBe(2);
+    expect(projection.report.projectedObjects).toBe(300);
+    expect(projection.inspect(changed)?.lane).toBe("batched");
+    expect(projection.drawsWith(second)).toBe(true);
+    expect(countInstanceMatrices(projection.root, changed.matrixWorld)).toBe(1);
+  });
+
+  it("should dispose a batch after every member changes its group", () => {
+    const scene = new Scene();
+    const first = new MeshStandardMaterial({ color: 0x446688 });
+    const second = new MeshStandardMaterial({ color: 0x886644 });
+    const firstMeshes = fill(scene, first, 200);
+    const secondMeshes = fill(scene, second, 100);
+    for (const mesh of secondMeshes) mesh.position.x += 1000;
+    const projection = projected(scene, 2);
+
+    for (const mesh of firstMeshes) mesh.material = second;
+    projection.reconcile();
+
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+    expect(drawCandidates(projection.root)).toHaveLength(1);
+  });
+
+  it("should clear pooled source references after a scan", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 8);
+    const sprite = new Sprite(new SpriteMaterial());
+    scene.add(sprite);
+    const workspace = createProjectionScanWorkspace();
+    const scan = scanProjection(scene, 8, workspace);
+    const group = scan.plan.action === "project" ? scan.plan.batchGroups[0] : undefined;
+    const exactEntry = workspace.exactEntryPool[0];
+
+    expect(exactEntry?.object).toBe(sprite);
+    expect(group?.memberCount).toBe(8);
+    releaseProjectionScanWorkspace(workspace);
+
+    expect(exactEntry?.object).toBeUndefined();
+    expect(group?.memberCount).toBe(0);
+    expect(group?.members).toHaveLength(8);
+    expect(group?.members.every((member) => member === undefined)).toBe(true);
+  });
+
+  it("should retire removed lights with reused membership storage", () => {
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 250);
+    const projection = projected(scene, 2);
+
+    scene.remove(light);
+    const allocations = countCollectionConstructors(() => projection.reconcile());
+
+    let mirroredLights = 0;
+    projection.root.traverse((object) => {
+      if (isLightObject(object)) mirroredLights += 1;
+    });
+    expect(allocations.sets).toBe(0);
+    expect(mirroredLights).toBe(0);
+
+    scene.add(light);
+    projection.reconcile();
+    scene.remove(light);
+    projection.reconcile();
+    mirroredLights = 0;
+    projection.root.traverse((object) => {
+      if (isLightObject(object)) mirroredLights += 1;
+    });
+    expect(mirroredLights).toBe(0);
   });
 });
 
