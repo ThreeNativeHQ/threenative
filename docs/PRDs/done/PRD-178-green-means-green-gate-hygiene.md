@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-178 — Green means green: the quick-win gate-hygiene batch
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard (findings #3, #4, #5, #6,
+**Status:** COMPLETE, 2026-08-22. Integration verification 2026-08-22: typecheck/lint/test/budgets green at HEAD, native:verify:desktop 300 frames. Filed from the 2026-08-22 area scorecard (findings #3, #4, #5, #6,
 #20; scripts/CI/DX scored 62/100). All evidence verified at HEAD `a84f08da`.
 
 Complexity: 5 → MEDIUM mode (many small edits across packages and root; no deep state).

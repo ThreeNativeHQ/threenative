@@ -100,7 +100,7 @@ table above covers only ctx properties; this index covers the public exports sca
 
 | Import surface | Public class/function exports |
 |---|---|
-| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
+| `@threenative/core` | `AnimationPlayer`, `AudioBus`, `CanvasLayer`, `createRandom`, `defineGame`, `getPlatform`, `GPUParticles3D`, `GroundSnap`, `isMobile`, `isNative`, `isTouchscreenAvailable`, `isWeb`, `measureThreePose`, `parseReplayRecording`, `posedBounds`, `PathFollow3D`, `ScenePicker`, `createReplayDriver`, `replay`, `Scheduler`, `Scene`, `prewarm`, `normaliseToMetres`, `attachToBone`, `skeletonBones`, `softCircleDataTexture`, `TracerPool3D` |
 | `@threenative/core/playtest` | `playtest` |
 | `@threenative/core/hot` | `acceptHotUpdate` |
 | `@threenative/physics` | `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `Joint3D`, `PhysicsDirectSpaceState3D`, `interactionGroups`, `RigidBody3D`, `rapier` |
@@ -122,6 +122,7 @@ pnpm studio                    # chat, preview and proof in one page; needs clau
 pnpm build                     # web build; identical to vite build
 pnpm build --target desktop    # native executable; Linux is the only verified host
 pnpm test                      # build, start the dev server, and run the committed playtest
+node tools/look.mjs            # build, serve dist/, screenshot each vantage to artifacts/look/
 ```
 
 The normal `@threenative/physics` API selects native Rapier on Android; its source-workspace

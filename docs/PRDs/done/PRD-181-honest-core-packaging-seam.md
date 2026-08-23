@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-181 — Core stops shipping a hidden copy of playtest
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard (finding #12; core scored
+**Status:** COMPLETE, 2026-08-22. Integration verification 2026-08-22: typecheck/lint/test/budgets green at HEAD, native:verify:desktop 300 frames.
+Includes the browser-tier fix (97f1c0e9) and the capability-tag/strict-mode repairs (b9db0a18) found at integration. Filed from the 2026-08-22 area scorecard (finding #12; core scored
 70/100). Evidence verified at HEAD `a84f08da`.
 
 Complexity: 4 → MEDIUM mode (small file count; the decision — dependency direction — is the substance).

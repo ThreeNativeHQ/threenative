@@ -11,7 +11,7 @@ gate record — `pnpm gate:status` shows RED only because HEAD moved after the u
 (`exitCode: 0`, `state: "succeeded"`); rerun `pnpm test` or let the next long gate overwrite
 `artifacts/gates/status.json`.
 
-## 1. [PRD-176](../done/PRD-176-navigation-scenario-navigator-never-moves.md) — COMPLETE 2026-08-22 — navigator never moves, plus a coverage hole
+## 1. [PRD-176](../PRD-176-navigation-scenario-navigator-never-moves.md) — COMPLETE 2026-08-22 — navigator never moves, plus a coverage hole
 
 Deterministic red, reproduced twice today at HEAD: the abyss-framework navigator accumulates zero
 movement over 212 frames with a clean console, and `navigation.playtest.json` is not in the default
@@ -20,7 +20,7 @@ it is deterministic, freshly evidenced, and the example fixture currently cannot
 
 Estimate: half a day including the mutation proof (criterion 3).
 
-## 2. [PRD-167](../done/PRD-167-desktop-playtest-mailbox-goes-silent.md) — COMPLETE 2026-08-22 — desktop playtest mailbox goes silent after replay
+## 2. [PRD-167](../PRD-167-desktop-playtest-mailbox-goes-silent.md) — COMPLETE 2026-08-22 — desktop playtest mailbox goes silent after replay
 
 Flaky hang: 2 of 4 runs exit `2` with `TN_PLAYTEST_OPERATION_TIMEOUT` while the app itself stays
 alive and already executed the capability under test. A gate that hangs without a cause poisons
@@ -29,7 +29,7 @@ the PRD-162 scenario.
 
 Estimate: unknown until the cause is named; budget half a day to the named-diagnostic criterion.
 
-## 3. [PRD-166](../done/PRD-166-camera-parented-overlay-never-marks-on-android.md) — COMPLETE 2026-08-22 — emulator scene never reaches its marker
+## 3. [PRD-166](../PRD-166-camera-parented-overlay-never-marks-on-android.md) — COMPLETE 2026-08-22 — emulator scene never reaches its marker
 
 The Android lane exits `1` on `25-camera-parented-overlay`, keeping it at `66 / 1 / 0`. The emulator
 lane runs unattended on this machine, so this is fully actionable without hardware — but it is the
@@ -46,12 +46,12 @@ Numbering continues from PRD-176.
 
 | PRD | What it closes | Complexity | Lane |
 | --- | --- | --- | --- |
-| [177](../BLOCKED/requires-asan-libuv-source-build/PRD-177-native-restart-shutdown-lifetime.md) | BLOCKED 2026-08-22 (phases 2–3 → [PRD-184](../BLOCKED/requires-asan-libuv-source-build/PRD-184-native-shutdown-ownership-transfer.md); phase 1 + restart row shipped and proved) — native restart ghosts input + libuv close-then-clear UAF at three shutdown sites; direct C++ lifetime tests and a restart conformance row | 6 HIGH | native build required; one owner across phases |
-| [178](./PRD-178-green-means-green-gate-hygiene.md) | Four never-collected duplicate suites; diagnostics prescribing forbidden `xvfb-run`; double-build/double-vitest pipeline; orphaned root argon2/pg; catalog nits | 5 MEDIUM | quick wins |
-| [179](./PRD-179-instruments-measure-growth.md) | Quality report keys by file:line ignoring values (42 fake-"new"; hotspots grow as "inherited"); six long chains invisible to gate:status/resume | 5 MEDIUM | after or with 178 |
-| [180](../done/PRD-180-core-lifecycle-failure-atomicity.md) | COMPLETE 2026-08-22 — boot throw-paths leak half-booted games (abort path is fine); teardown first-throw-wins; `goto()` wipes state before validating | 4 MEDIUM | core unit lane |
-| [181](./PRD-181-honest-core-packaging-seam.md) | Published core inlines a hidden playtest copy (`noExternal` masking a devDep-only import); hardcoded stale CORE_VERSION | 4 MEDIUM | packaging/consumer lane |
-| [182](../done/PRD-182-playtest-monolith-containment.md) | COMPLETE 2026-08-22 — contained the three hottest monoliths (evaluators 2,312 / scenario 1,867 growing / runner 1,800 top-churn) behind facades, characterization-first, zero behavior change | 5 MEDIUM, highest risk | last in the batch |
+| [177](../../BLOCKED/requires-asan-libuv-source-build/PRD-177-native-restart-shutdown-lifetime.md) | BLOCKED 2026-08-22 (phases 2–3 → [PRD-184](../../BLOCKED/requires-asan-libuv-source-build/PRD-184-native-shutdown-ownership-transfer.md); phase 1 + restart row shipped and proved) — native restart ghosts input + libuv close-then-clear UAF at three shutdown sites; direct C++ lifetime tests and a restart conformance row | 6 HIGH | native build required; one owner across phases |
+| [178](../PRD-178-green-means-green-gate-hygiene.md) | COMPLETE 2026-08-22 — four never-collected duplicate suites; diagnostics prescribing forbidden `xvfb-run`; double-build/double-vitest pipeline; orphaned root argon2/pg; catalog nits | 5 MEDIUM | quick wins |
+| [179](../PRD-179-instruments-measure-growth.md) | COMPLETE 2026-08-22 — quality report keys by file:line ignoring values (42 fake-"new"; hotspots grow as "inherited"); six long chains invisible to gate:status/resume | 5 MEDIUM | after or with 178 |
+| [180](../PRD-180-core-lifecycle-failure-atomicity.md) | COMPLETE 2026-08-22 — boot throw-paths leak half-booted games (abort path is fine); teardown first-throw-wins; `goto()` wipes state before validating | 4 MEDIUM | core unit lane |
+| [181](../PRD-181-honest-core-packaging-seam.md) | COMPLETE 2026-08-22 — published core inlines a hidden playtest copy (`noExternal` masking a devDep-only import); hardcoded stale CORE_VERSION | 4 MEDIUM | packaging/consumer lane |
+| [182](../PRD-182-playtest-monolith-containment.md) | COMPLETE 2026-08-22 — contained the three hottest monoliths (evaluators 2,312 / scenario 1,867 growing / runner 1,800 top-churn) behind facades, characterization-first, zero behavior change | 5 MEDIUM, highest risk | last in the batch |
 
 **Suggested order:** 178 → 179 (green gates first, so every later measurement is trusted) →
 180 → 181 (independent) → 177 (longest, needs `pnpm native:build`) → 182 (needs 179's honest

@@ -56,6 +56,7 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "threenative.config.ts",
+  "tools/look.mjs",
   "index.html",
   "tailwind.config.ts",
   "tsconfig.json",

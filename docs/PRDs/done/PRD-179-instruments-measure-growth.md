@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-179 — The instruments measure growth, not coordinates
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard (findings #11, #14;
+**Status:** COMPLETE, 2026-08-22. Integration verification 2026-08-22: typecheck/lint/test/budgets green at HEAD, native:verify:desktop 300 frames.
+The quality baseline's second regen decision is recorded in the batch closing record. Filed from the 2026-08-22 area scorecard (findings #11, #14;
 scripts/CI/DX scored 62/100). Evidence verified at HEAD `a84f08da`.
 
 Complexity: 5 → MEDIUM mode (two instruments; comparison semantics are subtle — the 2026-08-20

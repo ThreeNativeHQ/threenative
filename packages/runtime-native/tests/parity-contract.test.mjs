@@ -275,9 +275,16 @@ test("the camera-parented overlay row resizes for real and observes the drawing 
     /TN_CONFORMANCE_OVERLAY_ANCHOR_DRIFTED/u,
   );
 
-  // The scene must actually call both, against the canvas rather than the requested numbers.
+  // The scene must actually call both, against the canvas rather than the requested numbers,
+  // and derive its viewports from the plan. The loop carries the PRD-166 trace ladder
+  // (viewport-begin/set-size-returned/render-returned/viewport-passed), so the shape is
+  // index-based rather than for-of; the ladder is what names a native death for logcat.
   const scene = read("conformance/scenes/shared/camera-parented-overlay.js");
   assert.match(scene, /renderer\.setSize\(size\.width, size\.height, false\)/u);
   assert.match(scene, /assertRenderedSize\(size, \{ height: canvas\.height, width: canvas\.width \}\)/u);
-  assert.match(scene, /for \(const size of overlayRenderPlan\(dimensions\)\)/u);
+  assert.match(scene, /const plan = overlayRenderPlan\(dimensions\)/u);
+  assert.match(scene, /for \(let index = 0; index < plan\.length; index \+= 1\)/u);
+  assert.match(scene, /trace\("set-size-returned"/u);
+  assert.match(scene, /trace\("viewport-passed"/u);
+});
 });

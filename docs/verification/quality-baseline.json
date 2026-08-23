@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-22T21:14:22.280Z",
+  "generatedAt": "2026-08-23T01:18:58.556Z",
   "counts": {
     "interface-in-disguise": 12,
-    "file-length": 17,
+    "file-length": 23,
     "suppression/unknown-cast": 21,
     "suppression/biome-ignore": 2,
     "lint-coverage-hole": 1
@@ -89,6 +89,13 @@
     {
       "file": "packages/core/src/renderer.ts",
       "line": 223,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/replay-protocol.ts",
+      "line": 84,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -202,7 +209,7 @@
       "file": "packages/physics/src/native/host.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 520,
+      "value": 531,
       "threshold": 400
     },
     {
@@ -227,32 +234,39 @@
       "threshold": 10
     },
     {
-      "file": "packages/playtest/src/assertion-evaluators.ts",
-      "line": 1,
-      "signal": "file-length",
-      "value": 2312,
-      "threshold": 800
-    },
-    {
-      "file": "packages/playtest/src/assertion-evaluators.ts",
-      "line": 1540,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
       "file": "packages/playtest/src/assertion-schema.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 493,
+      "value": 512,
       "threshold": 400
     },
     {
-      "file": "packages/playtest/src/replay.ts",
-      "line": 80,
+      "file": "packages/playtest/src/evaluators/families-observation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 403,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/evaluators/families-observation.ts",
+      "line": 362,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/evaluators/measures.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 577,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/evaluators/movement-evidence.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 605,
+      "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/android.ts",
@@ -265,12 +279,12 @@
       "file": "packages/playtest/src/runner/androidRunner.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 671,
+      "value": 682,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/deviceTransport.ts",
-      "line": 272,
+      "line": 298,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -293,33 +307,26 @@
       "file": "packages/playtest/src/runner/runner.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1800,
-      "threshold": 800
+      "value": 626,
+      "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/runner.ts",
-      "line": 138,
+      "line": 162,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
-      "file": "packages/playtest/src/runner/runner.ts",
-      "line": 1063,
-      "signal": "interface-in-disguise",
-      "value": "object type alias",
-      "threshold": "interface"
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 649,
+      "threshold": 400
     },
     {
-      "file": "packages/playtest/src/runner/runner.ts",
-      "line": 1179,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/playtest/src/runner/runner.ts",
-      "line": 1385,
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 233,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
@@ -339,15 +346,50 @@
       "threshold": 10
     },
     {
-      "file": "packages/playtest/src/scenario.ts",
+      "file": "packages/playtest/src/runner/steps.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1867,
+      "value": 710,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/steps.ts",
+      "line": 559,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/playtest/src/runner/steps.ts",
+      "line": 675,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/scenario/schema-accessors.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 634,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/scenario/schema-base.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 414,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/scenario/schema-validate.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 932,
       "threshold": 800
     },
     {
       "file": "packages/playtest/src/three/device.ts",
-      "line": 308,
+      "line": 316,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10

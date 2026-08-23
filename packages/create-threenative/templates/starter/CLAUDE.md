@@ -124,6 +124,7 @@ pnpm studio                    # chat, preview and proof in one page; needs clau
 pnpm build                     # web build; identical to vite build
 pnpm build --target desktop    # native executable; Linux is the only verified host
 pnpm test                      # build, start the dev server, and run the committed playtest
+node tools/look.mjs            # build, serve dist/, screenshot each vantage to artifacts/look/
 ```
 
 The normal `@threenative/physics` API selects native Rapier on Android; its source-workspace
