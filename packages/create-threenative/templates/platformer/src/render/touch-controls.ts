@@ -16,7 +16,6 @@ import {
   type ITouchPointer,
   type ITouchViewport,
   MOVE_RADIUS,
-  stickDeflection,
   touchControlPoint,
 } from "./touch-layout.js";
 
@@ -45,11 +44,21 @@ export class TouchControls {
   readonly root = new Group();
   readonly object = this.root;
   #camera: PerspectiveCamera;
-  #input: ITouchInput = { dashPressed: false, jumpPressed: false, move: new Vector2() };
+  #input: { dashPressed: boolean; jumpPressed: boolean; move: Vector2 } = {
+    dashPressed: false,
+    jumpPressed: false,
+    move: new Vector2(),
+  };
   #wasDash = false;
   #wasJump = false;
   /** Where the current thumb landed. Undefined between touches. */
-  #moveAnchor: Vector2 | undefined;
+  #moveAnchor = new Vector2();
+  #hasMoveAnchor = false;
+  #jumpCenter = new Vector2();
+  #dashCenter = new Vector2();
+  #resting = new Vector2();
+  #lastWidth = -1;
+  #lastHeight = -1;
   #moveBase: Mesh;
   #moveKnob: Mesh;
   #dash: Mesh;
@@ -71,38 +80,39 @@ export class TouchControls {
   }
 
   update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
-    const jumpCenter = touchControlPoint(size, "jump");
-    const dashCenter = touchControlPoint(size, "dash");
-    const jump = this.#at(pointers, jumpCenter, BUTTON_RADIUS);
-    const dash = this.#at(pointers, dashCenter, BUTTON_RADIUS);
+    this.#ensureLayout(size);
+    const jump = this.#at(pointers, this.#jumpCenter, BUTTON_RADIUS);
+    const dash = this.#at(pointers, this.#dashCenter, BUTTON_RADIUS);
     let left: ITouchPointer | undefined;
     for (const pointer of pointers.values()) {
-      if (this.#isMovementPointer(pointer, size, dashCenter, jumpCenter)) {
+      if (this.#isMovementPointer(pointer, size)) {
         left = pointer;
         break;
       }
     }
-    const resting = touchControlPoint(size, "move");
     const move = this.#input.move;
     if (left === undefined) {
       // Thumb lifted: forget where it was, so the next touch anchors fresh.
-      this.#moveAnchor = undefined;
+      this.#hasMoveAnchor = false;
       move.set(0, 0);
     } else {
-      this.#moveAnchor ??= left.position.clone();
-      move.copy(stickDeflection(this.#moveAnchor, left.position, MOVE_RADIUS));
+      if (!this.#hasMoveAnchor) {
+        this.#moveAnchor.copy(left.position);
+        this.#hasMoveAnchor = true;
+      }
+      move.set(
+        MathUtils.clamp((left.position.x - this.#moveAnchor.x) / MOVE_RADIUS, -1, 1),
+        MathUtils.clamp((this.#moveAnchor.y - left.position.y) / MOVE_RADIUS, -1, 1),
+      );
     }
     // The ring follows the thumb to its anchor, so the player can see where the stick went
     // instead of watching a knob move against a circle their thumb is nowhere near.
-    const center = this.#moveAnchor ?? resting;
+    const center = this.#hasMoveAnchor ? this.#moveAnchor : this.#resting;
     place(this.#moveKnob, center.x + move.x * MOVE_RADIUS, center.y - move.y * MOVE_RADIUS);
     this.#jump.material = jump ? this.#activeMaterial : this.#idleMaterial;
     this.#dash.material = dash ? this.#activeMaterial : this.#idleMaterial;
-    this.#input = {
-      dashPressed: dash && !this.#wasDash,
-      jumpPressed: jump && !this.#wasJump,
-      move,
-    };
+    this.#input.dashPressed = dash && !this.#wasDash;
+    this.#input.jumpPressed = jump && !this.#wasJump;
     this.#wasDash = dash;
     this.#wasJump = jump;
     this.#layout(size);
@@ -122,6 +132,15 @@ export class TouchControls {
     this.#activeMaterial.dispose();
   }
 
+  #ensureLayout(size: ITouchViewport): void {
+    if (size.width === this.#lastWidth && size.height === this.#lastHeight) return;
+    this.#lastWidth = size.width;
+    this.#lastHeight = size.height;
+    this.#resting.copy(touchControlPoint(size, "move"));
+    this.#dashCenter.copy(touchControlPoint(size, "dash"));
+    this.#jumpCenter.copy(touchControlPoint(size, "jump"));
+  }
+
   #layout(size: ITouchViewport): void {
     const worldHeight = 2 * Math.tan(MathUtils.degToRad(this.#camera.fov / 2));
     const pixels = worldHeight / Math.max(1, size.height);
@@ -129,27 +148,20 @@ export class TouchControls {
     this.root.position.set(-worldWidth / 2, worldHeight / 2, -1);
     this.root.scale.set(pixels, -pixels, 1);
     // The anchor wins while a thumb is down; this only re-homes the ring once it lifts.
-    const move = this.#moveAnchor ?? touchControlPoint(size, "move");
-    const dash = touchControlPoint(size, "dash");
-    const jump = touchControlPoint(size, "jump");
+    const move = this.#hasMoveAnchor ? this.#moveAnchor : this.#resting;
     place(this.#moveBase, move.x, move.y);
-    place(this.#dash, dash.x, dash.y);
-    place(this.#jump, jump.x, jump.y);
+    place(this.#dash, this.#dashCenter.x, this.#dashCenter.y);
+    place(this.#jump, this.#jumpCenter.x, this.#jumpCenter.y);
   }
 
-  #isMovementPointer(
-    pointer: ITouchPointer,
-    size: ITouchViewport,
-    dashCenter: Vector2,
-    jumpCenter: Vector2,
-  ): boolean {
+  #isMovementPointer(pointer: ITouchPointer, size: ITouchViewport): boolean {
     if (pointer.position.x >= size.width * 0.5 || pointer.position.y <= size.height * 0.5)
       return false;
     if (size.height <= size.width) return true;
     const radiusSquared = BUTTON_RADIUS * BUTTON_RADIUS;
     return (
-      pointer.position.distanceToSquared(dashCenter) > radiusSquared &&
-      pointer.position.distanceToSquared(jumpCenter) > radiusSquared
+      pointer.position.distanceToSquared(this.#dashCenter) > radiusSquared &&
+      pointer.position.distanceToSquared(this.#jumpCenter) > radiusSquared
     );
   }
 

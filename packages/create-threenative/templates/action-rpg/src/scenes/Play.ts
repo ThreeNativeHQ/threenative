@@ -33,6 +33,10 @@ function itemId(value: string): value is ItemId {
   return Object.values(ITEMS).some((item) => item.id === value);
 }
 
+function quantize(value: number, scale: number): number {
+  return Math.round(value * scale) / scale;
+}
+
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
     abilityCooldown: 0,
@@ -380,6 +384,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     cameraRig.snap(player.mesh.position);
     let lastSavedRoom = currentRoom;
+    const frameState: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
       elapsed += dt;
@@ -415,21 +420,35 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       for (const enemy of enemies.values()) enemy.update(frameCtx, dt, player.mesh.position);
 
       currentRoom = roomFor(player.mesh.position.x);
-      frameCtx.state.set({
-        abilityCooldown: Number(ability.cooldownRemaining.toFixed(3)),
-        baseDamage: damageStats.base,
-        damage: Math.round(damageStats.value(elapsed)),
-        health: player.health,
-        lineOfSightBlocked: wallEnemy.lineOfSightBlocked ? 1 : 0,
-        modifierActive: ability.active ? 1 : 0,
-        playerX: Number(player.mesh.position.x.toFixed(3)),
-        playerY: Number(player.mesh.position.y.toFixed(3)),
-        playerZ: Number(player.mesh.position.z.toFixed(3)),
-        room: currentRoom,
-        visibleEnemyAggro:
-          visibleEnemy.state === "aggro" || visibleEnemy.state === "attack" ? 1 : 0,
-        wallEnemyAggro: wallEnemy.state === "aggro" || wallEnemy.state === "attack" ? 1 : 0,
-      });
+      const previous = frameCtx.state.getState();
+      frameState.abilityCooldown = quantize(ability.cooldownRemaining, 1000);
+      frameState.baseDamage = damageStats.base;
+      frameState.damage = Math.round(damageStats.value(elapsed));
+      frameState.health = player.health;
+      frameState.lineOfSightBlocked = wallEnemy.lineOfSightBlocked ? 1 : 0;
+      frameState.modifierActive = ability.active ? 1 : 0;
+      frameState.playerX = quantize(player.mesh.position.x, 1000);
+      frameState.playerY = quantize(player.mesh.position.y, 1000);
+      frameState.playerZ = quantize(player.mesh.position.z, 1000);
+      frameState.room = currentRoom;
+      frameState.visibleEnemyAggro =
+        visibleEnemy.state === "aggro" || visibleEnemy.state === "attack" ? 1 : 0;
+      frameState.wallEnemyAggro =
+        wallEnemy.state === "aggro" || wallEnemy.state === "attack" ? 1 : 0;
+      const changed =
+        frameState.abilityCooldown !== previous.abilityCooldown ||
+        frameState.baseDamage !== previous.baseDamage ||
+        frameState.damage !== previous.damage ||
+        frameState.health !== previous.health ||
+        frameState.lineOfSightBlocked !== previous.lineOfSightBlocked ||
+        frameState.modifierActive !== previous.modifierActive ||
+        frameState.playerX !== previous.playerX ||
+        frameState.playerY !== previous.playerY ||
+        frameState.playerZ !== previous.playerZ ||
+        frameState.room !== previous.room ||
+        frameState.visibleEnemyAggro !== previous.visibleEnemyAggro ||
+        frameState.wallEnemyAggro !== previous.wallEnemyAggro;
+      if (changed) frameCtx.state.set(frameState);
       if (currentRoom !== lastSavedRoom) {
         lastSavedRoom = currentRoom;
         saveRequested = true;

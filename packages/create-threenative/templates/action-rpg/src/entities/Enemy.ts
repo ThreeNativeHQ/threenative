@@ -37,6 +37,9 @@ export class Enemy {
   #onDeath: (enemy: Enemy) => void;
   #playerBody: IPhysicsBodyHandle;
   #rangeShape = CollisionShape3D.sphere(4.8);
+  #from = new Vector3();
+  #to = new Vector3();
+  #direction = new Vector3();
 
   constructor(
     ctx: GameCtx,
@@ -71,12 +74,19 @@ export class Enemy {
       position: this.mesh.position,
       shape: this.#rangeShape,
     });
-    const inRange = rangeHits.some((hit) => hit.body.id === this.#playerBody.id);
+    let inRange = false;
+    for (const hit of rangeHits) {
+      if (hit.body.id !== this.#playerBody.id) continue;
+      inRange = true;
+      break;
+    }
     this.lineOfSight = false;
     this.lineOfSightBlocked = false;
     if (inRange) {
-      const from = this.mesh.position.clone().add(new Vector3(0, this.boss ? 0.9 : 0.5, 0));
-      const to = playerPosition.clone().add(new Vector3(0, 0.5, 0));
+      const from = this.#from.copy(this.mesh.position);
+      from.y += this.boss ? 0.9 : 0.5;
+      const to = this.#to.copy(playerPosition);
+      to.y += 0.5;
       const ray = directSpaceState(ctx.physics).intersectRay({
         collisionMask: WORLD_LAYER | PLAYER_LAYER,
         from,
@@ -93,7 +103,7 @@ export class Enemy {
       return;
     }
 
-    const direction = playerPosition.clone().sub(this.mesh.position).setY(0);
+    const direction = this.#direction.copy(playerPosition).sub(this.mesh.position).setY(0);
     const distance = direction.length();
     if (distance <= 1.45) {
       this.state = "attack";

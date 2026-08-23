@@ -7,17 +7,17 @@ export interface IPathFollow3DOptions {
 }
 
 export interface IPathFollow3DSample {
-  readonly point: Vector3;
-  readonly progress: number;
-  readonly tangent: Vector3;
+  point: Vector3;
+  progress: number;
+  tangent: Vector3;
 }
 
 export interface IPathFollow3DProjection {
-  readonly distanceFromStart: number;
-  readonly lateralDistance: number;
-  readonly tangent: Vector3;
-  readonly point: Vector3;
-  readonly segment: number;
+  distanceFromStart: number;
+  lateralDistance: number;
+  tangent: Vector3;
+  point: Vector3;
+  segment: number;
 }
 
 const CURVE_DIVISIONS = 128;
@@ -95,7 +95,7 @@ export class PathFollow3D {
     if (target !== undefined) {
       this.curve.getPointAt(u, target.point);
       this.#writeTangentAt(u, target.tangent);
-      (target as { progress: number }).progress = progress;
+      target.progress = progress;
       return target;
     }
     this.curve.getPointAt(u, this.#samplePoint);
@@ -147,14 +147,9 @@ export class PathFollow3D {
     pointTarget.copy(point);
     tangentTarget.subVectors(next, tangentStart).normalize();
     if (target !== undefined) {
-      const output = target as {
-        distanceFromStart: number;
-        lateralDistance: number;
-        segment: number;
-      };
-      output.distanceFromStart = distanceFromSample;
-      output.lateralDistance = point.distanceTo(position);
-      output.segment = segment;
+      target.distanceFromStart = distanceFromSample;
+      target.lateralDistance = point.distanceTo(position);
+      target.segment = segment;
       return target;
     }
     return {

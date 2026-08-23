@@ -1,5 +1,5 @@
 import type { PhysicsBody3D } from "@threenative/physics";
-import type { Vector3 } from "three";
+import { Vector3 } from "three";
 import type { Checkline } from "./Checkline.js";
 
 export interface ILapTarget {
@@ -15,8 +15,13 @@ export class Lap {
   reverseRejects = 0;
   #target: ILapTarget;
   #gates: readonly Checkline[];
+  #gateNormals: Vector3[] = [];
   #onLap: (lap: number) => void;
   #unsubscribe: (() => void)[] = [];
+  #targetDirection = new Vector3();
+  #gateDirection = new Vector3();
+  #before = new Vector3();
+  #after = new Vector3();
 
   constructor(
     target: ILapTarget,
@@ -33,6 +38,7 @@ export class Lap {
     this.#onLap = onLap;
     for (const [index, gate] of gates.entries()) {
       const expected = gate.forward.clone().setY(0).normalize();
+      this.#gateNormals.push(expected);
       this.#unsubscribe.push(
         gate.area.on("bodyEntered", (body) => {
           if (body !== this.#target.body || this.completed >= this.totalLaps) return;
@@ -49,11 +55,11 @@ export class Lap {
       return false;
     }
     const direction = gateForward ?? gate.forward;
-    const travel = this.#target.forward
-      .clone()
+    const travel = this.#targetDirection
+      .copy(this.#target.forward)
       .setY(0)
       .normalize()
-      .dot(direction.clone().setY(0).normalize());
+      .dot(this.#gateDirection.copy(direction).setY(0).normalize());
     if (travel <= 0.2) {
       this.reverseRejects += 1;
       return false;
@@ -73,9 +79,10 @@ export class Lap {
   /** Sweeps a car transform between frames so a fast body cannot skip a thin sensor. */
   observe(previous: Vector3, current: Vector3): void {
     for (const [index, gate] of this.#gates.entries()) {
-      const normal = gate.forward.clone().setY(0).normalize();
-      const before = previous.clone().sub(gate.at).dot(normal);
-      const after = current.clone().sub(gate.at).dot(normal);
+      const normal = this.#gateNormals[index];
+      if (normal === undefined) throw new Error("Lap gate normal is missing.");
+      const before = this.#before.copy(previous).sub(gate.at).dot(normal);
+      const after = this.#after.copy(current).sub(gate.at).dot(normal);
       const crossedForward = before < 0 && after >= 0;
       const crossedReverse = before >= 0 && after < 0;
       if (crossedForward || crossedReverse) this.cross(index);

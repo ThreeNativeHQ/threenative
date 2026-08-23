@@ -154,7 +154,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     goal.area.on("bodyEntered", (body) => {
       if (body === player.body) overGoal = true;
     });
-    ctx.state.set({ entityCount: Object.keys(ctx.entities.snapshot()).length });
+    let entityCount = 4;
+    ctx.state.set({ entityCount });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },
@@ -164,13 +165,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (body !== player.body) return;
       ctx.state.set((state) => ({ score: state.score + 1 }));
       ctx.entities.remove("pickup");
-      ctx.state.set({
-        entityCount: Object.keys(ctx.entities.snapshot()).length,
-      });
+      entityCount -= 1;
+      ctx.state.set({ entityCount });
       pickup.monitoring = false;
       pickupVisual.visible = false;
       ctx.after(3, () => {
         ctx.entities.add("pickup", pickupVisual);
+        entityCount += 1;
+        ctx.state.set({ entityCount });
         pickupVisual.visible = true;
         pickup.monitoring = true;
       });
@@ -178,11 +180,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     if (state.score > 0) {
       ctx.entities.remove("pickup");
+      entityCount -= 1;
+      ctx.state.set({ entityCount });
       pickup.monitoring = false;
       pickupVisual.visible = false;
     }
 
     ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }));
+    const frameState: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.
@@ -206,24 +211,30 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         respawned = true;
       }
       springArm.follow(player.mesh.position, dt);
-      const debug = player.debug();
       // `status` is written only on the frame that ends the run, and never in the bulk
       // write below, which would stamp this frame's stale copy back over it.
       if (lives <= 0) frameCtx.state.set({ status: "lost" });
-      else if (overGoal && debug.grounded) {
+      else if (overGoal && player.grounded) {
         frameCtx.state.set({ status: "won" });
         frameCtx.state.flush();
       }
-      frameCtx.state.set({
-        coyoteJumps: debug.coyoteJumps,
-        jumps: debug.jumps,
-        lives,
-        odometer: debug.odometer,
-        peakRise: Math.max(previous.peakRise, player.mesh.position.y - 0.5),
-        playerX: player.mesh.position.x,
-        respawns: previous.respawns + (respawned ? 1 : 0),
-        entityCount: Object.keys(frameCtx.entities.snapshot()).length,
-      });
+      frameState.coyoteJumps = player.coyoteJumps;
+      frameState.jumps = player.jumps;
+      frameState.lives = lives;
+      frameState.odometer = player.odometer;
+      frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - 0.5);
+      frameState.playerX = player.mesh.position.x;
+      frameState.respawns = previous.respawns + (respawned ? 1 : 0);
+      const current = frameCtx.state.getState();
+      const changed =
+        frameState.coyoteJumps !== current.coyoteJumps ||
+        frameState.jumps !== current.jumps ||
+        frameState.lives !== current.lives ||
+        frameState.odometer !== current.odometer ||
+        frameState.peakRise !== current.peakRise ||
+        frameState.playerX !== current.playerX ||
+        frameState.respawns !== current.respawns;
+      if (changed) frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();
     };
   }

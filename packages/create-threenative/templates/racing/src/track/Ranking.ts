@@ -12,12 +12,20 @@ export interface IRankedRacer extends IRacerProgress {
   readonly routeProgress: number;
 }
 
+export interface IRankedRacerScratch {
+  id: string;
+  lap: number;
+  position: Vector3;
+  place: number;
+  routeProgress: number;
+}
+
 const projectionScratch: IPathFollow3DProjection = {
   distanceFromStart: 0,
   lateralDistance: 0,
-  point: new Vector3(),
+  point: new Vector3(0, 0, 0),
   segment: 0,
-  tangent: new Vector3(),
+  tangent: new Vector3(0, 0, 1),
 };
 
 export function routeProgress(
@@ -35,15 +43,24 @@ export function rankRacers(
   route: PathFollow3D,
   racers: readonly IRacerProgress[],
   target: IPathFollow3DProjection = projectionScratch,
+  buffer: IRankedRacerScratch[] = [],
 ): readonly IRankedRacer[] {
-  const ranked = racers
-    .map((racer) => ({
-      ...racer,
-      place: 0,
-      routeProgress: routeProgress(route, racer.position, racer.lap, target),
-    }))
-    .sort(
-      (left, right) => right.routeProgress - left.routeProgress || left.id.localeCompare(right.id),
-    );
-  return ranked.map((racer, index) => ({ ...racer, place: index + 1 }));
+  if (buffer.length > racers.length) buffer.length = racers.length;
+  for (let index = buffer.length; index < racers.length; index += 1) {
+    buffer.push({ id: "", lap: 0, position: projectionScratch.point, place: 0, routeProgress: 0 });
+  }
+  for (const [index, racer] of racers.entries()) {
+    const ranked = buffer[index];
+    if (ranked === undefined) throw new Error("Racing ranking buffer slot is missing.");
+    ranked.id = racer.id;
+    ranked.lap = racer.lap;
+    ranked.position = racer.position;
+    ranked.routeProgress = routeProgress(route, racer.position, racer.lap, target);
+    ranked.place = 0;
+  }
+  buffer.sort(
+    (left, right) => right.routeProgress - left.routeProgress || left.id.localeCompare(right.id),
+  );
+  for (const [index, racer] of buffer.entries()) racer.place = index + 1;
+  return buffer;
 }

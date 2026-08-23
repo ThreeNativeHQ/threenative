@@ -50,6 +50,7 @@ export class Character {
   #airJumpUsed = false;
   #time = 0;
   #dashDirection = new Vector3(1, 0, 0);
+  #wants = new Vector3();
 
   constructor(ctx: GameCtx, spawn: Vector3) {
     this.mesh = new Group();
@@ -81,9 +82,12 @@ export class Character {
     this.#coyote = Math.max(0, this.#coyote - dt);
     this.#buffered = Math.max(0, this.#buffered - dt);
     const move = ctx.input.vector("move");
-    if (touch !== undefined) move.add(touch.move).clampLength(0, 1);
-    const wants = new Vector3(move.x, 0, -move.y);
-    if (wants.lengthSq() > 1) wants.normalize();
+    this.#wants.set(move.x, 0, -move.y);
+    if (touch !== undefined) {
+      this.#wants.x += touch.move.x;
+      this.#wants.z -= touch.move.y;
+    }
+    if (this.#wants.lengthSq() > 1) this.#wants.normalize();
     if (this.body.grounded) {
       this.#coyote = PLATFORMER_FEEL.coyoteTime;
       this.#airJumpUsed = false;
@@ -95,10 +99,10 @@ export class Character {
       this.#dashCooldown <= 0 &&
       this.#dashTimer <= 0
     )
-      this.#startDash(wants);
+      this.#startDash(this.#wants);
 
     if (this.#dashTimer > 0) this.#driveDash();
-    else this.#driveWalk(wants, dt);
+    else this.#driveWalk(this.#wants, dt);
     this.#tryJump();
     this.body.moveAndSlide(dt);
     this.#face(dt);

@@ -18,6 +18,7 @@ import { WaveSchedule } from "../waves.js";
 export type GameCtx = ICtx<GameState, DefensePhysics>;
 
 const SAFE_BUILD_HEIGHT = 0;
+const EMPTY_POSITION = new Vector3();
 
 export class Defense extends Scene<GameState, DefensePhysics> {
   static override readonly initialState = INITIAL_STATE;
@@ -36,6 +37,7 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     const buildable = new Buildable(query);
     const economy = new Economy();
     const attackers = new Map<string, Attacker>();
+    const attackerPool: Attacker[] = [];
     const towers = new Map<string, Tower>();
     const removeAttackers = new Set<string>();
     let safeSlot = 0;
@@ -71,23 +73,35 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     };
     const spawn = (wave: number, member: number): void => {
       const id = `attacker.${wave}.${member}`;
-      const attacker = new Attacker({
-        id,
-        lateralOffset: member === 0 ? -0.17 : 0.17,
-        onDefeated: () => {
-          defeated += 1;
-          removeAttackers.add(id);
-        },
-        onLeak: () => {
-          leaks = registerLeak(leaks).leaks;
-          removeAttackers.add(id);
-          if (leaks >= MAX_LEAKS) status = "LOST";
-        },
-        pathPoints: board.points,
-        physics: ctx.physics,
-      });
-      attackers.set(id, attacker);
-      ctx.entities.add(id, attacker);
+      let attacker: Attacker | undefined;
+      for (const candidate of attackerPool) {
+        if (!candidate.dead && !candidate.escaped) continue;
+        attacker = candidate;
+        break;
+      }
+      if (attacker === undefined) {
+        const entityId = `attacker.pool.${attackerPool.length}`;
+        const created = new Attacker({
+          id: entityId,
+          lateralOffset: member === 0 ? -0.17 : 0.17,
+          onDefeated: () => {
+            defeated += 1;
+            removeAttackers.add(entityId);
+          },
+          onLeak: () => {
+            leaks = registerLeak(leaks).leaks;
+            removeAttackers.add(entityId);
+            if (leaks >= MAX_LEAKS) status = "LOST";
+          },
+          pathPoints: board.points,
+          physics: ctx.physics,
+        });
+        attacker = created;
+        attackerPool.push(attacker);
+        ctx.entities.add(entityId, attacker);
+      }
+      attacker.reset(id, member === 0 ? -0.17 : 0.17);
+      attackers.set(attacker.entityId, attacker);
     };
     const waves = new WaveSchedule({
       onSpawn: spawn,
@@ -103,6 +117,7 @@ export class Defense extends Scene<GameState, DefensePhysics> {
       if (reason === "route") routeRejects += 1;
       if (reason === "overlap") overlapRejects += 1;
     };
+    const state: GameState = { ...INITIAL_STATE };
     return (frameCtx, dt) => {
       loading.update();
       if (frameCtx.input.justPressed("restart")) {
@@ -122,18 +137,21 @@ export class Defense extends Scene<GameState, DefensePhysics> {
         }
         if (frameCtx.input.justPressed("routeTest")) place(ROUTE_TEST_SLOT);
         if (frameCtx.input.justPressed("overlapTest"))
-          place(lastPlaced ?? SAFE_BUILD_SLOTS[0] ?? new Vector3());
+          place(lastPlaced ?? SAFE_BUILD_SLOTS[0] ?? EMPTY_POSITION);
         for (const attacker of attackers.values()) attacker.update(dt);
         for (const tower of towers.values()) tower.update(dt);
-        waves.update(dt, attackers.size);
         for (const id of removeAttackers) {
-          ctx.entities.remove(id);
           attackers.delete(id);
         }
         removeAttackers.clear();
+        waves.update(dt, attackers.size);
       }
-      const scanCount = [...towers.values()].reduce((total, tower) => total + tower.scanCount, 0);
-      const shots = [...towers.values()].reduce((total, tower) => total + tower.shots, 0);
+      let scanCount = 0;
+      let shots = 0;
+      for (const tower of towers.values()) {
+        scanCount += tower.scanCount;
+        shots += tower.shots;
+      }
       if (scanWindowFrames < 300) {
         scanWindowFrames += 1;
         if (scanWindowFrames === 300) {
@@ -141,25 +159,41 @@ export class Defense extends Scene<GameState, DefensePhysics> {
           scanWindowValid = towers.size > 0 && scanCount >= 10 && scanCount <= 40 * towers.size;
         }
       }
-      const state: GameState = {
-        balance: economy.balance,
-        defeated,
-        income: economy.income,
-        leaks,
-        overlapRejects,
-        placementRejects: routeRejects + overlapRejects,
-        routeRejects,
-        scanCount,
-        scanWindowFrames,
-        scanWindowScans,
-        scanWindowValid,
-        shots,
-        spent: economy.spent,
-        status,
-        towers: towers.size,
-        wave: waves.spawned,
-      };
-      frameCtx.state.set(state);
+      const previous = frameCtx.state.getState();
+      state.balance = economy.balance;
+      state.defeated = defeated;
+      state.income = economy.income;
+      state.leaks = leaks;
+      state.overlapRejects = overlapRejects;
+      state.placementRejects = routeRejects + overlapRejects;
+      state.routeRejects = routeRejects;
+      state.scanCount = scanCount;
+      state.scanWindowFrames = scanWindowFrames;
+      state.scanWindowScans = scanWindowScans;
+      state.scanWindowValid = scanWindowValid;
+      state.shots = shots;
+      state.spent = economy.spent;
+      state.status = status;
+      state.towers = towers.size;
+      state.wave = waves.spawned;
+      const changed =
+        state.balance !== previous.balance ||
+        state.defeated !== previous.defeated ||
+        state.income !== previous.income ||
+        state.leaks !== previous.leaks ||
+        state.overlapRejects !== previous.overlapRejects ||
+        state.placementRejects !== previous.placementRejects ||
+        state.routeRejects !== previous.routeRejects ||
+        state.scanCount !== previous.scanCount ||
+        state.scanWindowFrames !== previous.scanWindowFrames ||
+        state.scanWindowScans !== previous.scanWindowScans ||
+        state.scanWindowValid !== previous.scanWindowValid ||
+        state.shots !== previous.shots ||
+        state.spent !== previous.spent ||
+        state.status !== previous.status ||
+        state.towers !== previous.towers ||
+        state.wave !== previous.wave;
+      if (changed) frameCtx.state.set(state);
     };
   }
 }

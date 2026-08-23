@@ -13,6 +13,7 @@ import {
 } from "../entities/Player.js";
 import { Target } from "../entities/Target.js";
 import { SpawnPoints } from "../level/SpawnPoints.js";
+import type { IRayHit } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createArenaCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
@@ -44,6 +45,11 @@ const SPAWN_POINTS = new SpawnPoints([
 ]);
 
 type TargetEntry = { readonly id: string; readonly target: Target };
+type ProjectileEntry = {
+  readonly collisionMask: number;
+  readonly id: string;
+  readonly value: Projectile;
+};
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
@@ -111,7 +117,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     const targets = new Map<number, Target>();
     const waveTargets: TargetEntry[] = [];
-    const projectiles: Array<{ readonly id: string; readonly value: Projectile }> = [];
+    const projectiles: ProjectileEntry[] = [];
+    const targetScratch: Target[] = [];
     let projectileIndex = 0;
     const waveDirector = new WaveDirector();
     const hitscan = new Hitscan();
@@ -121,26 +128,41 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // aim direction rotates with it. Reported through ctx.state so a playtest can observe the
     // rotation after the real input path.
     const lookState = { yaw: 0 };
-    const aimForward = (): Vector3 => AIM.clone().applyAxisAngle(UP, -lookState.yaw);
+    const aimDirection = new Vector3();
+    const enemyDirection = new Vector3();
+    const aimForward = (): Vector3 => aimDirection.copy(AIM).applyAxisAngle(UP, -lookState.yaw);
+
+    const onEnemyProjectileHit = (hit: IRayHit): void => {
+      if (hit.body.id === getPlayer().body.body.id) {
+        getPlayer().takeDamage(20);
+        emitPlaytestEvent({ entity: "player", name: "projectile-hit" });
+      }
+    };
+    const onPlayerProjectileHit = (hit: IRayHit): void => {
+      if (applyDirectDamage(targets, hit.body.id, 22))
+        emitPlaytestEvent({ entity: "player", name: "projectile-defeated" });
+    };
+
+    const acquireProjectile = (
+      origin: Vector3,
+      direction: Vector3,
+      collisionMask: number,
+      onHit: (hit: IRayHit) => void,
+    ): void => {
+      for (const entry of projectiles) {
+        if (!entry.value.dead || entry.collisionMask !== collisionMask) continue;
+        entry.value.reset(origin, direction, onHit);
+        return;
+      }
+      const id = `projectile.pool.${projectileIndex++}`;
+      const projectile = new Projectile(ctx, materials, origin, direction, collisionMask, onHit);
+      projectiles.push({ collisionMask, id, value: projectile });
+      ctx.entities.add(id, projectile);
+    };
 
     const createEnemyProjectile = (origin: Vector3): void => {
-      const direction = getPlayer().mesh.position.clone().sub(origin).normalize();
-      const id = `projectile.enemy.${projectileIndex++}`;
-      const projectile = new Projectile(
-        ctx,
-        materials,
-        origin,
-        direction,
-        WORLD_LAYER | PLAYER_LAYER,
-        (hit) => {
-          if (hit.body.id === getPlayer().body.body.id) {
-            getPlayer().takeDamage(20);
-            emitPlaytestEvent({ entity: "player", name: "projectile-hit" });
-          }
-        },
-      );
-      projectiles.push({ id, value: projectile });
-      ctx.entities.add(id, projectile);
+      const direction = enemyDirection.copy(getPlayer().mesh.position).sub(origin).normalize();
+      acquireProjectile(origin, direction, WORLD_LAYER | PLAYER_LAYER, onEnemyProjectileHit);
     };
 
     const registerTarget = (
@@ -183,7 +205,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (lives === 0) return;
       ctx.after(0.5, () => {
         waveDirector.reset();
-        const spawn = spawnPoints.furthestFrom(waveTargets.map(({ target }) => target));
+        targetScratch.length = 0;
+        for (const entry of waveTargets) targetScratch.push(entry.target);
+        const spawn = spawnPoints.furthestFrom(targetScratch);
         getPlayer().respawn(spawn);
         const state = ctx.state.getState();
         ctx.state.set({
@@ -329,27 +353,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const fireProjectile = (): void => {
-      const id = `projectile.player.${projectileIndex++}`;
-      const projectile = new Projectile(
-        ctx,
-        materials,
+      acquireProjectile(
         player.aimOrigin(),
         AIM,
         HOSTILE_LAYER | WORLD_LAYER,
-        (hit) => {
-          if (applyDirectDamage(targets, hit.body.id, 22))
-            emitPlaytestEvent({ entity: "player", name: "projectile-defeated" });
-        },
+        onPlayerProjectileHit,
       );
-      projectiles.push({ id, value: projectile });
-      ctx.entities.add(id, projectile);
     };
 
     const fireRadius = (): void => {
       applyRadiusDamage(ctx.physics, BLAST_CENTRE, 3.5, 80, targets);
-      const insideDeaths = [radiusNear, radiusMid].filter(
-        (target) => target.alive === false,
-      ).length;
+      let insideDeaths = 0;
+      if (!radiusNear.alive) insideDeaths += 1;
+      if (!radiusMid.alive) insideDeaths += 1;
       ctx.state.set({
         radiusInsideDeaths: insideDeaths,
         radiusMidAlive: radiusMid.alive ? 1 : 0,
@@ -412,43 +428,54 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const updateProjectiles = (frameCtx: GameCtx, dt: number): void => {
-      for (const entry of [...projectiles]) {
-        entry.value.update(frameCtx, dt);
-        if (!entry.value.dead) continue;
-        removeEntity(entry.id);
-        projectiles.splice(projectiles.indexOf(entry), 1);
-      }
+      for (const entry of projectiles) entry.value.update(frameCtx, dt);
     };
 
     const updateWaves = (frameCtx: GameCtx): void => {
-      waveDirector.update(
-        frameCtx,
-        waveTargets.filter(({ target }) => target.alive).length,
-        spawnWave,
-        (wave) => {
-          const state = frameCtx.state.getState();
-          frameCtx.state.set({ score: state.score + 100, wavesCleared: waveDirector.cleared });
-          emitPlaytestEvent({ entity: "wave", name: "cleared", wave });
-        },
-      );
+      let liveTargets = 0;
+      for (const entry of waveTargets) if (entry.target.alive) liveTargets += 1;
+      waveDirector.update(frameCtx, liveTargets, spawnWave, (wave) => {
+        const state = frameCtx.state.getState();
+        frameCtx.state.set({ score: state.score + 100, wavesCleared: waveDirector.cleared });
+        emitPlaytestEvent({ entity: "wave", name: "cleared", wave });
+      });
       if (waveDirector.won) frameCtx.state.set({ gameWon: 1, phase: "won" });
     };
 
+    const hudPatch: Partial<GameState> = {};
+    let lastHealth = -1;
+    let lastScanCount = -1;
+    let lastTargetsRemaining = -1;
+    let lastWave = -1;
+    let lastWavesCleared = -1;
     const syncStateAndHud = (frameCtx: GameCtx): void => {
-      const liveTargets = waveTargets.filter(({ target }) => target.alive).length;
-      const currentScanCount = [...targets.values()].reduce(
-        (sum, target) => sum + target.scanCount,
-        0,
-      );
+      let liveTargets = 0;
+      for (const entry of waveTargets) if (entry.target.alive) liveTargets += 1;
+      let currentScanCount = 0;
+      for (const target of targets.values()) currentScanCount += target.scanCount;
       const previous = frameCtx.state.getState();
       const scanCount = Math.max(previous.scanCount, currentScanCount);
-      frameCtx.state.set({
-        health: player.health,
-        scanCount,
-        targetsRemaining: liveTargets,
-        wave: waveDirector.wave,
-        wavesCleared: waveDirector.cleared,
-      });
+      const wave = waveDirector.wave;
+      const wavesCleared = waveDirector.cleared;
+      if (
+        player.health === lastHealth &&
+        scanCount === lastScanCount &&
+        liveTargets === lastTargetsRemaining &&
+        wave === lastWave &&
+        wavesCleared === lastWavesCleared
+      )
+        return;
+      lastHealth = player.health;
+      lastScanCount = scanCount;
+      lastTargetsRemaining = liveTargets;
+      lastWave = wave;
+      lastWavesCleared = wavesCleared;
+      hudPatch.health = player.health;
+      hudPatch.scanCount = scanCount;
+      hudPatch.targetsRemaining = liveTargets;
+      hudPatch.wave = wave;
+      hudPatch.wavesCleared = wavesCleared;
+      frameCtx.state.set(hudPatch);
     };
 
     // Relative mouse pixels accumulate here once per frame; the same yaw drives both the

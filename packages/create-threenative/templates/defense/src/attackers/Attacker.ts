@@ -9,8 +9,9 @@ export const ATTACKER_SPEED = 7;
 export const ATTACKER_HEALTH = 4;
 
 export class Attacker {
-  readonly id: string;
-  readonly lateralOffset: number;
+  readonly entityId: string;
+  id: string;
+  lateralOffset: number;
   readonly mesh: Group;
   readonly tags = ["attacker", "hostile"];
   readonly #body;
@@ -18,7 +19,7 @@ export class Attacker {
   readonly #sample: IPathFollow3DSample = {
     point: new Vector3(),
     progress: 0,
-    tangent: new Vector3(),
+    tangent: new Vector3(0, 0, 1),
   };
   readonly #side = new Vector3();
   #health = ATTACKER_HEALTH;
@@ -35,23 +36,23 @@ export class Attacker {
     readonly onDefeated: () => void;
     readonly onLeak: () => void;
   }) {
+    this.entityId = options.id;
     this.id = options.id;
     this.lateralOffset = options.lateralOffset;
     this.#onDefeated = options.onDefeated;
     this.#onLeak = options.onLeak;
     this.#path = new PathFollow3D({ points: options.pathPoints, speed: ATTACKER_SPEED });
-    this.#path.sample(undefined, this.#sample);
     this.mesh = attackerMesh();
-    this.#place(this.lateralOffset);
     this.#body = createEntityBody({
       collisionLayer: ATTACKER_LAYER,
       collisionMask: 0,
-      entity: this.id,
+      entity: this.entityId,
       object: this.mesh,
       physics: options.physics,
       shape: CollisionShape3D.sphere(0.42),
       type: "kinematic",
     });
+    this.reset(options.id, options.lateralOffset);
   }
 
   get dead(): boolean {
@@ -60,6 +61,18 @@ export class Attacker {
 
   get escaped(): boolean {
     return this.#escaped;
+  }
+
+  reset(id: string, lateralOffset: number): void {
+    this.id = id;
+    this.lateralOffset = lateralOffset;
+    this.#health = ATTACKER_HEALTH;
+    this.#dead = false;
+    this.#escaped = false;
+    this.#path.progressTo(0);
+    this.mesh.visible = true;
+    const sample = this.#path.sample(0, this.#sample);
+    this.#place(this.lateralOffset, sample.point, sample.tangent);
   }
 
   takeDamage(amount: number): void {
@@ -99,9 +112,9 @@ export class Attacker {
     this.mesh.removeFromParent();
   }
 
-  #place(lateralOffset: number, point = this.#sample.point, tangent = this.#sample.tangent): void {
-    this.#side.set(-tangent.z, 0, tangent.x).normalize();
-    this.mesh.position.copy(point).addScaledVector(this.#side, lateralOffset).setY(0);
+  #place(lateralOffset: number, point: Vector3, tangent: Vector3): void {
+    const side = this.#side.set(-tangent.z, 0, tangent.x).normalize();
+    this.mesh.position.copy(point).addScaledVector(side, lateralOffset).setY(0);
     this.mesh.rotation.y = Math.atan2(tangent.x, tangent.z);
   }
 }

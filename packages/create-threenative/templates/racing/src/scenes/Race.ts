@@ -13,7 +13,7 @@ import { flag } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";
-import { rankRacers } from "../track/Ranking.js";
+import { type IRankedRacer, type IRankedRacerScratch, rankRacers } from "../track/Ranking.js";
 import { TOTAL_LAPS, buildTrack, intersectRay, roadRayProbe } from "../track/Track.js";
 import { TrackSector } from "../track/TrackSector.js";
 
@@ -21,6 +21,15 @@ export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const SPAWN = new Vector3(2, 0.55, -18);
 const TIME_LIMIT = 90;
+
+function playerRanking(ranked: readonly IRankedRacer[]): IRankedRacer | undefined {
+  for (const racer of ranked) if (racer.id === "player") return racer;
+  return undefined;
+}
+
+function quantize(value: number, scale: number): number {
+  return Math.round(value * scale) / scale;
+}
 
 export class Race extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
@@ -77,13 +86,17 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       TOTAL_LAPS,
       (completed) => emitPlaytestEvent({ entity: "player", lap: completed, name: "lap-completed" }),
     );
-    const rankRace = () =>
-      rankRacers(track.route, [
-        { id: "player", lap: lap.completed, position: car.mesh.position },
-        { id: "rival", lap: rival.lap, position: rival.mesh.position },
-      ]);
+    const playerRankingInput = { id: "player", lap: lap.completed, position: car.mesh.position };
+    const rivalRankingInput = { id: "rival", lap: rival.lap, position: rival.mesh.position };
+    const rankingInputs = [playerRankingInput, rivalRankingInput];
+    const rankingBuffer: IRankedRacerScratch[] = [];
+    const rankRace = () => {
+      playerRankingInput.lap = lap.completed;
+      rivalRankingInput.lap = rival.lap;
+      return rankRacers(track.route, rankingInputs, undefined, rankingBuffer);
+    };
     const initialRanked = rankRace();
-    const initialPlayer = initialRanked.find((entry) => entry.id === "player");
+    const initialPlayer = playerRanking(initialRanked);
     if (initialPlayer === undefined) throw new Error("Race ranking lost the player at spawn.");
     const fallbackProbe = roadRayProbe(track.roadMeshes);
     const sector = new TrackSector({
@@ -105,6 +118,9 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let speedAfterBoost = 0;
     let boostSettled = false;
     let sameDistanceRanking = initialRanked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
+    let place = initialPlayer.place;
+    let positionLabel = `P${place}`;
+    const lastOnRoad: [number, number, number] = [SPAWN.x, SPAWN.y, SPAWN.z];
     const observedPosition = SPAWN.clone();
     sector.update(SPAWN, car.forward, 0);
     chaseCamera(camera, car.mesh.position, car.forward, 1);
@@ -118,14 +134,17 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       sector.update(car.mesh.position, car.forward, dt);
       if (sector.rescue(car)) {
         rescues += 1;
-        rescuePositionError = Number(
-          car.mesh.position.distanceTo(sector.lastOnRoadPosition).toFixed(4),
+        rescuePositionError = quantize(
+          car.mesh.position.distanceTo(sector.lastOnRoadPosition),
+          10_000,
         );
-        rescueHeadingError = Number(car.forward.angleTo(sector.lastOnRoadHeading).toFixed(4));
+        rescueHeadingError = quantize(car.forward.angleTo(sector.lastOnRoadHeading), 10_000);
         emitPlaytestEvent({ entity: "player", name: "rescued" });
       }
       if (elapsed >= TIME_LIMIT || rescues >= 4) status = "DNF";
     };
+
+    const statePatch: Partial<GameState> = {};
 
     return (frameCtx, dt) => {
       loading.update();
@@ -145,34 +164,40 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         }
       }
       const ranked = rankRace();
-      const player = ranked.find((entry) => entry.id === "player");
+      const player = playerRanking(ranked);
       if (player === undefined) throw new Error("Race ranking lost the player.");
       sameDistanceRanking = ranked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
       status = resolveRaceStatus(status, lap.completed, TOTAL_LAPS, player.place);
+      if (player.place !== place) {
+        place = player.place;
+        positionLabel = `P${place}`;
+      }
       const previous = frameCtx.state.getState();
       const boostPeakSpeed = Math.max(previous.boostPeakSpeed, car.boost.active ? car.speed : 0);
-      frameCtx.state.set({
-        boostActive: car.boost.active,
-        boostPeakSpeed,
-        boostUses: car.boost.uses,
-        completedLaps: lap.completed,
-        elapsed,
-        lastOnRoad: sector.lastOnRoadPosition.toArray() as [number, number, number],
-        place: player.place,
-        position: `P${player.place}`,
-        raceStatus: status,
-        rescueHeading: Math.atan2(sector.lastOnRoadHeading.z, sector.lastOnRoadHeading.x),
-        rescueHeadingError,
-        rescuePositionError,
-        rescues,
-        shortcutRejects: lap.shortcutRejects,
-        speed: car.speed,
-        speedAfterBoost,
-        sameDistanceRanking,
-        topSpeed: Math.max(previous.topSpeed, car.topSpeed),
-        trackProgress: player.routeProgress,
-        reverseRejects: lap.reverseRejects,
-      });
+      lastOnRoad[0] = sector.lastOnRoadPosition.x;
+      lastOnRoad[1] = sector.lastOnRoadPosition.y;
+      lastOnRoad[2] = sector.lastOnRoadPosition.z;
+      statePatch.boostActive = car.boost.active;
+      statePatch.boostPeakSpeed = boostPeakSpeed;
+      statePatch.boostUses = car.boost.uses;
+      statePatch.completedLaps = lap.completed;
+      statePatch.elapsed = elapsed;
+      statePatch.lastOnRoad = lastOnRoad;
+      statePatch.place = player.place;
+      statePatch.position = positionLabel;
+      statePatch.raceStatus = status;
+      statePatch.rescueHeading = Math.atan2(sector.lastOnRoadHeading.z, sector.lastOnRoadHeading.x);
+      statePatch.rescueHeadingError = rescueHeadingError;
+      statePatch.rescuePositionError = rescuePositionError;
+      statePatch.rescues = rescues;
+      statePatch.shortcutRejects = lap.shortcutRejects;
+      statePatch.speed = car.speed;
+      statePatch.speedAfterBoost = speedAfterBoost;
+      statePatch.sameDistanceRanking = sameDistanceRanking;
+      statePatch.topSpeed = Math.max(previous.topSpeed, car.topSpeed);
+      statePatch.trackProgress = player.routeProgress;
+      statePatch.reverseRejects = lap.reverseRejects;
+      frameCtx.state.set(statePatch);
       chaseCamera(camera, car.mesh.position, car.forward, dt);
       cameraRoll(camera, car.forward);
     };

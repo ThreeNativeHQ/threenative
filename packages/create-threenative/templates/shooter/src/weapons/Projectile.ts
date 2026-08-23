@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import type { Mesh, Vector3 } from "three";
+import { type Mesh, Vector3 } from "three";
 import { PROJECTILE_LAYER } from "../entities/Player.js";
 import { type IRayHit, directSpaceState } from "../physics.js";
 import { createProjectileVisual } from "../render/shapes.js";
@@ -12,11 +12,13 @@ export class Projectile {
   readonly mesh: Mesh;
   readonly body: RigidBody3D;
   readonly tags = ["projectile"];
-  #direction: Vector3;
+  #direction = new Vector3();
+  #from = new Vector3();
+  #to = new Vector3();
   #life = 2.4;
-  #speed = 10;
-  #collisionMask: number;
-  #onHit: (hit: IRayHit) => void;
+  readonly #speed = 10;
+  readonly #collisionMask: number;
+  #onHit: (hit: IRayHit) => void = () => undefined;
   #dead = false;
 
   constructor(
@@ -28,10 +30,8 @@ export class Projectile {
     onHit: (hit: IRayHit) => void,
   ) {
     this.#collisionMask = collisionMask;
-    this.#direction = direction.clone().normalize();
-    this.#onHit = onHit;
     this.mesh = createProjectileVisual(materials);
-    this.mesh.position.copy(origin);
+    this.reset(origin, direction, onHit);
     ctx.add(this.mesh);
     this.body = new RigidBody3D({
       collisionLayer: PROJECTILE_LAYER,
@@ -47,15 +47,25 @@ export class Projectile {
     return this.#dead;
   }
 
+  reset(origin: Vector3, direction: Vector3, onHit: (hit: IRayHit) => void): void {
+    this.#life = 2.4;
+    this.#dead = false;
+    this.#onHit = onHit;
+    this.#direction.copy(direction).normalize();
+    this.mesh.position.copy(origin);
+    this.mesh.visible = true;
+  }
+
   update(ctx: GameCtx, dt: number): void {
     if (this.#dead) return;
     this.#life -= dt;
     if (this.#life <= 0) {
       this.#dead = true;
+      this.mesh.visible = false;
       return;
     }
-    const from = this.mesh.position.clone();
-    const to = from.clone().addScaledVector(this.#direction, this.#speed * dt);
+    const from = this.#from.copy(this.mesh.position);
+    const to = this.#to.copy(from).addScaledVector(this.#direction, this.#speed * dt);
     const hit = directSpaceState(ctx.physics).intersectRay({
       collisionMask: this.#collisionMask,
       from,
@@ -63,6 +73,7 @@ export class Projectile {
     });
     if (hit !== undefined) {
       this.#dead = true;
+      this.mesh.visible = false;
       this.#onHit(hit);
       return;
     }

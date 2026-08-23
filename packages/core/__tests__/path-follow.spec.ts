@@ -82,6 +82,18 @@ describe("PathFollow3D", () => {
     expect(projection.tangent).toBe(projectionTarget.tangent);
   });
 
+  it("refills the same targets on repeated live calls", () => {
+    const follow = new PathFollow3D({ points, speed: 4 });
+    const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };
+    const first = follow.advance(0.5, sampleTarget);
+    const firstProgress = sampleTarget.progress;
+    const second = follow.advance(0.5, sampleTarget);
+
+    expect(first).toBe(sampleTarget);
+    expect(second).toBe(first);
+    expect(sampleTarget.progress).toBeGreaterThan(firstProgress);
+  });
+
   it("passes targets through Three.js tangent sampling", () => {
     const follow = new PathFollow3D({ points, speed: 4 });
     const target = { point: new Vector3(), progress: 0, tangent: new Vector3() };
@@ -117,6 +129,23 @@ describe("PathFollow3D", () => {
 
     expect(usedEvery).toBe(false);
     expect(usedEntries).toBe(false);
+  });
+
+  it("keeps allocating results safe to retain", () => {
+    const follow = new PathFollow3D({ points });
+    const first = follow.sample(1);
+    const firstPoint = first.point.clone();
+    const second = follow.pointAt(2);
+    const firstProjection = follow.project(new Vector3(1, 0, 0));
+    const firstProjectionPoint = firstProjection.point.clone();
+    const secondProjection = follow.project(new Vector3(2, 0, 0));
+
+    expect(second).not.toBe(first);
+    expect(first.point).toEqual(firstPoint);
+    expect(second.point).not.toEqual(first.point);
+    expect(secondProjection).not.toBe(firstProjection);
+    expect(firstProjection.point).toEqual(firstProjectionPoint);
+    expect(secondProjection.point).not.toEqual(firstProjection.point);
   });
 
   it("rejects malformed routes and deltas", () => {

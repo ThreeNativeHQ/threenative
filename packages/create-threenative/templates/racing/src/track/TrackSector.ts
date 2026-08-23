@@ -1,4 +1,4 @@
-import type { PathFollow3D } from "@threenative/core";
+import type { IPathFollow3DProjection, PathFollow3D } from "@threenative/core";
 import { Vector3 } from "three";
 import { type IRescueTarget, rescueToLastValid } from "./rescue.js";
 
@@ -33,6 +33,15 @@ export class TrackSector {
   readonly #intersectRay: IntersectRay;
   readonly #rescueDelay: number;
   readonly #rayHeight: number;
+  readonly #origin = new Vector3();
+  readonly #direction = new Vector3(0, -1, 0);
+  readonly #projection: IPathFollow3DProjection = {
+    distanceFromStart: 0,
+    lateralDistance: 0,
+    point: new Vector3(),
+    segment: 0,
+    tangent: new Vector3(0, 0, 1),
+  };
 
   constructor(options: ITrackSectorOptions) {
     this.#route = options.route;
@@ -45,13 +54,14 @@ export class TrackSector {
   update(position: Vector3, heading: Vector3, dt: number): boolean {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("TrackSector.update requires a finite non-negative dt.");
-    const origin = position.clone().add(new Vector3(0, this.#rayHeight, 0));
-    const hit = this.#intersectRay(origin, new Vector3(0, -1, 0), this.#rayHeight + 2);
+    const origin = this.#origin.copy(position);
+    origin.y += this.#rayHeight;
+    const hit = this.#intersectRay(origin, this.#direction, this.#rayHeight + 2);
     const onRoad = hit !== undefined && hit.distance >= 0 && hit.distance <= this.#rayHeight + 2;
     if (onRoad) {
       this.lastOnRoadPosition.copy(position);
       this.lastOnRoadHeading.copy(heading).setY(0).normalize();
-      this.currentSector = this.#route.project(position).segment;
+      this.currentSector = this.#route.project(position, this.#projection).segment;
       this.#hasOnRoadSample = true;
       this.#offRoadTime = 0;
       return true;
