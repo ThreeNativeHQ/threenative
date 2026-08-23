@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   Group,
   InstancedMesh,
@@ -55,6 +56,67 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("returns no render metrics object on either disabled render path", () => {
+    const source = readFileSync(new URL("../src/game.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("if (!this.#renderMetricsEnabled) return undefined;");
+    expect(source).toContain("return this.#renderMetricsEnabled ? worldMetrics : undefined;");
+    expect(source).not.toContain("if (!this.#renderMetricsEnabled) return {};");
+    expect(source).not.toContain("return this.#renderMetricsEnabled ? worldMetrics : {};");
+  });
+
+  it("executes the ordinary no-overlay render path with diagnostics disabled", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let worldRenders = 0;
+    let sceneRenders = 0;
+    class OrdinaryScene extends Scene {
+      static override readonly initialState = {};
+
+      override render(): void {
+        sceneRenders += 1;
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => {
+            worldRenders += 1;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: OrdinaryScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
+
+      frame(16);
+      expect(ctx.canvasLayer.scene.children).toHaveLength(0);
+      expect(worldRenders).toBe(1);
+      expect(sceneRenders).toBe(1);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("draws only the CanvasLayer on every opaque frame and draws it last otherwise", async () => {
     const canvas = testCanvas();
     const draws: unknown[] = [];

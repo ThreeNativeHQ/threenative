@@ -16,7 +16,7 @@ export function useGameState<TState extends Record<string, unknown>, TPhysics, T
 ): TSelected {
   return useSyncExternalStore(
     (onStoreChange) => game.state.subscribe(onStoreChange),
-    () => selector(game.state.getState()),
-    () => selector(game.state.getState()),
+    () => selector(game.state.getPublishedState()),
+    () => selector(game.state.getPublishedState()),
   );
 }

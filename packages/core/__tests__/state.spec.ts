@@ -48,4 +48,33 @@ describe("createGameStore", () => {
     unsubscribe();
     store.stop();
   });
+
+  it("should keep the immediate snapshot identity stable across pre-flush writes", () => {
+    const store = createGameStore({ score: 0 });
+    const immediate = store.getState();
+
+    for (let score = 1; score <= 600; score += 1) store.set({ score });
+
+    expect(store.getState()).toBe(immediate);
+    expect(store.getState().score).toBe(600);
+    store.stop();
+  });
+
+  it("should never mutate a retained published snapshot", () => {
+    const store = createGameStore({ score: 0 });
+    const published: Readonly<{ score: number }>[] = [];
+    const unsubscribe = store.subscribe((state) => published.push(state));
+
+    store.set({ score: 1 });
+    store.flush();
+    store.set({ score: 2 });
+    store.flush();
+
+    expect(published).toHaveLength(2);
+    expect(published[0]).toEqual({ score: 1 });
+    expect(published[1]).toEqual({ score: 2 });
+    expect(published[0]).not.toBe(published[1]);
+    unsubscribe();
+    store.stop();
+  });
 });

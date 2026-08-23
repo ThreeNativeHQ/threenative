@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { InputMap } from "../src/input.js";
 
@@ -18,6 +19,58 @@ function pointerEvent(
 }
 
 describe("InputMap", () => {
+  it("should reuse one vector when the same action is sampled", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    const first = input.vector("move");
+    const second = input.vector("move");
+
+    expect(second).toBe(first);
+    input.dispose();
+  });
+
+  it("should keep move and aim vectors independent", () => {
+    const target = new EventTarget();
+    const input = new InputMap(
+      {
+        aim: { right: ["ArrowRight"] },
+        move: { up: ["KeyW"] },
+      },
+      target,
+    );
+
+    const move = input.vector("move");
+    const aim = input.vector("aim");
+
+    expect(aim).not.toBe(move);
+    target.dispatchEvent(keyEvent("keydown", "KeyW"));
+    expect(move.toArray()).toEqual([0, 0]);
+    expect(input.vector("move").toArray()).toEqual([0, 1]);
+    expect(aim.toArray()).toEqual([0, 0]);
+    input.dispose();
+  });
+
+  it("should keep unknown action vectors stable and distinct", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    const firstUnknown = input.vector("first-unknown");
+    const secondUnknown = input.vector("second-unknown");
+
+    expect(input.vector("first-unknown")).toBe(firstUnknown);
+    expect(secondUnknown).not.toBe(firstUnknown);
+    expect(firstUnknown.toArray()).toEqual([0, 0]);
+    expect(secondUnknown.toArray()).toEqual([0, 0]);
+    input.dispose();
+  });
+
+  it("should scan the gamepad source without a per-tick find predicate", () => {
+    const source = readFileSync(new URL("../src/input.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain(".find(");
+  });
+
   it("should report (-1, 0) when KeyA is held", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);

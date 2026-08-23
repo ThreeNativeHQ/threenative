@@ -35,6 +35,7 @@ export class FixedStepLoop {
   #fps = 0;
   #lastRenderTime: number | undefined;
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
+  #frameCallback: (time: number) => void;
   // Sample collection is opt-in because nothing outside a diagnostics consumer reads the series:
   // collecting unconditionally spent allocations on every rendered frame of every game.
   #collectMetrics: boolean;
@@ -71,6 +72,7 @@ export class FixedStepLoop {
         if (typeof globalThis.cancelAnimationFrame === "function")
           globalThis.cancelAnimationFrame(handle);
       });
+    this.#frameCallback = (time) => this.#frame(time);
   }
 
   get running(): boolean {
@@ -95,7 +97,7 @@ export class FixedStepLoop {
     this.#tick = 0;
     this.#fps = 0;
     this.#renderPerformanceSamples = [];
-    this.#frameHandle = this.#requestFrame((time) => this.#frame(time));
+    this.#frameHandle = this.#requestFrame(this.#frameCallback);
   }
   stop(): void {
     this.#running = false;
@@ -162,7 +164,7 @@ export class FixedStepLoop {
       this.stepFrame(time);
     } finally {
       if (this.#running) {
-        this.#frameHandle = this.#requestFrame((nextTime) => this.#frame(nextTime));
+        this.#frameHandle = this.#requestFrame(this.#frameCallback);
       }
     }
   }

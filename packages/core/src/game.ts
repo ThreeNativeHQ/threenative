@@ -558,13 +558,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         if (canvasLayer.scene.children.length > 0) {
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
-          if (!this.#renderMetricsEnabled) return {};
+          if (!this.#renderMetricsEnabled) return undefined;
           const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
           return worldMetrics === undefined
             ? overlayMetrics
             : addRenderPerformanceMetrics(worldMetrics, overlayMetrics);
         }
-        return this.#renderMetricsEnabled ? (worldMetrics ?? {}) : {};
+        return this.#renderMetricsEnabled ? worldMetrics : undefined;
       },
       onUpdate: (dt) => {
         if (this.#paused) return;

@@ -136,6 +136,7 @@ export class InputMap {
   readonly raw: IRawInputState;
   #bindings: InputBindings;
   #bindingNames: string[] = [];
+  #vectors = new Map<string, Vector2>();
   #target: EventTarget;
   #heldKeys = new Set<string>();
   #pointerPosition = new Vector2();
@@ -227,12 +228,14 @@ export class InputMap {
    * `Input.get_vector`, where up is -y.
    */
   vector(name: string): Vector2 {
+    let vector = this.#vectors.get(name);
+    if (vector === undefined) {
+      vector = new Vector2();
+      this.#vectors.set(name, vector);
+    }
     const binding = this.#bindings[name];
-    if (binding === undefined) return new Vector2();
-    const vector = new Vector2(
-      this.#isHeld(binding.left) ? -1 : 0,
-      this.#isHeld(binding.down) ? -1 : 0,
-    );
+    if (binding === undefined) return vector.set(0, 0);
+    vector.set(this.#isHeld(binding.left) ? -1 : 0, this.#isHeld(binding.down) ? -1 : 0);
     if (this.#isHeld(binding.right)) vector.x += 1;
     if (this.#isHeld(binding.up)) vector.y += 1;
     if (name === "move" && this.#gamepadAxes.length >= 2) {
@@ -288,19 +291,29 @@ export class InputMap {
   pressed(name: string): boolean {
     const binding = this.#bindings[name];
     if (binding === undefined) return false;
-    return (
+    if (
       this.#isHeld(binding.keys) ||
       this.#isHeld(binding.down) ||
       this.#isHeld(binding.left) ||
       this.#isHeld(binding.right) ||
       this.#isHeld(binding.up) ||
-      (binding.pointer === true && this.#pointers.size > 0) ||
-      (binding.mouseButtons?.some(
-        (button) => (this.#pointerButtons & mouseButtonMask(button)) !== 0,
-      ) ??
-        false) ||
-      (binding.buttons?.some((button) => this.#gamepadButtons[button] === true) ?? false)
-    );
+      (binding.pointer === true && this.#pointers.size > 0)
+    )
+      return true;
+    const mouseButtons = binding.mouseButtons;
+    if (mouseButtons !== undefined) {
+      for (let index = 0; index < mouseButtons.length; index += 1) {
+        if ((this.#pointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
+          return true;
+      }
+    }
+    const gamepadButtons = binding.buttons;
+    if (gamepadButtons !== undefined) {
+      for (let index = 0; index < gamepadButtons.length; index += 1) {
+        if (this.#gamepadButtons[gamepadButtons[index] as number] === true) return true;
+      }
+    }
+    return false;
   }
 
   justPressed(name: string): boolean {
@@ -314,7 +327,15 @@ export class InputMap {
   tick(): void {
     this.#relativeSample.copy(this.#pointerRelative);
     this.#pointerRelative.set(0, 0);
-    const gamepad = this.#source().find((item) => item !== null);
+    const sources = this.#source();
+    let gamepad: IInputGamepad | undefined;
+    for (let index = 0; index < sources.length; index += 1) {
+      const candidate = sources[index];
+      if (candidate !== null) {
+        gamepad = candidate;
+        break;
+      }
+    }
     // Reused buffers: fresh arrays here were four allocations per update step, device or not.
     this.#gamepadAxes.length = 0;
     this.#gamepadButtons.length = 0;
@@ -323,13 +344,16 @@ export class InputMap {
       for (let axis = 0; axis < axes.length; axis += 1)
         this.#gamepadAxes.push(axes[axis] as number);
     }
-    if (gamepad?.buttons)
-      for (const button of gamepad.buttons) this.#gamepadButtons.push(button.pressed);
+    if (gamepad?.buttons) {
+      for (let index = 0; index < gamepad.buttons.length; index += 1)
+        this.#gamepadButtons.push(gamepad.buttons[index]?.pressed ?? false);
+    }
     this.raw.gamepad.axes = this.#gamepadAxes;
     this.raw.gamepad.buttons = this.#gamepadButtons;
     this.#justPressed.clear();
     this.#justReleased.clear();
-    for (const name of this.#bindingNames) {
+    for (let index = 0; index < this.#bindingNames.length; index += 1) {
+      const name = this.#bindingNames[index] as string;
       // A press that came and went inside this frame still counts as a press. `pressed()` stays
       // instantaneous — it answers "is it down right now" — while the edge is latched, so a tap
       // reports justPressed on this frame and justReleased on the next one.
@@ -379,24 +403,39 @@ export class InputMap {
   #latchedPressed(name: string): boolean {
     const binding = this.#bindings[name];
     if (binding === undefined) return false;
-    const latched = (codes: readonly string[] | undefined): boolean =>
-      codes?.some((code) => this.#latchedKeys.has(code)) ?? false;
-    return (
-      latched(binding.keys) ||
-      latched(binding.down) ||
-      latched(binding.left) ||
-      latched(binding.right) ||
-      latched(binding.up) ||
-      (binding.pointer === true && this.#latchedPointer) ||
-      (binding.mouseButtons?.some(
-        (button) => (this.#latchedPointerButtons & mouseButtonMask(button)) !== 0,
-      ) ??
-        false)
-    );
+    if (
+      this.#isLatched(binding.keys) ||
+      this.#isLatched(binding.down) ||
+      this.#isLatched(binding.left) ||
+      this.#isLatched(binding.right) ||
+      this.#isLatched(binding.up) ||
+      (binding.pointer === true && this.#latchedPointer)
+    )
+      return true;
+    const mouseButtons = binding.mouseButtons;
+    if (mouseButtons !== undefined) {
+      for (let index = 0; index < mouseButtons.length; index += 1) {
+        if ((this.#latchedPointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
+          return true;
+      }
+    }
+    return false;
   }
 
   #isHeld(codes: readonly string[] | undefined): boolean {
-    return codes?.some((code) => this.#heldKeys.has(code)) ?? false;
+    if (codes === undefined) return false;
+    for (let index = 0; index < codes.length; index += 1) {
+      if (this.#heldKeys.has(codes[index] as string)) return true;
+    }
+    return false;
+  }
+
+  #isLatched(codes: readonly string[] | undefined): boolean {
+    if (codes === undefined) return false;
+    for (let index = 0; index < codes.length; index += 1) {
+      if (this.#latchedKeys.has(codes[index] as string)) return true;
+    }
+    return false;
   }
 
   #listen(target: EventTarget, type: string, listener: EventListener): void {

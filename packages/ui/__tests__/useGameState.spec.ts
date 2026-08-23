@@ -56,4 +56,29 @@ describe("useGameState", () => {
 
     expect(renders).toBe(1);
   });
+
+  it("should re-render a full-state subscriber after a state flush", () => {
+    const game = defineGame({
+      initialState: { hull: 100, score: 0 },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+    let renders = 0;
+
+    function Probe() {
+      useGameState(game);
+      renders += 1;
+      return createElement("span");
+    }
+
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => {
+      game.state.set({ score: 1 });
+      game.state.flush();
+    });
+
+    expect(renders).toBe(2);
+  });
 });

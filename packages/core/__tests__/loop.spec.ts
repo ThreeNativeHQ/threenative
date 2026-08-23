@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FixedStepLoop } from "../src/loop.js";
+import { FixedStepLoop, type IRenderPerformanceMetrics } from "../src/loop.js";
 
 describe("FixedStepLoop", () => {
   it("should reject a maxSteps that can never run an update", () => {
@@ -108,6 +108,29 @@ describe("FixedStepLoop", () => {
     expect(callbacks).toHaveLength(1);
   });
 
+  it("should reuse one request-frame callback across 120 frames", () => {
+    const callbacks: Array<(time: number) => void> = [];
+    const identities = new Set<(time: number) => void>();
+    const loop = new FixedStepLoop({
+      onUpdate: () => undefined,
+      requestFrame: (callback) => {
+        callbacks.push(callback);
+        identities.add(callback);
+        return callbacks.length;
+      },
+    });
+
+    loop.start(0);
+    for (let frame = 1; frame <= 120; frame += 1) {
+      const callback = callbacks.shift();
+      if (callback === undefined) throw new Error("The loop did not schedule a frame.");
+      callback(frame * 16);
+    }
+
+    expect(identities).toHaveLength(1);
+    loop.stop();
+  });
+
   it("should advance fixed ticks only while the loop is running", () => {
     let updates = 0;
     const loop = new FixedStepLoop({ onUpdate: () => updates++ });
@@ -164,6 +187,23 @@ describe("FixedStepLoop metrics collection", () => {
     loop.start(0);
     for (let index = 1; index <= 5; index += 1) loop.stepFrame(index * 16);
     expect(loop.runtimeDiagnosticsSeries()).toHaveLength(0);
+  });
+
+  it("does not create a disabled metrics record for a rendered frame", () => {
+    const rendered: Array<undefined | IRenderPerformanceMetrics> = [];
+    const loop = new FixedStepLoop({
+      onUpdate: () => undefined,
+      onRender: () => {
+        const metrics = undefined;
+        rendered.push(metrics);
+        return metrics;
+      },
+    });
+
+    loop.start(0);
+    loop.stepFrame(16);
+
+    expect(rendered).toEqual([undefined]);
   });
 
   it("still calls onRender every frame while collecting nothing", () => {
