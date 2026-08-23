@@ -16,12 +16,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@threenative/core": "0.2.0",
-    "@threenative/physics": "0.2.1",
+    "@threenative/core": "0.3.0",
+    "@threenative/physics": "0.3.0",
     "three": "0.185.1"
   },
   "devDependencies": {
-    "@threenative/playtest": "0.2.0",
+    "@threenative/playtest": "0.3.0",
     "threenative-engine-mcp": "0.2.0",
     "@types/three": "0.185.3",
     "create-threenative": "0.2.3",
@@ -34,7 +34,7 @@
     "@gltf-transform/cli": "4.4.2"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": "0.2.0"
+    "@threenative/runtime-native": "0.3.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"]

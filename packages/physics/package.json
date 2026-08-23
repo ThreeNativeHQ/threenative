@@ -1,6 +1,6 @@
 {
   "name": "@threenative/physics",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Thin Rapier physics bindings for ThreeNative games.",
   "type": "module",
@@ -29,7 +29,7 @@
     "recast-navigation": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/core": ">=0.2.0 <0.3.0"
+    "@threenative/core": ">=0.3.0 <0.4.0"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",

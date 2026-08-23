@@ -70,6 +70,40 @@ The negative-control scenarios in `examples/native-smoke/playtests/` (`-misspell
 `-wrong-value`) prove the device path still fails closed; run them when you change transport
 or observation code.
 
+## Scenario-controlled spawn & aim
+
+The scenario `setup` block carries a placement vocabulary so capturing a vantage frame is
+one scenario, not a patch-run-revert ceremony:
+
+- `setup.spawn { x, z }` (+ optional `y`) overrides the SUBJECT player start's position.
+  An absent `y` preserves the game's own height (eye or ground line); it is never silently
+  defaulted to zero. Requires `subject`.
+- `setup.aim { yaw, pitch }` overrides the SUBJECT player start's aim; both angles are
+  radians, Three.js convention (forward is -Z at yaw 0, pitch positive up). Requires
+  `subject`.
+- `setup.place[]` entries `{ entity, at: {x,y,z}, facing?: {yaw} | lookAt?: {x,y,z}, frozen?: boolean }`
+  put named entities at explicit transforms. `frozen` sets `PLAYTEST_FROZEN_MARKER`
+  (`__threenativeFrozen`) on the entity's userData — data the game reads to suppress
+  physics motion, never a runner-side teleport loop.
+
+Presence semantics are explicit and fail closed: an unknown entity id, an entity missing
+from the registry at apply time, or a target coincident with the subject is a NAMED error
+(`TN_PLAYTEST_SETUP_UNAPPLIED`), never a silent skip. One entity may be placed by only one
+of `setup.entities` / `setup.place`.
+
+Steps can also carry `{ kind: "aimAt", target: { x, z } | { entity }, pitch?, waitTicks?, screenshot?, label? }`.
+The runner samples the subject's current position, computes yaw/pitch toward the target,
+and applies them through the setup channel as quaternion data — no CDP mouse events and no
+OS-focus dependency. An `aimAt` step cannot also deliver input (`press`, pointers) or
+ignored holds (`holdTicks`/`holdFrames`); follow it with a `waitTicks` step to hold the pose.
+
+Every requested override rides into the run report as `setup.requested` next to what
+applied (`setup.applied`). A run whose placement cannot apply fails with the reason named —
+an overridden spawn must be visible in diagnostics, never green-with-silence. The game keeps
+its own spawn constants; scenarios override them for determinism, through this one channel.
+The template-teaching copy of this vocabulary ships via the create-threenative shared
+fragment when games adopt it; until then this section is the harness contract.
+
 ## Determinism
 
 Scenario steps count fixed-step ticks, not milliseconds — use `holdTicks`, `waitTicks`. The

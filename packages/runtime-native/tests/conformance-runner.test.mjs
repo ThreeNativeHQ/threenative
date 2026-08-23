@@ -52,7 +52,14 @@ function run(args, env = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
     cwd: root,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: {
+      // A runner spawned by a test is a nested lane, never the outermost one: it must not
+      // register its own parity lease, or it collides with the live lease the suite wrapper
+      // (run-test-suite.sh) already holds and every package-test run fails TN_WORKTREE_OWNED.
+      TN_GATE_NESTED: "1",
+      ...process.env,
+      ...env,
+    },
     timeout: 120_000,
   });
 }

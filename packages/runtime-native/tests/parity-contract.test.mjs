@@ -287,4 +287,3 @@ test("the camera-parented overlay row resizes for real and observes the drawing 
   assert.match(scene, /trace\("set-size-returned"/u);
   assert.match(scene, /trace\("viewport-passed"/u);
 });
-});

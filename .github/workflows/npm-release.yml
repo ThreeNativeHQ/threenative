@@ -72,6 +72,7 @@ jobs:
       #   @threenative/runtime-native
       #   @threenative/ui
       #   create-threenative
+      #   threenative-engine-mcp
       - name: Publish every non-private workspace package
         run: pnpm -r --filter "./packages/*" publish --access public --no-git-checks
         env:

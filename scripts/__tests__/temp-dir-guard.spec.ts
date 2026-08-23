@@ -7,6 +7,10 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
+  [
+    "packages/playtest/src/runner/captureLock.ts",
+    "The holder staging directory is removed immediately after the atomic rename.",
+  ],
   ["packages/playtest/src/runner/ios.ts", "iOS device staging is removed in finally."],
   [
     "packages/playtest/src/runner/videoAnalysis.ts",

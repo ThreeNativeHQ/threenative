@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   defaultRunId,
   finishGateRecord,
@@ -20,7 +21,7 @@ afterEach(async () => {
 });
 
 async function tempStatusPath(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "gate-records-"));
+  const root = await makeTempDir("gate-records-");
   temporaryRoots.push(root);
   return path.join(root, "status.json");
 }

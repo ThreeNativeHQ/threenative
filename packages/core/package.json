@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
@@ -46,7 +46,7 @@
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.2.0 <0.3.0"
+    "@threenative/playtest": ">=0.3.0 <0.4.0"
   },
   "peerDependenciesMeta": {
     "@threenative/playtest": {

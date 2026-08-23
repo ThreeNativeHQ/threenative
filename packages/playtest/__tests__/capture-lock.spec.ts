@@ -1,7 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import {
   acquireCaptureLock,
@@ -58,7 +60,7 @@ test("CAPTURE_LOCK_TIMEOUT_MS overrides both defaults and must be a positive int
 });
 
 test("an absent lock root means nobody else is running", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   try {
     expect(detectCaptureConcurrency({ isProcessAlive: aliveAlways, lockRoot })).toBe(0);
   } finally {
@@ -67,7 +69,7 @@ test("an absent lock root means nobody else is running", async () => {
 });
 
 test("a live holder counts as concurrency; a dead one does not", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   try {
     const lockDir = join(lockRoot, "lock");
     await mkdir(lockDir, { recursive: true });
@@ -84,7 +86,7 @@ test("a live holder counts as concurrency; a dead one does not", async () => {
 });
 
 test("a malformed holder record fails closed instead of reading as solo", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   try {
     const lockDir = join(lockRoot, "lock");
     await mkdir(lockDir, { recursive: true });
@@ -96,7 +98,7 @@ test("a malformed holder record fails closed instead of reading as solo", async 
 });
 
 test("acquire, hold, release leaves no residue behind", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   const states: string[] = [];
   try {
     const lease = await acquireCaptureLock({
@@ -119,7 +121,7 @@ test("acquire, hold, release leaves no residue behind", async () => {
 });
 
 test("a held lock times out naming the holder, and is NOT a test failure", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   try {
     const holderLease = await acquireCaptureLock({
       command: "playtest beta",
@@ -156,7 +158,7 @@ test("a held lock times out naming the holder, and is NOT a test failure", async
 });
 
 test("a dead holder's stale lock is stolen, not waited on", async () => {
-  const lockRoot = await mkdtemp(join(tmpdir(), "tn-capture-lock-"));
+  const lockRoot = await makeTempDir("tn-capture-lock-");
   try {
     const deadLease = await acquireCaptureLock({
       isProcessAlive: () => false,
