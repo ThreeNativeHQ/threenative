@@ -14,6 +14,8 @@
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+#include <thread>
+#include <unistd.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
@@ -21,6 +23,44 @@
 #define LOG_TAG "MystralRuntime"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+namespace {
+
+// stdout and stderr reach nothing on Android: no terminal owns them, so every iostream
+// line — and every Rust panic message from wgpu-native, which is exactly how a native
+// abort names itself — is lost before it is ever read. A process that dies on a panic
+// therefore died silently (PRD-183). Pipe both streams into logcat; unbuffered stderr
+// keeps the panic text ahead of the abort that follows it.
+void redirectStdioToLogcat() {
+    int pipeFds[2];
+    if (::pipe(pipeFds) != 0) return;
+
+    ::dup2(pipeFds[1], STDOUT_FILENO);
+    ::dup2(pipeFds[1], STDERR_FILENO);
+    ::close(pipeFds[1]);
+    ::setvbuf(stderr, nullptr, _IONBF, 0);
+
+    std::thread([readFd = pipeFds[0]] {
+        char buffer[1024];
+        std::string pending;
+        ssize_t received;
+        while ((received = ::read(readFd, buffer, sizeof(buffer))) > 0) {
+            pending.append(buffer, static_cast<size_t>(received));
+            // logcat has no stream concept: forward complete lines as they arrive, and the
+            // trailing partial line only when more output follows.
+            size_t newline = 0;
+            size_t start = 0;
+            while ((newline = pending.find('\n', start)) != std::string::npos) {
+                __android_log_print(ANDROID_LOG_INFO, "MystralStdio", "%.*s",
+                    static_cast<int>(newline - start), pending.data() + start);
+                start = newline + 1;
+            }
+            pending.erase(0, start);
+        }
+    }).detach();
+}
+
+}  // namespace
 
 /**
  * Read a script file from Android assets using SDL3's IOStream.
@@ -77,6 +117,7 @@ static std::string readAsset(const std::string& assetPath) {
  * Must be visible and use C linkage for SDL to find it via dlsym.
  */
 extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* argv[]) {
+    redirectStdioToLogcat();
     mystral::coldStartMark("process");
     LOGI("SDL_main called with %d arguments", argc);
     for (int i = 0; i < argc; i++) {

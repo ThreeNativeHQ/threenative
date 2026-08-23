@@ -707,6 +707,40 @@ static bool syncSurfaceSizeToCanvas(js::JSValueHandle canvas) {
 
     if (width == g_canvasWidth && height == g_canvasHeight) return true;
 
+    // On a direct-presentation surface, a swapchain image acquired earlier in this scene's
+    // life may still be held in g_currentTexture — the frame boundary that presents it has
+    // not run. wgpu-native refuses to reconfigure a surface with an outstanding
+    // SurfaceOutput: its panic reads "`SurfaceOutput` must be dropped before a new `Surface`
+    // is made", and the panic aborts the process (PRD-183: the Android emulator died with a
+    // silent SIGABRT exactly here, 67 ms into the first render after renderer.setSize).
+    //
+    // Discard that image rather than presenting it: the caller is already replacing the
+    // frame's contents at the new size, an extra present would break the one-present-per-
+    // frame invariant the device gates enforce, and releasing the texture back unwinds the
+    // SurfaceOutput so the reconfigure below is accepted. Deferring the reconfigure instead
+    // is worse on both platforms — the current frame would draw new-size depth onto
+    // old-size colour, "attachments have differing sizes", the failure tier-1 day recorded
+    // on desktop.
+    //
+    // The sRGB presentation bridge never holds a raw surface output across frames
+    // (g_currentTexture is an offscreen linear texture there), so it keeps the immediate
+    // reconfigure it always had.
+    if (g_currentTexture != nullptr && !g_requiresSrgbPresentationBridge) {
+    g_framePresentPending = false;
+    if (g_currentTextureView != nullptr) {
+    wgpuTextureViewRelease(g_currentTextureView);
+    g_currentTextureView = nullptr;
+    }
+    if (g_currentSurfaceTextureId != 0) {
+    g_textureRegistry.erase(g_currentSurfaceTextureId);
+    g_currentSurfaceTextureId = 0;
+    }
+    wgpuTextureRelease(g_currentTexture);
+    g_currentTexture = nullptr;
+    g_surfaceRenderEncoder = nullptr;
+    g_surfaceRenderPassEnded = false;
+    }
+
     WGPUSurfaceConfiguration config = {};
     config.device = g_device;
     config.format = g_nativeSurfaceFormat;
