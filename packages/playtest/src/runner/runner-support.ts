@@ -204,7 +204,13 @@ export function buildReport(
     distance,
     entity,
     expectMoved: scenario.assert?.movement?.minDistance !== undefined,
-    frames: scenario.steps.reduce((total, step) => total + (step.holdFrames ?? step.waitFrames ?? step.holdTicks ?? step.waitTicks ?? 1), 0),
+    // Count what runStep actually waits: hold + wait within a family (steps.ts sums them),
+    // never one family member short-changed by a ?? chain.
+    frames: scenario.steps.reduce((total, step) => {
+      const frameCount = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
+      const tickCount = (step.holdTicks ?? 0) + (step.waitTicks ?? 0);
+      return total + Math.max(frameCount, tickCount, 1);
+    }, 0),
     trivialityOptOuts: [],
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),

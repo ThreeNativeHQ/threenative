@@ -134,4 +134,15 @@ describe("honest reporting in the run report", () => {
     const report = buildReport(config, baseScenario as unknown as IPlaytestScenario, undefined, undefined, [], [], 0, {}, true, undefined, [], undefined, undefined, undefined, [], receipt);
     expect(report.setup).toEqual(receipt);
   });
+
+  test("report.frames counts hold and wait time together like the runner waits it", () => {
+    // The schema allows holdFrames + waitFrames in one step and runStep waits their sum;
+    // the report must count the same elapsed frames or movement.velocity inflates.
+    const scenario = {
+      ...baseScenario,
+      steps: [{ press: ["KeyW"], holdFrames: 10, waitFrames: 5 }, { waitFrames: 7 }],
+    } as unknown as IPlaytestScenario;
+    const report = buildReport(config, scenario, undefined, undefined, [], []);
+    expect(report.frames).toBe(22);
+  });
 });

@@ -98,7 +98,7 @@ const STARTER_PATHS = [
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",
-  "assets/pickup.ogg",
+  "assets/pickup.wav",
   // P2-2: the searchable reference bundle every generated project must ship.
   "agent-docs/assertion-reference.md",
   "agent-docs/capture-the-frame.md",
@@ -245,8 +245,11 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      const pickupAudio = await readFile(path.join(result.target, "assets/pickup.ogg"));
-      expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
+      // A scaffolded project must land with audio every target can decode, WAV included, or its
+      // first `--target android` build installs and shows nothing.
+      const pickupAudio = await readFile(path.join(result.target, "assets/pickup.wav"));
+      expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("RIFF");
+      expect(pickupAudio.subarray(8, 12).toString("ascii")).toBe("WAVE");
       const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
       expect(agents).toContain("my-game");
       expect(agents).not.toContain("__PROJECT_NAME__");

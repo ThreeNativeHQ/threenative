@@ -122,6 +122,14 @@ describe("AnimationPlayer", () => {
     player.update(1);
     expect(player.finished).toBe(true);
     expect(root.position.x).toBeCloseTo(1);
+
+    // A held last frame is not animation progress: three advances mixer.time every update
+    // even when nothing animates, so advancedFrames must stop at the finished clip or
+    // playtest evaluators read idle frames as proof the clip animated.
+    const frozen = player.advancedFrames;
+    player.update(1);
+    player.update(1);
+    expect(player.advancedFrames).toBe(frozen);
   });
 
   it("applies a mode change when the requested clip is already current", () => {

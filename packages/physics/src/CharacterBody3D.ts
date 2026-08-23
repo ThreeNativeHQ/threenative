@@ -227,7 +227,13 @@ export class CharacterBody3D {
   }
 
   syncFromPhysics(): void {
-    const transform = this.#simulation.readBodyTransform?.(this.body.id);
+    // Fail closed like every other missing-backend-capability seam: a silent return here
+    // would leave the object stale on one platform only.
+    if (this.#simulation.readBodyTransform === undefined)
+      throw new Error(
+        "TN_PHYSICS_READ_TRANSFORM_MISSING: the active physics backend cannot read body transforms.",
+      );
+    const transform = this.#simulation.readBodyTransform(this.body.id);
     if (transform === undefined) return;
     this.object.position.set(transform.position.x, transform.position.y, transform.position.z);
     this.object.quaternion.set(

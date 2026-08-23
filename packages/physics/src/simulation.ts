@@ -212,9 +212,19 @@ export interface IPhysicsSimulation {
         };
       }
     | undefined;
-  /** Reflects the most recently completed step, independent of visible-transform reads. */
+  /**
+   * Reflects the most recently completed step, independent of visible-transform reads.
+   *
+   * This reuses one record per character, so the next call overwrites the object it returned.
+   * Read it in the same tick, or copy the fields out before the step advances.
+   */
   readCharacterState?(id: number): IPhysicsCharacterState | undefined;
-  /** Reflects the most recently completed step, independent of visible-transform reads. */
+  /**
+   * Reflects the most recently completed step, independent of visible-transform reads.
+   *
+   * This reuses one set per area, so the next call overwrites the set it returned. Read it in
+   * the same tick, or copy the fields out before the step advances.
+   */
   areaIntersections?(id: number): ReadonlySet<number>;
   drainCollisionEvents(buffer: Uint32Array): number;
   dispose(): void;

@@ -3,7 +3,11 @@ import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
 import type { IPhysicsContext, PhysicsBody3D } from "./plugin.js";
-import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import {
+  type IPhysicsShapeDescriptor,
+  type IPhysicsSimulation,
+  requirePhysicsSimulation,
+} from "./simulation.js";
 import { bulkTransformValue } from "./transformRecord.js";
 
 export type AreaEvent = "bodyEntered" | "bodyExited";
@@ -84,12 +88,19 @@ export class Area3D {
     this.#physics = options.physics;
     this.entity = options.entity;
     Object.assign(this.#position, resolveInitialTransform(options, { x: 0, y: 0, z: 0 }).position);
-    const shape = options.shape.setSensor(true).descriptor;
-    if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
-      const layer = options.collisionLayer ?? shape.collisionLayer;
-      const mask = options.collisionMask ?? shape.collisionMask;
-      options.shape.setCollisionGroups(interactionGroups(layer, mask));
-    }
+    // The area owns its sensor flag and collision groups: derive a private descriptor instead
+    // of mutating the caller's CollisionShape3D, which may be shared with solid bodies.
+    const base = options.shape.descriptor;
+    const groups = interactionGroups(
+      options.collisionLayer ?? base.collisionLayer,
+      options.collisionMask ?? base.collisionMask,
+    );
+    const shape: IPhysicsShapeDescriptor = {
+      ...base,
+      collisionLayer: groups >>> 16,
+      collisionMask: groups & 0xffff,
+      sensor: true,
+    };
     const registration = this.#simulation.createBody({
       mass: 0,
       entity: this.entity,
@@ -99,7 +110,6 @@ export class Area3D {
       shape,
       type: "kinematic",
     });
-    options.shape.bindRaw(registration.rawShape);
     this.body = registration.body;
     this.collider = registration.collider;
     this.#physics?.addArea(this);

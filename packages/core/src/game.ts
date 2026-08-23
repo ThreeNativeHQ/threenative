@@ -553,7 +553,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // here branches on which: `root` is the single render input either way, so there is no
           // second optional render path to leave untested.
           renderer.render(this.#projection?.root ?? threeScene, camera);
-          this.#scene?.render(ctx);
+          // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
+          if (this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }
         if (canvasLayer.scene.children.length > 0) {
@@ -574,7 +575,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const scene = this.#scene;
         const frame = this.#sceneFrame;
         if (frame !== undefined) frame(ctx, dt);
-        else scene?.update(ctx, dt);
+        // An async goto() installs the incoming scene before its load resolves; until enter()
+        // has run there is no gameplay to step and a game-overridden update() would run against
+        // a cleared graph.
+        else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();

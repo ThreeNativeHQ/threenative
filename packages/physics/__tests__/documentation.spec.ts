@@ -43,4 +43,17 @@ describe("published physics portability documentation", () => {
     expect(nativeDoc).toContain("../verification/PRD-049.md");
     expect(archived).toContain("docs/verification/PRD-049.md");
   });
+
+  // Both readers were changed to hand back storage they reuse (91e46d34, "reuse crossing-frame
+  // storage"). The type says `IPhysicsCharacterState` and `ReadonlySet<number>` and nothing said
+  // the next call overwrites them, so a game that held one across frames would read the wrong
+  // answer with no error. The doc comments are the contract, so they are gated: deleting one is a
+  // failing change, not a tidy-up.
+  it("states that the reused character-state and area-intersection reads are overwritten", async () => {
+    const simulation = await readFile(new URL("../src/simulation.ts", import.meta.url), "utf8");
+
+    expect(simulation).toMatch(/reuses one record per character[\s\S]*next call overwrites/i);
+    expect(simulation).toMatch(/reuses one set per area[\s\S]*next call overwrites/i);
+    expect(simulation).toMatch(/copy the fields out/i);
+  });
 });

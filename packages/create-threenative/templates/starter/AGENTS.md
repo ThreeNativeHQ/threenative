@@ -301,8 +301,9 @@ Files the game loads live in `assets/`; the dev server and `threenative build` c
 into hashed outputs in `public/` plus `public/assets.manifest.json`, and
 `ctx.assets.model("hero.glb")` resolves the logical name through that manifest. Favicon and
 launcher icons stay hand-owned in `public/`. This starter ships
-`assets/native-proof.glb`, `assets/native-proof.png` and `assets/pickup.ogg`; compiled
-outputs are gitignored — dev or build compiles them first.
+`assets/native-proof.glb`, `assets/native-proof.png` and `assets/pickup.wav`; compiled
+outputs are gitignored. **Audio is WAV** because Android decodes RIFF/WAVE only;
+`--target android` refuses the rest.
 
 For clips from a rigged asset, drop the `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive an `AnimationPlayer` beside the

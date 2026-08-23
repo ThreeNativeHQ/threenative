@@ -98,6 +98,9 @@ public final class Bundle {
     Object value = values.get(key);
     return value instanceof String ? (String) value : fallback;
   }
+  // The one-argument overload. applyOrientation calls it, and without it here this whole probe
+  // failed to compile, so the orientation fix shipped with no compiling test at all.
+  public String getString(String key) { return getString(key, null); }
 }
 `,
     'android/content/pm/ApplicationInfo.java': `package android.content.pm;
@@ -188,6 +191,14 @@ public final class WindowInsets {
   }
 }
 `,
+    'android/content/pm/ActivityInfo.java': `package android.content.pm;
+
+public final class ActivityInfo {
+  public static final int SCREEN_ORIENTATION_UNSPECIFIED = -1;
+  public static final int SCREEN_ORIENTATION_SENSOR_LANDSCAPE = 6;
+  public static final int SCREEN_ORIENTATION_SENSOR_PORTRAIT = 7;
+}
+`,
     'org/libsdl/app/SDLActivity.java': `package org.libsdl.app;
 
 import android.content.Intent;
@@ -211,12 +222,15 @@ public class SDLActivity {
   public Window getWindow() { return window; }
   public File getExternalFilesDir(String type) { return null; }
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
+  public int requestedOrientation = Integer.MIN_VALUE;
+  public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
   public void configureMetadata(Bundle metadata) { packageManager = new PackageManager(metadata); }
 }
 `,
     'com/threenative/runtime/MetadataProbe.java': `package com.threenative.runtime;
 
 import android.os.Bundle;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.view.WindowManager;
 
@@ -235,6 +249,7 @@ public final class MetadataProbe {
     metadata.putBoolean("TN_KEEP_SCREEN_ON", true);
     metadata.putString("TN_WINDOW_TITLE", "Fox \\\"Deluxe\\\"");
     metadata.putBoolean("TN_FULLSCREEN", false);
+    metadata.putString("TN_ORIENTATION", "landscape");
 
     ProbeActivity activity = new ProbeActivity();
     activity.configureMetadata(metadata);
@@ -248,6 +263,11 @@ public final class MetadataProbe {
     require("Fox \\\"Deluxe\\\"".equals(arguments[3]),
       "window title metadata was not retrieved");
     require("false".equals(arguments[4]), "fullscreen metadata was not retrieved");
+    // Android 16+ overrides a manifest orientation for apps it treats as non-adaptive, which is
+    // how a landscape-declared game launched portrait on a Pixel 8. Re-requesting it in onCreate
+    // is the belt to the manifest property's braces; this asserts that it happens.
+    require(activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      "declared landscape orientation was not re-requested in onCreate");
   }
 }
 `,
@@ -367,4 +387,60 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(defaultManifest, /TN_KEEP_SCREEN_ON" android:value="false"/u);
   assert.match(defaultManifest, /TN_FULLSCREEN" android:value="true"/u);
   assert.match(defaultStrings, /<string name="app_name">ThreeNative<\/string>/u);
+});
+
+/**
+ * The consumer route out of a 404 that no consumer can fix.
+ *
+ * `install-prebuilt.mjs` builds a GitHub release URL from the package version. That release was
+ * never published for 0.2.0, and the repository is private, so **every** published install fetching
+ * it gets `HTTP 404` — the documented `pnpm build:android` cannot work for anybody. The mechanism
+ * to sidestep it already existed as `options.runtimeRoot`; it was simply unreachable from a shell.
+ */
+test('THREENATIVE_RUNTIME_SOURCE points the packager at a runtime source checkout', async () => {
+  const root = makeTempDirSync('threenative-android-runtime-source-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  const previous = process.env.THREENATIVE_RUNTIME_SOURCE;
+  process.env.THREENATIVE_RUNTIME_SOURCE = runtime;
+  try {
+    // No `runtimeRoot` option at all: the env var alone has to be what selects this checkout.
+    // If it is ignored, the packager looks at the real installed package and this rejects.
+    const output = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+    });
+    assert.ok(output.startsWith(runtime), `expected an artifact under ${runtime}, got ${output}`);
+  } finally {
+    if (previous === undefined) delete process.env.THREENATIVE_RUNTIME_SOURCE;
+    else process.env.THREENATIVE_RUNTIME_SOURCE = previous;
+  }
+});
+
+test('a failed prebuilt download names the cause and the environment variable that fixes it', async () => {
+  const root = makeTempDirSync('threenative-android-prebuilt-404-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => {
+        throw new Error("Prebuilt release manifest fetch failed for 'android-arm64-v8a-sdl3': HTTP 404.");
+      },
+    }),
+    (error) => {
+      // The original status is kept: it is still the fact that a fetch failed.
+      assert.match(error.message, /HTTP 404/u);
+      // And it now says why a published install can never satisfy it, and what to do instead.
+      assert.match(error.message, /THREENATIVE_RUNTIME_SOURCE=/u);
+      return true;
+    },
+  );
 });

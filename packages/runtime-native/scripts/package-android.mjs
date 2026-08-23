@@ -15,6 +15,7 @@ import {
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, verifyChecksum } from './install-prebuilt.mjs';
+import { assertAndroidAssetsDecodable } from './asset-preflight.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
@@ -260,6 +261,22 @@ export function renderAndroidBrandingResources(config) {
   };
 }
 
+/**
+ * Insert or replace an `<activity>`-scoped `<property>` element.
+ *
+ * `<property>` is not `<meta-data>`: the platform reads compat properties only from the former, so
+ * `upsertApplicationMetadata` cannot express this.
+ */
+function upsertActivityProperty(source, name, value) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const existing = new RegExp(`\\s*<property\\s+android:name="${escapedName}"[^>]*/>`, 'u');
+  const element = `\n            <property android:name="${name}" android:value="${value}" />`;
+  if (existing.test(source)) return source.replace(existing, element);
+  const activity = /<activity\b[^>]*>/u.exec(source);
+  if (!activity) return source;
+  return source.replace(activity[0], `${activity[0]}${element}`);
+}
+
 export function renderAndroidManifest(source, orientation = 'landscape') {
   const config = configValue(typeof orientation === 'string' ? undefined : orientation, typeof orientation === 'string' ? orientation : undefined);
   const value = orientationValue(config.display.orientation);
@@ -285,9 +302,29 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
     value,
   );
   rendered = rendered.replace(activity[0], renderedActivity);
+  // Opt out of the platform's orientation override.
+  //
+  // Android 16+ applies `SCREEN_ORIENTATION_FULL_USER` on top of an app's declared orientation for
+  // apps it considers non-adaptive, which is why a manifest reading
+  // `android:screenOrientation="landscape"` still came up portrait on a Pixel 8 —
+  // `dumpsys activity activities` showed `overrideOrientation=SCREEN_ORIENTATION_FULL_USER` and the
+  // window simply followed the device. This property is the documented way to decline that
+  // override, and it is only set when the game actually asked for a fixed orientation: a game
+  // configured `sensor` wants the platform behaviour and must not opt out of it.
+  if (value !== 'sensor') {
+    rendered = upsertActivityProperty(
+      rendered,
+      'android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE',
+      'false',
+    );
+  }
   rendered = upsertApplicationMetadata(rendered, 'TN_KEEP_SCREEN_ON', String(config.display.keepScreenOn));
   rendered = upsertApplicationMetadata(rendered, 'TN_WINDOW_TITLE', '@string/window_title');
-  return upsertApplicationMetadata(rendered, 'TN_FULLSCREEN', String(config.display.fullscreen));
+  rendered = upsertApplicationMetadata(rendered, 'TN_FULLSCREEN', String(config.display.fullscreen));
+  // Also carried as metadata, not only as `android:screenOrientation`: the activity re-requests it
+  // in `onCreate`, because the manifest attribute alone did not hold a landscape game in landscape
+  // on a Pixel 8.
+  return upsertApplicationMetadata(rendered, 'TN_ORIENTATION', config.display.orientation);
 }
 
 export function renderAndroidStrings(source, config) {
@@ -470,6 +507,10 @@ export function stageAndroidAssets(
   if (!statSync(assets).isDirectory()) {
     throw new Error(`Android assets path is not a directory: ${assets}`);
   }
+  // Read the assets before copying them. Everything this catches — OGG the decoder rejects, WebP
+  // the runtime was built without, interleaved buffers WebGPU refuses to make a pipeline for —
+  // otherwise ships in an APK that installs, launches and draws nothing.
+  assertAndroidAssetsDecodable(assets);
   const files = listFiles(assets);
   for (const file of files) {
     const output = join(destination, file);
@@ -487,7 +528,17 @@ export async function packageAndroid(
   config = undefined,
   options = {},
 ) {
-  const packageRoot = resolve(options.runtimeRoot ?? runtimeRoot);
+  // `THREENATIVE_RUNTIME_SOURCE` points the packager at a runtime **source checkout**, which is
+  // the only route that works today for a consumer install.
+  //
+  // A game in a sandbox resolves `runtime-native` to the published tarball, which ships no
+  // `CMakeLists.txt`, so the check below always takes the download path — and the download path
+  // fetches a GitHub release that does not exist, in a repository that is private. Every consumer
+  // on 0.2.0 gets `HTTP 404` naming a URL and no next step. `packageAndroid` has always accepted
+  // `options.runtimeRoot`; it simply was not reachable from the CLI or the environment.
+  const packageRoot = resolve(
+    options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
+  );
   const { androidRoot } = androidPaths(packageRoot);
   const declared = configValue(config, orientation);
   orientationValue(declared.display.orientation);
@@ -505,7 +556,20 @@ export async function packageAndroid(
     const preparePrebuilts =
       options.prepareAndroidPrebuilts ??
       (() => prepareAndroidPrebuilts({ outputRoot: join(packageRoot, 'android', 'prebuilt') }));
-    await preparePrebuilts();
+    try {
+      await preparePrebuilts();
+    } catch (error) {
+      // Name the cause and the way out. The bare HTTP status told a person which URL failed and
+      // nothing about why a published install can never satisfy it.
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\n\n` +
+          `This install has no runtime source checkout at ${packageRoot}, so it tried to download\n` +
+          'prebuilt Android artifacts from a GitHub release. Point the packager at a source\n' +
+          'checkout of @threenative/runtime-native instead:\n\n' +
+          '  THREENATIVE_RUNTIME_SOURCE=/path/to/packages/runtime-native pnpm build:android\n',
+        { cause: error },
+      );
+    }
   }
   const generatedAssets = join(
     packageRoot,

@@ -263,4 +263,44 @@ describe("Area3D", () => {
     character.dispose();
     area.dispose();
   });
+
+  it("does not turn a solid body into a sensor when it shares the area's shape", async () => {
+    await RAPIER.init();
+    const plugin = rapier({ gravity: { x: 0, y: -9.81, z: 0 } });
+    const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
+    await plugin.setup?.(ctx);
+    plugins.push(plugin);
+
+    const shared = CollisionShape3D.box(1, 1, 1);
+    const crateMesh = new Mesh(new BoxGeometry(1, 1, 1));
+    crateMesh.position.set(0, 5, 0);
+    const area = new Area3D({
+      physics: ctx.physics,
+      position: { x: 0, y: 3, z: 0 },
+      shape: shared,
+    });
+    const crate = new RigidBody3D({
+      object: crateMesh,
+      physics: ctx.physics,
+      shape: shared,
+    });
+    const floor = new RigidBody3D({
+      physics: ctx.physics,
+      position: { x: 0, y: -0.5, z: 0 },
+      shape: CollisionShape3D.box(20, 1, 20),
+      type: "fixed",
+    });
+    let entered = 0;
+    area.on("bodyEntered", () => entered++);
+
+    for (let step = 0; step < 120; step++) plugin.update?.(ctx, 1 / 60);
+
+    // A sensor falls through the world; a solid body rests on the floor's top face (y = 0).
+    expect(crate.object?.position.y).toBeGreaterThan(0.2);
+    // The area keeps detecting bodies through the same shape instance.
+    expect(entered).toBe(1);
+    crate.dispose();
+    floor.dispose();
+    area.dispose();
+  });
 });

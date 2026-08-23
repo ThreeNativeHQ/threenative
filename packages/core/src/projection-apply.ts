@@ -9,9 +9,11 @@ import {
   Matrix4,
   Mesh,
   type Object3D,
+  type PointLight,
   Points,
   Scene,
   SkinnedMesh,
+  type SpotLight,
   Sprite,
   type SpriteMaterial,
 } from "three";
@@ -389,6 +391,25 @@ export class ProjectionMirror {
       (proxy.color as Color | undefined)?.copy(light.color as Color);
       proxy.castShadow = light.castShadow;
       proxy.layers.mask = light.layers.mask;
+      // Cone and falloff are runtime surface too: a flashlight zoom or a muzzle-flash decay
+      // changes these per frame, and frozen first-frame values would render the scene lit
+      // differently than the game lit it.
+      if ((light as { isSpotLight?: boolean }).isSpotLight === true) {
+        const spot = light as SpotLight;
+        const spotProxy = proxy as SpotLight;
+        spotProxy.angle = spot.angle;
+        spotProxy.penumbra = spot.penumbra;
+        spotProxy.distance = spot.distance;
+        spotProxy.decay = spot.decay;
+        spotProxy.power = spot.power;
+      }
+      if ((light as { isPointLight?: boolean }).isPointLight === true) {
+        const point = light as PointLight;
+        const pointProxy = proxy as PointLight;
+        pointProxy.distance = point.distance;
+        pointProxy.decay = point.decay;
+        pointProxy.power = point.power;
+      }
     }
     return undefined;
   }

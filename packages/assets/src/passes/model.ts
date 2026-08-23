@@ -193,6 +193,22 @@ function decodeElement(accessor: Accessor, index: number): [number, number, numb
  * joint × inverse-bind matrices — which is precisely where quantization's volume
  * compensation cancels out for skinned meshes.
  */
+/** glTF normalized-accessor decode scale per component type, as the GPU applies it. */
+function normalizedWeightScale(accessor: Accessor): number {
+  switch (accessor.getComponentType()) {
+    case Accessor.ComponentType.BYTE:
+      return 1 / 127;
+    case Accessor.ComponentType.UNSIGNED_BYTE:
+      return 1 / 255;
+    case Accessor.ComponentType.SHORT:
+      return 1 / 32767;
+    case Accessor.ComponentType.UNSIGNED_SHORT:
+      return 1 / 65535;
+    default:
+      return 1;
+  }
+}
+
 function evaluateVertex(
   position: Accessor,
   index: number,
@@ -207,7 +223,7 @@ function evaluateVertex(
   }
   const jointArray = joints.getArray();
   const weightArray = weights.getArray();
-  const weightScale = weights.getNormalized() ? 1 / 255 : 1;
+  const weightScale = weights.getNormalized() ? normalizedWeightScale(weights) : 1;
   let wx = 0;
   let wy = 0;
   let wz = 0;

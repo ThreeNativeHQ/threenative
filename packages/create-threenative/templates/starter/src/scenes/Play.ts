@@ -90,7 +90,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     if (this.#assetProof === undefined) throw new Error("Starter proof assets did not load.");
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
-    const pickupAudio = ctx.assets.audio("pickup.ogg");
+    const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
     setupSky(ctx.scene);
     setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);

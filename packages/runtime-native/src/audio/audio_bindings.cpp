@@ -469,28 +469,82 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
         })
     );
 
-    // decodeAudioData(arrayBuffer) -> Promise<AudioBuffer>
+    // decodeAudioData(arrayBuffer, onSuccess?, onError?) -> thenable<AudioBuffer>
+    //
+    // The return value has to be then-able, and for a long time it was not: this returned the
+    // decoded `AudioBuffer` directly on success and `undefined` on every failure path, with a
+    // comment saying a Promise belonged there. Three.js `AudioLoader` ends its load with
+    //
+    //     context.decodeAudioData(buffer, onSuccess).catch(handleError)
+    //
+    // so *every* call reached `.catch` on a non-Promise. On the failure path that is
+    // `undefined.catch` — a TypeError thrown inside the boot promise, which rejects it and stops
+    // the game before its first frame. That is a black screen on device with nothing in logcat
+    // except the rejection, and it takes down any game that loads a sound Three's way.
+    //
+    // Decoding here is synchronous, so a real Promise is not needed to be correct — only
+    // something that honours `.then`/`.catch`. This returns a settled thenable and also invokes
+    // the legacy callbacks, which is what the Web Audio spec requires of both call styles.
     engine->setProperty(jsCtx, "decodeAudioData",
         engine->newFunction("decodeAudioData", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) -> js::JSValueHandle {
-            if (args.empty()) return g_jsEngine->newUndefined();
+            auto* engine = g_jsEngine;
+            const auto callbackAt = [&args, engine](size_t index) -> js::JSValueHandle {
+                if (args.size() <= index) return engine->newUndefined();
+                return engine->isFunction(args[index]) ? args[index] : engine->newUndefined();
+            };
+            const js::JSValueHandle onSuccess = callbackAt(1);
+            const js::JSValueHandle onError = callbackAt(2);
 
-            // Get ArrayBuffer data
-            size_t length = 0;
-            void* data = g_jsEngine->getArrayBufferData(args[0], &length);
-
-            if (!data || length == 0) {
-                std::cerr << "[Audio] decodeAudioData: invalid ArrayBuffer" << std::endl;
-                return g_jsEngine->newUndefined();
+            std::shared_ptr<AudioBuffer> buffer;
+            const char* failure = nullptr;
+            if (args.empty()) {
+                failure = "decodeAudioData requires an ArrayBuffer.";
+            } else {
+                size_t length = 0;
+                void* data = engine->getArrayBufferData(args[0], &length);
+                if (!data || length == 0) {
+                    failure = "decodeAudioData received an empty or non-ArrayBuffer argument.";
+                } else {
+                    buffer = ctxPtr->decodeAudioDataSync(static_cast<const uint8_t*>(data), length);
+                    if (!buffer) failure = "decodeAudioData could not decode the supplied audio.";
+                }
             }
 
-            auto buffer = ctxPtr->decodeAudioDataSync(static_cast<const uint8_t*>(data), length);
-            if (!buffer) {
-                std::cerr << "[Audio] decodeAudioData: failed to decode" << std::endl;
-                return g_jsEngine->newUndefined();
+            const bool ok = failure == nullptr;
+            const js::JSValueHandle settled =
+                ok ? createAudioBufferJS(engine, buffer) : engine->newString(failure);
+            if (!ok) std::cerr << "[Audio] " << failure << std::endl;
+
+            // Legacy callback style, delivered before the thenable is handed back so a caller
+            // using both sees the same order a browser gives it.
+            const js::JSValueHandle undefinedValue = engine->newUndefined();
+            if (ok) {
+                if (engine->isFunction(onSuccess)) engine->call(onSuccess, undefinedValue, {settled});
+            } else if (engine->isFunction(onError)) {
+                engine->call(onError, undefinedValue, {settled});
             }
 
-            // For now, return the buffer directly (should be a Promise in full impl)
-            return createAudioBufferJS(g_jsEngine, buffer);
+            // A settled thenable. `then` runs the matching handler immediately and hands back
+            // another thenable so chains keep working; `catch` is `then(undefined, handler)`.
+            js::JSValueHandle thenable = engine->newObject();
+            engine->setProperty(thenable, "then",
+                engine->newFunction("then", [ok, settled](void*, const std::vector<js::JSValueHandle>& handlers) -> js::JSValueHandle {
+                    auto* inner = g_jsEngine;
+                    const size_t index = ok ? 0 : 1;
+                    if (handlers.size() > index && inner->isFunction(handlers[index])) {
+                        inner->call(handlers[index], inner->newUndefined(), {settled});
+                    }
+                    return inner->newUndefined();
+                }));
+            engine->setProperty(thenable, "catch",
+                engine->newFunction("catch", [ok, settled](void*, const std::vector<js::JSValueHandle>& handlers) -> js::JSValueHandle {
+                    auto* inner = g_jsEngine;
+                    if (!ok && !handlers.empty() && inner->isFunction(handlers[0])) {
+                        inner->call(handlers[0], inner->newUndefined(), {settled});
+                    }
+                    return inner->newUndefined();
+                }));
+            return thenable;
         })
     );
 

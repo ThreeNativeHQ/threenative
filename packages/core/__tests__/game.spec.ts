@@ -1148,6 +1148,73 @@ describe("IGame", () => {
     game.stop();
   });
 
+  it("does not update or render an incoming scene before enter() has run", async () => {
+    const events: string[] = [];
+    let releaseLoad: (() => void) | undefined;
+    let advance: ((ticks: number) => number) | undefined;
+    let navigation: Promise<void> | undefined;
+
+    class Boot extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        navigation = ctx.goto("play");
+      }
+    }
+
+    class Play extends Scene {
+      static override readonly initialState = {};
+
+      override load(): Promise<void> {
+        events.push("play.load");
+        return new Promise((resolve) => {
+          releaseLoad = resolve;
+        });
+      }
+
+      override enter(): void {
+        events.push("play.enter");
+      }
+
+      override update(): void {
+        events.push("play.update");
+      }
+
+      override render(): void {
+        events.push("play.render");
+      }
+    }
+
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { boot: Boot, play: Play },
+      start: "boot",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Plugin did not receive the fixed-step runtime.");
+    if (navigation === undefined) throw new Error("Boot did not navigate.");
+
+    advance(1);
+    // While play.load is still pending the incoming scene is not entered: no update, no render.
+    expect(events).toEqual(["play.load"]);
+
+    releaseLoad?.();
+    await navigation;
+    advance(1);
+    expect(events).toContain("play.enter");
+    expect(events).toContain("play.update");
+    game.stop();
+  });
+
   it("should run exit, clear, load, and enter in order on goto", async () => {
     const events: string[] = [];
     let navigate: ((name: string) => Promise<void>) | undefined;

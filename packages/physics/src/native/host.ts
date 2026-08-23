@@ -324,6 +324,8 @@ export function createNativePhysicsSimulation(
     rawWorld: raw,
     createBody: (options: IPhysicsBodyCreateOptions) => {
       requireLive();
+      if (!Number.isFinite(options.mass) || options.mass < 0)
+        throw new Error("Physics body mass must be a finite non-negative number.");
       // Same seam rule as web: a NaN placement corrupts the body for the rest of
       // the run instead of throwing, and a zero-length rotation normalizes to NaN.
       requireFiniteVector(options.position, "body position");
@@ -377,6 +379,7 @@ export function createNativePhysicsSimulation(
       return id;
     },
     configureCharacter: (id, options) => {
+      requireLive();
       raw.configureCharacter(id, options);
       invalidateObservations();
     },
@@ -402,6 +405,7 @@ export function createNativePhysicsSimulation(
       jointBodies.delete(id);
     },
     setBodyTransform: (id, position) => {
+      requireLive();
       if (raw.setBodyTransform === undefined)
         throw new Error("TN_NATIVE_PHYSICS_SET_TRANSFORM_MISSING: runtime ABI is too old");
       raw.setBodyTransform(id, position);
@@ -438,11 +442,13 @@ export function createNativePhysicsSimulation(
       return velocity;
     },
     step: (deltaTime, inputSnapshot) => {
+      requireLive();
       requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodyIds.has(id));
       raw.step(deltaTime, inputSnapshot);
       invalidateObservations();
     },
     readVisibleTransforms: (buffer) => {
+      requireLive();
       requirePhysicsRenderBuffer(buffer, bodyIds.size);
       return raw.readVisibleTransforms(buffer);
     },
@@ -452,6 +458,7 @@ export function createNativePhysicsSimulation(
       return raw.readBodySleepStates(buffer);
     },
     intersectRay: (value) => {
+      requireLive();
       const query = requirePhysicsRayQuery(value);
       const hit = raw.intersectRay(query, rayOutput);
       if (typeof hit === "number") {
@@ -493,6 +500,7 @@ export function createNativePhysicsSimulation(
       };
     },
     intersectShape: (value) => {
+      requireLive();
       const query = requirePhysicsShapeQuery(value);
       const hits = raw.intersectShape({
         collisionMask: query.collisionMask,
@@ -506,6 +514,7 @@ export function createNativePhysicsSimulation(
       return hits.map(nativeHit);
     },
     intersectPoint: (value) => {
+      requireLive();
       const query = requirePhysicsPointQuery(value);
       const hits = raw.intersectPoint(query);
       if (!Array.isArray(hits) || hits.length > query.maxResults)
@@ -513,14 +522,17 @@ export function createNativePhysicsSimulation(
       return hits.map(nativeHit);
     },
     readCharacterState: (id) => {
+      requireLive();
       refreshCharacterState();
       return characterStatePresent.has(id) ? characterState.get(id) : undefined;
     },
     areaIntersections: (id) => {
+      requireLive();
       refreshAreaIntersections();
       return areaIntersections.get(id) ?? emptyAreaIntersections;
     },
     drainCollisionEvents: (buffer) => {
+      requireLive();
       requirePhysicsEventBuffer(buffer);
       return raw.drainCollisionEvents(buffer);
     },

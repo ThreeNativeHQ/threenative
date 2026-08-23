@@ -138,6 +138,9 @@ export class AnimationPlayer {
   update(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    // Read before mixer.update(): the "finished" listener fires inside it for a completing
+    // once-clip, and that final frame still counts as advancement.
+    const wasFinished = this.#finished;
     const before = this.mixer.time;
     this.mixer.update(dt);
     if (this.#fadeOut.length > 0) {
@@ -156,7 +159,10 @@ export class AnimationPlayer {
         this.#fadeOut = [];
       }
     }
-    if (this.#current !== undefined && this.mixer.time !== before) this.#advancedFrames += 1;
+    // three advances mixer.time unconditionally, finished or not: past a held last frame the
+    // pose is frozen, so counting there would report idle frames as animation progress.
+    if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
+      this.#advancedFrames += 1;
   }
 
   stop(): void {

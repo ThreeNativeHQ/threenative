@@ -1,9 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { NodeIO } from "@gltf-transform/core";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import type { Document } from "@gltf-transform/core";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it, vi } from "vitest";
-import { FIXTURE_PATH, buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
+import {
+  FIXTURE_PATH,
+  type IFixtureOptions,
+  buildFixtureDocument,
+  buildFixtureGlb,
+} from "../../../test-support/generate-fixture-model.js";
 import { assertNoDrift, modelPass, reachableStats } from "../src/passes/model.js";
 
 /** Re-reads pass output exactly as self-verification does: codecs registered. */
@@ -110,6 +116,53 @@ describe("modelPass", () => {
     for (const attribute of weights) {
       // FLOAT32, exactly as the generator declared — never narrowed by quantization.
       expect(attribute?.getComponentSize()).toBe(4);
+    }
+  });
+
+  it("decodes normalized ushort joint weights by their own component type in reachableStats", async () => {
+    // External exporters ship WEIGHTS_0 as normalized UNSIGNED_SHORT. reachableStats must
+    // decode them /65535 like the GPU does; the hardcoded ubyte scale (/255) reads raw
+    // integers ~257x heavy and reports a garbage bind-pose bounding box.
+    const posed = (options: IFixtureOptions): Document => {
+      const doc = buildFixtureDocument(options);
+      // Pose the skeleton off its bind pose: at bind, joint matrices collapse to the rigid
+      // fallback and every decoding evaluates identically, hiding a wrong scale.
+      const torso = doc
+        .getRoot()
+        .listNodes()
+        .find((node) => node.getName() === "torso");
+      if (torso === undefined) throw new Error("Fixture lost its torso joint.");
+      torso.setTranslation([0.25, 0.35, 0]);
+      return doc;
+    };
+    const floatDoc = posed({ textured: false });
+    const ushortDoc = posed({ textured: false });
+    for (const mesh of ushortDoc.getRoot().listMeshes()) {
+      for (const primitive of mesh.listPrimitives()) {
+        const weights = primitive.getAttribute("WEIGHTS_0");
+        if (weights === null) continue;
+        const source = weights.getArray();
+        const quantized = new Uint16Array(source.length);
+        for (let index = 0; index < source.length; index += 1)
+          quantized[index] = Math.round((source[index] ?? 0) * 65535);
+        const next = ushortDoc
+          .createAccessor(`${weights.getName()}-ushort`)
+          .setBuffer(weights.getBuffer())
+          .setArray(quantized)
+          .setType("VEC4")
+          .setNormalized(true);
+        primitive.setAttribute("WEIGHTS_0", next);
+      }
+    }
+
+    const floatBox = reachableStats(floatDoc.getRoot()).boundingBox;
+    const ushortBox = reachableStats(ushortDoc.getRoot()).boundingBox;
+    expect(floatBox).toBeDefined();
+    expect(ushortBox).toBeDefined();
+    if (floatBox === undefined || ushortBox === undefined) return;
+    for (const axis of [0, 1, 2]) {
+      expect(Math.abs((ushortBox.min[axis] ?? 0) - (floatBox.min[axis] ?? 0))).toBeLessThan(1e-3);
+      expect(Math.abs((ushortBox.max[axis] ?? 0) - (floatBox.max[axis] ?? 0))).toBeLessThan(1e-3);
     }
   });
 

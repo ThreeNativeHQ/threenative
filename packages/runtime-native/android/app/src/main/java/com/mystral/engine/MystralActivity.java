@@ -1,5 +1,6 @@
 package com.threenative.runtime;
 
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Insets;
@@ -50,10 +51,40 @@ public class MystralActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Bundle metadata = applicationMetadata();
+        applyOrientation(metadata);
         if (metadata != null && metadata.getBoolean("TN_KEEP_SCREEN_ON", false)) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    /**
+     * Re-assert the declared orientation from the activity itself.
+     *
+     * `android:screenOrientation` is already written into the manifest by the packager, and on
+     * this device it was not enough: a landscape-declared build still came up in portrait, because
+     * the activity declares `configChanges=...|orientation|screenSize`, so the system hands
+     * rotation to the app instead of recreating it, and recent Android releases increasingly treat
+     * the manifest value as advisory. Calling `setRequestedOrientation` in `onCreate` is the
+     * request the window manager honours, and it costs nothing when the manifest already agreed.
+     *
+     * `sensor` is deliberately the only value that leaves rotation to the user; `landscape` and
+     * `portrait` lock, and landscape allows both ways up so the phone can be held either way.
+     */
+    private void applyOrientation(Bundle metadata) {
+        String orientation = metadata == null ? null : metadata.getString("TN_ORIENTATION");
+        if (orientation == null) return;
+        switch (orientation) {
+            case "landscape":
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                break;
+            case "portrait":
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+                break;
+            default:
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                break;
         }
     }
 

@@ -16,6 +16,7 @@ import {
   RigidBody3D as NativeRigidBody3D,
 } from "../src/native/index.js";
 import * as nativeEntry from "../src/native/index.js";
+import type { IPhysicsContext } from "../src/plugin.js";
 import {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_SLEEP_STATE_STRIDE,
@@ -70,6 +71,68 @@ describe("native physics contract", () => {
       }),
     ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*heightfield/);
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-finite or negative mass before calling the host, like the web seam", () => {
+    const createBody = vi.fn(() => 0);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+
+    for (const mass of [Number.NaN, Number.POSITIVE_INFINITY, -5]) {
+      expect(() =>
+        native.createBody({
+          mass,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { w: 1, x: 0, y: 0, z: 0 },
+          sensor: false,
+          shape: CollisionShape3D.sphere(0.5).descriptor,
+          type: "dynamic",
+        }),
+      ).toThrow(/mass must be a finite non-negative number/);
+    }
+    expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when syncFromPhysics hits a backend without readBodyTransform", () => {
+    const simulation = createNativePhysicsSimulation(
+      {
+        configureCharacter: vi.fn(),
+        createBody: vi.fn(() => 0),
+        dispose: vi.fn(),
+        drainCollisionEvents: vi.fn(() => 0),
+        intersectPoint: vi.fn(() => []),
+        intersectRay: vi.fn(() => null),
+        intersectShape: vi.fn(() => []),
+        readAreaIntersections: vi.fn(() => 0),
+        readCharacterStates: vi.fn(() => 0),
+        readVisibleTransforms: vi.fn(() => 0),
+        removeBody: vi.fn(),
+        step: vi.fn(),
+      } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const physics = {
+      add: () => {},
+      addArea: () => {},
+      remove: () => {},
+      removeArea: () => {},
+      simulation,
+    } as unknown as IPhysicsContext;
+
+    const crate = new Object3D();
+    crate.position.set(1, 2, 3);
+    const body = new RigidBody3D({ object: crate, physics, shape: CollisionShape3D.sphere(0.5) });
+    expect(() => body.syncFromPhysics()).toThrow(/TN_PHYSICS_READ_TRANSFORM_MISSING/);
+    expect(crate.position.x).toBe(1);
+
+    const character = new CharacterBody3D({
+      object: new Object3D(),
+      physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+    expect(() => character.syncFromPhysics()).toThrow(/TN_PHYSICS_READ_TRANSFORM_MISSING/);
   });
 
   it("requires matching sensor metadata on both adapters and keeps native raw values opaque", async () => {

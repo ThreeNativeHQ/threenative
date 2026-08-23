@@ -599,6 +599,20 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   }
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
+  if (
+    camera !== undefined &&
+    !(
+      (typeof camera.within === "number" && Number.isFinite(camera.within)) ||
+      camera.targetInViewport === true
+    )
+  ) {
+    // entity/follows only select what to observe; without a binding predicate the camera
+    // assertion passes on zero observations, the vacuous-green shape rejected everywhere else.
+    throw invalidScenario(
+      scenarioPath,
+      "Assertion 'assert.camera' must declare 'within' or 'targetInViewport: true'; a camera assertion with neither passes without consulting any observation.",
+    );
+  }
   const diagnostics = isRecord(value.diagnostics) ? value.diagnostics : undefined;
   const performance = isRecord(value.performance)
     ? validatePerformanceAssertion(value.performance, scenarioPath, "assert.performance")

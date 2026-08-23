@@ -294,13 +294,16 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const pickupAudio = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/assets/pickup.ogg"),
+      path.resolve("packages/create-threenative/templates/starter/assets/pickup.wav"),
     );
 
     expect(game).toContain("seed: 90210");
     expect(menu).toContain("game.pause()");
     expect(seed).toContain('"path": "levelX"');
-    expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("OggS");
+    // WAV, not OGG. The Android runtime decodes RIFF/WAVE only, so a starter shipping OGG hands
+    // every scaffolded project an `--target android` build that installs and black-screens.
+    expect(pickupAudio.subarray(0, 4).toString("ascii")).toBe("RIFF");
+    expect(pickupAudio.subarray(8, 12).toString("ascii")).toBe("WAVE");
   });
 
   it("should assert the seeded level range instead of a generator draw", async () => {

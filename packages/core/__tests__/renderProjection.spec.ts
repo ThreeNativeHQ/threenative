@@ -21,6 +21,7 @@ import {
   Skeleton,
   SkinnedMesh,
   SphereGeometry,
+  SpotLight,
   Sprite,
   SpriteMaterial,
 } from "three";
@@ -273,6 +274,36 @@ describe("SceneRenderProjection", () => {
     light.intensity = 0.25;
     projection.reconcile();
     expect(mirrored[0]?.intensity).toBe(0.25);
+  });
+
+  it("keeps a spotlight's runtime cone and falloff parameters in step", () => {
+    const scene = new Scene();
+    const light = new SpotLight(0xffffff, 3, 12, 0.4, 0.2, 1.5);
+    light.position.set(0, 6, 0);
+    scene.add(light);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    let mirrored: SpotLight | undefined;
+    projection.root.traverse((object) => {
+      if ((object as SpotLight).isSpotLight === true) mirrored = object as SpotLight;
+    });
+    expect(mirrored).toBeDefined();
+
+    // A flashlight zoom or a fading muzzle-flash light changes cone and falloff at runtime;
+    // frozen first-frame values would render the scene lit differently than authored.
+    light.angle = 0.9;
+    light.penumbra = 0.7;
+    light.distance = 30;
+    light.decay = 1.1;
+    light.intensity = 5;
+    projection.reconcile();
+
+    expect(mirrored?.angle).toBeCloseTo(0.9);
+    expect(mirrored?.penumbra).toBeCloseTo(0.7);
+    expect(mirrored?.distance).toBeCloseTo(30);
+    expect(mirrored?.decay).toBeCloseTo(1.1);
+    expect(mirrored?.intensity).toBeCloseTo(5);
   });
 
   it("carries the scene's own look rather than choosing one", () => {

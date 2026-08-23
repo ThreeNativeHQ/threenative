@@ -6269,10 +6269,28 @@ void endDawnFrame() {
     // Every pass this frame has been submitted; put the one image on screen.
     presentPendingSurface();
 
-    // One line a second at 60Hz. Cheap enough to leave on in every build, and a gate that has to
-    // ask for the invariant is a gate nobody turns on.
+    // One line a second, by the clock and not by the frame count.
+    //
+    // `% 60` alone is one line a second only if the loop runs at 60 Hz. When a game fails to start
+    // there is nothing to present and nothing to wait for, so the loop free-runs: measured at
+    // ~96,000 fps on a Pixel 8, which is ~1,600 of these lines a second, ~24,000 in fifteen
+    // seconds. That overruns logcat's ring buffer and **evicts the entire startup sequence** —
+    // this diagnostic was destroying the evidence for the failure it exists to report, and two
+    // wrong conclusions in one debugging session came from reading the buffer it had emptied.
+    //
+    // The first tick is unconditional so any run of at least 60 frames still emits one and the
+    // desktop and device gates keep their `minTicks` guarantee; every tick after it waits a
+    // second of wall clock, whatever the loop is doing.
     g_frameEndCount += 1;
-    if (g_frameEndCount % 60 == 0) reportPresentTick(g_frameEndCount);
+    if (g_frameEndCount % 60 == 0) {
+        using clock = std::chrono::steady_clock;
+        static clock::time_point lastTick{};
+        const clock::time_point now = clock::now();
+        if (lastTick == clock::time_point{} || now - lastTick >= std::chrono::seconds(1)) {
+            lastTick = now;
+            reportPresentTick(g_frameEndCount);
+        }
+    }
 
     // Tick the WebGPU device to process completed GPU work and free internal
     // resources (staging buffers, command encoder state, etc.). Without this,
