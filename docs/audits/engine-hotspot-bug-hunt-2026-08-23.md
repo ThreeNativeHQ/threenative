@@ -8,7 +8,8 @@ red→green probe: the failing assertion pasted against unfixed source, then the
 suite green. Test and fix share a commit per finding.
 
 Related earlier report from a separate session on the same date: `docs/bug-hunt-2026-08-23.md`
-(native `decodeAudioData` thenable defect — still open there; see A5 below).
+(native `decodeAudioData` thenable defect; A5 below — **now fixed and executed on the native
+lane**, see that report for the red and the green).
 
 ## Scoreboard
 
@@ -28,7 +29,7 @@ Related earlier report from a separate session on the same date: `docs/bug-hunt-
 | C3 | Invalid play options permanently orphan a pooled audio voice | core | CONFIRMED by inspection, low | — |
 | C4 | Scheduler can fire a mid-tick `after()` callback in the same tick after a cancellation | core | CONFIRMED by inspection, low; deterministic so replays unaffected | — |
 | P5 | Plugin render buffer sized from registry, validated against simulation body count | physics | SUSPECTED — fail-closed fires, error points wrong; deprecated-path judgment call | — |
-| A5 | Native `decodeAudioData` thenable chain breaks on the second link | runtime-native | CONFIRMED by two independent sessions; needs native lane + C++ fix | — |
+| A5 | Native `decodeAudioData` thenable chain breaks on the second link | runtime-native | **FIXED** — executed red→green on the native lane (V8) | see `docs/bug-hunt-2026-08-23.md` |
 | PL3 | Blank capture emits visual rows as `pass: true, reason: "not-evaluated"` | playtest | DISPUTED — pinned test names this deliberate ("infrastructure-red while visual assertions stay not evaluated"); flagged for a ruling | — |
 
 ## Fixed findings — evidence per finding
@@ -143,10 +144,6 @@ RED: mirrored angle stayed 0.4 after the source moved to 0.9. GREEN: core suite 
 - **P5 (render buffer sizing)**: mechanism verified (`plugin.ts:202` vs the simulation-side
   buffer check); reachable only through the deprecated `world:` constructor path or direct
   `simulation.createBody`. Fail-closed works; the error just points nowhere near the cause.
-- **A5 (native audio chains)**: `decodeAudioData`'s thenable returns undefined from `then`,
-  breaking any second chained link; independently filed at `docs/bug-hunt-2026-08-23.md`.
-  Requires the native runtime lane and a C++ edit — left to that lane.
-
 ## Flagged for a ruling
 
 - **PL3 (blank-capture visual rows)**: when the screenshot is blank, declared visual assertions
