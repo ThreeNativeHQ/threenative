@@ -22,6 +22,7 @@ class Navigator {
   readonly #agent: NavigationAgent3D;
   readonly #body: CharacterBody3D;
   readonly #direction = new Vector3();
+  readonly #next = new Vector3();
 
   constructor(ctx: NavigationCtx, navigation: NonNullable<IPhysicsContext["navigation"]>) {
     this.mesh = new Mesh(
@@ -47,8 +48,8 @@ class Navigator {
   }
 
   update(dt: number): void {
-    const next = this.#agent.getNextPathPosition();
-    this.#direction.subVectors(next, this.mesh.position).setY(0);
+    this.#agent.getNextPathPosition(this.#next);
+    this.#direction.subVectors(this.#next, this.mesh.position).setY(0);
     if (this.#direction.lengthSq() > 0.0001) this.#direction.normalize().multiplyScalar(SPEED);
     else this.#direction.set(0, 0, 0);
     this.#body.velocity.copy(this.#direction);

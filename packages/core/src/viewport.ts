@@ -55,8 +55,10 @@ export class Viewport {
   #stopObserving: () => void = () => undefined;
   #disposed = false;
   #raycaster = new Raycaster();
+  #ndc = new Vector2();
   #plane = new Plane(new Vector3(0, 0, 1));
   #projected = new Vector3();
+  #unprojected = new Vector3();
 
   constructor(options: IViewportOptions) {
     this.camera = options.camera;
@@ -76,23 +78,24 @@ export class Viewport {
     return this.#safeArea;
   }
 
-  projectPosition(screen: Vector2, z = 0): Vector3 {
+  projectPosition(screen: Vector2, z = 0, target?: Vector3): Vector3 {
     if (!Number.isFinite(z)) throw new Error("Viewport.projectPosition z must be finite.");
-    const ndc = new Vector2(
-      (screen.x / this.#size.width) * 2 - 1,
-      -((screen.y / this.#size.height) * 2 - 1),
-    );
-    this.#raycaster.setFromCamera(ndc, this.camera);
+    this.#ndc.set((screen.x / this.#size.width) * 2 - 1, -((screen.y / this.#size.height) * 2 - 1));
+    this.#raycaster.setFromCamera(this.#ndc, this.camera);
     this.#plane.constant = -z;
     const point = this.#raycaster.ray.intersectPlane(this.#plane, this.#projected);
     if (point === null)
       throw new Error("Viewport.projectPosition cannot reach the requested z plane.");
-    return point.clone();
+    return target?.copy(point) ?? point.clone();
   }
 
-  unprojectPosition(world: Vector3): Vector2 {
-    const ndc = world.clone().project(this.camera);
-    return new Vector2(((ndc.x + 1) / 2) * this.#size.width, ((1 - ndc.y) / 2) * this.#size.height);
+  unprojectPosition(world: Vector3, target?: Vector2): Vector2 {
+    this.#unprojected.copy(world).project(this.camera);
+    const result = target ?? new Vector2();
+    return result.set(
+      ((this.#unprojected.x + 1) / 2) * this.#size.width,
+      ((1 - this.#unprojected.y) / 2) * this.#size.height,
+    );
   }
 
   onResize(handler: ViewportResizeHandler): () => void {

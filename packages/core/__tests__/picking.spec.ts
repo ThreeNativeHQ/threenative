@@ -261,6 +261,22 @@ describe("ScenePicker", () => {
     expect(firstHits.map((hit) => hit.object.name)).toEqual(firstHitNames);
   });
 
+  it("fills and returns a supplied raycastAll target", () => {
+    const far = box("far", -3);
+    const near = box("near", 0);
+    const { picker } = scenePicker(far, near);
+    const target: Intersection[] = [];
+    const origin = new Vector3(0, 0, 5);
+    const direction = new Vector3(0, 0, -1);
+
+    expect(picker.raycastAll({ origin, direction }, target)).toBe(target);
+    expect(target[0]?.object.name).toBe("near");
+
+    picker.raycastAll({ origin, direction, targets: near }, target);
+    expect(target).toHaveLength(2);
+    expect(target[0]?.object.name).toBe("near");
+  });
+
   it("excludes a parent and its whole subtree", () => {
     const excludedParent = new Object3D();
     const excludedChild = box("excluded", 0);

@@ -494,7 +494,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       physics: undefined as TPhysics,
       random,
       raycast: (options) => picker.raycast(options),
-      raycastAll: (options) => picker.raycastAll(options),
+      raycastAll: (options, target) => picker.raycastAll(options, target),
       startup: {
         get phase() {
           // The projection reaches its verdict on the first frame it reconciles rather than after

@@ -81,7 +81,10 @@ export interface ICtx<
   ) => Promise<void>;
   readonly random: IRandom;
   readonly raycast: (options?: IRaycastOptions) => Intersection | undefined;
-  readonly raycastAll: (options?: IRaycastOptions) => readonly Intersection[];
+  readonly raycastAll: (
+    options?: IRaycastOptions,
+    target?: Intersection[],
+  ) => readonly Intersection[];
   /**
    * The framework's own startup work — what a loading screen waits on.
    *

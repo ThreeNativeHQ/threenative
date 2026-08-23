@@ -141,6 +141,29 @@ describe("Viewport", () => {
     expect(screen.y).toBeCloseTo(360, 6);
   });
 
+  it("fills caller targets without mutating projection inputs", () => {
+    const canvas = testCanvas();
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    const viewport = new Viewport({ camera, renderer: renderer(canvas) });
+    const screen = new Vector2(1280, 360);
+    const originalScreen = screen.clone();
+    const projectedTarget = new Vector3();
+    const projected = viewport.projectPosition(screen, 0, projectedTarget);
+
+    expect(projected).toBe(projectedTarget);
+    expect(screen).toEqual(originalScreen);
+
+    const world = new Vector3(0, 0, 0);
+    const originalWorld = world.clone();
+    const screenTarget = new Vector2();
+    const unprojected = viewport.unprojectPosition(world, screenTarget);
+
+    expect(unprojected).toBe(screenTarget);
+    expect(world).toEqual(originalWorld);
+  });
+
   it("keeps an asymmetric measured safe rectangle through resize", () => {
     const canvas = testCanvas();
     let insets = { bottom: 24, left: 18, right: 42, top: 80 };

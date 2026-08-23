@@ -58,6 +58,10 @@ export class ScenePicker {
   #ndc = new Vector2();
   #hits: Intersection[] = [];
   #objectHits: Intersection[] = [];
+  #roots: Object3D[] = [];
+  #excluded = new Set<Object3D>();
+  #compareHits = (first: Intersection, second: Intersection): number =>
+    first.distance - second.distance;
   #trees = new WeakMap<BufferGeometry, ICachedTree>();
 
   constructor(options: IScenePickerOptions) {
@@ -77,27 +81,8 @@ export class ScenePicker {
    * the candidates. The winner is a running minimum, never a full sort: a game asking "what did
    * this round hit" should not pay for every wall behind the answer.
    */
-  raycast(options: IRaycastOptions = {}): Intersection | undefined {
-    this.#setRay(options);
-    this.#raycaster.far = options.far ?? Number.POSITIVE_INFINITY;
-    const targets = options.targets ?? this.#scene;
-    const roots = Array.isArray(targets) ? targets : [targets as Object3D];
-    const excluded =
-      options.exclude === undefined
-        ? new Set<Object3D>()
-        : new Set(Array.isArray(options.exclude) ? options.exclude : [options.exclude]);
-    this.#hits.length = 0;
-    this.#raycaster.firstHitOnly = true;
-    try {
-      for (const root of roots) {
-        root.updateMatrixWorld();
-        this.#collect(root, excluded, true);
-      }
-    } finally {
-      // `raycastAll` relies on the default of collecting every hit; a query that throws must
-      // not leave the accelerated flag set for it.
-      this.#raycaster.firstHitOnly = false;
-    }
+  raycast(options?: IRaycastOptions): Intersection | undefined {
+    this.#query(options, true);
     let nearest: Intersection | undefined;
     for (const hit of this.#hits) {
       if (nearest === undefined || hit.distance < nearest.distance) nearest = hit;
@@ -106,45 +91,69 @@ export class ScenePicker {
   }
 
   /** Every hit, sorted from the nearest to the farthest. */
-  raycastAll(options: IRaycastOptions = {}): readonly Intersection[] {
+  raycastAll(options?: IRaycastOptions, target?: Intersection[]): readonly Intersection[] {
+    if (target !== undefined) target.length = 0;
+    this.#query(options, false);
+    if (target === undefined) return this.#hits.slice();
+    for (const hit of this.#hits) target.push(hit);
+    return target;
+  }
+
+  #query(options: IRaycastOptions | undefined, single: boolean): void {
     this.#setRay(options);
-    this.#raycaster.far = options.far ?? Number.POSITIVE_INFINITY;
-    const targets = options.targets ?? this.#scene;
-    const roots = Array.isArray(targets) ? targets : [targets as Object3D];
-    const excluded =
-      options.exclude === undefined
-        ? new Set<Object3D>()
-        : new Set(Array.isArray(options.exclude) ? options.exclude : [options.exclude]);
-    this.#hits.length = 0;
-    for (const root of roots) {
-      root.updateMatrixWorld();
-      this.#collect(root, excluded, false);
+    this.#raycaster.far = options?.far ?? Number.POSITIVE_INFINITY;
+    const targets = options?.targets ?? this.#scene;
+    this.#roots.length = 0;
+    if (Array.isArray(targets)) {
+      for (const target of targets as readonly Object3D[]) this.#roots.push(target);
+    } else {
+      this.#roots.push(targets as Object3D);
     }
-    this.#hits.sort((first, second) => first.distance - second.distance);
-    return this.#hits.slice();
+    this.#excluded.clear();
+    const exclude = options?.exclude;
+    if (exclude !== undefined) {
+      if (Array.isArray(exclude)) {
+        for (const object of exclude as readonly Object3D[]) this.#excluded.add(object);
+      } else {
+        this.#excluded.add(exclude as Object3D);
+      }
+    }
+    this.#hits.length = 0;
+    this.#raycaster.firstHitOnly = single;
+    try {
+      for (const root of this.#roots) {
+        root.updateMatrixWorld();
+        this.#collect(root, this.#excluded, single);
+      }
+      if (!single) this.#hits.sort(this.#compareHits);
+    } finally {
+      this.#raycaster.firstHitOnly = false;
+    }
   }
 
   /** Drops every cached hierarchy. The next `raycast` rebuilds what it needs. */
   dispose(): void {
     this.#trees = new WeakMap<BufferGeometry, ICachedTree>();
     this.#hits.length = 0;
+    this.#roots.length = 0;
+    this.#excluded.clear();
   }
 
-  #setRay(options: IRaycastOptions): void {
-    const hasScreen = options.screen !== undefined;
-    const hasOrigin = options.origin !== undefined;
-    const hasDirection = options.direction !== undefined;
+  #setRay(options: IRaycastOptions | undefined): void {
+    const hasScreen = options?.screen !== undefined;
+    const hasOrigin = options?.origin !== undefined;
+    const hasDirection = options?.direction !== undefined;
     if (hasScreen && (hasOrigin || hasDirection))
       throw new Error("ICtx.raycast screen cannot be combined with origin or direction.");
     if (hasDirection && !hasOrigin) throw new Error("ICtx.raycast direction requires origin.");
     if (hasOrigin && !hasDirection) throw new Error("ICtx.raycast origin requires direction.");
     if (hasOrigin) {
       this.#raycaster.camera = this.#camera;
-      this.#raycaster.set(options.origin as Vector3, options.direction as Vector3);
+      this.#raycaster.set(options?.origin as Vector3, options?.direction as Vector3);
       return;
     }
 
-    const screen = options.screen ?? this.#pointer();
+    const screen = options?.screen ?? this.#pointer();
     if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y))
       throw new Error("ICtx.raycast screen point must be finite.");
     const { height, width } = this.#viewport.size;

@@ -1,4 +1,4 @@
-import { PathFollow3D } from "@threenative/core";
+import { type IPathFollow3DSample, PathFollow3D } from "@threenative/core";
 import { CollisionShape3D } from "@threenative/physics";
 import { type Group, Vector3 } from "three";
 import { ATTACKER_LAYER, type DefensePhysics, createEntityBody } from "../physics.js";
@@ -15,6 +15,12 @@ export class Attacker {
   readonly tags = ["attacker", "hostile"];
   readonly #body;
   readonly #path: PathFollow3D;
+  readonly #sample: IPathFollow3DSample = {
+    point: new Vector3(),
+    progress: 0,
+    tangent: new Vector3(),
+  };
+  readonly #side = new Vector3();
   #health = ATTACKER_HEALTH;
   #dead = false;
   #escaped = false;
@@ -34,6 +40,7 @@ export class Attacker {
     this.#onDefeated = options.onDefeated;
     this.#onLeak = options.onLeak;
     this.#path = new PathFollow3D({ points: options.pathPoints, speed: ATTACKER_SPEED });
+    this.#path.sample(undefined, this.#sample);
     this.mesh = attackerMesh();
     this.#place(this.lateralOffset);
     this.#body = createEntityBody({
@@ -69,7 +76,7 @@ export class Attacker {
 
   update(dt: number): void {
     if (this.#dead || this.#escaped) return;
-    const sample = this.#path.advance(dt);
+    const sample = this.#path.advance(dt, this.#sample);
     this.#place(this.lateralOffset, sample.point, sample.tangent);
     if (!this.#path.completed) return;
     this.#escaped = true;
@@ -92,13 +99,9 @@ export class Attacker {
     this.mesh.removeFromParent();
   }
 
-  #place(
-    lateralOffset: number,
-    point = this.#path.sample().point,
-    tangent = this.#path.sample().tangent,
-  ): void {
-    const side = new Vector3(-tangent.z, 0, tangent.x).normalize();
-    this.mesh.position.copy(point).addScaledVector(side, lateralOffset).setY(0);
+  #place(lateralOffset: number, point = this.#sample.point, tangent = this.#sample.tangent): void {
+    this.#side.set(-tangent.z, 0, tangent.x).normalize();
+    this.mesh.position.copy(point).addScaledVector(this.#side, lateralOffset).setY(0);
     this.mesh.rotation.y = Math.atan2(tangent.x, tangent.z);
   }
 }

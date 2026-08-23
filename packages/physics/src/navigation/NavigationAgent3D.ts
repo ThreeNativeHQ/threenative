@@ -1,4 +1,4 @@
-import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3 } from "recast-navigation";
+import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3, Raw } from "recast-navigation";
 import { type Object3D, Vector3 } from "three";
 import type { INavigationContext } from "./index.js";
 
@@ -18,6 +18,7 @@ export interface INavigationAgent3DOptions {
 
 const MAX_CROWD_AGENTS = 64;
 const MAX_CROWD_AGENT_RADIUS = 2;
+type NavigationArray = [number, number, number];
 
 function finitePositive(name: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0)
@@ -25,8 +26,28 @@ function finitePositive(name: string, value: number): number {
   return value;
 }
 
-function toNavigationVector(value: Pick<Vector3, "x" | "y" | "z">): NavigationVector3 {
-  return { x: value.x, y: value.y, z: value.z };
+function finitePositionComponents(x: number, y: number, z: number): boolean {
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
+}
+
+function toNavigationVector(
+  value: Pick<Vector3, "x" | "y" | "z">,
+  target: NavigationVector3,
+): NavigationVector3 {
+  target.x = value.x;
+  target.y = value.y;
+  target.z = value.z;
+  return target;
+}
+
+function toNavigationArray(
+  value: Pick<Vector3, "x" | "y" | "z">,
+  target: NavigationArray,
+): NavigationArray {
+  target[0] = value.x;
+  target[1] = value.y;
+  target[2] = value.z;
+  return target;
 }
 
 function distanceSquared(
@@ -75,6 +96,7 @@ export class NavigationAgent3D {
   readonly targetDesiredDistance: number;
   #avoidanceEnabled: boolean;
   #target: Vector3 | undefined;
+  #targetRevision = 0;
   #path: Vector3[] = [];
   #pathIndex = 0;
   #finished = false;
@@ -85,6 +107,16 @@ export class NavigationAgent3D {
     targetReached: new Set(),
   };
   #crowdAgent: CrowdAgent | undefined;
+  readonly #objectRecord: NavigationVector3 = { x: 0, y: 0, z: 0 };
+  readonly #targetRecord: NavigationVector3 = { x: 0, y: 0, z: 0 };
+  readonly #avoidanceRecord: NavigationVector3 = { x: 0, y: 0, z: 0 };
+  readonly #crowdPositionArray: NavigationArray = [0, 0, 0];
+  readonly #crowdTargetArray: NavigationArray = [0, 0, 0];
+  readonly #crowdHalfExtentsArray: NavigationArray = [0, 0, 0];
+  readonly #crowdNearestPointArray: NavigationArray = [0, 0, 0];
+  readonly #crowdNearestRef: InstanceType<typeof Raw.UnsignedIntRef>;
+  readonly #crowdNearestPoint: InstanceType<typeof Raw.Vec3>;
+  readonly #crowdPointOverPoly: InstanceType<typeof Raw.BoolRef>;
 
   constructor(options: INavigationAgent3DOptions) {
     if (options.navigation === undefined)
@@ -104,6 +136,9 @@ export class NavigationAgent3D {
       "targetDesiredDistance",
       options.targetDesiredDistance ?? 0.45,
     );
+    this.#crowdNearestRef = new Raw.UnsignedIntRef();
+    this.#crowdNearestPoint = new Raw.Vec3();
+    this.#crowdPointOverPoly = new Raw.BoolRef();
     this.#avoidanceEnabled = options.avoidanceEnabled ?? true;
     this.#crowdAgent = undefined;
     if (this.#avoidanceEnabled) this.#enableAvoidance();
@@ -132,17 +167,26 @@ export class NavigationAgent3D {
 
   setTargetPosition(position: Pick<Vector3, "x" | "y" | "z">): void {
     if (this.#disposed) throw new Error("NavigationAgent3D cannot target after dispose.");
-    if (![position.x, position.y, position.z].every(Number.isFinite))
+    const x = position.x;
+    const y = position.y;
+    const z = position.z;
+    if (!finitePositionComponents(x, y, z))
       throw new Error("NavigationAgent3D target position must be finite.");
-    this.#target = new Vector3(position.x, position.y, position.z);
+    this.#target ??= new Vector3();
+    this.#target.set(x, y, z);
+    this.#targetRevision += 1;
     this.#pathIndex = 0;
     this.#finished = false;
     // One path computation serves both storage and reachability: retargeting used to run
     // computePath twice — once inside isTargetReachable and once to store #path — which doubled
     // the most expensive navigation call for chase AI that retargets every frame.
     const target = this.#target;
-    const start = this.navigation.query.findClosestPoint(toNavigationVector(this.object.position));
-    const end = this.navigation.query.findClosestPoint(toNavigationVector(target));
+    const start = this.navigation.query.findClosestPoint(
+      toNavigationVector(this.object.position, this.#objectRecord),
+    );
+    const end = this.navigation.query.findClosestPoint(
+      toNavigationVector(target, this.#targetRecord),
+    );
     if (!this.#hasEnabledRegion() || !start.success || !end.success) {
       this.#path = [];
       this.#crowdAgent?.resetMoveTarget();
@@ -154,32 +198,32 @@ export class NavigationAgent3D {
       ) {
         this.#crowdAgent?.resetMoveTarget();
       } else if (this.#path.length > 0) {
-        this.#crowdAgent?.requestMoveTarget(toNavigationVector(target));
+        this.#requestCrowdMoveTarget(target);
       }
     } else {
       const reachable = this.#storeComputedPath(target);
       if (!reachable) {
         this.#crowdAgent?.resetMoveTarget();
       } else if (this.#path.length > 0) {
-        this.#crowdAgent?.requestMoveTarget(toNavigationVector(target));
+        this.#requestCrowdMoveTarget(target);
       }
     }
     for (const handler of this.#listeners.pathChanged) handler();
   }
 
-  getNextPathPosition(): Vector3 {
+  getNextPathPosition(target = new Vector3()): Vector3 {
     if (this.#target === undefined)
       throw new Error("NavigationAgent3D.getNextPathPosition requires a target position.");
-    if (!this.#hasEnabledRegion()) return this.object.position.clone();
-    const avoidance = this.#crowdAgent?.desiredVelocityObstacleAdjusted();
-    if (this.#path.length === 0) return this.object.position.clone();
+    if (!this.#hasEnabledRegion()) return target.copy(this.object.position);
+    const avoidance = this.#readAvoidance();
+    if (this.#path.length === 0) return target.copy(this.object.position);
     if (avoidance !== undefined && Math.hypot(avoidance.x, avoidance.z) > 0.001) {
-      const next = this.object.position.clone();
-      next.x += avoidance.x;
-      next.z += avoidance.z;
-      return next;
+      target.copy(this.object.position);
+      target.x += avoidance.x;
+      target.z += avoidance.z;
+      return target;
     }
-    return this.#path[this.#pathIndex]?.clone() ?? this.object.position.clone();
+    return target.copy(this.#path[this.#pathIndex] ?? this.object.position);
   }
 
   isNavigationFinished(): boolean {
@@ -193,8 +237,8 @@ export class NavigationAgent3D {
    */
   #storeComputedPath(target: Vector3): boolean {
     const result = this.navigation.query.computePath(
-      toNavigationVector(this.object.position),
-      toNavigationVector(target),
+      toNavigationVector(this.object.position, this.#objectRecord),
+      toNavigationVector(target, this.#targetRecord),
     );
     this.#path = result.success
       ? result.path.map((point) => new Vector3(point.x, point.y, point.z))
@@ -210,8 +254,12 @@ export class NavigationAgent3D {
   isTargetReachable(position?: Pick<Vector3, "x" | "y" | "z">): boolean {
     const target = position ?? this.#target;
     if (target === undefined) return false;
-    const start = this.navigation.query.findClosestPoint(toNavigationVector(this.object.position));
-    const end = this.navigation.query.findClosestPoint(toNavigationVector(target));
+    const start = this.navigation.query.findClosestPoint(
+      toNavigationVector(this.object.position, this.#objectRecord),
+    );
+    const end = this.navigation.query.findClosestPoint(
+      toNavigationVector(target, this.#targetRecord),
+    );
     if (!this.#hasEnabledRegion() || !start.success || !end.success) return false;
     if (start.polyRef === end.polyRef)
       return navigationPointMatchesTarget(
@@ -221,8 +269,8 @@ export class NavigationAgent3D {
         this.height,
       );
     const path = this.navigation.query.computePath(
-      toNavigationVector(this.object.position),
-      toNavigationVector(target),
+      toNavigationVector(this.object.position, this.#objectRecord),
+      toNavigationVector(target, this.#targetRecord),
     );
     const final = path.path.at(-1);
     return (
@@ -247,7 +295,7 @@ export class NavigationAgent3D {
   #lastSyncX = Number.NaN;
   #lastSyncY = Number.NaN;
   #lastSyncZ = Number.NaN;
-  #lastRequestedTarget: Vector3 | undefined;
+  #lastRequestedTargetRevision = -1;
 
   syncCrowd(): void {
     if (this.#disposed || this.#crowdAgent === undefined) return;
@@ -255,7 +303,7 @@ export class NavigationAgent3D {
     const moved = x !== this.#lastSyncX || y !== this.#lastSyncY || z !== this.#lastSyncZ;
     const retargeted =
       this.#target !== undefined &&
-      this.#target !== this.#lastRequestedTarget &&
+      this.#targetRevision !== this.#lastRequestedTargetRevision &&
       this.#path.length > 0;
     if (!moved && !retargeted) return;
     this.#lastSyncX = x;
@@ -264,11 +312,11 @@ export class NavigationAgent3D {
     if (moved) {
       // Teleport re-localises the agent and drops its move state, so the target is re-sent in
       // the same sync — the pair is atomic, which the every-frame version got by doing both.
-      this.#crowdAgent.teleport(toNavigationVector(this.object.position));
+      this.#teleportCrowdAgent();
     }
     if (this.#target !== undefined && this.#path.length > 0) {
-      this.#lastRequestedTarget = this.#target;
-      this.#crowdAgent.requestMoveTarget(toNavigationVector(this.#target));
+      this.#lastRequestedTargetRevision = this.#targetRevision;
+      this.#requestCrowdMoveTarget(this.#target);
     }
   }
 
@@ -307,23 +355,29 @@ export class NavigationAgent3D {
     for (const listeners of Object.values(this.#listeners)) listeners.clear();
     this.#path = [];
     this.#target = undefined;
+    Raw.destroy(this.#crowdNearestRef);
+    Raw.destroy(this.#crowdNearestPoint);
+    Raw.destroy(this.#crowdPointOverPoly);
   }
 
   #enableAvoidance(): void {
     if (this.#crowdAgent !== undefined) return;
     const crowd = crowdFor(this.navigation, this.radius);
-    this.#crowdAgent = crowd.addAgent(toNavigationVector(this.object.position), {
-      collisionQueryRange: 2.5,
-      height: this.height,
-      maxAcceleration: 20,
-      maxSpeed: this.maxSpeed,
-      obstacleAvoidanceType: 0,
-      pathOptimizationRange: 0,
-      radius: this.radius,
-      separationWeight: 2,
-      updateFlags: 7,
-      userData: this,
-    });
+    this.#crowdAgent = crowd.addAgent(
+      toNavigationVector(this.object.position, this.#objectRecord),
+      {
+        collisionQueryRange: 2.5,
+        height: this.height,
+        maxAcceleration: 20,
+        maxSpeed: this.maxSpeed,
+        obstacleAvoidanceType: 0,
+        pathOptimizationRange: 0,
+        radius: this.radius,
+        separationWeight: 2,
+        updateFlags: 7,
+        userData: this,
+      },
+    );
   }
 
   #disableAvoidance(): void {
@@ -332,8 +386,67 @@ export class NavigationAgent3D {
     this.#crowdAgent = undefined;
   }
 
+  #teleportCrowdAgent(): void {
+    const crowdAgent = this.#crowdAgent;
+    if (crowdAgent === undefined) return;
+    const { crowd } = crowdAgent;
+    const query = crowd.navMeshQuery;
+    Raw.CrowdUtils.agentTeleport(
+      crowd.raw,
+      crowdAgent.agentIndex,
+      toNavigationArray(this.object.position, this.#crowdPositionArray),
+      toNavigationArray(query.defaultQueryHalfExtents, this.#crowdHalfExtentsArray),
+      query.defaultFilter.raw,
+    );
+    crowdAgent.interpolatedPosition.x = this.object.position.x;
+    crowdAgent.interpolatedPosition.y = this.object.position.y;
+    crowdAgent.interpolatedPosition.z = this.object.position.z;
+  }
+
+  #requestCrowdMoveTarget(target: Pick<Vector3, "x" | "y" | "z">): void {
+    const crowdAgent = this.#crowdAgent;
+    if (crowdAgent === undefined) return;
+    const { crowd } = crowdAgent;
+    const query = crowd.navMeshQuery;
+    const targetArray = toNavigationArray(target, this.#crowdTargetArray);
+    const halfExtentsArray = toNavigationArray(
+      query.defaultQueryHalfExtents,
+      this.#crowdHalfExtentsArray,
+    );
+    this.#crowdNearestRef.value = 0;
+    this.#crowdNearestPoint.x = 0;
+    this.#crowdNearestPoint.y = 0;
+    this.#crowdNearestPoint.z = 0;
+    this.#crowdPointOverPoly.value = false;
+    query.raw.findNearestPoly(
+      targetArray,
+      halfExtentsArray,
+      query.defaultFilter.raw,
+      this.#crowdNearestRef,
+      this.#crowdNearestPoint,
+      this.#crowdPointOverPoly,
+    );
+    this.#crowdNearestPointArray[0] = this.#crowdNearestPoint.x;
+    this.#crowdNearestPointArray[1] = this.#crowdNearestPoint.y;
+    this.#crowdNearestPointArray[2] = this.#crowdNearestPoint.z;
+    crowd.raw.requestMoveTarget(
+      crowdAgent.agentIndex,
+      this.#crowdNearestRef.value,
+      this.#crowdNearestPointArray,
+    );
+  }
+
   #hasEnabledRegion(): boolean {
     for (const region of this.navigation.regions) if (region.enabled) return true;
     return false;
+  }
+
+  #readAvoidance(): NavigationVector3 | undefined {
+    const raw = this.#crowdAgent?.raw;
+    if (raw === undefined) return undefined;
+    this.#avoidanceRecord.x = raw.get_nvel(0);
+    this.#avoidanceRecord.y = raw.get_nvel(1);
+    this.#avoidanceRecord.z = raw.get_nvel(2);
+    return this.#avoidanceRecord;
   }
 }

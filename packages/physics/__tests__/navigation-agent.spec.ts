@@ -1,4 +1,5 @@
 import type { ICtx } from "@threenative/core";
+import { Raw } from "recast-navigation";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../src/index.js";
@@ -153,6 +154,42 @@ describe("NavigationAgent3D", () => {
     expect(Math.abs(agent.getNextPathPosition().z)).toBeGreaterThan(2.5);
   });
 
+  it("fills a supplied next-position target", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object,
+    });
+    agent.setTargetPosition(new Vector3(0, 0.75, 0));
+    const target = new Vector3();
+
+    expect(agent.getNextPathPosition(target)).toBe(target);
+  });
+
+  it("rejects non-finite target components", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object: new Object3D(),
+    });
+
+    expect(() => agent.setTargetPosition({ x: Number.NaN, y: 0, z: 0 })).toThrow(
+      /target position must be finite/,
+    );
+    expect(() => agent.setTargetPosition({ x: 0, y: Number.POSITIVE_INFINITY, z: 0 })).toThrow(
+      /target position must be finite/,
+    );
+    expect(() => agent.setTargetPosition({ x: 0, y: 0, z: Number.NEGATIVE_INFINITY })).toThrow(
+      /target position must be finite/,
+    );
+  });
+
   it("should throw when getNextPathPosition is called before a target is set", async () => {
     const { ctx } = await setup();
     new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
@@ -163,6 +200,35 @@ describe("NavigationAgent3D", () => {
     });
 
     expect(() => agent.getNextPathPosition()).toThrow(/requires a target/);
+  });
+
+  it("does not retain raw query records after construction validation fails", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const constructors = [
+      vi.spyOn(Raw, "UnsignedIntRef"),
+      vi.spyOn(Raw, "Vec3"),
+      vi.spyOn(Raw, "BoolRef"),
+    ];
+    const destroySpy = vi.spyOn(Raw, "destroy");
+    try {
+      expect(
+        () =>
+          new NavigationAgent3D({
+            navigation: navigation(ctx),
+            object: new Object3D(),
+            radius: 0,
+          }),
+      ).toThrow(/radius must be finite and positive/);
+
+      const allocatedRecords = constructors.reduce((total, recordSpy) => {
+        return total + recordSpy.mock.calls.length;
+      }, 0);
+      expect(destroySpy).toHaveBeenCalledTimes(allocatedRecords);
+    } finally {
+      destroySpy.mockRestore();
+      for (const recordSpy of constructors) recordSpy.mockRestore();
+    }
   });
 });
 
@@ -201,7 +267,8 @@ describe("NavigationAgent3D hot-path cost", () => {
     const crowdAgent = agent.crowdAgent;
     if (crowdAgent === undefined) throw new Error("Test setup produced no crowd agent.");
     agent.setTargetPosition(new Vector3(0, 0.75, 0));
-    const teleportSpy = vi.spyOn(crowdAgent, "teleport");
+    const teleportSpy = vi.spyOn(Raw.CrowdUtils, "agentTeleport");
+    const requestTargetSpy = vi.spyOn(crowdAgent.crowd.raw, "requestMoveTarget");
     try {
       agent.syncCrowd();
       const initialTeleports = teleportSpy.mock.calls.length;
@@ -216,8 +283,97 @@ describe("NavigationAgent3D hot-path cost", () => {
       object.position.x += 0.5;
       agent.syncCrowd();
       expect(teleportSpy.mock.calls.length).toBeGreaterThan(initialTeleports);
+      expect(requestTargetSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(requestTargetSpy.mock.calls[0]?.[2]).toBe(requestTargetSpy.mock.calls[1]?.[2]);
     } finally {
       teleportSpy.mockRestore();
+      requestTargetSpy.mockRestore();
+    }
+  });
+
+  it("reuses crowd movement arrays and nearest-poly records after warmup", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      navigation: navigation(ctx),
+      object,
+    });
+    const crowdAgent = agent.crowdAgent;
+    if (crowdAgent === undefined) throw new Error("Test setup produced no crowd agent.");
+    const crowdQuery = crowdAgent.crowd.navMeshQuery;
+    const findNearestPolySpy = vi.spyOn(crowdQuery.raw, "findNearestPoly");
+    const requestMoveTargetSpy = vi.spyOn(crowdAgent.crowd.raw, "requestMoveTarget");
+    const teleportSpy = vi.spyOn(Raw.CrowdUtils, "agentTeleport");
+    try {
+      agent.setTargetPosition(new Vector3(0, 0.75, 0));
+
+      // The first moved frame warms the reusable records; later frames must retain every
+      // array and query-record identity passed through the Recast crowd boundary.
+      agent.syncCrowd();
+      object.position.x += 0.25;
+      agent.syncCrowd();
+      object.position.x += 0.25;
+      agent.syncCrowd();
+
+      const nearestCalls = findNearestPolySpy.mock.calls;
+      const nearestPrevious = nearestCalls.at(-2);
+      const nearestCurrent = nearestCalls.at(-1);
+      if (nearestPrevious === undefined || nearestCurrent === undefined)
+        throw new Error("Expected repeated crowd target queries.");
+      expect(nearestCurrent[0]).toBe(nearestPrevious[0]);
+      expect(nearestCurrent[1]).toBe(nearestPrevious[1]);
+      expect(nearestCurrent[3]).toBe(nearestPrevious[3]);
+      expect(nearestCurrent[4]).toBe(nearestPrevious[4]);
+      expect(nearestCurrent[5]).toBe(nearestPrevious[5]);
+
+      const requestCalls = requestMoveTargetSpy.mock.calls;
+      const requestPrevious = requestCalls.at(-2);
+      const requestCurrent = requestCalls.at(-1);
+      if (requestPrevious === undefined || requestCurrent === undefined)
+        throw new Error("Expected repeated crowd target requests.");
+      expect(requestCurrent[2]).toBe(requestPrevious[2]);
+
+      const teleportCalls = teleportSpy.mock.calls;
+      const teleportPrevious = teleportCalls.at(-2);
+      const teleportCurrent = teleportCalls.at(-1);
+      if (teleportPrevious === undefined || teleportCurrent === undefined)
+        throw new Error("Expected repeated crowd teleports.");
+      expect(teleportCurrent[2]).toBe(teleportPrevious[2]);
+      expect(teleportCurrent[3]).toBe(teleportPrevious[3]);
+    } finally {
+      findNearestPolySpy.mockRestore();
+      requestMoveTargetSpy.mockRestore();
+      teleportSpy.mockRestore();
+    }
+  });
+
+  it("reuses target validation storage across repeated avoidance retargets", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({ navigation: navigation(ctx), object });
+    const crowdAgent = agent.crowdAgent;
+    if (crowdAgent === undefined) throw new Error("Test setup produced no crowd agent.");
+    const target = new Vector3(0, 0.75, 0);
+    const next = new Vector3();
+    const everySpy = vi.spyOn(Array.prototype, "every");
+    const getNvelSpy = vi.spyOn(crowdAgent.raw, "get_nvel");
+    try {
+      const everyCallsBeforeRetargets = everySpy.mock.calls.length;
+      for (let iteration = 0; iteration < 5; iteration += 1) {
+        target.x = iteration % 2 === 0 ? 0 : 0.25;
+        agent.setTargetPosition(target);
+        expect(agent.getNextPathPosition(next)).toBe(next);
+      }
+
+      expect(everySpy.mock.calls.length).toBe(everyCallsBeforeRetargets);
+      expect(getNvelSpy).toHaveBeenCalledTimes(15);
+    } finally {
+      getNvelSpy.mockRestore();
+      everySpy.mockRestore();
     }
   });
 });

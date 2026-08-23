@@ -101,9 +101,11 @@ export function recast(): NavigationPlugin {
  * @situation NPC walks to a destination
  * @constraint import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
  * @example import { NavigationAgent3D } from "@threenative/physics/navigation";
+ * import { Vector3 } from "three";
  * const agent = new NavigationAgent3D({ navigation, object });
  * agent.setTargetPosition(player.position);
- * const next = agent.getNextPathPosition();
+ * const reusableTarget = new Vector3();
+ * const next = agent.getNextPathPosition(reusableTarget);
  */
 export { NavigationAgent3D } from "./NavigationAgent3D.js";
 export type {

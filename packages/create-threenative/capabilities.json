@@ -646,7 +646,7 @@
       "constraints": [
         "import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D"
       ],
-      "example": "import { NavigationAgent3D } from \"@threenative/physics/navigation\";\nconst agent = new NavigationAgent3D({ navigation, object });\nagent.setTargetPosition(player.position);\nconst next = agent.getNextPathPosition();",
+      "example": "import { NavigationAgent3D } from \"@threenative/physics/navigation\";\nimport { Vector3 } from \"three\";\nconst agent = new NavigationAgent3D({ navigation, object });\nagent.setTargetPosition(player.position);\nconst reusableTarget = new Vector3();\nconst next = agent.getNextPathPosition(reusableTarget);",
       "importPath": "@threenative/physics/navigation",
       "kind": "class",
       "overrides": [],

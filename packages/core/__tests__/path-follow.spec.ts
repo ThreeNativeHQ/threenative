@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PathFollow3D } from "../src/path-follow.js";
 
 const points = [new Vector3(0, 0, 0), new Vector3(4, 0, 0), new Vector3(8, 0, 4)];
@@ -57,6 +57,66 @@ describe("PathFollow3D", () => {
     expect(projection.distanceFromStart).toBe(route.totalLength);
     expect(projection.tangent.length()).toBeCloseTo(1, 5);
     expect(projection.tangent.dot(finalDirection)).toBeGreaterThan(0.9);
+  });
+
+  it("fills caller targets for samples and projections", () => {
+    const follow = new PathFollow3D({ points, speed: 4 });
+    const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };
+    const sample = follow.advance(0.5, sampleTarget);
+
+    expect(sample).toBe(sampleTarget);
+    expect(sample.point).toBe(sampleTarget.point);
+    expect(sample.tangent).toBe(sampleTarget.tangent);
+
+    const projectionTarget = {
+      distanceFromStart: 0,
+      lateralDistance: 0,
+      point: new Vector3(),
+      segment: 0,
+      tangent: new Vector3(),
+    };
+    const projection = follow.project(new Vector3(1, 0, 0), projectionTarget);
+
+    expect(projection).toBe(projectionTarget);
+    expect(projection.point).toBe(projectionTarget.point);
+    expect(projection.tangent).toBe(projectionTarget.tangent);
+  });
+
+  it("passes targets through Three.js tangent sampling", () => {
+    const follow = new PathFollow3D({ points, speed: 4 });
+    const target = { point: new Vector3(), progress: 0, tangent: new Vector3() };
+    const getPoint = vi.spyOn(follow.curve, "getPoint");
+
+    follow.sample(0.5, target);
+
+    for (const [, optionalTarget] of getPoint.mock.calls) expect(optionalTarget).toBeDefined();
+  });
+
+  it("keeps repeated target projections off allocation-producing array helpers", () => {
+    const follow = new PathFollow3D({ points });
+    const target = {
+      distanceFromStart: 0,
+      lateralDistance: 0,
+      point: new Vector3(),
+      segment: 0,
+      tangent: new Vector3(),
+    };
+    const every = vi.spyOn(Array.prototype, "every");
+    const entries = vi.spyOn(Array.prototype, "entries");
+    const position = new Vector3(1, 0, 0);
+    let usedEvery = false;
+    let usedEntries = false;
+    try {
+      for (let index = 0; index < 8; index += 1) follow.project(position, target);
+    } finally {
+      usedEvery = every.mock.calls.length > 0;
+      usedEntries = entries.mock.calls.length > 0;
+      every.mockRestore();
+      entries.mockRestore();
+    }
+
+    expect(usedEvery).toBe(false);
+    expect(usedEntries).toBe(false);
   });
 
   it("rejects malformed routes and deltas", () => {
