@@ -70,6 +70,7 @@ interface IArmObservation {
   readonly areaMembership: readonly number[];
   readonly areaMembershipSnapshots: readonly string[];
   readonly collisionEventSet: readonly string[];
+  readonly collisionEventSequence: readonly string[];
   readonly removeStoppedEventCount: number;
   readonly freshnessBeforeVisible: { readonly statePresent: boolean; readonly areaCount: number };
   readonly teleportState: {
@@ -125,16 +126,22 @@ function createSimulation(): IPhysicsRuntimeSimulation {
   });
 }
 
-function transforms(simulation: IPhysicsRuntimeSimulation): Map<number, [number, number, number]> {
+function transforms(
+  simulation: IPhysicsRuntimeSimulation,
+): Map<number, [number, number, number, number, number, number, number]> {
   const buffer = new Float32Array(scenario.bodies.length * PHYSICS_TRANSFORM_STRIDE);
   const count = simulation.readVisibleTransforms(buffer);
-  const result = new Map<number, [number, number, number]>();
+  const result = new Map<number, [number, number, number, number, number, number, number]>();
   for (let index = 0; index < count; index += 1) {
     const offset = index * PHYSICS_TRANSFORM_STRIDE;
     result.set(buffer[offset] as number, [
       buffer[offset + 1] as number,
       buffer[offset + 2] as number,
       buffer[offset + 3] as number,
+      buffer[offset + 4] as number,
+      buffer[offset + 5] as number,
+      buffer[offset + 6] as number,
+      buffer[offset + 7] as number,
     ]);
   }
   return result;
@@ -297,7 +304,7 @@ function runScenario(): IArmObservation {
   const initial = transforms(simulation);
   const initialCharacter = initial.get(scenario.character.bodyId);
   if (initialCharacter === undefined) throw new Error("Parity scenario is missing its character");
-  const allEvents = new Set<string>();
+  const allEvents: string[] = [];
   const areaSnapshots: string[] = [];
   let freshnessBeforeVisible = { areaCount: -1, statePresent: false };
   let removeStoppedEventCount = 0;
@@ -318,7 +325,7 @@ function runScenario(): IArmObservation {
       removeStoppedEventCount = removalEvents.filter(
         (event) => event.includes(`-${scenario.removeBodyId}-`) && event.endsWith("-0"),
       ).length;
-      for (const event of removalEvents) allEvents.add(event);
+      allEvents.push(...removalEvents);
     }
     if (step === scenario.teleportAtStep) {
       const before = simulation.readCharacterState?.(scenario.teleportBodyId);
@@ -379,7 +386,7 @@ function runScenario(): IArmObservation {
     const postStepState = simulation.readCharacterState?.(scenario.character.bodyId);
     if (postStepState?.grounded === true && postStepState.groundCollider === 2)
       platformGroundedObserved = true;
-    for (const event of drainEvents(simulation)) allEvents.add(event);
+    allEvents.push(...drainEvents(simulation));
     if (scenario.checkpoints.includes(step)) {
       areaSnapshots.push(
         [...(simulation.areaIntersections?.(5) ?? [])]
@@ -390,9 +397,9 @@ function runScenario(): IArmObservation {
   }
 
   const final = transforms(simulation);
-  const restingPosition = final.get(1);
+  const restingTransform = final.get(1);
   const finalCharacter = final.get(scenario.character.bodyId);
-  if (restingPosition === undefined || finalCharacter === undefined)
+  if (restingTransform === undefined || finalCharacter === undefined)
     throw new Error("Parity scenario did not produce final transforms");
   const state = simulation.readCharacterState?.(scenario.character.bodyId);
   const areaMembership = [...(simulation.areaIntersections?.(5) ?? [])].sort(
@@ -409,7 +416,8 @@ function runScenario(): IArmObservation {
       finalCharacter[1] - initialCharacter[1],
       finalCharacter[2] - initialCharacter[2],
     ],
-    collisionEventSet: [...allEvents].sort(),
+    collisionEventSet: [...new Set(allEvents)].sort(),
+    collisionEventSequence: allEvents,
     freshnessBeforeVisible,
     groundCollider: state?.groundCollider ?? null,
     grounded: state?.grounded ?? false,
@@ -422,7 +430,7 @@ function runScenario(): IArmObservation {
     },
     rapierVersion: RAPIER.version(),
     removeStoppedEventCount,
-    restingPosition,
+    restingPosition: [restingTransform[0], restingTransform[1], restingTransform[2]],
     scenarioSha256,
     scenarioCoverage: {
       areaExcludedCharacter: !areaMembership.includes(scenario.character.bodyId),
@@ -460,6 +468,7 @@ describe("physics parity web measurement arm", () => {
     expect(typeof observation.grounded).toBe("boolean");
     expect(observation.areaMembership).toBeDefined();
     expect(observation.collisionEventSet).toBeDefined();
+    expect(observation.collisionEventSequence).toBeDefined();
     expect(Object.keys(observation.validationOutcomes)).toHaveLength(6);
     expect(observation.averageStepNanoseconds).toBeGreaterThan(0);
     expect(observation.areaMembershipSnapshots).toHaveLength(scenario.checkpoints.length);
@@ -474,9 +483,155 @@ describe("physics parity web measurement arm", () => {
     const written = JSON.parse(readFileSync(webArtifactPath, "utf8")) as IArmObservation;
     expect(written).toEqual(observation);
   });
+
+  it("preserves repeated area crossing edges in order", () => {
+    const simulation = createSimulation();
+    const area = simulation.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: true,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "box",
+        sensor: true,
+        x: 1,
+        y: 1,
+        z: 1,
+      },
+      type: "fixed",
+    });
+    const body = simulation.createBody({
+      mass: 0,
+      position: { x: -3, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "box",
+        sensor: false,
+        x: 0.5,
+        y: 0.5,
+        z: 0.5,
+      },
+      type: "kinematic",
+    });
+    const input = new Float32Array(PHYSICS_TRANSFORM_STRIDE);
+    let wasInside = false;
+    const edges: string[] = [];
+    for (const positionX of [0, 3, 0, 3]) {
+      input.set([body.body.id, positionX, 0, 0, 0, 0, 0, 1]);
+      simulation.step(1 / 60, {
+        kinematicCount: 1,
+        kinematicTransforms: input,
+      });
+      const isInside = simulation.areaIntersections?.(area.body.id)?.has(body.body.id) ?? false;
+      if (!wasInside && isInside) edges.push("entered");
+      if (wasInside && !isInside) edges.push("exited");
+      wasInside = isInside;
+    }
+    simulation.dispose();
+
+    expect(edges).toEqual(["entered", "exited", "entered", "exited"]);
+  });
 });
 
 describe("native adapter freshness", () => {
+  it("preserves quaternion component order in web visible transform records", () => {
+    const simulation = createSimulation();
+    simulation.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: -0.5, x: 0.5, y: -0.5, z: 0.5 },
+      sensor: false,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "box",
+        sensor: false,
+        x: 1,
+        y: 1,
+        z: 1,
+      },
+      type: "fixed",
+    });
+    const buffer = new Float32Array(PHYSICS_TRANSFORM_STRIDE);
+
+    expect(simulation.readVisibleTransforms(buffer)).toBe(1);
+    expect([...buffer.slice(4, 8)]).toEqual([0.5, -0.5, 0.5, -0.5]);
+    simulation.dispose();
+  });
+
+  it("keeps area membership views stable across refreshes and absent ids", () => {
+    const { native, web } = validationAdapters();
+    const area = native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: true,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "box",
+        sensor: true,
+        x: 1,
+        y: 1,
+        z: 1,
+      },
+      type: "kinematic",
+    });
+    const first = native.areaIntersections?.(area.body.id);
+    const second = native.areaIntersections?.(area.body.id);
+    const missingBefore = native.areaIntersections?.(999);
+    native.step(1 / 60);
+    const third = native.areaIntersections?.(area.body.id);
+    const missingAfter = native.areaIntersections?.(999);
+
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+    expect(missingBefore).toBe(missingAfter);
+    expect([...(third ?? [])]).toEqual([]);
+    native.dispose();
+    web.dispose();
+  });
+
+  it("reuses the web character state record while preserving its values", () => {
+    const simulation = createSimulation();
+    const character = simulation.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "capsule",
+        sensor: false,
+        x: 0.2,
+        y: 0.3,
+        z: 0,
+      },
+      type: "character",
+    });
+    simulation.configureCharacter(character.body.id, {
+      maxSlopeClimbAngle: Math.PI / 4,
+      offset: 0.01,
+      oneWayLayers: 0,
+    });
+    simulation.step(1 / 60);
+    const first = simulation.readCharacterState?.(character.body.id);
+    const second = simulation.readCharacterState?.(character.body.id);
+
+    expect(first).toBe(second);
+    expect({ grounded: second?.grounded, groundCollider: second?.groundCollider }).toEqual({
+      grounded: false,
+      groundCollider: undefined,
+    });
+    simulation.dispose();
+  });
+
   it("refreshes state and area caches independently without reading visible transforms", () => {
     let nextId = 0;
     const raw: INativeSimulation = {
@@ -543,6 +698,7 @@ describe("native adapter freshness", () => {
 
     simulation.step(1 / 60);
     simulation.readCharacterState?.(0);
+    expect(simulation.readCharacterState?.(0)).toBe(state);
     expect(raw.readCharacterStates).toHaveBeenCalledTimes(2);
     expect(raw.readAreaIntersections).toHaveBeenCalledTimes(1);
     simulation.areaIntersections?.(1);

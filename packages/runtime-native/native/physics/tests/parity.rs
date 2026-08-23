@@ -123,6 +123,7 @@ struct Observation {
     area_membership: Vec<u32>,
     area_membership_snapshots: Vec<String>,
     collision_event_set: Vec<String>,
+    collision_event_sequence: Vec<String>,
     remove_stopped_event_count: usize,
     freshness_before_visible: Freshness,
     teleport_state: TeleportState,
@@ -144,6 +145,7 @@ struct Comparison {
     ground_collider_mismatch: u32,
     area_membership_symmetric_difference: usize,
     collision_event_symmetric_difference: usize,
+    collision_event_sequence_mismatch: u32,
     validation_outcome_mismatches: usize,
     remove_stopped_event_count_delta: usize,
     teleport_grounded_mismatch: u32,
@@ -249,6 +251,82 @@ fn drain_events(simulation: *mut Simulation, body_count: usize) -> Vec<String> {
             format!("{left}-{right}-{}", output[offset + 2])
         })
         .collect()
+}
+
+#[test]
+fn preserves_repeated_area_crossing_edges_in_order() {
+    let simulation = tn_physics_create(&TnPhysicsWorldOptions {
+        gravity_x: 0.0,
+        gravity_y: 0.0,
+        gravity_z: 0.0,
+    });
+    assert!(!simulation.is_null());
+    assert!(tn_physics_add_body(
+        simulation,
+        &TnPhysicsBodyOptions {
+            id: 0,
+            body_type: 1,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 1.0,
+            shape_y: 1.0,
+            shape_z: 1.0,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: true,
+        },
+    ));
+    assert!(tn_physics_add_body(
+        simulation,
+        &TnPhysicsBodyOptions {
+            id: 1,
+            body_type: 2,
+            shape_type: 0,
+            position_x: -3.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        },
+    ));
+
+    let mut was_inside = false;
+    let mut edges = Vec::new();
+    for position_x in [0.0, 3.0, 0.0, 3.0] {
+        let input = [1.0, position_x, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(tn_physics_step(
+            simulation,
+            1.0 / 60.0,
+            input.as_ptr(),
+            1,
+        ));
+        let is_inside = area_membership(simulation, 0).contains(&1);
+        match (was_inside, is_inside) {
+            (false, true) => edges.push("entered"),
+            (true, false) => edges.push("exited"),
+            _ => {}
+        }
+        was_inside = is_inside;
+    }
+    tn_physics_destroy(simulation);
+
+    assert_eq!(edges, ["entered", "exited", "entered", "exited"]);
 }
 
 fn validation_outcomes(scenario: &Scenario) -> BTreeMap<String, String> {
@@ -386,6 +464,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
     let initial = positions(simulation, scenario.bodies.len());
     let initial_character = initial[&character.body_id];
     let mut all_events = BTreeSet::new();
+    let mut all_event_sequence = Vec::new();
     let mut area_snapshots = Vec::new();
     let mut freshness = Freshness {
         state_present: false,
@@ -413,6 +492,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
                         && event.ends_with("-0")
                 })
                 .count();
+            all_event_sequence.extend(removal_events.iter().cloned());
             all_events.extend(removal_events);
         }
         if step == scenario.teleport_at_step {
@@ -479,7 +559,9 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         {
             platform_grounded_observed = true;
         }
-        all_events.extend(drain_events(simulation, scenario.bodies.len()));
+        let step_events = drain_events(simulation, scenario.bodies.len());
+        all_event_sequence.extend(step_events.iter().cloned());
+        all_events.extend(step_events);
         if scenario.checkpoints.contains(&step) {
             area_snapshots.push(
                 area_membership(simulation, 5)
@@ -512,6 +594,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         area_membership: area_membership.clone(),
         area_membership_snapshots: area_snapshots,
         collision_event_set: all_events.into_iter().collect(),
+        collision_event_sequence: all_event_sequence,
         remove_stopped_event_count,
         freshness_before_visible: freshness,
         teleport_state,
@@ -614,6 +697,9 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
             &web.collision_event_set,
             &rust.collision_event_set,
         ),
+        collision_event_sequence_mismatch: u32::from(
+            web.collision_event_sequence != rust.collision_event_sequence,
+        ),
         validation_outcome_mismatches: web
             .validation_outcomes
             .iter()
@@ -664,6 +750,10 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
     assert_eq!(
         comparison.collision_event_symmetric_difference, 0,
         "collision event membership must agree exactly"
+    );
+    assert_eq!(
+        comparison.collision_event_sequence_mismatch, 0,
+        "collision event order must agree exactly"
     );
     assert_eq!(
         rust.remove_stopped_event_count, web.remove_stopped_event_count,

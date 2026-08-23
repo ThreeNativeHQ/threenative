@@ -326,11 +326,17 @@ interface ISimulationBody {
   readonly id: number;
   readonly body: rapier.RigidBody;
   readonly collider: rapier.Collider;
+  readonly characterState: IStoredCharacterState;
   readonly entity?: string;
   readonly type: PhysicsBodyType;
   controller?: rapier.KinematicCharacterController;
   controllerHandle?: IPhysicsHandle;
   character?: IPhysicsCharacterOptions;
+  groundCollider?: number;
+}
+
+interface IStoredCharacterState {
+  grounded: boolean;
   groundCollider?: number;
 }
 
@@ -633,8 +639,9 @@ function characterState(
   simulationBody: ISimulationBody,
   byCollider: ReadonlyMap<number, ISimulationBody>,
 ): IPhysicsCharacterState {
+  const state = simulationBody.characterState;
   const controller = simulationBody.controller;
-  if (controller === undefined) return { grounded: false };
+  if (controller === undefined) return state;
   let groundCollider: number | undefined;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
     const collision = controller.computedCollision(index);
@@ -647,7 +654,31 @@ function characterState(
   const grounded = controller.computedGrounded();
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
-  return { grounded, groundCollider: simulationBody.groundCollider };
+  state.grounded = grounded;
+  state.groundCollider = simulationBody.groundCollider;
+  return state;
+}
+
+/**
+ * Rapier compat 0.19.3 exposes no out-parameter for rigid-body transforms. Keep its two
+ * short-lived wrapper records behind this adapter and write their values directly to the shared
+ * typed record; reaching through Rapier's private raw set would be an unstable API seam.
+ */
+function writeRapierTransformRecord(
+  entry: ISimulationBody,
+  renderBuffer: Float32Array,
+  offset: number,
+): void {
+  const translation = entry.body.translation();
+  const rotation = entry.body.rotation();
+  renderBuffer[offset] = entry.id;
+  renderBuffer[offset + 1] = translation.x;
+  renderBuffer[offset + 2] = translation.y;
+  renderBuffer[offset + 3] = translation.z;
+  renderBuffer[offset + 4] = rotation.x;
+  renderBuffer[offset + 5] = rotation.y;
+  renderBuffer[offset + 6] = rotation.z;
+  renderBuffer[offset + 7] = rotation.w;
 }
 
 /** Web adapter. It is the only implementation that names Rapier's JS objects. */
@@ -661,6 +692,24 @@ export function createWebPhysicsSimulation(
     { readonly handle: number; readonly bodyA: number; readonly bodyB: number }
   >();
   const dirtyBodies = new Set<ISimulationBody>();
+  const areaIntersections = new Map<number, Set<number>>();
+  const emptyAreaIntersections = new Set<number>();
+  let areaIntersectionId = -1;
+  let areaIntersectionMask = 0;
+  let areaIntersectionMembers: Set<number> | undefined;
+  const areaIntersectionCallback = (collider: rapier.Collider): boolean => {
+    const members = areaIntersectionMembers;
+    if (members === undefined) return true;
+    const body = byCollider.get(collider.handle);
+    if (
+      body !== undefined &&
+      body.id !== areaIntersectionId &&
+      !collider.isSensor() &&
+      ((collider.collisionGroups() >>> 16) & areaIntersectionMask) !== 0
+    )
+      members.add(body.id);
+    return true;
+  };
   // Flat stride-4 records instead of one array per event: contact-heavy scenes
   // drained hundreds of short-lived tuples per step into the collector.
   const pendingCollisionEvents: number[] = [];
@@ -754,6 +803,7 @@ export function createWebPhysicsSimulation(
       const rawCollider = options.world.createCollider(rawShape, rawBody);
       const entry: ISimulationBody = {
         body: rawBody,
+        characterState: { grounded: false },
         collider: rawCollider,
         entity: bodyOptions.entity,
         id,
@@ -765,6 +815,7 @@ export function createWebPhysicsSimulation(
       }
       bodies.set(id, entry);
       byCollider.set(rawCollider.handle, entry);
+      if (bodyOptions.sensor) areaIntersections.set(id, new Set());
       dirtyBodies.add(entry);
       return {
         body: physicsBodyHandle(id, rawBody, bodyOptions.entity),
@@ -839,6 +890,7 @@ export function createWebPhysicsSimulation(
       }
       bodies.delete(id);
       byCollider.delete(entry.collider.handle);
+      areaIntersections.delete(id);
       dirtyBodies.delete(entry);
       if (entry.controller !== undefined) options.world.removeCharacterController(entry.controller);
       if (entry.body.isValid()) options.world.removeRigidBody(entry.body);
@@ -950,16 +1002,7 @@ export function createWebPhysicsSimulation(
       for (const entry of bodies.values()) {
         if (!entry.body.isValid()) continue;
         const offset = index * PHYSICS_TRANSFORM_STRIDE;
-        const translation = entry.body.translation();
-        const rotation = entry.body.rotation();
-        renderBuffer[offset] = entry.id;
-        renderBuffer[offset + 1] = translation.x;
-        renderBuffer[offset + 2] = translation.y;
-        renderBuffer[offset + 3] = translation.z;
-        renderBuffer[offset + 4] = rotation.x;
-        renderBuffer[offset + 5] = rotation.y;
-        renderBuffer[offset + 6] = rotation.z;
-        renderBuffer[offset + 7] = rotation.w;
+        writeRapierTransformRecord(entry, renderBuffer, offset);
         index += 1;
       }
       return index;
@@ -1102,28 +1145,27 @@ export function createWebPhysicsSimulation(
     areaIntersections: (id) => {
       requireLive();
       const area = bodies.get(id);
-      if (area === undefined) return new Set();
-      const current = new Set<number>();
-      const areaMask = area.collider.collisionGroups() & 0xffff;
-      options.world.intersectionsWithShape(
-        area.collider.translation(),
-        area.collider.rotation(),
-        area.collider.shape,
-        (collider) => {
-          const body = byCollider.get(collider.handle);
-          if (
-            body !== undefined &&
-            body.id !== id &&
-            !collider.isSensor() &&
-            ((collider.collisionGroups() >>> 16) & areaMask) !== 0
-          )
-            current.add(body.id);
-          return true;
-        },
-        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-        undefined,
-        area.collider,
-      );
+      const current = areaIntersections.get(id);
+      if (area === undefined || current === undefined) return emptyAreaIntersections;
+      current.clear();
+      areaIntersectionId = id;
+      areaIntersectionMask = area.collider.collisionGroups() & 0xffff;
+      areaIntersectionMembers = current;
+      try {
+        options.world.intersectionsWithShape(
+          area.collider.translation(),
+          area.collider.rotation(),
+          area.collider.shape,
+          areaIntersectionCallback,
+          options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+          undefined,
+          area.collider,
+        );
+      } finally {
+        areaIntersectionMembers = undefined;
+        areaIntersectionId = -1;
+        areaIntersectionMask = 0;
+      }
       return current;
     },
     drainCollisionEvents: (buffer) => {
@@ -1156,6 +1198,7 @@ export function createWebPhysicsSimulation(
       byCollider.clear();
       joints.clear();
       dirtyBodies.clear();
+      areaIntersections.clear();
       pendingCollisionEvents.length = 0;
       options.eventQueue.free();
       options.world.free();

@@ -215,6 +215,11 @@ function growUint32(buffer: Uint32Array, minimum: number): Uint32Array {
   return length === buffer.length ? buffer : new Uint32Array(length);
 }
 
+interface IStoredCharacterState {
+  grounded: boolean;
+  groundCollider?: number;
+}
+
 export function createNativePhysicsSimulation(
   raw: INativeSimulation,
   version: string,
@@ -222,16 +227,14 @@ export function createNativePhysicsSimulation(
   const bodyIds = new Set<number>();
   const bodyHandles = new Map<number, ReturnType<typeof physicsBodyHandle>>();
   const jointBodies = new Map<number, readonly [number, number]>();
-  const areaIds = new Set<number>();
   const characterIds = new Set<number>();
-  const characterState = new Map<
-    number,
-    { readonly grounded: boolean; readonly groundCollider?: number }
-  >();
+  const characterState = new Map<number, IStoredCharacterState>();
+  const characterStatePresent = new Set<number>();
   let characterStates = new Float32Array(48);
   const rayOutput = new Float32Array(8);
   let areaPairs: Uint32Array<ArrayBufferLike> = new Uint32Array(32);
   const areaIntersections = new Map<number, Set<number>>();
+  const emptyAreaIntersections = new Set<number>();
   let characterStateDirty = true;
   let areaIntersectionsDirty = true;
   let disposed = false;
@@ -271,7 +274,7 @@ export function createNativePhysicsSimulation(
     const required = Math.max(1, characterIds.size) * 3;
     if (characterStates.length < required) characterStates = new Float32Array(required);
     const stateCount = raw.readCharacterStates(characterStates);
-    characterState.clear();
+    characterStatePresent.clear();
     for (let index = 0; index < stateCount; index += 1) {
       const offset = index * 3;
       const id = characterStates[offset];
@@ -279,10 +282,14 @@ export function createNativePhysicsSimulation(
       const groundCollider = characterStates[offset + 2];
       if (id === undefined || grounded === undefined || groundCollider === undefined)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed character state");
-      characterState.set(id, {
-        grounded: grounded === 1,
-        groundCollider: groundCollider < 0 ? undefined : groundCollider,
-      });
+      let state = characterState.get(id);
+      if (state === undefined) {
+        state = { grounded: false };
+        characterState.set(id, state);
+      }
+      state.grounded = grounded === 1;
+      state.groundCollider = groundCollider < 0 ? undefined : groundCollider;
+      characterStatePresent.add(id);
     }
     characterStateDirty = false;
   };
@@ -300,8 +307,7 @@ export function createNativePhysicsSimulation(
         areaPairs = growUint32(areaPairs, Math.min(maximum, areaPairs.length * 2));
       }
     }
-    areaIntersections.clear();
-    for (const areaId of areaIds) areaIntersections.set(areaId, new Set());
+    for (const members of areaIntersections.values()) members.clear();
     for (let index = 0; index < pairCount; index += 1) {
       const offset = index * 2;
       const areaId = areaPairs[offset];
@@ -340,8 +346,13 @@ export function createNativePhysicsSimulation(
       const bodyHandleValue = physicsBodyHandle(id, rawHandle, options.entity);
       bodyIds.add(id);
       bodyHandles.set(id, bodyHandleValue);
-      if (sensor) areaIds.add(id);
-      if (options.type === "character") characterIds.add(id);
+      if (sensor) {
+        areaIntersections.set(id, new Set());
+      }
+      if (options.type === "character") {
+        characterIds.add(id);
+        characterState.set(id, { grounded: false });
+      }
       invalidateObservations();
       return {
         body: bodyHandleValue,
@@ -377,9 +388,10 @@ export function createNativePhysicsSimulation(
       for (const [jointId, bodies] of jointBodies) {
         if (bodies[0] === id || bodies[1] === id) jointBodies.delete(jointId);
       }
-      areaIds.delete(id);
+      areaIntersections.delete(id);
       characterIds.delete(id);
       characterState.delete(id);
+      characterStatePresent.delete(id);
       invalidateObservations();
     },
     removeJoint: (id) => {
@@ -502,11 +514,11 @@ export function createNativePhysicsSimulation(
     },
     readCharacterState: (id) => {
       refreshCharacterState();
-      return characterState.get(id);
+      return characterStatePresent.has(id) ? characterState.get(id) : undefined;
     },
     areaIntersections: (id) => {
       refreshAreaIntersections();
-      return areaIntersections.get(id) ?? new Set();
+      return areaIntersections.get(id) ?? emptyAreaIntersections;
     },
     drainCollisionEvents: (buffer) => {
       requirePhysicsEventBuffer(buffer);
@@ -519,9 +531,9 @@ export function createNativePhysicsSimulation(
       bodyIds.clear();
       bodyHandles.clear();
       jointBodies.clear();
-      areaIds.clear();
       characterIds.clear();
       characterState.clear();
+      characterStatePresent.clear();
       areaIntersections.clear();
       characterStateDirty = false;
       areaIntersectionsDirty = false;

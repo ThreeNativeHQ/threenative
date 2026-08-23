@@ -126,6 +126,26 @@ describe("rapier plugin", () => {
     expect(new Set(lengths).size).toBe(lengths.length);
   });
 
+  it("reuses two area reconciliation maps across feature frames", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1) });
+    const maps: ReadonlyMap<number, unknown>[] = [];
+    const reconcile = area.reconcileIntersections.bind(area);
+    area.reconcileIntersections = (current) => {
+      maps.push(current);
+      reconcile(current);
+    };
+
+    for (let step = 0; step < 4; step += 1) plugin.update?.(ctx, 1 / 60);
+
+    expect(maps).toHaveLength(4);
+    expect(new Set(maps).size).toBe(2);
+    expect(maps[0]).toBe(maps[2]);
+    expect(maps[1]).toBe(maps[3]);
+    expect(maps[0]).not.toBe(maps[1]);
+    area.dispose();
+  });
+
   it("releases scene physics on sceneExit", async () => {
     const { ctx, plugin } = await setup();
     const body = new RigidBody3D({

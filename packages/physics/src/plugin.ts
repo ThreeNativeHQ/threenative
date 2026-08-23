@@ -65,6 +65,11 @@ interface IPhysicsDebugSample {
   readonly tick: number;
 }
 
+interface IAreaMembershipBuffers {
+  current: Map<number, PhysicsBody3D>;
+  previous: Map<number, PhysicsBody3D>;
+}
+
 function growFloat(
   buffer: Float32Array<ArrayBufferLike>,
   records: number,
@@ -104,6 +109,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   const bodies = new Set<PhysicsBody3D>();
   const bodiesById = new Map<number, PhysicsBody3D>();
   const areas = new Map<number, Area3D>();
+  const areaMembershipBuffers = new Map<number, IAreaMembershipBuffers>();
   const kinematicMotions = new Map<
     number,
     { readonly x: number; readonly y: number; readonly z: number }
@@ -125,7 +131,13 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         bodies.add(body);
         bodiesById.set(body.body.id, body);
       },
-      addArea: (area) => areas.set(area.body.id, area),
+      addArea: (area) => {
+        areas.set(area.body.id, area);
+        areaMembershipBuffers.set(area.body.id, {
+          current: new Map(),
+          previous: new Map(),
+        });
+      },
       eventQueue: physicsHandle(selected.rawEventQueue),
       kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
       numBodies: () => bodies.size,
@@ -136,6 +148,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       },
       removeArea: (area) => {
         areas.delete(area.body.id);
+        areaMembershipBuffers.delete(area.body.id);
         removeContactsFor(area.body.id);
       },
       directSpaceState: new PhysicsDirectSpaceState3D(selected),
@@ -237,12 +250,18 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       }
       if (simulation.areaIntersections !== undefined) {
         for (const area of areas.values()) {
-          const current = new Map<number, PhysicsBody3D>();
+          const buffers = areaMembershipBuffers.get(area.body.id);
+          if (buffers === undefined)
+            throw new Error("Physics area membership buffers lost a registered area.");
+          const current = buffers.current;
+          current.clear();
           for (const bodyId of simulation.areaIntersections(area.body.id)) {
             const body = bodiesById.get(bodyId);
             if (body !== undefined) current.set(bodyId, body);
           }
           area.reconcileIntersections(current);
+          buffers.current = buffers.previous;
+          buffers.previous = current;
         }
       }
       kinematicMotions.clear();
@@ -256,6 +275,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     sceneExit: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
+      areaMembershipBuffers.clear();
       kinematicMotions.clear();
       activeContacts.clear();
       debugSeries = [];
@@ -274,6 +294,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       unregisterObservations = undefined;
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
+      areaMembershipBuffers.clear();
       simulation?.dispose();
       simulation = undefined;
       context = undefined;

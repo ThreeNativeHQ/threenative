@@ -26,6 +26,25 @@ afterEach(() => {
 });
 
 describe("Area3D", () => {
+  it("keeps one stable empty membership view across feature frames", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
+    const missingBefore = ctx.physics.simulation.areaIntersections?.(999);
+    const first = ctx.physics.simulation.areaIntersections?.(area.body.id);
+
+    plugin.update?.(ctx, 1 / 60);
+    const second = ctx.physics.simulation.areaIntersections?.(area.body.id);
+    plugin.update?.(ctx, 1 / 60);
+    const third = ctx.physics.simulation.areaIntersections?.(area.body.id);
+    const missingAfter = ctx.physics.simulation.areaIntersections?.(999);
+
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+    expect(missingBefore).toBe(missingAfter);
+    expect([...(first ?? [])]).toEqual([]);
+    area.dispose();
+  });
+
   it("monitors by default and suppresses stale exits while disabled", async () => {
     const { ctx, plugin } = await setup();
     const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
@@ -190,6 +209,29 @@ describe("Area3D", () => {
     plugin.update?.(ctx, 1 / 60);
 
     expect(exited).toBe(1);
+    body.dispose();
+    area.dispose();
+  });
+
+  it("should preserve repeated enter and exit edges in order", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(2, 2, 2) });
+    const body = new RigidBody3D({
+      object: new Mesh(new BoxGeometry(1, 1, 1)),
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    const events: string[] = [];
+    area.on("bodyEntered", () => events.push("entered"));
+    area.on("bodyExited", () => events.push("exited"));
+    const rawBody = body.body.raw as RAPIER.RigidBody;
+
+    for (const x of [0, 5, 0, 5]) {
+      rawBody.setTranslation({ x, y: 0, z: 0 }, true);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(events).toEqual(["entered", "exited", "entered", "exited"]);
     body.dispose();
     area.dispose();
   });
