@@ -14,6 +14,7 @@ import type {
   IPhysicsVector3,
 } from "../simulation.js";
 import {
+  PHYSICS_TRANSFORM_STRIDE,
   requireFiniteRotation,
   requireFiniteVector,
   requirePhysicsBodySensor,
@@ -235,8 +236,11 @@ export function createNativePhysicsSimulation(
   let areaPairs: Uint32Array<ArrayBufferLike> = new Uint32Array(32);
   const areaIntersections = new Map<number, Set<number>>();
   const emptyAreaIntersections = new Set<number>();
+  let bodyTransforms = new Float32Array(PHYSICS_TRANSFORM_STRIDE * 8);
+  const bodyTransformRows = new Map<number, number>();
   let characterStateDirty = true;
   let areaIntersectionsDirty = true;
+  let bodyTransformsDirty = true;
   let disposed = false;
   const requireLive = () => {
     if (disposed) throw new Error("Physics simulation is disposed.");
@@ -244,6 +248,7 @@ export function createNativePhysicsSimulation(
   const invalidateObservations = () => {
     characterStateDirty = true;
     areaIntersectionsDirty = true;
+    bodyTransformsDirty = true;
   };
   const bodyHandle = (id: number) => {
     const handle = bodyHandles.get(id);
@@ -268,6 +273,30 @@ export function createNativePhysicsSimulation(
       entity: body.entity,
       position: finiteQueryVector(hit.position, "query hit position"),
     };
+  };
+  // The native ABI has no per-body transform call, only the bulk render read the renderer already
+  // makes. `readBodyTransform` is the seam a game uses through `syncFromPhysics()`, so serve it
+  // from one cached bulk read per step rather than adding an ABI entry point or reading N times.
+  const refreshBodyTransforms = () => {
+    if (!bodyTransformsDirty) return;
+    const required = Math.max(1, bodyIds.size) * PHYSICS_TRANSFORM_STRIDE;
+    if (bodyTransforms.length < required) bodyTransforms = new Float32Array(required);
+    const count = raw.readVisibleTransforms(bodyTransforms);
+    bodyTransformRows.clear();
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * PHYSICS_TRANSFORM_STRIDE;
+      const id = bodyTransforms[offset];
+      if (id === undefined || !Number.isInteger(id) || id < 0)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed visible transform record");
+      bodyTransformRows.set(id, offset);
+    }
+    bodyTransformsDirty = false;
+  };
+  const scalarAt = (offset: number) => {
+    const value = bodyTransforms[offset];
+    if (value === undefined || !Number.isFinite(value))
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: visible transform contains a non-finite scalar");
+    return value;
   };
   const refreshCharacterState = () => {
     if (!characterStateDirty) return;
@@ -521,6 +550,27 @@ export function createNativePhysicsSimulation(
         throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed point query result");
       return hits.map(nativeHit);
     },
+    readBodyTransform: (id) => {
+      requireLive();
+      refreshBodyTransforms();
+      const offset = bodyTransformRows.get(id);
+      // A body the backend did not report — removed, or filtered out of the visible set — is
+      // absent rather than an error, the same answer the web adapter gives for an invalid body.
+      if (offset === undefined) return undefined;
+      return {
+        position: {
+          x: scalarAt(offset + 1),
+          y: scalarAt(offset + 2),
+          z: scalarAt(offset + 3),
+        },
+        rotation: {
+          x: scalarAt(offset + 4),
+          y: scalarAt(offset + 5),
+          z: scalarAt(offset + 6),
+          w: scalarAt(offset + 7),
+        },
+      };
+    },
     readCharacterState: (id) => {
       requireLive();
       refreshCharacterState();
@@ -541,6 +591,7 @@ export function createNativePhysicsSimulation(
       disposed = true;
       raw.dispose();
       bodyIds.clear();
+      bodyTransformRows.clear();
       bodyHandles.clear();
       jointBodies.clear();
       characterIds.clear();

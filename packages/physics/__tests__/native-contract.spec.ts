@@ -20,6 +20,7 @@ import type { IPhysicsContext } from "../src/plugin.js";
 import {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_SLEEP_STATE_STRIDE,
+  PHYSICS_TRANSFORM_STRIDE,
   createWebPhysicsSimulation,
 } from "../src/simulation.js";
 
@@ -96,23 +97,19 @@ describe("native physics contract", () => {
   });
 
   it("fails closed when syncFromPhysics hits a backend without readBodyTransform", () => {
-    const simulation = createNativePhysicsSimulation(
-      {
-        configureCharacter: vi.fn(),
-        createBody: vi.fn(() => 0),
-        dispose: vi.fn(),
-        drainCollisionEvents: vi.fn(() => 0),
-        intersectPoint: vi.fn(() => []),
-        intersectRay: vi.fn(() => null),
-        intersectShape: vi.fn(() => []),
-        readAreaIntersections: vi.fn(() => 0),
-        readCharacterStates: vi.fn(() => 0),
-        readVisibleTransforms: vi.fn(() => 0),
-        removeBody: vi.fn(),
-        step: vi.fn(),
-      } as unknown as INativeSimulation,
-      "0.30.0",
-    );
+    // Both shipped backends read transforms. The guard exists for any other simulation reaching
+    // these nodes, so prove it against one that genuinely lacks the capability rather than
+    // against an adapter that has it.
+    const simulation = {
+      configureCharacter: vi.fn(),
+      createBody: vi.fn(() => ({
+        body: { entity: undefined, id: 0 },
+        collider: { id: 0 },
+        controller: { id: 0 },
+        rawShape: undefined,
+      })),
+      removeBody: vi.fn(),
+    } as unknown as IPhysicsContext["simulation"];
     const physics = {
       add: () => {},
       addArea: () => {},
@@ -133,6 +130,81 @@ describe("native physics contract", () => {
       shape: CollisionShape3D.capsule(0.2, 0.3),
     });
     expect(() => character.syncFromPhysics()).toThrow(/TN_PHYSICS_READ_TRANSFORM_MISSING/);
+  });
+
+  it("reads one body transform on the native seam like the web seam", () => {
+    // The seam only had the bulk render read, so `syncFromPhysics()` — a public method with no
+    // caller inside the framework — threw on native and worked on web. That is the web-only
+    // split the framework exists to prevent.
+    let nextId = 0;
+    const placed = new Map<number, readonly number[]>();
+    const raw = {
+      configureCharacter: vi.fn(),
+      createBody: vi.fn(() => {
+        const id = nextId;
+        nextId += 1;
+        placed.set(id, [id + 1, id + 2, id + 3, 0, 0, 0, 1]);
+        return id;
+      }),
+      dispose: vi.fn(),
+      drainCollisionEvents: vi.fn(() => 0),
+      intersectPoint: vi.fn(() => []),
+      intersectRay: vi.fn(() => null),
+      intersectShape: vi.fn(() => []),
+      readAreaIntersections: vi.fn(() => 0),
+      readCharacterStates: vi.fn(() => 0),
+      readVisibleTransforms: vi.fn((buffer: Float32Array) => {
+        let index = 0;
+        for (const [id, row] of placed) {
+          const offset = index * PHYSICS_TRANSFORM_STRIDE;
+          buffer[offset] = id;
+          for (let scalar = 0; scalar < row.length; scalar += 1)
+            buffer[offset + 1 + scalar] = row[scalar] as number;
+          index += 1;
+        }
+        return index;
+      }),
+      removeBody: vi.fn(),
+      step: vi.fn(),
+    } as unknown as INativeSimulation;
+    const simulation = createNativePhysicsSimulation(raw, "0.30.0");
+    const physics = {
+      add: () => {},
+      addArea: () => {},
+      remove: () => {},
+      removeArea: () => {},
+      simulation,
+    } as unknown as IPhysicsContext;
+
+    const first = new Object3D();
+    const second = new Object3D();
+    new RigidBody3D({ object: first, physics, shape: CollisionShape3D.sphere(0.5) });
+    const secondBody = new RigidBody3D({
+      object: second,
+      physics,
+      shape: CollisionShape3D.sphere(0.5),
+    });
+
+    expect(simulation.readBodyTransform?.(0)).toEqual({
+      position: { x: 1, y: 2, z: 3 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+    });
+    expect(simulation.readBodyTransform?.(1)?.position).toEqual({ x: 2, y: 3, z: 4 });
+    expect(simulation.readBodyTransform?.(99)).toBeUndefined();
+
+    secondBody.syncFromPhysics();
+    expect(second.position.toArray()).toEqual([2, 3, 4]);
+
+    // One bulk read per step, not one per body.
+    const reads = (raw.readVisibleTransforms as unknown as { mock: { calls: unknown[] } }).mock
+      .calls.length;
+    simulation.readBodyTransform?.(0);
+    expect(
+      (raw.readVisibleTransforms as unknown as { mock: { calls: unknown[] } }).mock.calls.length,
+    ).toBe(reads);
+
+    simulation.dispose();
+    expect(() => simulation.readBodyTransform?.(0)).toThrow(/disposed/);
   });
 
   it("requires matching sensor metadata on both adapters and keeps native raw values opaque", async () => {
