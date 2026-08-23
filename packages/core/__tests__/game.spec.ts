@@ -9,6 +9,7 @@ import {
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
+import { InputMap } from "../src/input.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -398,6 +399,194 @@ describe("IGame", () => {
     scene.clear = () => scene;
 
     expect(() => game.stop()).toThrow("IGame teardown leaked scene objects.");
+    expect(game.ctx).toBeUndefined();
+  });
+
+  it("should run every cleanup when an earlier cleanup throws", async () => {
+    const events: string[] = [];
+    let disposed = 0;
+    const canvas = testCanvas();
+    class TestScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            events.push("first");
+            throw new Error("first cleanup exploded");
+          },
+        },
+        {
+          setup: () => () => {
+            events.push("second");
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    expect(() => game.stop()).toThrow("first cleanup exploded");
+    expect(events).toEqual(["first", "second"]);
+    expect(disposed).toBe(1);
+    expect(game.ctx).toBeUndefined();
+  });
+
+  it("should report the first failing cleanup, not the leak check, when both would fire", async () => {
+    let disposed = 0;
+    const canvas = testCanvas();
+    class LeakyScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(new Mesh());
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            throw new Error("cleanup exploded before the leak check");
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LeakyScene },
+      start: "test",
+    });
+
+    await game.start();
+    const scene = game.ctx?.scene;
+    if (scene === undefined) throw new Error("IGame did not expose its scene.");
+    scene.clear = () => scene;
+    expect(() => game.stop()).toThrow("cleanup exploded before the leak check");
+    // Both failures fired: the cleanup threw AND the scene leaked. Teardown must still have
+    // completed every step after the throwing one — the error reported is the cleanup's.
+    // Scalar assertions: a failing matcher handed the live ctx would crash vitest's diff
+    // printer on the renderer's fail-closed info getter instead of showing this.
+    expect(disposed).toBe(1);
+    expect(game.ctx).toBeUndefined();
+  });
+
+  it("should dispose renderer, input and run cleanups when plugin.setup throws", async () => {
+    const boom = new Error("plugin setup exploded");
+    const events: string[] = [];
+    let disposed = 0;
+    const canvas = testCanvas();
+    const removeCanvas = vi.fn();
+    Object.defineProperty(canvas, "remove", { configurable: true, value: removeCanvas });
+    const inputDispose = vi.spyOn(InputMap.prototype, "dispose");
+    class TestScene extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            events.push("cleanup");
+          },
+        },
+        {
+          setup: () => {
+            throw boom;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    try {
+      await expect(game.start()).rejects.toBe(boom);
+      expect(events).toEqual(["cleanup"]);
+      expect(disposed).toBe(1);
+      expect(inputDispose).toHaveBeenCalledTimes(1);
+      expect(removeCanvas).toHaveBeenCalledTimes(1);
+      expect(game.ctx).toBeUndefined();
+    } finally {
+      inputDispose.mockRestore();
+    }
+  });
+
+  it("should tear down when scene.load rejects", async () => {
+    const boom = new Error("scene load exploded");
+    const events: string[] = [];
+    let disposed = 0;
+    const canvas = testCanvas();
+    const removeCanvas = vi.fn();
+    Object.defineProperty(canvas, "remove", { configurable: true, value: removeCanvas });
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+
+      override load(): Promise<void> {
+        return Promise.reject(boom);
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            events.push("cleanup");
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => {
+            disposed += 1;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+
+    await expect(game.start()).rejects.toBe(boom);
+    expect(events).toEqual(["cleanup"]);
+    expect(disposed).toBe(1);
+    expect(removeCanvas).toHaveBeenCalledTimes(1);
     expect(game.ctx).toBeUndefined();
   });
 
@@ -1015,6 +1204,31 @@ describe("IGame", () => {
     if (navigate === undefined) throw new Error("First scene did not expose ctx.goto.");
     const goto = navigate;
     expect(() => goto("missing")).toThrow("Unknown scene 'missing'.");
+    game.stop();
+  });
+
+  it("should keep state intact when goto names an unknown scene", async () => {
+    class Restartable extends Scene<{ score: number }> {
+      static override readonly initialState = { score: 0 };
+    }
+    const game = defineGame<{ score: number }>({
+      renderer: renderer(testCanvas()),
+      scenes: { play: Restartable },
+      start: "play",
+    });
+
+    await game.start();
+    game.state.set({ score: 42 });
+    const liveScene = game.scene;
+    expect(() => game.goto("typo")).toThrow("Unknown scene 'typo'.");
+    // The typo must not cost the session: state keeps its in-flight value and the running
+    // scene is untouched...
+    expect(game.state.getState()).toEqual({ score: 42 });
+    expect(game.scene).toBe(liveScene);
+    // ...and navigation still works afterwards.
+    await game.goto("play");
+    expect(game.scene).not.toBe(liveScene);
+    expect(game.state.getState()).toEqual({ score: 0 });
     game.stop();
   });
 

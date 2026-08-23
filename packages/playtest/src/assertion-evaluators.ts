@@ -73,7 +73,7 @@ export function evaluateRichPlaytestAssertions(input: {
         code: "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE",
         message: `Framebuffer pixels could not be read: ${observation?.unreadableReason}.`,
         severity: "error",
-        suggestion: "On headless Linux, prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
+        suggestion: "On headless Linux, prefix the command with sh scripts/xvfb.sh.",
       });
     } else if (!started || !completed) {
       diagnostics.push({

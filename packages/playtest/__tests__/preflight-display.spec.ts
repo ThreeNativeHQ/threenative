@@ -14,8 +14,8 @@ test("warns before a headless Linux visual run without a display", () => {
 
   expect(diagnostic?.severity).toBe("warning");
   expect(diagnostic?.message).toContain("WebGPU");
-  expect(diagnostic?.message).toContain("xvfb-run -a -s '-screen 0 1600x900x24'");
-  expect(diagnostic?.suggestion).toContain("xvfb-run -a -s '-screen 0 1600x900x24'");
+  expect(diagnostic?.message).toContain("use sh scripts/xvfb.sh <cmd>.");
+  expect(diagnostic?.suggestion).toContain("Prefix the command with sh scripts/xvfb.sh.");
 });
 
 test("stays silent when the run has no screenshot or visual assertion", () => {
@@ -58,5 +58,5 @@ test("fails loudly before framebuffer readback on headless Linux without a displ
     code: "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE",
     severity: "error",
   });
-  expect(diagnostic?.message).toContain("xvfb-run -a -s '-screen 0 1600x900x24'");
+  expect(diagnostic?.message).toContain("use sh scripts/xvfb.sh <cmd>.");
 });

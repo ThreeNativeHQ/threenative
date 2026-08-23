@@ -119,7 +119,8 @@ catalog version, on every target claimed.
 
 **0b — physics.** Native Rapier drops a cube onto a plane through the versioned bulk ABI,
 PRD-045 asserts the trajectory and demonstrates a deliberately broken run failing, and
-PRD-049 measures web/host/device agreement with negative controls.
+PRD-049 measures web/host/device agreement with negative controls
+([divergence report](../verification/PRD-049.md)).
 
 Both are passed on emulated and simulated targets. On physical hardware, only 0a has moved: a
 Pixel 8 rendered and was measured against Godot 4.7.1 on 2026-08-14/16

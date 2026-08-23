@@ -37,13 +37,15 @@ binding document.
 - **Archive rule:** a PRD moves to `done/` in the same commit that finishes its acceptance
   evidence.
 
-The repository currently records 88 done PRDs and 16 blocked PRDs. Active batches are
+The repository currently records 148 done PRD files and 17 blocked PRD files. Active batches are
 [`agent-leverage/`](PRDs/agent-leverage/), [`asset-pipeline/`](PRDs/asset-pipeline/),
-[`batch-26-08-16/`](PRDs/batch-26-08-16/README.md), [`batch-26-08-18/`](PRDs/batch-26-08-18/README.md),
-[`experiments/`](PRDs/experiments/),
-[`native/`](PRDs/native/), [`native-performance-fixes/`](PRDs/native-performance-fixes/),
-[`production-readiness-26-08-14/`](PRDs/production-readiness-26-08-14/),
+[`batch-2026-08-22/`](PRDs/batch-2026-08-22/README.md),
+[`batch-26-08-16/`](PRDs/batch-26-08-16/README.md), [`experiments/`](PRDs/experiments/),
+[`native-performance-fixes/`](PRDs/native-performance-fixes/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
+`batch-26-08-18/`, `native/` and `production-readiness-26-08-14/` were deleted on 2026-08-22 as
+outdated documentation; their PRDs live in [`done/`](PRDs/done/) or
+[`BLOCKED/`](PRDs/BLOCKED/README.md).
 `alpha-readiness/` was deleted on 2026-08-18 and `batch-26-08-17/` closed as
 [`done/fps-friction-26-08-17/`](PRDs/done/fps-friction-26-08-17/README.md).
 

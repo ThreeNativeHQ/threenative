@@ -4,9 +4,13 @@ prd_contract: v1
 
 # PRD-176 — The abyss navigation scenario's navigator never moves, and no default gate runs the scenario
 
-**Status:** OPEN, 2026-08-22. Filed from a red reproduced twice at HEAD the same day; the
-reproduction record is
-[navigation-red-at-head-2026-08-22](../../verification/navigation-red-at-head-2026-08-22.md).
+**Status:** COMPLETE, 2026-08-22. Cause named at `file:line` (game/harness side: the scenario was
+driven at the wrong entry point, then two later harness guards fire on the scene it did load; the
+engine suspect was checked and rejected), green under the standard web recipe, both scenario lines
+mutation-proved, scenario wired into root `test:playtest` with the full chain green, and scoped
+typecheck/lint clean on the changed files. Evidence appended to
+[navigation-red-at-head-2026-08-22](../../verification/navigation-red-at-head-2026-08-22.md);
+the full-workspace `pnpm test` suite runs at wave integration (coordinator gate).
 
 **Outcome:** `examples/abyss-framework/playtests/navigation.playtest.json` exits `0` under the
 standard web recipe (`--browser-recipe webgpu --headed`) — the navigator routes around the blocker,

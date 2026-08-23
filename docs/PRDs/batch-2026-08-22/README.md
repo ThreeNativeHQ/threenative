@@ -11,7 +11,7 @@ gate record — `pnpm gate:status` shows RED only because HEAD moved after the u
 (`exitCode: 0`, `state: "succeeded"`); rerun `pnpm test` or let the next long gate overwrite
 `artifacts/gates/status.json`.
 
-## 1. [PRD-176](./PRD-176-navigation-scenario-navigator-never-moves.md) — navigator never moves, plus a coverage hole
+## 1. [PRD-176](../done/PRD-176-navigation-scenario-navigator-never-moves.md) — COMPLETE 2026-08-22 — navigator never moves, plus a coverage hole
 
 Deterministic red, reproduced twice today at HEAD: the abyss-framework navigator accumulates zero
 movement over 212 frames with a clean console, and `navigation.playtest.json` is not in the default
@@ -36,6 +36,39 @@ lane runs unattended on this machine, so this is fully actionable without hardwa
 longest of the three, and nothing downstream is blocked by it today.
 
 Estimate: a day, most of it logcat correlation.
+
+## Scorecard slice — filed 2026-08-22 from plans/threenative-area-scorecard-2026-08-22.md
+
+A four-audit sweep of every area (correctness/security, tests/architecture, perf/deps/DX,
+direction), each finding verified at HEAD `a84f08da`, scored all ten areas 0–100. This section
+slices the four lowest — runtime-native 54, playtest 60, scripts/DX 62, core 70 — into PRDs.
+Numbering continues from PRD-176.
+
+| PRD | What it closes | Complexity | Lane |
+| --- | --- | --- | --- |
+| [177](./PRD-177-native-restart-shutdown-lifetime.md) | Native restart ghosts input (window/document listener removal is a no-op) + libuv close-then-clear UAF at three shutdown sites; seeds direct C++ lifetime tests and a restart conformance row | 6 HIGH | native build required; one owner across phases |
+| [178](./PRD-178-green-means-green-gate-hygiene.md) | Four never-collected duplicate suites; diagnostics prescribing forbidden `xvfb-run`; double-build/double-vitest pipeline; orphaned root argon2/pg; catalog nits | 5 MEDIUM | quick wins |
+| [179](./PRD-179-instruments-measure-growth.md) | Quality report keys by file:line ignoring values (42 fake-"new"; hotspots grow as "inherited"); six long chains invisible to gate:status/resume | 5 MEDIUM | after or with 178 |
+| [180](../done/PRD-180-core-lifecycle-failure-atomicity.md) | COMPLETE 2026-08-22 — boot throw-paths leak half-booted games (abort path is fine); teardown first-throw-wins; `goto()` wipes state before validating | 4 MEDIUM | core unit lane |
+| [181](./PRD-181-honest-core-packaging-seam.md) | Published core inlines a hidden playtest copy (`noExternal` masking a devDep-only import); hardcoded stale CORE_VERSION | 4 MEDIUM | packaging/consumer lane |
+| [182](./PRD-182-playtest-monolith-containment.md) | Contain the three hottest monoliths (evaluators 2,312 / scenario 1,867 growing / runner 1,800 top-churn) behind facades, characterization-first, zero behavior change | 5 MEDIUM, highest risk | last in the batch |
+
+**Suggested order:** 178 → 179 (green gates first, so every later measurement is trusted) →
+180 → 181 (independent) → 177 (longest, needs `pnpm native:build`) → 182 (needs 179's honest
+quality report to prove its LOC outcome). No PRD here depends on another for correctness.
+
+**Lead handed to PRD-176's diagnosis:** the correctness audit found
+`packages/physics/src/navigation/NavigationAgent3D.ts:159-165` stores the computed path *before*
+judging reachability and leaves it set on unreachable targets, while `syncCrowd`'s re-request gate
+(`:256-259`) trusts `#path.length > 0` — regressed by `8a5104cc`. A navigator that never moves is
+consistent with this store-then-reset contradiction. Prime suspect for criterion 1; verify before
+attributing.
+
+**Deliberately not sliced into PRDs (owner decisions / above the score cut):**
+native LOC trigger at 79,139/50,000 (+58%) — justify per the PRD-069/175 evidence or run the kill
+switch; Phase-2 exclusivity condition; physics mass-seam asymmetry and the example deep-import
+(physics 82 and examples 74 sit above this batch's cut — both S-effort, fold them wherever
+convenient).
 
 ## Closing the batch
 

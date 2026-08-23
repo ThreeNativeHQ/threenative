@@ -333,6 +333,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   goto(name: string): Promise<void> {
     if (this.#ctx === undefined) throw new Error("Cannot call game.goto() before start().");
+    // Validate before the reset: a typo'd scene name must not wipe the live session's state on
+    // its way to throwing.
+    if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
     this.#state.stop();
     this.#state.setState({ ...this.#initialState });
     this.#state.start();
@@ -593,9 +596,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
+    // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
+    // resource released — and the original error rethrown, not a teardown error standing in
+    // for it. The abort branches below stay outside these guards: they tear down themselves.
     for (const plugin of this.#config.plugins ?? []) {
-      const cleanup =
-        typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
+      let cleanup: PluginCleanup | undefined;
+      try {
+        cleanup = typeof plugin === "function" ? plugin(ctx) : await plugin.setup?.(ctx, runtime);
+      } catch (error) {
+        this.#teardown(ctx);
+        throw error;
+      }
       if (typeof plugin !== "function") this.#activePlugins.push(plugin);
       if (this.#aborted) {
         if (cleanup !== undefined) this.#cleanup.push(cleanup);
@@ -609,12 +620,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#teardown(ctx);
       return;
     }
-    await scene.load(ctx);
+    try {
+      await scene.load(ctx);
+    } catch (error) {
+      this.#teardown(ctx);
+      throw error;
+    }
     if (this.#aborted) {
       this.#teardown(ctx);
       return;
     }
-    this.#enterScene(scene, ctx);
+    try {
+      this.#enterScene(scene, ctx);
+    } catch (error) {
+      this.#teardown(ctx);
+      throw error;
+    }
     if (this.#aborted) {
       this.#teardown(ctx);
       return;
@@ -657,6 +678,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
     const ctx = this.#ctx ?? startingCtx;
+    // Teardown is failure-atomic: one throwing release must not strand the resources after it.
+    // Every attempt runs, errors are collected, and the first — the original cause — is thrown
+    // once all attempts and the final leak check have completed.
+    const failures: unknown[] = [];
     this.#loop?.stop();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
@@ -665,9 +690,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities?.clear();
     this.#entities = undefined;
     if (ctx !== undefined)
-      for (const plugin of this.#activePlugins) this.#disposePlugin(plugin, ctx);
+      for (const plugin of this.#activePlugins) {
+        try {
+          this.#disposePlugin(plugin, ctx);
+        } catch (error) {
+          failures.push(error);
+        }
+      }
     this.#activePlugins = [];
-    for (const cleanup of this.#cleanup.splice(0)) cleanup();
+    for (const cleanup of this.#cleanup.splice(0)) {
+      try {
+        cleanup();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
     if (ctx !== undefined) clearScene(ctx.scene, this.#particles);
     this.#input?.dispose();
     this.#state.stop();
@@ -692,8 +729,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#disposedPlugins.clear();
     this.#paused = false;
     this.#started = false;
+    // Runs even when releases above failed; its verdict loses to a real cleanup error, which is
+    // the more actionable diagnosis of what went wrong while stopping.
     if ((ctx?.scene.children.length ?? 0) > 0)
-      throw new Error("IGame teardown leaked scene objects.");
+      failures.push(new Error("IGame teardown leaked scene objects."));
+    if (failures.length > 0) throw failures[0];
   }
 }
 

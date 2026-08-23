@@ -25,13 +25,16 @@ describe("published physics portability documentation", () => {
     expect(shape).toMatch(/halfHeight \+ radius/);
   });
 
-  it("keeps the parity evidence linked from the native PRD index", async () => {
-    const [report, nativeIndex] = await Promise.all([
+  // The old index was docs/PRDs/native/README.md, deleted as outdated on 2026-08-22
+  // (d2ca4f0f). The pin follows the surviving native-runtime doc so the divergence
+  // report cannot go unlinked again.
+  it("keeps the parity evidence linked from the native runtime doc", async () => {
+    const [report, nativeDoc] = await Promise.all([
       readFile(new URL("../../../docs/verification/PRD-049.md", import.meta.url), "utf8"),
-      readFile(new URL("../../../docs/PRDs/native/README.md", import.meta.url), "utf8"),
+      readFile(new URL("../../../docs/architecture/NATIVE-RUNTIME.md", import.meta.url), "utf8"),
     ]);
 
     expect(report).toContain("# PRD-049 — physics parity verification");
-    expect(nativeIndex).toContain("docs/verification/PRD-049.md");
+    expect(nativeDoc).toContain("../verification/PRD-049.md");
   });
 });

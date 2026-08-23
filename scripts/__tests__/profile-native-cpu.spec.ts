@@ -205,7 +205,7 @@ describe("native CPU profile collector logic", () => {
         headed: false,
         verifyPresentation: true,
       }),
-    ).toThrow(/xvfb-run .*--headed --verify-presentation/);
+    ).toThrow(/sh scripts\/xvfb\.sh .*--headed --verify-presentation/);
   });
 
   it("rejects visual presentation verification without a display", () => {

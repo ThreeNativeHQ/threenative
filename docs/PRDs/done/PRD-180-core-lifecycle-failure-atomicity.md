@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-180 — Core lifecycle is failure-atomic on every path, not just the abort path
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard (findings #7, #10; core
+**Status:** COMPLETE, 2026-08-22. Filed from the 2026-08-22 area scorecard (findings #7, #10; core
 scored 70/100). Evidence verified at HEAD `a84f08da` by two independent passes — including a
 correction: boot rollback exists for **abort** paths (`#aborted` checks + tested in
 `game.spec.ts:326-354`) but NOT for thrown plugin/scene failures.
@@ -39,9 +39,9 @@ currently don't, and the repo's verification culture is fail-closed.
 
 | # | New thing | Live caller (`file:line` — fill during implementation) | Replaces | Old path removed? | Negative control |
 |---|-----------|--------------------------------------------------------|----------|-------------------|------------------|
-| 1 | Boot try/catch → teardown-and-rethrow around setup/load/enter | `#boot` failure flow in `game.ts` | uncaught awaits | replaced in place | new spec reds when the try/catch is reverted |
-| 2 | Error-collecting teardown loops | `#teardown` in `game.ts` | first-throw-wins loops | replaced in place | spec with throwing first cleanup proves later cleanups ran |
-| 3 | Validate-before-reset in `goto()` | `goto()` in `game.ts` | reset-then-validate | replaced in place | typo'd goto preserves state → red on revert |
+| 1 | Boot try/catch → teardown-and-rethrow around setup/load/enter | `#boot` guards at `packages/core/src/game.ts:599-641` | uncaught awaits | replaced in place | new spec reds when the try/catch is reverted (proved, see verification record) |
+| 2 | Error-collecting teardown loops | `#teardown` at `packages/core/src/game.ts:679-737` | first-throw-wins loops | replaced in place | spec with throwing first cleanup proves later cleanups ran (proved) |
+| 3 | Validate-before-reset in `goto()` | `goto()` at `packages/core/src/game.ts:334-343` | reset-then-validate | replaced in place | typo'd goto preserves state → red on revert (proved) |
 
 ## Phases
 
@@ -50,10 +50,10 @@ currently don't, and the repo's verification culture is fail-closed.
 **Files (2):** `packages/core/src/game.ts` - EDIT; `packages/core/__tests__/game.spec.ts` - EDIT.
 
 **Implementation:**
-- [ ] Wrap each plugin dispose and each cleanup in its own try/catch; collect errors; after all
+- [x] Wrap each plugin dispose and each cleanup in its own try/catch; collect errors; after all
       attempts, throw the FIRST collected error (precedence: original cause first), still running
       the final scene-leak check.
-- [ ] Dispose-once guard stays exactly as is.
+- [x] Dispose-once guard stays exactly as is.
 
 | Test File | Test Name | Assertion | Negative control |
 |-----------|-----------|-----------|------------------|
@@ -65,9 +65,9 @@ currently don't, and the repo's verification culture is fail-closed.
 **Files (2):** same as Phase 1.
 
 **Implementation:**
-- [ ] Wrap the plugin-setup loop, `scene.load()`, and `#enterScene` so any throw runs
+- [x] Wrap the plugin-setup loop, `scene.load()`, and `#enterScene` so any throw runs
       `#teardown(ctx)` then rethrows the original error.
-- [ ] Abort-path behavior unchanged (its tests already pin it).
+- [x] Abort-path behavior unchanged (its tests already pin it).
 
 | Test File | Test Name | Assertion | Negative control |
 |-----------|-----------|-----------|------------------|

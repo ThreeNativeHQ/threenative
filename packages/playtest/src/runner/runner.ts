@@ -587,10 +587,10 @@ export function preflightDisplay(
       ? "TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE"
       : "TN_PLAYTEST_HEADLESS_WEBGPU",
     message: evaluatesFramebuffer
-      ? "Headless Linux cannot provide trusted per-frame WebGPU pixels without a display; use xvfb-run -a -s '-screen 0 1600x900x24'."
-      : "Headless Linux visual runs may render WebGPU blank without a display; use xvfb-run -a -s '-screen 0 1600x900x24'.",
+      ? "Headless Linux cannot provide trusted per-frame WebGPU pixels without a display; use sh scripts/xvfb.sh <cmd>."
+      : "Headless Linux visual runs may render WebGPU blank without a display; use sh scripts/xvfb.sh <cmd>.",
     severity: evaluatesFramebuffer ? "error" : "warning",
-    suggestion: "Prefix the command with xvfb-run -a -s '-screen 0 1600x900x24'.",
+    suggestion: "Prefix the command with sh scripts/xvfb.sh.",
   };
 }
 

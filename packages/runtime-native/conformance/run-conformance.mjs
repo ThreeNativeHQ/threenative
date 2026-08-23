@@ -615,7 +615,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
   if (process.platform === "linux" && !process.env.DISPLAY) {
     result.status = "blocked";
     result.blockedReason =
-      "Browser WebGPU capture requires Xvfb; run with xvfb-run -a -s '-screen 0 1600x900x24'.";
+      "Browser WebGPU capture requires Xvfb; run with sh scripts/xvfb.sh <cmd>.";
     return;
   }
   let chromium;

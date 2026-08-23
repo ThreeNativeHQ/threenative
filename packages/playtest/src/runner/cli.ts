@@ -93,7 +93,7 @@ export function classifyRunnerError(
     return diagnostic(
       "TN_PLAYTEST_BROWSER_UNAVAILABLE",
       message,
-      "Install or repair Chromium; under a headless Linux session run via xvfb-run.",
+      "Install or repair Chromium; under a headless Linux session run via sh scripts/xvfb.sh.",
     );
   }
   if (message.startsWith("page.goto")) {

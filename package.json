@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "bash scripts/run-test-suite.sh",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
-    "test:playtest": "pnpm --filter @threenative/playtest build && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/camera.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/movement-axis.playtest.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
+    "test:playtest": "pnpm --filter @threenative/playtest build && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/camera.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/movement-axis.playtest.json --url http://127.0.0.1:5180 --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed && sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/navigation.playtest.json --url 'http://127.0.0.1:5180/?navigation' --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
     "test:templates": "sh scripts/xvfb.sh tsx scripts/verify-template-playtests.ts",
     "verify:golden-path": "sh scripts/xvfb.sh tsx scripts/verify-golden-path.ts",
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
@@ -60,18 +60,10 @@
     "@biomejs/biome": "1.9.4",
     "@playwright/test": "1.62.1",
     "@types/node": "20.19.43",
-    "@types/pg": "catalog:",
     "@types/pngjs": "6.0.5",
     "pngjs": "7.0.0",
     "tsx": "4.23.5",
     "typescript": "catalog:",
     "vitest": "4.1.10"
-  },
-  "dependencies": {
-    "argon2": "catalog:",
-    "pg": "catalog:"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["argon2"]
   }
 }

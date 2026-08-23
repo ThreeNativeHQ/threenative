@@ -16,12 +16,14 @@
     },
     "visibility": [
       {
+        "allowTrivial": "The probe camera frames the whole floor from above, so the navigator is projected and in frame from the first tick; this held visibility row rides along while the movement rows prove the traversal.",
         "entity": "navigator",
         "minProjectedPixels": 100,
         "present": true
       }
     ]
   },
+  "artifacts": { "screenshots": false },
   "name": "navigation-routes-around-blocker",
   "schemaVersion": 1,
   "steps": [

@@ -16,14 +16,10 @@ catalog:
   tailwindcss: 4.3.3
   '@tailwindcss/vite': 4.3.3
   '@vitejs/plugin-react': 6.0.5
-  argon2: 0.45.1
-  monaco-editor: 0.56.0
-  pg: 8.23.0
-  '@types/pg': 8.15.5
   zod: 4.4.3
   typescript: 5.9.3
   vite: 8.2.0
   vitest: 4.1.10
   esbuild: 0.27.0
   publint: 0.3.22
-  zustand: 5.x
+  zustand: 5.0.14
