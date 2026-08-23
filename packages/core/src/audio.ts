@@ -422,9 +422,8 @@ function assertOptions(options: IAudioPlayOptions): void {
   if (options.detune !== undefined && !Number.isFinite(options.detune)) {
     throw new RangeError("detune must be finite.");
   }
-}
-
-function configureVoice(voice: ThreeAudio<AudioNode>, options: IAudioPlayOptions): void {
+  // Volume/fade/refDistance/rolloffFactor used to be validated only in configureVoice —
+  // after play() had already claimed its voice, so a throwing option orphaned it for good.
   const volume = options.volume ?? 1;
   if (!Number.isFinite(volume) || volume < 0)
     throw new RangeError("volume must be finite and non-negative.");
@@ -443,6 +442,10 @@ function configureVoice(voice: ThreeAudio<AudioNode>, options: IAudioPlayOptions
   ) {
     throw new RangeError("rolloffFactor must be finite and non-negative.");
   }
+}
+
+function configureVoice(voice: ThreeAudio<AudioNode>, options: IAudioPlayOptions): void {
+  const volume = options.volume ?? 1;
   voice.setLoop(options.loop ?? false);
   voice.setVolume(options.fade === undefined || options.fade === 0 ? volume : 0);
 }

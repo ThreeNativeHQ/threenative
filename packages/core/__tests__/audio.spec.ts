@@ -130,6 +130,28 @@ describe("AudioBus", () => {
     bus.dispose();
   });
 
+  it("keeps a rejected cue from consuming a pooled voice", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const first = bus.play(buffer);
+      endVoice(first);
+      expect(bus.pooled).toBe(1);
+
+      // The option contract throws — but only before a voice is claimed, never after one
+      // has been taken out of the pool and dropped on the floor.
+      expect(() => bus.play(buffer, { volume: Number.NaN })).toThrow(RangeError);
+
+      // Documented reclaim rule: an ended voice may be handed to a later cue.
+      const second = bus.play(buffer);
+      expect(second).toBe(first);
+    } finally {
+      bus.dispose();
+    }
+  });
+
   it("should attach positional playback to its source", () => {
     audioContext();
     const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
