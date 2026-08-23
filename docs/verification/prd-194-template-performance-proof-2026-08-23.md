@@ -5,20 +5,23 @@ Source PRD: [PRD-194](../PRDs/batch-2026-08-22-charter-performance/PRD-194-every
 This is the committed raw measurement record for the seven shipped templates. The browser
 measurements used Chromium WebGPU, `--browser-recipe webgpu`, an NVIDIA/Turing adapter, a
 1920×1080 viewport, 60 warmup frames, and the scenario workload from the checked-in proof.
-Each template was run ten times. The checked-in bound is `ceil(max observed × 1.10)` for each
-metric, with the frame-time bound capped at the PRD's 33 ms p95 requirement.
+The deterministic workload is 60 warmup frames plus at least 600 fixed ticks. Those ticks are
+workload units, not performance samples: `assert.performance` defines upper bounds only and the
+runner does not enforce a minimum performance-sample count. Each template was run ten times. The
+checked-in bound is `ceil(max observed × 1.10)` for each metric, with the frame-time bound capped
+at the PRD's 33 ms p95 requirement.
 
 ## Scenario coverage
 
-| Template | Scenario | Input workload | Samples required | Bounds: draws / p95 ms / triangles |
-| --- | --- | ---: | ---: | ---: |
-| action-rpg | `playtests/performance.playtest.json` | 60 + 600 ticks | 600 | 62 / 33 / 996 |
-| defense | `playtests/performance.playtest.json` | 60 + 600 ticks | 600 | 44 / 33 / 1951 |
-| minimal | `playtests/play.playtest.json` | 60 + 600 ticks | 600 | 20 / 33 / 1223 |
-| platformer | `playtests/performance.playtest.json` | 60 + 600 ticks | 600 | 70 / 33 / 3350 |
-| racing | `playtests/performance.playtest.json` | 60 + 600 ticks | 600 | 84 / 33 / 2070 |
-| shooter | `playtests/performance.playtest.json` | 60 + 600 ticks | 600 | 96 / 33 / 1053 |
-| starter | `playtests/play.playtest.json` | 120 + 600 ticks | 600 | 53 / 33 / 4403 |
+| Template | Scenario | Deterministic workload | Bounds: draws / p95 ms / triangles |
+| --- | --- | ---: | ---: |
+| action-rpg | `playtests/performance.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 62 / 33 / 996 |
+| defense | `playtests/performance.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 44 / 33 / 1951 |
+| minimal | `playtests/play.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 20 / 33 / 1223 |
+| platformer | `playtests/performance.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 70 / 33 / 3350 |
+| racing | `playtests/performance.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 84 / 33 / 2070 |
+| shooter | `playtests/performance.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 96 / 33 / 1053 |
+| starter | `playtests/play.playtest.json` | 60 warmup frames + at least 600 fixed ticks | 53 / 33 / 4403 |
 
 The seven scenario files contain seven non-empty `assert.performance` objects and no empty
 performance object. Every scenario uses `{ "width": 1920, "height": 1080 }` and
@@ -26,9 +29,9 @@ performance object. Every scenario uses `{ "width": 1920, "height": 1080 }` and
 
 ## Raw browser runs
 
-Actual values are `samples / frame p95 ms / max draw calls / max triangles`.
+Actual values are `observed performance samples / frame p95 ms / max draw calls / max triangles`.
 
-| Template | Run | Samples | Frame p95 ms | Draw calls | Triangles |
+| Template | Run | Observed performance samples | Frame p95 ms | Draw calls | Triangles |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | action-rpg | 1 | 255 | 5.6 | 56 | 905 |
 | action-rpg | 2 | 257 | 4.7 | 56 | 905 |
@@ -106,7 +109,7 @@ Actual values are `samples / frame p95 ms / max draw calls / max triangles`.
 Each command was run through `sh scripts/xvfb.sh` with the WebGPU browser recipe. Every command
 exited 0.
 
-| Template | Exit | Samples | Frame p95 ms | Draw calls | Triangles | Adapter | Viewport |
+| Template | Exit | Observed performance samples | Frame p95 ms | Draw calls | Triangles | Adapter | Viewport |
 | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
 | action-rpg | 0 | 253 | 4.9 | 56 | 905 | nvidia/turing | 1920×1080 |
 | defense | 0 | 256 | 4.3 | 40 | 1773 | nvidia/turing | 1920×1080 |
