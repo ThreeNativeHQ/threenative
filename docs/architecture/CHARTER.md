@@ -4,6 +4,8 @@
 **Amended 2026-08-17:** §3, §5, §5b and §11.1 — the 20-line rule is replaced by the two
 questions in §11.1, and §5b splits mechanism from appearance. The kill switch (§11.2) and the
 closed list (§2) are unchanged.
+**Amended 2026-08-22:** §1 and §11 — performance is a shipped default bounded by §5b, §11.2 and
+§10a, not a tuning pass left to each game.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -72,6 +74,16 @@ cage, and a game that has to fork the engine to differ has been failed twice. Ea
    grounding is the convention failing.
 3. **Honest reporting when overridden** — turning a convention off must not turn its measurement
    off. A body that is deliberately airborne still reports its real clearance.
+
+**Performance is one of those defaults, not a tuning pass the game is expected to discover.**
+The §10a frame budget is the framework's to hold on the ordinary path: whatever the framework
+owns arrives pooled, batched, culled and free of per-frame allocation, and the obvious way to
+write a game here is the fast way. A game should have to work to make it slow, and a hitch that
+appears in a template as scaffolded is an engine defect, not the game's tuning debt. The same
+bounds apply as to every other convention — §5b (a performance default never decides how
+anything looks), §11.2's kill switch (an optimisation costing more code than vanilla Three.js is
+deleted like anything else), and §10a's measurement (a speed-up no `performance` assertion can
+show is a claim, not a gain).
 
 **A convention that is not in the templates' `AGENTS.md` does not exist.** The agent's field of
 view is that file. Shipping a capability the doc omits is shipping nothing, and is a release
@@ -768,6 +780,9 @@ by §11.1 and §11.4, with evidence, or they are not bounded at all.
 6. **CI green means something or it means nothing.** No merge while red. (v1: 0 passing in 100.)
 7. **Write once, run everywhere.** §7. One implementation per public class. A backend swaps
    beneath the API, never a node the user writes against; what a backend cannot honour throws.
+8. **Performance is a default, not a tuning pass.** §1. The framework holds §10a's budget on
+   the path a game gets by doing nothing — pooled, batched, culled, allocation-free — and proves
+   it with a `performance` assertion rather than an intention.
 
 ### 11.1 — the two questions, and what they do not open
 
