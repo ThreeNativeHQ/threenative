@@ -137,6 +137,52 @@ describe("AudioBus", () => {
     bus.dispose();
   });
 
+  it("should pass spatial tuning through to the positional panner", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+    const source = new PerspectiveCamera();
+
+    const tuned = bus.playAt(buffer, source, { refDistance: 12, rolloffFactor: 2.5 });
+
+    expect(tuned.parent).toBe(source);
+    expect(tuned.getRefDistance()).toBe(12);
+    expect(tuned.getRolloffFactor()).toBe(2.5);
+    const zeroRolloff = bus.playAt(buffer, source, { rolloffFactor: 0 });
+    expect(zeroRolloff.getRolloffFactor()).toBe(0);
+    bus.dispose();
+  });
+
+  it("should leave positional falloff at runtime defaults when untuned", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+
+    const voice = bus.playAt(buffer, new PerspectiveCamera());
+
+    expect(voice.getRefDistance()).toBe(1);
+    expect(voice.getRolloffFactor()).toBe(1);
+    bus.dispose();
+  });
+
+  it("should fail closed on invalid spatial tuning, naming the option", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera(), gestureTarget: new EventTarget() });
+    const source = new PerspectiveCamera();
+
+    expect(() => bus.playAt(buffer, source, { refDistance: 0 })).toThrow(RangeError);
+    expect(() => bus.playAt(buffer, source, { refDistance: 0 })).toThrow(/refDistance/u);
+    expect(() => bus.playAt(buffer, source, { refDistance: -3 })).toThrow(RangeError);
+    expect(() => bus.playAt(buffer, source, { refDistance: Number.NaN })).toThrow(RangeError);
+    expect(() => bus.playAt(buffer, source, { refDistance: Number.POSITIVE_INFINITY })).toThrow(
+      RangeError,
+    );
+    expect(() => bus.playAt(buffer, source, { rolloffFactor: -0.5 })).toThrow(/rolloffFactor/u);
+    expect(() => bus.playAt(buffer, source, { rolloffFactor: Number.NaN })).toThrow(RangeError);
+    expect(() => bus.play(buffer, { refDistance: 0 })).toThrow(/refDistance/u);
+    expect(() => bus.play(buffer, { rolloffFactor: -0.5 })).toThrow(/rolloffFactor/u);
+    expect(bus.queued).toBe(0);
+    bus.dispose();
+  });
+
   it("should fail closed when the runtime has no positional audio", () => {
     const context = audioContext();
     Reflect.deleteProperty(context, "createPanner");

@@ -20,7 +20,9 @@ export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
+ * @situation keep a gunshot audible at 20 metres by tuning positional falloff
  * @constraint create buses before playing clips and dispose them with the game
+ * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
  * @example const effects = new AudioBus({ name: "effects" });
  */
 export { AudioBus } from "./audio.js";

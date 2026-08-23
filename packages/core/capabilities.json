@@ -36,7 +36,10 @@
       "symbol": "attachToBone"
     },
     {
-      "constraints": ["create buses before playing clips and dispose them with the game"],
+      "constraints": [
+        "create buses before playing clips and dispose them with the game",
+        "refDistance and rolloffFactor tune positional falloff and apply to playAt only"
+      ],
       "example": "const effects = new AudioBus({ name: \"effects\" });",
       "importPath": "@threenative/core",
       "kind": "class",
@@ -45,7 +48,8 @@
       "signature": "export class AudioBus { … }",
       "situations": [
         "play a sound effect with a volume bus",
-        "mute or adjust a category of game audio"
+        "mute or adjust a category of game audio",
+        "keep a gunshot audible at 20 metres by tuning positional falloff"
       ],
       "summary": "Route effects through a named audio bus.",
       "symbol": "AudioBus"

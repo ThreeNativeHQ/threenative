@@ -11,6 +11,17 @@ export interface IAudioPlayOptions {
   readonly fade?: number;
   readonly loop?: boolean;
   readonly volume?: number;
+  /**
+   * Metres from the source where positional attenuation begins; `playAt` only. Three's panner
+   * default of 1 m makes a shot 20 m away all but inaudible — raise this to keep mid-distance
+   * sounds loud. Must be finite and positive.
+   */
+  readonly refDistance?: number;
+  /**
+   * How fast volume falls off past `refDistance`; `playAt` only. 0 keeps the sound at full
+   * volume at any distance. Must be finite and non-negative.
+   */
+  readonly rolloffFactor?: number;
 }
 
 export interface IAudioRuntimeSnapshot {
@@ -90,6 +101,8 @@ export class AudioBus {
       throw new Error("AudioBus.playAt needs createPanner(); this runtime has none.");
     const voice = new PositionalAudio(this.listener);
     configureVoice(voice, options);
+    if (options.refDistance !== undefined) voice.setRefDistance(options.refDistance);
+    if (options.rolloffFactor !== undefined) voice.setRolloffFactor(options.rolloffFactor);
     voice.setBuffer(buffer);
     if (source instanceof Object3D) source.add(voice);
     else {
@@ -170,6 +183,18 @@ function configureVoice(voice: ThreeAudio<AudioNode>, options: IAudioPlayOptions
     throw new RangeError("volume must be finite and non-negative.");
   if (options.fade !== undefined && (!Number.isFinite(options.fade) || options.fade < 0)) {
     throw new RangeError("fade must be finite and non-negative.");
+  }
+  if (
+    options.refDistance !== undefined &&
+    (!Number.isFinite(options.refDistance) || options.refDistance <= 0)
+  ) {
+    throw new RangeError("refDistance must be finite and positive.");
+  }
+  if (
+    options.rolloffFactor !== undefined &&
+    (!Number.isFinite(options.rolloffFactor) || options.rolloffFactor < 0)
+  ) {
+    throw new RangeError("rolloffFactor must be finite and non-negative.");
   }
   voice.setLoop(options.loop ?? false);
   voice.setVolume(options.fade === undefined || options.fade === 0 ? volume : 0);
