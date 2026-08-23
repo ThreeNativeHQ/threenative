@@ -4,8 +4,20 @@ prd_contract: v1
 
 # PRD-177 — Native restart and shutdown own their lifetimes
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard
-([plans/threenative-area-scorecard-2026-08-22.md](../../../plans/threenative-area-scorecard-2026-08-22.md),
+**Status:** BLOCKED (phases 2–3), 2026-08-22 — split by coordinator disposition into
+[PRD-184](PRD-184-native-shutdown-ownership-transfer.md),
+which owns the three libuv close-then-clear sites and names the missing instrument. **Phase 1
+shipped** (commit `f2b70c34`): window/document listener removal is real, proven by
+`tests/input_restart_test.cpp` red/green/mutation and by registry row
+`97-input-restart-lifetime`, which passes on the desktop lane (pixel mismatch 0.000017 against a
+fresh browser reference) and on the Android emulator (mismatch 0.0), and fails with "expected
+exactly four deliveries … got 6" when the erase is reverted — case-level revert check executed
+2026-08-22. Criterion 1 and the row half of criterion 4 are met; criterion 2 stays honestly
+unmet and unprovable today; criteria 3/5 carry phase-1 evidence only. Stop record:
+[prd177-phase1-shipped-23-stopped-2026-08-22.md](../../../verification/prd177-phase1-shipped-23-stopped-2026-08-22.md).
+
+Filed from the 2026-08-22 area scorecard
+([plans/threenative-area-scorecard-2026-08-22.md](../../../../plans/threenative-area-scorecard-2026-08-22.md),
 findings #1, #9, #15; runtime-native scored 54/100, the lowest area). Every claim below was
 verified at HEAD `a84f08da` by two independent passes.
 

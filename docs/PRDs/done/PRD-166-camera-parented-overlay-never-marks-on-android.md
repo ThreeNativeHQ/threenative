@@ -8,7 +8,7 @@ prd_contract: v1
 is pasted in `docs/verification/camera-parented-overlay-android-2026-08-22.md`. The harness
 reporting defect is fixed with red/green/mutation-proven fixtures (`abaae6d5`, `556eecc6`), and
 the lane re-ran `66 / 1 / 0` where the one failing row is the named engine defect owned by
-[PRD-183](../batch-2026-08-22/PRD-183-android-surface-reconfigure-abort.md) — a named defect,
+[PRD-183](PRD-183-android-surface-reconfigure-abort.md) — a named defect,
 never a timeout. The residual row-pass (`67 / 0 / 0`) paste belongs to PRD-183's acceptance and
 its Phase 3 verification arm, not to this file. Filed PROPOSED 2026-08-19; §1 is the observed
 result of [PRD-160](PRD-160-android-emulator-lane-repair-and-parity-adjudication.md)'s

@@ -1,6 +1,13 @@
 export const PLAYTEST_BRIDGE_GLOBAL = "__THREENATIVE_PLAYTEST_BRIDGE__";
 export const PLAYTEST_PROTOCOL_VERSION = 1 as const;
 
+/**
+ * userData key the setup channel sets on an entity placed with `frozen: true`. Games read
+ * this marker and suppress physics motion for the entity — placement stays data the game
+ * interprets, never a runner-side per-frame teleport.
+ */
+export const PLAYTEST_FROZEN_MARKER = "__threenativeFrozen";
+
 export const PLAYTEST_PROTOCOL_LIMITS = {
   maxEntitiesPerSample: 100,
   maxEventsPerDrain: 1_000,
@@ -31,7 +38,12 @@ export interface IPlaytestEntityTransform {
 }
 
 export interface IPlaytestSetupRequest {
-  entities?: Array<{ entity: string; transform: IPlaytestEntityTransform }>;
+  entities?: Array<{
+    entity: string;
+    /** Marks the placed entity with {@link PLAYTEST_FROZEN_MARKER} for the game to read. */
+    frozen?: boolean;
+    transform: IPlaytestEntityTransform;
+  }>;
   resources?: Array<{ id: string; path?: string; value: JsonValue }>;
 }
 
@@ -147,10 +159,21 @@ export interface IPlaytestBridgeHost {
   [PLAYTEST_BRIDGE_GLOBAL]?: IPlaytestBridgeV1;
 }
 
+/**
+ * Measure a payload's wire size in bytes.
+ * @situation check a runtime observation against the protocol payload limit before sampling
+ * @example const bytes = jsonByteLength(observation);
+ */
 export function jsonByteLength(value: JsonValue): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+/**
+ * Reject any value that would not survive JSON serialization.
+ * @situation validate entity components and gameplay observations before crossing the bridge
+ * @constraint throws instead of silently dropping the offending field
+ * @example assertJsonSafe(snapshot, "$.components");
+ */
 export function assertJsonSafe(value: unknown, path = "$"): asserts value is JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return;

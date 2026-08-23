@@ -36,6 +36,7 @@ describe("the published export map", () => {
       ".",
       "./capture",
       "./package.json",
+      "./protocol",
       "./runner",
       "./three",
     ]);

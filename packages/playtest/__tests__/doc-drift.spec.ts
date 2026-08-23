@@ -82,11 +82,11 @@ function playtestSections(content: string): string {
   for (const line of lines) {
     const heading = /^(#{1,6}) (.+)$/u.exec(line);
     if (heading !== null) {
-      const isBoundary = inside && heading[1].length <= level;
+      const isBoundary = inside && (heading[1]?.length ?? 0) <= level;
       if (isBoundary) inside = false;
-      if (!inside && /playtest/i.test(heading[2])) {
+      if (!inside && /playtest/i.test(heading[2] ?? "")) {
         inside = true;
-        level = heading[1].length;
+        level = heading[1]?.length ?? 1;
         collected.push(line);
         continue;
       }
@@ -136,6 +136,7 @@ describe("playtest documentation drift", () => {
     for (const document of await teachingDocuments()) {
       for (const match of document.content.matchAll(CAMEL_TOKEN)) {
         const token = match[1];
+        if (token === undefined) continue;
         if (accepted.has(token) || PROSE_TOKENS[token] !== undefined) continue;
         offenders.push(`${token} (${document.path})`);
       }

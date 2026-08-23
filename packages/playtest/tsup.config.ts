@@ -13,6 +13,7 @@ export default defineConfig({
   // not have to pull playwright to ask.
   entry: [
     "src/index.ts",
+    "src/protocol.ts",
     "src/three/index.ts",
     "src/capture.ts",
     "src/runner/index.ts",

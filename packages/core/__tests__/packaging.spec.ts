@@ -43,3 +43,47 @@ test("should import the protocol from core, not playtest", async () => {
   }
   expect(offenders).toEqual([]);
 });
+
+// The ./playtest bridge subpath loads inside the GAME'S browser page. Its import graph must
+// therefore stay free of bare node: builtins - and free of value imports from the harness
+// ROOT entry, which transitively drags scenario loading (node:fs/promises) into that graph.
+// Regression context: PRD-181 briefly repointed core at the root entry and every example
+// using the bridge died at page evaluation with vite's "externalized for browser
+// compatibility" error.
+test("should keep the playtest bridge tier browser-safe", async () => {
+  // Transitive local-import walk from both entries: every reached module must be free of
+  // bare node: specifiers AND free of value imports from the harness ROOT entry (whose
+  // graph drags scenario loading - node:fs/promises - into the page). Type-only imports of
+  // the root are elided at runtime and allowed; multi-line imports must be caught too, so
+  // matching happens over whole-file text with import-type statements stripped first.
+  const entryFiles = ["index.ts", PLAYTEST_BRIDGE_ENTRY];
+  const seen = new Set<string>();
+  const offenders: string[] = [];
+  async function walk(file: string): Promise<void> {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let text: string;
+    try {
+      text = await readFile(join(srcRoot, file), "utf8");
+    } catch {
+      throw new Error(`browser-tier walk could not read ${file}`);
+    }
+    for (const match of text.matchAll(/(?:from|import) ["'](node:[^"']+)["']/g)) {
+      offenders.push(`${file}: bare ${match[1]}`);
+    }
+    const withoutTypeImports = text.replace(/import type \{[^}]*\} from "[^"]*";/g, "");
+    if (/["']@threenative\/playtest["']/.test(withoutTypeImports)) {
+      offenders.push(`${file}: value import of @threenative/playtest root`);
+    }
+    for (const match of withoutTypeImports.matchAll(/from ["'](\.[./][^"']+)["']/g)) {
+      const specifier = match[1];
+      if (specifier === undefined) continue;
+      const resolved = join(dirname(file), specifier).replace(/\.js$/, ".ts");
+      await walk(resolved);
+    }
+  }
+  for (const entry of entryFiles) await walk(entry);
+
+  expect(seen.size).toBeGreaterThan(3);
+  expect(offenders).toEqual([]);
+});

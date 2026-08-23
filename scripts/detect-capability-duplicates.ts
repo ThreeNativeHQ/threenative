@@ -132,6 +132,7 @@ async function main(): Promise<void> {
     if (content.includes("@threenative")) continue; // already importing the engine — not a rewrite
     for (const match of content.matchAll(EXPORT_PATTERN)) {
       const [, kind, symbol] = match;
+      if (kind === undefined || symbol === undefined) continue;
       const line = content.slice(0, match.index).split("\n").length;
       const symbolTokens = tokens(symbol);
       if (symbolTokens.length === 0) continue;

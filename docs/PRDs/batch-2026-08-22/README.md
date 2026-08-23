@@ -46,7 +46,7 @@ Numbering continues from PRD-176.
 
 | PRD | What it closes | Complexity | Lane |
 | --- | --- | --- | --- |
-| [177](./PRD-177-native-restart-shutdown-lifetime.md) | Native restart ghosts input (window/document listener removal is a no-op) + libuv close-then-clear UAF at three shutdown sites; seeds direct C++ lifetime tests and a restart conformance row | 6 HIGH | native build required; one owner across phases |
+| [177](../BLOCKED/requires-asan-libuv-source-build/PRD-177-native-restart-shutdown-lifetime.md) | BLOCKED 2026-08-22 (phases 2–3 → [PRD-184](../BLOCKED/requires-asan-libuv-source-build/PRD-184-native-shutdown-ownership-transfer.md); phase 1 + restart row shipped and proved) — native restart ghosts input + libuv close-then-clear UAF at three shutdown sites; direct C++ lifetime tests and a restart conformance row | 6 HIGH | native build required; one owner across phases |
 | [178](./PRD-178-green-means-green-gate-hygiene.md) | Four never-collected duplicate suites; diagnostics prescribing forbidden `xvfb-run`; double-build/double-vitest pipeline; orphaned root argon2/pg; catalog nits | 5 MEDIUM | quick wins |
 | [179](./PRD-179-instruments-measure-growth.md) | Quality report keys by file:line ignoring values (42 fake-"new"; hotspots grow as "inherited"); six long chains invisible to gate:status/resume | 5 MEDIUM | after or with 178 |
 | [180](../done/PRD-180-core-lifecycle-failure-atomicity.md) | COMPLETE 2026-08-22 — boot throw-paths leak half-booted games (abort path is fine); teardown first-throw-wins; `goto()` wipes state before validating | 4 MEDIUM | core unit lane |

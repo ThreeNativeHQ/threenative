@@ -4,11 +4,19 @@ prd_contract: v1
 
 # PRD-183 — The Android runtime aborts silently on the first draw against a resized swapchain
 
-**Status:** OPEN, 2026-08-22. Filed from [PRD-166](../done/PRD-166-camera-parented-overlay-never-marks-on-android.md)'s
-Phase 0/1 attribution, all of it executed on this machine on 2026-08-22 — see
-`docs/verification/camera-parented-overlay-android-2026-08-22.md` for every line quoted below.
-**No physical-device, iOS, arm64, driver or mobile-readiness claim is made or licensed by
-anything in this file. The emulator proves the emulator.**
+**Status:** COMPLETE, 2026-08-22 (commit `4538536f`). Root cause named with its own panic text —
+wgpu-native refuses `wgpuSurfaceConfigure` while a SurfaceOutput is outstanding; the host now
+discards the stale acquisition before reconfiguring (`webgpu/bindings.cpp`) and pipes
+stdout/stderr to logcat so every future native failure names itself (`platform/android_main.cpp`).
+Evidence: [prd183-android-resize-abort-2026-08-22.md](../../verification/prd183-android-resize-abort-2026-08-22.md)
+— phase-0 repro without conformance machinery reproducing the original panic pre-fix and
+completing post-fix; row `25-camera-parented-overlay` mutation cycle on emulator-5554 (fix pass →
+commenting exactly the discard block fails with "Error in wgpuSurfaceConfigure: Validation Error"
+→ restored pass); full Android lane **67 pass / 0 fail / 1 blocked**, where the single blocked row
+(`97-input-restart-lifetime`, which completed its native leg) belongs to PRD-177's parked phase-4
+parity wiring, not to this defect. Desktop rows 25 and 60-resize-render-target pass against pixel
+references. No physical-device, iOS, arm64, driver or mobile-readiness claim is made or licensed
+by anything in this file. The emulator proves the emulator.
 
 **Outcome:** the `25-camera-parented-overlay` conformance row completes on the Android emulator,
 or dies with a named diagnostic naming the reconfigure step — never again as a silent SIGABRT
@@ -22,7 +30,7 @@ rebuild mid-measurement.
 
 **Depends on:** nothing outside this package.
 
-**Blocks:** [PRD-166](../done/PRD-166-camera-parented-overlay-never-marks-on-android.md) phases 2–3 (its
+**Blocks:** [PRD-166](PRD-166-camera-parented-overlay-never-marks-on-android.md) phases 2–3 (its
 row can neither pass nor fail honestly until this defect has an owner), and therefore the
 Android lane reaching `67 / 0 / 0` on this machine.
 

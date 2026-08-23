@@ -4,8 +4,15 @@ prd_contract: v1
 
 # PRD-182 — Contain the playtest monoliths before they are edited again
 
-**Status:** OPEN, 2026-08-22. Filed from the 2026-08-22 area scorecard (finding #17; playtest
-scored 60/100). Evidence verified at HEAD `a84f08da`.
+**Status:** COMPLETE, 2026-08-22. Filed from the 2026-08-22 area scorecard (finding #17; playtest
+scored 60/100). All four phases landed: characterization net (d0a9d7a7, mutation check included —
+its first draft survived the flip and was thickened before movement), assertion-evaluators split
+(ad191e07, 2,312 → 44-line facade + nine modules), scenario split (7460cca8, 1,867 → facade +
+four modules), runner split (ba8619d5, 1,880 → orchestration facade + support/steps/sampling).
+Full playtest suite green at every phase; end-to-end moves.json exits 0 through the split runner.
+Evidence: docs/verification/prd-182-monolith-containment-2026-08-22.md — including the corrected
+attribution for the paired moves failures (they were the PRD-181 browser-tier regression,
+fixed in 97f1c0e9 with live red/green boot probes, not a game-side red).
 
 Complexity: 5 → MEDIUM mode by the count rubric, but risk is the highest in this batch: these are
 fail-closed verification semantics, where an accidental behavior change manufactures false test

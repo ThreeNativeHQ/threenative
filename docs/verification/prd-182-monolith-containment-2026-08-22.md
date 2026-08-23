@@ -44,27 +44,41 @@ both xvfb.sh advice strings preserved byte-for-byte; import paths for all consum
 
 ## End-to-end paired proof (moves.json, standard recipe, headed webgpu)
 
-Pre-split runner at HEAD:
+**CORRECTION (STOP-SHIP fix 97f1c0e9):** the two runs below were both made AFTER the
+7b25a032 packaging regression, so their identical failure was that regression manifesting —
+NOT a pre-existing game-side red as this section originally claimed. The bridge red was my own
+misattribution; lane-desktop's stale-recording theory and this regression were separate issues.
+
+Pre-split runner at HEAD (post-7b25a032):
 
 ```
 MOVES HEAD_RUN_EXIT=2   diagnostics: TN_PLAYTEST_BRIDGE_MISSING   pass: false
 ```
 
-Split runner, same command:
+Split runner, same command (pre-fix):
 
 ```
 SPLIT_RUN_EXIT=2        diagnostics: TN_PLAYTEST_BRIDGE_MISSING   pass: false
 ```
 
-Identical outcomes through the split. The scenario cannot exit 0 on this machine today either
-way: the abyss example is not registering its bridge in this environment — a pre-existing,
-game-side red outside this PRD's scope ("fixing behavior is explicitly NOT this PRD"), flagged
-for the batch rather than papered over.
+Identical outcomes through the split — the Phase 4 parity proof stands.
+
+**After the STOP-SHIP fix**, same recipe:
+
+```
+MOVES_EXIT=0    "pass": true across all assertions
+```
+
+Criterion 4 is satisfied for real once the browser-tier regression is fixed; the regression
+itself is documented under PRD-181 in commit 97f1c0e9 with live RED/GREEN boot probes:
+RED `pageerror: Module "fs/promises" has been externalized for browser compatibility`,
+bridgePresent false → GREEN `BOOT={"bridgePresent":true,"errors":[]}`.
 
 ## Instrument results
 
-- Characterization net: 24/24 green after every phase.
-- Full playtest suite: identical totals per phase — final: 47 files / 468 tests, all green.
+- Characterization net: 24/24 green after every phase AND re-run after the STOP-SHIP fix.
+- Full playtest suite: identical totals per phase — final: 47 files / 468 tests, all green
+  (plus the export-map pin updated for the new ./protocol subpath).
 - Kill-switch sanity (`pnpm tsx scripts/count-loc.ts`): "suggested framework normalised
   baseline: 432 (current baseline 441)" — pure module splits, no new abstraction cost.
 - Honest quality report (NOT regenerated to hide anything):

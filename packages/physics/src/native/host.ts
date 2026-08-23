@@ -133,7 +133,18 @@ export interface INativePhysicsHost {
 }
 
 declare global {
-  var __THREENATIVE_NATIVE__: { readonly physics?: INativePhysicsHost } | undefined;
+  // One global, two residents: the physics host and the playtest mailbox bridge
+  // (packages/playtest/src/three/device.ts reads `playtest`). Declared where the
+  // name was first declared; keep both shapes in sync with their readers.
+  var __THREENATIVE_NATIVE__:
+    | {
+        readonly physics?: INativePhysicsHost;
+        readonly playtest?: {
+          receive?(path: string): string | undefined;
+          respond?(path: string, payload: string): boolean;
+        };
+      }
+    | undefined;
 }
 
 export function nativePhysicsHost(): INativePhysicsHost {

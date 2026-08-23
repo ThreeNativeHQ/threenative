@@ -4,18 +4,39 @@
   "license": "MIT",
   "description": "Scenario-driven playtest harness for Three.js games. Runs on plain Three.js with zero ThreeNative dependencies.",
   "type": "module",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./three": { "types": "./dist/three/index.d.ts", "import": "./dist/three/index.js" },
-    "./capture": { "types": "./dist/capture.d.ts", "import": "./dist/capture.js" },
-    "./runner": { "types": "./dist/runner/index.d.ts", "import": "./dist/runner/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./three": {
+      "types": "./dist/three/index.d.ts",
+      "import": "./dist/three/index.js"
+    },
+    "./capture": {
+      "types": "./dist/capture.d.ts",
+      "import": "./dist/capture.js"
+    },
+    "./runner": {
+      "types": "./dist/runner/index.d.ts",
+      "import": "./dist/runner/index.js"
+    },
     "./package.json": "./package.json"
   },
-  "bin": { "threenative-playtest": "./dist/runner/cli.js" },
+  "bin": {
+    "threenative-playtest": "./dist/runner/cli.js"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -33,8 +54,12 @@
     "three": ">=0.185.0 <0.186.0"
   },
   "peerDependenciesMeta": {
-    "playwright": { "optional": true },
-    "three": { "optional": true }
+    "playwright": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/pngjs": "catalog:",

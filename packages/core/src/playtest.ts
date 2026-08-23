@@ -9,7 +9,7 @@ import {
   type JsonValue,
   PLAYTEST_PROTOCOL_LIMITS,
   assertJsonSafe,
-} from "@threenative/playtest";
+} from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";

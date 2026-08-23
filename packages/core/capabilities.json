@@ -222,6 +222,18 @@
       "symbol": "isWeb"
     },
     {
+      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
+      "example": "const measurement = measureThreePose(model);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
+      "situations": ["inspect a skinned model's posed bounds", "verify a character's visual pose"],
+      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "symbol": "measureThreePose"
+    },
+    {
       "constraints": [
         "skinned height uses a crown bone; game-specific asset expectations stay in render code"
       ],
@@ -239,6 +251,18 @@
       "symbol": "normaliseToMetres"
     },
     {
+      "constraints": ["recordings are version 1; the parser fails closed with TN_REPLAY_* codes"],
+      "example": "const recording = parseReplayRecording(rawRecording);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",
+      "situations": ["validate a recording before replaying it in another host"],
+      "summary": "Validate and parse a replay recording file.",
+      "symbol": "parseReplayRecording"
+    },
+    {
       "constraints": [],
       "example": "const follower = new PathFollow3D(curve, { loop: true });",
       "importPath": "@threenative/core",
@@ -252,6 +276,18 @@
       ],
       "summary": "Move an object along a Three.js curve with Godot-style path following.",
       "symbol": "PathFollow3D"
+    },
+    {
+      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
+      "example": "const measurement = measureThreePose(model);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThreePoseBounds { … }",
+      "situations": ["inspect a skinned model's posed bounds", "verify a character's visual pose"],
+      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
+      "symbol": "posedBounds"
     },
     {
       "constraints": [
@@ -610,7 +646,10 @@
       "symbol": "recast"
     },
     {
-      "constraints": ["bridge values must be JSON-shaped"],
+      "constraints": [
+        "bridge values must be JSON-shaped",
+        "throws instead of silently dropping the offending field"
+      ],
       "example": "assertJsonSafe({ score: 10 });",
       "importPath": "@threenative/playtest",
       "kind": "function",
@@ -619,7 +658,8 @@
       "signature": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
       "situations": [
         "send a safe observation over the playtest bridge",
-        "reject an oversized or cyclic playtest payload"
+        "reject an oversized or cyclic playtest payload",
+        "validate entity components and gameplay observations before crossing the bridge"
       ],
       "summary": "Validate JSON-safe bridge messages and protocol sizes.",
       "symbol": "assertJsonSafe"
@@ -664,7 +704,8 @@
       "signature": "export function jsonByteLength(value: JsonValue): number { … }",
       "situations": [
         "send a safe observation over the playtest bridge",
-        "reject an oversized or cyclic playtest payload"
+        "reject an oversized or cyclic playtest payload",
+        "check a runtime observation against the protocol payload limit before sampling"
       ],
       "summary": "Validate JSON-safe bridge messages and protocol sizes.",
       "symbol": "jsonByteLength"
@@ -698,21 +739,6 @@
       ],
       "summary": "Validate and inspect playtest capability declarations.",
       "symbol": "missingPlaytestCapabilities"
-    },
-    {
-      "constraints": ["malformed recordings throw instead of becoming empty input"],
-      "example": "const recording = parseReplayRecording(rawRecording);",
-      "importPath": "@threenative/playtest",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/playtest",
-      "signature": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",
-      "situations": [
-        "load recorded input for deterministic playback",
-        "validate a replay fixture before running it"
-      ],
-      "summary": "Parse a recorded playtest replay into a validated recording.",
-      "symbol": "parseReplayRecording"
     },
     {
       "constraints": [],
@@ -877,6 +903,34 @@
       "symbol": "inspectFrame"
     },
     {
+      "constraints": ["throws instead of silently dropping the offending field"],
+      "example": "assertJsonSafe(snapshot, \"$.components\");",
+      "importPath": "@threenative/playtest/protocol",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
+      "situations": [
+        "validate entity components and gameplay observations before crossing the bridge"
+      ],
+      "summary": "Reject any value that would not survive JSON serialization.",
+      "symbol": "assertJsonSafe"
+    },
+    {
+      "constraints": [],
+      "example": "const bytes = jsonByteLength(observation);",
+      "importPath": "@threenative/playtest/protocol",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function jsonByteLength(value: JsonValue): number { … }",
+      "situations": [
+        "check a runtime observation against the protocol payload limit before sampling"
+      ],
+      "summary": "Measure a payload's wire size in bytes.",
+      "symbol": "jsonByteLength"
+    },
+    {
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -935,6 +989,21 @@
       ],
       "summary": "Drive and inspect Android playtest transport.",
       "symbol": "androidTouchBatches"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function batchArtifactDirectory(base: string, scenarioPath: string, index: number): string { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "batchArtifactDirectory"
     },
     {
       "constraints": ["missing observations and malformed assertions fail closed"],
@@ -1072,6 +1141,21 @@
       "symbol": "DeviceMailboxTransport"
     },
     {
+      "constraints": ["paths stay inside the managed artifact directory"],
+      "example": "const paths = deviceMailboxPaths(projectRoot);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function deviceTimeoutDiagnostic( diagnostic: IPlaytestProtocolDiagnostic, hostAlive: boolean | undefined, lastConsoleLines: readonly string[], ): IPlaytestProtocolDiagnostic { … }",
+      "situations": [
+        "connect a native host to the playtest runner",
+        "validate an Android or iOS device endpoint"
+      ],
+      "summary": "Resolve a native device transport and its mailbox paths.",
+      "symbol": "deviceTimeoutDiagnostic"
+    },
+    {
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -1172,6 +1256,21 @@
       ],
       "summary": "Drive a local desktop playtest mailbox.",
       "symbol": "LocalDeviceMailbox"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class ManagedServerError extends Error { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "ManagedServerError"
     },
     {
       "constraints": ["missing observations and malformed assertions fail closed"],
@@ -1397,6 +1496,21 @@
       ],
       "summary": "Execute scenario steps, assertions, and evidence capture.",
       "symbol": "resolveManagedServerCommand"
+    },
+    {
+      "constraints": ["missing observations and malformed assertions fail closed"],
+      "example": "const report = await runStandalonePlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function resolveManagedServerConfig( config: IStandalonePlaytestConfig, ): Promise<IStandalonePlaytestConfig> { … }",
+      "situations": [
+        "run a complete browser or device playtest",
+        "capture diagnostics and screenshots from a managed server"
+      ],
+      "summary": "Execute scenario steps, assertions, and evidence capture.",
+      "symbol": "resolveManagedServerConfig"
     },
     {
       "constraints": ["Android evidence must name its target and transport"],
@@ -1634,36 +1748,6 @@
       ],
       "summary": "Install the playtest observation bridge for a plain Three.js game.",
       "symbol": "installThreePlaytestBridge"
-    },
-    {
-      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
-      "example": "const measurement = measureThreePose(model);",
-      "importPath": "@threenative/playtest/three",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/playtest",
-      "signature": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
-      "situations": [
-        "inspect a skinned model's posed bounds",
-        "verify a character's visual pose in a playtest"
-      ],
-      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
-      "symbol": "measureThreePose"
-    },
-    {
-      "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
-      "example": "const measurement = measureThreePose(model);",
-      "importPath": "@threenative/playtest/three",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/playtest",
-      "signature": "export function posedBounds( root: Object3D, meshes?: readonly Object3D[], ): IThreePoseBounds { … }",
-      "situations": [
-        "inspect a skinned model's posed bounds",
-        "verify a character's visual pose in a playtest"
-      ],
-      "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
-      "symbol": "posedBounds"
     },
     {
       "constraints": ["use the device transport selected by the runner"],
