@@ -200,18 +200,36 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       simulation.step(dt, input);
 
       visible = growFloat(visible, bodies.size + areas.size);
-      visibleCount = simulation.readVisibleTransforms(visible);
+      // The simulation may own more bodies than this registry (the deprecated raw-world node
+      // path and direct createBody are both reachable), so a small-buffer refusal grows the
+      // bulk buffer instead of killing every future frame.
+      const maximumVisibleValues = Math.max(
+        64,
+        (bodies.size + areas.size + 1) * 4 * PHYSICS_TRANSFORM_STRIDE,
+      );
+      for (;;) {
+        try {
+          visibleCount = simulation.readVisibleTransforms(visible);
+          break;
+        } catch (error) {
+          if (!isSmallBufferError(error) || visible.length >= maximumVisibleValues) throw error;
+          visible = growFloat(visible, Math.ceil(visible.length / PHYSICS_TRANSFORM_STRIDE) * 2);
+        }
+      }
       for (let index = 0; index < visibleCount; index += 1) {
         const offset = index * PHYSICS_TRANSFORM_STRIDE;
         const id = visibleId(visible, offset);
         const body = bodiesById.get(id);
-        if (body !== undefined) body.applyTransform(visible, offset);
-        else {
-          const area = areas.get(id);
-          if (area === undefined)
-            throw new Error("IPhysicsSimulation returned an unknown visible body id.");
-          area.applyTransform(visible, offset);
+        if (body !== undefined) {
+          body.applyTransform(visible, offset);
+          continue;
         }
+        const area = areas.get(id);
+        if (area !== undefined) {
+          area.applyTransform(visible, offset);
+          continue;
+        }
+        // An unregistered body has no node to sync; that is what unregistered means.
       }
 
       events = growEvents(events, bodies.size + areas.size);
