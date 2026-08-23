@@ -922,6 +922,19 @@
       },
       "desktopGate": false,
       "required": true
+    },
+    {
+      "id": "97-input-restart-lifetime",
+      "title": "listener removal survives a stop-restart cycle",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/input-restart-lifetime.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
     }
   ],
   "generatedPlaytestProofs": [

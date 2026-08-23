@@ -49,7 +49,10 @@ static void applyEmbeddedWindowIcon() {
         : ".threenative/app-icon.png";
     std::vector<uint8_t> bytes;
     if (!vfs::readEmbeddedFile(path, bytes)) {
-        std::cerr << "[Window] Brand icon unavailable in embedded bundle; using compositor default" << std::endl;
+        // Informational degradation, not an error: an unbranded game is legitimate. It goes to
+        // stdout because the playtest runner classifies every stderr line as a console error and
+        // fails the run; a missing icon must not fail anyone's gate.
+        std::cout << "[Window] Brand icon unavailable in embedded bundle; using compositor default" << std::endl;
         return;
     }
     int width = 0;

@@ -275,6 +275,10 @@ export function selectDevice(devices, requestedSerial = null) {
 
 const failureMatchers = [
   { kind: 'first-proof-failure', pattern: /\[ThreeNative Android\]\s+first proof failed:/i },
+  // The generated conformance entry catches every scene throw and logs it here before staying
+  // alive, so without this pattern a failing assertion burned the whole marker timeout and was
+  // reported as a generic timeout instead of itself (PRD-166, probe run of 2026-08-22).
+  { kind: 'scene-failure', pattern: /\[ThreeNative conformance\]\s*failed:/i },
   { kind: 'native-smoke-failure', pattern: /TN_NATIVE_SMOKE_FAILED:/i },
   { kind: 'fatal-signal', pattern: /\bFatal signal\b|\bSIG(?:ABRT|BUS|FPE|ILL|SEGV|TRAP)\b/i },
   { kind: 'range-error', pattern: /\bRangeError\b/i },

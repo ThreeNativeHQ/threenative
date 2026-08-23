@@ -6,6 +6,15 @@ import {
 } from "../../overlay-anchor.mjs";
 import { THREE, startVisualScene } from "./scene-support.js";
 
+// PRD-166 phase 1: this row died on Android as an unattributed SIGABRT that the harness
+// reported as "exited before the conformance marker". These lines form a ladder in logcat so a
+// dead run says how far it walked: module loaded, scene entered, each viewport reached, each
+// viewport passed. A run whose last line is the one before a step names that step as the death.
+const trace = (stage, detail = {}) =>
+  console.info(`TN_PRD166_TRACE:${JSON.stringify({ stage, ...detail })}`);
+
+trace("module-loaded");
+
 const DEPTH = 1.4;
 
 function layoutInPixelSpace(camera, root, overlay, size) {
@@ -29,11 +38,13 @@ function screenPosition(camera, object, size) {
 }
 
 export function startScene(canvas, dimensions) {
+  trace("start-scene");
   return startVisualScene(
     canvas,
     dimensions,
     "camera-parented-overlay",
     ({ renderer, scene, camera }) => {
+      trace("build-entered");
       const world = new THREE.Mesh(
         new THREE.TorusKnotGeometry(0.62, 0.2, 96, 16),
         new THREE.MeshStandardMaterial({ color: 0x718096, roughness: 0.5 }),
@@ -51,12 +62,21 @@ export function startScene(canvas, dimensions) {
 
       // Each viewport resizes the real renderer and renders a frame. The observation comes
       // from the drawing buffer, so removing the resize fails the row rather than passing it.
-      for (const size of overlayRenderPlan(dimensions)) {
+      const plan = overlayRenderPlan(dimensions);
+      for (let index = 0; index < plan.length; index += 1) {
+        const size = plan[index];
+        trace("viewport-begin", { height: size.height, index, width: size.width });
         renderer.setSize(size.width, size.height, false);
+        // Splitting the two native calls a resize iteration makes: on the emulator the process
+        // aborts inside this window with no output of its own, and "between begin and passed"
+        // is not enough to hand the engine lane a named call.
+        trace("set-size-returned", { height: size.height, index, width: size.width });
         layoutInPixelSpace(camera, root, overlay, size);
         renderer.render(scene, camera);
+        trace("render-returned", { height: size.height, index, width: size.width });
         assertRenderedSize(size, { height: canvas.height, width: canvas.width });
         assertAnchorHeld(size, screenPosition(camera, overlay, size));
+        trace("viewport-passed", { height: size.height, index, width: size.width });
       }
       return { overlay, root, world };
     },

@@ -31,6 +31,7 @@ import {
   androidMailboxPaths,
   DeviceBridgeTransport,
   DeviceMailboxTransport,
+  deviceTimeoutDiagnostic,
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
@@ -390,7 +391,17 @@ async function runDevicePlaytestInternal(
     };
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
-      return failureReport(config, scenario, error.diagnostic, target.name);
+      let diagnostic = error.diagnostic;
+      if (diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT") {
+        // A timed-out operation must say what stopped answering: a host whose process exited is
+        // a crash with evidence in its console tail, not a generic timeout (PRD-167).
+        const hostAlive = await target.driver.isAlive().catch(() => undefined);
+        const lastConsoleLines = hostAlive === false
+          ? (await target.driver.captureConsole().catch(() => [])).slice(-6).map((entry) => entry.text)
+          : [];
+        diagnostic = deviceTimeoutDiagnostic(diagnostic, hostAlive, lastConsoleLines);
+      }
+      return failureReport(config, scenario, diagnostic, target.name);
     }
     throw error;
   } finally {

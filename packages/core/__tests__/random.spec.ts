@@ -5,6 +5,7 @@ import { defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
 import { createRandom } from "../src/random.js";
 import { Scene } from "../src/scene.js";
+import { CORE_VERSION } from "../src/version.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -137,7 +138,8 @@ describe("IRandom", () => {
       expect(world).toEqual({
         runtime: {
           agent: typeof navigator === "undefined" ? "node" : navigator.userAgent,
-          core: "0.1.0",
+          // The fingerprint reports the derived package version, not a hardcoded literal.
+          core: CORE_VERSION,
           randomState: 90210,
           rapier: null,
           step: 1 / 60,

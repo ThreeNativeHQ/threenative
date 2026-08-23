@@ -69,7 +69,7 @@ export default game;
 | Package | Version | Purpose |
 | --- | --- | --- |
 | `@threenative/core` | `0.2.0` | Bootstrap, scenes, lifecycle, input, and renderer integration |
-| `create-threenative` | `0.2.2` | Scaffold a readable game project from seven templates |
+| `create-threenative` | `0.2.3` | Scaffold a readable game project from seven templates |
 | `@threenative/physics` | `0.2.1` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | `0.2.0` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | `0.2.0` | Owned C++ host for desktop, Android, and iOS |

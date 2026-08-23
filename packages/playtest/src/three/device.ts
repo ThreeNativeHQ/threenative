@@ -2,11 +2,17 @@ import {
   PLAYTEST_PROTOCOL_LIMITS,
   assertJsonSafe,
   jsonByteLength,
+  playtestDiagnostic,
   type IPlaytestBridgeV1,
   type IPlaytestDeviceRequest,
   type IPlaytestDeviceResponse,
   type JsonValue,
 } from "../index.js";
+
+/** One watchdog tick; timers are the observer that survives a stopped frame pump. */
+const MAILBOX_WATCHDOG_BEAT_MS = 250;
+/** Consecutive unpolled beats before the stall is named: 8 × 250ms = 2000ms. */
+const MAILBOX_POLL_STALL_BEATS = 8;
 
 const BRIDGE_METHODS = new Set<keyof IPlaytestBridgeV1>([
   "advance",
@@ -98,6 +104,24 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   let closed = false;
   let frame: number | undefined;
   const nativePointers = new Map<number, INativePointer>();
+  // The poll loop rides requestAnimationFrame, so a host whose frame pump stops goes silent
+  // with no error anywhere: the app runs, its loop is not pumping, and the runner waits out its
+  // operation timeout. Timers are serviced independently of frames, so a timer-driven watchdog
+  // can observe the stall and name it instead of leaving silence (PRD-167).
+  let watchdogBeats = 0;
+  let polledAtBeat = 0;
+  let stallReported = false;
+  const pollWatchdog = setInterval(() => {
+    watchdogBeats += 1;
+    if (closed || stallReported || watchdogBeats - polledAtBeat < MAILBOX_POLL_STALL_BEATS) return;
+    stallReported = true;
+    const stall = playtestDiagnostic(
+      "TN_PLAYTEST_MAILBOX_POLL_STALLED",
+      `the native mailbox poll has not run for ${MAILBOX_POLL_STALL_BEATS * MAILBOX_WATCHDOG_BEAT_MS}ms while timers still fire; the host's requestAnimationFrame frame pump stopped servicing it`,
+      "Inspect the host for a stopped or crashed frame pump; the mailbox cannot answer until frames resume.",
+    );
+    console.error(`${stall.code}: ${stall.message}`);
+  }, MAILBOX_WATCHDOG_BEAT_MS);
   const respond = (response: IPlaytestDeviceResponse): void => {
     if (!host.respond!(mailbox.response as string, JSON.stringify(response))) {
       console.error("TN_PLAYTEST_DEVICE_TRANSPORT: native mailbox response failed");
@@ -105,6 +129,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   };
   const poll = (): void => {
     if (closed) return;
+    polledAtBeat = watchdogBeats;
     const raw = host.receive!(mailbox.request as string);
     if (raw !== undefined) {
       try {
@@ -124,6 +149,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   return {
     close: () => {
       closed = true;
+      clearInterval(pollWatchdog);
       if (frame !== undefined) globalThis.cancelAnimationFrame(frame);
     },
   };

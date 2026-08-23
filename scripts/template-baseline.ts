@@ -93,12 +93,22 @@ function readCapture(template: string, visualRoot: string): Buffer {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runTemplateBaseline()
-    .then((result) => {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    })
-    .catch((error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
+  void (async () => {
+    const { createGateRecorder } = await import("./gate-records.mjs");
+    const recorder = await createGateRecorder({
+      phase: "template-baseline",
+      command: ["pnpm visuals:baseline", ...process.argv.slice(2)].join(" "),
     });
+    let exit = 0;
+    try {
+      const result = await runTemplateBaseline();
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      exit = 1;
+    } finally {
+      await recorder.finish(exit);
+    }
+    if (exit !== 0) process.exitCode = 1;
+  })();
 }

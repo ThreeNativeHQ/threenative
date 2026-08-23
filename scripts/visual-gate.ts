@@ -465,8 +465,21 @@ export async function runVisualGate(
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runVisualGate().catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+  void (async () => {
+    const { createGateRecorder } = await import("./gate-records.mjs");
+    const recorder = await createGateRecorder({
+      phase: "visual-gate",
+      command: ["pnpm visuals", ...process.argv.slice(2)].join(" "),
+    });
+    let exit = 0;
+    try {
+      await runVisualGate();
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      exit = 1;
+    } finally {
+      await recorder.finish(exit);
+    }
+    if (exit !== 0) process.exitCode = 1;
+  })();
 }

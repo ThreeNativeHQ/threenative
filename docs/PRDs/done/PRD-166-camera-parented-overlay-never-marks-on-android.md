@@ -4,8 +4,14 @@ prd_contract: v1
 
 # PRD-166 — One conformance scene never reaches its marker on the Android emulator, and the harness kills it rather than the scene failing
 
-**Status:** PROPOSED, 2026-08-19. Nothing below has executed as a repair. §1 is the observed
-result of [PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md)'s
+**Status:** COMPLETE, 2026-08-22. Phases 0–3 executed on this machine; every criterion's evidence
+is pasted in `docs/verification/camera-parented-overlay-android-2026-08-22.md`. The harness
+reporting defect is fixed with red/green/mutation-proven fixtures (`abaae6d5`, `556eecc6`), and
+the lane re-ran `66 / 1 / 0` where the one failing row is the named engine defect owned by
+[PRD-183](../batch-2026-08-22/PRD-183-android-surface-reconfigure-abort.md) — a named defect,
+never a timeout. The residual row-pass (`67 / 0 / 0`) paste belongs to PRD-183's acceptance and
+its Phase 3 verification arm, not to this file. Filed PROPOSED 2026-08-19; §1 is the observed
+result of [PRD-160](PRD-160-android-emulator-lane-repair-and-parity-adjudication.md)'s
 adjudicating run and its logcat, quoted verbatim. **No physical-device, iOS, or mobile-readiness
 claim is made or licensed by anything in this file.**
 
@@ -17,7 +23,7 @@ reach `67 / 0 / 0` on this machine instead of `66 / 1 / 0`.
 that used to hide this row behind `TN_ANDROID_FOCUS_UNKNOWN`.
 
 **Blocks:** the Android lane exiting `0`. It does not block beta row 4's adjudication, which
-[PRD-160](../done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) settled.
+[PRD-160](PRD-160-android-emulator-lane-repair-and-parity-adjudication.md) settled.
 
 **Complexity: 4 → MEDIUM mode.** One scene, one timeout path, one seam between the harness's
 marker wait and the scene's own render loop.

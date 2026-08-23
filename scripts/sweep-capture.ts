@@ -106,10 +106,21 @@ function main(): void {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    main();
-  } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  }
+  void (async () => {
+    const { createGateRecorder } = await import("./gate-records.mjs");
+    const recorder = await createGateRecorder({
+      phase: "sweep-capture",
+      command: ["pnpm sweep:capture", ...process.argv.slice(2)].join(" "),
+    });
+    let exit = 0;
+    try {
+      main();
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      exit = 1;
+    } finally {
+      await recorder.finish(exit);
+    }
+    if (exit !== 0) process.exitCode = 1;
+  })();
 }

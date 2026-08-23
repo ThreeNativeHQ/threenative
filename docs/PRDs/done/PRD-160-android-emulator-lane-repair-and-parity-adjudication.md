@@ -12,7 +12,7 @@ PRD-160 runs to reach pixel comparison at all. **`parity-2026-08-10-r2`'s `67 / 
 and `tier-1-2026-08-10`'s `27 / 40 / 0` is retired on its Android row**, each with a scoped banner.
 Beta row 4's Android half has one number instead of two for the first time since 2026-08-11, and it
 is **not green**: the lane exits `1` on one row that never reaches its marker, filed as
-[PRD-166](../batch-2026-08-22/PRD-166-camera-parented-overlay-never-marks-on-android.md). Evidence:
+[PRD-166](../done/PRD-166-camera-parented-overlay-never-marks-on-android.md). Evidence:
 [`android-parity-2026-08-19.md`](../../verification/android-parity-2026-08-19.md).
 **No physical-device, iOS, arm64, frame-rate or mobile-readiness claim is made or licensed by
 anything in this file. The emulator proves the emulator.**

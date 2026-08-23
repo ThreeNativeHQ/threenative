@@ -4,7 +4,16 @@ prd_contract: v1
 
 # PRD-167 — The desktop playtest mailbox goes silent after a replay
 
-**Status:** OPEN, 2026-08-20. Filed from an observed flake, not from a theory.
+**Status:** COMPLETE, 2026-08-22. Filed from an observed flake, not from a theory. Diagnosed and
+repaired the same day: the silence was a use-after-free in the native host's DOM-event dispatch
+(setupDOMEvents captured document/window handles by value; frame cleanup freed them), fixed by
+`25b5a194`, and the mailbox now names every failure mode it can hit instead of going quiet
+(`TN_PLAYTEST_MAILBOX_POLL_STALLED` app-side watchdog, `TN_PLAYTEST_HOST_EXITED` runner-side,
+existing `TN_PLAYTEST_OPERATION_TIMEOUT` for live-host stalls). Evidence:
+[desktop-mailbox-2026-08-22.md](../../verification/desktop-mailbox-2026-08-22.md) — reproduction
+with the frame pump observed, gdb stack, red/green for the diagnostics, and ten consecutive
+passing desktop runs (`stateHash = 1884960806`) after the repair and a fixture regeneration
+forced by core's version constant moving to the generated package version.
 
 **Outcome:** the desktop `--target desktop` playtest either answers every operation it is sent, or
 fails with a named diagnostic that says what stopped answering. A gate that passes half the time is

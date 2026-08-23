@@ -1587,6 +1587,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/physics_actuation_bindings_test.cpp)
     target_link_libraries(threenative-physics-actuation-bindings-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
+        tests/dom_dispatch_lifetime_test.cpp)
+    target_link_libraries(threenative-dom-dispatch-lifetime-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-input-restart-test EXCLUDE_FROM_ALL
+        tests/input_restart_test.cpp)
+    target_link_libraries(threenative-input-restart-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-shutdown-lifetime-test EXCLUDE_FROM_ALL
+        tests/shutdown_lifetime_test.cpp)
+    target_link_libraries(threenative-shutdown-lifetime-test PRIVATE mystral-runtime)
+
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)
         target_include_directories(mystral PRIVATE ${WEBP_INCLUDE_DIR})

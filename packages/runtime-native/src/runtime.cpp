@@ -3764,6 +3764,12 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // Create document object
         // ========================================================================
         auto document = jsEngine_->newObject();
+        // The dispatchEvent lambda below captures this handle by value and must stay valid for
+        // the process lifetime. Unprotected, clearFrameHandles() deletes its backing persistent
+        // at the end of the first frame and every later dispatch re-enters V8 through freed
+        // memory (the PRD-167 SIGSEGV inside UpdateDescriptorForValue). The canvas handle gets
+        // the same protection via canvasElement_ below.
+        jsEngine_->protect(document);
         jsEngine_->setProperty(document, "pointerLockElement", jsEngine_->newNull());
 
         // document.addEventListener
@@ -3785,17 +3791,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // document.removeEventListener
         jsEngine_->setProperty(document, "removeEventListener",
             jsEngine_->newFunction("removeEventListener", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                if (args.size() < 2) return jsEngine_->newUndefined();
-
-                std::string eventType = jsEngine_->toString(args[0]);
-                js::JSValueHandle callback = args[1];
-
-                auto& listeners = eventListeners_["document"][eventType];
-                for (auto it = listeners.begin(); it != listeners.end(); ++it) {
-                    // Note: Comparing function handles is tricky. For now, we don't properly compare.
-                    // A full implementation would need to track callback identity.
-                }
-
+                removeEventListenerFromTarget("document", args);
                 return jsEngine_->newUndefined();
             })
         );
@@ -3955,6 +3951,9 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // Create window object with event listeners
         // Note: We use the global object as window, and also set 'window' as a global property
         auto window = jsEngine_->getGlobal();
+        // Same lifetime rule as document above: the dispatchEvent lambda captures this handle
+        // by value, so it must survive clearFrameHandles() at the end of every frame.
+        jsEngine_->protect(window);
         jsEngine_->setGlobalProperty("window", window);
 
         // Set 'self' to point to global object (required by Three.js and other libs)
@@ -3983,6 +3982,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // window.removeEventListener
         jsEngine_->setProperty(window, "removeEventListener",
             jsEngine_->newFunction("removeEventListener", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                removeEventListenerFromTarget("window", args);
                 return jsEngine_->newUndefined();
             })
         );

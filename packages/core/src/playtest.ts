@@ -16,8 +16,8 @@ import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 import type { ICtx } from "./scene.js";
+import { CORE_VERSION } from "./version.js";
 
-const CORE_VERSION = "0.1.0";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
 
 /**

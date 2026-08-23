@@ -7,7 +7,7 @@ observation rather than as a result of any PRD in it.
 **Closed 2026-08-20.** All four PRDs executed and landed on `main`; this folder is archived. Their
 results are not uniform: 163, 164 and 165 closed green, and 162 closed **red with attribution** on
 the exclusivity condition, which §8 of that PRD names as a permitted ending. The follow-up it
-raised is [PRD-167](../../batch-2026-08-22/PRD-167-desktop-playtest-mailbox-goes-silent.md).
+raised is [PRD-167](../../done/PRD-167-desktop-playtest-mailbox-goes-silent.md).
 
 ## Why this batch, tonight
 

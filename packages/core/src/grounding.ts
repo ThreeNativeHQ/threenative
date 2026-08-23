@@ -1,5 +1,5 @@
-import { measureThreePose, posedBounds } from "@threenative/playtest/three";
 import { Matrix4, type Object3D, Vector3 } from "three";
+import { measureThreePose, posedBounds } from "./pose-measure.js";
 
 export interface IGroundSnapOptions {
   /** Whether to apply the correction. Measurement and `clearance` continue when this is false. */

@@ -1,6 +1,6 @@
-import { type IReplayRecording, parseReplayRecording } from "@threenative/playtest";
 import type { IGamePluginHooks, IGamePluginRuntime } from "./game.js";
-const CORE_VERSION = "0.1.0";
+import { type IReplayRecording, parseReplayRecording } from "./replay-protocol.js";
+import { CORE_VERSION } from "./version.js";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
 type Pointer = readonly [number, number, number, number, number];
 type Point = readonly [number, number, number];

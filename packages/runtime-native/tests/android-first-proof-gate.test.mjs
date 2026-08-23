@@ -138,6 +138,7 @@ test('fatal signals, RangeError, and WebGPU failures reject an otherwise ready l
     ['webgpu-error', 'E wgpu: Device validation error: invalid command buffer'],
     ['shader-error', 'E wgpu: Device::create_shader_module error: Shader parsing error'],
     ['first-proof-failure', '[ThreeNative Android] first proof failed: Error: adapter unavailable'],
+    ['scene-failure', '[ThreeNative conformance] failed: Error: assertion exploded'],
   ];
 
   for (const [expectedKind, line] of cases) {
@@ -145,6 +146,25 @@ test('fatal signals, RangeError, and WebGPU failures reject an otherwise ready l
     assert.equal(result.markerFound, true);
     assert.ok(result.failures.some(({ kind }) => kind === expectedKind), `${expectedKind} was not classified: ${line}`);
   }
+});
+
+test('a conformance scene failure logged through console.error rejects the row with its own message', () => {
+  // Pinned to PRD-166's throw-probe run of 2026-08-22T14:27:13.005. The generated native entry
+  // catches scene throws and prints this exact shape; the process then stays alive. Before the
+  // scene-failure matcher existed, analyzeAppLog recognized nothing here, so the harness burned
+  // its entire TN_ANDROID_TIMEOUT_MS window and recorded a generic timeout instead of the
+  // failing assertion — an assertion that fails must report as itself.
+  const log = [
+    '08-22 14:27:12.784  7304  7323 I MystralJS: [info] TN_NATIVE_SMOKE_READY:webgpu',
+    '08-22 14:27:13.002  7304  7323 I MystralJS: [info] TN_PRD166_TRACE:{"stage":"viewport-begin","index":1,"width":1024,"height":768}',
+    '08-22 14:27:13.005  7304  7323 I MystralJS: [error] [ThreeNative conformance] failed: Error: TN_PRD166_PROBE_THROW: deliberate probe failure',
+    '08-22 14:27:13.005  7304  7323 I MystralJS: [error]     at startScene (conformance/scenes/shared/camera-parented-overlay.js:54:17)',
+  ].join('\n');
+
+  const result = analyzeAppLog(log);
+  const failure = result.failures.find(({ kind }) => kind === 'scene-failure');
+  assert.ok(failure, 'the caught-and-logged scene failure was not classified');
+  assert.match(failure.excerpt, /TN_PRD166_PROBE_THROW: deliberate probe failure/u);
 });
 
 test('log filtering keeps the target pid and drops unrelated RangeErrors', () => {

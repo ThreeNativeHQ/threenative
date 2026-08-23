@@ -50,18 +50,3 @@ export type { IThreePlaytestPhysics, IThreePlaytestPhysicsBody } from "./physics
 export { connectDevicePlaytestBridge, readPlaytestEndpoint } from "./device.js";
 export type { IDeviceBridgeInstallation } from "./device.js";
 export type { IThreePlaytestEntity } from "./entities.js";
-/**
- * Measure a Three.js pose for grounded or attachment-aware checks.
- * @situation inspect a skinned model's posed bounds
- * @situation verify a character's visual pose in a playtest
- * @constraint precise per-vertex measurement is opt-in and not for frame loops
- * @example const measurement = measureThreePose(model);
- */
-export { measureThreePose, posedBounds } from "./pose.js";
-export type {
-  IMeasureThreePoseOptions,
-  IThreePoseBounds,
-  IThreePoseMeasurement,
-  ThreePoseQuaternion,
-  ThreePoseVector,
-} from "./pose.js";

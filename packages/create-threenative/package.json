@@ -30,7 +30,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build && publint --strict"
+    "test": "publint --strict"
   },
   "dependencies": {
     "three": "catalog:"

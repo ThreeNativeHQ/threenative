@@ -79,15 +79,8 @@ export type {
   IPlaytestWorldRuntimeObservation,
   JsonValue,
 } from "./protocol.js";
-/**
- * Parse a recorded playtest replay into a validated recording.
- * @situation load recorded input for deterministic playback
- * @situation validate a replay fixture before running it
- * @constraint malformed recordings throw instead of becoming empty input
- * @example const recording = parseReplayRecording(rawRecording);
- */
-export { parseReplayRecording } from "./replay.js";
-export type { IReplayRecording, IReplayRecordingSample, ReplayPointer } from "./replay.js";
+// The replay wire protocol moved to @threenative/core (PRD-181); playtest no longer ships
+// its own copy. Import it from `@threenative/core` if a harness needs the parser.
 export type {
   IPlaytestCaptureProvenance,
   IPlaytestDiagnosticsPolicy,

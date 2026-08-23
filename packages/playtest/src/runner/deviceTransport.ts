@@ -7,6 +7,7 @@ import {
   playtestDiagnostic,
   type IPlaytestDeviceRequest,
   type IPlaytestDeviceResponse,
+  type IPlaytestProtocolDiagnostic,
   type JsonValue,
 } from "../index.js";
 import { type IBridgeTransport, PlaytestBridgeError } from "./bridgeClient.js";
@@ -238,6 +239,31 @@ export function androidMailboxPaths(
   root = `/sdcard/Android/data/${packageName}/files`,
 ): IDeviceMailboxPaths {
   return deviceMailboxPaths(root);
+}
+
+/**
+ * Names what stopped answering when an operation times out (PRD-167).
+ *
+ * A timed-out operation is ambiguous between two failures with different owners: a host whose
+ * process died mid-run, and a live host whose mailbox stopped polling. When the driver can prove
+ * the process exited, the diagnostic says so and carries the host's last console lines — a crash
+ * message must not be hidden behind a generic timeout.
+ */
+export function deviceTimeoutDiagnostic(
+  diagnostic: IPlaytestProtocolDiagnostic,
+  hostAlive: boolean | undefined,
+  lastConsoleLines: readonly string[],
+): IPlaytestProtocolDiagnostic {
+  if (diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT") return diagnostic;
+  if (hostAlive !== false) return diagnostic;
+  const tail = lastConsoleLines.length === 0
+    ? "the host produced no further output"
+    : `last host output: ${lastConsoleLines.map((line) => line.slice(0, 160)).join(" | ").slice(0, 1_000)}`;
+  return playtestDiagnostic(
+    "TN_PLAYTEST_HOST_EXITED",
+    `${diagnostic.message}; the host process has exited — ${tail}`,
+    "Inspect the named host output for the first native or JavaScript error; rerun the same scenario after fixing it.",
+  );
 }
 
 export function deviceMailboxPaths(root: string): IDeviceMailboxPaths {

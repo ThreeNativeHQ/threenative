@@ -820,6 +820,29 @@ function androidPid(adb, serial) {
     : null;
 }
 
+/**
+ * A death before the marker used to be reported bare, and a bare message is what made
+ * `25-camera-parented-overlay` opaque for a week (PRD-166): the row died natively mid-scene and
+ * its last logged act — which scene stage it reached — never reached the report. Append the tail
+ * of the app's own filtered log so the recorded failure names where the process was when it
+ * went. Bounded: this rides inside an error message.
+ */
+export function androidDeathExcerpt(message, appLog) {
+  // Prefer the app's own TN_* diagnostic lines: after a native death the filtered log's last
+  // lines are Window Manager chatter that merely names the app, and a raw tail slice lets that
+  // chatter crowd out the scene trace saying which stage the process reached (PRD-166 phase 3).
+  const diagnostics = String(appLog || "")
+    .split(/\r?\n/u)
+    .filter((line) => /\bTN_[A-Z0-9_]+:/.test(line));
+  const tail = diagnostics
+    .slice(-3)
+    .join(" | ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(-400);
+  return tail.length > 0 ? `${message} Last app output: ${tail}` : message;
+}
+
 function androidLog(adb, serial) {
   return String(
     runCommand(adb, androidArgs(serial, "logcat", "-d", "-v", "threadtime"), {
@@ -1107,7 +1130,7 @@ async function runAndroid(
       if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
       if (appLog.includes(marker)) break;
       if (pid && !androidPid(tools.adb, serial))
-        throw new Error("Android process exited before the conformance marker.");
+        throw new Error(androidDeathExcerpt("Android process exited before the conformance marker.", appLog));
       await wait(500);
     }
     if (!appLog.includes(marker)) throw new Error(`Android timed out waiting for ${marker}.`);
@@ -1817,8 +1840,31 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === runnerPath) {
-  main().catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
-    process.exitCode = 1;
-  });
+  // Lane children re-execute this file (the multi-target loop below spawns runnerPath).
+  // Only the outermost invocation owns the gate record and worktree lease; nested ones
+  // are covered by their parent's single record.
+  if (process.env.TN_GATE_NESTED === "1") {
+    main().catch((error) => {
+      process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+      process.exitCode = 1;
+    });
+  } else {
+    process.env.TN_GATE_NESTED = "1";
+    void (async () => {
+      const { createGateRecorder } = await import("../../../scripts/gate-records.mjs");
+      const gateRecorder = await createGateRecorder({
+        phase: "parity",
+        command: ["pnpm parity", ...process.argv.slice(2)].join(" "),
+      });
+      try {
+        await main();
+      } catch (error) {
+        process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+        process.exitCode = 1;
+      } finally {
+        // main() communicates its own result through process.exitCode; record what ran.
+        await gateRecorder.finish(process.exitCode ?? 0);
+      }
+    })();
+  }
 }

@@ -9,5 +9,4 @@ export default defineConfig({
   clean: true,
   splitting: false,
   treeshake: true,
-  noExternal: ["@threenative/playtest"],
 });

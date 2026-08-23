@@ -27,16 +27,16 @@
     "access": "public"
   },
   "sideEffects": false,
+  "scripts": {
+    "postinstall": "node ./scripts/ensure-mcp.mjs",
+    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "publint --strict"
+  },
   "dependencies": {
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
     "zustand": "catalog:"
-  },
-  "scripts": {
-    "postinstall": "node ./scripts/ensure-mcp.mjs",
-    "build": "tsup --config tsup.config.ts && publint",
-    "typecheck": "tsc --noEmit",
-    "test": "publint --strict"
   },
   "devDependencies": {
     "@types/three": "0.185.3",
@@ -44,5 +44,13 @@
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@threenative/playtest": ">=0.2.0 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@threenative/playtest": {
+      "optional": true
+    }
   }
 }

@@ -107,6 +107,21 @@ export { PathFollow3D } from "./path-follow.js";
  */
 export { GroundSnap } from "./grounding.js";
 export type { IGroundSnapOptions } from "./grounding.js";
+/**
+ * Measure a Three.js pose for grounded or attachment-aware checks.
+ * @situation inspect a skinned model's posed bounds
+ * @situation verify a character's visual pose
+ * @constraint precise per-vertex measurement is opt-in and not for frame loops
+ * @example const measurement = measureThreePose(model);
+ */
+export { measureThreePose, posedBounds } from "./pose-measure.js";
+export type {
+  IMeasureThreePoseOptions,
+  IThreePoseBounds,
+  IThreePoseMeasurement,
+  ThreePoseQuaternion,
+  ThreePoseVector,
+} from "./pose-measure.js";
 export type {
   IPathFollow3DOptions,
   IPathFollow3DProjection,
@@ -143,6 +158,18 @@ export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
  */
 export { createReplayDriver, replay } from "./replay.js";
 export type { IReplayOptions, Recording } from "./replay.js";
+/**
+ * Validate and parse a replay recording file.
+ * @situation validate a recording before replaying it in another host
+ * @constraint recordings are version 1; the parser fails closed with TN_REPLAY_* codes
+ * @example const recording = parseReplayRecording(rawRecording);
+ */
+export { parseReplayRecording } from "./replay-protocol.js";
+export type {
+  IReplayRecording,
+  IReplayRecordingSample,
+  ReplayPointer,
+} from "./replay-protocol.js";
 /**
  * Schedule delayed and repeating callbacks with game-owned cleanup.
  * @situation delay an enemy patrol transition

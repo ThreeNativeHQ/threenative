@@ -1512,6 +1512,11 @@ function positiveInteger(value, flag) {
 }
 
 if (process.argv[1] && new URL(`file://${process.argv[1]}`).pathname === new URL(import.meta.url).pathname) {
+  const { createGateRecorder } = await import('../../../scripts/gate-records.mjs');
+  const gateRecorder = await createGateRecorder({
+    phase: 'profile-production',
+    command: ['pnpm profile:production', ...process.argv.slice(2)].join(' '),
+  });
   try {
     const result = await runProductionProfile(parseProductionArgs());
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -1521,5 +1526,8 @@ if (process.argv[1] && new URL(`file://${process.argv[1]}`).pathname === new URL
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${JSON.stringify({ codes: [code], message, status: 'BLOCKED', exitCode: 2 }, null, 2)}\n`);
     process.exitCode = 2;
+  } finally {
+    // main() communicates its own result through process.exitCode; record what actually ran.
+    await gateRecorder.finish(process.exitCode ?? 0);
   }
 }

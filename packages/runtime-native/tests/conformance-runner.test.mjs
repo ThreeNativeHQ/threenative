@@ -27,6 +27,7 @@ import {
 } from "../conformance/project-mode.mjs";
 import {
   androidDeviceKind,
+  androidDeathExcerpt,
   androidDependencyBlocker,
   ANDROID_CAPTURE_SIZE,
   androidDisplayRestoreTarget,
@@ -716,4 +717,25 @@ test("Android checks liveness after its marker, settle window, and screenshot", 
 test("Linux desktop parity selects SDL X11 because the native surface does not support Wayland", () => {
   const source = readFileSync(runner, "utf8");
   assert.match(source, /process\.platform === "linux"[\s\S]*SDL_VIDEODRIVER: "x11"/u);
+});
+
+test("a pre-marker death excerpt carries the app's own diagnostic lines, not death chatter", () => {
+  // PRD-166 phase 3: the full-lane rerun's row error appended a raw 400-char tail that was
+  // Window Manager lines merely naming the app, crowding out the scene trace that names the
+  // stage the process reached. The excerpt must prefer the app's TN_* diagnostics and fall back
+  // to the bare message when the log has none.
+  const log = [
+    "08-22 15:14:15.900  8101  8120 I MystralJS: [info] TN_PRD166_TRACE:{\"stage\":\"viewport-begin\",\"index\":1,\"width\":1024,\"height\":768}",
+    "08-22 15:14:15.901  8101  8120 I MystralJS: [info] TN_PRD166_TRACE:{\"stage\":\"set-size-returned\",\"index\":1,\"width\":1024,\"height\":768}",
+    "08-22 15:14:16.156   588  1949 W ActivityTaskManager: Unable to send transaction to client proc com.threenative.game: no app thread",
+  ].join("\n");
+
+  const excerpt = androidDeathExcerpt("Android process exited before the conformance marker.", log);
+  assert.match(excerpt, /Android process exited before the conformance marker\./u);
+  assert.match(excerpt, /set-size-returned/u, "the app's last diagnostic line must survive");
+  assert.doesNotMatch(excerpt, /no app thread/u, "death chatter must not crowd out diagnostics");
+  assert.equal(
+    androidDeathExcerpt("Android process exited before the conformance marker.", ""),
+    "Android process exited before the conformance marker.",
+  );
 });

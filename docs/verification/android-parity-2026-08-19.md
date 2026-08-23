@@ -61,7 +61,7 @@ because its marker never arrived.
 It is the same scene `tier-1-2026-08-10` recorded failing the *desktop* lane on GPU validation —
 mismatched depth and colour attachment sizes after resize — which a 2026-08-15 desktop run measured
 passing. It is the only conformance scene that resizes the swapchain mid-scene. That attribution is
-[PRD-166](../PRDs/batch-2026-08-22/PRD-166-camera-parented-overlay-never-marks-on-android.md), not this ledger; this
+[PRD-166](../PRDs/done/PRD-166-camera-parented-overlay-never-marks-on-android.md), not this ledger; this
 run establishes that the row is a marker timeout and not a pixel result, and stops there.
 
 ### Evidence boundary

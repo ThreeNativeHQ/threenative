@@ -105,23 +105,13 @@ run_phase() {
     return "$guard_status"
   fi
 
-  pnpm exec tsx scripts/gate-status.ts start \
+  node scripts/gate-records.mjs start \
     --status-path "$status_path" \
     --run-id "$run_id" \
     --phase "$phase" \
     --owner "$lease_owner" \
-    --owner-pid "$lease_pid" \
     --pid "$lease_pid" \
-    --command "$command_text" \
-    --worktree-path "$repository_root" \
-    --branch "$lease_branch" \
-    --head "$lease_head" \
-    --lease-path "$repository_root" \
-    --lease-owner "$lease_owner" \
-    --lease-pid "$lease_pid" \
-    --expected-head "$lease_head" \
-    --artifact-path "$status_path" \
-    --artifact-id "${run_id}:${phase}"
+    --command "$command_text"
   status_start=$?
   if [[ "$status_start" -ne 0 ]]; then
     return "$status_start"
@@ -135,12 +125,11 @@ run_phase() {
       if ! kill -0 "$child_pid" >/dev/null 2>&1; then
         break
       fi
-      pnpm exec tsx scripts/gate-status.ts heartbeat \
+      node scripts/gate-records.mjs heartbeat \
         --status-path "$status_path" \
         --run-id "$run_id" \
         --phase "$phase" \
         --owner "$lease_owner" \
-        --owner-pid "$lease_pid" \
         --pid "$lease_pid" >/dev/null 2>&1 || exit 0
       pnpm exec tsx scripts/worktree-lifecycle.ts heartbeat \
         --run-id "$run_id" \
@@ -157,12 +146,11 @@ run_phase() {
   wait "$heartbeat_pid" >/dev/null 2>&1 || true
   heartbeat_pid=0
 
-  pnpm exec tsx scripts/gate-status.ts finish \
+  node scripts/gate-records.mjs finish \
     --status-path "$status_path" \
     --run-id "$run_id" \
     --phase "$phase" \
     --owner "$lease_owner" \
-    --owner-pid "$lease_pid" \
     --pid "$lease_pid" \
     --exit-code "$child_status"
   status_finish=$?

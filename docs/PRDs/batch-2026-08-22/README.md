@@ -20,7 +20,7 @@ it is deterministic, freshly evidenced, and the example fixture currently cannot
 
 Estimate: half a day including the mutation proof (criterion 3).
 
-## 2. [PRD-167](./PRD-167-desktop-playtest-mailbox-goes-silent.md) — desktop playtest mailbox goes silent after replay
+## 2. [PRD-167](../done/PRD-167-desktop-playtest-mailbox-goes-silent.md) — COMPLETE 2026-08-22 — desktop playtest mailbox goes silent after replay
 
 Flaky hang: 2 of 4 runs exit `2` with `TN_PLAYTEST_OPERATION_TIMEOUT` while the app itself stays
 alive and already executed the capability under test. A gate that hangs without a cause poisons
@@ -29,7 +29,7 @@ the PRD-162 scenario.
 
 Estimate: unknown until the cause is named; budget half a day to the named-diagnostic criterion.
 
-## 3. [PRD-166](./PRD-166-camera-parented-overlay-never-marks-on-android.md) — emulator scene never reaches its marker
+## 3. [PRD-166](../done/PRD-166-camera-parented-overlay-never-marks-on-android.md) — COMPLETE 2026-08-22 — emulator scene never reaches its marker
 
 The Android lane exits `1` on `25-camera-parented-overlay`, keeping it at `66 / 1 / 0`. The emulator
 lane runs unattended on this machine, so this is fully actionable without hardware — but it is the
