@@ -42,7 +42,7 @@
     "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --test parity -- --nocapture",
     "native:physics:parity:device": "node scripts/verify-android-physics-parity.mjs",
     "native:qualify:physical": "node scripts/qualify-physical-mobile.mjs",
-    "native:verify:desktop": "node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs",
+    "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs",
     "native:verify:android:multitouch": "pnpm --dir ../playtest build && node scripts/verify-android-multitouch.mjs",
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",

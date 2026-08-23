@@ -22,6 +22,30 @@ static std::unordered_map<void*, std::unique_ptr<PannerNode>> g_pannerNodes;
 
 static js::Engine* g_jsEngine = nullptr;
 
+// A real Promise settled with a value that already exists as a live JS handle. `Promise.resolve`
+// is read off the global rather than built with `evalWithResult` because the settled value is an
+// object handle, not something that can be written into a source string.
+static js::JSValueHandle settledPromise(js::Engine* engine, const char* method,
+                                        js::JSValueHandle value) {
+    const js::JSValueHandle promiseCtor = engine->getGlobalProperty("Promise");
+    const bool haveCtor = engine->isObject(promiseCtor) || engine->isFunction(promiseCtor);
+    const js::JSValueHandle settle =
+        haveCtor ? engine->getProperty(promiseCtor, method) : engine->newUndefined();
+    if (!engine->isFunction(settle)) {
+        engine->throwException("The native Web Audio surface requires a global Promise.");
+        return engine->newUndefined();
+    }
+    return engine->call(settle, promiseCtor, {value});
+}
+
+// Browsers reject `decodeAudioData` with an exception object, not a string, and hand the same
+// value to the legacy `onError` callback.
+static js::JSValueHandle newAudioError(js::Engine* engine, const char* message) {
+    const js::JSValueHandle ctor = engine->getGlobalProperty("Error");
+    if (!engine->isFunction(ctor)) return engine->newString(message);
+    return engine->call(ctor, engine->newUndefined(), {engine->newString(message)});
+}
+
 static void installAudioNodeBindings(js::Engine* engine, js::JSValueHandle jsNode,
                                      AudioNode* nodePtr) {
     engine->setPrivateData(jsNode, nodePtr);
@@ -469,11 +493,11 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
         })
     );
 
-    // decodeAudioData(arrayBuffer, onSuccess?, onError?) -> thenable<AudioBuffer>
+    // decodeAudioData(arrayBuffer, onSuccess?, onError?) -> Promise<AudioBuffer>
     //
-    // The return value has to be then-able, and for a long time it was not: this returned the
-    // decoded `AudioBuffer` directly on success and `undefined` on every failure path, with a
-    // comment saying a Promise belonged there. Three.js `AudioLoader` ends its load with
+    // The return value has to be a Promise, and twice it was not. First it returned the decoded
+    // `AudioBuffer` directly on success and `undefined` on every failure path, with a comment
+    // saying a Promise belonged there. Three.js `AudioLoader` ends its load with
     //
     //     context.decodeAudioData(buffer, onSuccess).catch(handleError)
     //
@@ -482,9 +506,13 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
     // the game before its first frame. That is a black screen on device with nothing in logcat
     // except the rejection, and it takes down any game that loads a sound Three's way.
     //
-    // Decoding here is synchronous, so a real Promise is not needed to be correct — only
-    // something that honours `.then`/`.catch`. This returns a settled thenable and also invokes
-    // the legacy callbacks, which is what the Web Audio spec requires of both call styles.
+    // The repair for that was a hand-rolled thenable, which fixed exactly Three's one shape.
+    // Its `then` ran the handler and returned `undefined`, so `.then(use).catch(report)` still
+    // threw on `undefined.catch`, `.then(a).then(b)` broke a chain of two, and
+    // `result instanceof Promise` was false. Decoding here is synchronous, so the Promise is
+    // already settled when it is handed back; that is the only latitude the contract allows.
+    // The legacy callbacks fire as well, which is what the Web Audio spec requires of both
+    // call styles.
     engine->setProperty(jsCtx, "decodeAudioData",
         engine->newFunction("decodeAudioData", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) -> js::JSValueHandle {
             auto* engine = g_jsEngine;
@@ -512,7 +540,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
 
             const bool ok = failure == nullptr;
             const js::JSValueHandle settled =
-                ok ? createAudioBufferJS(engine, buffer) : engine->newString(failure);
+                ok ? createAudioBufferJS(engine, buffer) : newAudioError(engine, failure);
             if (!ok) std::cerr << "[Audio] " << failure << std::endl;
 
             // Legacy callback style, delivered before the thenable is handed back so a caller
@@ -524,27 +552,9 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
                 engine->call(onError, undefinedValue, {settled});
             }
 
-            // A settled thenable. `then` runs the matching handler immediately and hands back
-            // another thenable so chains keep working; `catch` is `then(undefined, handler)`.
-            js::JSValueHandle thenable = engine->newObject();
-            engine->setProperty(thenable, "then",
-                engine->newFunction("then", [ok, settled](void*, const std::vector<js::JSValueHandle>& handlers) -> js::JSValueHandle {
-                    auto* inner = g_jsEngine;
-                    const size_t index = ok ? 0 : 1;
-                    if (handlers.size() > index && inner->isFunction(handlers[index])) {
-                        inner->call(handlers[index], inner->newUndefined(), {settled});
-                    }
-                    return inner->newUndefined();
-                }));
-            engine->setProperty(thenable, "catch",
-                engine->newFunction("catch", [ok, settled](void*, const std::vector<js::JSValueHandle>& handlers) -> js::JSValueHandle {
-                    auto* inner = g_jsEngine;
-                    if (!ok && !handlers.empty() && inner->isFunction(handlers[0])) {
-                        inner->call(handlers[0], inner->newUndefined(), {settled});
-                    }
-                    return inner->newUndefined();
-                }));
-            return thenable;
+            // A settled Promise from the engine's own constructor, so `instanceof Promise`
+            // holds, handlers run as microtasks, and every chain a browser supports chains.
+            return settledPromise(engine, ok ? "resolve" : "reject", settled);
         })
     );
 

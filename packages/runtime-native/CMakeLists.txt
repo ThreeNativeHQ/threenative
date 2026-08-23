@@ -1583,6 +1583,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-audio-graph-test EXCLUDE_FROM_ALL tests/audio_graph_test.cpp)
     target_link_libraries(threenative-audio-graph-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-audio-decode-promise-test EXCLUDE_FROM_ALL
+        tests/audio_decode_promise_test.cpp)
+    target_link_libraries(threenative-audio-decode-promise-test PRIVATE mystral-runtime)
+
     add_executable(threenative-physics-actuation-bindings-test EXCLUDE_FROM_ALL
         tests/physics_actuation_bindings_test.cpp)
     target_link_libraries(threenative-physics-actuation-bindings-test PRIVATE mystral-runtime)
