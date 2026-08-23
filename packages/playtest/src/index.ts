@@ -58,6 +58,7 @@ export type { IPlaytestProtocolDiagnostic } from "./diagnostics.js";
  */
 export {
   PLAYTEST_BRIDGE_GLOBAL,
+  PLAYTEST_FROZEN_MARKER,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
@@ -85,6 +86,8 @@ export type {
   IPlaytestCaptureProvenance,
   IPlaytestDiagnosticsPolicy,
   IPlaytestReport,
+  IPlaytestSetupApplication,
+  IPlaytestSetupRecord,
   IPlaytestTrivialityOptOut,
   PlaytestVec3,
 } from "./report.js";

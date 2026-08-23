@@ -24,6 +24,7 @@ import {
   type IPlaytestReport,
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
+  type IPlaytestSetupApplication,
   type IPlaytestSetupRequest,
   type IPlaytestTrivialityOptOut,
   type PlaytestVec3,
@@ -163,6 +164,7 @@ export function buildReport(
   capture: IPlaytestCaptureProvenance | undefined = undefined,
   captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
   movementSamples: readonly IMovementSampleInterval[] = [],
+  setup: IPlaytestSetupApplication | undefined = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -206,6 +208,8 @@ export function buildReport(
     trivialityOptOuts: [],
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),
+    // Honest placement reporting: what the scenario asked to override, and what applied.
+    ...(setup === undefined ? {} : { setup }),
     observations: buildObservations({
       console: consoleEntries,
       ...(components === undefined

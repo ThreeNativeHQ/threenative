@@ -91,6 +91,10 @@
       }
 
       const player = { x: 0, y: 0, z: 0 };
+      // Setup-channel state: the last applied rotation and whether the placement
+      // carried the frozen marker. A real game would read these to steer or hold.
+      let appliedRotation = [0, 0, 0, 1];
+      let placedFrozen = false;
       const camera = { x: 0, y: 2, z: -6 };
       let held = false;
       let tick = 0;
@@ -205,7 +209,7 @@
           id,
           transform: {
             position: [source.x, source.y, source.z],
-            rotation: [0, 0, 0, 1],
+            rotation: appliedRotation,
             scale: [1, 1, 1],
           },
           visible: true,
@@ -222,6 +226,12 @@
             if (entry.entity !== "player") throw new Error(`Unknown entity '${entry.entity}'.`);
             if (entry.transform.position) {
               [player.x, player.y, player.z] = entry.transform.position;
+            }
+            if (entry.transform.rotation) {
+              appliedRotation = entry.transform.rotation;
+            }
+            if (entry.frozen === true) {
+              placedFrozen = true;
             }
           }
         },

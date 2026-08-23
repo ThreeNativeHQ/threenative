@@ -453,8 +453,23 @@ export interface IPlaytestSetupSchemaEntry {
 
 export const PLAYTEST_SETUP_REGISTRY: readonly IPlaytestSetupSchemaEntry[] = [
   {
+    description: "Overrides the subject player-start position before input.",
+    kind: "spawn",
+    requiredCapabilities: ["entity.setup"],
+  },
+  {
+    description: "Overrides the subject player-start aim before input.",
+    kind: "aim",
+    requiredCapabilities: ["entity.setup"],
+  },
+  {
     description: "Applies bounded transforms to registered entities before input.",
     kind: "entities",
+    requiredCapabilities: ["entity.setup"],
+  },
+  {
+    description: "Places named entities at explicit world transforms before input.",
+    kind: "place",
     requiredCapabilities: ["entity.setup"],
   },
   {
@@ -468,6 +483,10 @@ export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): Playt
   const required = new Set<PlaytestCapability>();
   if (scenario.steps.some((step) => step.kind !== "wait" && (step.press !== undefined || step.pointerPosition !== undefined || step.pointers !== undefined))) {
     required.add("browser.input");
+  }
+  // An aimAt step steers the subject through the bridge's setup channel.
+  if (scenario.steps.some((step) => step.kind === "aimAt")) {
+    required.add("entity.setup");
   }
   if (scenario.artifacts?.screenshots !== false) {
     required.add("browser.screenshot");

@@ -1,5 +1,6 @@
 import {
   PLAYTEST_BRIDGE_GLOBAL,
+  PLAYTEST_FROZEN_MARKER,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
@@ -178,12 +179,15 @@ function applySetup(
   resources: IThreePlaytestResources | undefined,
   request: IPlaytestSetupRequest,
 ): void {
-  request.entities?.forEach(({ entity, transform }) => {
+  // Presence semantics: every named entity must exist in the registry right now. A miss
+  // throws with the id named — placement is never silently skipped.
+  request.entities?.forEach(({ entity, frozen, transform }) => {
     const object = registry.get(entity)?.object;
     if (object === undefined) throw new Error(`Setup entity '${entity}' is not registered.`);
     if (transform.position !== undefined) object.position.fromArray(transform.position);
     if (transform.rotation !== undefined) object.quaternion.fromArray(transform.rotation);
     if (transform.scale !== undefined) object.scale.fromArray(transform.scale);
+    if (frozen === true) object.userData[PLAYTEST_FROZEN_MARKER] = true;
     object.updateMatrix();
   });
   request.resources?.forEach(({ id, path, value }) => {

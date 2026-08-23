@@ -12,6 +12,7 @@ export * from "./scenario/schema-base.js";
 export * from "./scenario/schema-validate.js";
 export * from "./scenario/schema-accessors.js";
 export * from "./scenario/errors.js";
+export * from "./scenario/orientation.js";
 
 export async function loadPlaytestScenario(projectPath: string, scenarioPath: string): Promise<IPlaytestScenario> {
   const absolutePath = resolve(projectPath, scenarioPath);

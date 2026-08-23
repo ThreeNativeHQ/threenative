@@ -14,6 +14,7 @@ export type PlaytestDiagnosticCode =
   | "TN_PLAYTEST_PAGE_NAVIGATED"
   | "TN_PLAYTEST_PAYLOAD_TOO_LARGE"
   | "TN_PLAYTEST_SERVER_FAILED"
+  | "TN_PLAYTEST_SETUP_UNAPPLIED"
   | "TN_PLAYTEST_UNSUPPORTED_ON_TARGET";
 
 export interface IPlaytestProtocolDiagnostic {

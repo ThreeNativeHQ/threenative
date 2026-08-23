@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -48,7 +48,11 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (!Array.isArray(value.steps) || value.steps.length === 0) {
     throw invalidStep(scenarioPath, "Scenario steps[] must contain at least one step.");
   }
+  const subject = typeof value.subject === "string" && value.subject.trim() !== "" ? value.subject : undefined;
   const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
+  if (steps.some(({ kind }) => kind === "aimAt") && subject === undefined) {
+    throw invalidScenario(scenarioPath, "A step with kind 'aimAt' aims the subject player start; declare scenario.subject or replace the step.");
+  }
   const assertions = isRecord(value.assert) ? validateAssertions(value.assert, scenarioPath) : undefined;
   validateStepLabels(steps, assertions, scenarioPath);
   return {
@@ -59,7 +63,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
     schemaVersion: 1,
-    ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath) } : {}),
+    ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath, subject) } : {}),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
     steps,
     ...(typeof value.subject === "string" ? { subject: value.subject } : {}),
@@ -119,12 +123,123 @@ export function validateParityAnimation(value: unknown): NonNullable<IPlaytestPa
   };
 }
 
-export function validateSetup(value: Record<string, unknown>, scenarioPath: string): IPlaytestScenarioSetup {
-  rejectUnknownKeys(value, ["entities", "resources"], scenarioPath, "setup");
+export function validateSetup(value: Record<string, unknown>, scenarioPath: string, subject?: string): IPlaytestScenarioSetup {
+  rejectUnknownKeys(value, ["aim", "entities", "place", "resources", "spawn"], scenarioPath, "setup");
+  const spawn = validateSpawnRequest(value.spawn, scenarioPath);
+  const aim = validateAimRequest(value.aim, scenarioPath);
+  const place = validatePlaceRequests(value.place, scenarioPath);
+  // spawn and aim address the SUBJECT player start — the "one owner of the player
+  // start" convention. Without a declared subject they would silently no-op or hit
+  // the wrong entity, so they are rejected at load instead.
+  if (spawn !== undefined && subject === undefined) {
+    throw invalidScenario(scenarioPath, "Scenario setup.spawn overrides the subject player start, but the scenario declares no subject.");
+  }
+  if (aim !== undefined && subject === undefined) {
+    throw invalidScenario(scenarioPath, "Scenario setup.aim overrides the subject player start, but the scenario declares no subject.");
+  }
+  const claimed = new Map<string, string>();
+  for (const [index, entity] of (Array.isArray(value.entities) ? value.entities : []).entries()) {
+    if (isRecord(entity) && typeof entity.entity === "string") {
+      claimed.set(entity.entity, `setup.entities[${index}]`);
+    }
+  }
+  for (const [index, entry] of (place ?? []).entries()) {
+    const previous = claimed.get(entry.entity);
+    if (previous !== undefined) {
+      throw invalidScenario(scenarioPath, `Entity '${entry.entity}' is placed twice (${previous} and setup.place[${index}]); each id may be placed once.`);
+    }
+    claimed.set(entry.entity, `setup.place[${index}]`);
+  }
   return {
+    ...(aim === undefined ? {} : { aim }),
     ...(Array.isArray(value.entities) ? { entities: value.entities.map((entity, index) => validateSetupEntity(entity, scenarioPath, index)) } : {}),
+    ...(place === undefined ? {} : { place }),
     ...(Array.isArray(value.resources) ? { resources: value.resources.map((resource, index) => validateSetupResource(resource, scenarioPath, index)) } : {}),
+    ...(spawn === undefined ? {} : { spawn }),
   };
+}
+
+function validateSpawnRequest(value: unknown, scenarioPath: string): IPlaytestSpawnRequest | undefined {
+  if (value === undefined) return undefined;
+  const record = requireRecord(value, scenarioPath, "setup.spawn");
+  rejectUnknownKeys(record, ["x", "y", "z"], scenarioPath, "setup.spawn");
+  const x = optionalNumber(record, "x", scenarioPath, "setup.spawn");
+  const y = optionalNumber(record, "y", scenarioPath, "setup.spawn");
+  const z = optionalNumber(record, "z", scenarioPath, "setup.spawn");
+  if (x === undefined || z === undefined) {
+    throw invalidScenario(scenarioPath, "'setup.spawn' must define finite x and z; y is optional and preserves the game's current height when absent.");
+  }
+  return { x, ...(y === undefined ? {} : { y }), z };
+}
+
+function validateAimRequest(value: unknown, scenarioPath: string): IPlaytestAimRequest | undefined {
+  if (value === undefined) return undefined;
+  const record = requireRecord(value, scenarioPath, "setup.aim");
+  rejectUnknownKeys(record, ["pitch", "yaw"], scenarioPath, "setup.aim");
+  const pitch = optionalNumber(record, "pitch", scenarioPath, "setup.aim");
+  const yaw = optionalNumber(record, "yaw", scenarioPath, "setup.aim");
+  if (pitch === undefined || yaw === undefined) {
+    throw invalidScenario(scenarioPath, "'setup.aim' must define finite yaw and pitch angles in radians.");
+  }
+  return { pitch, yaw };
+}
+
+function validatePlaceRequests(value: unknown, scenarioPath: string): IPlaytestPlaceRequest[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw invalidScenario(scenarioPath, `'setup.place' must be an array of placements, received ${describeValue(value)}.`);
+  }
+  if (value.length === 0) {
+    throw invalidScenario(scenarioPath, "'setup.place' must contain at least one placement; an empty array places nothing.");
+  }
+  return value.map((entry, index) => validatePlaceRequest(entry, scenarioPath, index));
+}
+
+function validatePlaceRequest(value: unknown, scenarioPath: string, index: number): IPlaytestPlaceRequest {
+  const objectPath = `setup.place[${index}]`;
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["at", "entity", "facing", "frozen", "lookAt"], scenarioPath, objectPath);
+  const entity = requireString(record, "entity", scenarioPath, objectPath);
+  const at = validatePoint(record.at, scenarioPath, `${objectPath}.at`, "placement is absolute");
+  const facingYaw = record.facing === undefined
+    ? undefined
+    : (() => {
+        const facingRecord = requireRecord(record.facing, scenarioPath, `${objectPath}.facing`);
+        rejectUnknownKeys(facingRecord, ["yaw"], scenarioPath, `${objectPath}.facing`);
+        const yaw = optionalNumber(facingRecord, "yaw", scenarioPath, `${objectPath}.facing`);
+        if (yaw === undefined) {
+          throw invalidScenario(scenarioPath, `'${objectPath}.facing.yaw' must be a finite angle in radians.`);
+        }
+        return yaw;
+      })();
+  const lookAt = record.lookAt === undefined ? undefined : validatePoint(record.lookAt, scenarioPath, `${objectPath}.lookAt`, "lookAt names a world point");
+  if (facingYaw !== undefined && lookAt !== undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must choose facing or lookAt, not both.`);
+  }
+  return {
+    at,
+    entity,
+    ...(facingYaw === undefined ? {} : { facing: { yaw: facingYaw } }),
+    ...present("frozen", optionalBoolean(record, "frozen", scenarioPath, objectPath)),
+    ...(lookAt === undefined ? {} : { lookAt }),
+  };
+}
+
+function validatePoint(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+  requirement: string,
+): { x: number; y: number; z: number } {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["x", "y", "z"], scenarioPath, objectPath);
+  const x = optionalNumber(record, "x", scenarioPath, objectPath);
+  const y = optionalNumber(record, "y", scenarioPath, objectPath);
+  const z = optionalNumber(record, "z", scenarioPath, objectPath);
+  if (x === undefined || y === undefined || z === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must define finite x, y, and z; ${requirement}.`);
+  }
+  return { x, y, z };
 }
 
 export function validateSetupResource(value: unknown, scenarioPath: string, index: number): IPlaytestSetupResource {
@@ -171,11 +286,13 @@ export const PLAYTEST_STEP_KEYS = [
   "kind",
   "label",
   "overlayMessage",
+  "pitch",
   "pointerPosition",
   "pointers",
   "press",
   "release",
   "screenshot",
+  "target",
   "waitFrames",
   "waitTicks",
   "window",
@@ -243,7 +360,9 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   const holdTicks = positiveInteger(value.holdTicks);
   const waitFrames = positiveInteger(value.waitFrames);
   const waitTicks = positiveInteger(value.waitTicks);
-  const kind = value.kind === "wait" ? "wait" : value.kind === "input" ? "input" : undefined;
+  const kind = value.kind === "aimAt" ? "aimAt" : value.kind === "wait" ? "wait" : value.kind === "input" ? "input" : undefined;
+  const target = validateAimTarget(value.target, scenarioPath, index);
+  const pitch = typeof value.pitch === "number" && Number.isFinite(value.pitch) ? value.pitch : undefined;
   const screenshot = typeof value.screenshot === "string" && /^[A-Za-z0-9._-]+$/.test(value.screenshot)
     ? value.screenshot
     : undefined;
@@ -263,6 +382,30 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   }
   if (value.press !== undefined && press === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} press must be a non-empty key or a unique array of non-empty keys.`);
+  }
+  if (kind !== "aimAt" && (target !== undefined || pitch !== undefined)) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} declares ${target !== undefined ? "target" : "pitch"}, which belongs to kind 'aimAt'.`);
+  }
+  if (kind === "aimAt") {
+    // An aimAt instant steers the subject; it is not an input hold, and holdTicks
+    // without a press is silently ignored by the tick math, so both are rejected.
+    if (target === undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' must define target as { x, z } or { entity }.`);
+    }
+    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "window"] as const) {
+      if (value[forbidden] !== undefined) {
+        throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' cannot define ${forbidden}; apply aim in its own step.`);
+      }
+    }
+    if (holdFrames !== undefined || holdTicks !== undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' cannot define holdFrames/holdTicks; use waitTicks to hold the aimed pose.`);
+    }
+  }
+  if (value.pitch !== undefined && pitch === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} pitch must be a finite angle in radians.`);
+  }
+  if (value.target !== undefined && target === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} target must be { x, z } or { entity }, not both forms.`);
   }
   const hasPress = press !== undefined && (typeof press === "string" || press.length > 0);
   if (kind === "wait" && hasPress) {
@@ -286,8 +429,8 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define press, overlayMessage, pointerPosition, pointers, window, or waitFrames/waitTicks.`);
+  if (press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define press, overlayMessage, pointerPosition, pointers, window, aimAt target, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -319,10 +462,12 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(holdTicks === undefined ? {} : { holdTicks }),
     ...(typeof value.label === "string" ? { label: value.label } : {}),
     ...(overlayMessage === undefined ? {} : { overlayMessage }),
+    ...(pitch === undefined ? {} : { pitch }),
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
     ...(pointers === undefined ? {} : { pointers }),
     ...(press === undefined ? {} : { press }),
     release: typeof value.release === "boolean" ? value.release : true,
+    ...(target === undefined ? {} : { target }),
     ...(screenshot === undefined ? {} : { screenshot }),
     ...(waitFrames === undefined ? {} : { waitFrames }),
     ...(waitTicks === undefined ? {} : { waitTicks }),
@@ -330,13 +475,35 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   };
 }
 
+/** An aimAt target is exactly one of a world xz position or a registered entity id. */
+export function validateAimTarget(value: unknown, scenarioPath: string, stepIndex: number): IPlaytestAimTarget | undefined {
+  if (value === undefined) return undefined;
+  const objectPath = `steps[${stepIndex}].target`;
+  if (!isRecord(value)) {
+    throw invalidStep(scenarioPath, `Scenario ${objectPath} must be an object, received ${describeValue(value)}.`);
+  }
+  if (value.entity !== undefined && (value.x !== undefined || value.z !== undefined)) {
+    throw invalidStep(scenarioPath, `Scenario ${objectPath} must be { x, z } or { entity }, not both forms.`);
+  }
+  if (value.entity !== undefined) {
+    rejectUnknownKeys(value, ["entity"], scenarioPath, objectPath);
+    return { entity: requireString(value, "entity", scenarioPath, objectPath) };
+  }
+  rejectUnknownKeys(value, ["x", "z"], scenarioPath, objectPath);
+  const x = optionalNumber(value, "x", scenarioPath, objectPath);
+  const z = optionalNumber(value, "z", scenarioPath, objectPath);
+  if (x === undefined || z === undefined) {
+    throw invalidStep(scenarioPath, `Scenario ${objectPath} must define finite x and z world coordinates.`);
+  }
+  return { x, z };
+}
+
 export function validatePointer(
   value: unknown,
   scenarioPath: string,
   stepIndex: number,
   pointerIndex: number,
-): IPlaytestPointer {
-  const path = `steps[${stepIndex}].pointers[${pointerIndex}]`;
+): IPlaytestPointer {  const path = `steps[${stepIndex}].pointers[${pointerIndex}]`;
   if (!isRecord(value)) throw invalidStep(scenarioPath, `${path} must be an object.`);
   rejectUnknownKeys(value, ["buttons", "id", "x", "y"], scenarioPath, path);
   if (!Number.isInteger(value.id) || (value.id as number) < 1) {

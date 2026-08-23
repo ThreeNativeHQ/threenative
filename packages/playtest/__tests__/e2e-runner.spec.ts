@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { exitCodeForReport } from "../src/runner/cli.js";
+import { yawPitchToQuaternion } from "../src/scenario/orientation.js";
 import { runStandalonePlaytest } from "../src/runner/runner.js";
 import type { IStandalonePlaytestReport } from "../src/runner/runner.js";
 
@@ -405,4 +406,83 @@ test("setup positions the entity before the run so movement is measured from it"
 
   expect(report.before?.position[2]).toBeGreaterThanOrEqual(10);
   expect(report.pass).toBe(true);
+}, 60_000);
+
+test("setup.spawn and aim, then an aimAt step, steer the subject over the wire", async () => {
+  const projectPath = await makeTempDir("playtest-e2e-spawn-aim-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { diagnostics: { runtimeReady: true } },
+      name: "e2e-spawn-aim",
+      schemaVersion: 1,
+      setup: {
+        aim: { pitch: 0, yaw: Math.PI / 2 },
+        spawn: { x: 3, z: 7 },
+      },
+      steps: [
+        { kind: "aimAt", label: "aim-northwest", target: { x: -5, z: 0 }, waitTicks: 2 },
+        { release: true, waitTicks: 1 },
+      ],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 2,
+    }),
+  );
+
+  const report = await runStandalonePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    timeoutMs: 15_000,
+    trace: false,
+    url: `${origin}/?mode=good`,
+  });
+
+  expect(report.pass).toBe(true);
+  expect(report.setup?.requested.map(({ kind }) => kind)).toEqual(["spawn", "aim"]);
+  // The spawn applied before the first sample; the absent y preserved the game's own height.
+  expect(report.before?.position).toEqual([3, 0, 7]);
+  // The aimAt step aimed at (-5, 0) from the spawned (3, 7), computed from the sampled position.
+  expect(report.after?.rotation).toEqual(yawPitchToQuaternion(Math.atan2(8, 7), 0));
+}, 60_000);
+
+test("a placement the game cannot resolve fails with a named setup diagnostic", async () => {
+  const projectPath = await makeTempDir("playtest-e2e-setup-miss-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { diagnostics: { runtimeReady: true } },
+      name: "e2e-setup-miss",
+      schemaVersion: 1,
+      setup: {
+        place: [{ at: { x: 1, y: 0, z: 1 }, entity: "sentry", facing: { yaw: 0 }, frozen: true }],
+      },
+      steps: [{ release: true, waitTicks: 1 }],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 2,
+    }),
+  );
+
+  const report = await runStandalonePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    timeoutMs: 15_000,
+    trace: false,
+    url: `${origin}/?mode=good`,
+  });
+
+  expect(report.pass).toBe(false);
+  const diagnostic = report.diagnostics.find(({ code }) => code === "TN_PLAYTEST_SETUP_UNAPPLIED");
+  expect(diagnostic?.message).toContain("sentry");
+  expect(report.setup?.applied).toEqual([]);
+  expect(report.setup?.requested).toHaveLength(1);
 }, 60_000);

@@ -22,7 +22,7 @@ export interface IPlaytestPointer {
 }
 
 export interface IPlaytestStep {
-  kind?: "input" | "wait";
+  kind?: "aimAt" | "input" | "wait";
   /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
   holdFrames?: number;
   holdTicks?: number;
@@ -32,6 +32,7 @@ export interface IPlaytestStep {
     payload: unknown;
     type: string;
   };
+  pitch?: number;
   pointerPosition?: {
     buttons?: number;
     x: number;
@@ -43,6 +44,8 @@ export interface IPlaytestStep {
   press?: string | readonly string[];
   release: boolean;
   screenshot?: string;
+  /** Runner-native aim: yaw/pitch are computed from the sampled subject position. */
+  target?: IPlaytestAimTarget;
   /** @deprecated Use waitTicks. Fixed-step bridges treat this as a tick alias. */
   waitFrames?: number;
   waitTicks?: number;
@@ -52,6 +55,9 @@ export interface IPlaytestStep {
     width?: number;
   };
 }
+
+/** Where an aimAt step points: a world xz position or another registered entity. */
+export type IPlaytestAimTarget = { entity: string } | { x: number; z: number };
 
 export interface IPlaytestMovementAssertion {
   axis?: string;
@@ -337,6 +343,32 @@ export interface IPlaytestSetupEntityTransform {
   scale?: [number, number, number];
 }
 
+/** Overrides the subject player start. y is optional and preserves the game's own height when absent. */
+export interface IPlaytestSpawnRequest {
+  x: number;
+  y?: number;
+  z: number;
+}
+
+/** Overrides the subject player-start aim; both angles are radians (Three.js convention). */
+export interface IPlaytestAimRequest {
+  pitch: number;
+  yaw: number;
+}
+
+/**
+ * Places a named entity at an explicit world transform before input. Orientation comes
+ * from facing yaw or a lookAt point (never both); frozen delivers the placed-frozen
+ * marker the game reads to suppress physics motion — placement is data, not teleports.
+ */
+export interface IPlaytestPlaceRequest {
+  at: { x: number; y: number; z: number };
+  entity: string;
+  facing?: { yaw: number };
+  frozen?: boolean;
+  lookAt?: { x: number; y: number; z: number };
+}
+
 export interface IPlaytestSetupResource {
   id: string;
   path?: string;
@@ -344,8 +376,11 @@ export interface IPlaytestSetupResource {
 }
 
 export interface IPlaytestScenarioSetup {
+  aim?: IPlaytestAimRequest;
   entities?: IPlaytestSetupEntityTransform[];
+  place?: IPlaytestPlaceRequest[];
   resources?: IPlaytestSetupResource[];
+  spawn?: IPlaytestSpawnRequest;
 }
 
 export interface IPlaytestScenario {

@@ -1,4 +1,4 @@
-import { setupRequest, waitFrames, observedEntityIds, observedResourceIds, captureVisualSurface, runStep, screenshotObservations, accumulatedPathLength, failureReport } from "./steps.js";
+import { applyScenarioSetup, waitFrames, observedEntityIds, observedResourceIds, captureVisualSurface, runStep, screenshotObservations, accumulatedPathLength, failureReport } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./sampling.js";
@@ -28,6 +28,7 @@ import {
   type IPlaytestReport,
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
+  type IPlaytestSetupApplication,
   type IPlaytestSetupRequest,
   type IPlaytestTrivialityOptOut,
   type PlaytestVec3,
@@ -313,8 +314,21 @@ export async function runStandalonePlaytest(
     const bridge = await openPageAndConnectBridge(page, browserConfig, scenario);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
-    if (bridge !== undefined && scenario.setup !== undefined) {
-      await bridge.applySetup(setupRequest(scenario));
+    let setupApplication: IPlaytestSetupApplication | undefined;
+    if (scenario.setup !== undefined) {
+      // The capability handshake already failed the run when the page has no bridge but
+      // setup requires one; this guard keeps that promise explicit instead of relying on
+      // registry drift never happening.
+      if (bridge === undefined) {
+        throw new PlaytestBridgeError(playtestDiagnostic(
+          "TN_PLAYTEST_BRIDGE_MISSING",
+          "Scenario declares setup overrides but no playtest bridge is installed to receive them.",
+          "Install the playtest bridge before application startup.",
+        ));
+      }
+      // A placement that cannot apply throws a named diagnostic; requested vs applied
+      // rides into the report either way.
+      setupApplication = await applyScenarioSetup(bridge, scenario);
     }
     await waitFrames(page, scenario.warmupFrames);
     const runtimeReady = await page.evaluate(() =>
@@ -442,6 +456,7 @@ export async function runStandalonePlaytest(
         inputState,
         capturesAnonymousMovement ? sampleRequest : undefined,
         index === scenario.steps.length - 1,
+        scenario.subject,
       );
       if (capturesAnonymousMovement && movementCursor !== undefined && stepSamples.afterInput !== undefined) {
         movementSamples.push({
@@ -513,6 +528,7 @@ export async function runStandalonePlaytest(
       captureProvenance,
       captureFailure,
       movementSamples,
+      setupApplication,
     );
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
