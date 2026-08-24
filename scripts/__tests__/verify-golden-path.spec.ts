@@ -6,6 +6,7 @@ import {
   GOLDEN_PATH_STEPS,
   type TemplateStep,
   assertGoldenPathSteps,
+  assertMcpServers,
   assertMcpToolSurface,
   assertTemplateDependencies,
   discoverGoldenPathTemplates,
@@ -255,37 +256,51 @@ input.on("line", (line) => {
     const root = await makeTempDir("threenative-golden-path-mcp-resource-");
     try {
       const server = path.join(root, "server.mjs");
+      const assetTools = (
+        JSON.parse(
+          await readFile(path.resolve("packages/create-threenative/asset-mcp-tools.json"), "utf8"),
+        ) as { tools: string[] }
+      ).tools;
+      const sculptTools = (
+        JSON.parse(
+          await readFile(path.resolve("packages/create-threenative/sculpt-mcp-tools.json"), "utf8"),
+        ) as { tools: string[] }
+      ).tools;
       await writeFile(
         server,
         `import { createInterface } from "node:readline";
 const input = createInterface({ input: process.stdin });
+const tools = JSON.parse(process.env.MCP_TOOLS ?? "[]").map((name) => ({ name }));
 input.on("line", (line) => {
   const request = JSON.parse(line);
   if (request.id === undefined) return;
   const result = request.method === "tools/list"
-    ? { tools: [{ name: "sculpt_plan" }] }
-    : request.method === "resources/list"
-      ? { resources: [] }
-      : { protocolVersion: "2025-06-18", capabilities: {} };
+    ? { tools }
+      : request.method === "resources/list"
+        ? { resources: [] }
+        : { protocolVersion: "2025-06-18", capabilities: {} };
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) + "\\n");
 });
 `,
       );
-      await expect(
-        probeMcpServer(
-          "threenative-sculpt",
-          { args: [server], command: process.execPath },
-          { tools: ["sculpt_plan"], version: "test" },
-          root,
-          async (request) => {
-            const listed = await request("resources/list");
-            const resources = (listed as { resources?: unknown }).resources;
-            if (!Array.isArray(resources) || resources.length === 0) {
-              throw new Error("threenative-sculpt listed no technique resources.");
-            }
+      await writeFile(
+        path.join(root, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            "threenative-assets": {
+              args: [server],
+              command: process.execPath,
+              env: { MCP_TOOLS: JSON.stringify(assetTools) },
+            },
+            "threenative-sculpt": {
+              args: [server],
+              command: process.execPath,
+              env: { MCP_TOOLS: JSON.stringify(sculptTools) },
+            },
           },
-        ),
-      ).rejects.toThrow(/listed no technique resources/u);
+        }),
+      );
+      await expect(assertMcpServers(root)).rejects.toThrow(/listed no technique resources/u);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

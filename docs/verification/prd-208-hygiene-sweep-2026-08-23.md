@@ -57,6 +57,35 @@ Result: 1 test file passed, 13 tests passed
 The committed empty-resource negative control also passes by rejecting with
 `threenative-sculpt listed no technique resources.`.
 
+## Repair round 2 — production validator wiring negative control
+
+The empty-resource test now writes a temporary `.mcp.json` with both recorded MCP surfaces and
+calls production `assertMcpServers`. Its sculpt server returns the recorded five-tool surface and
+an empty `resources/list`; the rejection therefore comes from the production
+`MCP_VALIDATORS["threenative-sculpt"]` mapping rather than an inline test callback.
+
+The mapping-removal mutation was red:
+
+```text
+Command: pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts -t "fails closed when a sculpt resource validator observes no resources" --reporter=verbose
+Result: 1 test failed, 12 skipped
+AssertionError: promise resolved "undefined" instead of rejecting
+```
+
+After restoring the mapping, the focused production-path test was green:
+
+```text
+Command: pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts -t "fails closed when a sculpt resource validator observes no resources" --reporter=dot
+Result: 1 test passed, 12 skipped
+```
+
+The complete golden-path suite was also green:
+
+```text
+Command: pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts --reporter=dot
+Result: 1 test file passed, 13 tests passed
+```
+
 ## Verification commands
 
 - `pnpm exec vitest run` — 198 files passed, 1,884 tests passed.
@@ -72,6 +101,15 @@ The committed empty-resource negative control also passes by rejecting with
 The exact required chain `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` reached `pnpm test` but was stopped by `@threenative/playtest`'s orphan-process guard. A standalone `pnpm --filter @threenative/playtest test` reproduced the same failure: the guard reported Chromium PIDs after the runner exited. The PIDs were gone on inspection. This is an environment/runner cleanup failure, not a test assertion failure; the direct Vitest suite above is green.
 
 No templates or render sources were changed, so no visual change was expected.
+
+## Repair round 2 gate rerun
+
+- `pnpm typecheck` — passed across 16 workspace projects.
+- `pnpm lint` — passed with 291 existing complexity warnings and no errors.
+- `pnpm test` — passed: 198 test files and 1,885 tests; the recorded gate state was `succeeded` with exit 0.
+- `pnpm budgets` — passed: `budgets ok`; existing framework LOC and native census drift notices were reported.
+- `pnpm test:playtest` — passed: 4 scenario reports, all with `"pass": true`.
+- `pnpm test:templates` — passed: action-rpg, defense, minimal, platformer, racing, shooter, and starter scaffolded playtests.
 
 ## Acceptance result
 
