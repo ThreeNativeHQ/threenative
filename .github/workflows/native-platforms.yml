@@ -12,10 +12,15 @@ on:
   workflow_dispatch:
   workflow_call:
 
+concurrency:
+  group: native-platforms-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-emulator-parity:
     name: Android emulator visual parity
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -56,7 +61,7 @@ jobs:
             --target web --out artifacts/conformance/web
           status=$?
           set -e
-          test "$status" -eq 0 || test "$status" -eq 2
+          test "$status" -eq 0
       - name: Run checksum-locked APKs on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -87,6 +92,7 @@ jobs:
           - platform: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -99,10 +105,7 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       - name: Build native-smoke workspace dependencies
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm --filter threenative-native-smoke build
       - name: Install Windows HTTP build dependencies
         if: runner.os == 'Windows'
@@ -134,6 +137,7 @@ jobs:
   starter-linux:
     name: Scaffolded starter desktop artifact
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -154,28 +158,23 @@ jobs:
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
       - name: Build and pack the scaffold dependencies
         run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/ui build
-          pnpm --filter create-threenative build
+          pnpm tsx scripts/workspace-packages.ts build
           pnpm --filter @threenative/runtime-native native:build
-          mkdir -p "$RUNNER_TEMP/threenative-packages"
-          for package in @threenative/playtest @threenative/core @threenative/physics \
-            @threenative/ui @threenative/runtime-native create-threenative; do
-            pnpm --filter "$package" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          done
+          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/threenative-packages"
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
+          assets=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
           core=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
           physics=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          engine_mcp=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           ui=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
           runtime=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --engine-mcp-package "$engine_mcp" \
             --ui-package "$ui" --runtime-native-package "$runtime" --cli-package "$cli"
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
@@ -192,6 +191,7 @@ jobs:
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -201,10 +201,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Archive the scenario-verified unsigned simulator host
@@ -220,23 +217,18 @@ jobs:
       - name: Pack and install the exact consumer packages without lifecycle compilation
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter create-threenative build
-          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/ios-packages"
           target="$RUNNER_TEMP/threenative-ios-consumer"
+          assets=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-assets-*.tgz' -print -quit)
           core=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-core-*.tgz' -print -quit)
           physics=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          engine_mcp=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           runtime=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli=$(find "$RUNNER_TEMP/ios-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --engine-mcp-package "$engine_mcp" \
             --runtime-native-package "$runtime" --cli-package "$cli"
           cp examples/native-smoke/src/physics.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"

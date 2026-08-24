@@ -3,9 +3,13 @@ import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, defineConfig } from "@playwright/test";
+import { defineConfig } from "@playwright/test";
 import { PNG } from "pngjs";
 import { createProject } from "./packages/create-threenative/src/index.js";
+import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/src/runner/browser.js";
+import { localPackageEntries, workspacePackages } from "./scripts/workspace-packages.js";
+import { acquireHotReloadProjectLock } from "./test-support/hot-reload-lock.js";
+import { packageSourcesMatch } from "./test-support/hot-reload-project.js";
 import { makeTempDir } from "./test-support/temp-dir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -19,14 +23,11 @@ const hotReloadProjectFile = path.join(
   tmpdir(),
   `threenative-hot-reload-${path.basename(repoRoot)}.path`,
 );
-const localPackages = [
-  ["core", "@threenative/core"],
-  ["physics", "@threenative/physics"],
-  ["playtest", "@threenative/playtest"],
-  ["runtime-native", "@threenative/runtime-native"],
-  ["ui", "@threenative/ui"],
-  ["create-threenative", "create-threenative"],
-] as const;
+const hotReloadProjectLock = `${hotReloadProjectFile}.lock`;
+const localPackages = localPackageEntries(repoRoot);
+const workspacePackageManifests = new Map(
+  workspacePackages(repoRoot).map((item) => [item.name, item]),
+);
 // The scaffolded projects install from tarballs, not from `packages/*` directly: a source
 // directory still carries `catalog:` specifiers, which only resolve inside this workspace.
 // `pnpm pack` rewrites them, which is the same thing CI's scaffold smoke does.
@@ -36,25 +37,18 @@ async function packLocalPackages(): Promise<Record<string, string>> {
   const existing = process.env.THREENATIVE_PACKED_PACKAGES;
   const staging = existing ?? (await makeTempDir("threenative-packed-"));
   if (existing === undefined) {
-    for (const [directory] of localPackages) {
-      await run("pnpm", ["--filter", `./packages/${directory}`, "run", "build"]);
-      await run("pnpm", [
-        "--filter",
-        `./packages/${directory}`,
-        "exec",
-        "pnpm",
-        "pack",
-        "--pack-destination",
-        staging,
-      ]);
+    for (const [name] of localPackages) {
+      if (workspacePackageManifests.get(name)?.scripts.build !== undefined) {
+        await run("pnpm", ["--filter", name, "run", "build"]);
+      }
+      await run("pnpm", ["--filter", name, "exec", "pnpm", "pack", "--pack-destination", staging]);
     }
     process.env.THREENATIVE_PACKED_PACKAGES = staging;
   }
   const files = await readdir(staging);
   const sources: Record<string, string> = {};
-  for (const [directory, packageName] of localPackages) {
-    const prefix = packageName.replace("@", "").replace("/", "-");
-    const tarball = files.find((file) => file.startsWith(`${prefix}-`));
+  for (const [packageName, prefix] of localPackages) {
+    const tarball = files.find((file) => file.startsWith(prefix));
     if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${packageName}.`);
     sources[packageName] = path.join(staging, tarball);
   }
@@ -80,18 +74,31 @@ if (hotReloadProject !== undefined) process.env.THREENATIVE_HOT_RELOAD_PROJECT =
 async function prepareHotReloadProject(): Promise<string> {
   const existing = await readSharedHotReloadProject();
   if (existing !== undefined) return existing;
-  const temporaryRoot = await makeTempDir("threenative-hot-reload-");
-  const target = path.join(temporaryRoot, "starter");
-  await createProject(
-    { install: true, packageSources: localPackageSources, target, template: "starter" },
-    repoRoot,
-  );
-  await writeFile(hotReloadProjectFile, target);
-  return target;
+  const lock = await acquireHotReloadProjectLock({ lockPath: hotReloadProjectLock });
+  try {
+    const retry = await readSharedHotReloadProject();
+    if (retry !== undefined) return retry;
+    const temporaryRoot = await makeTempDir("threenative-hot-reload-");
+    const target = path.join(temporaryRoot, "starter");
+    await createProject(
+      { install: true, packageSources: localPackageSources, target, template: "starter" },
+      repoRoot,
+    );
+    await writeFile(hotReloadProjectFile, target);
+    return target;
+  } finally {
+    await lock.release();
+  }
 }
 
 async function runHotReloadServer(): Promise<void> {
-  const target = process.env.THREENATIVE_HOT_RELOAD_PROJECT ?? (await readSharedHotReloadProject());
+  const deadline = Date.now() + 120_000;
+  let target = await readSharedHotReloadProject();
+  while (target === undefined && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    target = await readSharedHotReloadProject();
+  }
+  target ??= process.env.THREENATIVE_HOT_RELOAD_PROJECT;
   if (target === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
   const server = startStarterServer(target, hotReloadPort);
   const output: string[] = [];
@@ -128,9 +135,7 @@ async function readSharedHotReloadProject(): Promise<string | undefined> {
       ...manifest.devDependencies,
       ...manifest.optionalDependencies,
     };
-    const current = Object.entries(localPackageSources).every(
-      ([name, source]) => installedSources[name] === `file:${source}`,
-    );
+    const current = packageSourcesMatch(localPackageSources, installedSources);
     return current ? target : undefined;
   } catch {
     return undefined;
@@ -374,6 +379,7 @@ async function keepServerAlive(server: ChildProcess): Promise<void> {
 }
 
 export default defineConfig({
+  globalSetup: "./test-support/root-playwright-setup.ts",
   testDir: "./examples/abyss-vanilla/__tests__",
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
@@ -385,12 +391,12 @@ export default defineConfig({
     headless: true,
     screenshot: "only-on-failure",
     launchOptions: {
-      args: ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+      args: [...WEBGPU_BROWSER_ARGS],
     },
   },
   webServer: [
     {
-      command: "pnpm --filter abyss-vanilla dev --host 127.0.0.1 --port 4173",
+      command: "pnpm --filter abyss-vanilla dev --host 127.0.0.1 --port 4173 --strictPort",
       url: "http://127.0.0.1:4173",
       timeout: 120_000,
       reuseExistingServer: false,
@@ -433,7 +439,7 @@ export default defineConfig({
       use: {
         baseURL: `http://127.0.0.1:${hotReloadPort}`,
         launchOptions: {
-          args: ["--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+          args: [...WEBGPU_BROWSER_ARGS],
         },
       },
     },

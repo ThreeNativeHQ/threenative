@@ -46,9 +46,11 @@ if [[ "$resume_mode" -eq 1 && -z "$resume_phase" ]]; then
   exit 2
 fi
 
-suite_marker="$(mktemp /tmp/tn-suite-count.XXXXXX)"
-# Names this run so the temp-directory leak guard counts its own directories and not a concurrent
-# lane's. Read by test-support/temp-dir.ts and by orphan-cleanup.sh.
+suite_tmp_root="$(mktemp -d /tmp/threenative-suite.XXXXXX)"
+export TN_SUITE_TMPDIR="$suite_tmp_root"
+export TMPDIR="$suite_tmp_root"
+suite_marker="$(mktemp "$suite_tmp_root/tn-suite-count.XXXXXX")"
+# Names this run so any legacy tag-aware temp guard also stays isolated from concurrent lanes.
 export TN_TEST_TEMP_TAG="run${$}"
 lease_branch="$(git symbolic-ref -q HEAD || true)"
 lease_head="$(git rev-parse HEAD)"
@@ -64,6 +66,7 @@ cleanup() {
     lease_registered=0
   fi
   rm -f "$suite_marker"
+  rm -rf -- "$suite_tmp_root"
 }
 trap cleanup EXIT
 

@@ -1,4 +1,5 @@
 import { cp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -7,6 +8,7 @@ import {
   RENDER_LAYER_FILES,
   TEMPLATE_NAMES,
   VISUAL_SCORE_FLOOR,
+  assertVisualPortAvailable,
   captureAllTemplates,
   inspectAllTemplates,
   validateVisualScores,
@@ -23,6 +25,22 @@ describe("visual gate", () => {
   it("terminates the complete visual server process group outside Windows", () => {
     expect(visualServerProcessGroup(1234, "linux")).toBe(-1234);
     expect(visualServerProcessGroup(1234, "win32")).toBe(1234);
+  });
+
+  it("refuses to capture on a port already owned by another process", async () => {
+    const listener = createServer();
+    await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+    const address = listener.address();
+    if (address === null || typeof address === "string") throw new Error("listener has no port");
+    try {
+      await expect(assertVisualPortAvailable(address.port)).rejects.toThrow(
+        "TN_VISUAL_PORT_IN_USE",
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        listener.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
+    }
   });
 
   it("finds the six live render files and quality floor in every template", () => {

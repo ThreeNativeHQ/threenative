@@ -433,7 +433,7 @@ export function evaluateDiagnosticsPolicy(
   if (policy.noNetworkErrors && (report.observations?.network.length ?? 0) > 0) {
     diagnostics.push({
       code: "TN_PLAYTEST_NETWORK_ERROR",
-      message: `${report.observations?.network.length ?? 0} failed network request(s) were captured during playtest.`,
+      message: `${report.observations?.network.length ?? 0} failed network request(s) were captured after runtime readiness.`,
       severity: "error",
       suggestion: "Open network.json in the playtest artifact directory and fix missing asset or bundle paths.",
     });
@@ -573,5 +573,4 @@ export function evaluateVisibilityAssertion(
     suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
   });
 }
-
 

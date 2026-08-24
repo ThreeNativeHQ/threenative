@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,9 @@ import {
   createImageBlindBundle,
   hashPromptFile,
 } from "./score-blind.js";
+import { localPackageEntries, workspacePackages } from "./workspace-packages.js";
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_ROOT = path.join(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
   "packages/create-threenative/templates",
@@ -32,16 +35,7 @@ export const RENDER_LAYER_FILES = [
   "postprocessing.ts",
 ] as const;
 export const VISUAL_SCORE_FLOOR = 4;
-export const LOCAL_FRAMEWORK_PACKAGES = [
-  ["@threenative/playtest", "threenative-playtest-"],
-  ["@threenative/core", "threenative-core-"],
-  ["@threenative/assets", "threenative-assets-"],
-  ["@threenative/physics", "threenative-physics-"],
-  ["@threenative/runtime-native", "threenative-runtime-native-"],
-  ["@threenative/ui", "threenative-ui-"],
-  ["create-threenative", "create-threenative-"],
-  ["threenative-engine-mcp", "threenative-engine-mcp-"],
-] as const;
+export const LOCAL_FRAMEWORK_PACKAGES = localPackageEntries(REPO_ROOT);
 
 export function visualServerProcessGroup(
   pid: number,
@@ -50,13 +44,53 @@ export function visualServerProcessGroup(
   return platform === "win32" ? pid : -pid;
 }
 
-function stopVisualServer(server: ChildProcess): void {
-  if (server.pid === undefined || server.exitCode !== null) return;
+export async function assertVisualPortAvailable(port: number): Promise<void> {
+  const probe = createServer();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(port, "127.0.0.1", () => {
+        probe.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
+    });
+  } catch (error) {
+    throw new Error(
+      `TN_VISUAL_PORT_IN_USE: template server port ${port} is unavailable; stop the stale listener before capturing.`,
+      { cause: error },
+    );
+  }
+}
+
+async function waitVisualServerExit(server: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (server.exitCode !== null || server.signalCode !== null) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      server.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    const onExit = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    server.once("exit", onExit);
+  });
+}
+
+export async function stopVisualServer(server: ChildProcess): Promise<void> {
+  if (server.pid === undefined || server.exitCode !== null || server.signalCode !== null) return;
+  const stopped = waitVisualServerExit(server, 2_000);
   try {
     process.kill(visualServerProcessGroup(server.pid), "SIGTERM");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
   }
+  if (await stopped) return;
+  try {
+    process.kill(visualServerProcessGroup(server.pid), "SIGKILL");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+  await waitVisualServerExit(server, 1_000);
 }
 
 export interface TemplateStructureResult {
@@ -87,7 +121,6 @@ export interface IVisualCaptureOptions {
   readonly visualRoot?: string;
 }
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VISUAL_ROOT = path.join(REPO_ROOT, "docs/verification/visuals");
 const BASELINE = path.join(REPO_ROOT, "docs/product/VISUAL-BASELINE.md");
 
@@ -288,9 +321,12 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
   const packages = LOCAL_FRAMEWORK_PACKAGES;
+  const manifests = new Map(workspacePackages(REPO_ROOT).map((item) => [item.name, item]));
   const archives = new Map<string, string>();
   for (const [name] of packages) {
-    await runCommand("pnpm", ["--filter", name, "build"], REPO_ROOT);
+    if (manifests.get(name)?.scripts.build !== undefined) {
+      await runCommand("pnpm", ["--filter", name, "build"], REPO_ROOT);
+    }
     await runCommand(
       "pnpm",
       ["--filter", name, "pack", "--pack-destination", packageRoot],
@@ -323,6 +359,7 @@ const captureTemplate: CaptureTemplate = async (
     root,
   );
   await runCommand("pnpm", ["build"], result.target);
+  await assertVisualPortAvailable(port);
   const server = spawn(
     "pnpm",
     ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
@@ -361,7 +398,7 @@ const captureTemplate: CaptureTemplate = async (
       `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,
     );
   } finally {
-    stopVisualServer(server);
+    await stopVisualServer(server);
   }
 };
 

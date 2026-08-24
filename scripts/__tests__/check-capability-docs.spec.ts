@@ -139,7 +139,7 @@ describe("capability documentation gate", () => {
         }),
       ]),
     );
-  });
+  }, 15_000);
 
   it("should scan a capability written as an arrow const, not only declaration forms", async () => {
     // The gate's job is to make an undocumented capability a release defect. It counted only

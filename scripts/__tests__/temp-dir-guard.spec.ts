@@ -37,6 +37,7 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/verify-template-playtests.ts",
     "The production template playtest gate owns its cleanup.",
   ],
+  ["scripts/release.ts", "The release packer removes its temporary tarball directory in finally."],
   [
     "scripts/verify-registry-install.ts",
     "The production registry probe removes its parent in finally.",

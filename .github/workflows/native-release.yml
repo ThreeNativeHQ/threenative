@@ -7,10 +7,16 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: native-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validate-tag:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -29,8 +35,23 @@ jobs:
           }
           NODE
 
-  build:
+  gates:
     needs: validate-tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require a green CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          successful_runs="$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json status,conclusion,event,headBranch --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
+          test "$successful_runs" -gt 0 || {
+            echo "No completed successful CI push run on main found for $GITHUB_SHA." >&2
+            exit 1
+          }
+
+  build:
+    needs: gates
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +72,7 @@ jobs:
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -63,10 +85,7 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       - name: Build native-smoke workspace dependencies
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm --filter threenative-native-smoke build
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
@@ -124,8 +143,9 @@ jobs:
           if-no-files-found: error
 
   build-android:
-    needs: validate-tag
+    needs: gates
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -142,10 +162,7 @@ jobs:
       - run: rustup target add aarch64-linux-android x86_64-linux-android
       - run: pnpm install --frozen-lockfile
       - name: Build Android proof workspace dependencies
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs
@@ -211,8 +228,9 @@ jobs:
           if-no-files-found: error
 
   build-ios-simulator:
-    needs: validate-tag
+    needs: gates
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -222,10 +240,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Stage the scenario-verified unsigned simulator host
@@ -250,6 +265,7 @@ jobs:
   publish:
     needs: [build, build-android, build-ios-simulator]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
@@ -321,6 +337,7 @@ jobs:
   clean-consumer:
     needs: publish
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -336,25 +353,20 @@ jobs:
       - name: Pack the exact scaffold consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/packages"
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter create-threenative build
-          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/packages"
-          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/packages"
-          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/packages"
-          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/packages"
-          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/packages"
+          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/packages"
       - name: Scaffold from local tarballs
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
+          assets=$(find "$RUNNER_TEMP/packages" -name 'threenative-assets-*.tgz' -print -quit)
           core=$(find "$RUNNER_TEMP/packages" -name 'threenative-core-*.tgz' -print -quit)
           physics=$(find "$RUNNER_TEMP/packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest=$(find "$RUNNER_TEMP/packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          engine_mcp=$(find "$RUNNER_TEMP/packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           runtime=$(find "$RUNNER_TEMP/packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli=$(find "$RUNNER_TEMP/packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --engine-mcp-package "$engine_mcp" \
             --runtime-native-package "$runtime" --cli-package "$cli"
           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
           import { copyFileSync } from "node:fs";
@@ -473,6 +485,7 @@ jobs:
   clean-consumer-ios:
     needs: publish
     runs-on: macos-15
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -484,23 +497,18 @@ jobs:
       - name: Pack and install the exact iOS consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter create-threenative build
-          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/ios-packages"
-          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/ios-packages"
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
+          assets=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-assets-*.tgz' -print -quit)
           core=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-core-*.tgz' -print -quit)
           physics=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          engine_mcp=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           runtime=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli=$(find "$RUNNER_TEMP/ios-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
+            --engine-mcp-package "$engine_mcp" \
             --runtime-native-package "$runtime" --cli-package "$cli"
           cp examples/native-smoke/src/game.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
@@ -614,6 +622,7 @@ jobs:
   finalize:
     needs: [clean-consumer, clean-consumer-ios]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -632,6 +641,7 @@ jobs:
       (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
     needs: [publish, clean-consumer, clean-consumer-ios]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:

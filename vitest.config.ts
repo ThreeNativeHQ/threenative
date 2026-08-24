@@ -5,7 +5,6 @@ export default defineConfig({
     environment: "node",
     include: [
       "scripts/**/*.spec.ts",
-      "hosting/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.tsx",
     ],

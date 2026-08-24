@@ -270,11 +270,13 @@ async function applyPackageSources(
   };
   for (const [name, source] of Object.entries(packageSources)) {
     if (source === undefined) continue;
+    const isExistingDevDependency = packageJson.devDependencies?.[name] !== undefined;
     if (packageJson.optionalDependencies?.[name] !== undefined) {
       packageJson.optionalDependencies[name] = source.startsWith("file:")
         ? source
         : `file:${source}`;
     } else if (
+      isExistingDevDependency ||
       name === "@threenative/playtest" ||
       name === "create-threenative" ||
       name === "threenative-engine-mcp"

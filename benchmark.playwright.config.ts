@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/src/runner/browser.js";
 
 export default defineConfig({
+  globalSetup: "./test-support/benchmark-playwright-setup.ts",
   testDir: "./examples/abyss-framework/tests",
   testMatch: "**/*.playtest.ts",
   fullyParallel: true,
@@ -18,7 +19,7 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 4174",
+    command: "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 4174 --strictPort",
     url: "http://127.0.0.1:4174",
     timeout: 120_000,
     reuseExistingServer: false,

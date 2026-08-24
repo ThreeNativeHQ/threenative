@@ -37,6 +37,7 @@ import {
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
+  expiredExclusions,
   validateRegistry,
   validateReport,
 } from "../conformance/run-conformance.mjs";
@@ -463,6 +464,21 @@ test("registry exclusions fail closed without an owner, reason, or explicit excl
   assert.match(errors, /owner must be a non-empty string/u);
   assert.match(errors, /reason must be a non-empty string/u);
   assert.match(errors, /status must be excluded/u);
+});
+
+test("registry exclusion expiry is validated and surfaced as blocked evidence", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const exclusion = registry.exclusions.find(({ id }) => id === "desktop-multitouch-input");
+  assert.equal(expiredExclusions(registry, Date.parse("2026-12-30T23:59:59.000Z")).length, 0);
+  assert.deepEqual(
+    expiredExclusions(registry, Date.parse("2027-01-01T00:00:00.000Z")).map(({ id }) => id),
+    ["desktop-multitouch-input"],
+  );
+  assert.equal(validateRegistry(registry).length, 0);
+
+  const malformed = structuredClone(registry);
+  malformed.exclusions.find(({ id }) => id === exclusion.id).expires = "2026-02-30";
+  assert.match(validateRegistry(malformed).join("\n"), /expires must be an ISO date/u);
 });
 
 test("help exits without starting any parity lane", () => {

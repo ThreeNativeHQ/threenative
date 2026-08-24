@@ -42,8 +42,9 @@ styled HUD, for the same reason it must not ship a lighting rig.
 `DebugOverlay` follows the same rule: it renders one
 `<aside data-threenative-debug-overlay="true">` and no presentation at all. Every project that
 mounts it owns a rule for that selector in its own stylesheet — without one the overlay paints
-behind an absolutely positioned `GameCanvas`. `scripts/__tests__/debug-overlay-css.spec.ts`
-fails any example or template that mounts the overlay and never styles it.
+behind an absolutely positioned `GameCanvas`. The browser playtest in
+`examples/abyss-framework/tests/viewport.playtest.ts` opens the overlay and checks its computed
+positioning and pointer behavior.
 
 ## Tests
 

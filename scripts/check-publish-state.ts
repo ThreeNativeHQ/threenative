@@ -27,6 +27,7 @@ import { init, parse } from "es-module-lexer";
 const { releaseManifestUrl } = (await import(
   new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
 )) as { readonly releaseManifestUrl: (version?: string) => string };
+import { publicWorkspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -52,32 +53,31 @@ export interface IPublishReport {
 
 /** Every workspace package a stranger would have to install. `private` packages are not shipped. */
 export function publishSet(repo: string): readonly IPublishPackage[] {
-  const root = path.join(repo, "packages");
-  if (!fs.existsSync(root))
-    throw new Error(`TN_PUBLISH_NO_PACKAGES: ${root} does not exist, so nothing can be published.`);
-  const packages: IPublishPackage[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const manifest = path.join(root, entry.name, "package.json");
-    if (!fs.existsSync(manifest)) continue;
-    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as {
-      name?: unknown;
-      private?: unknown;
-      version?: unknown;
-    };
-    if (parsed.private === true) continue;
-    if (typeof parsed.name !== "string" || typeof parsed.version !== "string")
-      throw new Error(`TN_PUBLISH_MANIFEST_MALFORMED: ${manifest} has no name or version.`);
-    packages.push({
-      directory: path.join(root, entry.name),
-      manifest,
-      name: parsed.name,
-      version: parsed.version,
-    });
-  }
-  if (packages.length === 0)
+  const workspacePackages = (() => {
+    try {
+      return publicWorkspacePackages(repo);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "TN_WORKSPACE_PACKAGES_EMPTY: no package manifests were found."
+      ) {
+        throw new Error(
+          "TN_PUBLISH_EMPTY_SET: no publishable package was found. Refusing to pass.",
+        );
+      }
+      throw error;
+    }
+  })();
+  const packages = workspacePackages.map((item) => ({
+    directory: item.directory,
+    manifest: path.join(item.directory, "package.json"),
+    name: item.name,
+    version: item.version,
+  }));
+  if (packages.length === 0) {
     throw new Error("TN_PUBLISH_EMPTY_SET: no publishable package was found. Refusing to pass.");
-  return packages.sort((left, right) => left.name.localeCompare(right.name));
+  }
+  return packages;
 }
 
 export interface IRegistryFacts {
@@ -123,10 +123,21 @@ export type SourceCommits = (directory: string, since: string) => number;
 export function gitSourceCommits(repo: string): SourceCommits {
   return (directory, since) => {
     const source = path.join(directory, "src");
-    const target = fs.existsSync(source) ? source : directory;
+    const targets = [
+      ...(fs.existsSync(source) ? [source] : [directory]),
+      ...(fs.existsSync(path.join(directory, "templates"))
+        ? [path.join(directory, "templates")]
+        : []),
+    ];
     const stdout = execFileSync(
       "git",
-      ["log", "--oneline", `--since=${since}`, "--", path.relative(repo, target)],
+      [
+        "log",
+        "--oneline",
+        `--since=${since}`,
+        "--",
+        ...targets.map((target) => path.relative(repo, target)),
+      ],
       { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
     return stdout.split("\n").filter((line) => line.trim().length > 0).length;

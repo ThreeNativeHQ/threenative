@@ -334,6 +334,9 @@ export async function runStandalonePlaytest(
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);
+    // Vite can abort dependency-prefetch requests while the first document is settling. Those
+    // cold-start failures are not gameplay evidence; diagnostics begin at the readiness boundary.
+    if (runtimeReady) networkEntries.length = 0;
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
     const sampleRequest = {
@@ -359,7 +362,8 @@ export async function runStandalonePlaytest(
     const needsCapture = scenario.artifacts?.screenshots !== false
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
-    const captureProvenance = needsCapture
+    const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
+    const captureProvenance = needsCapture || requiresWebGpuProvenance
       ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {

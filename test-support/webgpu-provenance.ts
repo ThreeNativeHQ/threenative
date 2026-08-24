@@ -1,0 +1,167 @@
+import type { FullConfig, Page } from "@playwright/test";
+
+import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
+
+const ADAPTER_IDENTITY_KEYS = ["architecture", "description", "device", "vendor"] as const;
+
+export interface IPlaywrightCaptureProvenance {
+  readonly adapter: Record<string, string>;
+  readonly browserArgs: readonly string[];
+  readonly captureMethod: "page.screenshot";
+  readonly rendererKind: "webgpu";
+  readonly target: string;
+}
+
+export interface IWebGpuCaptureObservation {
+  readonly adapter: Record<string, unknown>;
+  readonly rendererKind: "webgpu" | "webgl" | undefined;
+}
+
+/** Convert the browser's adapter.info object into the stable provenance fields used by captures. */
+export function assertAdapterInfo(
+  info: Readonly<Record<string, unknown>> | undefined,
+  browserArgs: readonly string[],
+  target: string,
+): IPlaywrightCaptureProvenance {
+  if (info === undefined) {
+    throw new Error(`WebGPU adapter evidence missing for ${target}: adapter.info was unavailable.`);
+  }
+  const adapter = Object.fromEntries(
+    ADAPTER_IDENTITY_KEYS.flatMap((key) => {
+      const value = info[key];
+      return typeof value === "string" && value.trim().length > 0 ? [[key, value]] : [];
+    }),
+  );
+  if (Object.keys(adapter).length === 0) {
+    throw new Error(`WebGPU adapter evidence missing for ${target}: adapter.info had no identity.`);
+  }
+  if (info.isFallbackAdapter === true || info.isFallbackAdapter === "true") {
+    throw new Error(`WebGPU lane ${target} selected a software adapter (fallback).`);
+  }
+  const software = softwareAdapterName(adapter);
+  if (software !== undefined) {
+    throw new Error(`WebGPU lane ${target} selected a software adapter: '${software}'.`);
+  }
+  return {
+    adapter,
+    browserArgs: [...browserArgs],
+    captureMethod: "page.screenshot",
+    rendererKind: "webgpu",
+    target,
+  };
+}
+
+export async function readWebGpuAdapterInfo(
+  page: Pick<Page, "evaluate">,
+): Promise<IWebGpuCaptureObservation | undefined> {
+  return page.evaluate(async () => {
+    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"] as const;
+    type Adapter = {
+      info?: Record<string, unknown>;
+      isFallbackAdapter?: boolean;
+    };
+
+    function rendererKind(canvas: HTMLCanvasElement | null): "webgpu" | "webgl" | undefined {
+      if (canvas === null) return undefined;
+      const hasContext = (kind: string): boolean => {
+        try {
+          return canvas.getContext(kind) !== null;
+        } catch {
+          return false;
+        }
+      };
+      if (hasContext("webgpu")) return "webgpu";
+      if (hasContext("webgl2") || hasContext("webgl")) return "webgl";
+      return undefined;
+    }
+
+    function adapterFields(
+      info: Record<string, unknown>,
+      adapter: Adapter,
+    ): Record<string, unknown> {
+      const fallback = info.isFallbackAdapter ?? adapter.isFallbackAdapter;
+      return Object.fromEntries([
+        ...adapterIdentityKeys.flatMap((key) => {
+          const value = info[key];
+          return value === undefined ? [] : [[key, value]];
+        }),
+        ...(fallback === undefined ? [] : [["isFallbackAdapter", fallback]]),
+      ]);
+    }
+
+    const gpu = (
+      globalThis.navigator as Navigator & {
+        gpu?: { requestAdapter(): Promise<Adapter | null> };
+      }
+    ).gpu;
+    if (gpu === undefined) return undefined;
+    const adapter = await gpu.requestAdapter().catch(() => null);
+    const info = adapter?.info;
+    if (adapter === null || info === undefined || typeof info !== "object" || Array.isArray(info))
+      return undefined;
+    return {
+      adapter: adapterFields(info, adapter),
+      rendererKind: rendererKind(document.querySelector("canvas")),
+    };
+  });
+}
+
+export async function assertWebGpuCaptureProvenance(
+  page: Pick<Page, "evaluate">,
+  browserArgs: readonly string[],
+  target: string,
+): Promise<IPlaywrightCaptureProvenance> {
+  const observation = await readWebGpuAdapterInfo(page);
+  if (observation?.rendererKind !== "webgpu") {
+    throw new Error(
+      `WebGPU renderer kind evidence missing for ${target}: observed ${observation?.rendererKind ?? "none"}.`,
+    );
+  }
+  return assertAdapterInfo(observation.adapter, browserArgs, target);
+}
+
+/** Verify every configured Playwright project against the real browser adapter before its tests run. */
+export async function verifyWebGpuProjects(
+  config: Pick<FullConfig, "projects">,
+  browserArgs: readonly string[],
+  lane: string,
+): Promise<void> {
+  const projects = config.projects.flatMap(({ name, use }) => {
+    const baseURL = use.baseURL;
+    return typeof baseURL === "string" ? [{ name, baseURL }] : [];
+  });
+  if (projects.length === 0)
+    throw new Error(`WebGPU provenance has no base URL in the ${lane} lane.`);
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch({ args: [...browserArgs] });
+  try {
+    for (const project of projects) {
+      const page = await browser.newPage();
+      try {
+        const response = await page.goto(project.baseURL, {
+          timeout: 30_000,
+          waitUntil: "domcontentloaded",
+        });
+        if (response === null || !response.ok()) {
+          throw new Error(
+            `WebGPU provenance could not load ${project.baseURL} for ${lane}/${project.name}.`,
+          );
+        }
+        const provenance = await assertWebGpuCaptureProvenance(
+          page,
+          browserArgs,
+          `${lane}/${project.name}`,
+        );
+        const screenshot = await page.screenshot({ animations: "disabled" });
+        if (screenshot.byteLength === 0) {
+          throw new Error(`WebGPU provenance capture was empty for ${lane}/${project.name}.`);
+        }
+        process.stdout.write(`[webgpu-provenance] ${JSON.stringify(provenance)}\n`);
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+}

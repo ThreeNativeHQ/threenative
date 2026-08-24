@@ -308,7 +308,13 @@ describe("create-threenative", () => {
       );
       const sourcedManifest = JSON.parse(
         await readFile(path.join(sourced.target, "package.json"), "utf8"),
-      ) as { pnpm?: { overrides?: Record<string, string> } };
+      ) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        pnpm?: { overrides?: Record<string, string> };
+      };
+      expect(sourcedManifest.devDependencies?.["@threenative/assets"]).toBe("file:/tmp/assets.tgz");
+      expect(sourcedManifest.dependencies?.["@threenative/assets"]).toBeUndefined();
       expect(sourcedManifest.pnpm?.overrides).toMatchObject({
         "@threenative/assets": "file:/tmp/assets.tgz",
         "create-threenative": "file:/tmp/cli.tgz",

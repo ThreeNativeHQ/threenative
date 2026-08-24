@@ -2,11 +2,20 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   install:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -19,6 +28,7 @@ jobs:
   typecheck:
     needs: install
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -28,17 +38,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build workspace packages consumed through export maps
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/ui build
-          pnpm --filter create-threenative build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm typecheck
 
   lint:
     needs: typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -52,6 +58,7 @@ jobs:
   test:
     needs: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -68,6 +75,7 @@ jobs:
   golden-path:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -76,22 +84,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter create-threenative build
       - name: Pack local framework packages
         run: |
           mkdir -p "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/assets build
-          pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/ui build
-          pnpm --filter @threenative/core pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/assets pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/physics pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/playtest pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/ui pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter @threenative/runtime-native pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          pnpm --filter create-threenative pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/threenative-packages"
       - name: Generate starter scaffold
         run: |
           target="$RUNNER_TEMP/threenative-starter"
@@ -100,11 +96,13 @@ jobs:
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
+          engine_mcp_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
             --core-package "$core_package" --assets-package "$assets_package" --physics-package "$physics_package" \
             --playtest-package "$playtest_package" --ui-package "$ui_package" \
+            --engine-mcp-package "$engine_mcp_package" \
             --runtime-native-package "$runtime_package" --cli-package "$cli_package"
           pnpm --dir "$target" install
           MCP_TARGET="$target" node --input-type=module - <<'NODE'
@@ -239,14 +237,16 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-platformer"
           core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
+          assets_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
           physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
           playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
+          engine_mcp_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
           ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
           runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
           cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
           node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
-            --core-package "$core_package" --physics-package "$physics_package" \
-            --playtest-package "$playtest_package" --ui-package "$ui_package" \
+            --core-package "$core_package" --assets-package "$assets_package" --physics-package "$physics_package" \
+            --playtest-package "$playtest_package" --engine-mcp-package "$engine_mcp_package" --ui-package "$ui_package" \
             --runtime-native-package "$runtime_package" --cli-package "$cli_package"
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
@@ -257,6 +257,7 @@ jobs:
   benchmark:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -266,11 +267,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build framework packages consumed through export maps
-        run: |
-          pnpm --filter @threenative/playtest build
-          pnpm --filter @threenative/core build
-          pnpm --filter @threenative/physics build
-          pnpm --filter @threenative/ui build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
@@ -282,6 +279,7 @@ jobs:
   visuals:
     needs: golden-path
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -296,6 +294,7 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -304,16 +303,27 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build
+      - run: pnpm tsx scripts/workspace-packages.ts build
+      - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: |
           test "$(wc -l < packages/core/src/entities.ts)" -lt 80
           ! rg -n '\b(archetype|createQuery|defineComponent|System|Component)\b' packages/core/src
-          ! rg -n 'DebugOverlay|__THREENATIVE__' examples/abyss-framework/dist
+          if rg -n 'DebugOverlay|__THREENATIVE__' examples/abyss-framework/dist; then
+            echo 'Generated abyss-framework bundle contains forbidden debug symbols.' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "Could not inspect the abyss-framework bundle (rg exit $status)." >&2
+              exit "$status"
+            fi
+          fi
 
   budgets:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
