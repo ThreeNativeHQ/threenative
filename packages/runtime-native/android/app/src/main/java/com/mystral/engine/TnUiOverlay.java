@@ -80,7 +80,9 @@ public final class TnUiOverlay extends WebView {
      */
     private volatile float[] regions = new float[0];
 
+    private final Object bridgeLock = new Object();
     private JavaScriptReplyProxy replyProxy;
+    private String pendingFrame;
     private boolean ownsGesture;
 
     private TnUiOverlay(Activity activity) {
@@ -103,12 +105,12 @@ public final class TnUiOverlay extends WebView {
                     + " ui.renderer = \"native\".");
         }
         TnUiOverlay overlay = new TnUiOverlay(activity);
+        nativeUiOverlayAttached(false);
         overlay.configure(activity);
         activity.addContentView(
             overlay,
             new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        nativeUiOverlayAttached(true);
         return overlay;
     }
 
@@ -153,8 +155,15 @@ public final class TnUiOverlay extends WebView {
             HOST_OBJECT,
             origins,
             (view, message, sourceOrigin, isMainFrame, proxy) -> {
-                replyProxy = proxy;
+                String pending;
+                synchronized (bridgeLock) {
+                    replyProxy = proxy;
+                    pending = pendingFrame;
+                    pendingFrame = null;
+                }
+                nativeUiOverlayAttached(true);
                 onPageMessage(message);
+                if (pending != null) proxy.postMessage(pending);
             });
         loadUrl(ASSET_ORIGIN + ASSET_PATH + "index.html");
     }
@@ -202,8 +211,16 @@ public final class TnUiOverlay extends WebView {
 
     /** Deliver one frame to the page. Called from the runtime through the activity. */
     public void postToPage(String frame) {
-        JavaScriptReplyProxy proxy = replyProxy;
-        if (proxy == null) return;
+        JavaScriptReplyProxy proxy;
+        synchronized (bridgeLock) {
+            proxy = replyProxy;
+            if (proxy == null) {
+                // Keep only the newest state while the page is loading. The UI readiness frame
+                // causes the game to replay it after the proxy is live.
+                pendingFrame = frame;
+                return;
+            }
+        }
         proxy.postMessage(frame);
     }
 

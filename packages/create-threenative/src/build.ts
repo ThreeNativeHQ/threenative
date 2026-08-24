@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { compileAssets } from "@threenative/assets";
@@ -78,6 +78,21 @@ export async function assertNativeBundleCompatible(
   if (wasm.length === 0) return;
   throw new Error(
     `TN_NATIVE_WASM_ON_MOBILE: ${target} bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
+  );
+}
+
+/**
+ * Refuse a web UI target before native packaging can silently discard its bundle. Android is the
+ * only host with the WebView surface implemented; desktop and iOS retain the native renderer
+ * until their host surfaces land.
+ */
+export function assertNativeUiRendererCompatible(
+  target: NativeBuildTarget,
+  renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
+): void {
+  if (renderer === "native" || target === "android") return;
+  throw new Error(
+    `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "web", but ${target} has no WebView host yet. Set ui.renderer to "native" for ${target}; Android is the only native web UI target currently implemented.`,
   );
 }
 
@@ -183,7 +198,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   }
   const buildRoot = path.join(cwd, ".threenative", "build");
   await mkdir(buildRoot, { recursive: true });
-  const page = path.join(buildRoot, "ui.html");
+  const page = path.join(buildRoot, "index.html");
   // `viewport-fit=cover` so the UI can reach under a display cutout, and a transparent body so
   // the game surface underneath is what shows through everywhere the UI does not draw.
   await writeFile(
@@ -206,6 +221,12 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   const driver = path.join(buildRoot, "build-ui.mjs");
   await writeFile(driver, uiBuildDriver(cwd, page, output));
   await run(process.execPath, [driver], cwd);
+  const generatedPage = path.join(output, path.relative(cwd, page));
+  const index = path.join(output, "index.html");
+  if (generatedPage !== index) {
+    await rename(generatedPage, index);
+    await rm(path.dirname(generatedPage), { force: true, recursive: true });
+  }
   return output;
 }
 
@@ -228,7 +249,7 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
     "    build: {",
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",
-    `      rollupOptions: { input: ${literal(page)} },`,
+    `      rollupOptions: { input: { index: ${literal(page)} } },`,
     "    },",
     "  }),",
     ");",
@@ -380,6 +401,7 @@ function installedRuntime(runtimeRoot: string): string {
 
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
+  assertNativeUiRendererCompatible(target, config.ui.renderer);
   await compileAssets({ config: config.assets, cwd });
   await assertNativeAssetsCompatible(cwd, target, config);
   const entry = await nativeEntry(cwd, config);
