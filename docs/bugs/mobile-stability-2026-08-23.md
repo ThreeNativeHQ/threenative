@@ -76,7 +76,16 @@ unreadable model" case, so genuinely broken files still fail closed.
 <a id="bug-2"></a>
 ## Bug 2 — a native game has no user interface at all
 
-**Severity:** blocker. **Status:** open; fix layer decided this session.
+**Severity:** blocker. **Status:** open — but the fix layer is now **decided by measurement, and it
+is not `packages/`**. PRD-209's Phase 0 spike ran the portable text path on web, Linux desktop
+native, the Android emulator and a physical Pixel 8: one unbranched source, 2 152 bright glyph
+pixels and bounds `[49,56,313,85]` on every lane, `pixelMismatchRatio` 0 against the browser
+reference on all three native lanes, and legible on each capture. The SDF-atlas alternative costs
+53 % more source and renders `SCORE 1200` as `2COKE ]500`. Candidate **E is withdrawn**: the game's
+cost under candidate G is three statements, so there is nothing a `@threenative/core` text surface
+would remove. What shipped instead is the convention, in the templates' `AGENTS.md`, where an agent
+reads it. Evidence: `docs/verification/prd-209-2026-08-23.md`. The remaining half of this bug —
+touch controls, and which HUD layer each React template should pick — stays with PRD-055.
 
 ### What happens
 
@@ -108,16 +117,25 @@ real game's evidence and is parked in `docs/PRDs/BLOCKED/requires-touch-evidence
 `/AGENTS.md` states that a feature working on web only is unfinished. The UI is the part of a game
 a player reads. Today it works on exactly one of three targets.
 
-### Fix direction (decided by João, 2026-08-23)
+### Fix direction (decided by João, 2026-08-23; revised by measurement, PRD-209 Phase 0)
 
-Framework work in `packages/`, **not** a per-game workaround — PRD-055 candidate **E**: the
-framework ships portable screen-space text and nothing else; games compose their own HUD from it.
-Rule 3 (never own the look) stays intact because the game supplies colour, size, layout and content.
+The direction as filed was framework work in `packages/` — PRD-055 candidate **E**: the framework
+ships portable screen-space text and nothing else. PRD-209's Phase 0 was the spike that priced
+that, and it came back **G-only**.
 
-Prior art already in the tree: `templates/minimal/src/render/hud.ts`, 69 lines, a 5×7 bitmap font
-drawn as an `InstancedMesh` of quads — portable because it is geometry. Conformance rows
-`25-camera-parented-overlay`, `30-screen-space-text`, `31-hud-readout-updates` are all `implemented`
-and `required`.
+The prior art it named — `templates/minimal/src/render/hud.ts`, 69 lines, a 5×7 bitmap font drawn
+as an `InstancedMesh` of quads — turned out to be the whole answer. It already renders identical,
+legible text on all four lanes measured, and it already costs the game three statements: an import,
+`createHud(...)`, and `hud.update(...)`. A package surface would have to re-expose the glyph table,
+colour, size, anchor, labels and update timing as options — a widget with extra steps, and a rule 3
+violation. Conformance rows `25-camera-parented-overlay`, `30-screen-space-text` and
+`31-hud-readout-updates` all pass on web, desktop native and the emulator; row 30 also passes on the
+physical Pixel 8.
+
+So the real defect was never a missing mechanism. It was that nothing told the agent the mechanism
+existed or that the React one does not run: `starter/AGENTS.md` called a native HUD optional
+(*"only if your game needs one"*), and `minimal/AGENTS.md` described a DOM readout its own
+`main.ts` does not have. Both now state the rule and name the file to copy.
 
 ---
 

@@ -38,14 +38,25 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // survives the triplication cut that paid for most of it (the same override rule had been
   // stated in the ctx-surface prose, the generated trailer, and the engine-capabilities
   // fragment). See docs/verification/instruction-budgets-2026-08-22.md.
+  // `minimal` and `starter` each carry a further re-measured increment from PRD-209
+  // (2026-08-23): +53 and +65 rendered words for the portable-HUD convention. Both templates
+  // had under 25 words of headroom, so stating the convention at all needed the override the
+  // contract above allows. The measured content justifying it: a shipped Android build
+  // rendered its world with no HUD whatsoever, because `starter`'s portability list called a
+  // native HUD optional and no template said where a portable one comes from. The spike that
+  // priced the alternatives — one geometry source rendering byte-identical text on web, Linux
+  // desktop native, the Android emulator and a physical Pixel 8 — is
+  // docs/verification/prd-209-2026-08-23.md; the before/after table is
+  // docs/verification/instruction-budgets-2026-08-23.md.
   defaultMaxWords: 2660,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     platformer: 2960,
-    // The no-React DOM HUD contract and its accessible-DOM native rules have no genre-kit peer.
-    minimal: 3360,
-    // React state bridge, native-proof game contract, and the four-difference portability list.
-    starter: 3710,
+    // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
+    minimal: 3413,
+    // React state bridge, native-proof game contract, the four-difference portability list, and
+    // the React-HUD-is-invisible-natively rule that list has to carry.
+    starter: 3775,
   },
 };
 

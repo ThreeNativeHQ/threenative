@@ -164,7 +164,13 @@ browser-only boundary under the current native portability rule:
    and `src/render/` without `src/ui/`; gameplay, scoring and state transitions live in the
    scene, so a desktop build still ends its runs — just without the React banner. Pause is
    genuinely web-only here (`game.pause()` from the React menu): a native build cannot pause.
-   Add a native HUD in your game-owned render code only if your game needs one.
+
+   **So `src/ui/Hud.tsx` draws nothing on native** — a shipped Android build showed its world
+   and no HUD at all. Shipping to native means drawing the HUD as camera-parented Three.js
+   geometry instead: scaffold `--template minimal` and lift its 69-line `src/render/hud.ts`,
+   which renders identical text on web, desktop and Android with no per-target branch and
+   costs the scene three statements. Not a `CanvasTexture` readout — it samples black
+   natively. Then stop drawing those values from `src/ui/`, or both layers render on web.
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
