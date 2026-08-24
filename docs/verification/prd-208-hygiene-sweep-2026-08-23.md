@@ -149,10 +149,25 @@ No templates or render sources were changed, so no visual change was expected.
 - `pnpm test:templates` — passed: action-rpg, defense, minimal, platformer, racing, shooter, and starter scaffolded playtests.
 - No native target is claimed by this build-time hygiene lane.
 
+## Repair round 4 — production LOC reconciliation
+
+- `freePort` had only one production caller, so it now lives beside `verify-golden-path.ts`; the shared `scripts/utils.ts` retains only `isRecord` for its three sweep consumers and sealed-proof tests.
+- The avoidable `mcp-client.ts` extraction was folded back into its sole production caller. Its validator-enforcing implementation and script exports remain in `verify-golden-path.ts`, preserving the existing golden-path contract without a second module.
+- The final production scope is measured with `git diff --numstat linchpin/batch-2026-08-23-base...HEAD -- packages/*/src scripts/*.ts`: 269 additions and 282 deletions, net −13.
+- Focused asset/golden-path verification — passed: 4 files, 27 tests.
+- `pnpm typecheck` — passed across 16 workspace projects.
+- `pnpm lint` — passed with 291 existing complexity warnings and no errors.
+- `pnpm test` — passed: 199 test files and 1,886 tests; no orphan processes.
+- `pnpm budgets` — passed; existing framework LOC review-trigger and native-census drift notices were reported.
+- `pnpm quality` — passed; 70 non-fatal findings were reported.
+- `pnpm test:playtest` — passed: 4 browser/WebGPU scenario reports, all with `"pass": true`.
+- `pnpm test:templates` — passed: action-rpg, defense, minimal, platformer, racing, shooter, and starter scaffolded playtests.
+- No native target is claimed by this build-time hygiene lane.
+
 ## Acceptance result
 
 - Deleted APIs had zero callers.
 - Consolidated symbols have one owner and no twin literals at the audited sites.
 - All exact stale anchors are gone and their refactor history was checked.
 - A closed `DebugOverlay` performs zero polls, with a regression test that turns red on revert.
-- The final production range is 304 additions and 308 deletions, a net decrease of 4 lines. No public package API was added.
+- The final production range is 269 additions and 282 deletions, a net decrease of 13 lines. No public package API was added.
