@@ -1,10 +1,10 @@
 # PRD-198 verification — 2026-08-23
 
 Status: the native raytracing refusal, capability truth, and non-vacuous browser gate are
-verified. The browser raytracing row fails closed because this Chromium adapter has no web
-raytracing capability; the unchanged browser cube control passes. The native desktop row passes
-the real refusal call. Bounded conformance reports retain the runner's 67 unselected rows as
-blocked.
+verified. The browser raytracing row passes its standard WebGPU readiness control; this Chromium
+adapter exposes no web raytracing feature, so the row makes no web raytracing support claim. The
+unchanged browser cube control passes. The native desktop row passes the real refusal call.
+Bounded conformance reports retain the runner's 67 unselected rows as blocked.
 
 ## 1. Contract red-green
 
@@ -359,3 +359,116 @@ pnpm lint      -> exit 0 (291 pre-existing warnings; no errors)
 pnpm build     -> exit 0
 pnpm test      -> exit 0 (198 test files, 1,884 tests passed)
 ```
+
+## 7. Repair round 3 — callback exception propagation and record consistency
+
+The fresh review found that `bindings.cpp` calls `engine->throwException()` for native
+`traceRays` refusal, but the JSC callback adapter did not copy that pending exception into its
+`JSValueRef* exception` output. The QuickJS callback also had no explicit return of
+`JS_EXCEPTION` after a native callback raised. The status paragraph above simultaneously said
+the browser row failed closed while the repair-round evidence said both selected rows passed.
+
+The new source-derived JSC/QuickJS adapter contracts and verification-record consistency check
+were written and run before the implementation or status fix:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run tests/raytracing-contract.test.mjs
+```
+
+Red result:
+
+```text
+exit 1
+Test Files  1 failed (1)
+Tests       4 failed | 7 passed (11)
+Error: RED observed: JSC native exception propagation missing
+AssertionError: the mutation must remove JSC exception propagation
+AssertionError: the mutation must remove QuickJS exception propagation
+Error: RED observed: verification header contradicts the passing browser evidence
+```
+
+The two mutation checks were also red because neither adapter propagation block existed to
+remove. The implementation and the record status are repaired below and the same command is
+rerun green.
+
+The repair maps each JSC context to its engine, marks exceptions raised during a native callback,
+copies the pending `JSValueRef` into JSC's `exception` out-parameter, and clears the adapter marker
+after handoff. QuickJS uses the same pending marker and returns `JS_EXCEPTION`; its existing
+exception object remains owned by the QuickJS context.
+
+Focused contract result after the source and record fixes:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run tests/raytracing-contract.test.mjs
+```
+
+```text
+exit 0
+Test Files  1 passed (1)
+Tests       11 passed (11)
+```
+
+The complete runtime-native package gate also passed:
+
+```text
+pnpm --filter @threenative/runtime-native test -> exit 0
+Vitest: 54 test files passed, 367 tests passed, 31 skipped
+Physics parity: 28 web tests passed and 2 Rust tests passed
+publint: All good!
+```
+
+The default native build passed again with `pnpm native:build` and ended with the existing V8
+Linux executable. A separate QuickJS desktop build passed with the supported no-native-physics
+configuration and ended with `[389/389] Linking CXX executable mystral`.
+
+The browser and native conformance rows were rerun against the repaired tree:
+
+```sh
+sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs \
+  --target web \
+  --only-tests 01-basic-cube,98-native-raytracing-refusal \
+  --out artifacts/prd-198-repair3-web-2026-08-24
+```
+
+Report: `packages/runtime-native/artifacts/prd-198-repair3-web-2026-08-24/report.json`.
+The bounded command exited `2` with `pass: 2, fail: 0, blocked: 67`; both selected browser rows
+completed at 1280×720 with no page errors or GPU validation errors.
+
+The V8 desktop command wrote
+`packages/runtime-native/artifacts/prd-198-repair3-desktop-v8-2026-08-24/report.json` and
+exited `2` with `pass: 2, fail: 0, blocked: 67`. The selected native refusal row completed with
+`nativeExit: 0`, `gpuValidationErrors: []`, pixel mismatch
+`0.00001736111111111111`, perceptual delta E `0.0009414396421669794`, the exact refusal message,
+`Rendered 300 frames`, and `TN_PRESENTS:300`.
+
+The same desktop rows ran against the QuickJS executable and wrote
+`packages/runtime-native/artifacts/prd-198-repair3-desktop-quickjs-2026-08-24/report.json`.
+It also exited `2` with `pass: 2, fail: 0, blocked: 67`; native stdout identified `QuickJS`,
+logged the refusal from the real scene call, completed 300 frames with `nativeExit: 0`, and had
+no GPU validation errors. Both native rows matched the browser reference within the same pixel
+and perceptual deltas.
+
+Repository gates:
+
+```text
+pnpm typecheck -> exit 0
+pnpm lint      -> exit 0 (291 pre-existing warnings; no errors)
+pnpm build     -> exit 0 (122 capabilities generated)
+pnpm budgets   -> exit 0 (existing LOC/census notices reported)
+```
+
+The root `pnpm test` orchestration was not green in this shared checkout: it stopped in the
+playtest orphan guard after the asset package's 7 files and 58 tests passed. The prescribed
+orphan probe was retried; concurrent workspace activity produced stale Chromium, exit 137 during
+the five-second probe, and then a shared `/tmp` test-directory count race (`135` before, `134`
+after). No source test failure was reported. The direct runtime-native package gate above is the
+applicable green test evidence for this repair.
+
+Unexecuted targets and rows:
+
+- JSC/iOS execution was unavailable on this Linux host; the JSC adapter has source contracts only,
+  and no iOS simulator or physical iOS run is claimed.
+- Android physical-device and emulator runs were not executed.
+- The 67 registry rows excluded by `--only-tests` remain blocked; they are not claimed as passed.
+- The native conformance host reported the stub raytracing backend; no hardware raytracing support
+  or future result interop is claimed.

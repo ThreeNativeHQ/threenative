@@ -7,9 +7,24 @@ import { test } from 'vitest';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bindingsPath = join(root, 'src/raytracing/bindings.cpp');
 const scenePath = join(root, 'conformance/scenes/shared/raytracing-refusal.js');
+const jscEnginePath = join(root, 'src/js/jsc_engine.mm');
+const quickJsEnginePath = join(root, 'src/js/quickjs_engine.cpp');
+const verificationPath = join(
+  root,
+  '../../docs/verification/prd-198-raytracing-gated-2026-08-23.md',
+);
 
 function read(path) {
   return readFileSync(join(root, path), 'utf8');
+}
+
+function callbackBody(source, startMarker, endMarker, errorMessage) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start);
+  if (start < 0 || end <= start) {
+    throw new Error(`RED observed: ${errorMessage}`);
+  }
+  return source.slice(start, end);
 }
 
 function traceRaysBody(source) {
@@ -62,6 +77,52 @@ export function assertBrowserWebGpuControl(source) {
   assert.doesNotMatch(source, /WEB_RAY_TRACING_FEATURE|ray-tracing|requiredFeatures/u);
 }
 
+export function assertJscNativeExceptionPropagation(source) {
+  const callback = callbackBody(
+    source,
+    'static JSValueRef nativeCallback(',
+    '\n    JSContextGroupRef contextGroup_',
+    'JSC native callback missing',
+  );
+  if (
+    !/g_nativeEngines\.find\(ctx\)/u.test(callback) ||
+    !/takePendingNativeException\(\)/u.test(callback) ||
+    !/if \(exception\) \*exception = pendingException;/u.test(callback)
+  ) {
+    throw new Error('RED observed: JSC native exception propagation missing');
+  }
+  assert.match(source, /g_nativeEngines\[context_\] = this/u);
+  assert.match(source, /nativeExceptionPending_/u);
+}
+
+export function assertQuickJsNativeExceptionPropagation(source) {
+  const callback = callbackBody(
+    source,
+    'static JSValue nativeCallback(',
+    '\n    // Console functions',
+    'QuickJS native callback missing',
+  );
+  if (!/takePendingNativeException\(\)/u.test(callback) || !/return JS_EXCEPTION;/u.test(callback)) {
+    throw new Error('RED observed: QuickJS native exception propagation missing');
+  }
+  assert.match(source, /bool takePendingNativeException\(\)/u);
+  assert.match(source, /nativeExceptionPending_/u);
+}
+
+export function assertVerificationRecordConsistency(source) {
+  const headerEnd = source.indexOf('\n## 1. Contract red-green');
+  const latestRepair = source.lastIndexOf('\n## 6. Repair round 2');
+  if (headerEnd < 0 || latestRepair < 0) {
+    throw new Error('RED observed: PRD-198 verification sections missing');
+  }
+  const header = source.slice(0, headerEnd);
+  if (/browser raytracing row fails closed/u.test(header)) {
+    throw new Error('RED observed: verification header contradicts the passing browser evidence');
+  }
+  assert.match(header, /browser raytracing row passes its standard WebGPU readiness control/u);
+  assert.match(source.slice(latestRepair), /both selected rows passed/u);
+}
+
 test('native traceRays refuses before any backend can report success', () => {
   const bindings = readFileSync(bindingsPath, 'utf8');
   assertNativeRayTracingGate(bindings);
@@ -88,6 +149,41 @@ test('negative control: replacing the browser readiness control with fake succes
     () => assertBrowserWebGpuControl(withoutBrowserCheck),
     /RED observed: browser WebGPU readiness is not checked before the surface/u,
   );
+});
+
+test('JSC and QuickJS propagate native callback exceptions', () => {
+  assertJscNativeExceptionPropagation(readFileSync(jscEnginePath, 'utf8'));
+  assertQuickJsNativeExceptionPropagation(readFileSync(quickJsEnginePath, 'utf8'));
+});
+
+test('negative control: removing JSC exception propagation is red', () => {
+  const jsc = readFileSync(jscEnginePath, 'utf8');
+  const withoutPropagation = jsc.replace(
+    /if \(pendingException\) \{\n\s+if \(exception\) \*exception = pendingException;\n\s+return JSValueMakeUndefined\(ctx\);\n\s+\}/u,
+    '',
+  );
+  assert.notEqual(withoutPropagation, jsc, 'the mutation must remove JSC exception propagation');
+  assert.throws(
+    () => assertJscNativeExceptionPropagation(withoutPropagation),
+    /RED observed: JSC native exception propagation missing/u,
+  );
+});
+
+test('negative control: removing QuickJS exception propagation is red', () => {
+  const quickJs = readFileSync(quickJsEnginePath, 'utf8');
+  const withoutPropagation = quickJs.replace(
+    /if \(engineInstance_ && engineInstance_->takePendingNativeException\(\)\) \{\n\s+return JS_EXCEPTION;\n\s+\}/u,
+    '',
+  );
+  assert.notEqual(withoutPropagation, quickJs, 'the mutation must remove QuickJS exception propagation');
+  assert.throws(
+    () => assertQuickJsNativeExceptionPropagation(withoutPropagation),
+    /RED observed: QuickJS native exception propagation missing/u,
+  );
+});
+
+test('verification record status agrees with its latest conformance evidence', () => {
+  assertVerificationRecordConsistency(readFileSync(verificationPath, 'utf8'));
 });
 
 test('default native builds register the refusal surface without compiling heavy backends', () => {

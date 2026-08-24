@@ -705,11 +705,20 @@ public:
 
         JS_FreeValue(context_, lastException_);
         lastException_ = JS_UNDEFINED;
+        nativeExceptionPending_ = false;
         return result;
     }
 
     void throwException(const char* message) override {
         lastException_ = JS_ThrowInternalError(context_, "%s", message);
+        nativeExceptionPending_ = true;
+    }
+
+    bool takePendingNativeException() {
+        if (!nativeExceptionPending_) return false;
+        nativeExceptionPending_ = false;
+        lastException_ = JS_UNDEFINED;
+        return true;
     }
 
     // ========================================================================
@@ -826,6 +835,10 @@ private:
             delete val;
         }
 
+        if (engineInstance_ && engineInstance_->takePendingNativeException()) {
+            return JS_EXCEPTION;
+        }
+
         if (result.ptr) {
             JSValue* val = (JSValue*)result.ptr;
             // The handle retains its own reference until frame cleanup. Return
@@ -896,6 +909,7 @@ private:
     JSRuntime* runtime_ = nullptr;
     JSContext* context_ = nullptr;
     JSValue lastException_ = JS_UNDEFINED;
+    bool nativeExceptionPending_ = false;
     std::chrono::high_resolution_clock::time_point startTime_;
     std::unordered_map<void*, void*> privateDataMap_;  // Map JS object ptr to native data
     std::vector<NativeFunction*> allocatedFunctions_;  // Track allocated function pointers

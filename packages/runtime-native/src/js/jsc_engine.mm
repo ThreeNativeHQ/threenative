@@ -21,6 +21,8 @@ namespace js {
 
 // Store native function callbacks (since we can't capture lambdas in JSC callbacks)
 static std::unordered_map<void*, NativeFunction> g_nativeFunctions;
+class JSCEngine;
+static std::unordered_map<JSContextRef, JSCEngine*> g_nativeEngines;
 
 class JSCEngine : public Engine {
 public:
@@ -36,6 +38,8 @@ public:
             return;
         }
 
+        g_nativeEngines[context_] = this;
+
         // Set up standard globals
         setupGlobals();
 
@@ -46,6 +50,7 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
+            g_nativeEngines.erase(context_);
             JSGlobalContextRelease(context_);
         }
         if (contextGroup_) {
@@ -511,6 +516,7 @@ public:
 
         std::string result = toString({(void*)lastException_, context_});
         lastException_ = nullptr;
+        nativeExceptionPending_ = false;
         return result;
     }
 
@@ -529,6 +535,15 @@ public:
         JSValueRef exception = nullptr;
         JSObjectRef error = JSObjectCallAsConstructor(context_, errorConstructor, 1, args, &exception);
         lastException_ = error ? error : msgVal;
+        nativeExceptionPending_ = true;
+    }
+
+    JSValueRef takePendingNativeException() {
+        if (!nativeExceptionPending_) return nullptr;
+        nativeExceptionPending_ = false;
+        JSValueRef exception = lastException_;
+        lastException_ = nullptr;
+        return exception;
     }
 
     // ========================================================================
@@ -645,12 +660,21 @@ private:
 
         // Call the native function
         JSValueHandle result = it->second((void*)ctx, args);
+        auto engineIt = g_nativeEngines.find(ctx);
+        if (engineIt != g_nativeEngines.end()) {
+            JSValueRef pendingException = engineIt->second->takePendingNativeException();
+            if (pendingException) {
+                if (exception) *exception = pendingException;
+                return JSValueMakeUndefined(ctx);
+            }
+        }
         return (JSValueRef)result.ptr;
     }
 
     JSContextGroupRef contextGroup_ = nullptr;
     JSGlobalContextRef context_ = nullptr;
     JSValueRef lastException_ = nullptr;
+    bool nativeExceptionPending_ = false;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
     std::chrono::high_resolution_clock::time_point startTime_;
 };
