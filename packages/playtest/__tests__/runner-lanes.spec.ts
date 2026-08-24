@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as ts from "typescript";
 import { expect, test } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -28,9 +29,62 @@ import {
 } from "../src/index.js";
 
 const runnerDirectory = fileURLToPath(new URL("../src/runner/", import.meta.url));
+const SHARED_RUNNER_HELPER_NAMES = [
+  "appendPosition",
+  "accumulatedPathLength",
+  "failureReport",
+  "observedEntityIds",
+  "observedResourceIds",
+  "safePart",
+  "setupRequest",
+] as const;
+type SharedRunnerHelperName = (typeof SHARED_RUNNER_HELPER_NAMES)[number];
 
 async function runnerSource(name: string): Promise<string> {
   return readFile(`${runnerDirectory}${name}`, "utf8");
+}
+
+async function runnerHelperImplementations(directory: string): Promise<Map<SharedRunnerHelperName, string[]>> {
+  const implementations = new Map<SharedRunnerHelperName, string[]>();
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const source = await readFile(join(directory, entry.name), "utf8");
+    const sourceFile = ts.createSourceFile(entry.name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const addImplementation = (name: string): void => {
+      if (!(SHARED_RUNNER_HELPER_NAMES as readonly string[]).includes(name)) return;
+      const helperName = name as SharedRunnerHelperName;
+      const files = implementations.get(helperName) ?? [];
+      files.push(entry.name);
+      implementations.set(helperName, files);
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isFunctionDeclaration(node) && node.name !== undefined) addImplementation(node.name.text);
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer !== undefined
+        && ts.isArrowFunction(node.initializer)
+        && ts.isVariableDeclarationList(node.parent)
+        && (node.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) !== 0
+      ) {
+        addImplementation(node.name.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return implementations;
+}
+
+function runnerHelperViolations(implementations: Map<SharedRunnerHelperName, string[]>): string[] {
+  return SHARED_RUNNER_HELPER_NAMES.flatMap((helperName) => {
+    const files = implementations.get(helperName) ?? [];
+    return files.length === 1
+      ? []
+      : [`${helperName}: ${files.length === 0 ? "none" : files.join(", ")}`];
+  });
 }
 
 test("runner lane helpers have one implementation", async () => {
@@ -62,6 +116,27 @@ test("runner lane helpers have one implementation", async () => {
   expect(deviceSignal).toMatch(/process\.once\("SIGINT", handleSignal\)/u);
   expect(android).toMatch(/abortSignal:/u);
   expect(ios).toMatch(/withTargetAbortSignal/u);
+
+  const violations = runnerHelperViolations(await runnerHelperImplementations(runnerDirectory));
+  expect(violations, `Runner helper implementations must be exactly one per helper.\n${violations.join("\n")}`).toEqual([]);
+});
+
+test("runner helper guard detects an arrow duplicate in a new runner file", async () => {
+  const syntheticDirectory = await makeTempDir("playtest-runner-guard-");
+  await writeFile(join(syntheticDirectory, "shared.ts"), await runnerSource("shared.ts"));
+  await writeFile(join(syntheticDirectory, "synthetic-runner.ts"), [
+    'import { safePart as importedSafePart } from "./shared.js";',
+    'importedSafePart("ordinary call");',
+    "// function safePart() {}",
+    'const safePart = () => "duplicate";',
+    "let setupRequest = () => ({});",
+  ].join("\n"));
+
+  const implementations = await runnerHelperImplementations(syntheticDirectory);
+  expect(runnerHelperViolations(implementations)).toEqual([
+    "safePart: shared.ts, synthetic-runner.ts",
+    "setupRequest: shared.ts, synthetic-runner.ts",
+  ]);
 });
 
 test("sampling.ts contains sampling concerns only", async () => {
