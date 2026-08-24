@@ -221,3 +221,136 @@ the existing syntax-only compatibility-stub check:
 
 This follow-up did not execute JSC on Apple hardware, Android, iOS, browser-reference/pixel
 conformance, or the full desktop 300-frame verification. It makes no new claim for those lanes.
+
+## Fresh independent-review closure
+
+Baseline: `881e15ba4ce10fc6b41777128f6f96802e180438`
+
+The final independent review identified five fail-closed and engine-lifetime gaps:
+
+1. `Engine::isBindingDestination` now admits only an unchanged ordinary object created by the
+   owning engine. V8 uses an inaccessible private marker, QuickJS an
+   unforgeable internal class ID with the ordinary prototype, and JSC an owner class with the
+   ordinary prototype. Registration rejects globals, proxies, arrays, other exotic values, foreign
+   handles, and altered prototypes before descriptor snapshots or writes. Production global
+   helpers are completed on a protected ordinary host, then copied to `globalThis`. Cross-row setter
+   and descriptor proxies prove that no trap runs and no earlier row is corrupted.
+2. Every static and dynamic `installBindingTable` call in `bindings.cpp`, plus both shared wrapper
+   factories, checks and propagates failure. Static production initialization returns false on the
+   first failed table rather than accepting a partially installed surface.
+3. Expected installed functions remain protected for the whole transaction and are released in
+   reverse order on success and every rollback path. JSC native callbacks now live in callable
+   private data with a finalizer and an owning global context; no process-global pointer-keyed
+   callback map remains.
+4. QuickJS `performance.now()` resolves its engine through `JS_GetContextOpaque(ctx)`. Destroying
+   another engine no longer clears process-global state used by a surviving context.
+5. `isSameValue` implements ECMAScript SameValue semantics: V8 uses `SameValue`, QuickJS uses
+   `JS_IsSameValue`, and JSC handles `NaN` and signed zero before strict equality. A real ordinary
+   object rollback proves `NaN` restores equal and `-0` restores distinct from `+0` without
+   weakening complete rollback verification.
+
+### Fresh-review red/green evidence
+
+The focused controls were red before the production repair:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs
+    exit 1; 8 contract tests failed
+    missing: safe destination API/implementations, protected expected functions, JSC owned
+    callbacks, SameValue/performance ownership, and checked static/dynamic table installs
+
+    cmake --build --preset tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 1; whole-table binding proof failed: proxy destination rejection did not identify the
+    invariant
+
+A final ordinary-only control then caught the exotic global-object exception before commit:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs --reporter=dot
+    exit 1; 2 controls failed: the V8 global exception remained and ordinary-host global copies
+    were absent
+
+    cmake --build --preset tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 1; atomic binding proof failed: global exotic destination did not fail
+
+    cmake --build build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 1; whole-table binding proof failed: proxy destination rejection did not identify the
+    invariant
+
+The repaired controls are green:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs --reporter=dot
+    exit 0; Test Files 2 passed; Tests 30 passed
+
+    cmake --build --preset tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 0; NVIDIA GeForce RTX 2080, Vulkan; native WebGPU bindings reentrancy passed
+
+    cmake --build build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 0; NVIDIA GeForce RTX 2080, Vulkan; native WebGPU bindings reentrancy passed
+
+JSC is unavailable as an executable runtime on this Linux host. Its ownership, finalizer, and
+SameValue source controls pass, and its Objective-C++ implementation passes the available syntax
+lane:
+
+    clang++ -fsyntax-only -x objective-c++ -std=c++17 -D__APPLE__ -DMYSTRAL_JS_JSC \
+      -I/tmp/tn-prd205-jsc-stub -I/usr/include/webkitgtk-4.1 \
+      -Ipackages/runtime-native/include packages/runtime-native/src/js/jsc_engine.mm
+    exit 0
+
+### Fresh-review gates and limits
+
+    pnpm --filter @threenative/runtime-native test
+    exit 0; Test Files 57 passed; Tests 401 passed, 33 skipped; physics parity 28 JS tests and
+    2 Rust tests passed; publint passed
+
+    pnpm typecheck
+    exit 0; Scope 16 of 17 workspace projects
+
+    pnpm lint
+    exit 0; Biome checked 1113 files; 381 warnings, no errors
+
+    pnpm test
+    exit 0; Test Files 198 passed; Tests 1883 passed
+
+    pnpm budgets
+    exit 0; 18376/15000 framework LOC review trigger, 86954/100000 native runtime LOC,
+    no hard failure; census drift reported
+
+    pnpm quality
+    exit 0; 70 findings (11 new, 9 grew, 50 inherited, 0 waived)
+
+    pnpm sync:agents
+    exit 0; 16 mirrors synced, 0 written
+
+The first desktop attempt ran the stale production host because the focused CMake target had
+relinked only the regression executable. It reported 284 presents for 300 frames. After explicitly
+relinking the production host, the same gate passed:
+
+    cmake --build --preset tn-linux --target mystral --parallel
+    exit 0; linked mystral
+
+    SDL_AUDIODRIVER=dummy pnpm native:verify:desktop
+    exit 0; audio Promise proof passed; desktop core passed exactly 300 presents for 300 frames at
+    1280x720; physics actuation, 14-assertion playtest, and query proofs passed
+
+A later final-source gate run transiently reported 279 presents for 300 frames. The unchanged final
+binary immediately emitted exact 60/120/180/240/300 present ticks and `TN_PRESENTS:300` in a direct
+run; the unchanged full gate then passed with the result above. The transient miss was not
+reproducible and no production change was made in response.
+
+    git diff --check
+    exit 0; no whitespace errors
+
+Android, iOS, Apple JSC runtime execution, and browser-reference/pixel conformance remain
+unverified. No result claims those lanes.

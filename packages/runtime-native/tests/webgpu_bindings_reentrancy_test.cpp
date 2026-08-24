@@ -1,4 +1,5 @@
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include "mystral/runtime.h"
@@ -72,13 +73,12 @@ bool checkRowOwnedAndAtomicInstall(mystral::Runtime& runtime) {
         ~FrameTrackingGuard() { engine->resumeFrameTracking(); }
     } frameTrackingGuard{engine};
     engine->suspendFrameTracking();
-    if (!runtime.evalScript(
-            "globalThis.__tnTableFirst = {}; globalThis.__tnTableSecond = {};",
-            "webgpu-binding-row-ownership-setup.js")) {
+    const auto firstDestination = engine->newObject();
+    const auto secondDestination = engine->newObject();
+    if (!engine->setGlobalProperty("__tnTableFirst", firstDestination) ||
+        !engine->setGlobalProperty("__tnTableSecond", secondDestination)) {
         return false;
     }
-    const auto firstDestination = engine->getGlobalProperty("__tnTableFirst");
-    const auto secondDestination = engine->getGlobalProperty("__tnTableSecond");
     atomicSecondDestination = secondDestination;
     atomicProbePassed = false;
 
@@ -118,17 +118,17 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
     } frameTrackingGuard{engine};
     engine->suspendFrameTracking();
 
-    if (!runtime.evalScript(
-            "globalThis.__tnAtomicObject = {}; "
-            "globalThis.__tnAtomicBlocked = {}; "
+    const auto objectDestination = engine->newObject();
+    const auto blockedDestination = engine->newObject();
+    if (!engine->setGlobalProperty("__tnAtomicObject", objectDestination) ||
+        !engine->setGlobalProperty("__tnAtomicBlocked", blockedDestination) ||
+        !runtime.evalScript(
             "Object.defineProperty(__tnAtomicBlocked, 'blocked', "
             "{value: 'original', writable: false, configurable: false});",
             "webgpu-binding-atomic-rollback-setup.js")) {
         return failed("setup");
     }
 
-    const auto objectDestination = engine->getGlobalProperty("__tnAtomicObject");
-    const auto blockedDestination = engine->getGlobalProperty("__tnAtomicBlocked");
     const auto nonObjectDestination = engine->newNumber(7);
 
     if (!engine->setProperty(
@@ -166,8 +166,21 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
         return failed("non-object install did not fail");
     }
     engine->getException();
+
+    const auto globalTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "globalEarlier", 0, nullptr, &tableProbe, objectDestination},
+        {"TestSurface", "globalExotic", 0, nullptr, &tableProbe, engine->getGlobal()},
+    });
+    if (!globalTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, globalTable) ||
+        !engine->hasException()) {
+        return failed("global exotic destination did not fail");
+    }
+    engine->getException();
     return !engine->hasProperty(objectDestination, "nonObjectEarlier") &&
-           !engine->hasProperty(objectDestination, "nonObjectFailure");
+           !engine->hasProperty(objectDestination, "nonObjectFailure") &&
+           !engine->hasProperty(objectDestination, "globalEarlier") &&
+           !engine->hasProperty(engine->getGlobal(), "globalExotic");
 }
 
 bool checkWholeTableVerification(mystral::Runtime& runtime) {
@@ -184,14 +197,28 @@ bool checkWholeTableVerification(mystral::Runtime& runtime) {
     } frameTrackingGuard{engine};
     engine->suspendFrameTracking();
 
+    const auto first = engine->newObject();
+    if (!engine->setProperty(first, "first", engine->newString("first-original")) ||
+        !engine->setGlobalProperty("__tnCrossRowFirst", first)) {
+        return failed("owned destination setup");
+    }
     if (!runtime.evalScript(R"JS((() => {
-        globalThis.__tnCrossRowFirst = { first: "first-original" };
         globalThis.__tnCrossRowSecondTarget = {};
+        globalThis.__tnCrossRowSetTrapCalls = 0;
         globalThis.__tnCrossRowSecondProxy = new Proxy(__tnCrossRowSecondTarget, {
             set(target, property, value) {
+                __tnCrossRowSetTrapCalls += 1;
                 Reflect.set(target, property, value);
                 delete __tnCrossRowFirst.first;
                 return true;
+            },
+        });
+        globalThis.__tnCrossRowDescriptorTrapCalls = 0;
+        globalThis.__tnCrossRowPreflightProxy = new Proxy({}, {
+            getOwnPropertyDescriptor() {
+                __tnCrossRowDescriptorTrapCalls += 1;
+                delete __tnCrossRowFirst.first;
+                return undefined;
             },
         });
 
@@ -216,7 +243,6 @@ bool checkWholeTableVerification(mystral::Runtime& runtime) {
         return failed("setup");
     }
 
-    const auto first = engine->getGlobalProperty("__tnCrossRowFirst");
     const auto second = engine->getGlobalProperty("__tnCrossRowSecondProxy");
     const auto table = mystral::webgpu::bindingTable({
         {"TestSurface", "first", 0, nullptr, &tableProbe, first},
@@ -226,7 +252,10 @@ bool checkWholeTableVerification(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("a later row deleted an earlier verified row without failing");
     }
-    engine->getException();
+    const auto crossRowMessage = engine->getException();
+    if (crossRowMessage.find("ordinary") == std::string::npos) {
+        return failed("proxy destination rejection did not identify the invariant");
+    }
     if (!runtime.evalScript(R"JS((() => {
         const firstDescriptor = Object.getOwnPropertyDescriptor(__tnCrossRowFirst, "first");
         if (firstDescriptor === undefined || firstDescriptor.value !== "first-original") {
@@ -235,8 +264,31 @@ bool checkWholeTableVerification(mystral::Runtime& runtime) {
         if (Object.prototype.hasOwnProperty.call(__tnCrossRowSecondTarget, "second")) {
             throw new Error("the later row survived rollback");
         }
+        if (__tnCrossRowSetTrapCalls !== 0) {
+            throw new Error("a rejected proxy set trap ran");
+        }
     })())JS", "webgpu-binding-whole-table-check.js")) {
         return failed("whole-table rollback state");
+    }
+
+    const auto preflightProxy = engine->getGlobalProperty("__tnCrossRowPreflightProxy");
+    const auto preflightTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "first", 0, nullptr, &tableProbe, first},
+        {"TestSurface", "descriptor", 0, nullptr, &tableProbe, preflightProxy},
+    });
+    if (!preflightTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, preflightTable) ||
+        !engine->hasException()) {
+        return failed("a descriptor proxy was not rejected before preflight");
+    }
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (__tnCrossRowDescriptorTrapCalls !== 0) "
+            "throw new Error('a rejected proxy descriptor trap ran'); "
+            "if (__tnCrossRowFirst.first !== 'first-original') "
+            "throw new Error('descriptor preflight tainted an unsnapshotted row');",
+            "webgpu-binding-preflight-proxy-check.js")) {
+        return failed("preflight proxy rejection state");
     }
 
     const auto rollbackFirst = engine->getGlobalProperty("__tnRollbackOrderFirstProxy");
@@ -251,16 +303,53 @@ bool checkWholeTableVerification(mystral::Runtime& runtime) {
         return failed("cross-row rollback corruption was not rejected");
     }
     const auto rollbackMessage = engine->getException();
-    if (rollbackMessage.find("binding-table rollback was incomplete") == std::string::npos ||
+    if (rollbackMessage.find("ordinary") == std::string::npos ||
         !runtime.evalScript(R"JS((() => {
             if (__tnRollbackOrderFirstTarget.first !== "rollback-first-original") {
-                throw new Error("the first rollback snapshot was not restored");
+                throw new Error("a rejected proxy mutated its target");
             }
-            if (__tnRollbackOrderSecondTarget.second !== "rollback-order-corruption") {
-                throw new Error("the rollback-order corruption control did not survive");
+            if (Object.prototype.hasOwnProperty.call(__tnRollbackOrderSecondTarget, "second")) {
+                throw new Error("a rejected proxy write reached its target");
             }
         })())JS", "webgpu-binding-rollback-order-check.js")) {
-        return failed("whole-table final rollback verification");
+        return failed("proxy rollback rejection state");
+    }
+
+    const auto rollbackDestination = engine->newObject();
+    const auto blockedDestination = engine->newObject();
+    const auto negativeZero = engine->newNumber(-0.0);
+    const auto positiveZero = engine->newNumber(0.0);
+    const auto notANumber = engine->newNumber(std::numeric_limits<double>::quiet_NaN());
+    if (!engine->setProperty(rollbackDestination, "negativeZero", negativeZero) ||
+        !engine->setProperty(rollbackDestination, "notANumber", notANumber) ||
+        !engine->setGlobalProperty("__tnRollbackDestination", rollbackDestination) ||
+        !engine->setGlobalProperty("__tnRollbackBlocked", blockedDestination) ||
+        !runtime.evalScript(
+            "Object.preventExtensions(__tnRollbackBlocked);",
+            "webgpu-binding-ordinary-rollback-setup.js")) {
+        return failed("ordinary rollback setup");
+    }
+    const auto ordinaryRollbackTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "negativeZero", 0, nullptr, &tableProbe, rollbackDestination},
+        {"TestSurface", "notANumber", 0, nullptr, &tableProbe, rollbackDestination},
+        {"TestSurface", "blocked", 0, nullptr, &tableProbe, blockedDestination},
+    });
+    if (!ordinaryRollbackTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, ordinaryRollbackTable) ||
+        !engine->hasException()) {
+        return failed("ordinary mid-table write did not trigger rollback");
+    }
+    const auto ordinaryRollbackMessage = engine->getException();
+    const auto restoredNegativeZero = engine->getProperty(
+        rollbackDestination, "negativeZero");
+    const auto restoredNaN = engine->getProperty(rollbackDestination, "notANumber");
+    if (ordinaryRollbackMessage.find("binding-table rollback was incomplete") !=
+            std::string::npos ||
+        !engine->isSameValue(restoredNegativeZero, negativeZero) ||
+        engine->isSameValue(restoredNegativeZero, positiveZero) ||
+        !engine->isSameValue(restoredNaN, notANumber) ||
+        engine->hasProperty(blockedDestination, "blocked")) {
+        return failed("SameValue rollback verification");
     }
     return true;
 }
@@ -523,17 +612,16 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("attribute-corrupting proxy setter was accepted");
     }
-    const auto attributeMessage = engine->getException();
-    if (attributeMessage.find("rollback") == std::string::npos ||
-        !runtime.evalScript(R"JS((() => {
+    engine->getException();
+    if (!runtime.evalScript(R"JS((() => {
             const descriptor = Object.getOwnPropertyDescriptor(
                 __tnAttributeTarget, "attributes");
-            if (descriptor.value !== "attribute-original" || descriptor.enumerable !== true ||
-                descriptor.configurable !== false || descriptor.writable !== true) {
-                throw new Error("attribute-corruption control did not retain the expected mutation");
+            if (descriptor.value !== "attribute-original" || descriptor.enumerable !== false ||
+                descriptor.configurable !== true || descriptor.writable !== true) {
+                throw new Error("a rejected attribute proxy mutated its target");
             }
         })())JS", "webgpu-binding-attribute-corruption-check.js")) {
-        return failed("attribute-corrupting rollback failure was not reported");
+        return failed("attribute proxy rejection state");
     }
 
     const auto partialWriteTable = mystral::webgpu::bindingTable({
@@ -560,13 +648,12 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("dishonest delete proxy did not fail closed");
     }
-    const auto dishonestDeleteMessage = engine->getException();
-    if (dishonestDeleteMessage.find("rollback") == std::string::npos ||
-        !runtime.evalScript(
-            "if (!Object.prototype.hasOwnProperty.call(__tnDishonestDeleteTarget, 'partial')) "
-            "throw new Error('dishonest delete control did not retain its mutation');",
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (Object.prototype.hasOwnProperty.call(__tnDishonestDeleteTarget, 'partial')) "
+            "throw new Error('a rejected dishonest delete proxy mutated its target');",
             "webgpu-binding-dishonest-delete-check.js")) {
-        return failed("dishonest delete rollback failure was not reported");
+        return failed("dishonest delete proxy rejection state");
     }
 
     const auto dishonestRestoreTable = mystral::webgpu::bindingTable({
@@ -578,13 +665,12 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("dishonest restore proxy did not fail closed");
     }
-    const auto dishonestRestoreMessage = engine->getException();
-    if (dishonestRestoreMessage.find("rollback") == std::string::npos ||
-        !runtime.evalScript(
-            "if (typeof __tnDishonestRestoreTarget.restore !== 'function') "
-            "throw new Error('dishonest restore control unexpectedly restored its value');",
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (__tnDishonestRestoreTarget.restore !== 'restore-original') "
+            "throw new Error('a rejected dishonest restore proxy mutated its target');",
             "webgpu-binding-dishonest-restore-check.js")) {
-        return failed("dishonest restore rollback failure was not reported");
+        return failed("dishonest restore proxy rejection state");
     }
 
     const auto accessorTable = mystral::webgpu::bindingTable({
@@ -614,6 +700,7 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         if (Object.prototype.hasOwnProperty.call(__tnAccessorEarlier, "earlier")) {
             throw new Error("an earlier row survived accessor rejection");
         }
+        __tnPrototypeTrapCalls = 0;
     })())JS", "webgpu-binding-accessor-check.js")) {
         return failed("accessor rollback state");
     }
@@ -640,8 +727,8 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
     }
     engine->getException();
     if (!runtime.evalScript(
-            "if (__tnPrototypeTrapCalls < 2) "
-            "throw new Error('getPrototypeOf traps did not run during descriptor traversal'); "
+            "if (__tnPrototypeTrapCalls !== 0) "
+            "throw new Error('a rejected proxy prototype trap ran'); "
             "if (Object.prototype.hasOwnProperty.call(__tnAccessorEarlier, 'earlier') || "
             "Object.prototype.hasOwnProperty.call(__tnReadonlyEarlier, 'earlier')) "
             "throw new Error('proxied prototype preflight wrote an earlier row');",
@@ -657,8 +744,8 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("throwing getPrototypeOf trap was not latched");
     }
-    if (engine->getException().find("getPrototypeOf") == std::string::npos) {
-        return failed("throwing getPrototypeOf exception was not retained");
+    if (engine->getException().find("ordinary") == std::string::npos) {
+        return failed("throwing proxy was not rejected as a destination");
     }
 
     const auto expectPrototypeCycleFailure = [&](const char* label,
@@ -671,7 +758,7 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
             return failed(label);
         }
         const auto message = engine->getException();
-        if (message.find("detected a cycle") == std::string::npos) {
+        if (message.find("ordinary") == std::string::npos) {
             return failed(label);
         }
         return true;
@@ -681,8 +768,8 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !expectPrototypeCycleFailure(
             "multi-proxy prototype cycle was not detected", multiPrototypeCycle) ||
         !runtime.evalScript(
-            "if (__tnSelfPrototypeTrapCalls > 2 || __tnMultiPrototypeTrapCalls > 3) "
-            "throw new Error('prototype cycle traversal was not bounded');",
+            "if (__tnSelfPrototypeTrapCalls !== 0 || __tnMultiPrototypeTrapCalls !== 0) "
+            "throw new Error('a rejected prototype-cycle trap ran');",
             "webgpu-binding-prototype-cycle-check.js")) {
         return failed("prototype cycle controls");
     }
@@ -727,18 +814,7 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
     auto* engine = state->engine;
     if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
 
-    if (!runtime.evalScript(R"JS((() => {
-        globalThis.__tnTeardownQueueProxy = new Proxy({}, {
-            set(target, property, value) {
-                Reflect.set(target, property, value);
-                Promise.resolve().then(() => value());
-                return true;
-            },
-        });
-    })())JS", "webgpu-binding-teardown-queue-setup.js")) {
-        return false;
-    }
-    const auto destination = engine->getGlobalProperty("__tnTeardownQueueProxy");
+    const auto destination = engine->newObject();
     const auto table = mystral::webgpu::bindingTable({
         {"TestSurface", "queuedAtTeardown", 0, nullptr, &teardownProbe, destination},
     });
@@ -945,6 +1021,8 @@ int main() {
     }
     if (!second->evalScript(
             "if (__tnReentrancyMarker !== 'second') throw new Error('second engine lost state'); "
+            "if (!(performance.now() > 0)) "
+            "throw new Error('second engine performance.now lost its context owner'); "
             "__tnEngineLocalCanvasContext.fillRect(0, 0, 1, 1); "
             "if (typeof __tnEngineLocalCanvasContext.measureText('x').width !== 'number') "
             "throw new Error('second engine Canvas2D callback lost its owning engine');",

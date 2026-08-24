@@ -9,9 +9,10 @@
 #include <iostream>
 #include <sstream>
 #include <cstring>
+#include <cmath>
 #include <unordered_map>
-#include <unordered_set>
 #include <chrono>
+#include <utility>
 
 #if defined(MYSTRAL_JS_JSC) && defined(__APPLE__)
 
@@ -21,11 +22,13 @@
 namespace mystral {
 namespace js {
 
-// Store native function callbacks (since we can't capture lambdas in JSC callbacks)
-static std::unordered_map<void*, NativeFunction> g_nativeFunctions;
-
 class JSCEngine : public Engine {
 public:
+    struct NativeFunctionData {
+        NativeFunction callback;
+        JSGlobalContextRef owner;
+    };
+
     JSCEngine() {
         std::cout << "[JSC] Creating JavaScriptCore engine..." << std::endl;
 
@@ -37,6 +40,17 @@ public:
             std::cerr << "[JSC] Failed to create context" << std::endl;
             return;
         }
+
+        JSClassDefinition ordinaryObjectDefinition = kJSClassDefinitionEmpty;
+        ordinaryObjectDefinition.className = "ThreeNativeOrdinaryObject";
+        ordinaryObjectDefinition.attributes = kJSClassAttributeNoAutomaticPrototype;
+        ordinaryObjectClass_ = JSClassCreate(&ordinaryObjectDefinition);
+
+        JSClassDefinition nativeFunctionDefinition = kJSClassDefinitionEmpty;
+        nativeFunctionDefinition.className = "ThreeNativeNativeFunction";
+        nativeFunctionDefinition.finalize = &finalizeNativeFunction;
+        nativeFunctionDefinition.callAsFunction = &nativeCallback;
+        nativeFunctionClass_ = JSClassCreate(&nativeFunctionDefinition);
 
         cacheIntrinsics();
 
@@ -50,17 +64,17 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
-            for (const auto callbackKey : nativeFunctionKeys_) {
-                g_nativeFunctions.erase(callbackKey);
-            }
-            nativeFunctionKeys_.clear();
             clearLastException();
+            if (functionPrototype_) JSValueUnprotect(context_, functionPrototype_);
+            if (objectPrototype_) JSValueUnprotect(context_, objectPrototype_);
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
             if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
             if (reflectSet_) JSValueUnprotect(context_, reflectSet_);
             if (reflectGetPrototypeOf_) JSValueUnprotect(context_, reflectGetPrototypeOf_);
             JSGlobalContextRelease(context_);
         }
+        if (nativeFunctionClass_) JSClassRelease(nativeFunctionClass_);
+        if (ordinaryObjectClass_) JSClassRelease(ordinaryObjectClass_);
         if (contextGroup_) {
             JSContextGroupRelease(contextGroup_);
         }
@@ -164,7 +178,11 @@ public:
     }
 
     JSValueHandle newObject() override {
-        return {(void*)JSObjectMake(context_, nullptr, nullptr), context_};
+        JSObjectRef object = JSObjectMake(context_, ordinaryObjectClass_, nullptr);
+        if (objectPrototype_) {
+            JSObjectSetPrototype(context_, object, objectPrototype_);
+        }
+        return {(void*)object, context_};
     }
 
     JSValueHandle newArray(size_t length) override {
@@ -361,19 +379,20 @@ public:
     }
 
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
+        JSObjectRef funcObj = JSObjectMake(
+            context_, nativeFunctionClass_,
+            new NativeFunctionData{std::move(fn), context_});
+        if (functionPrototype_) {
+            JSObjectSetPrototype(context_, funcObj, functionPrototype_);
+        }
+        JSStringRef propertyName = JSStringCreateWithUTF8CString("name");
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-
-        // We need to store the callback somewhere JSC can access it
-        // Use a static map with the function object pointer as key
-        JSObjectRef funcObj = JSObjectMakeFunctionWithCallback(context_, nameStr, &nativeCallback);
-
-        // Store the native function with the object pointer as key. The process-global callback
-        // trampoline cannot capture this engine, so retain explicit per-engine ownership for
-        // teardown instead of leaving callbacks that capture a released context behind.
-        void* callbackKey = (void*)funcObj;
-        g_nativeFunctions[callbackKey] = fn;
-        nativeFunctionKeys_.insert(callbackKey);
-
+        JSObjectSetProperty(
+            context_, funcObj, propertyName, JSValueMakeString(context_, nameStr),
+            static_cast<JSPropertyAttributes>(
+                kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum),
+            nullptr);
+        JSStringRelease(propertyName);
         JSStringRelease(nameStr);
         return {(void*)funcObj, context_};
     }
@@ -438,9 +457,35 @@ public:
                JSObjectIsFunction(context_, (JSObjectRef)value.ptr);
     }
 
+    bool isBindingDestination(JSValueHandle value) override {
+        if (!value.ptr || value.ctx != context_ ||
+            !JSValueIsObject(context_, (JSValueRef)value.ptr)) {
+            return false;
+        }
+        JSObjectRef object = (JSObjectRef)value.ptr;
+        if (!ordinaryObjectClass_ ||
+            !JSValueIsObjectOfClass(context_, object, ordinaryObjectClass_)) {
+            return false;
+        }
+        JSValueRef prototype = JSObjectGetPrototype(context_, object);
+        return objectPrototype_ && prototype &&
+               JSValueIsStrictEqual(context_, prototype, objectPrototype_);
+    }
+
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
         if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
-        return JSValueIsStrictEqual(context_, (JSValueRef)left.ptr, (JSValueRef)right.ptr);
+        JSValueRef leftValue = (JSValueRef)left.ptr;
+        JSValueRef rightValue = (JSValueRef)right.ptr;
+        if (JSValueIsNumber(context_, leftValue) &&
+            JSValueIsNumber(context_, rightValue)) {
+            const double leftNumber = JSValueToNumber(context_, leftValue, nullptr);
+            const double rightNumber = JSValueToNumber(context_, rightValue, nullptr);
+            if (std::isnan(leftNumber) && std::isnan(rightNumber)) return true;
+            if (leftNumber == 0.0 && rightNumber == 0.0) {
+                return std::signbit(leftNumber) == std::signbit(rightNumber);
+            }
+        }
+        return JSValueIsStrictEqual(context_, leftValue, rightValue);
     }
 
     // ========================================================================
@@ -751,6 +796,28 @@ private:
         JSStringRelease(objectName);
         if (!objectValue || !JSValueIsObject(context_, objectValue)) return;
 
+        JSStringRef prototypeName = JSStringCreateWithUTF8CString("prototype");
+        JSValueRef objectPrototype = JSObjectGetProperty(
+            context_, (JSObjectRef)objectValue, prototypeName, nullptr);
+        if (objectPrototype && JSValueIsObject(context_, objectPrototype)) {
+            objectPrototype_ = (JSObjectRef)objectPrototype;
+            JSValueProtect(context_, objectPrototype_);
+        }
+
+        JSStringRef functionName = JSStringCreateWithUTF8CString("Function");
+        JSValueRef functionValue = JSObjectGetProperty(
+            context_, global, functionName, nullptr);
+        JSStringRelease(functionName);
+        if (functionValue && JSValueIsObject(context_, functionValue)) {
+            JSValueRef functionPrototype = JSObjectGetProperty(
+                context_, (JSObjectRef)functionValue, prototypeName, nullptr);
+            if (functionPrototype && JSValueIsObject(context_, functionPrototype)) {
+                functionPrototype_ = (JSObjectRef)functionPrototype;
+                JSValueProtect(context_, functionPrototype_);
+            }
+        }
+        JSStringRelease(prototypeName);
+
         JSStringRef descriptorName = JSStringCreateWithUTF8CString("getOwnPropertyDescriptor");
         JSValueRef descriptorValue = JSObjectGetProperty(
             context_, (JSObjectRef)objectValue, descriptorName, nullptr);
@@ -897,13 +964,18 @@ private:
         std::cerr << "[JSC] Error: " << msg << std::endl;
     }
 
+    static void finalizeNativeFunction(JSObjectRef object) {
+        delete static_cast<NativeFunctionData*>(JSObjectGetPrivate(object));
+    }
+
     static JSValueRef nativeCallback(JSContextRef ctx, JSObjectRef function,
                                      JSObjectRef thisObject, size_t argumentCount,
                                      const JSValueRef arguments[], JSValueRef* exception) {
-        // Find the native function for this JS function
-        auto it = g_nativeFunctions.find((void*)function);
-        if (it == g_nativeFunctions.end()) {
-            std::cerr << "[JSC] Native function not found for callback" << std::endl;
+        auto* callbackData = static_cast<NativeFunctionData*>(
+            JSObjectGetPrivate(function));
+        if (!callbackData ||
+            callbackData->owner != JSContextGetGlobalContext(ctx)) {
+            std::cerr << "[JSC] Native function owner not found for callback" << std::endl;
             return JSValueMakeUndefined(ctx);
         }
 
@@ -915,7 +987,7 @@ private:
         }
 
         // Call the native function
-        JSValueHandle result = it->second((void*)ctx, args);
+        JSValueHandle result = callbackData->callback((void*)ctx, args);
         return (JSValueRef)result.ptr;
     }
 
@@ -925,8 +997,11 @@ private:
     JSObjectRef reflectHas_ = nullptr;
     JSObjectRef reflectSet_ = nullptr;
     JSObjectRef reflectGetPrototypeOf_ = nullptr;
+    JSObjectRef objectPrototype_ = nullptr;
+    JSObjectRef functionPrototype_ = nullptr;
+    JSClassRef ordinaryObjectClass_ = nullptr;
+    JSClassRef nativeFunctionClass_ = nullptr;
     JSValueRef lastException_ = nullptr;
-    std::unordered_set<void*> nativeFunctionKeys_;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
     std::chrono::high_resolution_clock::time_point startTime_;
 };

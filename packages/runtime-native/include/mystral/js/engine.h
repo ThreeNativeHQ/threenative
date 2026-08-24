@@ -220,10 +220,18 @@ public:
     virtual bool isFunction(JSValueHandle value) = 0;
 
     /**
-     * Compare two values using the engine's identity semantics.
+     * Return true only for a side-effect-free binding destination owned by this engine.
+     * Implementations accept ordinary objects created by newObject(), and reject global objects,
+     * proxies, other exotic objects, foreign-engine handles, and mutated prototype chains.
+     */
+    virtual bool isBindingDestination(JSValueHandle value) = 0;
+
+    /**
+     * Compare two values using ECMAScript SameValue (Object.is) semantics.
      *
      * Native DOM shims use this for browser-style callback identity, where two
-     * handles for the same JavaScript function must compare equal.
+     * handles for the same JavaScript function must compare equal. Unlike strict
+     * equality, NaN equals NaN and negative zero differs from positive zero.
      */
     virtual bool isSameValue(JSValueHandle left, JSValueHandle right) = 0;
 

@@ -126,12 +126,12 @@ js::JSValueHandle createTextureWrapper(
     state->engine->setProperty(jsTexture, "format", state->engine->newString(format));
     state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
 
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"GPUTexture", "createView", 0, nullptr,
          makeTextureViewBinding(state, textureId), jsTexture},
         {"GPUTexture", "destroy", 0, nullptr,
          makeDestroyTextureBinding(state, textureId), jsTexture},
-    }));
+    }))) return state->engine->newUndefined();
     return jsTexture;
 }
 
@@ -148,10 +148,10 @@ js::JSValueHandle createPipelineWrapper(
         "_type",
         state->engine->newString(renderPipeline ? "renderPipeline" : "computePipeline"));
     const char* pipelineSurface = renderPipeline ? "GPURenderPipeline" : "GPUComputePipeline";
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {pipelineSurface, "getBindGroupLayout", 0, nullptr,
          makePipelineBindGroupLayoutBinding(state, pipelineId, renderPipeline), jsPipeline},
-    }));
+    }))) return state->engine->newUndefined();
     return jsPipeline;
 }
 

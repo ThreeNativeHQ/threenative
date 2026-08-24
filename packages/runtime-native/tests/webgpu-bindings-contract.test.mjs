@@ -220,7 +220,7 @@ function assertRowOwnedDestinations(header, implementation) {
   assert.match(implementation, /destinations\.reserve\(/u);
   assert.match(
     implementation,
-    /if \(engine->isNull\(destination\) \|\|[\s\S]*?!engine->isObject\(destination\)/u,
+    /if \(!engine->isBindingDestination\(destination\)\)/u,
   );
   assert.match(implementation, /engine->setProperty\(\s*destination,/u);
   assert.doesNotMatch(implementation, /continue;/u);
@@ -265,7 +265,7 @@ test("binding-table installation validates every row before the first property w
   );
 });
 
-test("binding-table installation is object-only and rolls back failed writes", () => {
+test("binding-table installation accepts only non-observable engine destinations", () => {
   const engine = read("include/mystral/js/engine.h");
   const implementation = read("src/webgpu/registration_table.cpp");
 
@@ -278,7 +278,12 @@ test("binding-table installation is object-only and rolls back failed writes", (
   assert.match(engine, /virtual void releasePropertyInfo\(JSPropertyInfo& info\) = 0;/u);
   assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
-  assert.match(implementation, /!engine->isObject\(destination\)/u);
+  assert.match(
+    engine,
+    /virtual bool isBindingDestination\(JSValueHandle value\) = 0;/u,
+  );
+  assert.match(implementation, /!engine->isBindingDestination\(destination\)/u);
+  assert.match(implementation, /engine-owned ordinary object/u);
   assert.match(implementation, /expectedInstalled\.push_back[\s\S]*?engine->setProperty\(/u);
   assert.match(implementation, /getPropertyInfo\(/u);
   assert.match(implementation, /JSPropertyKind::Accessor/u);
@@ -302,10 +307,66 @@ test("binding-table installation is object-only and rolls back failed writes", (
     assert.match(source, /void releasePropertyInfo\(JSPropertyInfo& info\) override/u);
     assert.match(source, /bool hasProperty\(JSValueHandle obj, const char\* name\) override/u);
     assert.match(source, /bool deleteProperty\(JSValueHandle obj, const char\* name\) override/u);
+    assert.match(source, /bool isBindingDestination\(JSValueHandle value\) override/u);
     assert.doesNotMatch(source, /JavaScript property assignment did not create a property/u);
     assert.doesNotMatch(source, /JSValueIsStrictEqual\(context_, stored/u);
   }
+});
 
+test("binding destination ownership is unforgeable from JavaScript", () => {
+  const v8 = read("src/js/v8_engine.cpp");
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const jsc = read("src/js/jsc_engine.mm");
+
+  assert.match(v8, /bindingDestinationKey_\.Reset\(isolate_, v8::Private::New/u);
+  assert.match(v8, /local->IsProxy\(\)/u);
+  assert.match(quickjs, /JS_NewClassID\(runtime_, &bindingDestinationClassId_\)/u);
+  assert.match(quickjs, /JS_NewObjectProtoClass\(/u);
+  assert.match(quickjs, /JS_GetClassID\(object\) != bindingDestinationClassId_/u);
+  assert.doesNotMatch(quickjs, /bindingDestinationMarker_|JS_NewSymbol/u);
+  assert.match(jsc, /JSValueIsObjectOfClass\(context_, object, ordinaryObjectClass_\)/u);
+  assert.match(jsc, /JSObjectSetPrototype\(context_, object, objectPrototype_\)/u);
+
+  const destinationBlocks = [
+    blockBetween(v8, "bool isBindingDestination", "bool isSameValue"),
+    blockBetween(quickjs, "bool isBindingDestination", "bool isSameValue"),
+    blockBetween(jsc, "bool isBindingDestination", "bool isSameValue"),
+  ];
+  for (const destinationBlock of destinationBlocks) {
+    assert.doesNotMatch(
+      destinationBlock,
+      /context->Global|JS_GetGlobalObject|JSContextGetGlobalObject/u,
+      "an exotic global object must not be a binding destination",
+    );
+  }
+});
+
+test("supported feature collections stay iterable without binding onto an exotic array", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+
+  assert.match(bindings, /auto deviceFeatures = state->engine->newArray\(0\)/u);
+  assert.match(bindings, /auto features = state->engine->newArray\(0\)/u);
+  assert.match(bindings, /deviceFeaturesBindingHost[\s\S]*getProperty\(deviceFeaturesBindingHost, "has"\)/u);
+  assert.match(bindings, /featuresBindingHost[\s\S]*getProperty\(featuresBindingHost, "has"\)/u);
+  assert.doesNotMatch(
+    bindings,
+    /&tnWebgpuHandler(?:28|82)[\s\S]{0,80}, (?:deviceFeatures|features)\}\}/u,
+  );
+});
+
+test("global helpers are copied from ordinary binding hosts", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(bindings, /globalBindingHost = engine->newObject\(\)/u);
+  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "__decodeImageData"\)/u);
+  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "__nativeGetContext2D"\)/u);
+  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "createOffscreenCanvas2D"\)/u);
+  assert.doesNotMatch(
+    bindings,
+    /\{"WebGPU",\s*"[^"]+"[\s\S]{0,120}?getGlobal\(\)/u,
+  );
+  assert.match(nativeControl, /global exotic destination did not fail/u);
 });
 
 test("binding-table verification covers the whole table after writes and rollback", () => {
@@ -314,7 +375,7 @@ test("binding-table verification covers the whole table after writes and rollbac
   const writeLoop = blockBetween(
     implementation,
     "for (size_t index = 0; index < table.registrations.size(); ++index)",
-    "releaseSnapshots();\n    return true;",
+    "releaseExpectedValues();\n    return true;",
   );
 
   assert.match(implementation, /std::vector<ExpectedInstalledProperty> expectedInstalled/u);
@@ -324,39 +385,36 @@ test("binding-table verification covers the whole table after writes and rollbac
   assert.doesNotMatch(writeLoop, /installedPropertyMatches/u);
   assert.match(
     nativeControl,
-    /__tnCrossRowSecondProxy[\s\S]*delete __tnCrossRowFirst\.first[\s\S]*whole-table rollback state/u,
+    /__tnCrossRowSecondProxy[\s\S]*__tnCrossRowSetTrapCalls !== 0[\s\S]*rejected proxy set trap ran/u,
   );
   assert.match(
     nativeControl,
-    /controlled cross-row rollback failure[\s\S]*binding-table rollback was incomplete[\s\S]*whole-table final rollback verification/u,
+    /__tnCrossRowPreflightProxy[\s\S]*__tnCrossRowDescriptorTrapCalls !== 0[\s\S]*unsnapshotted row/u,
+  );
+  assert.match(
+    nativeControl,
+    /Object\.preventExtensions\(__tnRollbackBlocked\)[\s\S]*binding-table rollback was incomplete[\s\S]*SameValue rollback verification/u,
   );
 });
 
-test("descriptor traversal and ordinary reads preserve proxy exception semantics", () => {
+test("binding destinations reject proxies before descriptor traversal", () => {
   const engine = read("include/mystral/js/engine.h");
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const jsc = read("src/js/jsc_engine.mm");
   const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
 
-  assert.match(engine, /Proxy descriptor and getPrototypeOf traps may run/u);
-  assert.match(v8, /reflectGetPrototypeOf_/u);
-  assert.doesNotMatch(v8, /current->GetPrototype\(\)/u);
-  assert.match(jsc, /reflectGetPrototypeOf_/u);
-  assert.doesNotMatch(jsc, /JSObjectGetPrototype\(context_, current\)/u);
-  assert.match(quickjs, /JS_IsException\(result\)[\s\S]*capturePendingException\(\)/u);
-  assert.match(
-    nativeControl,
-    /getPrototypeOf\(\)[\s\S]*controlled getPrototypeOf failure[\s\S]*getProperty\(revoked/u,
-  );
-  assert.match(nativeControl, /self prototype cycle was not detected/u);
-  assert.match(nativeControl, /multi-proxy prototype cycle was not detected/u);
-  for (const source of [v8, quickjs, jsc]) {
-    assert.match(source, /property prototype traversal detected a cycle/u);
-  }
+  assert.match(engine, /side-effect-free binding destination/u);
+  assert.match(v8, /IsProxy\(\)/u);
+  assert.match(quickjs, /JS_IsProxy/u);
+  assert.match(jsc, /JSValueIsObjectOfClass/u);
+  assert.match(nativeControl, /a rejected proxy descriptor trap ran/u);
+  assert.match(nativeControl, /a rejected proxy set trap ran/u);
+  assert.match(nativeControl, /getProperty\(revoked/u);
 });
 
 test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () => {
+  const implementation = read("src/webgpu/registration_table.cpp");
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const jsc = read("src/js/jsc_engine.mm");
@@ -370,6 +428,14 @@ test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () =>
   assert.match(jsc, /replaceLastException\([\s\S]*JSValueProtect/u);
   assert.match(jsc, /getException\(\)[\s\S]*JSValueUnprotect/u);
   assert.match(jsc, /~JSCEngine\(\)[\s\S]*clearLastException/u);
+  assert.match(
+    implementation,
+    /engine->protect\(function\)[\s\S]*protectedExpectedValues\.push_back\(function\)/u,
+  );
+  assert.match(
+    implementation,
+    /for \(auto it = protectedExpectedValues\.rbegin\(\)[\s\S]*engine->unprotect\(\*it\)/u,
+  );
   assert.doesNotMatch(
     blockBetween(jsc, "bool setProperty(JSValueHandle obj", "JSValueHandle getProperty"),
     /JSObjectSetProperty/u,
@@ -380,7 +446,7 @@ test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () =>
   );
 });
 
-test("QuickJS teardown discards jobs that capture runtime-owned binding state", () => {
+test("QuickJS teardown does not execute pending binding callbacks", () => {
   const quickjs = read("src/js/quickjs_engine.cpp");
   const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
   const destructor = blockBetween(
@@ -390,7 +456,6 @@ test("QuickJS teardown discards jobs that capture runtime-owned binding state", 
   );
 
   assert.doesNotMatch(destructor, /JS_ExecutePendingJob/u);
-  assert.match(nativeControl, /Promise\.resolve\(\)\.then\(\(\) => value\(\)\)/u);
   assert.match(nativeControl, /queued QuickJS callback executed during runtime teardown/u);
 });
 
@@ -431,34 +496,63 @@ test("QuickJS centrally replaces and clears owned exception values", () => {
   );
 });
 
-test("JSC erases only callback keys owned by the engine being destroyed", () => {
+test("JSC native callbacks use callable private data with owner-qualified lifetime", () => {
   const jsc = read("src/js/jsc_engine.mm");
   const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
-  const destructor = blockBetween(
-    jsc,
-    "~JSCEngine() override",
-    "EngineType getType() const override",
-  );
   const newFunction = blockBetween(
     jsc,
     "JSValueHandle newFunction",
     "// ========================================================================\n    // Value Conversion",
   );
 
-  assert.match(jsc, /std::unordered_set<void\*> nativeFunctionKeys_/u);
-  assert.match(newFunction, /nativeFunctionKeys_\.insert\(callbackKey\)/u);
-  assert.match(destructor, /for \(const auto callbackKey : nativeFunctionKeys_\)[\s\S]*g_nativeFunctions\.erase\(callbackKey\)/u);
-  assert.doesNotMatch(destructor, /g_nativeFunctions\.clear/u);
-  assert.ok(
-    destructor.indexOf("g_nativeFunctions.erase(callbackKey)") <
-      destructor.indexOf("JSGlobalContextRelease(context_)"),
-    "JSC callback entries must be erased before context release",
+  assert.doesNotMatch(jsc, /g_nativeFunctions|nativeFunctionKeys_/u);
+  assert.match(
+    jsc,
+    /struct NativeFunctionData[\s\S]*NativeFunction callback[\s\S]*JSGlobalContextRef owner/u,
   );
+  assert.match(
+    newFunction,
+    /JSObjectMake\(\s*context_, nativeFunctionClass_,\s*new NativeFunctionData/u,
+  );
+  assert.match(jsc, /nativeFunctionDefinition\.finalize = &finalizeNativeFunction/u);
+  assert.match(jsc, /nativeFunctionDefinition\.callAsFunction = &nativeCallback/u);
+  assert.match(jsc, /JSObjectGetPrivate\(function\)/u);
+  assert.match(
+    jsc,
+    /callbackData->owner != JSContextGetGlobalContext\(ctx\)/u,
+  );
+  assert.match(jsc, /delete static_cast<NativeFunctionData\*>\(JSObjectGetPrivate\(object\)\)/u);
   assert.match(jsc, /replaceLastException\([\s\S]*JSValueProtect/u);
   assert.match(jsc, /reflectSet_[\s\S]*JSObjectCallAsFunction/u);
   assert.match(
     nativeControl,
     /Runtime::create\(config\)[\s\S]*replacement\.reset\(\)[\s\S]*surviving engine callback changed after replacement teardown/u,
+  );
+});
+
+test("all engines implement Object.is SameValue and QuickJS performance uses its callback context", () => {
+  const v8 = read("src/js/v8_engine.cpp");
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const jsc = read("src/js/jsc_engine.mm");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(v8, /->SameValue\(/u);
+  assert.doesNotMatch(
+    blockBetween(v8, "bool isSameValue", "// ========================================================================\n    // Object Operations"),
+    /StrictEquals/u,
+  );
+  assert.match(quickjs, /JS_IsSameValue\(context_/u);
+  assert.doesNotMatch(quickjs, /engineInstance_/u);
+  assert.match(
+    quickjs,
+    /js_performance_now[\s\S]*JS_GetContextOpaque\(ctx\)[\s\S]*engine->startTime_/u,
+  );
+  assert.match(jsc, /std::signbit/u);
+  assert.match(jsc, /std::isnan/u);
+  assert.match(nativeControl, /SameValue rollback verification/u);
+  assert.match(
+    nativeControl,
+    /first\.reset\(\)[\s\S]*performance\.now\(\) > 0[\s\S]*lost its context owner/u,
   );
 });
 
@@ -633,6 +727,22 @@ function assertDeclarativeInstaller(candidate) {
   assert.match(installer, /installBindingTable\(\s*state->engine\s*,\s*state\s*,/u);
   assert.match(installer, /\{"HTMLElement",\s*"appendChild"[\s\S]*&[A-Za-z_][A-Za-z0-9_]*/u);
   assert.match(installer, /bindingTable\(\{/u);
+  assert.equal(
+    installer.match(/installBindingTable\(/gu)?.length,
+    installer.match(/if \(!installBindingTable\(/gu)?.length,
+    "production initialization must return false for every partial table install",
+  );
+}
+
+function assertEveryTableInstallIsChecked(candidate) {
+  const calls = candidate.match(/installBindingTable\(/gu) ?? [];
+  const checked = candidate.match(/if \(!installBindingTable\(/gu) ?? [];
+  assert.ok(calls.length > 0, "expected binding-table installation sites");
+  assert.equal(
+    checked.length,
+    calls.length,
+    "every dynamic table/factory installation must propagate failure",
+  );
 }
 
 test("all migrated WebGPU registration families use the shared table dispatcher", () => {
@@ -645,6 +755,7 @@ test("all migrated WebGPU registration families use the shared table dispatcher"
   assert.doesNotMatch(bindings, /install(?:Global)?Binding\(/u);
   assertSurfaceInstallerDelegates(bindings);
   assertDeclarativeInstaller(bindings);
+  assertEveryTableInstallIsChecked(bindings);
   assertMigratedRegistrationRows(bindings);
 
   const inlineHandlerMutation = bindings.replace(
@@ -654,6 +765,15 @@ test("all migrated WebGPU registration families use the shared table dispatcher"
   assert.throws(
     () => assertDeclarativeInstaller(inlineHandlerMutation),
     /WebGPU table installer/u,
+  );
+
+  const ignoredStaticFailure = bindings.replace(
+    "if (!installBindingTable(",
+    "installBindingTable(",
+  );
+  assert.throws(
+    () => assertEveryTableInstallIsChecked(ignoredStaticFailure),
+    /propagate failure/u,
   );
 
   const withoutComputePipeline = bindings.replace(
@@ -682,6 +802,7 @@ test("texture and pipeline wrapper factories use the shared table dispatcher", (
   );
   assert.match(factories, /\{pipelineSurface, "getBindGroupLayout"/u);
   assert.doesNotMatch(factories, /newFunction\(/u);
+  assertEveryTableInstallIsChecked(factories);
 
   const directRegistration = factories.replaceAll("installBindingTable(", "directRegistration(");
   assert.throws(

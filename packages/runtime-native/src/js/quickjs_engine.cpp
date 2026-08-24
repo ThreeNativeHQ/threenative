@@ -143,6 +143,19 @@ public:
         }
         JS_SetContextOpaque(context_, this);
 
+        JS_NewClassID(runtime_, &bindingDestinationClassId_);
+        JSClassDef bindingDestinationDefinition = {};
+        bindingDestinationDefinition.class_name = "ThreeNativeOrdinaryObject";
+        if (JS_NewClass(
+                runtime_, bindingDestinationClassId_,
+                &bindingDestinationDefinition) < 0) {
+            std::cerr << "[QuickJS] Failed to register binding destination class" << std::endl;
+            return;
+        }
+        JSValue ordinaryObject = JS_NewObject(context_);
+        bindingDestinationPrototype_ = JS_GetPrototype(context_, ordinaryObject);
+        JS_FreeValue(context_, ordinaryObject);
+
         JS_SetModuleLoaderFunc(runtime_, quickjsModuleNormalize, quickjsModuleLoader, nullptr);
 
         // Set up standard globals
@@ -179,6 +192,9 @@ public:
             // Clear private data map
             privateDataMap_.clear();
 
+            JS_FreeValue(context_, bindingDestinationPrototype_);
+            bindingDestinationPrototype_ = JS_UNDEFINED;
+
             // Run garbage collection multiple times to clean up cycles
             JS_RunGC(runtime_);
             JS_RunGC(runtime_);
@@ -192,7 +208,6 @@ public:
             JS_FreeRuntime(runtime_);
         }
 
-        engineInstance_ = nullptr;
     }
 
     EngineType getType() const override { return EngineType::QuickJS; }
@@ -386,7 +401,9 @@ public:
     }
 
     JSValueHandle newObject() override {
-        JSValue* val = new JSValue(JS_NewObject(context_));
+        JSValue object = JS_NewObjectProtoClass(
+            context_, bindingDestinationPrototype_, bindingDestinationClassId_);
+        JSValue* val = new JSValue(object);
         return {val, context_};
     }
 
@@ -592,6 +609,19 @@ public:
     bool isFunction(JSValueHandle value) override {
         JSValue* val = (JSValue*)value.ptr;
         return JS_IsFunction(context_, *val);
+    }
+
+    bool isBindingDestination(JSValueHandle value) override {
+        if (!value.ptr || value.ctx != context_) return false;
+        JSValue object = *static_cast<JSValue*>(value.ptr);
+        if (!JS_IsObject(object) || JS_IsProxy(object)) return false;
+        if (JS_GetClassID(object) != bindingDestinationClassId_) return false;
+
+        JSValue prototype = JS_GetPrototype(context_, object);
+        const bool hasExpectedPrototype = !JS_IsException(prototype) &&
+            JS_IsSameValue(context_, prototype, bindingDestinationPrototype_);
+        JS_FreeValue(context_, prototype);
+        return hasExpectedPrototype;
     }
 
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
@@ -876,8 +906,6 @@ private:
         startTime_ = std::chrono::high_resolution_clock::now();
         JSValue performance = JS_NewObject(context_);
 
-        // Store engine pointer for performance.now
-        engineInstance_ = this;
         JS_SetPropertyStr(context_, performance, "now",
             JS_NewCFunction(context_, js_performance_now, "now", 0));
         JS_SetPropertyStr(context_, global, "performance", performance);
@@ -995,9 +1023,10 @@ private:
     }
 
     static JSValue js_performance_now(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-        if (!engineInstance_) return JS_NewFloat64(ctx, 0);
+        auto* engine = static_cast<QuickJSEngine*>(JS_GetContextOpaque(ctx));
+        if (!engine) return JS_NewFloat64(ctx, 0);
         auto now = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(now - engineInstance_->startTime_).count();
+        double ms = std::chrono::duration<double, std::milli>(now - engine->startTime_).count();
         return JS_NewFloat64(ctx, ms);
     }
 
@@ -1005,14 +1034,13 @@ private:
     JSContext* context_ = nullptr;
     JSValue lastException_ = JS_UNDEFINED;
     std::chrono::high_resolution_clock::time_point startTime_;
+    JSClassID bindingDestinationClassId_ = JS_INVALID_CLASS_ID;
+    JSValue bindingDestinationPrototype_ = JS_UNDEFINED;
     std::unordered_map<void*, void*> privateDataMap_;  // Map JS object ptr to native data
     std::vector<NativeFunction*> allocatedFunctions_;  // Track allocated function pointers
     std::unordered_set<void*> protectedHandles_;
 
-    static QuickJSEngine* engineInstance_;  // For performance.now access
 };
-
-QuickJSEngine* QuickJSEngine::engineInstance_ = nullptr;
 
 // Factory function
 std::unique_ptr<Engine> createQuickJSEngine() {

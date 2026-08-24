@@ -1127,17 +1127,18 @@ static BindingHandler makeCurrentTextureCanvasContextHandler(bool offscreen) {
     };
 }
 
-static void installCanvasContextBindings(
+static bool installCanvasContextBindings(
     BindingsState* state,
     js::JSValueHandle canvasContext,
     bool offscreen) {
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"GPUCanvasContext", "configure", 1, "configure requires a descriptor", &configureCanvasContext, canvasContext},
         {"GPUCanvasContext", "unconfigure", 0, nullptr,
          makeUnconfigureCanvasContextHandler(offscreen), canvasContext},
         {"GPUCanvasContext", "getCurrentTexture", 0, nullptr,
          makeCurrentTextureCanvasContextHandler(offscreen), canvasContext},
-    }));
+    }))) return false;
+    return true;
 }
 
 template <typename T>
@@ -1194,10 +1195,10 @@ static js::JSValueHandle tnWebgpuHandler87(BindingsState* state, BindingDestinat
             auto ctx2d = createOwnedCanvas2DContext(state, width, height);
             state->engine->setProperty(canvasWrapper, "_context", ctx2d);
             // getContext('2d') returns the pre-created context
-            installBindingTable(state->engine, state, bindingTable({
+            if (!installBindingTable(state->engine, state, bindingTable({
                 {"HTMLCanvasElement", "getContext", 0, nullptr,
                 &tnWebgpuHandler88
-            , canvasWrapper}}));
+            , canvasWrapper}}))) return state->engine->newUndefined();
             return canvasWrapper;
 }
 
@@ -1716,7 +1717,7 @@ static js::JSValueHandle tnWebgpuHandler72(BindingsState* state, BindingDestinat
                             // Capture for closures
                             WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
                             // renderBundleEncoder.setPipeline(pipeline)
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPURenderBundleEncoder", "setPipeline", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler73)
                             , jsEncoder},
@@ -1743,7 +1744,7 @@ static js::JSValueHandle tnWebgpuHandler72(BindingsState* state, BindingDestinat
                             // renderBundleEncoder.finish(descriptor?)
                                 {"GPURenderBundleEncoder", "finish", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler79)
-                            , jsEncoder}}));
+                            , jsEncoder}}))) return state->engine->newUndefined();
                             if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
                             return jsEncoder;
 }
@@ -2393,14 +2394,14 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                             // texture.createView(descriptor?) - Store texture ID for lookup
                             // We store the textureId to look up the texture later since callbacks don't have 'this'
                             state->engine->setProperty(jsTexture, "_createViewTextureId", state->engine->newNumber((double)textureId));
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUTexture", "createView", 0, nullptr,
                                 makeCapturedHandler(textureId, &tnWebgpuHandler65)
                             , jsTexture},
                             // texture.destroy()
                                                             {"GPUTexture", "destroy", 0, nullptr,
                                 &tnWebgpuHandler66
-                            , jsTexture}}));
+                            , jsTexture}}))) return state->engine->newUndefined();
                             if (state->verboseLogging) std::cout << "[WebGPU] Created texture " << width << "x" << height << " format=" << formatStr << " (id=" << textureId << ")" << std::endl;
                             return jsTexture;
 }
@@ -2684,7 +2685,7 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     state->jsComputePass = wgpuCommandEncoderBeginComputePass(state->jsCommandEncoder, &computePassDesc);
                                     auto jsComputePass = state->engine->newObject();
                                     // computePass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, bindingTable({
+                                    if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPUComputePassEncoder", "setPipeline", 0, nullptr,
                                         &tnWebgpuHandler54
                                     , jsComputePass},
@@ -2699,7 +2700,7 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     // computePass.end()
                                                                             {"GPUComputePassEncoder", "end", 0, nullptr,
                                         &tnWebgpuHandler57
-                                    , jsComputePass}}));
+                                    , jsComputePass}}))) return state->engine->newUndefined();
                                     if (state->verboseLogging) std::cout << "[WebGPU] Compute pass started" << std::endl;
                                     return jsComputePass;
 }
@@ -3081,7 +3082,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     state->engine->setPrivateData(jsRenderPass, renderPass);
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
                                     // renderPass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, bindingTable({
+                                    if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
                                         makeCapturedHandler(renderPass, &tnWebgpuHandler39)
                                     , jsRenderPass},
@@ -3128,19 +3129,28 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     // renderPass.setStencilReference(reference)
                                         {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
                                         makeCapturedHandler(renderPass, &tnWebgpuHandler50)
-                                    , jsRenderPass}}));
+                                    , jsRenderPass}}))) {
+                                        state->engine->resumeFrameTracking();
+                                        return state->engine->newUndefined();
+                                    }
                                     // renderPass.executeBundles(bundles)
                                     // Used by Three.js for mipmap generation
                                     WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
-                                    installBindingTable(state->engine, state, bindingTable({
+                                    if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
                                         makeCapturedHandler(renderPass, &tnWebgpuHandler51)
-                                    , jsRenderPass}}));
+                                    , jsRenderPass}}))) {
+                                        state->engine->resumeFrameTracking();
+                                        return state->engine->newUndefined();
+                                    }
                                     // renderPass.end() - capture encoder and render pass for cleanup
-                                    installBindingTable(state->engine, state, bindingTable({
+                                    if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "end", 0, nullptr,
                                         makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuHandler52)
-                                    , jsRenderPass}}));
+                                    , jsRenderPass}}))) {
+                                        state->engine->resumeFrameTracking();
+                                        return state->engine->newUndefined();
+                                    }
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;
@@ -3160,17 +3170,23 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             // Capture encoder pointer for use in closures
                             WGPUCommandEncoder capturedEncoder = encoder;
                             // encoder.beginRenderPass(descriptor)
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler38)
-                            , jsEncoder}}));
+                            , jsEncoder}}))) {
+                                state->engine->resumeFrameTracking();
+                                return state->engine->newUndefined();
+                            }
                             // encoder.beginComputePass(descriptor?)
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
                                 &tnWebgpuHandler53
-                            , jsEncoder}}));
+                            , jsEncoder}}))) {
+                                state->engine->resumeFrameTracking();
+                                return state->engine->newUndefined();
+                            }
                             // encoder.copyBufferToBuffer(source, sourceOffset, destination, destinationOffset, size)
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
                                 &tnWebgpuHandler58
                             , jsEncoder},
@@ -3193,7 +3209,10 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             // encoder.finish(descriptor?)
                                 {"GPUCommandEncoder", "finish", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler63)
-                            , jsEncoder}}));
+                            , jsEncoder}}))) {
+                                state->engine->resumeFrameTracking();
+                                return state->engine->newUndefined();
+                            }
                             // Resume frame tracking now that encoder wrapper is created
                             state->engine->resumeFrameTracking();
                             return jsEncoder;
@@ -3830,7 +3849,7 @@ static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestinat
                             state->engine->setProperty(jsBuffer, "mapState", state->engine->newString(mappedAtCreation ? "mapped" : "unmapped"));
                             // buffer.mapAsync(mode, offset?, size?) -> Promise
                             // Returns a Promise that resolves when the buffer is mapped
-                            installBindingTable(state->engine, state, bindingTable({
+                            if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUBuffer", "mapAsync", 0, nullptr,
                                 makeCapturedHandler(bufferId, &tnWebgpuHandler30)
                             , jsBuffer},
@@ -3848,7 +3867,7 @@ static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestinat
                             // Capture bufferId in closure to identify the correct buffer
                                 {"GPUBuffer", "destroy", 0, nullptr,
                                 makeCapturedHandler(bufferId, &tnWebgpuHandler33)
-                            , jsBuffer}}));
+                            , jsBuffer}}))) return state->engine->newUndefined();
                             return jsBuffer;
 }
 
@@ -4365,7 +4384,7 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     auto queue = state->engine->newObject();
                     state->engine->setPrivateData(queue, state->queue);
                     // queue.submit(commandBuffers)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUQueue", "submit", 0, nullptr,
                         &tnWebgpuHandler22
                     , queue},
@@ -4385,7 +4404,7 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // queue.onSubmittedWorkDone() - returns Promise that resolves when GPU work is done
                                             {"GPUQueue", "onSubmittedWorkDone", 0, nullptr,
                         &tnWebgpuHandler26
-                    , queue}}));
+                    , queue}}))) return state->engine->newUndefined();
                     state->engine->setProperty(device, "queue", queue);
                     // device.destroy() - part of the GPUDevice interface, and three.js calls it from
                     // `WebGPURenderer.dispose()`. Without it every clean teardown on a native host
@@ -4393,10 +4412,10 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // end of an otherwise successful run. Releasing the wgpu device here would pull
                     // the surface out from under a host that may still be presenting, so this
                     // reports the call and lets the host own the lifetime.
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "destroy", 0, nullptr,
                         &tnWebgpuHandler27
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.limits - expose device limits
                     auto deviceLimits = state->engine->newObject();
                     state->engine->setProperty(deviceLimits, "maxTextureDimension2D", state->engine->newNumber(8192));
@@ -4418,18 +4437,25 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // real device so consumers (three's KTX2Loader.detectSupport among them)
                     // pick transcode targets from actual hardware capability.
                     auto deviceFeatures = state->engine->newArray(0);
-                    installBindingTable(state->engine, state, bindingTable({
+                    auto deviceFeaturesBindingHost = state->engine->newObject();
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUSupportedFeatures", "has", 0, nullptr,
                         &tnWebgpuHandler28
-                    , deviceFeatures}}));
+                    , deviceFeaturesBindingHost}}))) return state->engine->newUndefined();
+                    if (!state->engine->setProperty(
+                            deviceFeatures,
+                            "has",
+                            state->engine->getProperty(deviceFeaturesBindingHost, "has"))) {
+                        return state->engine->newUndefined();
+                    }
                     state->engine->setProperty(device, "features", deviceFeatures);
                     // device.createBuffer(descriptor)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createBuffer", 0, nullptr,
                         &tnWebgpuHandler29
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.createShaderModule(descriptor)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createShaderModule", 0, nullptr,
                         &tnWebgpuHandler34
                     , device},
@@ -4440,7 +4466,7 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // device.createComputePipeline(descriptor)
                                             {"GPUDevice", "createComputePipeline", 0, nullptr,
                         &tnWebgpuHandler36
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.createRenderPipelineAsync / createComputePipelineAsync
                     //
                     // Without these, `renderer.compileAsync()` throws "not a function" and every
@@ -4486,17 +4512,17 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                         }
                     }
                     // device.createCommandEncoder(descriptor?)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createCommandEncoder", 0, nullptr,
                         &tnWebgpuHandler37
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.createTexture(descriptor)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createTexture", 0, nullptr,
                         &tnWebgpuHandler64
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.createSampler(descriptor?)
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createSampler", 0, nullptr,
                         &tnWebgpuHandler67
                     , device},
@@ -4521,10 +4547,10 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // Used by Three.js for mipmap generation
                                             {"GPUDevice", "createRenderBundleEncoder", 0, nullptr,
                         &tnWebgpuHandler72
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.pushErrorScope(filter) - Push an error scope for validation/OOM/internal errors
                     // Used by Three.js for error handling during pipeline creation
-                    installBindingTable(state->engine, state, bindingTable({
+                    if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "pushErrorScope", 0, nullptr,
                         &tnWebgpuHandler80
                     , device},
@@ -4532,7 +4558,7 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // Returns Promise<GPUError | null>
                                             {"GPUDevice", "popErrorScope", 0, nullptr,
                         &tnWebgpuHandler81
-                    , device}}));
+                    , device}}))) return state->engine->newUndefined();
                     // device.lost - Promise that resolves when the device is lost
                     // Required by Three.js WebGPU renderer during init
                     // We create a Promise that never resolves (device never lost in normal operation)
@@ -4550,19 +4576,25 @@ static js::JSValueHandle tnWebgpuHandler20(BindingsState* state, BindingDestinat
             // In native runtime, we already have an adapter, so just return a mock adapter object
             auto adapter = state->engine->newObject();
             // adapter.requestDevice()
-            installBindingTable(state->engine, state, bindingTable({
+            if (!installBindingTable(state->engine, state, bindingTable({
                 {"GPUAdapter", "requestDevice", 0, nullptr,
                 &tnWebgpuHandler21
-            , adapter}}));
-            // adapter.features - Set-like object that is also iterable
-            // We use an array for iteration support with a has() method added
+            , adapter}}))) return state->engine->newUndefined();
+            // adapter.features - Set-like iterable backed by the real adapter feature query
             // Dawn supports indirect-first-instance on Metal which is required for indirect draws
             // with non-zero firstInstance values
             auto features = state->engine->newArray(0);
-            installBindingTable(state->engine, state, bindingTable({
+            auto featuresBindingHost = state->engine->newObject();
+            if (!installBindingTable(state->engine, state, bindingTable({
                 {"GPUSupportedFeatures", "has", 0, nullptr,
                 &tnWebgpuHandler82
-            , features}}));
+            , featuresBindingHost}}))) return state->engine->newUndefined();
+            if (!state->engine->setProperty(
+                    features,
+                    "has",
+                    state->engine->getProperty(featuresBindingHost, "has"))) {
+                return state->engine->newUndefined();
+            }
             state->engine->setProperty(features, "size", state->engine->newNumber(1));
             state->engine->setProperty(adapter, "features", features);
             // adapter.limits
@@ -4675,7 +4707,10 @@ static js::JSValueHandle getOffscreenCanvasContext(
                         std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
                         auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
                         state->engine->setProperty(canvasContext, "canvas", canvasElement);
-                        installCanvasContextBindings(state, canvasContext, true);
+                        if (!installCanvasContextBindings(state, canvasContext, true)) {
+                            state->engine->resumeFrameTracking();
+                            return state->engine->newUndefined();
+                        }
                         state->engine->resumeFrameTracking();
                         return canvasContext;
                     }
@@ -4765,7 +4800,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
             state->engine->setProperty(element, "innerHTML", state->engine->newString(""));
             state->engine->setProperty(element, "textContent", state->engine->newString(""));
             state->engine->setProperty(element, "tagName", state->engine->newString(tagName.c_str()));
-            installBindingTable(state->engine, state, bindingTable({
+            if (!installBindingTable(state->engine, state, bindingTable({
                 {"HTMLElement", "appendChild", 0, nullptr,
                 &tnWebgpuHandler06
             , element},
@@ -4780,7 +4815,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
             , element},
                 {"HTMLElement", "removeEventListener", 0, nullptr,
                 &tnWebgpuHandler10
-            , element}}));
+            , element}}))) return state->engine->newUndefined();
             // Special handling for canvas elements - add Canvas 2D support
             if (tagName == "canvas" || tagName == "CANVAS") {
                 // Three's renderer creates its surface through document.createElement('canvas'),
@@ -4788,7 +4823,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 // document.getElementById('canvas'). Forward the event surface so a renderer
                 // canvas receives the same pointer and pointer-lock events on native.
                 const auto mainCanvas = state->engine->getGlobalProperty("canvas");
-                installBindingTable(state->engine, state, bindingTable({
+                if (!installBindingTable(state->engine, state, bindingTable({
                     {"HTMLCanvasElement", "addEventListener", 0, nullptr,
                     &tnWebgpuHandler11
                 , element},
@@ -4800,7 +4835,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 , element},
                     {"HTMLCanvasElement", "requestPointerLock", 0, nullptr,
                     &tnWebgpuHandler14
-                , element}}));
+                , element}}))) return state->engine->newUndefined();
                 // Create OffscreenCanvas struct to store state
                 int canvasId = state->nextOffscreenCanvasId++;
                 auto offscreenCanvas = std::make_unique<OffscreenCanvas>();
@@ -4819,20 +4854,20 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 // Create getContext function
                 // Capture canvasId to ensure each canvas element's getContext uses its own canvas
                 // This fixes the bug where all canvases shared the same context
-                installBindingTable(state->engine, state, bindingTable({
+                if (!installBindingTable(state->engine, state, bindingTable({
                     {"HTMLCanvasElement", "getContext", 0, nullptr,
                     makeOffscreenCanvasGetContextHandler(canvasId)
-                , element}}));
+                , element}}))) return state->engine->newUndefined();
                 if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
                 // toDataURL for compatibility (returns empty data URI)
-                installBindingTable(state->engine, state, bindingTable({
+                if (!installBindingTable(state->engine, state, bindingTable({
                     {"HTMLCanvasElement", "toDataURL", 0, nullptr,
                     &tnWebgpuHandler16
                 , element},
                 // getBoundingClientRect - return canvas dimensions
                     {"HTMLCanvasElement", "getBoundingClientRect", 0, nullptr,
                     &tnWebgpuHandler17
-                , element}}));
+                , element}}))) return state->engine->newUndefined();
             }
             return element;
 }
@@ -4877,7 +4912,9 @@ static js::JSValueHandle tnWebgpuHandler03(BindingsState* state, BindingDestinat
             // context.canvas - reference back to canvas
             auto canvas = state->engine->getGlobalProperty("canvas");
             state->engine->setProperty(canvasContext, "canvas", canvas);
-            installCanvasContextBindings(state, canvasContext, false);
+            if (!installCanvasContextBindings(state, canvasContext, false)) {
+                return state->engine->newUndefined();
+            }
             if (state->verboseLogging) std::cout << "[Canvas] WebGPU context created" << std::endl;
             return canvasContext;
 }
@@ -4891,18 +4928,47 @@ static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestinat
             return args.empty() ? state->engine->newUndefined() : args[0];
 }/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
 static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
+    const auto globalBindingHost = engine->newObject();
+    engine->protect(globalBindingHost);
+    struct GlobalBindingHostProtection {
+        js::Engine* engine;
+        js::JSValueHandle value;
+        ~GlobalBindingHostProtection() {
+            if (value.ptr) engine->unprotect(value);
+        }
+    } globalBindingHostProtection{engine, globalBindingHost};
+    const auto copyGlobalBinding = [&](js::JSValueHandle host, const char* name) {
+        const auto binding = engine->getProperty(host, name);
+        if (engine->hasException()) return false;
+        if (!engine->isFunction(binding)) {
+            const std::string message =
+                std::string("WebGPU global binding was not installed: ") + name;
+            engine->throwException(message.c_str());
+            return false;
+        }
+        if (engine->setGlobalProperty(name, binding) && !engine->hasException()) {
+            return true;
+        }
+        if (!engine->hasException()) {
+            const std::string message =
+                std::string("WebGPU global binding copy failed: ") + name;
+            engine->throwException(message.c_str());
+        }
+        return false;
+    };
+
     // ========================================================================
     // Create a mock parent element for the canvas (needed by Debugger)
     // ========================================================================
     auto parentElement = engine->newObject();
     engine->setProperty(parentElement, "style", engine->newObject());
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"HTMLElement", "appendChild", 0, nullptr,
         &tnWebgpuHandler01
     , parentElement},
         {"HTMLElement", "removeChild", 0, nullptr,
         &tnWebgpuHandler02
-    , parentElement}}));
+    , parentElement}}))) return false;
 
     // ========================================================================
     // Get existing canvas from runtime.cpp's document.getElementById
@@ -4937,10 +5003,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
     // canvas.getContext('webgpu') -> GPUCanvasContext
     // This is the WebGPU-specific method we add to the existing canvas
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"HTMLCanvasElement", "getContext", 0, nullptr,
         &tnWebgpuHandler03
-    , canvasObject}}));
+    , canvasObject}}))) return false;
 
     // Set global canvas - this is the SAME object as document.getElementById('canvas')
     // so it now has both WebGPU getContext AND event listener support
@@ -4952,7 +5018,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // ========================================================================
 
     // Add querySelector to existing document (if not present)
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"Document", "querySelector", 0, nullptr,
         &tnWebgpuHandler04
     , existingDocument},
@@ -4962,7 +5028,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // We ALWAYS override it here to add proper Canvas 2D support for offscreen canvases
         {"Document", "createElement", 0, nullptr,
         &tnWebgpuHandler05
-    , existingDocument}}));
+    , existingDocument}}))) return false;
 
     // Add document.body if not present, or enhance existing body with required methods
     auto existingBody = engine->getProperty(existingDocument, "body");
@@ -4972,13 +5038,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     }
     // Always add/update these methods on body
     engine->setProperty(existingBody, "style", engine->newObject());
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"HTMLElement", "appendChild", 0, nullptr,
         &tnWebgpuHandler18
     , existingBody},
         {"HTMLElement", "removeChild", 0, nullptr,
         &tnWebgpuHandler19
-    , existingBody}}));
+    , existingBody}}))) return false;
 
     // ========================================================================
     // Navigator object
@@ -5007,16 +5073,16 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // ========================================================================
     // navigator.gpu.requestAdapter()
     // ========================================================================
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"GPU", "requestAdapter", 0, nullptr,
         &tnWebgpuHandler20
-    , gpuObject}}));
+    , gpuObject}}))) return false;
 
     // navigator.gpu.getPreferredCanvasFormat()
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"GPU", "getPreferredCanvasFormat", 0, nullptr,
         &tnWebgpuHandler83
-    , gpuObject}}));
+    , gpuObject}}))) return false;
 
     // Set navigator.gpu
     engine->setProperty(navigatorHandle, "gpu", gpuObject);
@@ -5066,10 +5132,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // Note: PNG/JPEG supported via stb_image. WebP supported via libwebp (when MYSTRAL_HAS_WEBP defined).
 
     // Native helper that decodes image data synchronously
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__decodeImageData", 0, nullptr,
         &tnWebgpuHandler84
-    , state->engine->getGlobal()}}));
+    , globalBindingHost}})) ||
+        !copyGlobalBinding(globalBindingHost, "__decodeImageData")) return false;
 
     // JavaScript polyfill for createImageBitmap
     const char* imageBitmapPolyfill = R"(
@@ -5168,10 +5235,10 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Mystral.loadGLTF() - deprecated native GLTF/GLB file loader
     // =========================================================================
     // Default builds intentionally do not expose this; use upstream Three.js GLTFLoader.
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "loadGLTF", 0, nullptr,
         &tnWebgpuHandler85
-    , mystralNamespace}}));
+    , mystralNamespace}}))) return false;
 #endif
 
 
@@ -5182,10 +5249,10 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Native helper for offscreen canvas getContext('2d')
     // Called by the JS closure created in createElement('canvas')
     // ========================================================================
-    installBindingTable(state->engine, state, bindingTable({
+    if (!installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__nativeGetContext2D", 0, nullptr,
         &tnWebgpuHandler86
-    , state->engine->getGlobal()},
+    , globalBindingHost},
 
     // ========================================================================
     // Global createOffscreenCanvas2D(width, height) helper
@@ -5195,7 +5262,9 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // ========================================================================
             {"WebGPU", "createOffscreenCanvas2D", 0, nullptr,
         &tnWebgpuHandler87
-    , state->engine->getGlobal()}}));
+    , globalBindingHost}})) ||
+        !copyGlobalBinding(globalBindingHost, "__nativeGetContext2D") ||
+        !copyGlobalBinding(globalBindingHost, "createOffscreenCanvas2D")) return false;
 
 
     if (state->verboseLogging) {

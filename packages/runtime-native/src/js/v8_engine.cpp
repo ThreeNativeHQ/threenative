@@ -119,10 +119,19 @@ public:
         v8::Local<v8::Private> privateKey = v8::Private::ForApi(isolate_,
             v8::String::NewFromUtf8(isolate_, "__mystral_private__").ToLocalChecked());
         privateKey_.Reset(isolate_, privateKey);
+        bindingDestinationKey_.Reset(isolate_, v8::Private::New(isolate_));
 
         // Set up globals
         {
             v8::Context::Scope context_scope(context);
+            v8::Local<v8::Object> ordinaryObject = v8::Object::New(isolate_);
+#if V8_MAJOR_VERSION >= 12
+            bindingDestinationPrototype_.Reset(
+                isolate_, ordinaryObject->GetPrototypeV2());
+#else
+            bindingDestinationPrototype_.Reset(
+                isolate_, ordinaryObject->GetPrototype());
+#endif
             cacheIntrinsics(context);
             setupGlobals();
         }
@@ -151,6 +160,8 @@ public:
         moduleCache_.clear();
         reflectSet_.Reset();
         reflectGetPrototypeOf_.Reset();
+        bindingDestinationPrototype_.Reset();
+        bindingDestinationKey_.Reset();
         privateKey_.Reset();
         context_.Reset();
         isolate_->Dispose();
@@ -437,7 +448,13 @@ public:
         v8::HandleScope handle_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Context::Scope context_scope(context);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Object::New(isolate_));
+        v8::Local<v8::Object> object = v8::Object::New(isolate_);
+        object->SetPrivate(
+            context,
+            bindingDestinationKey_.Get(isolate_),
+            v8::True(isolate_)).Check();
+        v8::Persistent<v8::Value>* persistent =
+            new v8::Persistent<v8::Value>(isolate_, object);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -725,13 +742,36 @@ public:
         return persistent->Get(isolate_)->IsFunction();
     }
 
+    bool isBindingDestination(JSValueHandle value) override {
+        if (!value.ptr || value.ctx != isolate_) return false;
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+        auto* persistent = static_cast<v8::Persistent<v8::Value>*>(value.ptr);
+        v8::Local<v8::Value> local = persistent->Get(isolate_);
+        if (!local->IsObject()) return false;
+        if (local->IsProxy()) return false;
+        v8::Local<v8::Object> object = local.As<v8::Object>();
+        if (!object->HasPrivate(
+                context, bindingDestinationKey_.Get(isolate_)).FromMaybe(false)) {
+            return false;
+        }
+#if V8_MAJOR_VERSION >= 12
+        v8::Local<v8::Value> prototype = object->GetPrototypeV2();
+#else
+        v8::Local<v8::Value> prototype = object->GetPrototype();
+#endif
+        return prototype->StrictEquals(bindingDestinationPrototype_.Get(isolate_));
+    }
+
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
         if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
         auto* leftPersistent = (v8::Persistent<v8::Value>*)left.ptr;
         auto* rightPersistent = (v8::Persistent<v8::Value>*)right.ptr;
-        return leftPersistent->Get(isolate_)->StrictEquals(rightPersistent->Get(isolate_));
+        return leftPersistent->Get(isolate_)->SameValue(rightPersistent->Get(isolate_));
     }
 
     // ========================================================================
@@ -1462,6 +1502,8 @@ private:
     v8::Global<v8::Context> context_;
     v8::Global<v8::Function> reflectSet_;
     v8::Global<v8::Function> reflectGetPrototypeOf_;
+    v8::Global<v8::Value> bindingDestinationPrototype_;
+    v8::Global<v8::Private> bindingDestinationKey_;
     v8::Global<v8::Private> privateKey_;  // Cached private key to avoid string allocation per call
     std::string lastException_;
     std::chrono::high_resolution_clock::time_point startTime_;

@@ -128,9 +128,8 @@ bool verifyStableWholeTable(
     const char* stateName,
     const PropertyMatcher& matches,
     std::string& failures) {
-    // Descriptor/prototype proxy traps are observable. Verify in both directions so a later
-    // observation that corrupts an already checked row is seen by the reverse pass. If either
-    // complete pass differs, the table cannot be shown stable and the transaction fails closed.
+    // Binding destinations are side-effect-free, but keep the complete forward/reverse check as
+    // rollback defense in depth. A mismatch in either pass leaves the transaction failed closed.
     return verifyWholeTablePass(
                engine, snapshots, false, stateName, matches, failures) &&
            verifyWholeTablePass(
@@ -264,9 +263,10 @@ bool installBindingTable(
     destinations.reserve(table.registrations.size());
     for (const auto& registration : table.registrations) {
         const auto destination = registration.destination;
-        if (engine->isNull(destination) || engine->isUndefined(destination) ||
-            !engine->isObject(destination)) {
-            fail(engine, "WebGPU binding row resolved an invalid destination");
+        if (!engine->isBindingDestination(destination)) {
+            fail(
+                engine,
+                "WebGPU binding destination must be an engine-owned ordinary object");
             return false;
         }
         destinations.push_back(destination);
@@ -308,6 +308,16 @@ bool installBindingTable(
         snapshots.push_back(std::move(snapshot));
     }
 
+    std::vector<js::JSValueHandle> protectedExpectedValues;
+    protectedExpectedValues.reserve(table.registrations.size());
+    auto releaseExpectedValues = [&]() {
+        for (auto it = protectedExpectedValues.rbegin();
+             it != protectedExpectedValues.rend(); ++it) {
+            engine->unprotect(*it);
+        }
+        protectedExpectedValues.clear();
+    };
+
     auto rollback = [&]() {
         std::string failures;
         for (size_t remaining = snapshots.size(); remaining > 0; --remaining) {
@@ -343,6 +353,7 @@ bool installBindingTable(
         std::string finalSnapshotFailures;
         verifySnapshotTable(engine, snapshots, finalSnapshotFailures);
         releaseSnapshots();
+        releaseExpectedValues();
         if (!rollbackFailures.empty()) {
             exception += "; binding-table rollback operations failed: " + rollbackFailures;
         }
@@ -369,6 +380,10 @@ bool installBindingTable(
             });
         const bool functionCreated = function.ptr != nullptr;
         const bool pendingException = engine->hasException();
+        if (functionCreated) {
+            engine->protect(function);
+            protectedExpectedValues.push_back(function);
+        }
         if (!functionCreated || pendingException) {
             std::string exception = engine->hasException()
                 ? engine->getException()
@@ -395,6 +410,7 @@ bool installBindingTable(
             "WebGPU binding whole-table verification failed: " + installedFailures);
     }
     releaseSnapshots();
+    releaseExpectedValues();
     return true;
 }
 
