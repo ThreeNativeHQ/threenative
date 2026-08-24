@@ -12,7 +12,7 @@
  *   node scripts/download-deps.mjs --only skia-ios  # Download only iOS Skia
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, skia, swc
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, webp, skia, swc
  * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
  * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
@@ -162,7 +162,7 @@ const DEPS = {
   quiche: {
     // Cloudflare quiche - QUIC + HTTP/3 (native backend for the WebTransport API).
     // Prebuilt static libs (libquiche.a / quiche.lib + patched quiche.h, BoringSSL
-    // bundled) come from mystralengine/library-builder, exactly like libuv/draco/swc.
+    // bundled) come from mystralengine/library-builder, exactly like libuv/swc.
     // The library is built there (build-quiche.py + build-quiche.yml) so the engine
     // repo never compiles Rust/BoringSSL itself. If no prebuilt exists for this
     // platform/arch, the C++ build compiles a WebTransport stub (MYSTRAL_HAS_QUICHE off).
@@ -231,17 +231,6 @@ const DEPS = {
       'stb_image.h',
       'stb_image_write.h',
     ],
-  },
-  cgltf: {
-    // cgltf single-header GLTF loader from jkuhlmann/cgltf
-    version: 'v1.14',
-    // Single header download like stb
-    getUrl: () => null,  // Special handling below
-    extractTo: 'cgltf',
-    headers: [
-      'cgltf.h',
-    ],
-    rawUrl: 'https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.14/cgltf.h',
   },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
@@ -359,34 +348,6 @@ const DEPS = {
       return null;
     },
     extractTo: 'libuv',
-  },
-  draco: {
-    // Draco mesh compression library for native C++ decoding
-    // Bypasses WASM/Worker entirely for Draco-compressed glTF meshes
-    // https://github.com/mystralengine/library-builder/releases
-    version: 'draco-1.5.7-2',
-    getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/draco-1.5.7-2';
-      if (platformName === 'macos') {
-        const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
-        return `${baseUrl}/draco-mac-${arch}.zip`;
-      }if (platformName === 'linux') {
-        if (ARCH !== 'x64') {
-          console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-          return null;
-        }
-        return `${baseUrl}/draco-linux-x64.zip`;
-      }if (platformName === 'windows') {
-        if (ARCH !== 'x64') {
-          console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-          return null;
-        }
-        return `${baseUrl}/draco-win-x64.zip`;
-      }
-      console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-      return null;
-    },
-    extractTo: 'draco',
   },
   'skia-win-static': {
     // Static Skia + Dawn for Windows from mystralengine/library-builder
@@ -790,29 +751,6 @@ async function downloadDep(name) {
     }
   }
 
-  // Special handling for cgltf (single header with specific rawUrl)
-  if (name === 'cgltf' && dep.rawUrl) {
-    if (existsSync(destDir)) {
-      console.log(`${name} already exists at ${destDir}`);
-      if (!process.argv.includes('--force')) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      rmSync(destDir, { recursive: true });
-    }
-
-    mkdirSync(destDir, { recursive: true });
-    try {
-      const destPath = join(destDir, 'cgltf.h');
-      await downloadFile(dep.rawUrl, destPath);
-      console.log(`Successfully installed ${name}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to download ${name}:`, error.message);
-      return false;
-    }
-  }
-
   const url = dep.getUrl();
   if (!url) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
@@ -1033,7 +971,7 @@ async function main() {
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'draco', 'quiche'];
+  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];

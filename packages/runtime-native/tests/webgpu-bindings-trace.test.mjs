@@ -142,7 +142,7 @@ test("pre-refactor and post-refactor JS call traces are identical", () => {
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /TN_WEBGPU_CALL_TRACE:/u);
 });
 
-test("the supplementary surface/name registration and 43/43 error census stays green", () => {
+test("the supplementary surface/name registration and 42/42 error census stays green", () => {
   const trace = JSON.parse(read("tests/fixtures/webgpu-bindings-trace.json"));
   const source = [
     read("src/webgpu/bindings.cpp"),
@@ -156,5 +156,5 @@ test("the supplementary surface/name registration and 43/43 error census stays g
     assert.ok(source.includes(error), `missing JS-visible error trace: ${error}`);
   }
   assert.equal(registrations.length, trace.registrations.length);
-  assert.equal(trace.errors.length, 43);
+  assert.equal(trace.errors.length, 42);
 });

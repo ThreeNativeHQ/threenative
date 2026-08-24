@@ -1039,20 +1039,29 @@ public:
     // Memory Management
     // ========================================================================
 
-    void protect(JSValueHandle value) override {
+    void freezeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
         // Mark this handle as protected in this engine's set. nativeCallback will check it
         // and skip deletion for protected handles.
         protectedHandles_.insert(value.ptr);
+        frameHandles_.insert(static_cast<v8::Persistent<v8::Value>*>(value.ptr));
     }
 
-    void unprotect(JSValueHandle value) override {
-        // Remove from protected set, frame handles, and delete
-        protectedHandles_.erase(value.ptr);
-        frameHandles_.erase((v8::Persistent<v8::Value>*)value.ptr);
+    void freeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
+        const auto it = frameHandles_.find(persistent);
+        if (it == frameHandles_.end()) return;
+        protectedHandles_.erase(value.ptr);
+        frameHandles_.erase(it);
         persistent->Reset();
         delete persistent;
     }
+
+    void protect(JSValueHandle value) override { freezeHandle(value); }
+    void unprotect(JSValueHandle value) override { freeHandle(value); }
+
+    size_t outstandingHandleCount() const override { return frameHandles_.size(); }
 
     void gc() override {
         isolate_->LowMemoryNotification();
@@ -1074,13 +1083,16 @@ public:
     }
 
     void clearFrameHandles() override {
-        for (auto* handle : frameHandles_) {
+        for (auto it = frameHandles_.begin(); it != frameHandles_.end();) {
+            auto* handle = *it;
             if (protectedHandles_.find(handle) == protectedHandles_.end()) {
                 handle->Reset();
                 delete handle;
+                it = frameHandles_.erase(it);
+            } else {
+                ++it;
             }
         }
-        frameHandles_.clear();
 
         inFrame_ = false;
 
@@ -1139,6 +1151,7 @@ public:
     std::string getException() override {
         std::string result = lastException_;
         lastException_.clear();
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
@@ -1150,6 +1163,7 @@ public:
         isolate_->ThrowException(
             v8::String::NewFromUtf8(isolate_, message).ToLocalChecked());
         lastException_ = message;
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -1432,10 +1446,20 @@ private:
 
         // Get engine for frame handle tracking
         auto* engine = static_cast<V8Engine*>(isolate->GetData(0));
+        // A native callback may have thrown an exception that JavaScript caught. The host-side
+        // latch must follow JavaScript control flow, or a later binding transaction will reject a
+        // valid install even though the pending JS exception is gone.
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException() &&
+            !isolate->HasPendingException()) {
+            engine->getException();
+        }
 
         // Get the native function from external data
         v8::Local<v8::External> external = info.Data().As<v8::External>();
         NativeFunction* fn = static_cast<NativeFunction*>(external->Value());
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -1470,7 +1494,10 @@ private:
             delete persistent;
         }
 
-        // Clean up result handle if it wasn't one of the args
+        // Clean up result handle if it wasn't one of the args. An argument handle is also a
+        // temporary Persistent: setting the Local return value transfers the JavaScript value,
+        // not the Persistent allocation, so release that allocation unless the native callback
+        // explicitly froze it.
         bool resultWasArg = false;
         for (auto& arg : args) {
             if (arg.ptr == result.ptr) {
@@ -1478,7 +1505,13 @@ private:
                 break;
             }
         }
-        if (result.ptr && !resultWasArg &&
+        if (result.ptr && resultWasArg &&
+            (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
+            auto* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
+            if (engine) engine->frameHandles_.erase(resPersistent);
+            resPersistent->Reset();
+            delete resPersistent;
+        } else if (result.ptr && !resultWasArg &&
             (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
             // Remove from frame handles to avoid double-free in clearFrameHandles()
@@ -1488,6 +1521,7 @@ private:
             resPersistent->Reset();
             delete resPersistent;
         }
+        if (engine) engine->nativeCallbackDepth_ -= 1;
     }
 
     // Weak reference data for GC-triggered Dawn resource cleanup
@@ -1514,6 +1548,8 @@ private:
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
     bool inFrame_ = false;  // True during animation frame execution
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
 };
 
 // Factory function

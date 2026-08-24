@@ -314,7 +314,7 @@ bool installBindingTable(
     auto releaseExpectedValues = [&]() {
         for (auto it = protectedExpectedValues.rbegin();
              it != protectedExpectedValues.rend(); ++it) {
-            engine->unprotect(*it);
+            engine->freeHandle(*it);
         }
         protectedExpectedValues.clear();
     };
@@ -382,7 +382,7 @@ bool installBindingTable(
         const bool functionCreated = function.ptr != nullptr;
         const bool pendingException = engine->hasException();
         if (functionCreated) {
-            engine->protect(function);
+            engine->freezeHandle(function);
             protectedExpectedValues.push_back(function);
         }
         if (!functionCreated || pendingException) {

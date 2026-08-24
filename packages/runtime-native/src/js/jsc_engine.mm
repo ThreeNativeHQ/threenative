@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <utility>
 
@@ -27,6 +28,7 @@ public:
     struct NativeFunctionData {
         NativeFunction callback;
         JSGlobalContextRef owner;
+        JSCEngine* engine;
     };
 
     JSCEngine() {
@@ -65,6 +67,12 @@ public:
 
         if (context_) {
             clearLastException();
+            for (const auto value : ownedHandles_) {
+                JSValueUnprotect(context_, value);
+            }
+            ownedHandles_.clear();
+            frameHandles_.clear();
+            protectedHandles_.clear();
             if (functionPrototype_) JSValueUnprotect(context_, functionPrototype_);
             if (objectPrototype_) JSValueUnprotect(context_, objectPrototype_);
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
@@ -107,7 +115,7 @@ public:
             return {nullptr, context_};
         }
 
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     bool evalScript(const char* code, const char* filename) override {
@@ -124,7 +132,7 @@ public:
 
     JSValueHandle getGlobal() override {
         JSObjectRef global = JSContextGetGlobalObject(context_);
-        return {(void*)global, context_};
+        return storeHandle((JSValueRef)global);
     }
 
     bool setGlobalProperty(const char* name, JSValueHandle value) override {
@@ -147,7 +155,7 @@ public:
             recordException(exception);
             result = JSValueMakeUndefined(context_);
         }
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     // ========================================================================
@@ -155,26 +163,26 @@ public:
     // ========================================================================
 
     JSValueHandle newUndefined() override {
-        return {(void*)JSValueMakeUndefined(context_), context_};
+        return storeHandle(JSValueMakeUndefined(context_));
     }
 
     JSValueHandle newNull() override {
-        return {(void*)JSValueMakeNull(context_), context_};
+        return storeHandle(JSValueMakeNull(context_));
     }
 
     JSValueHandle newBoolean(bool value) override {
-        return {(void*)JSValueMakeBoolean(context_, value), context_};
+        return storeHandle(JSValueMakeBoolean(context_, value));
     }
 
     JSValueHandle newNumber(double value) override {
-        return {(void*)JSValueMakeNumber(context_, value), context_};
+        return storeHandle(JSValueMakeNumber(context_, value));
     }
 
     JSValueHandle newString(const char* value) override {
         JSStringRef str = JSStringCreateWithUTF8CString(value);
         JSValueRef result = JSValueMakeString(context_, str);
         JSStringRelease(str);
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     JSValueHandle newObject() override {
@@ -182,13 +190,13 @@ public:
         if (objectPrototype_) {
             JSObjectSetPrototype(context_, object, objectPrototype_);
         }
-        return {(void*)object, context_};
+        return storeHandle((JSValueRef)object);
     }
 
     JSValueHandle newArray(size_t length) override {
         JSValueRef exception = nullptr;
         JSObjectRef arr = JSObjectMakeArray(context_, 0, nullptr, &exception);
-        return {(void*)arr, context_};
+        return storeHandle((JSValueRef)arr);
     }
 
     JSValueHandle newArrayBuffer(const uint8_t* data, size_t length) override {
@@ -224,7 +232,7 @@ public:
             return {nullptr, context_};
         }
 
-        return {(void*)arrayBuffer, context_};
+        return storeHandle((JSValueRef)arrayBuffer);
     }
 
     JSValueHandle newArrayBufferExternal(void* data, size_t length) override {
@@ -244,7 +252,7 @@ public:
             return {nullptr, context_};
         }
 
-        return {(void*)arrayBuffer, context_};
+        return storeHandle((JSValueRef)arrayBuffer);
     }
 
     void* getArrayBufferData(JSValueHandle value, size_t* size) override {
@@ -304,7 +312,7 @@ public:
             context_, kJSTypedArrayTypeFloat32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createFloat32ArrayView(float* data, size_t count) override {
@@ -327,7 +335,7 @@ public:
             context_, kJSTypedArrayTypeFloat32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createUint32Array(const uint32_t* data, size_t count) override {
@@ -352,7 +360,7 @@ public:
             context_, kJSTypedArrayTypeUint32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createUint8Array(const uint8_t* data, size_t count) override {
@@ -375,13 +383,13 @@ public:
             context_, kJSTypedArrayTypeUint8Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
         JSObjectRef funcObj = JSObjectMake(
             context_, nativeFunctionClass_,
-            new NativeFunctionData{std::move(fn), context_});
+            new NativeFunctionData{std::move(fn), context_, this});
         if (functionPrototype_) {
             JSObjectSetPrototype(context_, funcObj, functionPrototype_);
         }
@@ -394,7 +402,7 @@ public:
             nullptr);
         JSStringRelease(propertyName);
         JSStringRelease(nameStr);
-        return {(void*)funcObj, context_};
+        return storeHandle((JSValueRef)funcObj);
     }
 
     // ========================================================================
@@ -509,7 +517,7 @@ public:
             recordException(exception);
             result = JSValueMakeUndefined(context_);
         }
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
@@ -683,7 +691,7 @@ public:
     JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {
         JSValueRef exception = nullptr;
         JSValueRef result = JSObjectGetPropertyAtIndex(context_, (JSObjectRef)arr.ptr, index, &exception);
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     JSValueHandle call(JSValueHandle func, JSValueHandle thisArg, const std::vector<JSValueHandle>& args) override {
@@ -708,19 +716,47 @@ public:
             result = JSValueMakeUndefined(context_);
         }
 
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     // ========================================================================
     // Memory Management
     // ========================================================================
 
-    void protect(JSValueHandle value) override {
-        JSValueProtect(context_, (JSValueRef)value.ptr);
+    void freezeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
+        const bool inserted = protectedHandles_.insert((JSValueRef)value.ptr).second;
+        if (inserted && ownedHandles_.insert((JSValueRef)value.ptr).second) {
+            JSValueProtect(context_, (JSValueRef)value.ptr);
+        }
     }
 
-    void unprotect(JSValueHandle value) override {
+    void freeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
+        const auto owned = ownedHandles_.find((JSValueRef)value.ptr);
+        if (owned == ownedHandles_.end()) return;
+        ownedHandles_.erase(owned);
+        frameHandles_.erase((JSValueRef)value.ptr);
+        protectedHandles_.erase((JSValueRef)value.ptr);
         JSValueUnprotect(context_, (JSValueRef)value.ptr);
+    }
+
+    void protect(JSValueHandle value) override { freezeHandle(value); }
+    void unprotect(JSValueHandle value) override { freeHandle(value); }
+
+    size_t outstandingHandleCount() const override { return ownedHandles_.size(); }
+
+    void clearFrameHandles() override {
+        for (auto it = frameHandles_.begin(); it != frameHandles_.end();) {
+            const JSValueRef value = *it;
+            if (protectedHandles_.find(value) != protectedHandles_.end()) {
+                ++it;
+                continue;
+            }
+            JSValueUnprotect(context_, value);
+            ownedHandles_.erase(value);
+            it = frameHandles_.erase(it);
+        }
     }
 
     void gc() override {
@@ -742,6 +778,7 @@ public:
         lastException_ = nullptr;
         std::string result = toString({(void*)exception, context_});
         JSValueUnprotect(context_, exception);
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
@@ -762,6 +799,7 @@ public:
         JSObjectRef error = JSObjectCallAsConstructor(context_, errorConstructor, 1, args, &exception);
         replaceLastException(exception ? exception : (error ? error : msgVal));
         JSValueUnprotect(context_, msgVal);
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -964,6 +1002,15 @@ private:
         std::cerr << "[JSC] Error: " << msg << std::endl;
     }
 
+    JSValueHandle storeHandle(JSValueRef value) {
+        if (!value) return {nullptr, context_};
+        if (ownedHandles_.insert(value).second) {
+            JSValueProtect(context_, value);
+        }
+        frameHandles_.insert(value);
+        return {(void*)value, context_};
+    }
+
     static void finalizeNativeFunction(JSObjectRef object) {
         delete static_cast<NativeFunctionData*>(JSObjectGetPrivate(object));
     }
@@ -978,6 +1025,14 @@ private:
             std::cerr << "[JSC] Native function owner not found for callback" << std::endl;
             return JSValueMakeUndefined(ctx);
         }
+        // A native callback may have thrown an exception that JavaScript caught. Keep the
+        // host-side exception latch aligned with the next callback boundary.
+        if (callbackData->engine && callbackData->engine->nativeCallbackDepth_ == 0 &&
+            callbackData->engine->exceptionFromNativeCallback_ &&
+            callbackData->engine->hasException()) {
+            callbackData->engine->getException();
+        }
+        if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -988,6 +1043,14 @@ private:
 
         // Call the native function
         JSValueHandle result = callbackData->callback((void*)ctx, args);
+        if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ -= 1;
+        if (callbackData->engine && result.ptr &&
+            callbackData->engine->protectedHandles_.find((JSValueRef)result.ptr) ==
+                callbackData->engine->protectedHandles_.end()) {
+            // The JavaScript call now owns the returned value. Release the temporary Engine
+            // handle without touching borrowed callback arguments.
+            callbackData->engine->freeHandle(result);
+        }
         return (JSValueRef)result.ptr;
     }
 
@@ -1002,7 +1065,12 @@ private:
     JSClassRef ordinaryObjectClass_ = nullptr;
     JSClassRef nativeFunctionClass_ = nullptr;
     JSValueRef lastException_ = nullptr;
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
+    std::unordered_set<JSValueRef> ownedHandles_;
+    std::unordered_set<JSValueRef> frameHandles_;
+    std::unordered_set<JSValueRef> protectedHandles_;
     std::chrono::high_resolution_clock::time_point startTime_;
 };
 

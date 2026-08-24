@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,18 +133,91 @@ test('native hosts forward one coarse safe-area value through resize and rotatio
   );
 });
 
-test('default builds do not compile/register deprecated native GLTF path', () => {
+test('deprecated native GLTF and Draco paths fail closed before compilation', () => {
   const cmake = read('CMakeLists.txt');
-  const nativeBlock = cmake.match(/if\(TN_ENABLE_NATIVE_GLTF\)([\s\S]*?)endif\(\)/);
-  assert.ok(nativeBlock, 'deprecated native GLTF sources must be behind explicit TN_ENABLE_NATIVE_GLTF block');
-  const defaultSourceList = cmake.replace(nativeBlock[0], '');
-  assert.doesNotMatch(defaultSourceList, /src\/utils\/cgltf_impl\.cpp|src\/gltf\/gltf_loader\.cpp/, 'deprecated native GLTF/cgltf files must not be in default MYSTRAL_SOURCES');
+  assert.match(cmake, /TN_ENABLE_NATIVE_GLTF was removed/u);
+  assert.match(cmake, /TN_ENABLE_DRACO was removed/u);
+  assert.doesNotMatch(cmake, /src\/utils\/cgltf_impl\.cpp|src\/gltf\/gltf_loader\.cpp|draco::draco/u);
 
   const runtime = read('src/runtime.cpp');
-  assert.match(runtime, /#if TN_ENABLE_NATIVE_GLTF[\s\S]*setupGLTF\(\);[\s\S]*#endif/, 'runtime setupGLTF registration must be gated');
+  assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
   const bindings = read('src/webgpu/bindings.cpp');
-  assert.match(bindings, /#if TN_ENABLE_NATIVE_GLTF[\s\S]*"loadGLTF"[\s\S]*#endif/, 'Mystral.loadGLTF binding must be gated');
+  assert.doesNotMatch(bindings, /TN_ENABLE_NATIVE_GLTF|tnWebgpuHandler85|"loadGLTF"/u);
   assert.match(bindings, /setGlobalProperty\("Mystral", mystralNamespace\)/, 'Mystral namespace may exist, but loadGLTF must not be registered by default');
+  const downloader = read('scripts/download-deps.mjs');
+  assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+});
+
+test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {
+  const scripts = {
+    'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
+    'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
+    'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
+    'url-worker-polyfill.js': '1eb2015e202ca7e039e854aa68099bbc167d4f385f014c6acaa8cfd7ef2d850b',
+    'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
+    'event-constructors-setup.js': '9f69ab661c4926863e5ce59e5a83504ea9a8457ed95f58c69058ee6702dcd5e0',
+    'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
+    'onload-trigger.js': '226fba97f402a71ba5f3ae530133e31c0f2a977d8b1564b1cd903a871c194aad',
+    'install-async-pipelines.js': '9100a90ee38e89f53e8d92ae84156916c5c779d11bbedbf11e8b7c7f6ff44331',
+    'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
+  };
+  const cmake = read('CMakeLists.txt');
+  const runtime = read('src/runtime.cpp');
+  const bindings = read('src/webgpu/bindings.cpp');
+  for (const [filename, expectedHash] of Object.entries(scripts)) {
+    const source = read(`src/runtime-scripts/${filename}`);
+    const actualHash = createHash('sha256').update(source).digest('hex');
+    assert.equal(actualHash, expectedHash, `${filename} was changed without updating its contract`);
+    const scriptName = filename.slice(0, -3);
+    assert.match(cmake, new RegExp(`\\b${scriptName}\\b`), `${filename} is not in the embed step`);
+    const consumer = filename === 'install-async-pipelines.js' || filename === 'image-bitmap-polyfill.js'
+      ? bindings
+      : runtime;
+    const loader = filename === 'install-async-pipelines.js'
+      ? 'evalEmbeddedRuntimeScriptWithResult'
+      : filename === 'image-bitmap-polyfill.js'
+        ? 'evalEmbeddedRuntimeScript'
+        : 'evalRuntimeScript\\(\\*jsEngine_';
+    assert.match(consumer, new RegExp(`${loader}.*"${scriptName}"`, 's'), `${filename} is not loaded by its native consumer`);
+  }
+  assert.doesNotMatch(runtime, /const char\*\s+\w+\s*=\s*R"/u, 'runtime bootstrap still owns a raw JavaScript string');
+  assert.doesNotMatch(runtime, /jsEngine_->eval\("/u, 'runtime bootstrap still evaluates an inline JavaScript literal');
+  assert.doesNotMatch(bindings, /const char\*\s+(installAsyncPipelines|imageBitmapPolyfill)\s*=\s*R"/u, 'WebGPU bootstrap still owns an extracted JavaScript string');
+});
+
+test('CLI build tools are separate units behind an unchanged dispatch surface', () => {
+  const main = read('src/cli/main.cpp');
+  const cmake = read('CMakeLists.txt');
+  const bundler = read('src/cli/bundler.cpp');
+  const lightmap = read('src/cli/lightmap.cpp');
+  const artifactCheck = read('scripts/verify-cli-artifact-diff.mjs');
+
+  assert.ok(main.split('\n').length <= 1800, 'main.cpp still contains a build-time tool body');
+  assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
+  assert.match(main, /BundlerOptions[\s\S]*compileBundle\(bundlerOptions\)/u);
+  assert.match(main, /LightmapOptions[\s\S]*bakeLightmaps\(lightmapOptions\)/u);
+  assert.match(cmake, /src\/cli\/bundler\.cpp[\s\S]*src\/cli\/lightmap\.cpp/u);
+  assert.match(bundler, /int compileBundle\(const BundlerOptions& opts\)/u);
+  assert.match(lightmap, /int bakeLightmaps\(const LightmapOptions& opts\)/u);
+  assert.match(artifactCheck, /byteIdentical/u);
+  assert.match(artifactCheck, /--before/u);
+  assert.match(artifactCheck, /--after/u);
+});
+
+test('JSValueHandle ownership is an Engine API with a move-only guard', () => {
+  const engine = read('include/mystral/js/engine.h');
+  const quickjs = read('src/js/quickjs_engine.cpp');
+  const v8 = read('src/js/v8_engine.cpp');
+  const churn = read('tests/handle_lifetime_test.cpp');
+
+  for (const method of ['freezeHandle', 'freeHandle', 'outstandingHandleCount']) {
+    assert.match(engine, new RegExp(`\\b${method}\\b`), `missing Engine ownership method ${method}`);
+  }
+  assert.match(engine, /class JSValueGuard[\s\S]*JSValueGuard\(const JSValueGuard&\) = delete/u);
+  assert.match(quickjs, /void freeHandle\(JSValueHandle value\) override/u);
+  assert.match(v8, /void freeHandle\(JSValueHandle value\) override/u);
+  assert.match(churn, /handles-created=[\s\S]*outstanding/u);
+  assert.match(read('CMakeLists.txt'), /threenative-handle-lifetime-test/u);
 });
 
 test('same-source first proof scene uses required Three.js WebGPU contract without runtime branches', () => {
@@ -418,10 +492,12 @@ test('desktop V8 drains Promise microtasks from the host frame loop', () => {
 });
 
 test('native DOM creates namespaced elements through the active element factory', () => {
-  const runtime = read('src/runtime.cpp');
-  assert.match(runtime,
-    /document\.createElementNS = function\(_namespace, tagName\) \{\s*return document\.createElement\(tagName\);/,
+  const setup = read('src/runtime-scripts/create-element-setup.js');
+  assert.match(setup,
+    /document\.createElementNS = (?:function\(_namespace, tagName\) \{\s*return document\.createElement\(tagName\);|\(_namespace, tagName\) => document\.createElement\(tagName\);)/,
     'Three.js createElementNS calls must reach the native canvas override');
+  assert.match(read('src/runtime.cpp'), /evalRuntimeScript\(\*jsEngine_, "create-element-setup"/,
+    'the native DOM setup must load the extracted element factory');
 });
 
 test('QuickJS native callback results have independent engine ownership', () => {
@@ -446,24 +522,26 @@ test('wgpu-native caps sampler LOD without changing sampler filtering', () => {
 
 test('the device exposes asynchronous pipeline creation', () => {
   const bindings = read('src/webgpu/bindings.cpp');
+  const installer = read('src/runtime-scripts/install-async-pipelines.js');
   // Without these, WebGPURenderer.compileAsync() throws "not a function" and every pipeline is
   // built lazily on the draw that first needs it, mid-play, instead of behind a loading screen.
   assert.match(
-    bindings,
+    installer,
     /device\.createRenderPipelineAsync\s*=/,
     'GPUDevice must expose createRenderPipelineAsync',
   );
   assert.match(
-    bindings,
+    installer,
     /device\.createComputePipelineAsync\s*=/,
     'GPUDevice must expose createComputePipelineAsync',
   );
   // Both must reject rather than throw synchronously: a caller awaits them.
   assert.match(
-    bindings,
+    installer,
     /return Promise\.reject\(error\)/,
     'a failed pipeline build must reject the returned promise',
   );
+  assert.match(bindings, /evalEmbeddedRuntimeScriptWithResult[\s\S]*install-async-pipelines/u);
 });
 
 test('native AudioContext exposes the positional graph used by Three.js', () => {

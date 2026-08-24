@@ -23,6 +23,7 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <queue>
 #include <iostream>
@@ -242,6 +243,7 @@ public:
                 std::lock_guard<std::mutex> lock(frameMutex_);
                 frameQueue_.push(std::move(frame));
             }
+            frameCondition_.notify_one();
 
             wgpuBufferDestroy(pending.buffer);
             wgpuBufferRelease(pending.buffer);
@@ -465,6 +467,7 @@ public:
         }
 
         encodingDone_ = true;
+        frameCondition_.notify_all();
 
         // Wait for encoder thread to finish
         if (encoderThread_.joinable()) {
@@ -540,31 +543,21 @@ public:
 private:
 #ifdef MYSTRAL_HAS_WEBP_MUX
     void runEncoderThread() {
-        while (!encodingDone_ || getQueuedFrameCount() > 0) {
+        while (true) {
             video::CapturedFrame frame;
-            if (tryGetFrame(frame)) {
-                if (!encodeFrame(frame)) {
-                    std::cerr << "[GPUReadbackRecorder] Failed to encode frame " << frame.frameNumber << std::endl;
-                }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            {
+                std::unique_lock<std::mutex> lock(frameMutex_);
+                frameCondition_.wait(lock, [this]() {
+                    return encodingDone_.load(std::memory_order_acquire) || !frameQueue_.empty();
+                });
+                if (frameQueue_.empty() && encodingDone_.load(std::memory_order_acquire)) break;
+                frame = std::move(frameQueue_.front());
+                frameQueue_.pop();
+            }
+            if (!encodeFrame(frame)) {
+                std::cerr << "[GPUReadbackRecorder] Failed to encode frame " << frame.frameNumber << std::endl;
             }
         }
-    }
-
-    bool tryGetFrame(video::CapturedFrame& outFrame) {
-        std::lock_guard<std::mutex> lock(frameMutex_);
-        if (frameQueue_.empty()) {
-            return false;
-        }
-        outFrame = std::move(frameQueue_.front());
-        frameQueue_.pop();
-        return true;
-    }
-
-    size_t getQueuedFrameCount() const {
-        std::lock_guard<std::mutex> lock(frameMutex_);
-        return frameQueue_.size();
     }
 
     bool encodeFrame(const CapturedFrame& frame) {
@@ -683,6 +676,7 @@ private:
     // Frame queue for encoder thread
     std::queue<video::CapturedFrame> frameQueue_;
     mutable std::mutex frameMutex_;
+    std::condition_variable frameCondition_;
 
     // Encoder
 #ifdef MYSTRAL_HAS_WEBP_MUX

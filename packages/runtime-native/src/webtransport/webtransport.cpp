@@ -1080,7 +1080,7 @@ void shutdown() {
     }
     g_sessions.clear();  // Session dtors close sockets and free quiche objects
     if (g_hasDispatch && g_engine) {
-        g_engine->unprotect(g_dispatch);
+        g_engine->freeHandle(g_dispatch);
         g_hasDispatch = false;
     }
 #ifdef _WIN32
@@ -1170,7 +1170,7 @@ bool initBindings(js::Engine* engine) {
         }));
 
     // Register the JS dispatcher target. The polyfill (below) defines
-    // globalThis.__wtDispatch; we grab and protect it after eval.
+    // globalThis.__wtDispatch; we freeze it after eval.
     extern const char* kWebTransportPolyfill;
     if (!engine->eval(kWebTransportPolyfill, "<webtransport-polyfill>")) {
         std::cerr << "[WebTransport] polyfill eval failed: " << engine->getException() << std::endl;
@@ -1179,7 +1179,7 @@ bool initBindings(js::Engine* engine) {
 
     g_dispatch = engine->getGlobalProperty("__wtDispatch");
     if (engine->isFunction(g_dispatch)) {
-        engine->protect(g_dispatch);
+        engine->freezeHandle(g_dispatch);
         g_hasDispatch = true;
     } else {
         std::cerr << "[WebTransport] __wtDispatch not defined by polyfill" << std::endl;

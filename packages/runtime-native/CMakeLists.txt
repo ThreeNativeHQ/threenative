@@ -81,6 +81,15 @@ option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
+if(TN_ENABLE_NATIVE_GLTF)
+    message(FATAL_ERROR
+        "TN_ENABLE_NATIVE_GLTF was removed; load assets with Three.js GLTFLoader instead")
+endif()
+if(TN_ENABLE_DRACO)
+    message(FATAL_ERROR
+        "TN_ENABLE_DRACO was removed; use the Three.js DracoLoader/Worker path instead")
+endif()
+
 if(TN_ANDROID_JS_PROFILE_BUSY_LOOP AND NOT TN_ANDROID_JS_PROFILE)
     message(FATAL_ERROR "Android JS profiling controls require TN_ANDROID_JS_PROFILE=ON")
 endif()
@@ -89,7 +98,6 @@ endif()
 # the C++ GLTF loader deprecated; ThreeNative GLTF conformance uses JavaScript
 # Three.js GLTFLoader paths only.
 set(MYSTRAL_USE_RAYTRACING ${TN_ENABLE_RAYTRACING} CACHE BOOL "Enable hardware ray tracing support" FORCE)
-set(MYSTRAL_USE_DRACO ${TN_ENABLE_DRACO} CACHE BOOL "Enable native Draco mesh decoder" FORCE)
 add_compile_definitions(
     TN_ENABLE_CANVAS2D=$<BOOL:${TN_ENABLE_CANVAS2D}>
     TN_ENABLE_VIDEO=$<BOOL:${TN_ENABLE_VIDEO}>
@@ -971,60 +979,13 @@ else()
     message(STATUS "libuv not found - async I/O disabled. Run 'node scripts/download-deps.mjs --only libuv' to enable.")
 endif()
 
-# Draco (optional - for native C++ Draco mesh decompression, bypasses WASM/Worker)
-# Prebuilt layout: draco/include/draco/*.h, draco/libdraco.a (or draco.lib)
-option(MYSTRAL_USE_DRACO "Enable native Draco mesh decoder (bypasses WASM)" ON)
-set(DRACO_DIR ${THIRD_PARTY_DIR}/draco)
-if(MYSTRAL_USE_DRACO AND EXISTS ${DRACO_DIR} AND NOT IOS AND NOT ANDROID)
-    # Headers
-    if(EXISTS ${DRACO_DIR}/include)
-        set(DRACO_INCLUDE_DIR ${DRACO_DIR}/include)
-    endif()
-
-    # Library
-    if(WIN32)
-        set(DRACO_LIB_PATH ${DRACO_DIR}/draco.lib)
-    else()
-        set(DRACO_LIB_PATH ${DRACO_DIR}/libdraco.a)
-    endif()
-
-    if(EXISTS ${DRACO_LIB_PATH})
-        set(DRACO_LIBRARY ${DRACO_LIB_PATH})
-    else()
-        find_library(DRACO_LIBRARY
-            NAMES draco libdraco
-            PATHS ${DRACO_DIR} ${DRACO_DIR}/lib
-            NO_DEFAULT_PATH
-        )
-    endif()
-
-    if(DRACO_LIBRARY AND DRACO_INCLUDE_DIR)
-        add_library(draco::draco STATIC IMPORTED)
-        set_target_properties(draco::draco PROPERTIES
-            IMPORTED_LOCATION ${DRACO_LIBRARY}
-            INTERFACE_INCLUDE_DIRECTORIES ${DRACO_INCLUDE_DIR}
-        )
-        add_compile_definitions(MYSTRAL_HAS_DRACO)
-        message(STATUS "Found Draco: ${DRACO_LIBRARY}")
-        message(STATUS "Draco includes: ${DRACO_INCLUDE_DIR}")
-    else()
-        message(WARNING "Draco library or headers not found:")
-        message(WARNING "  Library: ${DRACO_LIB_PATH}")
-        message(WARNING "  Include: ${DRACO_INCLUDE_DIR}")
-    endif()
-else()
-    if(MYSTRAL_USE_DRACO)
-        message(STATUS "Draco not found - native Draco decoder disabled. Run 'node scripts/download-deps.mjs --only draco' to enable.")
-    endif()
-endif()
-
 # ============================================================================
 # quiche (QUIC + HTTP/3, for the WebTransport API)
 # ============================================================================
 # quiche is a Rust library exposing a C API. The static library (libquiche.a /
 # quiche.lib + patched quiche.h, BoringSSL bundled) is built by
 # mystralengine/library-builder and downloaded as a prebuilt by
-# download-deps.mjs (like libuv/draco/swc) — the engine repo never compiles
+# download-deps.mjs (like libuv/swc) — the engine repo never compiles
 # Rust/BoringSSL itself. WebTransport is disabled (stubbed) if the library is
 # not present, so the build still succeeds without it.
 #
@@ -1141,6 +1102,40 @@ endif()
 # Main Library
 # ============================================================================
 
+set(TN_RUNTIME_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime-scripts")
+set(TN_RUNTIME_SCRIPT_NAMES
+    storage-polyfill
+    fetch-polyfill
+    streams-polyfill
+    url-worker-polyfill
+    create-element-setup
+    event-constructors-setup
+    image-support-init
+    onload-trigger
+    install-async-pipelines
+    image-bitmap-polyfill
+)
+set(TN_RUNTIME_SCRIPT_FILES)
+foreach(TN_RUNTIME_SCRIPT_NAME IN LISTS TN_RUNTIME_SCRIPT_NAMES)
+    list(APPEND TN_RUNTIME_SCRIPT_FILES
+        "${TN_RUNTIME_SCRIPT_DIR}/${TN_RUNTIME_SCRIPT_NAME}.js"
+    )
+endforeach()
+set(TN_RUNTIME_SCRIPT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime_scripts.h")
+add_custom_command(
+    OUTPUT "${TN_RUNTIME_SCRIPT_HEADER}"
+    COMMAND ${CMAKE_COMMAND}
+        "-DOUTPUT=${TN_RUNTIME_SCRIPT_HEADER}"
+        "-DSOURCE_DIR=${TN_RUNTIME_SCRIPT_DIR}"
+        "-DSCRIPT_NAMES=${TN_RUNTIME_SCRIPT_NAMES}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"
+        ${TN_RUNTIME_SCRIPT_FILES}
+    VERBATIM
+)
+add_custom_target(threenative-runtime-scripts DEPENDS "${TN_RUNTIME_SCRIPT_HEADER}")
+
 # Android requires shared library for JNI/SDL loading
 set(MYSTRAL_SOURCES
     src/runtime.cpp
@@ -1209,14 +1204,6 @@ list(APPEND MYSTRAL_SOURCES
     src/canvas/canvas2d_bindings.cpp
 )
 
-if(TN_ENABLE_NATIVE_GLTF)
-    message(WARNING "TN_ENABLE_NATIVE_GLTF enables deprecated native C++ GLTF/cgltf code; default ThreeNative GLTF path is upstream JavaScript three/addons GLTFLoader.")
-    list(APPEND MYSTRAL_SOURCES
-        src/utils/cgltf_impl.cpp
-        src/gltf/gltf_loader.cpp
-    )
-endif()
-
 if(TN_ENABLE_DEBUG_SERVER)
     list(APPEND MYSTRAL_SOURCES src/debug/debug_server.cpp)
 endif()
@@ -1272,8 +1259,9 @@ target_include_directories(mystral-runtime PUBLIC
 
 target_include_directories(mystral-runtime PRIVATE
     ${THIRD_PARTY_DIR}/stb
-    ${THIRD_PARTY_DIR}/cgltf
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
+add_dependencies(mystral-runtime threenative-runtime-scripts)
 
 # Pass build configuration to source code
 # Determine JS engine name
@@ -1566,11 +1554,6 @@ if(TARGET libuv::libuv)
     endif()
 endif()
 
-# Draco linkage (native mesh decoder - bypasses WASM/Worker)
-if(TARGET draco::draco)
-    target_link_libraries(mystral-runtime PRIVATE draco::draco)
-endif()
-
 # quiche linkage (QUIC/HTTP3 for WebTransport). The static lib bundles BoringSSL;
 # the Rust staticlib additionally needs a few platform system libraries.
 if(TARGET quiche::quiche)
@@ -1610,7 +1593,11 @@ endif()
 # ============================================================================
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
-    add_executable(mystral src/cli/main.cpp)
+    add_executable(mystral
+        src/cli/main.cpp
+        src/cli/bundler.cpp
+        src/cli/lightmap.cpp
+    )
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
     # The desktop conformance lane's multitouch injector. It is a separate program rather than
@@ -1662,6 +1649,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
+        tests/handle_lifetime_test.cpp)
+    target_link_libraries(threenative-handle-lifetime-test PRIVATE mystral-runtime)
     if(TN_ENABLE_VIDEO)
         add_executable(threenative-video-recorder-state-test EXCLUDE_FROM_ALL
             tests/video_recorder_state_test.cpp)

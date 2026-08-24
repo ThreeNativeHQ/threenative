@@ -1,9 +1,11 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -56,6 +58,8 @@ struct BufferMapData {
     bool completed = false;
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     std::string errorMessage;
+    std::mutex waitMutex;
+    std::condition_variable waitCondition;
 };
 
 #if TN_ANDROID_JS_PROFILE

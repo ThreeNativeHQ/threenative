@@ -812,21 +812,27 @@ public:
     // Memory Management
     // ========================================================================
 
-    void protect(JSValueHandle value) override {
+    void freezeHandle(JSValueHandle value) override {
         if (!value.ptr) return;
         protectedHandles_.insert(value.ptr);
+        frameHandles_.insert(value.ptr);
     }
 
-    void unprotect(JSValueHandle value) override {
+    void freeHandle(JSValueHandle value) override {
         if (!value.ptr) return;
-        const auto it = protectedHandles_.find(value.ptr);
-        if (it == protectedHandles_.end()) return;
+        const auto frameIt = frameHandles_.find(value.ptr);
+        if (frameIt == frameHandles_.end()) return;
         auto* val = static_cast<JSValue*>(value.ptr);
-        protectedHandles_.erase(it);
+        protectedHandles_.erase(value.ptr);
         frameHandles_.erase(value.ptr);
         JS_FreeValue(context_, *val);
         delete val;
     }
+
+    void protect(JSValueHandle value) override { freezeHandle(value); }
+    void unprotect(JSValueHandle value) override { freeHandle(value); }
+
+    size_t outstandingHandleCount() const override { return frameHandles_.size(); }
 
     void beginFrame() override {}
 
@@ -872,12 +878,14 @@ public:
         if (str) JS_FreeCString(context_, str);
 
         clearLastException();
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
     void throwException(const char* message) override {
         JS_ThrowInternalError(context_, "%s", message);
         replaceLastException(JS_GetException(context_));
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -982,12 +990,20 @@ private:
         (void)this_val;
         (void)magic;
         auto* engine = static_cast<QuickJSEngine*>(JS_GetContextOpaque(ctx));
+        // A native callback may have thrown an exception that JavaScript caught. Keep the
+        // host-side exception latch aligned with the next callback boundary.
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException()) {
+            engine->getException();
+        }
         auto* callbackData = engine
             ? static_cast<QuickJSNativeCallbackData*>(
                 JS_GetOpaque(func_data[0], engine->nativeCallbackDataClassId_))
             : nullptr;
         if (!callbackData || !callbackData->function) return JS_UNDEFINED;
         NativeFunction* fn = callbackData->function;
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -1029,6 +1045,7 @@ private:
             JS_FreeValue(ctx, *val);
             delete val;
         }
+        if (engine) engine->nativeCallbackDepth_ -= 1;
         return returned;
     }
 
@@ -1091,6 +1108,8 @@ private:
     std::unordered_map<void*, void*> privateDataMap_;  // Map JS object ptr to native data
     std::unordered_set<void*> frameHandles_;
     std::unordered_set<void*> protectedHandles_;
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
 
 };
 

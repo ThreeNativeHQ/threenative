@@ -120,7 +120,7 @@ test('Linux can validate the iOS lane without claiming simulator execution', () 
 test('iOS executable verifier builds and exercises native physics fail closed', () => {
   const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
   assert.match(verifier, /download-deps\.mjs', '--only', 'stb'/u);
-  assert.match(verifier, /download-deps\.mjs', '--only', 'cgltf'/u);
+  assert.doesNotMatch(verifier, /download-deps\.mjs', '--only', '(?:cgltf|draco)'/u);
   assert.match(verifier, /build-native-physics\.mjs', '--ios-simulator'/u);
   assert.match(verifier, /TN_ENABLE_NATIVE_PHYSICS=ON/u);
   for (const scenario of [

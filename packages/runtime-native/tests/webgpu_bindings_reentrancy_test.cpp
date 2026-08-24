@@ -110,6 +110,68 @@ bool checkRowOwnedAndAtomicInstall(mystral::Runtime& runtime) {
     return atomicProbePassed;
 }
 
+bool checkCaughtNativeExceptionDoesNotPoisonLaterInstall(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::V8) return true;
+
+    struct HandleGuard {
+        mystral::js::Engine* engine;
+        std::vector<mystral::js::JSValueHandle> handles;
+        ~HandleGuard() {
+            for (auto it = handles.rbegin(); it != handles.rend(); ++it) engine->unprotect(*it);
+        }
+    } guard{engine, {}};
+
+    const auto destination = engine->newObject();
+    const auto thrower = engine->newFunction(
+        "throwExpectedNativeError",
+        [engine](void*, const std::vector<mystral::js::JSValueHandle>&) {
+            engine->throwException("expected caught native error");
+            return mystral::js::JSValueHandle{};
+        });
+    const auto installer = engine->newFunction(
+        "installAfterCaughtNativeError",
+        [engine, state, destination](void*, const std::vector<mystral::js::JSValueHandle>&) {
+            const auto table = mystral::webgpu::bindingTable({
+                {"TestSurface", "afterCaught", 0, nullptr, &tableProbe, destination},
+            });
+            const bool installed = table.valid &&
+                mystral::webgpu::installBindingTable(engine, state, table);
+            if (!installed) {
+                if (engine->hasException()) engine->getException();
+                return engine->newBoolean(false);
+            }
+            return engine->newBoolean(
+                engine->isFunction(engine->getProperty(destination, "afterCaught")));
+        });
+    if (!destination.ptr || !thrower.ptr || !installer.ptr) return false;
+
+    for (const auto handle : {destination, thrower, installer}) {
+        engine->protect(handle);
+        guard.handles.push_back(handle);
+    }
+    if (!engine->setGlobalProperty("__tnThrowExpectedNativeError", thrower) ||
+        !engine->setGlobalProperty("__tnInstallAfterCaughtNativeError", installer)) {
+        return false;
+    }
+
+    const bool passed = runtime.evalScript(R"JS((() => {
+        try {
+            __tnThrowExpectedNativeError();
+        } catch (error) {
+            if (String(error).includes("expected caught native error") === false)
+                throw new Error("the expected native exception was not caught");
+        }
+        if (__tnInstallAfterCaughtNativeError() !== true)
+            throw new Error("a caught native exception poisoned the next binding install");
+    })())JS", "webgpu-binding-caught-exception-recovery.js");
+
+    engine->deleteProperty(engine->getGlobal(), "__tnThrowExpectedNativeError");
+    engine->deleteProperty(engine->getGlobal(), "__tnInstallAfterCaughtNativeError");
+    return passed;
+}
+
 bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -820,7 +882,7 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
     if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
 
     const auto destination = engine->newObject();
-    engine->protect(destination);
+    engine->freezeHandle(destination);
     if (!engine->setGlobalProperty("__tnTeardownDestination", destination) ||
         !runtime.evalScript(R"JS(Object.defineProperty(
             __tnTeardownDestination,
@@ -829,7 +891,7 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
                 Promise.resolve().then(() => value());
             }}
         );)JS", "webgpu-binding-teardown-queue-setup.js")) {
-        engine->unprotect(destination);
+        engine->freeHandle(destination);
         return false;
     }
     const auto table = mystral::webgpu::bindingTable({
@@ -837,14 +899,14 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
     });
     teardownProbeCalls = 0;
     if (!table.valid || !mystral::webgpu::installBindingTable(engine, state, table)) {
-        engine->unprotect(destination);
+        engine->freeHandle(destination);
         return false;
     }
     const auto callback = engine->getProperty(destination, "queuedAtTeardown");
-    engine->protect(callback);
+    engine->freezeHandle(callback);
     const bool queued = engine->setProperty(destination, "queuedTrigger", callback);
-    engine->unprotect(callback);
-    engine->unprotect(destination);
+    engine->freeHandle(callback);
+    engine->freeHandle(destination);
     return queued && teardownProbeCalls == 0;
 }
 
@@ -878,10 +940,10 @@ bool checkQuickJSExceptionReplacement(mystral::Runtime& runtime) {
         "(() => { throw new Error('quickjs-call-unconsumed'); })",
         "quickjs-call-unconsumed-setup.js");
     if (!thrower.ptr) return false;
-    engine->protect(thrower);
+    engine->freezeHandle(thrower);
     engine->throwException("quickjs-prior-unconsumed");
     const auto callResult = engine->call(thrower, {}, {});
-    engine->unprotect(thrower);
+    engine->freeHandle(thrower);
     if (callResult.ptr != nullptr || !engine->hasException() ||
         engine->getException().find("quickjs-call-unconsumed") == std::string::npos) {
         std::cerr << "QuickJS call did not replace an unconsumed exception" << std::endl;
@@ -1262,7 +1324,7 @@ bool checkQuickJSCallbackResultOwnership(mystral::Runtime& runtime) {
     if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
 
     const auto host = engine->newObject();
-    engine->protect(host);
+    engine->freezeHandle(host);
     mystral::js::JSValueHandle protectedResult;
     int unprotectedCalls = 0;
     int protectedCalls = 0;
@@ -1279,22 +1341,22 @@ bool checkQuickJSCallbackResultOwnership(mystral::Runtime& runtime) {
             void*, const std::vector<mystral::js::JSValueHandle>&) {
             ++protectedCalls;
             protectedResult = engine->newString("protected-result");
-            engine->protect(protectedResult);
+            engine->freezeHandle(protectedResult);
             return protectedResult;
         });
     if (!unprotectedCallback.ptr || !protectedCallback.ptr ||
         !engine->setGlobalProperty("__tnCallbackOwnershipHost", host)) {
-        if (protectedResult.ptr) engine->unprotect(protectedResult);
-        engine->unprotect(host);
+        if (protectedResult.ptr) engine->freeHandle(protectedResult);
+        engine->freeHandle(host);
         return false;
     }
-    engine->protect(unprotectedCallback);
-    engine->protect(protectedCallback);
+    engine->freezeHandle(unprotectedCallback);
+    engine->freezeHandle(protectedCallback);
     const bool installed =
         engine->setProperty(host, "unprotected", unprotectedCallback) &&
         engine->setProperty(host, "protected", protectedCallback);
-    engine->unprotect(protectedCallback);
-    engine->unprotect(unprotectedCallback);
+    engine->freeHandle(protectedCallback);
+    engine->freeHandle(unprotectedCallback);
     if (!installed || !runtime.evalScript(R"JS((() => {
         const unprotected = __tnCallbackOwnershipHost.unprotected();
         const protectedValue = __tnCallbackOwnershipHost.protected();
@@ -1302,15 +1364,15 @@ bool checkQuickJSCallbackResultOwnership(mystral::Runtime& runtime) {
             throw new Error('QuickJS callback result handle was empty or corrupted');
         }
     })())JS", "quickjs-callback-result-ownership.js")) {
-        if (protectedResult.ptr) engine->unprotect(protectedResult);
-        engine->unprotect(host);
+        if (protectedResult.ptr) engine->freeHandle(protectedResult);
+        engine->freeHandle(host);
         return false;
     }
     const bool complete = unprotectedCalls == 1 && protectedCalls == 1 && protectedResult.ptr;
-    if (protectedResult.ptr) engine->unprotect(protectedResult);
+    if (protectedResult.ptr) engine->freeHandle(protectedResult);
     const auto global = engine->getGlobal();
     engine->deleteProperty(global, "__tnCallbackOwnershipHost");
-    engine->unprotect(host);
+    engine->freeHandle(host);
     if (!complete) {
         std::cerr << "QuickJS callback result ownership proof failed" << std::endl;
     }
@@ -1417,7 +1479,7 @@ bool checkQuickJSCallbackLifetime(mystral::Runtime& runtime) {
     if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
 
     const auto destination = engine->newObject();
-    engine->protect(destination);
+    engine->freezeHandle(destination);
     std::weak_ptr<int> weakLifetime;
     {
         auto lifetime = std::make_shared<int>(1);
@@ -1431,17 +1493,17 @@ bool checkQuickJSCallbackLifetime(mystral::Runtime& runtime) {
                 });
             if (!callback.ptr) {
                 std::cerr << "QuickJS callback creation failed at " << index << std::endl;
-                engine->unprotect(destination);
+                engine->freeHandle(destination);
                 return false;
             }
-            engine->protect(callback);
+            engine->freezeHandle(callback);
             if (!engine->setProperty(destination, name.c_str(), callback)) {
                 std::cerr << "QuickJS callback property install failed at " << index << std::endl;
-                engine->unprotect(callback);
-                engine->unprotect(destination);
+                engine->freeHandle(callback);
+                engine->freeHandle(destination);
                 return false;
             }
-            engine->unprotect(callback);
+            engine->freeHandle(callback);
         }
     }
 
@@ -1449,14 +1511,14 @@ bool checkQuickJSCallbackLifetime(mystral::Runtime& runtime) {
         const std::string name = "callback" + std::to_string(index);
         if (!engine->deleteProperty(destination, name.c_str())) {
             std::cerr << "QuickJS callback property delete failed at " << index << std::endl;
-            engine->unprotect(destination);
+            engine->freeHandle(destination);
             return false;
         }
     }
     engine->gc();
     engine->gc();
     const bool released = weakLifetime.expired();
-    engine->unprotect(destination);
+    engine->freeHandle(destination);
     if (!released) {
         std::cerr << "QuickJS retained callback allocations after wrapper GC" << std::endl;
     }
@@ -1514,6 +1576,7 @@ int main() {
     }
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
+    if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
     if (!checkWholeTableVerification(*first)) return 1;
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;

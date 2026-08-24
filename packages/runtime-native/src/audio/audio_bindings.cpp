@@ -461,7 +461,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             // Pass undefined for context (not needed for our implementation)
             auto jsNode = createSourceNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
             g_sourceNodes[jsNode.ptr] = std::move(node);
-            g_jsEngine->protect(jsNode);
+            g_jsEngine->freezeHandle(jsNode);
             g_sourceHandles[jsNode.ptr] = jsNode;
 
             return jsNode;
@@ -642,7 +642,7 @@ void processAudioEvents() {
                           << g_jsEngine->getException() << std::endl;
             }
         }
-        g_jsEngine->unprotect(handle->second);
+        g_jsEngine->freeHandle(handle->second);
         completed.push_back(key);
     }
     for (void* key : completed) g_sourceHandles.erase(key);
@@ -658,7 +658,7 @@ void cleanupAudioBindings() {
 
     // Stop callbacks from retaining source pointers before source storage is released.
     for (auto& pair : g_audioContexts) pair.second->detachSources();
-    for (auto& pair : g_sourceHandles) g_jsEngine->unprotect(pair.second);
+    for (auto& pair : g_sourceHandles) g_jsEngine->freeHandle(pair.second);
     g_sourceHandles.clear();
 
     // Release audio contexts without destroying them (which calls SDL_DestroyAudioStream)

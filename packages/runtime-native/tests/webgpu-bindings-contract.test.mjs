@@ -430,11 +430,11 @@ test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () =>
   assert.match(jsc, /~JSCEngine\(\)[\s\S]*clearLastException/u);
   assert.match(
     implementation,
-    /engine->protect\(function\)[\s\S]*protectedExpectedValues\.push_back\(function\)/u,
+    /engine->freezeHandle\(function\)[\s\S]*protectedExpectedValues\.push_back\(function\)/u,
   );
   assert.match(
     implementation,
-    /for \(auto it = protectedExpectedValues\.rbegin\(\)[\s\S]*engine->unprotect\(\*it\)/u,
+    /for \(auto it = protectedExpectedValues\.rbegin\(\)[\s\S]*engine->freeHandle\(\*it\)/u,
   );
   assert.doesNotMatch(
     blockBetween(jsc, "bool setProperty(JSValueHandle obj", "JSValueHandle getProperty"),
@@ -738,7 +738,7 @@ const migratedRegistrationFamilies = {
     "finish",
   ],
   GPUTexture: ["createView", "destroy"],
-  WebGPU: ["__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D", "loadGLTF"],
+  WebGPU: ["__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D"],
 };
 
 function assertMigratedRegistrationRows(candidate) {
@@ -897,7 +897,7 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
   assert.match(state, /std::vector<js::JSValueHandle> protectedHandles;/u);
   assert.match(state, /std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;/u);
   assert.match(bindings, /for \(auto it = state->protectedHandles\.rbegin\(\)/u);
-  assert.match(bindings, /engine->unprotect\(\*it\)/u);
+  assert.match(bindings, /engine->freeHandle\(\*it\)/u);
   assert.match(bindings, /state->canvas2DContexts\.clear\(\)/u);
   assert.match(bindings, /createOwnedCanvas2DContext\(/u);
   assert.doesNotMatch(bindings, /canvas::createCanvas2DContext\(state->engine/u);
@@ -909,12 +909,12 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
   const quickjs = read("src/js/quickjs_engine.cpp");
   assert.doesNotMatch(quickjs, /g_protectedHandles/u);
   assert.doesNotMatch(
-    blockBetween(quickjs, "void protect(JSValueHandle value)", "void unprotect(JSValueHandle value)"),
+    blockBetween(quickjs, "void freezeHandle(JSValueHandle value)", "size_t outstandingHandleCount() const override"),
     /JS_DupValue/u,
   );
   const canvas2d = read("src/canvas/canvas2d_bindings.cpp");
   assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
-  assert.doesNotMatch(canvas2d, /engine->protect\(jsCtx\)/u);
+  assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
   assert.match(source, /__tnEngineLocalCanvasContext\.fillRect/u);
   assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
   assert.match(source, /Runtime::create\(config\)[\s\S]*Runtime::create\(config\)/u);

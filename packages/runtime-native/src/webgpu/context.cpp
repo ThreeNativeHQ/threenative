@@ -12,6 +12,8 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -1221,23 +1223,43 @@ struct BufferMapData {
     uint8_t _pad1[7] = {};
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     uint8_t _pad2[12] = {};
+    std::mutex waitMutex;
+    std::condition_variable waitCondition;
 };
 
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
 // Dawn buffer map callback
 static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
     auto* data = static_cast<BufferMapData*>(userdata1);
-    data->status = status;
-    data->completed = true;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+    }
+    data->waitCondition.notify_all();
 }
 #else
 // wgpu-native buffer map callback
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
     auto* data = static_cast<BufferMapData*>(userdata);
-    data->status = status;
-    data->completed = true;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+    }
+    data->waitCondition.notify_all();
 }
 #endif
+
+static bool bufferMapCompleted(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.completed;
+}
+
+static WGPUBufferMapAsyncStatus_Compat bufferMapStatus(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.status;
+}
 
 static bool copyScreenshotPixels(
     const uint8_t* source,
@@ -1326,28 +1348,31 @@ bool Context::saveScreenshot(const char* filename) {
     // Use wgpuDevicePoll/Tick to wait for the buffer mapping to complete
 #if defined(MYSTRAL_WEBGPU_WGPU)
     int maxIterations = 100;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDevicePoll(device_, true, nullptr);
     }
 #else
     // Dawn: Use device tick and instance process events
     int maxIterations = 5000;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDeviceTick(device_);
         wgpuInstanceProcessEvents(instance_);
-        if (!mapData.completed && maxIterations % 100 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!bufferMapCompleted(mapData) && maxIterations % 100 == 0) {
+            std::unique_lock<std::mutex> lock(mapData.waitMutex);
+            mapData.waitCondition.wait_for(lock, std::chrono::milliseconds(1), [&mapData]() {
+                return mapData.completed;
+            });
         }
     }
 #endif
 
-    if (!mapData.completed) {
+    if (!bufferMapCompleted(mapData)) {
         std::cerr << "[Screenshot] Buffer mapping timed out" << std::endl;
         return false;
     }
 
-    if (mapData.status != WGPUBufferMapAsyncStatus_Success_Compat) {
-        std::cerr << "[Screenshot] Buffer map failed with status: " << mapData.status << std::endl;
+    if (bufferMapStatus(mapData) != WGPUBufferMapAsyncStatus_Success_Compat) {
+        std::cerr << "[Screenshot] Buffer map failed with status: " << bufferMapStatus(mapData) << std::endl;
         return false;
     }
     TN_CONTEXT_LOGI("renderer capture map complete");
@@ -1442,21 +1467,25 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
     int maxIterations = 100;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDevicePoll(device_, true, nullptr);
     }
 #else
     int maxIterations = 5000;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDeviceTick(device_);
         wgpuInstanceProcessEvents(instance_);
-        if (!mapData.completed && maxIterations % 100 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!bufferMapCompleted(mapData) && maxIterations % 100 == 0) {
+            std::unique_lock<std::mutex> lock(mapData.waitMutex);
+            mapData.waitCondition.wait_for(lock, std::chrono::milliseconds(1), [&mapData]() {
+                return mapData.completed;
+            });
         }
     }
 #endif
 
-    if (!mapData.completed || mapData.status != WGPUBufferMapAsyncStatus_Success_Compat) {
+    if (!bufferMapCompleted(mapData) ||
+        bufferMapStatus(mapData) != WGPUBufferMapAsyncStatus_Success_Compat) {
         return false;
     }
 

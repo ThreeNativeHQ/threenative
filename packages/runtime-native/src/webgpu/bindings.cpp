@@ -23,6 +23,7 @@
 #include "mystral/webgpu/registration_table.h"
 #include "mystral/webgpu/wrapper_factories.h"
 #include "mystral/cold_start.h"
+#include "runtime_scripts.h"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -36,6 +37,7 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
+#include <string_view>
 
 #if defined(__APPLE__)
 #include <os/log.h>
@@ -51,11 +53,6 @@
 // libwebp for WebP image decoding (optional - for GLTF EXT_texture_webp extension)
 #ifdef MYSTRAL_HAS_WEBP
 #include <webp/decode.h>
-#endif
-
-// Deprecated native GLTF/GLB loader; disabled in default ThreeNative builds.
-#if TN_ENABLE_NATIVE_GLTF
-#include "mystral/gltf/gltf_loader.h"
 #endif
 
 // Canvas 2D context (Skia-backed)
@@ -99,6 +96,28 @@ WGPUBool wgpuDevicePoll(WGPUDevice device, WGPUBool wait, WGPUWrappedSubmissionI
 namespace mystral {
 namespace webgpu {
 
+static js::JSValueHandle evalEmbeddedRuntimeScriptWithResult(
+    js::Engine& engine, std::string_view name, const char* filename) {
+    const auto script = runtime_scripts::find(name);
+    if (!script.data) {
+        std::cerr << "[WebGPU] missing embedded runtime script: " << name << std::endl;
+        return {};
+    }
+    const std::string source(script.data, script.size);
+    return engine.evalScriptWithResult(source.c_str(), filename);
+}
+
+static bool evalEmbeddedRuntimeScript(
+    js::Engine& engine, std::string_view name, const char* filename) {
+    const auto script = runtime_scripts::find(name);
+    if (!script.data) {
+        std::cerr << "[WebGPU] missing embedded runtime script: " << name << std::endl;
+        return false;
+    }
+    const std::string source(script.data, script.size);
+    return engine.eval(source.c_str(), filename);
+}
+
 BindingsState* createBindingsState() {
     return new BindingsState();
 }
@@ -115,7 +134,7 @@ void destroyBindingsState(BindingsState*& state) {
             for (auto it = state->protectedHandles.rbegin();
                  it != state->protectedHandles.rend();
                  ++it) {
-                engine->unprotect(*it);
+                engine->freeHandle(*it);
             }
             state->protectedHandles.clear();
         }
@@ -193,7 +212,7 @@ static void protectBindingHandle(BindingsState* state, js::JSValueHandle value) 
     for (const auto& protectedHandle : state->protectedHandles) {
         if (protectedHandle.ptr == value.ptr) return;
     }
-    state->engine->protect(value);
+    state->engine->freezeHandle(value);
     state->protectedHandles.push_back(value);
 }
 
@@ -201,7 +220,7 @@ static void unprotectBindingHandle(BindingsState* state, js::JSValueHandle value
     if (!state || !state->engine || !value.ptr) return;
     for (auto it = state->protectedHandles.begin(); it != state->protectedHandles.end(); ++it) {
         if (it->ptr == value.ptr) {
-            state->engine->unprotect(*it);
+            state->engine->freeHandle(*it);
             state->protectedHandles.erase(it);
             return;
         }
@@ -459,6 +478,8 @@ static void recordBufferCreated(BindingsState* state, uint64_t size, uint32_t us
 struct ErrorScopeData {
     std::atomic<int> callbackReferences{2};
     std::atomic<bool> completed{false};
+    std::mutex waitMutex;
+    std::condition_variable waitCondition;
 #if WGPU_USES_CALLBACK_INFO_PATTERN
     WGPUPopErrorScopeStatus status = WGPUPopErrorScopeStatus_Force32;
 #endif
@@ -469,6 +490,8 @@ struct ErrorScopeData {
 struct QueueWorkDoneData {
     std::atomic<int> callbackReferences{2};
     std::atomic<bool> completed{false};
+    std::mutex waitMutex;
+    std::condition_variable waitCondition;
     WGPUQueueWorkDoneStatus status = WGPUQueueWorkDoneStatus_Error;
     std::string message;
 };
@@ -485,18 +508,26 @@ static void onErrorScopePopped(WGPUPopErrorScopeStatus status,
                                void* userdata1,
                                void*) {
     auto* data = static_cast<ErrorScopeData*>(userdata1);
-    data->status = status;
-    data->type = type;
-    data->message = WGPU_PRINT_STRING_VIEW(message);
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->type = type;
+        data->message = WGPU_PRINT_STRING_VIEW(message);
+    }
     data->completed.store(true, std::memory_order_release);
+    data->waitCondition.notify_all();
     releaseCallbackData(data);
 }
 #else
 static void onErrorScopePopped(WGPUErrorType type, const char* message, void* userdata) {
     auto* data = static_cast<ErrorScopeData*>(userdata);
-    data->type = type;
-    data->message = message ? message : "";
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->type = type;
+        data->message = message ? message : "";
+    }
     data->completed.store(true, std::memory_order_release);
+    data->waitCondition.notify_all();
     releaseCallbackData(data);
 }
 #endif
@@ -507,30 +538,43 @@ static void onQueueWorkDone(WGPUQueueWorkDoneStatus status,
                             void* userdata1,
                             void*) {
     auto* data = static_cast<QueueWorkDoneData*>(userdata1);
-    data->status = status;
-    data->message = WGPU_PRINT_STRING_VIEW(message);
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->message = WGPU_PRINT_STRING_VIEW(message);
+    }
     data->completed.store(true, std::memory_order_release);
+    data->waitCondition.notify_all();
     releaseCallbackData(data);
 }
 #elif defined(MYSTRAL_WEBGPU_WGPU_MODERN)
 static void onQueueWorkDone(WGPUQueueWorkDoneStatus status, void* userdata1, void*) {
     auto* data = static_cast<QueueWorkDoneData*>(userdata1);
-    data->status = status;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+    }
     data->completed.store(true, std::memory_order_release);
+    data->waitCondition.notify_all();
     releaseCallbackData(data);
 }
 #else
 static void onQueueWorkDone(WGPUQueueWorkDoneStatus status, void* userdata) {
     auto* data = static_cast<QueueWorkDoneData*>(userdata);
-    data->status = status;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+    }
     data->completed.store(true, std::memory_order_release);
+    data->waitCondition.notify_all();
     releaseCallbackData(data);
 }
 #endif
 
-static bool waitForWebGpuCallback(BindingsState* state, const std::atomic<bool>& completed) {
+template <typename CallbackData>
+static bool waitForWebGpuCallback(BindingsState* state, CallbackData* data) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (!completed.load(std::memory_order_acquire)) {
+    while (!data->completed.load(std::memory_order_acquire)) {
 #if defined(MYSTRAL_WEBGPU_WGPU)
         if (state->device) wgpuDevicePoll(state->device, false, nullptr);
 #else
@@ -538,7 +582,10 @@ static bool waitForWebGpuCallback(BindingsState* state, const std::atomic<bool>&
         if (state->device) wgpuDeviceTick(state->device);
 #endif
         if (std::chrono::steady_clock::now() >= deadline) return false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::unique_lock<std::mutex> lock(data->waitMutex);
+        data->waitCondition.wait_for(lock, std::chrono::milliseconds(1), [data]() {
+            return data->completed.load(std::memory_order_acquire);
+        });
     }
     return true;
 }
@@ -590,20 +637,43 @@ static const char* gpuErrorName(WGPUErrorType type) {
 // Dawn buffer map callback (4 params)
 static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
     auto* data = (BufferMapData*)userdata1;
-    data->status = status;
-    data->completed = true;
-    if (message.data && message.length > 0) {
-        data->errorMessage = std::string(message.data, message.length);
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+        if (message.data && message.length > 0) {
+            data->errorMessage = std::string(message.data, message.length);
+        }
     }
+    data->waitCondition.notify_all();
 }
 #else
 // wgpu-native buffer map callback (2 params)
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
     auto* data = (BufferMapData*)userdata;
-    data->status = status;
-    data->completed = true;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+    }
+    data->waitCondition.notify_all();
 }
 #endif
+
+static bool bufferMapCompleted(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.completed;
+}
+
+static WGPUBufferMapAsyncStatus_Compat bufferMapStatus(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.status;
+}
+
+static std::string bufferMapError(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.errorMessage;
+}
 
 /**
  * Convert texture format enum to string
@@ -1510,206 +1580,6 @@ static js::JSValueHandle tnWebgpuHandler86(BindingsState* state, BindingDestinat
             canvas->hasContext2d = true;
             return canvas->context2d;
 }
-#if TN_ENABLE_NATIVE_GLTF
-static js::JSValueHandle tnWebgpuHandler85(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) {
-                state->engine->throwException("loadGLTF requires a file path argument");
-                return state->engine->newUndefined();
-            }
-            std::string path = state->engine->toString(args[0]);
-            if (state->verboseLogging) std::cout << "[GLTF] Loading: " << path << std::endl;
-            auto gltfData = mystral::gltf::loadGLTF(path);
-            if (!gltfData) {
-                state->engine->throwException(("Failed to load GLTF file: " + path).c_str());
-                return state->engine->newUndefined();
-            }
-            // Convert to JavaScript object
-            auto result = state->engine->newObject();
-            // Meshes array
-            auto jsMeshes = state->engine->newArray();
-            for (size_t mi = 0; mi < gltfData->meshes.size(); mi++) {
-                const auto& mesh = gltfData->meshes[mi];
-                auto jsMesh = state->engine->newObject();
-                state->engine->setProperty(jsMesh, "name", state->engine->newString(mesh.name.c_str()));
-                // Primitives array
-                auto jsPrimitives = state->engine->newArray();
-                for (size_t pi = 0; pi < mesh.primitives.size(); pi++) {
-                    const auto& prim = mesh.primitives[pi];
-                    auto jsPrim = state->engine->newObject();
-                    // Positions Float32Array
-                    if (!prim.positions.data.empty()) {
-                        auto posArr = state->engine->createFloat32Array(
-                            prim.positions.data.data(),
-                            prim.positions.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "positions", posArr);
-                        state->engine->setProperty(jsPrim, "positionCount",
-                            state->engine->newNumber((double)prim.positions.count));
-                    }
-                    // Normals Float32Array
-                    if (!prim.normals.data.empty()) {
-                        auto normArr = state->engine->createFloat32Array(
-                            prim.normals.data.data(),
-                            prim.normals.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "normals", normArr);
-                    }
-                    // Texcoords Float32Array
-                    if (!prim.texcoords.data.empty()) {
-                        auto uvArr = state->engine->createFloat32Array(
-                            prim.texcoords.data.data(),
-                            prim.texcoords.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "texcoords", uvArr);
-                    }
-                    // Tangents Float32Array
-                    if (!prim.tangents.data.empty()) {
-                        auto tanArr = state->engine->createFloat32Array(
-                            prim.tangents.data.data(),
-                            prim.tangents.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "tangents", tanArr);
-                    }
-                    // Indices Uint32Array
-                    if (!prim.indices.empty()) {
-                        auto idxArr = state->engine->createUint32Array(
-                            prim.indices.data(),
-                            prim.indices.size()
-                        );
-                        state->engine->setProperty(jsPrim, "indices", idxArr);
-                        state->engine->setProperty(jsPrim, "indexCount",
-                            state->engine->newNumber((double)prim.indices.size()));
-                    }
-                    state->engine->setProperty(jsPrim, "materialIndex",
-                        state->engine->newNumber((double)prim.materialIndex));
-                    state->engine->setPropertyIndex(jsPrimitives, pi, jsPrim);
-                }
-                state->engine->setProperty(jsMesh, "primitives", jsPrimitives);
-                state->engine->setPropertyIndex(jsMeshes, mi, jsMesh);
-            }
-            state->engine->setProperty(result, "meshes", jsMeshes);
-            // Materials array
-            auto jsMaterials = state->engine->newArray();
-            for (size_t mi = 0; mi < gltfData->materials.size(); mi++) {
-                const auto& mat = gltfData->materials[mi];
-                auto jsMat = state->engine->newObject();
-                state->engine->setProperty(jsMat, "name", state->engine->newString(mat.name.c_str()));
-                // PBR factors
-                auto baseColor = state->engine->newArray();
-                for (int i = 0; i < 4; i++) {
-                    state->engine->setPropertyIndex(baseColor, i, state->engine->newNumber(mat.baseColorFactor[i]));
-                }
-                state->engine->setProperty(jsMat, "baseColorFactor", baseColor);
-                state->engine->setProperty(jsMat, "metallicFactor", state->engine->newNumber(mat.metallicFactor));
-                state->engine->setProperty(jsMat, "roughnessFactor", state->engine->newNumber(mat.roughnessFactor));
-                // Emissive
-                auto emissive = state->engine->newArray();
-                for (int i = 0; i < 3; i++) {
-                    state->engine->setPropertyIndex(emissive, i, state->engine->newNumber(mat.emissiveFactor[i]));
-                }
-                state->engine->setProperty(jsMat, "emissiveFactor", emissive);
-                // Texture indices
-                state->engine->setProperty(jsMat, "baseColorTextureIndex",
-                    state->engine->newNumber(mat.baseColorTexture.imageIndex));
-                state->engine->setProperty(jsMat, "metallicRoughnessTextureIndex",
-                    state->engine->newNumber(mat.metallicRoughnessTexture.imageIndex));
-                state->engine->setProperty(jsMat, "normalTextureIndex",
-                    state->engine->newNumber(mat.normalTexture.imageIndex));
-                state->engine->setProperty(jsMat, "occlusionTextureIndex",
-                    state->engine->newNumber(mat.occlusionTexture.imageIndex));
-                state->engine->setProperty(jsMat, "emissiveTextureIndex",
-                    state->engine->newNumber(mat.emissiveTexture.imageIndex));
-                state->engine->setProperty(jsMat, "normalScale", state->engine->newNumber(mat.normalScale));
-                state->engine->setProperty(jsMat, "occlusionStrength", state->engine->newNumber(mat.occlusionStrength));
-                state->engine->setProperty(jsMat, "alphaCutoff", state->engine->newNumber(mat.alphaCutoff));
-                state->engine->setProperty(jsMat, "doubleSided", state->engine->newBoolean(mat.doubleSided));
-                const char* alphaModeStr = "OPAQUE";
-                if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Mask) alphaModeStr = "MASK";
-                else if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Blend) alphaModeStr = "BLEND";
-                state->engine->setProperty(jsMat, "alphaMode", state->engine->newString(alphaModeStr));
-                state->engine->setPropertyIndex(jsMaterials, mi, jsMat);
-            }
-            state->engine->setProperty(result, "materials", jsMaterials);
-            // Images array (with embedded data as ArrayBuffers)
-            auto jsImages = state->engine->newArray();
-            for (size_t ii = 0; ii < gltfData->images.size(); ii++) {
-                const auto& img = gltfData->images[ii];
-                auto jsImg = state->engine->newObject();
-                state->engine->setProperty(jsImg, "name", state->engine->newString(img.name.c_str()));
-                state->engine->setProperty(jsImg, "uri", state->engine->newString(img.uri.c_str()));
-                state->engine->setProperty(jsImg, "mimeType", state->engine->newString(img.mimeType.c_str()));
-                // Embedded image data as ArrayBuffer
-                if (!img.data.empty()) {
-                    auto dataArr = state->engine->createUint8Array(
-                        img.data.data(),
-                        img.data.size()
-                    );
-                    state->engine->setProperty(jsImg, "data", dataArr);
-                }
-                state->engine->setPropertyIndex(jsImages, ii, jsImg);
-            }
-            state->engine->setProperty(result, "images", jsImages);
-            // Nodes array
-            auto jsNodes = state->engine->newArray();
-            for (size_t ni = 0; ni < gltfData->nodes.size(); ni++) {
-                const auto& node = gltfData->nodes[ni];
-                auto jsNode = state->engine->newObject();
-                state->engine->setProperty(jsNode, "name", state->engine->newString(node.name.c_str()));
-                state->engine->setProperty(jsNode, "meshIndex", state->engine->newNumber(node.meshIndex));
-                // Transform - store as separate arrays
-                auto translation = state->engine->newArray();
-                auto rotation = state->engine->newArray();
-                auto scale = state->engine->newArray();
-                for (int i = 0; i < 3; i++) {
-                    state->engine->setPropertyIndex(translation, i, state->engine->newNumber(node.translation[i]));
-                    state->engine->setPropertyIndex(scale, i, state->engine->newNumber(node.scale[i]));
-                }
-                for (int i = 0; i < 4; i++) {
-                    state->engine->setPropertyIndex(rotation, i, state->engine->newNumber(node.rotation[i]));
-                }
-                state->engine->setProperty(jsNode, "translation", translation);
-                state->engine->setProperty(jsNode, "rotation", rotation);
-                state->engine->setProperty(jsNode, "scale", scale);
-                // Matrix (if present)
-                if (node.hasMatrix) {
-                    auto matrix = state->engine->newArray();
-                    for (int i = 0; i < 16; i++) {
-                        state->engine->setPropertyIndex(matrix, i, state->engine->newNumber(node.matrix[i]));
-                    }
-                    state->engine->setProperty(jsNode, "matrix", matrix);
-                }
-                // Children indices
-                auto children = state->engine->newArray();
-                for (size_t ci = 0; ci < node.children.size(); ci++) {
-                    state->engine->setPropertyIndex(children, ci, state->engine->newNumber(node.children[ci]));
-                }
-                state->engine->setProperty(jsNode, "children", children);
-                state->engine->setPropertyIndex(jsNodes, ni, jsNode);
-            }
-            state->engine->setProperty(result, "nodes", jsNodes);
-            // Scenes array
-            auto jsScenes = state->engine->newArray();
-            for (size_t si = 0; si < gltfData->scenes.size(); si++) {
-                const auto& scene = gltfData->scenes[si];
-                auto jsScene = state->engine->newObject();
-                state->engine->setProperty(jsScene, "name", state->engine->newString(scene.name.c_str()));
-                auto sceneNodes = state->engine->newArray();
-                for (size_t sni = 0; sni < scene.nodes.size(); sni++) {
-                    state->engine->setPropertyIndex(sceneNodes, sni, state->engine->newNumber(scene.nodes[sni]));
-                }
-                state->engine->setProperty(jsScene, "nodes", sceneNodes);
-                state->engine->setPropertyIndex(jsScenes, si, jsScene);
-            }
-            state->engine->setProperty(result, "scenes", jsScenes);
-            state->engine->setProperty(result, "defaultScene", state->engine->newNumber(gltfData->defaultScene));
-            if (state->verboseLogging) {
-                std::cout << "[GLTF] Loaded " << gltfData->meshes.size() << " meshes, "
-                          << gltfData->materials.size() << " materials, "
-                          << gltfData->images.size() << " images" << std::endl;
-            }
-            return result;
-}
-#endif
 static js::JSValueHandle tnWebgpuHandler84(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             if (args.empty()) {
                 state->engine->throwException("__decodeImageData requires an ArrayBuffer argument");
@@ -1816,7 +1686,7 @@ static js::JSValueHandle tnWebgpuHandler81(BindingsState* state, BindingDestinat
 #else
                             wgpuDevicePopErrorScope(state->device, onErrorScopePopped, data);
 #endif
-                            if (!waitForWebGpuCallback(state, data->completed)) {
+                            if (!waitForWebGpuCallback(state, data)) {
                                 releaseCallbackData(data);
                                 return rejectedPromise(state,
                                     "GPUDevice.popErrorScope timed out waiting for native observation.",
@@ -4190,9 +4060,12 @@ static js::JSValueHandle tnWebgpuHandler30(BindingsState* state, uint64_t buffer
 #endif
                                     }
                                     // Synchronous mapping: use global callback + device poll
-                                    state->bufferMapData.completed = false;
-                                    state->bufferMapData.status = WGPUBufferMapAsyncStatus_Unknown_Compat;
-                                    state->bufferMapData.errorMessage.clear();
+                                    {
+                                        std::lock_guard<std::mutex> lock(state->bufferMapData.waitMutex);
+                                        state->bufferMapData.completed = false;
+                                        state->bufferMapData.status = WGPUBufferMapAsyncStatus_Unknown_Compat;
+                                        state->bufferMapData.errorMessage.clear();
+                                    }
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
                                     // Dawn uses CallbackInfo struct with 4-param callback
                                     // Use AllowSpontaneous mode so callback can be invoked at any time
@@ -4209,7 +4082,7 @@ static js::JSValueHandle tnWebgpuHandler30(BindingsState* state, uint64_t buffer
                                     // Poll device until mapping completes
                                     // Add small sleep to avoid busy-looping and let GPU work complete
                                     int pollCount = 0;
-                                    while (!state->bufferMapData.completed && pollCount < 10000) {
+                                    while (!bufferMapCompleted(state->bufferMapData) && pollCount < 10000) {
 #if defined(MYSTRAL_WEBGPU_WGPU)
                                         wgpuDevicePoll(state->device, true, nullptr);
 #else
@@ -4220,20 +4093,27 @@ static js::JSValueHandle tnWebgpuHandler30(BindingsState* state, uint64_t buffer
                                             wgpuDeviceTick(state->device);
                                         }
 #endif
-                                        // Small sleep every 100 iterations to avoid busy loop
+                                        // A timed condition wait avoids a fixed sleep while preserving
+                                        // the existing 100-iteration timeout budget.
                                         if (pollCount % 100 == 0) {
-                                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                            std::unique_lock<std::mutex> lock(state->bufferMapData.waitMutex);
+                                            state->bufferMapData.waitCondition.wait_for(
+                                                lock,
+                                                std::chrono::milliseconds(1),
+                                                [&state]() { return state->bufferMapData.completed; });
                                         }
                                         pollCount++;
                                     }
-                                    if (state->bufferMapData.status == WGPUBufferMapAsyncStatus_Success_Compat) {
+                                    const auto mapStatus = bufferMapStatus(state->bufferMapData);
+                                    if (mapStatus == WGPUBufferMapAsyncStatus_Success_Compat) {
                                         bufferInfo.isMapped = true;
                                         bufferInfo.mapMode = mode;  // Store whether mapped for read or write
                                         return state->engine->evalWithResult("Promise.resolve()", "mapAsync-success");
                                     } else {
-                                        std::cerr << "[WebGPU] mapAsync: Failed with status " << state->bufferMapData.status;
-                                        if (!state->bufferMapData.errorMessage.empty()) {
-                                            std::cerr << " - " << state->bufferMapData.errorMessage;
+                                        const std::string mapError = bufferMapError(state->bufferMapData);
+                                        std::cerr << "[WebGPU] mapAsync: Failed with status " << mapStatus;
+                                        if (!mapError.empty()) {
+                                            std::cerr << " - " << mapError;
                                         }
                                         std::cerr << std::endl;
                                         return state->engine->evalWithResult("Promise.reject(new Error('Buffer map failed'))", "mapAsync-failed");
@@ -4346,7 +4226,7 @@ static js::JSValueHandle tnWebgpuHandler26(BindingsState* state, BindingDestinat
 #else
                             wgpuQueueOnSubmittedWorkDone(state->queue, onQueueWorkDone, data);
 #endif
-                            if (!waitForWebGpuCallback(state, data->completed)) {
+                            if (!waitForWebGpuCallback(state, data)) {
                                 releaseCallbackData(data);
                                 return rejectedPromise(state,
                                     "GPUQueue.onSubmittedWorkDone timed out waiting for native completion.",
@@ -4919,33 +4799,20 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     // not what it costs — a game that awaits `compileAsync` behind its loading
                     // screen pays for the pipelines there instead of mid-frame.
                     {
-                        const char* installAsyncPipelines = R"JS(
-(function (device) {
-  const wrap = (syncName) => function (descriptor) {
-    try {
-      return Promise.resolve(this[syncName](descriptor));
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  };
-  if (typeof device.createRenderPipeline === "function") {
-    device.createRenderPipelineAsync = wrap("createRenderPipeline");
-  }
-  if (typeof device.createComputePipeline === "function") {
-    device.createComputePipelineAsync = wrap("createComputePipeline");
-  }
-  return (
-    typeof device.createRenderPipelineAsync === "function" &&
-    typeof device.createComputePipelineAsync === "function"
-  );
-})
-)JS";
-                        auto installer = state->engine->evalScriptWithResult(
-                            installAsyncPipelines, "install-async-pipelines");
-                        auto installed = state->engine->call(
-                            installer, state->engine->newUndefined(), {device});
+                        js::JSValueGuard installer(
+                            *state->engine,
+                            evalEmbeddedRuntimeScriptWithResult(
+                                *state->engine, "install-async-pipelines",
+                                "install-async-pipelines.js"));
+                        js::JSValueGuard installed(*state->engine, {});
+                        if (installer) {
+                            js::JSValueGuard thisArg(
+                                *state->engine, state->engine->newUndefined());
+                            installed.reset(
+                                state->engine->call(installer.get(), thisArg.get(), {device}));
+                        }
                         // Fail loudly rather than leave the renderer to discover it mid-frame.
-                        if (!state->engine->toBoolean(installed)) {
+                        if (!installed || !state->engine->toBoolean(installed.get())) {
                             std::cerr << "[WebGPU] failed to install async pipeline creation"
                                       << std::endl;
                         }
@@ -5384,12 +5251,12 @@ static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestinat
 }/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
 static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
     const auto globalBindingHost = engine->newObject();
-    engine->protect(globalBindingHost);
+    engine->freezeHandle(globalBindingHost);
     struct GlobalBindingHostProtection {
         js::Engine* engine;
         js::JSValueHandle value;
         ~GlobalBindingHostProtection() {
-            if (value.ptr) engine->unprotect(value);
+            if (value.ptr) engine->freeHandle(value);
         }
     } globalBindingHostProtection{engine, globalBindingHost};
     const auto copyGlobalBinding = [&](js::JSValueHandle host, const char* name) {
@@ -5594,109 +5461,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
         !copyGlobalBinding(globalBindingHost, "__decodeImageData")) return false;
 
     // JavaScript polyfill for createImageBitmap
-    const char* imageBitmapPolyfill = R"(
-// ImageBitmap class (web-compatible)
-class ImageBitmap {
-    constructor(width, height, data) {
-        this.width = width;
-        this.height = height;
-        this._data = data;  // Internal RGBA pixel data
-        this._closed = false;
+    if (!evalEmbeddedRuntimeScript(*engine, "image-bitmap-polyfill", "image-bitmap-polyfill.js")) {
+        return false;
     }
-
-    close() {
-        this._closed = true;
-        this._data = null;
-    }
-}
-
-// createImageBitmap - Standard Web API
-// Supports: Blob, ArrayBuffer, Response, or object with arrayBuffer() method
-async function createImageBitmap(source, options) {
-    let arrayBuffer;
-
-    if (source instanceof ArrayBuffer) {
-        arrayBuffer = source;
-    } else if (source instanceof Uint8Array) {
-        arrayBuffer = source.buffer;
-    } else if (source && typeof source.arrayBuffer === 'function') {
-        // Blob or Response
-        arrayBuffer = await source.arrayBuffer();
-    } else if (source && source._data) {
-        // Already an ImageBitmap-like object
-        return source;
-    } else {
-        throw new Error('createImageBitmap: unsupported source type');
-    }
-
-    // Decode using native function
-    const decoded = __decodeImageData(arrayBuffer);
-
-    if (!decoded) {
-        throw new Error('createImageBitmap: failed to decode image');
-    }
-
-    // Create ImageBitmap
-    const bitmap = new ImageBitmap(decoded.width, decoded.height, decoded._data);
-    return bitmap;
-}
-
-globalThis.createImageBitmap = createImageBitmap;
-globalThis.ImageBitmap = ImageBitmap;
-
-// CanvasRenderingContext2D - Placeholder class for instanceof checks
-// The actual implementation is in Canvas2D bindings, this is just for type checking
-class CanvasRenderingContext2D {
-    constructor() {
-        // This constructor is never called directly - contexts are created via getContext('2d')
-    }
-}
-globalThis.CanvasRenderingContext2D = CanvasRenderingContext2D;
-
-// HTMLCanvasElement - Placeholder class for instanceof checks
-class HTMLCanvasElement {
-    constructor() {}
-}
-globalThis.HTMLCanvasElement = HTMLCanvasElement;
-
-// OffscreenCanvas - For type checking
-class OffscreenCanvas {
-    constructor(width, height) {
-        this.width = width || 300;
-        this.height = height || 150;
-        this._contextType = null;
-        this._context = null;
-    }
-
-    getContext(type, options) {
-        if (type === '2d') {
-            // For basic 2D context needs
-            if (!this._context) {
-                this._context = { canvas: this };
-            }
-            return this._context;
-        }
-        return null;
-    }
-}
-globalThis.OffscreenCanvas = OffscreenCanvas;
-)";
-    engine->eval(imageBitmapPolyfill, "imageBitmap-polyfill.js");
 
     auto mystralNamespace = engine->newObject();
-
-#if TN_ENABLE_NATIVE_GLTF
-    // =========================================================================
-    // Mystral.loadGLTF() - deprecated native GLTF/GLB file loader
-    // =========================================================================
-    // Default builds intentionally do not expose this; use upstream Three.js GLTFLoader.
-    if (!installBindingTable(state->engine, state, bindingTable({
-        {"WebGPU", "loadGLTF", 0, nullptr,
-        &tnWebgpuHandler85
-    , mystralNamespace}}))) return false;
-#endif
-
-
 
     engine->setGlobalProperty("Mystral", mystralNamespace);
 

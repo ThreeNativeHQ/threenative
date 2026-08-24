@@ -84,8 +84,7 @@
     "HTMLElement.removeEventListener",
     "WebGPU.__decodeImageData",
     "WebGPU.__nativeGetContext2D",
-    "WebGPU.createOffscreenCanvas2D",
-    "WebGPU.loadGLTF"
+    "WebGPU.createOffscreenCanvas2D"
   ],
   "errors": [
     "Canvas dimensions must be positive integer pixels",
@@ -121,7 +120,6 @@
     "createTexture requires a descriptor",
     "createTextureView requires a texture",
     "createTextureView: invalid texture",
-    "loadGLTF requires a file path argument",
     "setBindGroup requires index and bindGroup",
     "writeBuffer requires buffer, offset, and data",
     "writeBuffer: buffer offset must be a non-negative multiple of 4",

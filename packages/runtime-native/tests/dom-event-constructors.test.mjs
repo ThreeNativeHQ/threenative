@@ -8,16 +8,21 @@ const source = readFileSync(
   fileURLToPath(new URL("../src/runtime.cpp", import.meta.url)),
   "utf8",
 );
+const constructorScript = readFileSync(
+  fileURLToPath(new URL("../src/runtime-scripts/event-constructors-setup.js", import.meta.url)),
+  "utf8",
+);
 
-function constructorSource(candidate) {
-  const match = candidate.match(
-    /const char\* eventConstructorsSetup = R"JS\(([\s\S]*?)\)JS";/u,
+function constructorSource(runtime, script) {
+  assert.match(
+    runtime,
+    /evalRuntimeScript\(\*jsEngine_, "event-constructors-setup"/u,
+    "runtime must load executable event constructors",
   );
-  assert.ok(match, "runtime must install executable event constructors");
   for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent"]) {
-    assert.match(match[1], new RegExp(`globalThis\\.${name} = ${name};`, "u"));
+    assert.match(script, new RegExp(`globalThis\\.${name} = ${name};`, "u"));
   }
-  return match[1];
+  return script;
 }
 
 function assertDispatchContract(candidate) {
@@ -35,7 +40,7 @@ function assertDispatchContract(candidate) {
 
 test("native Event constructors expose the fields used by runtime event scenes", () => {
   const context = vm.createContext({});
-  vm.runInContext(constructorSource(source), context);
+  vm.runInContext(constructorSource(source, constructorScript), context);
 
   const result = vm.runInContext(
     `(() => {
@@ -80,7 +85,12 @@ test("canvas, document, and window dispatch through native listener storage", ()
 });
 
 test("event plumbing contract fails closed when a constructor or target route disappears", () => {
-  assert.throws(() => constructorSource(source.replace("globalThis.PointerEvent = PointerEvent;", "")));
+  assert.throws(() =>
+    constructorSource(
+      source.replace('evalRuntimeScript(*jsEngine_, "event-constructors-setup"', "removed"),
+      constructorScript,
+    ),
+  );
   assert.throws(() =>
     assertDispatchContract(
       source.replace('dispatchConstructedEvent("window", window, args)', "dispatch removed"),

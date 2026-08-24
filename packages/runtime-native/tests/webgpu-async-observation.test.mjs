@@ -20,7 +20,7 @@ function assertAsyncObservationContract(candidate) {
   assert.match(candidate, /gpuErrorName\(errorType\)[\s\S]*jsStringLiteral\(errorMessage\)/u);
   assert.match(candidate, /status != WGPUQueueWorkDoneStatus_Success/u);
   assert.match(candidate, /callbackReferences\{2\}[\s\S]*releaseCallbackData/u);
-  assert.match(candidate, /if \(!waitForWebGpuCallback\(state, data->completed\)\) \{[\s\S]*releaseCallbackData\(data\)/u);
+  assert.match(candidate, /if \(!waitForWebGpuCallback\(state, data\)\) \{[\s\S]*releaseCallbackData\(data\)/u);
   assert.ok(
     (candidate.match(/releaseCallbackData\(data\);/gu) ?? []).length >= 10,
     "caller and callback must each release ownership on every completion path",

@@ -12,6 +12,7 @@
 #include <functional>
 #include <vector>
 #include <cstdint>
+#include <cstddef>
 
 namespace mystral {
 namespace js {
@@ -269,15 +270,22 @@ public:
     // ========================================================================
 
     /**
-     * Protect a value from garbage collection
-     * Must call unprotect() when done
+     * Keep a value alive beyond the current frame.
      */
-    virtual void protect(JSValueHandle value) = 0;
+    virtual void freezeHandle(JSValueHandle value) = 0;
 
     /**
-     * Allow a value to be garbage collected
+     * Release one handle owned by this Engine.
      */
-    virtual void unprotect(JSValueHandle value) = 0;
+    virtual void freeHandle(JSValueHandle value) = 0;
+
+    /** Return the number of live handles owned by this Engine. */
+    virtual size_t outstandingHandleCount() const = 0;
+
+    // Compatibility names for embedders that still use the old vocabulary. New code should use
+    // freezeHandle/freeHandle so ownership is explicit at the call site.
+    virtual void protect(JSValueHandle value) { freezeHandle(value); }
+    virtual void unprotect(JSValueHandle value) { freeHandle(value); }
 
     /**
      * Run garbage collection (if supported)
@@ -371,6 +379,59 @@ public:
      * - JSC: JSGlobalContextRef
      */
     virtual void* getRawContext() = 0;
+};
+
+/**
+ * Move-only owner for one Engine handle.
+ *
+ * A guard releases its value at scope exit. Use release() only when ownership is intentionally
+ * transferred to another owner or to a JavaScript API that takes the handle lifetime over.
+ */
+class JSValueGuard {
+public:
+    JSValueGuard(Engine& engine, JSValueHandle value) noexcept
+        : engine_(&engine), value_(value) {}
+
+    ~JSValueGuard() { reset(); }
+
+    JSValueGuard(const JSValueGuard&) = delete;
+    JSValueGuard& operator=(const JSValueGuard&) = delete;
+
+    JSValueGuard(JSValueGuard&& other) noexcept
+        : engine_(other.engine_), value_(other.value_) {
+        other.engine_ = nullptr;
+        other.value_ = {};
+    }
+
+    JSValueGuard& operator=(JSValueGuard&& other) noexcept {
+        if (this == &other) return *this;
+        reset();
+        engine_ = other.engine_;
+        value_ = other.value_;
+        other.engine_ = nullptr;
+        other.value_ = {};
+        return *this;
+    }
+
+    JSValueHandle get() const noexcept { return value_; }
+    operator bool() const noexcept { return value_.ptr != nullptr; }
+
+    JSValueHandle release() noexcept {
+        const JSValueHandle released = value_;
+        engine_ = nullptr;
+        value_ = {};
+        return released;
+    }
+
+    void reset(JSValueHandle value = {}) noexcept {
+        if (value_.ptr == value.ptr) return;
+        if (engine_ && value_.ptr) engine_->freeHandle(value_);
+        value_ = value;
+    }
+
+private:
+    Engine* engine_ = nullptr;
+    JSValueHandle value_;
 };
 
 /**
