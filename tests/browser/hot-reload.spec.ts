@@ -231,6 +231,7 @@ test("preserves starter state and stays flat across ten real HMR updates", async
     }
   });
 
+  await waitForGrounded(page);
   await page.keyboard.down("ArrowRight");
   try {
     await advanceFixedTicks(page, 240);
