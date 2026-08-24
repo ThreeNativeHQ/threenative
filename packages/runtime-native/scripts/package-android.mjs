@@ -15,7 +15,7 @@ import {
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, verifyChecksum } from './install-prebuilt.mjs';
-import { assertAndroidAssetsDecodable } from './asset-preflight.mjs';
+import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
@@ -500,6 +500,7 @@ function listFiles(directory, relative = '') {
 export function stageAndroidAssets(
   assets,
   destination = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets', 'game'),
+  runtimeSource = runtimeRoot,
 ) {
   rmSync(destination, { force: true, recursive: true });
   mkdirSync(destination, { recursive: true });
@@ -510,7 +511,9 @@ export function stageAndroidAssets(
   // Read the assets before copying them. Everything this catches — OGG the decoder rejects, WebP
   // the runtime was built without, interleaved buffers WebGPU refuses to make a pipeline for —
   // otherwise ships in an APK that installs, launches and draws nothing.
-  assertAndroidAssetsDecodable(assets);
+  // Derived from the runtime this build is about to pack, not declared here. A hardcoded claim
+  // goes stale the moment the build changes under it, which is exactly what happened to WebP.
+  assertAndroidAssetsDecodable(assets, { webp: deriveAndroidWebpSupport(runtimeSource) });
   const files = listFiles(assets);
   for (const file of files) {
     const output = join(destination, file);
@@ -588,7 +591,7 @@ export async function packageAndroid(
   );
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
-  stageAndroidAssets(assets, join(generatedAssets, 'game'));
+  stageAndroidAssets(assets, join(generatedAssets, 'game'), packageRoot);
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
     const command = process.platform === 'win32' ? gradlew : 'sh';

@@ -15,9 +15,25 @@ import { afterEach, test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import {
   assertAndroidAssetsDecodable,
+  deriveAndroidWebpSupport,
   findAndroidAssetProblems,
   readGlbJson,
 } from '../scripts/asset-preflight.mjs';
+
+/** A runtime source checkout, optionally with libwebp provisioned the way CMake wants it. */
+function makeRuntime({ webpSource = 'absent' } = {}) {
+  const root = makeTempDirSync('threenative-runtime-facts-');
+  roots.push(root);
+  writeFileSync(join(root, 'CMakeLists.txt'), 'project(mystral)\n');
+  if (webpSource === 'absent') return root;
+  const tree = join(root, 'third_party', 'webp-source', 'libwebp-1.5.0');
+  mkdirSync(tree, { recursive: true });
+  writeFileSync(join(tree, 'CMakeLists.txt'), 'project(libwebp)\n');
+  // CMake takes a candidate only when it has no lib/ — a prebuilt drop in the source destination
+  // satisfies the glob and builds nothing.
+  if (webpSource === 'prebuilt-drop') mkdirSync(join(tree, 'lib'), { recursive: true });
+  return root;
+}
 
 const roots = [];
 afterEach(() => {
@@ -103,13 +119,52 @@ test('an Ogg Vorbis asset is reported, named, and given the ffmpeg command', () 
   assert.match(problems[0].fix, /^ffmpeg .*pcm_s16le/);
 });
 
-test('a GLB with WebP textures is reported', () => {
+test('WebP support is derived from the runtime the build ships with, not declared', () => {
+  // The claim this replaces — "the android runtime is built without libwebp" — had been false
+  // since 62fac4d5 added webp-source to androidDeps. A hardcoded capability goes stale the moment
+  // the build changes under it, and nothing can notice.
+  const provisioned = deriveAndroidWebpSupport(makeRuntime({ webpSource: 'source' }));
+  assert.equal(provisioned.supported, true);
+  assert.match(provisioned.reason, /libwebp-1\.5\.0 is provisioned/);
+
+  const bare = deriveAndroidWebpSupport(makeRuntime());
+  assert.equal(bare.supported, false);
+  assert.match(bare.reason, /download-deps\.mjs --only webp-source/);
+
+  const dropped = deriveAndroidWebpSupport(makeRuntime({ webpSource: 'prebuilt-drop' }));
+  assert.equal(dropped.supported, false, 'a lib/ in the source destination builds nothing');
+
+  const install = deriveAndroidWebpSupport(makeAssets());
+  assert.equal(install.supported, false);
+  assert.match(install.reason, /not a runtime source checkout/);
+});
+
+test('a GLB with WebP textures is reported when the runtime carries no libwebp', () => {
   const root = makeAssets();
   writeFileSync(join(root, 'enemy.glb'), meshGlb({ images: [{ mimeType: 'image/webp' }, { mimeType: 'image/jpeg' }] }));
-  const problems = findAndroidAssetProblems(root);
+  const problems = findAndroidAssetProblems(root, {
+    webp: deriveAndroidWebpSupport(makeRuntime()),
+  });
   assert.equal(problems.length, 1);
   assert.match(problems[0].reason, /1 WebP texture/);
+  // The refusal names the missing provisioning rather than a stale rumour about the runtime.
+  assert.match(problems[0].reason, /download-deps\.mjs --only webp-source/);
   assert.match(problems[0].fix, /gltf-transform jpeg/);
+});
+
+test('a GLB with WebP textures passes when the runtime genuinely carries libwebp', () => {
+  const root = makeAssets();
+  writeFileSync(join(root, 'enemy.glb'), meshGlb({ images: [{ mimeType: 'image/webp' }] }));
+  assert.deepEqual(
+    findAndroidAssetProblems(root, { webp: deriveAndroidWebpSupport(makeRuntime({ webpSource: 'source' })) }),
+    [],
+  );
+});
+
+test('a caller that derives nothing gets the most restrictive runtime, not the most permissive', () => {
+  const root = makeAssets();
+  writeFileSync(join(root, 'enemy.glb'), meshGlb({ images: [{ mimeType: 'image/webp' }] }));
+  assert.equal(findAndroidAssetProblems(root).length, 1);
 });
 
 test('a GLB whose textures are all JPEG passes', () => {

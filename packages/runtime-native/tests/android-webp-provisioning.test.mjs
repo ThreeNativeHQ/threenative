@@ -21,6 +21,9 @@ import { test } from 'vitest';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const depsScript = readFileSync(join(root, 'scripts/download-deps.mjs'), 'utf8');
 const cmakeLists = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');
+const preflight = readFileSync(join(root, 'scripts/asset-preflight.mjs'), 'utf8');
+/** Comments record why the stale claim was wrong; the guard below must read code, not prose. */
+const preflightCode = preflight.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 function androidDeps() {
   const match = depsScript.match(/const androidDeps = \[([^\]]*)\]/);
@@ -88,5 +91,37 @@ test('the Android failure hint names the command that fixes it', () => {
   const hint = cmakeLists.match(/libwebp not found[^"]*"\s*\.\s*"?\s*Run '[^']*'[^.]*\./);
   if (hint !== null && !hint[0].includes('webp-source')) {
     throw new Error("the configure-time hint regressed to '--only webp', which does not exist for Android");
+  }
+});
+
+test('asset-preflight derives WebP support from the build rather than declaring it', () => {
+  // Leg 3, and the reason this test file names three legs. The preflight used to refuse every
+  // WebP texture with "the android runtime is built without libwebp", a sentence that had been
+  // false since 62fac4d5 added webp-source to androidDeps. Legs 1 and 2 above were pinned and
+  // leg 3 was not, so the build changed and the claim about the build did not.
+  if (/built without libwebp/.test(preflightCode)) {
+    throw new Error(
+      'asset-preflight.mjs hardcodes "built without libwebp" again; it must derive support from ' +
+        'the runtime source facts CMake reads, through deriveAndroidWebpSupport',
+    );
+  }
+  if (!/export function deriveAndroidWebpSupport/.test(preflight)) {
+    throw new Error('asset-preflight.mjs no longer exports deriveAndroidWebpSupport');
+  }
+  // The derivation must read the same directory CMake globs, or the two drift apart silently.
+  if (!/third_party.*webp-source/s.test(preflight)) {
+    throw new Error('deriveAndroidWebpSupport no longer reads third_party/webp-source');
+  }
+});
+
+test('the iOS exclusion stays honest: no libwebp is built for IOS', () => {
+  // CMakeLists.txt:697 excludes IOS from the prebuilt branch and the source branch is ANDROID
+  // only, so iOS genuinely cannot decode WebP. Correcting the Android claim must not quietly
+  // make the iOS one wrong in the other direction.
+  if (!/elseif\(EXISTS \$\{WEBP_DIR\} AND NOT IOS\)/.test(cmakeLists)) {
+    throw new Error(
+      'the libwebp prebuilt branch no longer excludes IOS; either iOS gained a decoder and the ' +
+        "preflight must say so, or the exclusion regressed",
+    );
   }
 });

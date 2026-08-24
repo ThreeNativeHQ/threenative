@@ -25,8 +25,68 @@
  * been built with decoders this file does not know about yet.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, posix, extname } from 'node:path';
+
+/**
+ * What the runtime about to be packaged can decode, derived from the build rather than declared.
+ *
+ * The first version of this file refused every WebP texture for Android, saying "the android
+ * runtime is built without libwebp". That had been false since `62fac4d5` added `webp-source` to
+ * `androidDeps`: CMake builds libwebp from source under `MYSTRAL_HAS_WEBP` and the device logs
+ * `[Mystral] WebP format support: YES`. The claim was hardcoded, so it went stale the moment the
+ * build changed under it, and nothing could notice. Every capability here is therefore computed
+ * from the same facts CMake reads.
+ */
+
+/** Mirrors the ANDROID branch of the libwebp block in CMakeLists.txt. */
+export function deriveAndroidWebpSupport(runtimeSource) {
+  if (!runtimeSource || !existsSync(join(runtimeSource, 'CMakeLists.txt'))) {
+    return {
+      supported: false,
+      reason:
+        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, and a prebuilt ` +
+        'Android release does not declare which decoders it was built with',
+    };
+  }
+  const sourceRoot = join(runtimeSource, 'third_party', 'webp-source');
+  // CMake globs libwebp-* and takes the first candidate that has a CMakeLists.txt and no lib/ —
+  // a lib/ means a prebuilt drop landed in the source destination, which builds nothing.
+  let candidates = [];
+  try {
+    candidates = readdirSync(sourceRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('libwebp-'))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    candidates = [];
+  }
+  const buildable = candidates.find(
+    (name) =>
+      existsSync(join(sourceRoot, name, 'CMakeLists.txt')) && !existsSync(join(sourceRoot, name, 'lib')),
+  );
+  if (buildable !== undefined) {
+    return {
+      supported: true,
+      reason: `third_party/webp-source/${buildable} is provisioned, so CMake builds libwebp into the Android runtime under MYSTRAL_HAS_WEBP`,
+    };
+  }
+  return {
+    supported: false,
+    reason:
+      'third_party/webp-source carries no buildable libwebp-* source tree, so CMake prints ' +
+      '"libwebp not found" and the runtime reports "WebP format support: NO". Provision it with ' +
+      "'node scripts/download-deps.mjs --only webp-source'",
+  };
+}
+
+/**
+ * Fail closed: a caller that names no capabilities gets the most restrictive runtime, not the most
+ * permissive one. `stageAndroidAssets` derives the real set from the runtime it is about to pack.
+ */
+export const NO_DECODERS = Object.freeze({
+  webp: Object.freeze({ supported: false, reason: 'no runtime capabilities were derived' }),
+});
 
 /** Extensions the runtime will hand to `decodeAudioData`. */
 const AUDIO_EXTENSIONS = new Set(['.ogg', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.opus']);
@@ -89,25 +149,26 @@ export function readGlbJson(bytes) {
 /**
  * Two things a GLB can carry that this target cannot draw.
  *
- * **WebP textures.** The Android runtime is built without libwebp — the build says so
- * (`libwebp not found`) and the runtime says so (`WebP format support: NO`), and both were
- * ignored, because the only visible symptom is `THREE.GLTFLoader: Couldn't load texture blob:...`
- * and two white models in an otherwise perfect scene. The shape of that failure is worth knowing:
- * a broken loader loses *every* embedded texture, so "only two models are white" was already
- * evidence the URLs were fine and the decode was not.
+ * **WebP textures.** When the runtime carries no libwebp, the build says so (`libwebp not found`)
+ * and the runtime says so (`WebP format support: NO`), and both were ignored, because the only
+ * visible symptom is `THREE.GLTFLoader: Couldn't load texture blob:...` and two white models in an
+ * otherwise perfect scene. The shape of that failure is worth knowing: a broken loader loses
+ * *every* embedded texture, so "only two models are white" was already evidence the URLs were fine
+ * and the decode was not. Whether this runtime carries it is derived, never assumed — see
+ * `deriveAndroidWebpSupport`.
  *
  * **Interleaved vertex buffers.** `gltf-transform optimize` interleaves by default, and an
  * interleaved buffer makes `THREE.WebGPURenderer` fail `createRenderPipeline` on every mesh. The
  * fix is one flag, `--vertex-layout separate`, and it has been written down as folklore in more
  * than one game's agent notes. Folklore does not stop a build; this does.
  */
-function glbProblems(relativePath, json) {
+function glbProblems(relativePath, json, capabilities) {
   const problems = [];
   const webp = (json.images ?? []).filter((image) => image?.mimeType === 'image/webp').length;
-  if (webp > 0) {
+  if (webp > 0 && capabilities.webp.supported !== true) {
     problems.push({
       file: relativePath,
-      reason: `embeds ${webp} WebP texture${webp === 1 ? '' : 's'}; the android runtime is built without libwebp`,
+      reason: `embeds ${webp} WebP texture${webp === 1 ? '' : 's'}, and ${capabilities.webp.reason}`,
       fix:
         `gltf-transform jpeg --formats '*' --quality 90 --vertex-layout separate "${relativePath}" "${relativePath}"` +
         ` && gltf-transform png --formats webp --vertex-layout separate "${relativePath}" "${relativePath}"`,
@@ -162,7 +223,7 @@ function listFiles(directory, relative = '') {
  * Returns rather than throws, so a caller can warn instead of failing and so this is testable
  * without a filesystem full of broken fixtures.
  */
-export function findAndroidAssetProblems(directory) {
+export function findAndroidAssetProblems(directory, capabilities = NO_DECODERS) {
   if (!directory) return [];
   let entries;
   try {
@@ -189,7 +250,7 @@ export function findAndroidAssetProblems(directory) {
       continue;
     }
     const json = readGlbJson(bytes);
-    if (json !== undefined) problems.push(...glbProblems(file, json));
+    if (json !== undefined) problems.push(...glbProblems(file, json, capabilities));
   }
   return problems;
 }
@@ -214,9 +275,9 @@ export function formatAssetProblems(problems) {
 }
 
 /** Throw unless every asset in `directory` is decodable, or the caller opted out by env. */
-export function assertAndroidAssetsDecodable(directory) {
+export function assertAndroidAssetsDecodable(directory, capabilities = NO_DECODERS) {
   if (process.env.THREENATIVE_SKIP_ASSET_PREFLIGHT === '1') return [];
-  const problems = findAndroidAssetProblems(directory);
+  const problems = findAndroidAssetProblems(directory, capabilities);
   if (problems.length > 0) throw new Error(formatAssetProblems(problems));
   return problems;
 }
