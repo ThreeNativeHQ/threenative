@@ -171,3 +171,28 @@ No templates or render sources were changed, so no visual change was expected.
 - All exact stale anchors are gone and their refactor history was checked.
 - A closed `DebugOverlay` performs zero polls, with a regression test that turns red on revert.
 - The final production range is 269 additions and 282 deletions, a net decrease of 13 lines. No public package API was added.
+
+## Repair round 5 — keep internal MCP helpers file-local (2026-08-24)
+
+- Removed only the `export` modifiers from `IMcpRequest` and `stopProcess` in `scripts/verify-golden-path.ts`; behavior and the production line count are unchanged.
+- The source/API census regression in `scripts/__tests__/verify-golden-path.spec.ts` was red before the fix:
+
+  ```text
+  Command: pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts --reporter=verbose
+  Result: exit 1 — 1 test failed, 13 passed; the file-local MCP census found `export type IMcpRequest`.
+  ```
+
+- After the fix, the focused four-file hygiene suite was green:
+
+  ```text
+  Command: pnpm exec vitest run packages/assets/__tests__/hygiene.spec.ts scripts/__tests__/sealed-contract.spec.ts scripts/__tests__/sealed-proof-tokens.spec.ts scripts/__tests__/verify-golden-path.spec.ts --reporter=json --outputFile=/tmp/prd208-focused.json
+  Result: exit 0 — 4 files passed, 28 tests passed.
+  ```
+
+- `git diff --check` — passed. `git diff --numstat HEAD -- packages/*/src scripts/*.ts` reported `2 2 scripts/verify-golden-path.ts`, so the production LOC count did not change.
+- `pnpm typecheck` — passed across 16 workspace projects.
+- `pnpm lint` — passed with 291 existing complexity warnings and no errors.
+- `pnpm test` — passed; the gate record reports `state: succeeded`, `exitCode: 0` after docs, build, package-test, and unit phases.
+- `pnpm budgets` — passed; existing framework LOC review-trigger and native-census drift notices were reported.
+- `pnpm quality` — passed; 70 non-fatal findings were reported.
+- `pnpm tsx scripts/count-loc.ts` — passed; suggested framework normalized baseline is 432 versus the 441-line current baseline.

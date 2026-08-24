@@ -28,6 +28,12 @@ describe("golden path matrix", () => {
     );
   });
 
+  it("keeps the internal MCP request type and process cleanup file-local", async () => {
+    const source = await readFile(path.resolve("scripts/verify-golden-path.ts"), "utf8");
+    expect(source).not.toMatch(/^export type IMcpRequest\b/mu);
+    expect(source).not.toMatch(/^export async function stopProcess\b/mu);
+  });
+
   it("records every template step that really ran", async () => {
     const calls: string[] = [];
     const action = (name: string) => async (): Promise<void> => {

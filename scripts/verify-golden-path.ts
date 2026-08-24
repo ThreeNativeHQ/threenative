@@ -78,7 +78,7 @@ export interface IMcpSurface {
   readonly version: string;
 }
 
-export type IMcpRequest = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+type IMcpRequest = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
 interface IMcpPendingRequest {
   readonly reject: (reason?: unknown) => void;
@@ -153,7 +153,7 @@ function consumeMcpOutput(
   }
 }
 
-export async function stopProcess(child: ChildProcess): Promise<void> {
+async function stopProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode === null) {
     if (process.platform === "win32" || child.pid === undefined) child.kill("SIGTERM");
     else {
