@@ -17,11 +17,16 @@ export interface IWebGpuCaptureObservation {
   readonly rendererKind: "webgpu" | "webgl" | undefined;
 }
 
+export interface IWebGpuProvenanceOptions {
+  readonly allowSoftwareAdapter?: boolean;
+}
+
 /** Convert the browser's adapter.info object into the stable provenance fields used by captures. */
 export function assertAdapterInfo(
   info: Readonly<Record<string, unknown>> | undefined,
   browserArgs: readonly string[],
   target: string,
+  options: IWebGpuProvenanceOptions = {},
 ): IPlaywrightCaptureProvenance {
   if (info === undefined) {
     throw new Error(`WebGPU adapter evidence missing for ${target}: adapter.info was unavailable.`);
@@ -35,11 +40,14 @@ export function assertAdapterInfo(
   if (Object.keys(adapter).length === 0) {
     throw new Error(`WebGPU adapter evidence missing for ${target}: adapter.info had no identity.`);
   }
-  if (info.isFallbackAdapter === true || info.isFallbackAdapter === "true") {
+  if (
+    options.allowSoftwareAdapter !== true &&
+    (info.isFallbackAdapter === true || info.isFallbackAdapter === "true")
+  ) {
     throw new Error(`WebGPU lane ${target} selected a software adapter (fallback).`);
   }
   const software = softwareAdapterName(adapter);
-  if (software !== undefined) {
+  if (software !== undefined && options.allowSoftwareAdapter !== true) {
     throw new Error(`WebGPU lane ${target} selected a software adapter: '${software}'.`);
   }
   return {
@@ -110,6 +118,7 @@ export async function assertWebGpuCaptureProvenance(
   page: Pick<Page, "evaluate">,
   browserArgs: readonly string[],
   target: string,
+  options: IWebGpuProvenanceOptions = {},
 ): Promise<IPlaywrightCaptureProvenance> {
   const observation = await readWebGpuAdapterInfo(page);
   if (observation?.rendererKind !== "webgpu") {
@@ -117,7 +126,29 @@ export async function assertWebGpuCaptureProvenance(
       `WebGPU renderer kind evidence missing for ${target}: observed ${observation?.rendererKind ?? "none"}.`,
     );
   }
-  return assertAdapterInfo(observation.adapter, browserArgs, target);
+  return assertAdapterInfo(observation.adapter, browserArgs, target, options);
+}
+
+/** Boot pages that create their renderer only after an initial interaction. */
+export async function waitForWebGpuProjectReady(
+  page: Pick<Page, "locator" | "waitForFunction" | "waitForSelector">,
+): Promise<void> {
+  const startButton = page.locator("#startBtn");
+  if ((await startButton.count()) > 0) await startButton.click({ timeout: 30_000 });
+  await page.waitForSelector("canvas", { state: "visible", timeout: 30_000 });
+  await page.waitForFunction(
+    () => {
+      const canvas = document.querySelector("canvas");
+      if (canvas === null) return false;
+      try {
+        return canvas.getContext("webgpu") !== null;
+      } catch {
+        return false;
+      }
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
 }
 
 /** Verify every configured Playwright project against the real browser adapter before its tests run. */
@@ -125,6 +156,7 @@ export async function verifyWebGpuProjects(
   config: Pick<FullConfig, "projects">,
   browserArgs: readonly string[],
   lane: string,
+  options: IWebGpuProvenanceOptions = {},
 ): Promise<void> {
   const projects = config.projects.flatMap(({ name, use }) => {
     const baseURL = use.baseURL;
@@ -147,10 +179,12 @@ export async function verifyWebGpuProjects(
             `WebGPU provenance could not load ${project.baseURL} for ${lane}/${project.name}.`,
           );
         }
+        await waitForWebGpuProjectReady(page);
         const provenance = await assertWebGpuCaptureProvenance(
           page,
           browserArgs,
           `${lane}/${project.name}`,
+          options,
         );
         const screenshot = await page.screenshot({ animations: "disabled" });
         if (screenshot.byteLength === 0) {

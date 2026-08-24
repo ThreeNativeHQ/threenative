@@ -8,6 +8,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertAdapterInfo,
   assertWebGpuCaptureProvenance,
+  waitForWebGpuProjectReady,
 } from "../../test-support/webgpu-provenance.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
@@ -54,6 +55,14 @@ describe("root Playwright lane contracts", () => {
     expect(() =>
       assertAdapterInfo({ architecture: "swiftshader", vendor: "google" }, [], "root browser"),
     ).toThrow(/software adapter/i);
+  });
+
+  it("accepts software WebGPU only when the CI fallback is explicit", () => {
+    expect(() =>
+      assertAdapterInfo({ architecture: "swiftshader", vendor: "google" }, [], "root browser", {
+        allowSoftwareAdapter: true,
+      }),
+    ).not.toThrow();
   });
 
   it("fails closed when the adapter explicitly reports a fallback", () => {
@@ -113,6 +122,28 @@ describe("root Playwright lane contracts", () => {
         /renderer kind/i,
       );
     }
+  });
+
+  it("boots deferred root pages before reading their WebGPU canvas", async () => {
+    const calls: string[] = [];
+    const page = {
+      locator: () => ({
+        click: async () => {
+          calls.push("click");
+        },
+        count: async () => 1,
+      }),
+      waitForFunction: async () => {
+        calls.push("context");
+      },
+      waitForSelector: async () => {
+        calls.push("canvas");
+      },
+    } as never;
+
+    await waitForWebGpuProjectReady(page);
+
+    expect(calls).toEqual(["click", "canvas", "context"]);
   });
 });
 
