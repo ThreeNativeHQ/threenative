@@ -138,6 +138,9 @@ const LAYOUT_EVENTS = ["resize", "orientationchange", "scroll"] as const;
  * Fail closed: with no document there is nothing to measure, and a registry that quietly
  * published nothing would look exactly like a UI with no buttons — every touch would fall
  * through to the game and the bug would present as "the button does nothing".
+ * @situation give native input hosts the rectangles claimed by UI controls
+ * @situation keep touch hit testing aligned with a moving web or native HUD
+ * @example const regions = publishHitRegions({ bridge });
  */
 export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry {
   const scope: IScopeLike = options.scope ?? (globalThis as IScopeLike);
