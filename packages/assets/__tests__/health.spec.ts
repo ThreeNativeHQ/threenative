@@ -375,6 +375,29 @@ describe("runHealthReport", () => {
     );
   });
 
+  it("should read a model that requires a glTF extension the health report does not decode", async () => {
+    // A .glb authored with EXT_texture_webp is a normal export today, and the model pass reads
+    // it because `createIo()` registers ALL_EXTENSIONS. The health report built its own bare
+    // `new NodeIO()`, so glTF-Transform refused the file for a *required* extension it had not
+    // been told about and the whole build died on a report that is meant to be advisory.
+    const root = await assetsDir("threenative-health-webp-");
+    await writeFile(
+      path.join(root, "assets", "webp-required.gltf"),
+      Buffer.from(
+        JSON.stringify({
+          asset: { version: "2.0" },
+          extensionsRequired: ["EXT_texture_webp"],
+          extensionsUsed: ["EXT_texture_webp"],
+          nodes: [{ name: "n" }],
+          scenes: [{ nodes: [0] }],
+        }),
+        "utf8",
+      ),
+    );
+
+    await expect(compileAssets({ cwd: root })).resolves.toBeDefined();
+  });
+
   it("should print one line per finding plus a summary when compiling", async () => {
     const root = await assetsDir("threenative-health-print-");
     await placeModel(root, path.join("models", "knight.glb"), { triangles: 2 });

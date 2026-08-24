@@ -1,4 +1,5 @@
 import { type Document, type GLTF, ImageUtils, NodeIO } from "@gltf-transform/core";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { type AssetKind, type IAssetTargets, classify } from "./compile.js";
 
 export type AssetFindingGrade = "fail" | "ok" | "warn";
@@ -123,7 +124,11 @@ export function textureStats(bytes: Buffer, mimeType?: string): ITextureStats {
 }
 
 async function parseModel(data: Buffer, logicalPath: string): Promise<Document> {
-  const io = new NodeIO();
+  // ALL_EXTENSIONS, matching the model pass's `createIo()`. glTF-Transform refuses a document
+  // whose `extensionsRequired` names something the reader was not told about, so a bare NodeIO
+  // turned an ordinary EXT_texture_webp export into a hard build failure — from the health
+  // report, which only measures and is never supposed to decide whether a build runs.
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   try {
     if (data.subarray(0, 4).toString("ascii") === "glTF") {
       return await io.readJSON(await io.binaryToJSON(data));
