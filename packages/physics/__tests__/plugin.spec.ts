@@ -43,8 +43,7 @@ describe("rapier plugin", () => {
     expect(isSmallBufferError("buffer is too small")).toBe(false);
   });
 
-  it("should route sceneExit and dispose through one ordered teardown", () => {
-    const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+  function assertTeardownContract(source: string): void {
     const registryStart = source.indexOf("  const bodies = new Set");
     const registryEnd = source.indexOf("  let debugSeries", registryStart);
     if (registryStart < 0 || registryEnd < 0)
@@ -63,6 +62,7 @@ describe("rapier plugin", () => {
 
     expect(registryNames.length).toBeGreaterThan(0);
     for (const registryName of registryNames) expect(clearedRegistryNames).toContain(registryName);
+    expect(releaseSource.match(/^\s+registry\.clear\(\);$/gm)).toHaveLength(1);
 
     expect(source.match(/function teardown/g)).toHaveLength(1);
     expect(source.match(/teardown\("sceneExit"/g)).toHaveLength(1);
@@ -75,6 +75,21 @@ describe("rapier plugin", () => {
     expect(
       source.match(/for \(const body of \[\.\.\.teardownRegistries\.bodies\]\) body\.dispose\(\)/g),
     ).toHaveLength(1);
+  }
+
+  it("should route sceneExit and dispose through one ordered teardown", () => {
+    const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+    assertTeardownContract(source);
+  });
+
+  it("should fail the teardown contract when registry.clear is neutralized", () => {
+    const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+    const clearCall = "      registry.clear();";
+    expect(source).toContain(clearCall);
+
+    const neutralizedSource = source.replace(clearCall, "      void registry;");
+    expect(neutralizedSource).not.toContain(clearCall);
+    expect(() => assertTeardownContract(neutralizedSource)).toThrow();
   });
 
   it("should register the actual Rapier runtime version", async () => {

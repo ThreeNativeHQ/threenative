@@ -287,3 +287,66 @@ for tolerance in 0.05 0.1 0.25 0.5 1; do
     --browser-recipe webgpu --headed
 done
 ```
+
+## Repair round 3 — live registry clear negative control
+
+The teardown contract now checks the live `registry.clear()` call inside the shared
+`releaseRegistries()` loop in addition to checking that every lifecycle registry is listed. The
+negative control reads `plugin.ts`, replaces that call with `void registry`, and requires the same
+source-derived contract assertion to throw. The production teardown call was restored immediately
+after the red run; no runtime teardown behavior changed.
+
+Red first, with the live call temporarily neutralized:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts -t 'should route sceneExit and dispose through one ordered teardown' --reporter=dot
+exit=1
+FAIL packages/physics/__tests__/plugin.spec.ts > rapier plugin > should route sceneExit and dispose through one ordered teardown
+AssertionError: Target cannot be null or undefined.
+  assertTeardownContract packages/physics/__tests__/plugin.spec.ts:65:64
+Test Files 1 failed (1)
+Tests 1 failed | 13 skipped (14)
+```
+
+After restoring `registry.clear()`:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts -t 'teardown' --reporter=dot
+exit=0
+Test Files 1 passed (1)
+Tests 2 passed | 12 skipped (14)
+
+pnpm exec vitest run packages/core/__tests__/input.spec.ts packages/core/__tests__/replay.spec.ts packages/physics/__tests__/plugin.spec.ts packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+exit=0
+Test Files 4 passed (4)
+Tests 81 passed (81)
+```
+
+The browser WebGPU navigation tolerance sweep used the existing scenario and passed at every
+requested value: `0.05`, `0.1`, `0.25`, `0.5`, and `1`. Every report had
+`targetReachable=true`, `navigationFinished=true`, zero console/network/runtime errors, and
+`pass=true`.
+
+```text
+for tolerance in 0.05 0.1 0.25 0.5 1; do
+  node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/navigation.playtest.json --url "http://127.0.0.1:5180/?navigation&targetDesiredDistance=$tolerance" --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed
+done
+exit=0
+```
+
+Desktop native navigation remains **unverified**. `pnpm native:verify:desktop` passed the
+native-smoke bundle check, then stopped because the required binary was absent:
+
+```text
+Error: /home/joao/projects/threenative/threenative-engine/.worktrees/prd-206-shared-behaviours-have-one-definition/packages/runtime-native/build/tn-linux does not exist; run pnpm native:build
+```
+
+## Repair round 3 gates
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | PASS; exit 0, 16 of 17 workspace projects typechecked. |
+| `pnpm lint` | PASS; exit 0, 939 files checked, 290 existing complexity warnings, no errors. |
+| `pnpm budgets` | PASS; exit 0, `budgets ok`; existing framework LOC and native census drift notices remain. |
+| `pnpm quality` | PASS; exit 0, 70 findings (11 new, 9 grew, 50 inherited, 0 waived). |
+| `pnpm test` | PASS; exit 0, 198 test files and 1,894 tests passed, including native parity. |
