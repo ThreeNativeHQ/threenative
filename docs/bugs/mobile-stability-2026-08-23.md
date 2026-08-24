@@ -153,9 +153,35 @@ controls **never appear in a mobile browser**: a phone on the web target has had
 to move" as the phone on Android. The investigation only ever looked at Android, so nobody saw it.
 No other template has any touch input.
 
-So the deeper defect is not the missing HUD. **A line-count reduction round deleted the user
-interface from five templates and no gate noticed for eight days**, because nothing in this
-repository asserts that a template renders UI on a native target. The templates were scored
+So the deeper defect is not the missing HUD. **The gate did not fail to notice — the same commit
+deleted the feature and the gate's coverage of it, together.**
+
+`packages/create-threenative/__tests__/template.spec.ts:25` holds the guard's coverage as a
+hand-edited constant:
+
+```ts
+const geometryHudTemplates = ["minimal"] as const;
+```
+
+`acabc39d` — the commit that deleted `hud.ts` from `defense`, `platformer`, `racing` and
+`shooter` — contains exactly this hunk:
+
+```diff
+-const geometryHudTemplates = ["minimal", "platformer"] as const;
++const geometryHudTemplates = ["minimal"] as const;
+```
+
+The HUD assertions were never bypassed or weakened. They were simply pointed at a shorter list, in
+the same change that removed what they would have caught, and the suite stayed green. `pnpm
+budgets` then reported the result as a template-LOC improvement, so the deletion **scored as a
+win**.
+
+That is the class of defect worth fixing, not the missing glyphs: **a gate whose own coverage is a
+hand-maintained enumeration protects nothing, because deleting a feature and deleting it from the
+list are the same size of edit and neither is loud.** The list must be derived from what exists —
+every template gets asserted, and a template without a HUD is a failure rather than an absence.
+This repository has been bitten by the identical shape before: five parallel package enumerations
+where `@threenative/assets` landed in only one, redding two gates. The templates were scored
 "below their own floor" on LOC, and the lines that went were the ones that made the game usable on
 a phone. Any fix that restores the HUD without adding that gate will be undone by the next
 tidy-up round.
