@@ -344,8 +344,8 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'archive extraction must pass native Windows paths directly to tar without shell rewriting');
   assert.match(deps, /archivePath\.endsWith\('\.zip'\) \|\| archivePath\.endsWith\('\.aar'\)/,
     'Android SDL AARs must be extracted as ZIP archives before CMake configures');
-  assert.match(deps, /const androidDeps = \['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android'\]/,
-    'a clean Android build must download the SDL Java glue, the Android AAR and V8');
+  assert.match(deps, /const androidDeps = \['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'\]/,
+    'a clean Android build must download the SDL Java glue, the Android AAR, V8 and the WebP source');
   // Until 2026-08-16 `third_party/v8-android/` existed only where somebody had unpacked it by hand,
   // so a fresh checkout could not build Android V8 at all. This file is the only supported
   // reconstruction path, and the pin is what makes "reconstructible" mean the same bytes.

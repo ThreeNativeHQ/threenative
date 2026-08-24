@@ -32,6 +32,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <algorithm>
 
 #if defined(__APPLE__)
 #include <os/log.h>
@@ -285,6 +286,115 @@ static bool g_presentReportedSinceLastPresent = false;
 #endif
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
 static uint64_t g_presentCount = 0;
+
+// GPU texture accounting. Nothing in this runtime has ever reported how much texture memory a
+// game holds, so "the process is using 1.6 GB" has never had an answer inside the engine — it had
+// to be inferred from `dumpsys meminfo` and guesswork. Every texture this binding creates is
+// measured here and reported beside the present tick, keyed by dimensions and format so a
+// full-screen render target is distinguishable from an author's 1024x1024 albedo map.
+static uint64_t g_textureBytesLive = 0;
+static uint64_t g_textureBytesCreated = 0;
+static uint64_t g_textureCountLive = 0;
+static std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> g_textureBuckets;
+
+/**
+ * Bytes per texel for the formats this runtime actually creates.
+ *
+ * Deliberately keyed on the WebGPU format *string* rather than the enum: `createTexture` already
+ * holds the string, the set is small, and an unknown format reports 4 rather than inventing a
+ * number that would make the total silently wrong. Compressed formats are block-based and report
+ * their per-texel average.
+ */
+static double textureBytesPerTexel(const std::string& format) {
+    if (format.rfind("bc", 0) == 0 || format.rfind("etc2", 0) == 0 || format.rfind("astc", 0) == 0 ||
+        format.rfind("eac", 0) == 0) {
+        // ETC2/BC1-class formats are 0.5 bytes/texel; BC3/BC7/ASTC-4x4-class are 1.0. The suffix
+        // that distinguishes them is the block size, so read it rather than assume.
+        if (format.find("rgba8unorm") != std::string::npos || format.find("bc3") != std::string::npos ||
+            format.find("bc7") != std::string::npos || format.find("astc-4x4") != std::string::npos)
+            return 1.0;
+        return 0.5;
+    }
+    if (format.find("32float") != std::string::npos || format.find("32uint") != std::string::npos ||
+        format.find("32sint") != std::string::npos) {
+        if (format.rfind("rgba", 0) == 0) return 16.0;
+        if (format.rfind("rg", 0) == 0) return 8.0;
+        return 4.0;
+    }
+    if (format.find("16float") != std::string::npos || format.find("16uint") != std::string::npos ||
+        format.find("16sint") != std::string::npos || format.find("16unorm") != std::string::npos) {
+        if (format.rfind("rgba", 0) == 0) return 8.0;
+        if (format.rfind("rg", 0) == 0) return 4.0;
+        return 2.0;
+    }
+    if (format.rfind("depth32float", 0) == 0) return format.find("stencil") != std::string::npos ? 5.0 : 4.0;
+    if (format.rfind("depth24", 0) == 0) return 4.0;
+    if (format.rfind("depth16", 0) == 0) return 2.0;
+    if (format.rfind("r8", 0) == 0) return 1.0;
+    if (format.rfind("rg8", 0) == 0) return 2.0;
+    if (format.rfind("rgb10a2", 0) != std::string::npos && format.rfind("rgb10a2", 0) == 0) return 4.0;
+    if (format.rfind("rg11b10", 0) == 0) return 4.0;
+    return 4.0;
+}
+
+/** Records one created texture. `mips` is the declared level count, never a guess. */
+static void recordTextureCreated(uint32_t width, uint32_t height, uint32_t layers, uint32_t mips,
+                                 uint32_t sampleCount, const std::string& format) {
+    const double perTexel = textureBytesPerTexel(format);
+    double texels = 0.0;
+    for (uint32_t level = 0; level < (mips == 0 ? 1u : mips); level += 1) {
+        const double w = std::max(1.0, std::floor(static_cast<double>(width) / std::pow(2.0, level)));
+        const double h = std::max(1.0, std::floor(static_cast<double>(height) / std::pow(2.0, level)));
+        texels += w * h;
+    }
+    const uint64_t bytes = static_cast<uint64_t>(
+        texels * static_cast<double>(layers == 0 ? 1u : layers) *
+        static_cast<double>(sampleCount == 0 ? 1u : sampleCount) * perTexel);
+    g_textureBytesLive += bytes;
+    g_textureBytesCreated += bytes;
+    g_textureCountLive += 1;
+    std::ostringstream key;
+    key << width << "x" << height;
+    if (layers > 1) key << "x" << layers;
+    key << " " << format;
+    if (mips > 1) key << " mips" << mips;
+    if (sampleCount > 1) key << " msaa" << sampleCount;
+    auto& bucket = g_textureBuckets[key.str()];
+    bucket.first += 1;
+    bucket.second += bytes;
+}
+
+// Buffer accounting, for the same reason as textures: a game's GPU footprint is textures plus
+// buffers, and reporting only one half turns "the rest" into guesswork. Bucketed by usage bits so
+// vertex/index geometry is distinguishable from per-object uniform churn.
+static uint64_t g_bufferBytesLive = 0;
+static uint64_t g_bufferCountLive = 0;
+static std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> g_bufferBuckets;
+
+/** Names the usage bits that matter for attribution; anything else reports its raw mask. */
+static std::string bufferUsageLabel(uint32_t usage) {
+    std::string label;
+    if (usage & WGPUBufferUsage_Vertex) label += "vertex|";
+    if (usage & WGPUBufferUsage_Index) label += "index|";
+    if (usage & WGPUBufferUsage_Uniform) label += "uniform|";
+    if (usage & WGPUBufferUsage_Storage) label += "storage|";
+    if (usage & WGPUBufferUsage_Indirect) label += "indirect|";
+    if (usage & WGPUBufferUsage_CopySrc) label += "copysrc|";
+    if (usage & WGPUBufferUsage_CopyDst) label += "copydst|";
+    if (usage & WGPUBufferUsage_MapRead) label += "mapread|";
+    if (usage & WGPUBufferUsage_MapWrite) label += "mapwrite|";
+    if (label.empty()) return "other";
+    label.pop_back();
+    return label;
+}
+
+static void recordBufferCreated(uint64_t size, uint32_t usage) {
+    g_bufferBytesLive += size;
+    g_bufferCountLive += 1;
+    auto& bucket = g_bufferBuckets[bufferUsageLabel(usage)];
+    bucket.first += 1;
+    bucket.second += size;
+}
 static WGPUCommandEncoder g_surfaceRenderEncoder = nullptr;
 // Set only by a consumer about to read a capture (requestFrameScreenshot). The frame copy and its
 // wait are paid on requested frames only — every unrequested presented frame skips both.
@@ -2346,6 +2456,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 g_engine->throwException("Failed to create buffer");
                                 return g_engine->newUndefined();
                             }
+                            recordBufferCreated(bufferDesc.size, (uint32_t)usage);
 
                             // Register buffer for mapping operations
                             uint64_t bufferId = g_nextBufferId++;
@@ -4129,6 +4240,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 g_engine->throwException("Failed to create texture");
                                 return g_engine->newUndefined();
                             }
+                            recordTextureCreated(width, height, depthOrArrayLayers, mipLevelCount,
+                                                 sampleCount, formatStr);
 
                             // Create JS wrapper
                             auto jsTexture = g_engine->newObject();
@@ -6248,12 +6361,62 @@ static void presentPendingSurface() {
  */
 static void reportPresentTick(uint64_t frames) {
     std::ostringstream output;
-    output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << g_presentCount << "}";
+    output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << g_presentCount
+           << ",\"textureMB\":" << (g_textureBytesLive / 1048576)
+           << ",\"textures\":" << g_textureCountLive
+           << ",\"bufferMB\":" << (g_bufferBytesLive / 1048576) << "}";
     const std::string marker = output.str();
     std::cout << marker << std::endl;
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
 #endif
+    // The per-bucket breakdown is the part that names a cause, so it goes out periodically rather
+    // than every tick: the running total above is enough to watch growth, and this answers "which
+    // allocation" once a run has settled.
+    static uint32_t tickIndex = 0;
+    if ((tickIndex++ % 5) == 0 && !g_textureBuckets.empty()) {
+        std::vector<std::pair<std::string, std::pair<uint64_t, uint64_t>>> sorted(
+            g_textureBuckets.begin(), g_textureBuckets.end());
+        std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) {
+            return a.second.second > b.second.second;
+        });
+        std::ostringstream buckets;
+        buckets << "TN_GPU_TEXTURES:{\"totalMB\":" << (g_textureBytesLive / 1048576)
+                << ",\"count\":" << g_textureCountLive << ",\"buckets\":[";
+        const size_t limit = sorted.size() < 12 ? sorted.size() : 12;
+        for (size_t i = 0; i < limit; i += 1) {
+            if (i > 0) buckets << ",";
+            buckets << "{\"k\":\"" << sorted[i].first << "\",\"n\":" << sorted[i].second.first
+                    << ",\"mb\":" << (sorted[i].second.second / 1048576) << "}";
+        }
+        buckets << "],\"bucketsTotal\":" << sorted.size() << "}";
+        const std::string bucketMarker = buckets.str();
+        std::cout << bucketMarker << std::endl;
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", bucketMarker.c_str());
+#endif
+        std::vector<std::pair<std::string, std::pair<uint64_t, uint64_t>>> bufferSorted(
+            g_bufferBuckets.begin(), g_bufferBuckets.end());
+        std::sort(bufferSorted.begin(), bufferSorted.end(), [](const auto& a, const auto& b) {
+            return a.second.second > b.second.second;
+        });
+        std::ostringstream buffers;
+        buffers << "TN_GPU_BUFFERS:{\"totalMB\":" << (g_bufferBytesLive / 1048576)
+                << ",\"count\":" << g_bufferCountLive << ",\"buckets\":[";
+        const size_t bufferLimit = bufferSorted.size() < 10 ? bufferSorted.size() : 10;
+        for (size_t i = 0; i < bufferLimit; i += 1) {
+            if (i > 0) buffers << ",";
+            buffers << "{\"k\":\"" << bufferSorted[i].first << "\",\"n\":"
+                    << bufferSorted[i].second.first << ",\"mb\":"
+                    << (bufferSorted[i].second.second / 1048576) << "}";
+        }
+        buffers << "]}";
+        const std::string bufferMarker = buffers.str();
+        std::cout << bufferMarker << std::endl;
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", bufferMarker.c_str());
+#endif
+    }
 #if defined(__APPLE__)
     // The iOS gate reads the unified log, which `std::cout` does not reach -- the JSC console
     // calls NSLog beside its cout for the same reason. os_log is the C entry point to the same
