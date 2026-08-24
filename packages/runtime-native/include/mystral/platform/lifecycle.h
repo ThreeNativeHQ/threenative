@@ -26,20 +26,18 @@ namespace platform {
 /**
  * `display.backgroundMode`.
  *
- * **Default is `Continue` as of 2026-08-23, and that is a deliberate retreat.** `Pause` is what
- * this feature is for and it will be the default again, but pausing exposed a worse defect than
- * the one it fixed: Android destroys the `ANativeWindow` on background and the `WGPUSurface` still
- * points at it, so resume restarts the loop and presents nothing — `frames` run away at ~600/s
- * while `presents` stays frozen and the screen is uniformly black. Measured on a physical Pixel 8,
- * 2026-08-23; see `docs/bugs/resume-presents-nothing-2026-08-23.md`.
+ * **Default is `Pause` again as of 2026-08-23**, restored from the `Continue` retreat once resume
+ * revalidates the surface. The retreat existed because Android destroys the `ANativeWindow` on
+ * background and the `WGPUSurface` kept pointing at the destroyed one, so resume restarted the
+ * loop and presented nothing — `frames` ran away at ~600/s while `presents` stayed frozen and the
+ * screen was uniformly black (physical Pixel 8, 2026-08-23,
+ * `docs/bugs/resume-presents-nothing-2026-08-23.md`). Resume now rebuilds and reconfigures the
+ * surface from the window Android hands back, and republishes it to the bindings, which is what
+ * `LifecycleAction::Resume` always claimed to do.
  *
- * Bug 9 — the loop drawing with the screen off — was a battery cost no player ever saw. A black
- * screen after any phone call, notification or screen timeout is one every player sees, in the
- * mode they did not choose. Between an unsurfaced cost and a visible break, ship the unsurfaced
- * one until the surface is revalidated on resume.
- *
- * Nothing else retreats: the watch, the markers and the paused flag are all still live and still
- * measured under `Continue`, so turning the convention off has not turned its measurement off.
+ * `Continue` remains the named override for a game that genuinely wants to keep rendering
+ * off-screen — a server-shaped or split-screen game. Turning the pause off does not turn its
+ * reporting off: the watch, the markers and the paused flag are live and measured in both modes.
  */
 enum class BackgroundMode { Pause, Continue };
 
@@ -101,6 +99,47 @@ bool isTerminating();
  * table is provable without SDL sending anything.
  */
 void handleLifecycleEvent(uint32_t sdlEventType);
+
+/**
+ * Surface revalidation, the other half of resume.
+ *
+ * Android destroys the `ANativeWindow` behind a backgrounded app and hands back a **new** one when
+ * the player returns. A `WGPUSurface` built at startup still points at the destroyed window, so
+ * every present after resume goes nowhere: `wgpuSurfaceGetCurrentTexture` stops succeeding, the
+ * frame never presents, and nothing paces the loop — measured at ~600 frames/s against a frozen
+ * present count, with a uniformly black screen (physical Pixel 8, 2026-08-23).
+ *
+ * The lifecycle layer only records that a resume happened. The rebuild itself belongs to the
+ * thread that owns the surface, so the loop takes the request and acts on it before it draws.
+ * Requested in **both** modes: the window is destroyed by Android whatever this host decided about
+ * pausing, so `Continue` needs the same rebuild.
+ */
+void requestSurfaceRevalidation();
+
+/** True while a resume is waiting for its surface rebuild. */
+bool surfaceRevalidationPending();
+
+/** Takes the request, exactly once per resume. */
+bool takeSurfaceRevalidationRequest();
+
+/**
+ * Drops a pending request without acting on it. Startup calls this after it has created and
+ * configured the surface itself: the `WINDOW_SHOWN` that arrives while the host is still waiting
+ * for its first valid window is not a resume, and rebuilding a surface that was built moments ago
+ * would be one more thing that can fail on the first frame.
+ */
+void clearSurfaceRevalidationRequest();
+
+/**
+ * The negative control for the revalidation, in the same binary as the fix.
+ *
+ * True when `debug.threenative.skip_surface_revalidate` (Android) or
+ * `THREENATIVE_SKIP_SURFACE_REVALIDATE` (everywhere) is `1`. It reinstates the defect exactly:
+ * resume clears the paused flag and nothing else. Keeping the control here makes the device rung a
+ * one-variable comparison instead of a build-to-build one, the same way
+ * `debug.threenative.prefix_handlers` does for the crash handlers.
+ */
+bool surfaceRevalidationDisabled();
 
 /** Counts a timer firing dropped while paused, so the resume marker can report how many. */
 void noteDroppedTimerFiring();

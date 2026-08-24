@@ -1067,6 +1067,35 @@ static bool presentLinearTextureToSrgbSurface(WGPUTextureView sourceView) {
 }
 
 /**
+ * Names a failed swapchain acquire, at most once a second and always the first one.
+ *
+ * `TN_SURFACE_ACQUIRE_FAILED` is the marker a logcat filter finds when a device shows a black
+ * screen; the status is wgpu's own `WGPUSurfaceGetCurrentTextureStatus`, so an outdated or lost
+ * surface is distinguishable from a device that simply has no window.
+ */
+static void reportSurfaceAcquireFailure(uint32_t status) {
+    static uint64_t suppressed = 0;
+    static std::chrono::steady_clock::time_point lastReport{};
+    const auto now = std::chrono::steady_clock::now();
+    const bool first = lastReport.time_since_epoch().count() == 0;
+    if (!first && now - lastReport < std::chrono::seconds(1)) {
+        suppressed += 1;
+        return;
+    }
+    lastReport = now;
+    std::ostringstream out;
+    out << "TN_SURFACE_ACQUIRE_FAILED:{\"status\":" << status << ",\"suppressed\":" << suppressed
+        << "}";
+    suppressed = 0;
+    const std::string marker = out.str();
+    std::cerr << "[WebGPU] " << marker << " the surface handed out no texture, so this frame "
+                 "presents nothing" << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_ERROR, "MystralRuntime", "%s", marker.c_str());
+#endif
+}
+
+/**
  * Get the current swapchain texture (or offscreen texture in no-SDL mode)
  */
 static WGPUTexture getCurrentSwapchainTexture() {
@@ -1088,7 +1117,12 @@ static WGPUTexture getCurrentSwapchainTexture() {
     wgpuSurfaceGetCurrentTexture(g_surface, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
-        std::cerr << "[WebGPU] Failed to get current texture" << std::endl;
+        // Fail by name. A surface that stops handing out images presents nothing, and the loop is
+        // no longer paced by presenting, so this fires hundreds of times a second, which is
+        // precisely how the resume defect looked from the outside: frames running away, presents
+        // frozen, a black screen, and no line in the log that said why. Rate-limited so the marker
+        // stays readable instead of becoming a flood.
+        reportSurfaceAcquireFailure(static_cast<uint32_t>(surfaceTexture.status));
         return nullptr;
     }
 
@@ -5883,6 +5917,67 @@ void clearScreenshotReady() {
 
 void requestFrameScreenshot() {
     g_screenshotRequested = true;
+}
+
+/**
+ * Drops every reference to the live presentation surface, ahead of a rebuild.
+ *
+ * Android destroys the `ANativeWindow` behind a backgrounded app, so on resume the surface is
+ * replaced rather than reconfigured. Any swapchain image acquired and not yet presented has to be
+ * released first: wgpu-native refuses to tear a surface down with an outstanding `SurfaceOutput`
+ * ("`SurfaceOutput` must be dropped before a new `Surface` is made") and that panic aborts the
+ * process, which is how PRD-183's silent SIGABRT happened on the resize path.
+ */
+void detachSurfaceForRebuild() {
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    g_framePresentPending = false;
+    if (g_currentTextureView != nullptr) {
+        wgpuTextureViewRelease(g_currentTextureView);
+        g_currentTextureView = nullptr;
+    }
+    if (g_currentSurfaceTextureId != 0) {
+        g_textureRegistry.erase(g_currentSurfaceTextureId);
+        g_currentSurfaceTextureId = 0;
+    }
+    if (g_currentTexture != nullptr) {
+        wgpuTextureRelease(g_currentTexture);
+        g_currentTexture = nullptr;
+    }
+    g_currentViewSourceTexture = nullptr;
+    g_surfaceRenderEncoder = nullptr;
+    g_surfaceRenderPassEnded = false;
+    g_screenshotCapturedThisFrame = false;
+    g_surface = nullptr;
+#endif
+}
+
+/**
+ * Publishes a rebuilt surface to the bindings, which is where every present reads it from.
+ *
+ * Without this the host would hold a fresh surface and JavaScript would keep presenting to the
+ * dead one: the resume defect again, one indirection later.
+ */
+void republishSurface(void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode,
+                      uint32_t width, uint32_t height) {
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    g_surface = (WGPUSurface)wgpuSurface;
+    g_presentMode = static_cast<WGPUPresentMode>(presentMode);
+    g_nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
+    g_requiresSrgbPresentationBridge =
+        g_surface != nullptr && isSrgbSurfaceFormat(g_nativeSurfaceFormat);
+    g_surfaceFormat = g_requiresSrgbPresentationBridge
+        ? linearSurfaceFormat(g_nativeSurfaceFormat)
+        : g_nativeSurfaceFormat;
+    // The same pairing startup makes: the canvas dimensions name the size the surface is
+    // configured at, so `syncSurfaceSizeToCanvas` reconfigures on the next frame if the game is
+    // rendering at a different one.
+    g_canvasWidth = width;
+    g_canvasHeight = height;
+    std::cout << "[WebGPU] Surface republished to bindings: " << wgpuSurface << " " << width << "x"
+              << height << " (format=" << g_surfaceFormat << ")" << std::endl;
+#else
+    (void)wgpuSurface; (void)surfaceFormat; (void)presentMode; (void)width; (void)height;
+#endif
 }
 
 void setOffscreenTexture(void* texture, void* textureView) {

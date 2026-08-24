@@ -86,6 +86,19 @@ adb -s 192.168.1.192:5555 logcat -d -s MystralRuntime | grep -E 'TN_PRESENTS_TIC
 - **Green:** `TN_LIFECYCLE:{"event":"paused","applied":true,...}` then zero new `TN_PRESENTS_TICK`.
 - Resume with `KEYCODE_WAKEUP`; expect `"event":"resumed"` and the `catchUp` marker, ticks resuming
   without a burst.
+- **No marker is observable while the app is paused.** SDL parks the writing thread inside
+  `Android_WaitLifecycleEvent`, so the paused marker, the resumed marker and
+  `TN_LIFECYCLE_SURFACE` all arrive in one burst at the instant of resume, one millisecond apart.
+  Background, resume, and *then* read the whole window; anything that waits for a live marker
+  during the background waits forever.
+- **The resume half was closed on 2026-08-23**
+  ([`resume-presents-2026-08-23.md`](resume-presents-2026-08-23.md)): resume rebuilds the surface,
+  `presents` advances with `frames`, and the capture is not blank. Re-run it with
+  `KEYCODE_HOME` + `am start` rather than sleep/wake if the phone's keyguard is secured — the pid
+  must be unchanged across the pair, or it was a relaunch and proves nothing. Green:
+  `TN_LIFECYCLE_SURFACE:{"event":"revalidated",...}` with `previousWindow` != `window`. Red control,
+  same APK: `adb shell setprop debug.threenative.skip_surface_revalidate 1`, which brings back
+  `TN_SURFACE_ACQUIRE_FAILED` and the black screen.
 - Repackage with `display.backgroundMode: "continue"` and repeat: ticks must **keep flowing** and
   the marker must still appear with `"applied":false`. Turning the convention off must not turn its
   measurement off.

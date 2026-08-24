@@ -1,11 +1,17 @@
 # Returning to a backgrounded native game leaves a black screen
 
-**Status:** open — introduced by PRD-210's pause, observed on a physical Pixel 8
-**Severity:** blocker for the pause feature — the regression it causes is worse than the battery
-drain it fixes, and the change is already on `main` (`5989e4a2`)
+**Status:** **fixed** — option 1 below landed on 2026-08-23; resume rebuilds and reconfigures the
+surface against the window Android hands back, and `display.backgroundMode` is back to `"pause"`
+**Severity:** was a blocker for the pause feature — the regression it caused was worse than the
+battery drain it fixed, and the interim retreat to `"continue"` (`c3ae3b26`) is now reversed
 **Reported:** 2026-08-23, physical Pixel 8 (`192.168.1.192:5555`, shiba, Android 17)
 **Layer:** `packages/runtime-native`
-**Evidence:** [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md)
+**Evidence, reported:** [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md)
+**Evidence, fixed:** [`../verification/resume-presents-2026-08-23.md`](../verification/resume-presents-2026-08-23.md)
+— red and green on the same phone, from one APK, with the pre-fix resume kept behind
+`debug.threenative.skip_surface_revalidate=1` so the comparison has one variable. `previousWindow`
+and `window` in the `TN_LIFECYCLE_SURFACE` marker differ, which measures the cause below rather than
+assuming it.
 
 ## What happens
 
@@ -50,7 +56,9 @@ surface rebuild and reconfigure, and the new surface has to be published to
 `webgpu::bindings`' `g_surface`.
 
 Nothing logs an error on this path: the present silently does nothing rather than failing by name,
-which is its own fail-closed violation.
+which is its own fail-closed violation. **Closed too** — `TN_SURFACE_ACQUIRE_FAILED:{"status":5,...}`
+is what the same defect prints now, rate-limited to once a second so 600 failures a second stay
+readable.
 
 ## Why it is worse than the bug it came from
 
@@ -58,16 +66,25 @@ Bug 9 was a battery complaint: the loop kept drawing with the screen off. The pl
 This makes the game unusable after any interruption — a phone call, a notification tap, a screen
 timeout — and it is the default (`display.backgroundMode: "pause"`).
 
-## Two options, in order of preference
+## Two options, in order of preference — option 1 landed
 
-1. **Revalidate the surface on resume.** The real fix, and what the PRD asked for.
-2. **Until then, default `display.backgroundMode` to `"continue"`.** One line. It restores exactly
-   the pre-PRD-210 behaviour — off-screen presenting, wasted battery — while keeping the lifecycle
-   markers flowing, and it removes the black screen. A soft battery cost is preferable to a hard
-   "the game is gone" for every player who backgrounds the app.
+1. **Revalidate the surface on resume.** The real fix, and what the PRD asked for. **Done**: resume
+   queues a revalidation in both modes, the loop rebuilds the `WGPUSurface` against the window
+   Android hands back, reconfigures it and republishes it to `webgpu::bindings`' `g_surface`,
+   ahead of any frame work. A rebuild that fails names itself (`TN_LIFECYCLE_SURFACE_FAILED`) and
+   stops the loop instead of running frames that present nothing, and a swapchain that hands out no
+   texture now logs `TN_SURFACE_ACQUIRE_FAILED` with wgpu's own status — the fail-closed hole named
+   below.
+2. ~~**Until then, default `display.backgroundMode` to `"continue"`.**~~ Shipped as `c3ae3b26` and
+   reversed by the fix. It bought exactly what it promised — off-screen presenting and wasted
+   battery instead of a black screen — and it was incomplete in one way worth remembering: the
+   packager's `DEFAULT_ANDROID_CONFIG` still wrote `TN_BACKGROUND_MODE=pause`, so only an APK
+   carrying no metadata (the in-repo first proof) actually ran `continue`. Every scaffolded Android
+   game kept the black screen. Both defaults are `pause` again and they now agree.
 
-Whichever lands, the proof is the same rung: background 12 s, resume, assert `presents` advances
-with `frames` and a screencap is not blank.
+The proof was the rung this bug named: background 12 s, resume, assert `presents` advances with
+`frames` and a screencap is not blank. Red: `frames` 43920 → 56340 against `presents` frozen at
+1304, capture 0.00% non-black. Green: `frames` == `presents` at 60 Hz and the scene back on screen.
 
 ## A second finding from the same run
 
@@ -76,7 +93,15 @@ The debug APK is not 16 KB page-size compatible; Android's compatibility dialog 
 unaligned LOAD segments and uncompressed libraries. Unrelated to this bug and not investigated
 here, but it is a real Android 15+ compatibility item and nothing in the repository mentions it.
 
-## A third: launching onto a dozing screen hangs startup
+## A third: launching onto a dozing screen hangs startup, or kills it
+
+Still open, and it bit this lane too in a second form: with the phone **locked**, `am start` put the
+activity behind the keyguard, Android stopped it 30 ms later, and startup died on
+`get_physical_device_surface_capabilities: ERROR_SURFACE_LOST_KHR` rather than hanging. Same root —
+a host that starts against a window the system is about to take away — and the same consequence for
+an unattended lane: nothing usable comes out. Recorded in
+[`../verification/resume-presents-2026-08-23.md`](../verification/resume-presents-2026-08-23.md).
+
 
 Two rung attempts were void because `am start` on a device whose screen had gone off leaves the
 host parked in `Waiting for valid ANativeWindow...` indefinitely — the app is alive, logs its

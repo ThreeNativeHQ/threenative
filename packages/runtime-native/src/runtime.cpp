@@ -166,6 +166,9 @@ namespace webgpu {
     void setOffscreenTexture(void* texture, void* textureView);
     void beginDawnFrame();
     void endDawnFrame();
+    void detachSurfaceForRebuild();
+    void republishSurface(void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode,
+                          uint32_t width, uint32_t height);
 }
 
 /**
@@ -483,6 +486,11 @@ public:
                 webgpu_->getOffscreenTextureView()
             );
         }
+
+        // Startup built and configured this surface itself, so whatever WINDOW_SHOWN the watch
+        // saw while the host was still waiting for its first valid window is not a resume. Drop
+        // the request rather than rebuilding a surface that is seconds old.
+        platform::clearSurfaceRevalidationRequest();
 
         // Set up ray tracing bindings (if compiled with MYSTRAL_HAS_RAYTRACING)
         setupRayTracing();
@@ -837,6 +845,111 @@ public:
         // So we don't need to do anything here - just let JS drive.
     }
 
+    /**
+     * Rebuilds the presentation surface against the window the platform has now, and republishes
+     * it to the bindings.
+     *
+     * Startup already solves this problem once: it waits for a valid `ANativeWindow`, checks it
+     * with `ANativeWindow_getWidth`, creates the surface and configures it. Resume needs the same
+     * sequence, which is what PRD-210 specified and did not carry, so this is that sequence
+     * against a live device rather than a cold one.
+     *
+     * Non-Android targets keep their window across a minimize, so there is nothing to rebuild and
+     * this reports success without touching anything.
+     */
+    bool revalidateSurfaceAfterResume() {
+        if (platform::surfaceRevalidationDisabled()) {
+            // The negative control, in the same binary as the fix: resume clears the paused flag
+            // and nothing else, which is exactly what shipped before this change. Reachable only
+            // through `debug.threenative.skip_surface_revalidate` / the environment variable.
+            std::cerr << "[Mystral] TN_CONTROL_SKIP_SURFACE_REVALIDATE: resuming without "
+                         "revalidating the surface; presents are expected to stop"
+                      << std::endl;
+            LOGE("TN_CONTROL_SKIP_SURFACE_REVALIDATE: resuming without revalidating the surface");
+            return true;
+        }
+
+#if defined(__ANDROID__)
+        if (!webgpu_) return false;
+
+        SDL_Window* sdlWindow = platform::getSDLWindow();
+        if (!sdlWindow) {
+            std::cerr << "[Mystral] Resume found no SDL window" << std::endl;
+            return false;
+        }
+
+        // Bounded, like startup's wait. Android hands the new window over a moment after the
+        // foreground event, and an unbounded wait here is a hang rather than a failure.
+        void* nativeWindow = nullptr;
+        int32_t windowWidth = 0;
+        int32_t windowHeight = 0;
+        const int maxWaitAttempts = 50;  // 5 seconds
+        for (int attempt = 0; attempt < maxWaitAttempts; attempt += 1) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) return false;
+            }
+            void* candidate = SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
+                SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+            if (candidate) {
+                ANativeWindow* anw = (ANativeWindow*)candidate;
+                windowWidth = ANativeWindow_getWidth(anw);
+                windowHeight = ANativeWindow_getHeight(anw);
+                if (windowWidth > 0 && windowHeight > 0) {
+                    nativeWindow = candidate;
+                    break;
+                }
+            }
+            SDL_Delay(100);
+        }
+
+        if (!nativeWindow) {
+            std::cerr << "[Mystral] Resume found no valid ANativeWindow after "
+                      << maxWaitAttempts << " attempts" << std::endl;
+            return false;
+        }
+
+        void* previous = webgpu_->getSurfaceNativeHandle();
+        // Always rebuilt, never compared: Android reuses window addresses, so an unchanged pointer
+        // is not evidence that the window survived, and a rebuild is what startup does anyway.
+        webgpu::detachSurfaceForRebuild();
+        if (!webgpu_->rebuildSurface(nativeWindow, webgpu::Context::PLATFORM_ANDROID)) return false;
+
+        platform::getWindowSize(&width_, &height_);
+        if (width_ <= 0 || height_ <= 0) {
+            width_ = static_cast<int>(windowWidth);
+            height_ = static_cast<int>(windowHeight);
+        }
+        if (!webgpu_->configureSurface(width_, height_, config_.vsync)) return false;
+
+        webgpu::republishSurface(webgpu_->getSurface(), webgpu_->getPreferredFormat(),
+                                 webgpu_->getPresentMode(), static_cast<uint32_t>(width_),
+                                 static_cast<uint32_t>(height_));
+
+        std::ostringstream marker;
+        marker << "TN_LIFECYCLE_SURFACE:{\"event\":\"revalidated\",\"previousWindow\":\""
+               << previous << "\",\"window\":\"" << nativeWindow << "\",\"width\":" << width_
+               << ",\"height\":" << height_ << "}";
+        std::cout << marker.str() << std::endl;
+        LOGI("%s", marker.str().c_str());
+        platform::refreshSafeAreaInsets();
+        return true;
+#else
+        return true;
+#endif
+    }
+
+    /** Names the failure loudly, on stderr and in logcat, before the loop stops. */
+    void reportSurfaceRevalidationFailure() {
+        const char* marker =
+            "TN_LIFECYCLE_SURFACE_FAILED:{\"event\":\"revalidation-failed\"}";
+        std::cerr << "[Mystral] " << marker
+                  << " the presentation surface could not be rebuilt after resume; stopping the "
+                     "loop rather than running frames that present nothing"
+                  << std::endl;
+        LOGE("%s", marker);
+    }
+
     bool pollEvents() override {
         // Poll SDL events through our platform layer (skip in no-SDL mode)
         if (!config_.noSdl) {
@@ -866,6 +979,22 @@ public:
             // loop would spin a core at full speed — a battery fix that costs battery.
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             return running_;
+        }
+
+        // Coming back from the background is not just "unset the paused flag". Android destroyed
+        // the ANativeWindow while the app was away and handed back a new one, so the surface every
+        // present writes to points at nothing until it is rebuilt. Ahead of any frame work,
+        // because a frame drawn to the dead surface is the black screen this fixes.
+        if (!config_.noSdl && platform::takeSurfaceRevalidationRequest()) {
+            if (!revalidateSurfaceAfterResume()) {
+                // Fail closed. A host that cannot get a surface back cannot present, and a loop
+                // that keeps running without presenting is the defect wearing a different hat:
+                // frames at 600/s, presents frozen, a black screen and nothing in the log.
+                reportSurfaceRevalidationFailure();
+                running_ = false;
+                exitCode_ = 1;
+                return false;
+            }
         }
 
         // Poll libuv event loop - process any ready I/O callbacks (non-blocking)

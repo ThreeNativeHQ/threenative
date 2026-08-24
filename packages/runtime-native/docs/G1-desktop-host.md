@@ -139,9 +139,22 @@ no audio device beyond SDL's dummy driver:
 - `threenative-lifecycle-policy-test` — drives the SDL lifecycle transition table, the paused
   flag, the `TN_LIFECYCLE` markers, the `display.backgroundMode` override and the host-side
   AudioContext registry, and pushes a real event through SDL so the watch is exercised on SDL's
-  own send path.
+  own send path. Since 2026-08-23 it also covers the **surface revalidation** resume queues in both
+  modes, and the `debug.threenative.skip_surface_revalidate` control that reinstates the pre-fix
+  resume. It was failing at `c3ae3b26` — the retreat to `backgroundMode: "continue"` left the
+  default asserted by section 2 disagreeing with the default the reset installs — and passes again
+  now that the default is `"pause"`.
 
 All three passed on Linux x64, V8 13.1.201.22, Dawn, preset `tn-linux`. The desktop preset carries
 V8 alone, so QuickJS and JavaScriptCore report `SKIP … not compiled into this build` — a skip, not
 a pass. Evidence and the open device rows:
 [`../../../docs/verification/prd-210-2026-08-23.md`](../../../docs/verification/prd-210-2026-08-23.md).
+
+**Surface revalidation on resume** (2026-08-23). `webgpu::Context::rebuildSurface()` swaps the
+`WGPUSurface` against a new native window while keeping the adapter, device and queue, and
+`webgpu::detachSurfaceForRebuild()` / `webgpu::republishSurface()` move `g_surface` with it. Both
+are named here because the other half of the repository is entitled to rely on them: a present
+after a resume reads the republished surface, and nothing else in the host may hold the old one.
+Desktop is a deliberate no-op — a desktop window survives a minimize — so this changes nothing
+about the desktop gate; it is proven on a physical Pixel 8 in
+[`../../../docs/verification/resume-presents-2026-08-23.md`](../../../docs/verification/resume-presents-2026-08-23.md).

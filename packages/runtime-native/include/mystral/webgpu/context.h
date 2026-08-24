@@ -94,6 +94,21 @@ public:
     void resizeSurface(uint32_t width, uint32_t height);
 
     /**
+     * Rebuild the surface against a new native window, keeping the adapter, device and queue.
+     *
+     * Android destroys the `ANativeWindow` behind a backgrounded app and hands back a new one on
+     * resume; the surface built at startup then points at nothing and every present after resume
+     * goes nowhere. The device and everything the game allocated on it are unaffected, so this
+     * swaps the surface alone and leaves the caller to `configureSurface` at the current size.
+     * Returns false rather than leaving the old, dead surface in place silently.
+     */
+    bool rebuildSurface(void* nativeHandle, int platformType);
+
+    /** The native window the live surface was built from, or nullptr. */
+    void* getSurfaceNativeHandle() const { return surfaceNativeHandle_; }
+    int getSurfacePlatformType() const { return surfacePlatformType_; }
+
+    /**
      * Get the current texture to render to
      * @return WGPUTextureView or nullptr if failed
      */
@@ -170,8 +185,13 @@ public:
     };
 
 private:
+    /** Builds a surface handle for a native window without touching any member state. */
+    WGPUSurface makeSurface(void* nativeHandle, int platformType);
+
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
+    void* surfaceNativeHandle_ = nullptr;
+    int surfacePlatformType_ = -1;
     WGPUAdapter adapter_ = nullptr;
     WGPUDevice device_ = nullptr;
     WGPUQueue queue_ = nullptr;

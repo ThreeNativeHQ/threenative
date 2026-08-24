@@ -122,10 +122,11 @@ public class MystralActivity extends SDLActivity {
         boolean fullscreen = metadata == null || metadata.getBoolean("TN_FULLSCREEN", true);
         // `display.backgroundMode`. The native side parses it and keeps the default for anything it
         // does not recognize, so an unset value and a typo behave the same and both get logged.
-        // Default "continue" until resume revalidates the surface — see
-        // docs/bugs/resume-presents-nothing-2026-08-23.md. Pausing here leaves a black screen
-        // after any interruption, which is worse than the battery cost pausing was fixing.
-        String backgroundMode = metadata == null ? "continue" : metadata.getString("TN_BACKGROUND_MODE", "continue");
+        // Default "pause" again as of 2026-08-23: resume now rebuilds the surface against the
+        // window Android hands back, so backgrounding no longer trades a battery cost for a black
+        // screen. This default must match the native one in `platform/lifecycle.cpp`, or an APK
+        // that carries no metadata runs one mode while the host reports the other.
+        String backgroundMode = metadata == null ? "pause" : metadata.getString("TN_BACKGROUND_MODE", "pause");
         if (mailboxRoot == null) {
             java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
@@ -136,7 +137,7 @@ public class MystralActivity extends SDLActivity {
             mailboxRoot,
             title,
             Boolean.toString(fullscreen),
-            backgroundMode == null ? "continue" : backgroundMode
+            backgroundMode == null ? "pause" : backgroundMode
         };
     }
 }

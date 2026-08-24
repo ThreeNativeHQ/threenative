@@ -3,12 +3,17 @@
 #include "mystral/audio/audio_context.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <mutex>
 #include <sstream>
 
 #include <SDL3/SDL.h>
+
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
 
 namespace mystral {
 namespace platform {
@@ -19,8 +24,8 @@ std::atomic<bool> g_paused{false};
 std::atomic<bool> g_terminating{false};
 std::atomic<bool> g_watchInstalled{false};
 std::atomic<uint64_t> g_droppedTimerFirings{0};
-// See lifecycle.h: Continue until resume revalidates the surface.
-std::atomic<BackgroundMode> g_backgroundMode{BackgroundMode::Continue};
+std::atomic<bool> g_surfaceRevalidationPending{false};
+std::atomic<BackgroundMode> g_backgroundMode{BackgroundMode::Pause};
 
 std::mutex g_markerMutex;
 std::deque<std::string> g_markers;
@@ -143,6 +148,10 @@ void handleLifecycleEvent(uint32_t sdlEventType) {
                 g_paused.store(false, std::memory_order_release);
                 audio::resumeAllContexts();
             }
+            // In both modes, and before the marker: Android destroyed the window while the app was
+            // away whatever this host decided about pausing, so the surface the loop presents to is
+            // stale either way. Clearing the paused flag alone is exactly the defect this fixes.
+            requestSurfaceRevalidation();
             queueMarker(action, sdlEventType, applied);
             break;
         }
@@ -174,6 +183,32 @@ void removeLifecycleWatch() {
     SDL_RemoveEventWatch(lifecycleEventWatch, nullptr);
 }
 
+void requestSurfaceRevalidation() {
+    g_surfaceRevalidationPending.store(true, std::memory_order_release);
+}
+
+bool surfaceRevalidationPending() {
+    return g_surfaceRevalidationPending.load(std::memory_order_acquire);
+}
+
+bool takeSurfaceRevalidationRequest() {
+    return g_surfaceRevalidationPending.exchange(false, std::memory_order_acq_rel);
+}
+
+void clearSurfaceRevalidationRequest() {
+    g_surfaceRevalidationPending.store(false, std::memory_order_release);
+}
+
+bool surfaceRevalidationDisabled() {
+#if defined(__ANDROID__)
+    char property[PROP_VALUE_MAX] = {};
+    if (__system_property_get("debug.threenative.skip_surface_revalidate", property) > 0)
+        return property[0] == '1';
+#endif
+    const char* configured = std::getenv("THREENATIVE_SKIP_SURFACE_REVALIDATE");
+    return configured != nullptr && configured[0] == '1';
+}
+
 void noteDroppedTimerFiring() { g_droppedTimerFirings.fetch_add(1, std::memory_order_relaxed); }
 
 uint64_t takeDroppedTimerFirings() {
@@ -192,7 +227,8 @@ void resetLifecycleForTesting() {
     g_paused.store(false);
     g_terminating.store(false);
     g_droppedTimerFirings.store(0);
-    g_backgroundMode.store(BackgroundMode::Continue);
+    g_surfaceRevalidationPending.store(false);
+    g_backgroundMode.store(BackgroundMode::Pause);
     std::lock_guard<std::mutex> lock(g_markerMutex);
     g_markers.clear();
 }

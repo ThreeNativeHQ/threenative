@@ -108,7 +108,53 @@ int main() {
     check(anyMarkerContains(drainMarkers(), "TN_LIFECYCLE:{\"event\":\"resumed\""),
           "the resume is reported as a TN_LIFECYCLE marker");
 
+    // 2b. Resume is not just "unset the flag": the surface it presents to died with the window.
+    mystral::platform::resetLifecycleForTesting();
+    check(mystral::platform::backgroundMode() == BackgroundMode::Pause,
+          "the default background mode is pause");
+    check(!mystral::platform::surfaceRevalidationPending(),
+          "a host that has not resumed has nothing to revalidate");
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_DID_ENTER_BACKGROUND);
+    check(!mystral::platform::surfaceRevalidationPending(),
+          "backgrounding alone does not queue a rebuild; the window is not back yet");
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_DID_ENTER_FOREGROUND);
+    check(mystral::platform::surfaceRevalidationPending(),
+          "resuming queues the surface rebuild that resume never did");
+    check(mystral::platform::takeSurfaceRevalidationRequest(),
+          "the loop takes the request");
+    check(!mystral::platform::surfaceRevalidationPending(),
+          "and it is taken exactly once, so one resume is not rebuilt on every later frame");
+    drainMarkers();
+
+    // 2c. Android destroys the window whatever this host decided about pausing, so `continue`
+    //     needs the same rebuild. The retreat that shipped `continue` as the default was living on
+    //     this being untrue.
+    mystral::platform::resetLifecycleForTesting();
+    mystral::platform::setBackgroundMode(BackgroundMode::Continue);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_DID_ENTER_BACKGROUND);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_DID_ENTER_FOREGROUND);
+    check(mystral::platform::surfaceRevalidationPending(),
+          "backgroundMode=continue still queues the surface rebuild");
+    mystral::platform::clearSurfaceRevalidationRequest();
+    check(!mystral::platform::surfaceRevalidationPending(),
+          "startup can drop a request it raised against a surface it just built");
+    drainMarkers();
+
+    // 2d. The negative control that reproduces the defect from the same binary.
+    check(!mystral::platform::surfaceRevalidationDisabled(),
+          "revalidation is on unless something explicitly asks for the pre-fix behaviour");
+#if !defined(_WIN32)
+    setenv("THREENATIVE_SKIP_SURFACE_REVALIDATE", "1", 1);
+    check(mystral::platform::surfaceRevalidationDisabled(),
+          "the documented control switch reinstates the pre-fix resume");
+    setenv("THREENATIVE_SKIP_SURFACE_REVALIDATE", "0", 1);
+    check(!mystral::platform::surfaceRevalidationDisabled(),
+          "and anything but 1 leaves the fix in place");
+    unsetenv("THREENATIVE_SKIP_SURFACE_REVALIDATE");
+#endif
+
     // 3. Focus loss alone must not pause anything.
+    mystral::platform::resetLifecycleForTesting();
     mystral::platform::handleLifecycleEvent(SDL_EVENT_WINDOW_FOCUS_LOST);
     check(!mystral::platform::isPaused(), "losing focus does not pause the loop");
     check(anyMarkerContains(drainMarkers(), "\"event\":\"observed\""),

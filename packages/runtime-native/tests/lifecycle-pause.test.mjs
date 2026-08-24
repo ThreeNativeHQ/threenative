@@ -97,7 +97,7 @@ test("display.backgroundMode is plumbed from the config to both hosts", () => {
   );
   assert.match(
     read("android/app/src/main/java/com/mystral/engine/MystralActivity.java"),
-    /metadata\.getString\("TN_BACKGROUND_MODE", "continue"\)/u,
+    /metadata\.getString\("TN_BACKGROUND_MODE", "pause"\)/u,
   );
   assert.match(read("src/platform/android_main.cpp"), /parseBackgroundMode\(argv\[6\], mode\)/u);
   assert.match(read("src/cli/main.cpp"), /THREENATIVE_BACKGROUND_MODE/u);
@@ -111,27 +111,107 @@ test("the lifecycle proof is built and run by a lane that needs no display", () 
   assert.match(read("scripts/verify-desktop-stability.mjs"), /"threenative-lifecycle-policy-test"/u);
 });
 
-test("the background default is `continue` until resume revalidates the surface", () => {
-  // A deliberate retreat, pinned so it cannot drift back before the defect that forced it is
-  // fixed. Pausing is what this feature is for, but on a physical Pixel 8 on 2026-08-23 resume
-  // restarted the loop and presented nothing — Android destroys the ANativeWindow on background
-  // and the WGPUSurface still points at it, so `frames` ran away at ~600/s while `presents` stayed
-  // frozen and the screen was uniformly black. Bug 9 was a battery cost no player saw; this is a
-  // black screen after every phone call, in the mode nobody chose.
+test("resume rebuilds the surface Android destroyed, and republishes it", () => {
+  // The defect this closes: PRD-210 specified "surface revalidated like startup does" and shipped
+  // a resume that cleared the paused flag and nothing else. Android destroys the ANativeWindow
+  // behind a backgrounded app, so every present after resume went to a dead window — measured on a
+  // physical Pixel 8 on 2026-08-23 as `frames` running away at ~600/s against a frozen `presents`
+  // and a uniformly black screencap.
+  const lifecycle = read("src/platform/lifecycle.cpp");
+  assert.match(
+    lifecycle,
+    /case LifecycleAction::Resume:[\s\S]*?requestSurfaceRevalidation\(\);/u,
+    "resume must queue the rebuild, not just clear the paused flag",
+  );
+  // Requested outside the `applied` branch: Android destroys the window whatever this host decided
+  // about pausing, so `continue` needs the same rebuild.
+  const resume = lifecycle.slice(lifecycle.indexOf("case LifecycleAction::Resume:"));
+  const request = resume.indexOf("requestSurfaceRevalidation();");
+  const appliedBranch = resume.indexOf("if (applied) {");
+  const appliedEnd = resume.indexOf("}", resume.indexOf("audio::resumeAllContexts();"));
+  assert.ok(
+    request > appliedEnd || appliedBranch < 0,
+    "the rebuild must be requested in both modes, not only when the pause was applied",
+  );
+
+  const runtime = read("src/runtime.cpp");
+  assert.match(runtime, /platform::takeSurfaceRevalidationRequest\(\)/u);
+  assert.match(
+    runtime,
+    /webgpu_->rebuildSurface\(nativeWindow, webgpu::Context::PLATFORM_ANDROID\)/u,
+    "the surface has to be rebuilt against the window Android handed back",
+  );
+  assert.match(
+    runtime,
+    /webgpu_->configureSurface\(width_, height_, config_\.vsync\)/u,
+    "a rebuilt surface presents nothing until it is configured",
+  );
+  assert.match(
+    runtime,
+    /webgpu::republishSurface\(webgpu_->getSurface\(\)/u,
+    "bindings read g_surface for every present; a host-only rebuild fixes nothing",
+  );
+  // Ahead of the frame work, or the first frame after resume draws to the dead surface.
+  const revalidate = runtime.indexOf("platform::takeSurfaceRevalidationRequest()");
+  for (const call of ["beginFrame()", "executeAnimationFrameCallbacks()", "endDawnFrame()"])
+    assert.ok(runtime.indexOf(call, revalidate) > revalidate, `${call} must be downstream of the rebuild`);
+
+  const bindings = read("src/webgpu/bindings.cpp");
+  assert.match(bindings, /void republishSurface\(/u);
+  assert.match(
+    bindings,
+    /void detachSurfaceForRebuild\(\)[\s\S]*?g_surface = nullptr;/u,
+    "an acquired-but-unpresented swapchain image must be released before the surface goes away",
+  );
+  assert.match(read("include/mystral/webgpu/context.h"), /bool rebuildSurface\(void\* nativeHandle, int platformType\);/u);
+});
+
+test("a surface that cannot be revalidated fails loudly instead of going black", () => {
+  const runtime = read("src/runtime.cpp");
+  assert.match(runtime, /TN_LIFECYCLE_SURFACE_FAILED/u, "the failure must be nameable in a log");
+  const failure = runtime.slice(runtime.indexOf("reportSurfaceRevalidationFailure();"));
+  assert.match(
+    failure.slice(0, 200),
+    /running_ = false;/u,
+    "a loop that keeps running without presenting is the same black screen with extra steps",
+  );
+  assert.match(
+    read("src/webgpu/bindings.cpp"),
+    /TN_SURFACE_ACQUIRE_FAILED/u,
+    "a swapchain that hands out no texture must say so; the defect logged nothing at all",
+  );
+});
+
+test("the background default is `pause` again, on both sides of the JNI boundary", () => {
+  // This default has moved twice and the second move is the one to read carefully.
   //
-  // When docs/bugs/resume-presents-nothing-2026-08-23.md is fixed, THIS TEST is the thing that
-  // must be changed back, deliberately, with a device rung proving resume presents again.
+  //   1. PRD-210 shipped `pause`, which is what the feature is for.
+  //   2. `c3ae3b26` retreated to `continue`, because resume presented nothing: Android destroys
+  //      the ANativeWindow on background and the WGPUSurface still pointed at it, so `frames` ran
+  //      away at ~600/s while `presents` stayed frozen and the screen went black after any phone
+  //      call. The guard that shipped with that retreat named itself as the thing to change back.
+  //   3. Restored to `pause` on 2026-08-23, deliberately, and only after a rung on the physical
+  //      Pixel 8 proved resume presents again: same APK, the pre-fix resume behind
+  //      `debug.threenative.skip_surface_revalidate=1`, `frames` 43920 -> 56340 against `presents`
+  //      frozen at 1304 and a 0.00%-non-black capture in the red; `frames` == `presents` at 60 Hz,
+  //      a `TN_LIFECYCLE_SURFACE` marker whose window pointer had genuinely changed, and the scene
+  //      back on screen in the green. docs/verification/resume-presents-2026-08-23.md.
+  //
+  // Do not move it a third time without a device rung that says why.
   assert.match(
     read("src/platform/lifecycle.cpp"),
-    /g_backgroundMode\{BackgroundMode::Continue\}/u,
-    "the native default must stay `continue` while resume presents nothing",
+    /g_backgroundMode\{BackgroundMode::Pause\}/u,
+    "pausing is what this feature is for, and resume now revalidates the surface",
   );
   assert.match(
     read("android/app/src/main/java/com/mystral/engine/MystralActivity.java"),
-    /getString\("TN_BACKGROUND_MODE", "continue"\)/u,
-    "the Android metadata default must match the native one, or Android pauses regardless",
+    /getString\("TN_BACKGROUND_MODE", "pause"\)/u,
+    "the Android metadata default must match the native one, or the two disagree on Android",
   );
-  // The retreat is the default only. The mechanism must stay live and measured under it.
+  // The packager has always shipped `pause` for a generated project, so these three are now one
+  // answer rather than two: an APK with metadata and an APK without behave the same way.
+  assert.match(read("scripts/package-android.mjs"), /backgroundMode: 'pause'/u);
+  // The override and its reporting stay live under either default.
   assert.match(read("src/platform/lifecycle.cpp"), /SDL_AddEventWatch/u);
   assert.match(read("src/platform/lifecycle.cpp"), /TN_LIFECYCLE/u);
 });
