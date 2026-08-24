@@ -4,7 +4,13 @@
   "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
-  "files": ["dist", "mcp", "scripts", "capabilities.json", "README.md"],
+  "files": [
+    "dist",
+    "mcp",
+    "scripts",
+    "capabilities.json",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,6 +30,10 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./ui-layer": {
+      "types": "./dist/ui-layer.d.ts",
+      "import": "./dist/ui-layer.js"
     },
     "./package.json": "./package.json"
   },
