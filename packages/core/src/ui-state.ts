@@ -89,7 +89,8 @@ export function publishUiState<T>(
 
   const publish = (): void => {
     if (stopped) return;
-    const state = read() as unknown as Record<string, unknown>;
+    // A published state is by definition JSON-shaped: it has just been serialised for the wire.
+    const state = read() as Record<string, unknown>;
     lastFrame = JSON.stringify(state);
     bridge.post({ type: GAME_STATE_MESSAGE, state } as IUiMessage);
   };

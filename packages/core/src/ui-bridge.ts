@@ -87,12 +87,20 @@ export const UI_BRIDGE_GLOBALS = {
   gamePost: "__tnUiPost",
 } as const;
 
-type Scope = Record<string, unknown>;
+/**
+ * The realm a bridge end installs into.
+ *
+ * Indexed rather than typed as `Window`, because the host globals it looks for are ones no
+ * TypeScript DOM library has heard of and the tests drive it with a plain object.
+ */
+interface IScope {
+  [key: string]: unknown;
+}
 
 interface IConnectOptions {
   readonly end: UiBridgeEnd;
   /** The realm to install into. Defaults to `globalThis`; injected by tests and by hosts. */
-  readonly scope?: Scope;
+  readonly scope?: IScope;
 }
 
 function assertSendable(message: IUiMessage): string {
@@ -144,7 +152,7 @@ function parseFrame(frame: unknown): IUiMessage {
  * The outbound half, per end. Every host shape reduces to one function taking a JSON string,
  * which is what lets the sibling-layer hosts and an offscreen-texture host share this file.
  */
-function findOutbound(scope: Scope, end: UiBridgeEnd): ((frame: string) => void) | undefined {
+function findOutbound(scope: IScope, end: UiBridgeEnd): ((frame: string) => void) | undefined {
   if (end === "game") {
     const post = scope[UI_BRIDGE_GLOBALS.gamePost];
     return typeof post === "function" ? (frame) => (post as (f: string) => void)(frame) : undefined;
@@ -175,7 +183,7 @@ interface IBroker {
   ui: Set<(message: IUiMessage) => void>;
 }
 
-function broker(scope: Scope): IBroker {
+function broker(scope: IScope): IBroker {
   const existing = scope[BROKER_KEY] as IBroker | undefined;
   if (existing !== undefined) return existing;
   const created: IBroker = { game: new Set(), ui: new Set() };
@@ -195,7 +203,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
   if (end !== "game" && end !== "ui") {
     throw new Error(`TN_UI_BRIDGE_END_INVALID: expected 'game' or 'ui', got '${String(end)}'.`);
   }
-  const scope = options.scope ?? (globalThis as unknown as Scope);
+  const scope: IScope = options.scope ?? globalThis;
   const listeners = new Set<(message: IUiMessage) => void>();
   const deliver = (frame: unknown): void => {
     const message = parseFrame(frame);

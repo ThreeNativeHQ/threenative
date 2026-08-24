@@ -51,7 +51,7 @@ interface IRegistryOptions {
   /** The connected bridge whose `ui` end publishes the regions. */
   readonly bridge: IUiBridge;
   /** The realm to observe. Defaults to `globalThis`; injected by tests. */
-  readonly scope?: Record<string, unknown>;
+  readonly scope?: IScopeLike;
   /** The marker attribute. Defaults to `data-tn-interactive`; a game should not change it. */
   readonly attribute?: string;
 }
@@ -71,12 +71,50 @@ interface IElementLike {
   getBoundingClientRect: () => IRectLike;
 }
 
-interface IDocumentLike {
-  querySelectorAll: (selector: string) => ArrayLike<IElementLike>;
-  documentElement?: { clientWidth?: number; clientHeight?: number };
+/** A `MutationObserver` or a `ResizeObserver`, as the two things this file asks of either. */
+interface IObserverLike {
+  observe: (target: unknown, options?: unknown) => void;
+  disconnect: () => void;
+}
+
+/** Anything that can be listened to. The document and the window both satisfy it structurally. */
+interface IEventTargetLike {
   addEventListener?: (type: string, listener: () => void, options?: unknown) => void;
   removeEventListener?: (type: string, listener: () => void, options?: unknown) => void;
 }
+
+interface IDocumentLike extends IEventTargetLike {
+  querySelectorAll: (selector: string) => ArrayLike<IElementLike>;
+  documentElement?: { clientWidth?: number; clientHeight?: number };
+}
+
+/**
+ * The realm the registry observes, as the parts of it this file actually touches.
+ *
+ * Declared structurally rather than as `Window`, because the registry has to be drivable from a
+ * test with no DOM — and because the host it really runs in is a web view whose globals the type
+ * system here has never seen.
+ */
+interface IScopeLike extends IEventTargetLike {
+  // Indexed because a real realm carries far more than this, and a fake one is free to.
+  [key: string]: unknown;
+  document?: IDocumentLike;
+  innerWidth?: number;
+  innerHeight?: number;
+  requestAnimationFrame?: (callback: () => void) => number;
+  cancelAnimationFrame?: (handle: number) => void;
+  // `MutationObserver` and `ResizeObserver` are read through the index signature above rather than
+  // declared here: they are browser globals and keep the host's capitalisation, which the naming
+  // rule is right to reject for an ordinary property.
+}
+
+/** A `MutationObserver` or a `ResizeObserver`, as the two things this file asks of either. */
+interface IObserverLike {
+  observe: (target: unknown, options?: unknown) => void;
+  disconnect: () => void;
+}
+
+type ObserverConstructor = new (callback: () => void) => IObserverLike;
 
 /** Five decimals of a normalized rect is a tenth of a pixel on a 10k display. */
 function quantize(value: number): number {
@@ -102,11 +140,8 @@ const LAYOUT_EVENTS = ["resize", "orientationchange", "scroll"] as const;
  * through to the game and the bug would present as "the button does nothing".
  */
 export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry {
-  const scope = (options.scope ?? (globalThis as unknown as Record<string, unknown>)) as Record<
-    string,
-    unknown
-  >;
-  const document = scope.document as IDocumentLike | undefined;
+  const scope: IScopeLike = options.scope ?? (globalThis as IScopeLike);
+  const document = scope.document;
   if (document === undefined || typeof document.querySelectorAll !== "function") {
     throw new Error(
       "TN_UI_HIT_REGIONS_NO_DOCUMENT: the interactive-rect registry runs in the UI page and found no document.",
@@ -126,13 +161,10 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
   let liveTransitions = 0;
   let frameHandle: number | undefined;
 
-  const viewport = (): { width: number; height: number } => {
-    const width =
-      (scope.innerWidth as number | undefined) ?? document.documentElement?.clientWidth ?? 0;
-    const height =
-      (scope.innerHeight as number | undefined) ?? document.documentElement?.clientHeight ?? 0;
-    return { width, height };
-  };
+  const viewport = (): { width: number; height: number } => ({
+    width: scope.innerWidth ?? document.documentElement?.clientWidth ?? 0,
+    height: scope.innerHeight ?? document.documentElement?.clientHeight ?? 0,
+  });
 
   /**
    * `getClientRects()` and not `getBoundingClientRect()`: a wrapped inline control is several
@@ -188,10 +220,8 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
     publish(measure());
   };
 
-  const requestFrame = scope.requestAnimationFrame as
-    | ((callback: () => void) => number)
-    | undefined;
-  const cancelFrame = scope.cancelAnimationFrame as ((handle: number) => void) | undefined;
+  const requestFrame = scope.requestAnimationFrame;
+  const cancelFrame = scope.cancelAnimationFrame;
 
   /**
    * While anything is transitioning, the published rect is a frame behind wherever the
@@ -217,13 +247,9 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
     refresh();
   };
 
-  const target = document as unknown as {
-    addEventListener?: (type: string, listener: () => void, options?: unknown) => void;
-    removeEventListener?: (type: string, listener: () => void, options?: unknown) => void;
-  };
   const listen = (
     on: "addEventListener" | "removeEventListener",
-    host: typeof target,
+    host: IEventTargetLike,
     types: readonly string[],
     listener: () => void,
   ): void => {
@@ -232,14 +258,14 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
     for (const type of types) method.call(host, type, listener, true);
   };
 
-  listen("addEventListener", target, TRANSITION_START, onTransitionStart);
-  listen("addEventListener", target, TRANSITION_END, onTransitionEnd);
-  listen("addEventListener", scope as unknown as typeof target, LAYOUT_EVENTS, refresh);
+  listen("addEventListener", document, TRANSITION_START, onTransitionStart);
+  listen("addEventListener", document, TRANSITION_END, onTransitionEnd);
+  listen("addEventListener", scope, LAYOUT_EVENTS, refresh);
 
   const MutationObserverCtor = scope.MutationObserver as
     | (new (
         callback: () => void,
-      ) => { observe: (t: unknown, o: unknown) => void; disconnect: () => void })
+      ) => IObserverLike)
     | undefined;
   const mutations =
     MutationObserverCtor === undefined ? undefined : new MutationObserverCtor(refresh);
@@ -253,7 +279,7 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
   const ResizeObserverCtor = scope.ResizeObserver as
     | (new (
         callback: () => void,
-      ) => { observe: (t: unknown) => void; disconnect: () => void })
+      ) => IObserverLike)
     | undefined;
   const resizes = ResizeObserverCtor === undefined ? undefined : new ResizeObserverCtor(refresh);
   if (resizes !== undefined && document.documentElement !== undefined) {
@@ -270,9 +296,9 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
       stopped = true;
       if (frameHandle !== undefined && cancelFrame !== undefined) cancelFrame(frameHandle);
       frameHandle = undefined;
-      listen("removeEventListener", target, TRANSITION_START, onTransitionStart);
-      listen("removeEventListener", target, TRANSITION_END, onTransitionEnd);
-      listen("removeEventListener", scope as unknown as typeof target, LAYOUT_EVENTS, refresh);
+      listen("removeEventListener", document, TRANSITION_START, onTransitionStart);
+      listen("removeEventListener", document, TRANSITION_END, onTransitionEnd);
+      listen("removeEventListener", scope, LAYOUT_EVENTS, refresh);
       mutations?.disconnect();
       resizes?.disconnect();
       // Publishing the empty set is the point of stopping: a host still holding the last
