@@ -16,6 +16,13 @@ struct PropertySnapshot {
     js::JSPropertyInfo property;
 };
 
+struct ExpectedInstalledProperty {
+    bool writable;
+    bool enumerable;
+    bool configurable;
+    js::JSValueHandle value;
+};
+
 bool propertyStateMatches(
     js::Engine* engine,
     const js::JSPropertyInfo& actual,
@@ -23,8 +30,42 @@ bool propertyStateMatches(
     if (actual.kind != expected.kind) return false;
     if (actual.kind == js::JSPropertyKind::Missing) return true;
     if (actual.own != expected.own) return false;
+    const bool attributesMatch =
+        actual.enumerable == expected.enumerable &&
+        actual.configurable == expected.configurable;
+    if (!attributesMatch) {
+        return false;
+    }
     if (actual.kind == js::JSPropertyKind::Accessor) return true;
     return actual.writable == expected.writable &&
+           engine->isSameValue(actual.value, expected.value);
+}
+
+ExpectedInstalledProperty expectedInstalledProperty(
+    const js::JSPropertyInfo& snapshot,
+    js::JSValueHandle value) {
+    ExpectedInstalledProperty expected;
+    expected.value = value;
+    if (snapshot.kind == js::JSPropertyKind::Data && snapshot.own) {
+        expected.writable = snapshot.writable;
+        expected.enumerable = snapshot.enumerable;
+        expected.configurable = snapshot.configurable;
+    } else {
+        expected.writable = true;
+        expected.enumerable = true;
+        expected.configurable = true;
+    }
+    return expected;
+}
+
+bool installedPropertyMatches(
+    js::Engine* engine,
+    const js::JSPropertyInfo& actual,
+    const ExpectedInstalledProperty& expected) {
+    return actual.kind == js::JSPropertyKind::Data && actual.own &&
+           actual.writable == expected.writable &&
+           actual.enumerable == expected.enumerable &&
+           actual.configurable == expected.configurable &&
            engine->isSameValue(actual.value, expected.value);
 }
 
@@ -246,10 +287,11 @@ bool installBindingTable(
                 // successful installation. Accessors are not invoked, but proxy descriptor and
                 // getPrototypeOf traps are observable and may have side effects.
                 js::JSPropertyInfo installed;
+                const auto expected = expectedInstalledProperty(
+                    snapshots[index].property, function);
                 propertyWritten = engine->getPropertyInfo(
                     destination, registration.name, installed) &&
-                    installed.kind == js::JSPropertyKind::Data && installed.own &&
-                    engine->isSameValue(installed.value, function);
+                    installedPropertyMatches(engine, installed, expected);
                 engine->releasePropertyInfo(installed);
                 if (!propertyWritten && !engine->hasException()) {
                     fail(engine, "WebGPU binding property installation did not create an own binding");

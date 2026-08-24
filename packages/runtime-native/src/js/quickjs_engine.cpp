@@ -155,12 +155,8 @@ public:
         std::cout << "[QuickJS] Destroying engine..." << std::endl;
 
         if (context_ && runtime_) {
-            // Execute all pending promise jobs
-            JSContext* ctx;
-            while (JS_ExecutePendingJob(runtime_, &ctx) > 0) {
-                // Keep running until no more jobs
-            }
-
+            // Runtime-owned native binding state is already gone at this point. Do not execute
+            // queued jobs here; JS_FreeRuntime discards them with the remaining JS graph.
             // Free all remaining protected handles
             for (void* ptr : protectedHandles_) {
                 JSValue* val = (JSValue*)ptr;
@@ -631,17 +627,37 @@ public:
 
         JSValue current = JS_DupValue(context_, *objVal);
         bool own = true;
+        std::vector<JSValue> visited;
+        const auto releaseVisited = [&]() {
+            for (const auto& value : visited) JS_FreeValue(context_, value);
+            visited.clear();
+        };
         while (JS_IsObject(current)) {
+            for (const auto& seen : visited) {
+                if (JS_IsSameValue(context_, current, seen)) {
+                    JS_FreeValue(context_, current);
+                    JS_FreeAtom(context_, atom);
+                    releaseVisited();
+                    throwException(
+                        "JavaScript property prototype traversal detected a cycle");
+                    return false;
+                }
+            }
+            visited.push_back(JS_DupValue(context_, current));
+
             JSPropertyDescriptor descriptor = {
                 0, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED};
             const int result = JS_GetOwnProperty(context_, &descriptor, current, atom);
             if (result < 0) {
                 JS_FreeValue(context_, current);
                 JS_FreeAtom(context_, atom);
+                releaseVisited();
                 return capturePendingException();
             }
             if (result > 0) {
                 info.own = own;
+                info.enumerable = (descriptor.flags & JS_PROP_ENUMERABLE) != 0;
+                info.configurable = (descriptor.flags & JS_PROP_CONFIGURABLE) != 0;
                 const bool accessor = (descriptor.flags & JS_PROP_TMASK) == JS_PROP_GETSET;
                 if (accessor) {
                     info.kind = JSPropertyKind::Accessor;
@@ -658,6 +674,7 @@ public:
                 JS_FreeValue(context_, descriptor.setter);
                 JS_FreeValue(context_, current);
                 JS_FreeAtom(context_, atom);
+                releaseVisited();
                 return true;
             }
 
@@ -665,6 +682,7 @@ public:
             JS_FreeValue(context_, current);
             if (JS_IsException(prototype)) {
                 JS_FreeAtom(context_, atom);
+                releaseVisited();
                 return capturePendingException();
             }
             current = prototype;
@@ -673,6 +691,7 @@ public:
 
         JS_FreeValue(context_, current);
         JS_FreeAtom(context_, atom);
+        releaseVisited();
         info = {};
         return true;
     }

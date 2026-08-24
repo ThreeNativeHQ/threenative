@@ -149,6 +149,7 @@ public:
             entry.second.Reset();
         }
         moduleCache_.clear();
+        reflectSet_.Reset();
         reflectGetPrototypeOf_.Reset();
         privateKey_.Reset();
         context_.Reset();
@@ -364,9 +365,11 @@ public:
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         v8::Local<v8::Value> val = persistent->Get(isolate_);
 
-        return global->Set(context,
+        return setPropertyWithReflect(
+            context,
+            global,
             v8::String::NewFromUtf8(isolate_, name).ToLocalChecked(),
-            val).FromMaybe(false);
+            val);
     }
 
     JSValueHandle getGlobalProperty(const char* name) override {
@@ -747,13 +750,8 @@ public:
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
         v8::Local<v8::String> key =
             v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
-        v8::TryCatch try_catch(isolate_);
-        const auto result = objLocal->Set(context, key, valPersistent->Get(isolate_));
-        if (result.IsNothing()) {
-            reportException(try_catch);
-            return false;
-        }
-        return result.FromJust();
+        return setPropertyWithReflect(
+            context, objLocal, key, valPersistent->Get(isolate_));
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -792,8 +790,18 @@ public:
         v8::Local<v8::String> key =
             v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
         bool own = true;
+        std::vector<v8::Local<v8::Object>> visited;
 
         while (!current.IsEmpty()) {
+            for (const auto& seen : visited) {
+                if (current->StrictEquals(seen)) {
+                    throwException(
+                        "JavaScript property prototype traversal detected a cycle");
+                    return false;
+                }
+            }
+            visited.push_back(current);
+
             v8::Local<v8::Value> descriptor;
             if (!current->GetOwnPropertyDescriptor(context, key).ToLocal(&descriptor)) {
                 reportException(try_catch);
@@ -810,6 +818,22 @@ public:
                 }
 
                 info.own = own;
+                const auto readBoolean = [&](const char* field, bool& output) {
+                    v8::Local<v8::Value> value;
+                    if (!descriptorObject->Get(
+                            context,
+                            v8::String::NewFromUtf8(isolate_, field).ToLocalChecked())
+                             .ToLocal(&value)) {
+                        reportException(try_catch);
+                        return false;
+                    }
+                    output = value->BooleanValue(isolate_);
+                    return true;
+                };
+                if (!readBoolean("enumerable", info.enumerable) ||
+                    !readBoolean("configurable", info.configurable)) {
+                    return false;
+                }
                 if (!hasValue.FromJust()) {
                     info.kind = JSPropertyKind::Accessor;
                     info.writable = false;
@@ -825,18 +849,10 @@ public:
                     reportException(try_catch);
                     return false;
                 }
-                v8::Local<v8::Value> writable;
-                if (!descriptorObject->Get(
-                        context,
-                        v8::String::NewFromUtf8(isolate_, "writable").ToLocalChecked())
-                         .ToLocal(&writable)) {
-                    reportException(try_catch);
-                    return false;
-                }
+                if (!readBoolean("writable", info.writable)) return false;
                 auto* persistent = new v8::Persistent<v8::Value>(isolate_, value);
                 frameHandles_.insert(persistent);
                 info.kind = JSPropertyKind::Data;
-                info.writable = writable->BooleanValue(isolate_);
                 info.value = {persistent, isolate_};
                 return true;
             }
@@ -1152,16 +1168,46 @@ private:
             !reflectValue->IsObject()) {
             return;
         }
+        v8::Local<v8::Object> reflect = reflectValue.As<v8::Object>();
         v8::Local<v8::Value> getPrototypeOf;
-        if (!reflectValue.As<v8::Object>()
-                 ->Get(
-                     context,
-                     v8::String::NewFromUtf8(isolate_, "getPrototypeOf").ToLocalChecked())
-                 .ToLocal(&getPrototypeOf) ||
-            !getPrototypeOf->IsFunction()) {
-            return;
+        if (reflect
+                ->Get(
+                    context,
+                    v8::String::NewFromUtf8(isolate_, "getPrototypeOf").ToLocalChecked())
+                .ToLocal(&getPrototypeOf) &&
+            getPrototypeOf->IsFunction()) {
+            reflectGetPrototypeOf_.Reset(isolate_, getPrototypeOf.As<v8::Function>());
         }
-        reflectGetPrototypeOf_.Reset(isolate_, getPrototypeOf.As<v8::Function>());
+        v8::Local<v8::Value> set;
+        if (reflect
+                ->Get(
+                    context,
+                    v8::String::NewFromUtf8(isolate_, "set").ToLocalChecked())
+                .ToLocal(&set) &&
+            set->IsFunction()) {
+            reflectSet_.Reset(isolate_, set.As<v8::Function>());
+        }
+    }
+
+    bool setPropertyWithReflect(
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Object> object,
+        v8::Local<v8::Value> property,
+        v8::Local<v8::Value> value) {
+        if (reflectSet_.IsEmpty()) {
+            throwException("V8 Reflect.set intrinsic is unavailable");
+            return false;
+        }
+        v8::TryCatch try_catch(isolate_);
+        v8::Local<v8::Value> args[] = {object, property, value};
+        v8::Local<v8::Value> result;
+        if (!reflectSet_.Get(isolate_)
+                 ->Call(context, v8::Undefined(isolate_), 3, args)
+                 .ToLocal(&result)) {
+            reportException(try_catch);
+            return false;
+        }
+        return result->BooleanValue(isolate_);
     }
 
     static std::string toStdString(v8::Isolate* isolate, v8::Local<v8::Value> value) {
@@ -1414,6 +1460,7 @@ private:
     v8::Isolate* isolate_ = nullptr;
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
     v8::Global<v8::Context> context_;
+    v8::Global<v8::Function> reflectSet_;
     v8::Global<v8::Function> reflectGetPrototypeOf_;
     v8::Global<v8::Private> privateKey_;  // Cached private key to avoid string allocation per call
     std::string lastException_;

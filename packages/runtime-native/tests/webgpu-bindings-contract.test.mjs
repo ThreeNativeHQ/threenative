@@ -269,6 +269,8 @@ test("binding-table installation is object-only and rolls back failed writes", (
   const engine = read("include/mystral/js/engine.h");
   const implementation = read("src/webgpu/registration_table.cpp");
 
+  assert.match(engine, /bool enumerable = false;/u);
+  assert.match(engine, /bool configurable = false;/u);
   assert.match(
     engine,
     /virtual bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) = 0;/u,
@@ -283,6 +285,9 @@ test("binding-table installation is object-only and rolls back failed writes", (
   assert.match(implementation, /cannot replace a non-writable property/u);
   assert.match(implementation, /deleteProperty\(/u);
   assert.match(implementation, /rollback[^;]*state/u);
+  assert.match(implementation, /actual\.enumerable == expected\.enumerable/u);
+  assert.match(implementation, /actual\.configurable == expected\.configurable/u);
+  assert.match(implementation, /expectedInstalledProperty/u);
   assert.match(implementation, /releasePropertyInfo\(/u);
   assert.match(implementation, /getException\(\)/u);
   assert.doesNotMatch(implementation, /getProperty\(it->destination/u);
@@ -320,17 +325,49 @@ test("descriptor traversal and ordinary reads preserve proxy exception semantics
     nativeControl,
     /getPrototypeOf\(\)[\s\S]*controlled getPrototypeOf failure[\s\S]*getProperty\(revoked/u,
   );
+  assert.match(nativeControl, /self prototype cycle was not detected/u);
+  assert.match(nativeControl, /multi-proxy prototype cycle was not detected/u);
+  for (const source of [v8, quickjs, jsc]) {
+    assert.match(source, /property prototype traversal detected a cycle/u);
+  }
 });
 
 test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () => {
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const jsc = read("src/js/jsc_engine.mm");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
 
   assert.match(v8, /void releasePropertyInfo\([\s\S]*frameHandles_\.erase/u);
   assert.match(quickjs, /void releasePropertyInfo\([\s\S]*JS_FreeValue/u);
   assert.match(jsc, /info\.value\s*=\s*\{\(void\*\)value, context_\};[\s\S]*JSValueProtect/u);
   assert.match(jsc, /void releasePropertyInfo\([\s\S]*JSValueUnprotect/u);
+  assert.match(jsc, /reflectSet_[\s\S]*JSValueProtect/u);
+  assert.match(jsc, /replaceLastException\([\s\S]*JSValueProtect/u);
+  assert.match(jsc, /getException\(\)[\s\S]*JSValueUnprotect/u);
+  assert.match(jsc, /~JSCEngine\(\)[\s\S]*clearLastException/u);
+  assert.doesNotMatch(
+    blockBetween(jsc, "bool setProperty(JSValueHandle obj", "JSValueHandle getProperty"),
+    /JSObjectSetProperty/u,
+  );
+  assert.match(
+    nativeControl,
+    /setProperty\(revoked[\s\S]*engine->gc\(\);[\s\S]*engine->getException\(\)/u,
+  );
+});
+
+test("QuickJS teardown discards jobs that capture runtime-owned binding state", () => {
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+  const destructor = blockBetween(
+    quickjs,
+    "~QuickJSEngine() override",
+    "EngineType getType() const override",
+  );
+
+  assert.doesNotMatch(destructor, /JS_ExecutePendingJob/u);
+  assert.match(nativeControl, /Promise\.resolve\(\)\.then\(\(\) => value\(\)\)/u);
+  assert.match(nativeControl, /queued QuickJS callback executed during runtime teardown/u);
 });
 
 test("dynamic canvas getContext captures its native id instead of the mutable row", () => {

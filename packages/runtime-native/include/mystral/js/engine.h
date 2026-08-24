@@ -40,6 +40,8 @@ struct JSPropertyInfo {
     JSPropertyKind kind = JSPropertyKind::Missing;
     bool own = false;
     bool writable = false;
+    bool enumerable = false;
+    bool configurable = false;
     JSValueHandle value;
 };
 

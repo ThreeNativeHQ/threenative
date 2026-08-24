@@ -49,8 +49,10 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
+            clearLastException();
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
             if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
+            if (reflectSet_) JSValueUnprotect(context_, reflectSet_);
             if (reflectGetPrototypeOf_) JSValueUnprotect(context_, reflectGetPrototypeOf_);
             JSGlobalContextRelease(context_);
         }
@@ -82,8 +84,7 @@ public:
         if (sourceURL) JSStringRelease(sourceURL);
 
         if (exception) {
-            lastException_ = exception;
-            reportException(exception);
+            recordException(exception);
             return {nullptr, context_};
         }
 
@@ -110,12 +111,9 @@ public:
     bool setGlobalProperty(const char* name, JSValueHandle value) override {
         JSObjectRef global = JSContextGetGlobalObject(context_);
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-
-        JSValueRef exception = nullptr;
-        JSObjectSetProperty(context_, global, nameStr, (JSValueRef)value.ptr, 0, &exception);
-
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        return exception == nullptr;
+        return setPropertyWithReflect(global, propertyName, (JSValueRef)value.ptr);
     }
 
     JSValueHandle getGlobalProperty(const char* name) override {
@@ -126,6 +124,10 @@ public:
         JSValueRef result = JSObjectGetProperty(context_, global, nameStr, &exception);
 
         JSStringRelease(nameStr);
+        if (exception != nullptr) {
+            recordException(exception);
+            result = JSValueMakeUndefined(context_);
+        }
         return {(void*)result, context_};
     }
 
@@ -438,14 +440,10 @@ public:
 
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-        JSValueRef exception = nullptr;
-        JSObjectSetProperty(context_, (JSObjectRef)obj.ptr, nameStr, (JSValueRef)value.ptr, 0, &exception);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        if (exception != nullptr) {
-            recordException(exception);
-            return false;
-        }
-        return true;
+        return setPropertyWithReflect(
+            (JSObjectRef)obj.ptr, propertyName, (JSValueRef)value.ptr);
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -469,19 +467,39 @@ public:
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
         JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
+        JSValueProtect(context_, propertyName);
         JSObjectRef current = (JSObjectRef)obj.ptr;
         bool own = true;
+        std::vector<JSObjectRef> visited;
+        const auto releaseTraversal = [&]() {
+            for (const auto& value : visited) JSValueUnprotect(context_, value);
+            visited.clear();
+            JSValueUnprotect(context_, propertyName);
+        };
 
         while (current) {
+            for (const auto& seen : visited) {
+                if (JSValueIsStrictEqual(context_, current, seen)) {
+                    releaseTraversal();
+                    throwException(
+                        "JavaScript property prototype traversal detected a cycle");
+                    return false;
+                }
+            }
+            JSValueProtect(context_, current);
+            visited.push_back(current);
+
             JSValueRef args[] = {(JSValueRef)current, propertyName};
             JSValueRef exception = nullptr;
             JSValueRef descriptor = JSObjectCallAsFunction(
                 context_, getOwnPropertyDescriptor_, nullptr, 2, args, &exception);
             if (exception != nullptr) {
                 recordException(exception);
+                releaseTraversal();
                 return false;
             }
             if (!JSValueIsUndefined(context_, descriptor)) {
+                JSValueProtect(context_, descriptor);
                 JSStringRef valueName = JSStringCreateWithUTF8CString("value");
                 JSValueRef valueNameValue = JSValueMakeString(context_, valueName);
                 JSStringRelease(valueName);
@@ -492,23 +510,34 @@ public:
                     valueDescriptorArgs, &valueDescriptorException);
                 if (valueDescriptorException != nullptr) {
                     recordException(valueDescriptorException);
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
                     return false;
                 }
+                const bool hasValue = !JSValueIsUndefined(context_, valueDescriptor);
 
                 info.own = own;
-                if (JSValueIsUndefined(context_, valueDescriptor)) {
+                if (!getBooleanProperty(
+                        (JSObjectRef)descriptor, "enumerable", info.enumerable) ||
+                    !getBooleanProperty(
+                        (JSObjectRef)descriptor, "configurable", info.configurable)) {
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return false;
+                }
+                if (!hasValue) {
                     info.kind = JSPropertyKind::Accessor;
                     info.writable = false;
                     info.value = {};
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
                     return true;
                 }
 
-                JSStringRef writableName = JSStringCreateWithUTF8CString("writable");
-                JSValueRef writable = JSObjectGetProperty(
-                    context_, (JSObjectRef)descriptor, writableName, &exception);
-                JSStringRelease(writableName);
-                if (exception != nullptr) {
-                    recordException(exception);
+                if (!getBooleanProperty(
+                        (JSObjectRef)descriptor, "writable", info.writable)) {
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
                     return false;
                 }
                 JSStringRef valuePropertyName = JSStringCreateWithUTF8CString("value");
@@ -517,16 +546,20 @@ public:
                 JSStringRelease(valuePropertyName);
                 if (exception != nullptr) {
                     recordException(exception);
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
                     return false;
                 }
                 info.kind = JSPropertyKind::Data;
-                info.writable = JSValueToBoolean(context_, writable);
                 info.value = {(void*)value, context_};
                 JSValueProtect(context_, value);
+                JSValueUnprotect(context_, descriptor);
+                releaseTraversal();
                 return true;
             }
 
             if (!reflectGetPrototypeOf_) {
+                releaseTraversal();
                 throwException("JavaScriptCore Reflect.getPrototypeOf intrinsic is unavailable");
                 return false;
             }
@@ -535,6 +568,7 @@ public:
                 context_, reflectGetPrototypeOf_, nullptr, 1, prototypeArgs, &exception);
             if (exception != nullptr) {
                 recordException(exception);
+                releaseTraversal();
                 return false;
             }
             if (!prototype || !JSValueIsObject(context_, prototype)) break;
@@ -543,6 +577,7 @@ public:
         }
 
         info = {};
+        releaseTraversal();
         return true;
     }
 
@@ -585,9 +620,10 @@ public:
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
-        JSValueRef exception = nullptr;
-        JSObjectSetPropertyAtIndex(context_, (JSObjectRef)arr.ptr, index, (JSValueRef)value.ptr, &exception);
-        return exception == nullptr;
+        return setPropertyWithReflect(
+            (JSObjectRef)arr.ptr,
+            JSValueMakeNumber(context_, static_cast<double>(index)),
+            (JSValueRef)value.ptr);
     }
 
     JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {
@@ -614,7 +650,8 @@ public:
         );
 
         if (exception) {
-            lastException_ = exception;
+            recordException(exception);
+            result = JSValueMakeUndefined(context_);
         }
 
         return {(void*)result, context_};
@@ -647,8 +684,10 @@ public:
     std::string getException() override {
         if (!lastException_) return "";
 
-        std::string result = toString({(void*)lastException_, context_});
+        JSValueRef exception = lastException_;
         lastException_ = nullptr;
+        std::string result = toString({(void*)exception, context_});
+        JSValueUnprotect(context_, exception);
         return result;
     }
 
@@ -656,6 +695,7 @@ public:
         JSStringRef msgStr = JSStringCreateWithUTF8CString(message);
         JSValueRef msgVal = JSValueMakeString(context_, msgStr);
         JSStringRelease(msgStr);
+        JSValueProtect(context_, msgVal);
 
         // Create Error object
         JSValueRef args[] = {msgVal};
@@ -666,7 +706,8 @@ public:
 
         JSValueRef exception = nullptr;
         JSObjectRef error = JSObjectCallAsConstructor(context_, errorConstructor, 1, args, &exception);
-        lastException_ = error ? error : msgVal;
+        replaceLastException(exception ? exception : (error ? error : msgVal));
+        JSValueUnprotect(context_, msgVal);
     }
 
     // ========================================================================
@@ -722,6 +763,14 @@ private:
             reflectHas_ = (JSObjectRef)hasValue;
             JSValueProtect(context_, reflectHas_);
         }
+        JSStringRef setName = JSStringCreateWithUTF8CString("set");
+        JSValueRef setValue = JSObjectGetProperty(
+            context_, (JSObjectRef)reflectValue, setName, nullptr);
+        JSStringRelease(setName);
+        if (setValue && JSValueIsObject(context_, setValue)) {
+            reflectSet_ = (JSObjectRef)setValue;
+            JSValueProtect(context_, reflectSet_);
+        }
         JSStringRef getPrototypeOfName = JSStringCreateWithUTF8CString("getPrototypeOf");
         JSValueRef getPrototypeOfValue = JSObjectGetProperty(
             context_, (JSObjectRef)reflectValue, getPrototypeOfName, nullptr);
@@ -732,8 +781,53 @@ private:
         }
     }
 
-    void recordException(JSValueRef exception) {
+    bool setPropertyWithReflect(
+        JSObjectRef object,
+        JSValueRef property,
+        JSValueRef value) {
+        if (!reflectSet_) {
+            throwException("JavaScriptCore Reflect.set intrinsic is unavailable");
+            return false;
+        }
+        JSValueRef args[] = {object, property, value};
+        JSValueRef exception = nullptr;
+        JSValueRef result = JSObjectCallAsFunction(
+            context_, reflectSet_, nullptr, 3, args, &exception);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return JSValueToBoolean(context_, result);
+    }
+
+    bool getBooleanProperty(JSObjectRef object, const char* name, bool& result) {
+        JSStringRef propertyName = JSStringCreateWithUTF8CString(name);
+        JSValueRef exception = nullptr;
+        JSValueRef value = JSObjectGetProperty(
+            context_, object, propertyName, &exception);
+        JSStringRelease(propertyName);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        result = JSValueToBoolean(context_, value);
+        return true;
+    }
+
+    void clearLastException() {
+        if (!lastException_) return;
+        JSValueUnprotect(context_, lastException_);
+        lastException_ = nullptr;
+    }
+
+    void replaceLastException(JSValueRef exception) {
+        if (exception) JSValueProtect(context_, exception);
+        clearLastException();
         lastException_ = exception;
+    }
+
+    void recordException(JSValueRef exception) {
+        replaceLastException(exception);
         reportException(exception);
     }
 
@@ -820,6 +914,7 @@ private:
     JSGlobalContextRef context_ = nullptr;
     JSObjectRef getOwnPropertyDescriptor_ = nullptr;
     JSObjectRef reflectHas_ = nullptr;
+    JSObjectRef reflectSet_ = nullptr;
     JSObjectRef reflectGetPrototypeOf_ = nullptr;
     JSValueRef lastException_ = nullptr;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;

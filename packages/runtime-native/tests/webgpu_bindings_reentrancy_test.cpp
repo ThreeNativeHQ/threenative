@@ -9,12 +9,24 @@ namespace {
 
 mystral::webgpu::BindingDestination atomicSecondDestination;
 bool atomicProbePassed = false;
+int teardownProbeCalls = 0;
 
 mystral::js::JSValueHandle tableProbe(
     mystral::webgpu::BindingsState* state,
     mystral::webgpu::BindingDestination,
     const std::vector<mystral::js::JSValueHandle>&) {
     return state->engine->newUndefined();
+}
+
+mystral::js::JSValueHandle teardownProbe(
+    mystral::webgpu::BindingsState*,
+    mystral::webgpu::BindingDestination,
+    const std::vector<mystral::js::JSValueHandle>&) {
+    // installBindingTable's dispatch closure still captures the BindingsState. Avoid dereferencing
+    // it here so the regression reports a deterministic call count instead of relying on a UAF
+    // crash after Runtime has deleted that state.
+    ++teardownProbeCalls;
+    return {};
 }
 
 mystral::js::JSValueHandle atomicTableProbe(
@@ -186,6 +198,31 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
                 return true;
             },
         });
+        globalThis.__tnFalseSetTarget = {};
+        globalThis.__tnFalseSetProxy = new Proxy(__tnFalseSetTarget, {
+            set(target, property, value) {
+                Reflect.set(target, property, value);
+                return false;
+            },
+        });
+        globalThis.__tnAttributeTarget = {};
+        Object.defineProperty(__tnAttributeTarget, "attributes", {
+            configurable: true,
+            enumerable: false,
+            value: "attribute-original",
+            writable: true,
+        });
+        globalThis.__tnAttributeProxy = new Proxy(__tnAttributeTarget, {
+            set(target, property, value) {
+                Object.defineProperty(target, property, {
+                    configurable: false,
+                    enumerable: true,
+                    value,
+                    writable: true,
+                });
+                return true;
+            },
+        });
 
         globalThis.__tnPartialWriteTarget = {};
         globalThis.__tnPartialWriteProxy = new Proxy(__tnPartialWriteTarget, {
@@ -271,6 +308,40 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
                 throw new Error("controlled getPrototypeOf failure");
             },
         });
+        globalThis.__tnSelfPrototypeTrapCalls = 0;
+        let selfPrototypeCycle;
+        selfPrototypeCycle = new Proxy({}, {
+            getPrototypeOf() {
+                __tnSelfPrototypeTrapCalls += 1;
+                if (__tnSelfPrototypeTrapCalls > 64) {
+                    throw new Error("controlled self traversal exhaustion");
+                }
+                return selfPrototypeCycle;
+            },
+        });
+        globalThis.__tnSelfPrototypeCycle = selfPrototypeCycle;
+        globalThis.__tnMultiPrototypeTrapCalls = 0;
+        let firstPrototypeCycle;
+        let secondPrototypeCycle;
+        firstPrototypeCycle = new Proxy({}, {
+            getPrototypeOf() {
+                __tnMultiPrototypeTrapCalls += 1;
+                if (__tnMultiPrototypeTrapCalls > 64) {
+                    throw new Error("controlled multi traversal exhaustion");
+                }
+                return secondPrototypeCycle;
+            },
+        });
+        secondPrototypeCycle = new Proxy({}, {
+            getPrototypeOf() {
+                __tnMultiPrototypeTrapCalls += 1;
+                if (__tnMultiPrototypeTrapCalls > 64) {
+                    throw new Error("controlled multi traversal exhaustion");
+                }
+                return firstPrototypeCycle;
+            },
+        });
+        globalThis.__tnMultiPrototypeCycle = firstPrototypeCycle;
         globalThis.__tnAccessorEarlier = {};
         globalThis.__tnReadonlyEarlier = {};
     })())JS", "webgpu-binding-property-controls-setup.js")) {
@@ -280,6 +351,8 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
     const auto inheritedTarget = engine->getGlobalProperty("__tnInheritedRollbackTarget");
     const auto rollbackProxy = engine->getGlobalProperty("__tnRollbackProxy");
     const auto silentProxy = engine->getGlobalProperty("__tnSilentProxy");
+    const auto falseSetProxy = engine->getGlobalProperty("__tnFalseSetProxy");
+    const auto attributeProxy = engine->getGlobalProperty("__tnAttributeProxy");
     const auto partialWriteProxy = engine->getGlobalProperty("__tnPartialWriteProxy");
     const auto dishonestDeleteProxy = engine->getGlobalProperty("__tnDishonestDeleteProxy");
     const auto dishonestRestoreProxy = engine->getGlobalProperty("__tnDishonestRestoreProxy");
@@ -289,6 +362,8 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         engine->getGlobalProperty("__tnInheritedReadonlyTarget");
     const auto throwingPrototypeTarget =
         engine->getGlobalProperty("__tnThrowingPrototypeTarget");
+    const auto selfPrototypeCycle = engine->getGlobalProperty("__tnSelfPrototypeCycle");
+    const auto multiPrototypeCycle = engine->getGlobalProperty("__tnMultiPrototypeCycle");
     const auto accessorEarlier = engine->getGlobalProperty("__tnAccessorEarlier");
     const auto readonlyEarlier = engine->getGlobalProperty("__tnReadonlyEarlier");
 
@@ -327,6 +402,43 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
             "throw new Error('silent proxy inherited lookup changed');",
             "webgpu-binding-silent-setter-check.js")) {
         return failed("silent proxy rollback state");
+    }
+
+    const auto falseSetTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "falseWrite", 0, nullptr, &tableProbe, falseSetProxy},
+    });
+    if (!falseSetTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, falseSetTable) ||
+        !engine->hasException()) {
+        return failed("false-returning mutating proxy setter was accepted");
+    }
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (Object.prototype.hasOwnProperty.call(__tnFalseSetTarget, 'falseWrite')) "
+            "throw new Error('false-returning proxy mutation survived rollback');",
+            "webgpu-binding-false-set-check.js")) {
+        return failed("false-returning proxy rollback state");
+    }
+
+    const auto attributeTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "attributes", 0, nullptr, &tableProbe, attributeProxy},
+    });
+    if (!attributeTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, attributeTable) ||
+        !engine->hasException()) {
+        return failed("attribute-corrupting proxy setter was accepted");
+    }
+    const auto attributeMessage = engine->getException();
+    if (attributeMessage.find("rollback") == std::string::npos ||
+        !runtime.evalScript(R"JS((() => {
+            const descriptor = Object.getOwnPropertyDescriptor(
+                __tnAttributeTarget, "attributes");
+            if (descriptor.value !== "attribute-original" || descriptor.enumerable !== true ||
+                descriptor.configurable !== false || descriptor.writable !== true) {
+                throw new Error("attribute-corruption control did not retain the expected mutation");
+            }
+        })())JS", "webgpu-binding-attribute-corruption-check.js")) {
+        return failed("attribute-corrupting rollback failure was not reported");
     }
 
     const auto partialWriteTable = mystral::webgpu::bindingTable({
@@ -454,6 +566,32 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         return failed("throwing getPrototypeOf exception was not retained");
     }
 
+    const auto expectPrototypeCycleFailure = [&](const char* label,
+                                                 mystral::js::JSValueHandle destination) {
+        const auto table = mystral::webgpu::bindingTable({
+            {"TestSurface", "missing", 0, nullptr, &tableProbe, destination},
+        });
+        if (!table.valid || mystral::webgpu::installBindingTable(engine, state, table) ||
+            !engine->hasException()) {
+            return failed(label);
+        }
+        const auto message = engine->getException();
+        if (message.find("detected a cycle") == std::string::npos) {
+            return failed(label);
+        }
+        return true;
+    };
+    if (!expectPrototypeCycleFailure(
+            "self prototype cycle was not detected", selfPrototypeCycle) ||
+        !expectPrototypeCycleFailure(
+            "multi-proxy prototype cycle was not detected", multiPrototypeCycle) ||
+        !runtime.evalScript(
+            "if (__tnSelfPrototypeTrapCalls > 2 || __tnMultiPrototypeTrapCalls > 3) "
+            "throw new Error('prototype cycle traversal was not bounded');",
+            "webgpu-binding-prototype-cycle-check.js")) {
+        return failed("prototype cycle controls");
+    }
+
     if (!runtime.evalScript(
             "const __tnRevoked = Proxy.revocable({}, {}); "
             "globalThis.__tnRevokedProperty = __tnRevoked.proxy; "
@@ -483,7 +621,35 @@ bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
         !engine->hasException()) {
         return failed("setProperty did not latch a revoked-proxy exception");
     }
+    engine->gc();
+    engine->gc();
     return !engine->getException().empty();
+}
+
+bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
+
+    if (!runtime.evalScript(R"JS((() => {
+        globalThis.__tnTeardownQueueProxy = new Proxy({}, {
+            set(target, property, value) {
+                Reflect.set(target, property, value);
+                Promise.resolve().then(() => value());
+                return true;
+            },
+        });
+    })())JS", "webgpu-binding-teardown-queue-setup.js")) {
+        return false;
+    }
+    const auto destination = engine->getGlobalProperty("__tnTeardownQueueProxy");
+    const auto table = mystral::webgpu::bindingTable({
+        {"TestSurface", "queuedAtTeardown", 0, nullptr, &teardownProbe, destination},
+    });
+    teardownProbeCalls = 0;
+    return table.valid && mystral::webgpu::installBindingTable(engine, state, table) &&
+           teardownProbeCalls == 0;
 }
 
 bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
@@ -612,7 +778,13 @@ int main() {
         return 1;
     }
 
+    if (!queueQuickJSTeardownProbe(*first)) return 1;
+
     first.reset();
+    if (teardownProbeCalls != 0) {
+        std::cerr << "queued QuickJS callback executed during runtime teardown" << std::endl;
+        return 1;
+    }
     if (!second->evalScript(
             "if (__tnReentrancyMarker !== 'second') throw new Error('second engine lost state'); "
             "__tnEngineLocalCanvasContext.fillRect(0, 0, 1, 1); "
