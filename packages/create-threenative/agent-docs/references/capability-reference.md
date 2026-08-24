@@ -140,8 +140,8 @@ const game = defineGame({ scenes: { Play } });
 export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();

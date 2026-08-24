@@ -20,6 +20,13 @@ namespace rt {
 // Global backend instance
 static std::unique_ptr<IRTBackend> g_rtBackend = nullptr;
 
+// Native backends currently stop at a CPU-visible readback buffer. Until that buffer can be
+// copied into the WebGPU texture supplied by the game, reporting hardware support would let a
+// caller build on a result that cannot be displayed.
+static constexpr bool kNativeRayTracingResultInteropAvailable = false;
+static constexpr const char* kNativeRayTracingUnavailableMessage =
+    "TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRays is unavailable until buffer-to-texture copy-out interop exists.";
+
 // Handle tracking for JS object cleanup
 static uint32_t g_nextGeometryId = 1;
 static uint32_t g_nextBLASId = 1;
@@ -133,6 +140,9 @@ static uint32_t getTLASId(js::Engine* engine, js::JSValueHandle obj) {
 // ============================================================================
 
 static js::JSValueHandle js_isSupported(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    if (!kNativeRayTracingResultInteropAvailable) {
+        return engine->newBoolean(false);
+    }
     if (!g_rtBackend) {
         return engine->newBoolean(false);
     }
@@ -404,6 +414,11 @@ static js::JSValueHandle js_updateTLAS(void* ctx, const std::vector<js::JSValueH
 }
 
 static js::JSValueHandle js_traceRays(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    if (!kNativeRayTracingResultInteropAvailable) {
+        engine->throwException(kNativeRayTracingUnavailableMessage);
+        return engine->newUndefined();
+    }
+
     if (!g_rtBackend || !g_rtBackend->isSupported()) {
         std::cerr << "[MystralRT] traceRays: Hardware ray tracing not available" << std::endl;
         return engine->newUndefined();

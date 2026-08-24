@@ -149,7 +149,17 @@ export type {
  * @constraint only use the returned platform facts; native globals are host-owned
  * @example if (isMobile()) showTouchControls();
  */
-export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";
+export { isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";
+/**
+ * Read the host platform without reaching for browser globals.
+ * @situation branch a portable game on web or native
+ * @situation choose touch controls for a mobile device
+ * @situation can I raytrace on native
+ * @constraint only use the returned platform facts; native globals are host-owned
+ * @constraint ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @example if (isMobile()) showTouchControls();
+ */
+export { getPlatform } from "./platform.js";
 export type {
   IPlatformInfo,
   PlatformFormFactor,

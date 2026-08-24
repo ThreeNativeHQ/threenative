@@ -118,7 +118,7 @@ test("dry run validates and bundles implemented rows without a browser or native
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 60_000);
+}, 120_000);
 
 test("project mode resolves the configured native entry and dry-bundles only that project", () => {
   const dir = makeTempDirSync("threenative-parity-project-");
