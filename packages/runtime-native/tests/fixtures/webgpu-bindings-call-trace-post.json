@@ -8,15 +8,6 @@
     "result": "object"
   },
   {
-    "surface": "HTMLElement",
-    "name": "addEventListener",
-    "args": [
-      "string",
-      "function"
-    ],
-    "error": "parent.addEventListener is not a function"
-  },
-  {
     "surface": "Document",
     "name": "querySelector",
     "args": [
@@ -40,6 +31,63 @@
       "function"
     ],
     "result": "undefined"
+  },
+  {
+    "surface": "Document",
+    "name": "createElement",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "Document",
+    "name": "createElement",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLElement",
+    "name": "addEventListener",
+    "args": [
+      "string",
+      "function"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
   },
   {
     "surface": "GPU",

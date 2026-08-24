@@ -220,7 +220,7 @@ function assertRowOwnedDestinations(header, implementation) {
   assert.match(implementation, /destinations\.reserve\(/u);
   assert.match(
     implementation,
-    /if \(engine->isNull\(destination\) \|\| engine->isUndefined\(destination\)\)/u,
+    /if \(engine->isNull\(destination\) \|\|[\s\S]*?!engine->isObject\(destination\)/u,
   );
   assert.match(implementation, /engine->setProperty\(\s*destination,/u);
   assert.doesNotMatch(implementation, /continue;/u);
@@ -262,6 +262,57 @@ test("binding-table installation validates every row before the first property w
   assert.throws(
     () => assert.doesNotMatch(partialInstallMutation.slice(0, writeLoop), /engine->setProperty\(/u),
     /engine->setProperty/u,
+  );
+});
+
+test("binding-table installation is object-only and rolls back failed writes", () => {
+  const engine = read("include/mystral/js/engine.h");
+  const implementation = read("src/webgpu/registration_table.cpp");
+
+  assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
+  assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
+  assert.match(implementation, /!engine->isObject\(destination\)/u);
+  assert.match(implementation, /const bool propertyWritten[\s\S]*?engine->setProperty\(/u);
+  assert.match(implementation, /deleteProperty\(/u);
+  assert.match(implementation, /getException\(\)/u);
+
+  for (const implementationPath of [
+    "src/js/v8_engine.cpp",
+    "src/js/quickjs_engine.cpp",
+    "src/js/jsc_engine.mm",
+  ]) {
+    const source = read(implementationPath);
+    assert.match(source, /bool hasProperty\(JSValueHandle obj, const char\* name\) override/u);
+    assert.match(source, /bool deleteProperty\(JSValueHandle obj, const char\* name\) override/u);
+  }
+
+});
+
+test("dynamic canvas getContext captures its native id instead of the mutable row", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const reentrancy = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(bindings, /makeOffscreenCanvasGetContextHandler\(int canvasId\)/u);
+  assert.match(bindings, /makeOffscreenCanvasGetContextHandler\(canvasId\)/u);
+  const handler = blockBetween(
+    bindings,
+    "static js::JSValueHandle getOffscreenCanvasContext(",
+    "static BindingHandler makeOffscreenCanvasGetContextHandler",
+  );
+  assert.doesNotMatch(handler, /bindingDestination/u);
+  assert.doesNotMatch(handler, /getProperty\(bindingDestination/u);
+  assert.match(
+    reentrancy,
+    /document\.createElement\("canvas"\)[\s\S]*first\.id\s*=\s*second\.id[\s\S]*getContext\("2d"\)/u,
+  );
+
+  const withoutDynamicCanvasRow = bindings.replace(
+    /makeOffscreenCanvasGetContextHandler\(canvasId\)/u,
+    "&tnWebgpuHandler15",
+  );
+  assert.throws(
+    () => assert.match(withoutDynamicCanvasRow, /makeOffscreenCanvasGetContextHandler\(canvasId\)/u),
+    /makeOffscreenCanvasGetContextHandler/u,
   );
 });
 

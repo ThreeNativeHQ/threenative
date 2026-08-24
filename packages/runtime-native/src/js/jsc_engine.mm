@@ -434,8 +434,16 @@ public:
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
         JSValueRef exception = nullptr;
         JSObjectSetProperty(context_, (JSObjectRef)obj.ptr, nameStr, (JSValueRef)value.ptr, 0, &exception);
+        if (exception != nullptr) {
+            JSStringRelease(nameStr);
+            return false;
+        }
+        JSValueRef storedException = nullptr;
+        JSValueRef stored = JSObjectGetProperty(context_, (JSObjectRef)obj.ptr, nameStr, &storedException);
         JSStringRelease(nameStr);
-        return exception == nullptr;
+        return storedException == nullptr &&
+               stored != nullptr &&
+               JSValueIsStrictEqual(context_, stored, (JSValueRef)value.ptr);
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -444,6 +452,21 @@ public:
         JSValueRef result = JSObjectGetProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
         JSStringRelease(nameStr);
         return {(void*)result, context_};
+    }
+
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        const bool result = JSObjectHasProperty(context_, (JSObjectRef)obj.ptr, nameStr);
+        JSStringRelease(nameStr);
+        return result;
+    }
+
+    bool deleteProperty(JSValueHandle obj, const char* name) override {
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSValueRef exception = nullptr;
+        const bool result = JSObjectDeleteProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
+        JSStringRelease(nameStr);
+        return result && exception == nullptr;
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {

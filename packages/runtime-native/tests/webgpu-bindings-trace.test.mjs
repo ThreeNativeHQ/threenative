@@ -46,6 +46,7 @@ function assertRequiredTraceFamilies(trace) {
   const requiredFamilies = {
     dom: [
       "Document.querySelector",
+      "Document.createElement",
       "HTMLElement.appendChild",
       "HTMLElement.addEventListener",
       "HTMLCanvasElement.getContext",
@@ -90,6 +91,29 @@ function assertRequiredTraceFamilies(trace) {
       assert.ok(calls.has(key), `trace must include ${family}.${key}`);
     }
   }
+
+  for (const key of ["Document.createElement", "HTMLElement.addEventListener"]) {
+    assert.ok(
+      trace.some((entry) => `${entry.surface}.${entry.name}` === key && Object.hasOwn(entry, "result")),
+      `trace must include a successful ${key} call`,
+    );
+  }
+}
+
+function assertDynamicCanvasTraceControls(trace) {
+  const creates = trace.filter(
+    (entry) => entry.surface === "Document" && entry.name === "createElement",
+  );
+  assert.ok(creates.length >= 2, "trace must execute two dynamic canvas creations");
+
+  const contexts = trace.filter(
+    (entry) => entry.surface === "HTMLCanvasElement" && entry.name === "getContext",
+  );
+  assert.ok(contexts.length >= 5, "trace must execute the dynamic context identity controls");
+  assert.ok(
+    contexts.every((entry) => Object.hasOwn(entry, "result")),
+    "dynamic canvas context controls must not be missing-method errors",
+  );
 }
 
 test("pre-refactor and post-refactor JS call traces are identical", () => {
@@ -100,12 +124,19 @@ test("pre-refactor and post-refactor JS call traces are identical", () => {
   assert.deepEqual(post, pre);
 
   assertRequiredTraceFamilies(pre);
+  assertDynamicCanvasTraceControls(pre);
   const withoutPipelineRow = pre.filter(
     (entry) => entry.surface !== "GPURenderPipeline" || entry.name !== "getBindGroupLayout",
   );
   assert.throws(
     () => assertRequiredTraceFamilies(withoutPipelineRow),
     /GPURenderPipeline\.getBindGroupLayout/u,
+  );
+  assert.throws(
+    () => assertDynamicCanvasTraceControls(pre.filter(
+      (entry) => !(entry.surface === "Document" && entry.name === "createElement"),
+    )),
+    /dynamic canvas creations/u,
   );
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /function record\(/u);
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /TN_WEBGPU_CALL_TRACE:/u);

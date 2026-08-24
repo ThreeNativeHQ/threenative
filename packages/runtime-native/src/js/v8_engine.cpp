@@ -745,9 +745,20 @@ public:
         v8::Persistent<v8::Value>* valPersistent = (v8::Persistent<v8::Value>*)value.ptr;
 
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
-        return objLocal->Set(context,
-            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked(),
-            valPersistent->Get(isolate_)).FromMaybe(false);
+        v8::Local<v8::String> key =
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
+        const auto attributes = objLocal->GetRealNamedPropertyAttributes(context, key);
+        if (!attributes.IsNothing() && (attributes.FromJust() & v8::ReadOnly) != 0) {
+            throwException("Cannot assign to read-only JavaScript property");
+            return false;
+        }
+
+        const auto result = objLocal->Set(context, key, valPersistent->Get(isolate_));
+        if (result.IsNothing() || !result.FromJust()) return false;
+        const auto present = objLocal->Has(context, key);
+        if (present.IsNothing() || present.FromMaybe(false)) return true;
+        throwException("JavaScript property assignment did not create a property");
+        return false;
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -765,6 +776,32 @@ public:
         v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
+    }
+
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
+        v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+        return objLocal->Has(
+            context,
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked()).FromMaybe(false);
+    }
+
+    bool deleteProperty(JSValueHandle obj, const char* name) override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
+        v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+        return objLocal->Delete(
+            context,
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked()).FromMaybe(false);
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
@@ -942,6 +979,9 @@ public:
 
     void throwException(const char* message) override {
         v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
         isolate_->ThrowException(
             v8::String::NewFromUtf8(isolate_, message).ToLocalChecked());
         lastException_ = message;

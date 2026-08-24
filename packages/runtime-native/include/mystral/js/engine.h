@@ -213,6 +213,10 @@ public:
 
     virtual bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) = 0;
     virtual JSValueHandle getProperty(JSValueHandle obj, const char* name) = 0;
+    /** Check whether a property is present on an object or its prototype chain. */
+    virtual bool hasProperty(JSValueHandle obj, const char* name) = 0;
+    /** Delete a property, returning false for a non-configurable property or exception. */
+    virtual bool deleteProperty(JSValueHandle obj, const char* name) = 0;
     virtual bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) = 0;
     virtual JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) = 0;
 

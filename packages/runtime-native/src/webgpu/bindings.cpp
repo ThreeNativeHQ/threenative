@@ -4590,8 +4590,10 @@ static js::JSValueHandle tnWebgpuHandler16(BindingsState* state, BindingDestinat
                         return state->engine->newString("data:image/png;base64,");
 }
 
-static js::JSValueHandle tnWebgpuHandler15(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& contextArgs) {
-    const int canvasId = static_cast<int>(state->engine->toNumber(state->engine->getProperty(bindingDestination, "_offscreenCanvasId")));
+static js::JSValueHandle getOffscreenCanvasContext(
+    BindingsState* state,
+    int canvasId,
+    const std::vector<js::JSValueHandle>& contextArgs) {
                     if (contextArgs.empty()) {
                         return state->engine->newNull();
                     }
@@ -4654,6 +4656,13 @@ static js::JSValueHandle tnWebgpuHandler15(BindingsState* state, BindingDestinat
                     return state->engine->newNull();
 }
 
+static BindingHandler makeOffscreenCanvasGetContextHandler(int canvasId) {
+    return [canvasId](BindingsState* state, BindingDestination,
+                      const std::vector<js::JSValueHandle>& contextArgs) {
+        return getOffscreenCanvasContext(state, canvasId, contextArgs);
+    };
+}
+
 static js::JSValueHandle tnWebgpuHandler14(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     const auto mainCanvas = state->engine->getGlobalProperty("canvas");
     const auto element = bindingDestination;
@@ -4710,6 +4719,10 @@ static js::JSValueHandle tnWebgpuHandler06(BindingsState* state, BindingDestinat
 
 static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             auto element = state->engine->newObject();
+            // Registration rows retain this handle for callbacks after the creating frame. The
+            // JavaScript object is also returned to the caller, so this protection preserves the
+            // existing ownership semantics without using a later mutable row property as state.
+            state->engine->protect(element);
             // Get tag name if provided
             std::string tagName = "";
             if (!args.empty()) {
@@ -4777,7 +4790,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 // This fixes the bug where all canvases shared the same context
                 installBindingTable(state->engine, state, bindingTable({
                     {"HTMLCanvasElement", "getContext", 0, nullptr,
-                    &tnWebgpuHandler15
+                    makeOffscreenCanvasGetContextHandler(canvasId)
                 , element}}));
                 if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
                 // toDataURL for compatibility (returns empty data URI)

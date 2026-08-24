@@ -93,6 +93,96 @@ bool checkRowOwnedAndAtomicInstall(mystral::Runtime& runtime) {
     return atomicProbePassed;
 }
 
+bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const auto failed = [](const char* message) {
+        std::cerr << "atomic binding proof failed: " << message << std::endl;
+        return false;
+    };
+    struct FrameTrackingGuard {
+        mystral::js::Engine* engine;
+        ~FrameTrackingGuard() { engine->resumeFrameTracking(); }
+    } frameTrackingGuard{engine};
+    engine->suspendFrameTracking();
+
+    if (!runtime.evalScript(
+            "globalThis.__tnAtomicObject = {}; "
+            "globalThis.__tnAtomicBlocked = {}; "
+            "Object.defineProperty(__tnAtomicBlocked, 'blocked', "
+            "{value: 'original', writable: false, configurable: false});",
+            "webgpu-binding-atomic-rollback-setup.js")) {
+        return failed("setup");
+    }
+
+    const auto objectDestination = engine->getGlobalProperty("__tnAtomicObject");
+    const auto blockedDestination = engine->getGlobalProperty("__tnAtomicBlocked");
+    const auto nonObjectDestination = engine->newNumber(7);
+
+    if (!engine->setProperty(
+            objectDestination, "existing", engine->newString("before"))) {
+        return failed("initial property write");
+    }
+
+    const auto nonWritableTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "existing", 0, nullptr, &tableProbe, objectDestination},
+        {"TestSurface", "newRow", 0, nullptr, &tableProbe, objectDestination},
+        {"TestSurface", "blocked", 0, nullptr, &tableProbe, blockedDestination},
+    });
+    if (!nonWritableTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, nonWritableTable) ||
+        !engine->hasException()) {
+        return failed("non-writable install did not fail");
+    }
+    engine->getException();
+    if (!engine->hasProperty(objectDestination, "existing") ||
+        engine->toString(engine->getProperty(objectDestination, "existing")) != "before" ||
+        engine->hasProperty(objectDestination, "newRow") ||
+        !engine->hasProperty(blockedDestination, "blocked") ||
+        engine->toString(engine->getProperty(blockedDestination, "blocked")) != "original" ||
+        engine->isFunction(engine->getProperty(blockedDestination, "blocked"))) {
+        return failed("non-writable rollback state");
+    }
+
+    const auto nonObjectTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "nonObjectEarlier", 0, nullptr, &tableProbe, objectDestination},
+        {"TestSurface", "nonObjectFailure", 0, nullptr, &tableProbe, nonObjectDestination},
+    });
+    if (!nonObjectTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, nonObjectTable) ||
+        !engine->hasException()) {
+        return failed("non-object install did not fail");
+    }
+    engine->getException();
+    return !engine->hasProperty(objectDestination, "nonObjectEarlier") &&
+           !engine->hasProperty(objectDestination, "nonObjectFailure");
+}
+
+bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
+    return runtime.evalScript(R"JS((() => {
+        const first = document.createElement("canvas");
+        const second = document.createElement("canvas");
+        first.id = "dynamic-first";
+        second.id = "dynamic-second";
+        const firstContext = first.getContext("2d");
+        const secondContext = second.getContext("2d");
+        if (!firstContext || !secondContext || firstContext === secondContext) {
+            throw new Error("dynamic canvases did not get distinct native contexts");
+        }
+
+        // Both the public DOM id and the exposed native-id diagnostic are mutable. The binding
+        // must retain the native id captured when each row was installed.
+        first.id = second.id;
+        first._offscreenCanvasId = second._offscreenCanvasId;
+        const firstAfterMutation = first.getContext("2d");
+        const secondAfterMutation = second.getContext("2d");
+        if (firstAfterMutation !== firstContext || secondAfterMutation !== secondContext ||
+            firstAfterMutation === secondAfterMutation) {
+            throw new Error("dynamic canvas getContext followed a mutable public id");
+        }
+    })())JS", "webgpu-binding-dynamic-canvas.js");
+}
+
 bool runProbe(mystral::Runtime& runtime, const char* marker) {
     const std::string script = std::string(R"JS((() => {
         const adapter = navigator.gpu.requestAdapter();
@@ -134,6 +224,8 @@ int main() {
     }
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
+    if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
+    if (!checkDynamicCanvasOwnership(*first)) return 1;
 
     if (!runProbe(*first, "first") || !runProbe(*second, "second") ||
         !first->evalScript(

@@ -610,8 +610,7 @@ public:
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSValue* val = (JSValue*)value.ptr;
-        JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val));
-        return true;
+        return JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val)) >= 0;
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -621,11 +620,26 @@ public:
         return {stored, context_};
     }
 
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        JSValue* objVal = (JSValue*)obj.ptr;
+        JSAtom atom = JS_NewAtom(context_, name);
+        const int result = JS_HasProperty(context_, *objVal, atom);
+        JS_FreeAtom(context_, atom);
+        return result > 0;
+    }
+
+    bool deleteProperty(JSValueHandle obj, const char* name) override {
+        JSValue* objVal = (JSValue*)obj.ptr;
+        JSAtom atom = JS_NewAtom(context_, name);
+        const int result = JS_DeleteProperty(context_, *objVal, atom, 0);
+        JS_FreeAtom(context_, atom);
+        return result > 0;
+    }
+
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
         JSValue* arrVal = (JSValue*)arr.ptr;
         JSValue* val = (JSValue*)value.ptr;
-        JS_SetPropertyUint32(context_, *arrVal, index, JS_DupValue(context_, *val));
-        return true;
+        return JS_SetPropertyUint32(context_, *arrVal, index, JS_DupValue(context_, *val)) >= 0;
     }
 
     JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {

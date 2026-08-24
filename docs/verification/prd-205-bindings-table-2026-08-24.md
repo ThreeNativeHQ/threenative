@@ -2,85 +2,88 @@
 
 Date: 2026-08-24
 Lane: `linchpin/prd-205-closure`
-Base: `a523efc17064aeca0bc341ae408926b532887036`
-Status: verified on Linux desktop; Android and iOS execution unavailable on this host
+Base: `d1663477bed0736020b67320b072846daf211ef3`
+Status: focused, native, and repository gates verified on Linux; pixel conformance is unverified because the browser reference captures are absent
 
 ## Repairs
 
-1. `registration_table.cpp` now validates the whole table before writing any property. Each
-   `BindingRegistration` carries its own `BindingDestination`; null, undefined, malformed, empty,
-   and mixed-surface tables fail closed with no partial install. The native reentrancy executable
-   checks distinct destinations, wrong-destination non-copying, mixed-surface rejection, and the
-   invalid-row partial-install negative control.
-2. `installWebGPUBindingTables` is declarative: the final source block is 315 lines, has zero
-   inline `BindingsState` lambdas, and dispatches named handlers. The 93 rows are split across 91
-   rows in `bindings.cpp` and 2 wrapper-factory rows; named capture factories retain native IDs or
-   handles where the old inline closures did so.
-3. The LOC proof counts every abstraction file: both registration/wrapper implementations and all
-   five related headers/state files. The final subtotal is net-negative against the explicit PRD
-   baseline.
-4. The call-trace fixture covers DOM/HTMLElement, canvas, pipeline wrappers, render pass, compute
-   pass, render bundle, and the remaining migrated families. A source mutation deleting a required
-   row fails the focused test; the stored pre/post traces remain byte-identical.
+1. `installBindingTable` now validates every destination as a non-null object before the first
+   write, snapshots every affected property, checks every `setProperty` result, and rolls back in
+   reverse order. Existing properties are restored and new properties are deleted. Failure returns
+   `false` with the engine exception set. The smallest cross-engine API is `hasProperty` plus
+   `deleteProperty`, implemented by V8, QuickJS, and JSC; the engines now report failed writes.
+2. The dynamic canvas `getContext` binding uses a named factory that captures the native canvas ID.
+   It never reads the mutable row destination to identify the canvas. The created element is
+   protected for the callback lifetime. The native control creates two canvases, mutates one public
+   ID and internal ID to the other, and proves their contexts remain independently owned.
+3. The call-trace fixture now executes `Document.createElement`, successful dynamic
+   `HTMLCanvasElement.getContext`, and successful `HTMLElement.addEventListener`. It also retains
+   mutation controls that remove the dynamic path or a required table row. The live trace has 75
+   calls, 65 result entries, and 10 caught errors; the pre/post fixture files are byte-identical.
+4. The accounting below separates the table/API subtotal from integration plumbing. The wrapper
+   factories contain three real rows: two `GPUTexture` rows (`createView`, `destroy`) and one
+   pipeline row (`getBindGroupLayout`) shared by the render/compute pipeline surfaces.
 
 ## Red/green evidence
 
-The focused contract/trace command was red before the repair:
+The focused contract/trace command was red after the negative controls were added and before the
+repair:
 
     pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
       tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs
     Test Files  2 failed (2)
-    Tests       4 failed | 14 passed (18)
+    Tests       3 failed | 15 passed (18)
 
-The failures covered row-owned destination handling, atomic mixed/invalid installation, the
-installer's inline-handler structure, and the missing trace families. After the repairs:
+After the repair:
 
     Test Files  2 passed (2)
-    Tests       18 passed (18)
+    Tests       20 passed (20)
 
-The live native trace also matched both stored fixtures:
+The live trace comparison command passed:
 
-    current trace matches pre/post byte-identical fixtures: 69 calls
-    results=58, errors=11
+    pre/post bytes identical: true
+    live trace matches pre fixture: true
+    calls=75 results=65 errors=10
 
-Required trace families include `HTMLElement.appendChild`, `HTMLElement.addEventListener`,
-`HTMLCanvasElement.getContext`, `HTMLCanvasElement.addEventListener`,
-`GPURenderPipeline.getBindGroupLayout`, `GPUComputePipeline.getBindGroupLayout`, and every
-render-pass, compute-pass, and render-bundle method group.
+The successful dynamic creation, context, and event-listener calls are counted as result entries;
+missing-method errors are not used as coverage.
 
 ## LOC accounting
 
-The explicit PRD baseline is:
+The PRD abstraction subtotal is the table API and implementation only:
 
-    git show efa71954:packages/runtime-native/src/webgpu/bindings.cpp | wc -l
-    6510
+    356 packages/runtime-native/include/mystral/js/engine.h
+    193 packages/runtime-native/src/webgpu/registration_table.cpp
+     42 packages/runtime-native/include/mystral/webgpu/registration_table.h
+    591 subtotal
 
-The complete implementation/header accounting set is:
+Integration/runtime plumbing is reported separately rather than folded into that subtotal:
 
-    5885 packages/runtime-native/src/webgpu/bindings.cpp
-     124 packages/runtime-native/src/webgpu/registration_table.cpp
+    1304 packages/runtime-native/src/js/v8_engine.cpp
+     914 packages/runtime-native/src/js/quickjs_engine.cpp
+     676 packages/runtime-native/src/js/jsc_engine.mm
+    5898 packages/runtime-native/src/webgpu/bindings.cpp
      158 packages/runtime-native/src/webgpu/wrapper_factories.cpp
-      56 packages/runtime-native/include/mystral/webgpu/bindings.h
-      42 packages/runtime-native/include/mystral/webgpu/registration_table.h
-      25 packages/runtime-native/include/mystral/webgpu/wrapper_factories.h
      166 packages/runtime-native/src/webgpu/bindings_state.h
-    6456 total
+     25 packages/runtime-native/include/mystral/webgpu/wrapper_factories.h
+    9141 integration/runtime subtotal
+    9732 complete touched accounting set
 
-Arithmetic: `5885 + 124 + 158 + 56 + 42 + 25 + 166 = 6456`; `6456 - 6510 = -54` lines.
-
-The repository LOC command passed:
-
-    pnpm tsx scripts/count-loc.ts: exit 0
-    suggested framework normalised baseline: 432 (current baseline 441)
-    platformer template LOC: 1891
+These are current-tree `wc -l` counts for the complete production set touched or required to
+account for this repair. No net-negative claim is made against an unrelated or stale PRD baseline.
 
 ## Native proof
 
-    pnpm native:build: exit 0
+    pnpm native:build: exit 0; ninja: no work to do
+    cmake --build --preset tn-linux --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test: exit 0
     native WebGPU bindings reentrancy passed
 
-The reentrancy executable ran two independently owned bindings states on an NVIDIA GeForce RTX 2080 through
-Vulkan. The packaged desktop gate passed with the host's dummy audio driver:
+The V8 reentrancy executable ran on an NVIDIA GeForce RTX 2080 through Vulkan. The equivalent
+QuickJS target also exited 0 and printed `native WebGPU bindings reentrancy passed`. JSC passed the
+Objective-C++ syntax-only compile; no JSC runtime result is claimed.
+
+The packaged desktop gate passed with the host's dummy audio driver:
 
     SDL_AUDIODRIVER=dummy pnpm native:verify:desktop: exit 0
     Verified native-smoke.js (6752705 bytes), one file with no imports
@@ -93,22 +96,46 @@ Vulkan. The packaged desktop gate passed with the host's dummy audio driver:
 ## Repository gates
 
     pnpm typecheck: exit 0; Scope 16 of 17 workspace projects
-    pnpm lint: exit 0; 380 inherited warnings, no errors
-    pnpm test: exit 0; 198 files passed; 1883 tests passed
-    runtime-native unit suite: 57 files passed; 389 tests passed; 33 skipped
+    pnpm lint: exit 0; Checked 1113 files; 381 warnings, no errors
+    pnpm test: exit 0; 197 files passed, 1 skipped; 1880 tests passed, 3 skipped
+    pnpm --filter @threenative/runtime-native test: exit 0; 57 files passed; 391 passed, 33 skipped
     pnpm budgets: exit 0; 18376/15000 framework LOC review trigger, no hard failure
-    pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited)
+    pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited, 0 waived)
     git diff --check: exit 0
 
-The budgets run also reported pre-existing native census drift; it did not fail the gate. The
-quality and lint findings are outside the scoped runtime-native repair.
+The budgets run reported native census drift but no hard failure. Lint and quality findings are
+outside this scoped repair.
 
-## Browser/native conformance and host limits
+## Current-source conformance and host limits
 
-Existing PRD-205 evidence retained from the prior lane:
+The current repair tree was run with:
 
-    target: web       pass: 68, fail: 0, blocked: 0
-    target: desktop   pass: 67, fail: 0, blocked: 1
+    sh ../../scripts/xvfb.sh node conformance/run-conformance.mjs \
+      --target desktop --out /tmp/tn-prd205-desktop-xvfb
 
-The desktop blocked row is the registry-declared 90-multitouch input host exclusion. Android and
-iOS were not claimed: `adb` and `xcrun` are unavailable on this host.
+The native executions completed with exit code 0 for 67 of 68 registry rows and wrote screenshots.
+The report summary was `pass:0 fail:0 blocked:68 planned:0 validated:0`: all 67 executable rows were
+blocked from comparison because the current browser reference captures are missing, and
+`90-multitouch-input` is additionally host-blocked. Exact first comparison blocker:
+
+    Missing browser reference capture: packages/runtime-native/artifacts/conformance/web/01-basic-cube.png
+
+Therefore no browser or pixel-conformance pass is claimed. A direct run without Xvfb also stopped
+before execution with `SDL_Init failed: x11 not available`; the Xvfb run is the usable native
+execution evidence. The Xvfb compatibility wrapper returned exit 2 during cleanup after the report;
+the native processes themselves exited 0.
+
+Android was checked with the SDK path required on this host:
+
+    /home/joao/Android/Sdk/platform-tools/adb version
+    Android Debug Bridge version 1.0.41
+    Version 37.0.0-14910828
+    Installed as /home/joao/Android/Sdk/platform-tools/adb
+
+    /home/joao/Android/Sdk/platform-tools/adb devices -l
+    192.168.1.192:5555 device product:shiba model:Pixel_8 device:shiba transport_id:4
+    emulator-5554 device product:sdk_gphone64_x86_64 model:sdk_gphone64_x86_64 device:emu64xa transport_id:1
+
+The Android tool is available and two devices are attached. Android runtime conformance was not
+executed in this repair, so no Android result is claimed. iOS was not executed and has no result
+claim.

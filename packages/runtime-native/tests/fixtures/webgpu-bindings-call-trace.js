@@ -44,14 +44,50 @@ const parent = canvas.parentElement;
 const resizeListener = () => {};
 const pointerListener = () => {};
 record("HTMLElement", "appendChild", [canvas], () => parent.appendChild(canvas));
-record("HTMLElement", "addEventListener", ["resize", resizeListener], () =>
-  parent.addEventListener("resize", resizeListener),
-);
 record("Document", "querySelector", ["canvas"], () => document.querySelector("canvas"));
 record("HTMLCanvasElement", "getContext", ["webgpu"], () => canvas.getContext("webgpu"));
 record("HTMLCanvasElement", "addEventListener", ["pointerdown", pointerListener], () =>
   canvas.addEventListener("pointerdown", pointerListener),
 );
+const dynamicCanvas = record("Document", "createElement", ["canvas"], () =>
+  document.createElement("canvas"),
+);
+const secondDynamicCanvas = record("Document", "createElement", ["canvas"], () =>
+  document.createElement("canvas"),
+);
+dynamicCanvas.id = "dynamic-first";
+secondDynamicCanvas.id = "dynamic-second";
+const dynamicListener = () => {};
+record("HTMLElement", "addEventListener", ["resize", dynamicListener], () =>
+  dynamicCanvas.addEventListener("resize", dynamicListener),
+);
+const dynamicContext = record("HTMLCanvasElement", "getContext", ["2d"], () =>
+  dynamicCanvas.getContext("2d"),
+);
+const secondDynamicContext = record("HTMLCanvasElement", "getContext", ["2d"], () =>
+  secondDynamicCanvas.getContext("2d"),
+);
+if (!dynamicContext || !secondDynamicContext || dynamicContext === secondDynamicContext) {
+  throw new Error("dynamic canvas contexts were not distinct");
+}
+dynamicCanvas.id = secondDynamicCanvas.id;
+dynamicCanvas._offscreenCanvasId = secondDynamicCanvas._offscreenCanvasId;
+const dynamicContextAfterMutation = record("HTMLCanvasElement", "getContext", ["2d"], () =>
+  dynamicCanvas.getContext("2d"),
+);
+const secondDynamicContextAfterMutation = record(
+  "HTMLCanvasElement",
+  "getContext",
+  ["2d"],
+  () => secondDynamicCanvas.getContext("2d"),
+);
+if (
+  dynamicContextAfterMutation !== dynamicContext ||
+  secondDynamicContextAfterMutation !== secondDynamicContext ||
+  dynamicContextAfterMutation === secondDynamicContextAfterMutation
+) {
+  throw new Error("dynamic canvas getContext followed a mutable public id");
+}
 const context = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
 record("GPU", "getPreferredCanvasFormat", [], () => format);
