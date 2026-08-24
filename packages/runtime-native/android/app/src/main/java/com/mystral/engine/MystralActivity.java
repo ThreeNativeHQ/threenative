@@ -120,9 +120,12 @@ public class MystralActivity extends SDLActivity {
         Bundle metadata = applicationMetadata();
         String title = metadata == null ? "ThreeNative" : metadata.getString("TN_WINDOW_TITLE", "ThreeNative");
         boolean fullscreen = metadata == null || metadata.getBoolean("TN_FULLSCREEN", true);
-        // `display.backgroundMode`. The native side parses it and keeps "pause" for anything it
+        // `display.backgroundMode`. The native side parses it and keeps the default for anything it
         // does not recognize, so an unset value and a typo behave the same and both get logged.
-        String backgroundMode = metadata == null ? "pause" : metadata.getString("TN_BACKGROUND_MODE", "pause");
+        // Default "continue" until resume revalidates the surface — see
+        // docs/bugs/resume-presents-nothing-2026-08-23.md. Pausing here leaves a black screen
+        // after any interruption, which is worse than the battery cost pausing was fixing.
+        String backgroundMode = metadata == null ? "continue" : metadata.getString("TN_BACKGROUND_MODE", "continue");
         if (mailboxRoot == null) {
             java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
@@ -133,7 +136,7 @@ public class MystralActivity extends SDLActivity {
             mailboxRoot,
             title,
             Boolean.toString(fullscreen),
-            backgroundMode == null ? "pause" : backgroundMode
+            backgroundMode == null ? "continue" : backgroundMode
         };
     }
 }

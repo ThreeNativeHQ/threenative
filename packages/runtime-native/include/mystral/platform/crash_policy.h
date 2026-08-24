@@ -65,5 +65,26 @@ bool applyCrashHandlerPolicy(CrashHandlerPolicy policy);
 /** Resolves and applies in one call — what `Runtime::initialize` uses. */
 void installCrashHandlers();
 
+/**
+ * A deliberate memory fault, after startup, on request. Nothing but a proof harness turns this on.
+ *
+ * The claim "a crash after startup now leaves a tombstone" cannot be checked without a crash after
+ * startup, and the crash it has to model is the one that produced six unnamed `SIGNALED status=11`
+ * exits on a physical Pixel 8 on 2026-08-23: a raw memory fault with no JavaScript frame on the
+ * stack. Waiting for an intermittent bug to recur is not a proof lane.
+ *
+ * Gated on `debug.threenative.deliberate_crash` (Android's `debug.` system-property channel,
+ * settable only over adb on a developer device) or `THREENATIVE_DELIBERATE_CRASH` in the
+ * environment. The value is the number of frames to run first, so the fault lands well after
+ * initialization, where the handler install used to be. Absent or unparsable means never.
+ */
+int deliberateCrashAfterFrames(const char* configured);
+
+/** Reads the property and the environment; returns 0 when nothing asked for a crash. */
+int deliberateCrashFrameCount();
+
+/** Faults, deliberately and immediately. Never returns. */
+[[noreturn]] void crashDeliberately();
+
 }  // namespace platform
 }  // namespace mystral

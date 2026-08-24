@@ -97,7 +97,7 @@ test("display.backgroundMode is plumbed from the config to both hosts", () => {
   );
   assert.match(
     read("android/app/src/main/java/com/mystral/engine/MystralActivity.java"),
-    /metadata\.getString\("TN_BACKGROUND_MODE", "pause"\)/u,
+    /metadata\.getString\("TN_BACKGROUND_MODE", "continue"\)/u,
   );
   assert.match(read("src/platform/android_main.cpp"), /parseBackgroundMode\(argv\[6\], mode\)/u);
   assert.match(read("src/cli/main.cpp"), /THREENATIVE_BACKGROUND_MODE/u);
@@ -109,4 +109,29 @@ test("the lifecycle proof is built and run by a lane that needs no display", () 
     /add_executable\(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL\s*tests\/lifecycle_policy_test\.cpp\)/u,
   );
   assert.match(read("scripts/verify-desktop-stability.mjs"), /"threenative-lifecycle-policy-test"/u);
+});
+
+test("the background default is `continue` until resume revalidates the surface", () => {
+  // A deliberate retreat, pinned so it cannot drift back before the defect that forced it is
+  // fixed. Pausing is what this feature is for, but on a physical Pixel 8 on 2026-08-23 resume
+  // restarted the loop and presented nothing — Android destroys the ANativeWindow on background
+  // and the WGPUSurface still points at it, so `frames` ran away at ~600/s while `presents` stayed
+  // frozen and the screen was uniformly black. Bug 9 was a battery cost no player saw; this is a
+  // black screen after every phone call, in the mode nobody chose.
+  //
+  // When docs/bugs/resume-presents-nothing-2026-08-23.md is fixed, THIS TEST is the thing that
+  // must be changed back, deliberately, with a device rung proving resume presents again.
+  assert.match(
+    read("src/platform/lifecycle.cpp"),
+    /g_backgroundMode\{BackgroundMode::Continue\}/u,
+    "the native default must stay `continue` while resume presents nothing",
+  );
+  assert.match(
+    read("android/app/src/main/java/com/mystral/engine/MystralActivity.java"),
+    /getString\("TN_BACKGROUND_MODE", "continue"\)/u,
+    "the Android metadata default must match the native one, or Android pauses regardless",
+  );
+  // The retreat is the default only. The mechanism must stay live and measured under it.
+  assert.match(read("src/platform/lifecycle.cpp"), /SDL_AddEventWatch/u);
+  assert.match(read("src/platform/lifecycle.cpp"), /TN_LIFECYCLE/u);
 });

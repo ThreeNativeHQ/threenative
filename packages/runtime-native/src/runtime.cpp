@@ -909,6 +909,16 @@ public:
         // Process microtask queue for promises
         processMicrotasks();
 
+        // A deliberate fault, after startup, only when a proof harness asked for one. This is the
+        // lane that checks "a crash after startup leaves a tombstone" without waiting for an
+        // intermittent bug to recur; `deliberateCrashFrameCount()` is 0 unless the debug property
+        // or the environment variable says otherwise.
+        if (deliberateCrashFrames_ < 0) deliberateCrashFrames_ = platform::deliberateCrashFrameCount();
+        if (deliberateCrashFrames_ > 0) {
+            framesSinceStart_ += 1;
+            if (framesSinceStart_ >= deliberateCrashFrames_) platform::crashDeliberately();
+        }
+
         // Begin frame — enables per-frame allocation tracking
         jsEngine_->beginFrame();
         webgpu::beginDawnFrame();
@@ -3625,6 +3635,9 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     // Timers already counted as skipped during the current pause; cleared on resume. Id 0 is the
     // sentinel that says "this pause was observed", so a pause with no timers still reports.
     std::unordered_set<int> countedPausedTimers_;
+    // -1 until the deliberate-crash setting has been read once; 0 means nobody asked for one.
+    int deliberateCrashFrames_ = -1;
+    int framesSinceStart_ = 0;
     int nextTimerId_ = 1;
 
     // Pending async file read callbacks (processed on main thread)

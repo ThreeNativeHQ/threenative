@@ -280,6 +280,14 @@ naming the operation instead of arming an FFI fault, with the raw SIGSEGV reprod
 child process as the negative control.
 
 **The crash itself is still unnamed.** This makes the next one nameable; it did not catch this one.
+
+**Proven on the physical Pixel 8, 2026-08-23 22:04.** Same binary, same deliberate post-startup
+fault, one variable. With the handlers left to the platform: a new symbolized `data_app_native_crash`
+tombstone naming `crashDeliberately() -> pollEvents() -> run() -> SDL_main`, recorded by exit-info
+as `reason=5 (APP CRASH(NATIVE)) status=11`. With the pre-fix handlers reinstated
+(`debug.threenative.prefix_handlers=1`): no dropbox entry at all, and exit-info reads
+`reason=2 (SIGNALED) subreason=0 (UNKNOWN) status=11` — the 2026-08-23 signature, character for
+character. Evidence: [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 The device proofs — a symbolized tombstone in dropbox, and the relaunch-over-pressure cycles — are
 open and listed in [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 
@@ -460,9 +468,19 @@ so a polled handler runs only after the app is already parked. Backgrounding and
 paused flag, suspend every live AudioContext through a new host-side registry, and emit
 `TN_LIFECYCLE` markers; `display.backgroundMode: "continue"` opts out of the pause without opting
 out of the markers. The transition table, the watch and the registry are proven by an executable
-that needs no display. **The battery claim is not proven**: "screen-off stops presenting within
-~1 s" needs the phone, and is open in
-[`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
+that needs no display.
+
+**On the physical Pixel 8, 2026-08-23 22:06:** screen-off stops presenting. One further 60-frame
+tick is emitted and then presenting halts, against this bug's recorded baseline of a full 60 s of
+continued presenting. Two caveats, both recorded rather than smoothed over: tick granularity is 60
+frames, so the "~1 s" bound is consistent with the data rather than measured by it; and no
+`TN_LIFECYCLE` marker is observable *while* paused — every marker arrives in one burst on resume,
+because the thread that writes them is parked inside SDL's `Android_WaitLifecycleEvent`.
+
+**And resume is now broken**, which is worse than what this bug reported: the loop restarts but
+presents nothing, and the player sees black. Filed separately as
+[`./resume-presents-nothing-2026-08-23.md`](./resume-presents-nothing-2026-08-23.md). This item is
+not closed.
 
 ---
 

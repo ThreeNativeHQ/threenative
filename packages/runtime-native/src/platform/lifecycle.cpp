@@ -19,7 +19,8 @@ std::atomic<bool> g_paused{false};
 std::atomic<bool> g_terminating{false};
 std::atomic<bool> g_watchInstalled{false};
 std::atomic<uint64_t> g_droppedTimerFirings{0};
-std::atomic<BackgroundMode> g_backgroundMode{BackgroundMode::Pause};
+// See lifecycle.h: Continue until resume revalidates the surface.
+std::atomic<BackgroundMode> g_backgroundMode{BackgroundMode::Continue};
 
 std::mutex g_markerMutex;
 std::deque<std::string> g_markers;
@@ -191,7 +192,7 @@ void resetLifecycleForTesting() {
     g_paused.store(false);
     g_terminating.store(false);
     g_droppedTimerFirings.store(0);
-    g_backgroundMode.store(BackgroundMode::Pause);
+    g_backgroundMode.store(BackgroundMode::Continue);
     std::lock_guard<std::mutex> lock(g_markerMutex);
     g_markers.clear();
 }
