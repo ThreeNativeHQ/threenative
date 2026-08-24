@@ -41,8 +41,17 @@ Answers to the bug doc's open questions:
 3. **`worstMs: 27489` explained:** one 27.4 s hitch between presented frames
    (`TN_OUTSIDE_HITCH …"deltaMs":27445`), startup-shaped, now wall-clock-tagged and excluded from
    windows rather than polluting max().
-4. **Shadows are not the lever:** `TN_SHADOWS_KILLED` executed at 20:14:04; the post-kill
-   breakdown still reads `renderWorld` p50 ≈ 49 ms.
+4. ~~**Shadows are not the lever:** `TN_SHADOWS_KILLED` executed at 20:14:04; the post-kill
+   breakdown still reads `renderWorld` p50 ≈ 49 ms.~~ **WITHDRAWN 2026-08-23 — the refutation was
+   circular.** The bundle the 20:18 measurement ran from
+   (`sandbox/fps-framework/.threenative/build/game.js`, mtime 20:13, shipped as
+   `dist-native/bayview-noshadow.apk`) disables `shadowMap` and clears `castShadow` on every light
+   *before the measurement window opens*, with the `KILL_SHADOWS` constant folded away as
+   always-true by the bundler. So "the post-kill breakdown still reads ≈ 49 ms" compares a
+   shadows-off build against a shadows-off build. The wording implies a pre-kill number existed;
+   no such capture survives anywhere in the sandbox tree or `docs/` — `gpuMemoryProbe.ts` was
+   untracked, so there is no history to date it by. **Shadows are untested, not refuted**, and
+   Phase 0's rung list carries a shadows-ON baseline as R0 with shadows-off as R1.
 5. Even spike frames attribute to the same owner (`spikeAvgPartsMs.render ≈ 45 ms`) — the
    distribution's bimodality is render-cost variance, not a second subsystem.
 
@@ -73,7 +82,7 @@ written badly.
   - an evaluation spike for pre-recorded command streams (WebGPU render bundles through
     wgpu-native) for static geometry *if* encode dominates and upstream supports it — spike
     first, kill switch applies;
-  - whatever Phase 0 refutes is recorded refuted (shadows already are).
+  - whatever Phase 0 refutes is recorded refuted (shadows are NOT already refuted — see 4).
 - **The budget becomes public instrumentation**: `TN_OUTSIDE_BREAKDOWN`'s windowed attribution
   promoted from sandbox probe into the permanent device-lane tooling, plus an fps budget gate so
   a mobile regression is red, not anecdotal.

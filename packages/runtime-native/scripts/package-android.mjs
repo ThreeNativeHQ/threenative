@@ -452,8 +452,14 @@ export async function prepareAndroidPrebuilts(options = {}) {
   // gets forgotten, so the prebuilt path takes the same engine names the Gradle property does.
   const engine = String(options.engine ?? 'v8').toLowerCase();
   const assets = androidPrebuiltAssets(engine);
+  // Name the source the download will really read. `downloadReleaseArtifact` prefers
+  // THREENATIVE_PREBUILT_MANIFEST over the release URL, so reporting the URL when the env hook is
+  // set sends a reader to a 404 that had nothing to do with their failure.
   const expectedSource =
-    options.manifestPath ?? options.manifestUrl ?? releaseManifestUrl(options.version);
+    options.manifestPath ??
+    process.env.THREENATIVE_PREBUILT_MANIFEST ??
+    options.manifestUrl ??
+    releaseManifestUrl(options.version);
   const downloadOptions = {
     ...options,
     manifestUrl: options.manifestUrl ?? releaseManifestUrl(options.version),

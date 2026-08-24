@@ -32,7 +32,11 @@ The "not a bug" items (landscape orientation) are likewise absent.
 - **Bug 3 attributed:** steady-state windows put `renderer.render()` at p50 49.42 ms of a
   54.44 ms rAF; engine plumbing measured innocent (`hostGap` p50 1.42 ms); `worstMs: 27489`
   explained as one tagged hitch; substep-per-markFrame caveat confirmed (`substepsPerRaf` p50 3);
-  shadows refuted as the lever.
+  ~~shadows refuted as the lever~~ — **withdrawn 2026-08-23**: that refutation compared a
+  shadows-off build against itself. The bundle the 20:18 measurement ran from already disabled
+  `shadowMap` and cleared `castShadow` on every light before the window opened, and no pre-kill
+  capture survives. Shadows are **untested**; PRD-214 Phase 0 carries a shadows-ON baseline (R0)
+  and shadows-off as an explicit rung (R1).
 
 ## Order
 

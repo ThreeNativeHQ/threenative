@@ -28,6 +28,41 @@ import {
   prepareAndroidPrebuilts,
 } from '../scripts/package-android.mjs';
 
+/** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
+async function serveFixtureRelease(root, contents) {
+  const server = createServer((request, response) => {
+    const key = decodeURIComponent(request.url.slice(1));
+    const payload = contents[key];
+    if (payload === undefined) {
+      response.statusCode = 404;
+      response.end();
+      return;
+    }
+    response.end(payload);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const artifacts = Object.fromEntries(
+    Object.entries(contents).map(([key, payload]) => [
+      key,
+      { sha256: sha256(payload), url: `http://127.0.0.1:${address.port}/${encodeURIComponent(key)}` },
+    ]),
+  );
+  const manifest = join(root, 'prebuilt-lock.json');
+  writeFileSync(manifest, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+  return {
+    artifacts,
+    close: () =>
+      new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    manifest,
+    rewrite: (mutate) => {
+      mutate(artifacts);
+      writeFileSync(manifest, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+    },
+  };
+}
+
 const roots = [];
 const run = promisify(execFile);
 
@@ -206,6 +241,131 @@ test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload befo
     );
   }
 });
+
+test('a clean-room install builds for Android from a fixture manifest, with no engine checkout', async () => {
+  // PRD-212 Phase 2. Every other Android test in this file runs inside the workspace, where
+  // CMakeLists.txt and a staged SDL3 AAR are simply present, so `packageAndroid` takes the source
+  // path and the prebuilt path is never exercised. A stranger has neither. This installs the packed
+  // tarball into a directory with no workspace and no engine checkout, and drives the packager from
+  // *there* — which is the only arrangement in which the 404 that killed bug 6 could have been seen.
+  const root = makeTempDirSync('threenative-android-cleanroom-');
+  roots.push(root);
+  const assets = ANDROID_PREBUILT_V8_ASSETS;
+  const contents = Object.fromEntries(
+    Object.keys(assets).map((key) => [key, Buffer.from(`payload:${key}`)]),
+  );
+  const release = await serveFixtureRelease(root, contents);
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    // The hook a stranger actually has. `packageAndroid` builds its own prebuilt call, so an
+    // option would test a seam no user can reach; the env variable is the shipped contract.
+    process.env.THREENATIVE_PREBUILT_MANIFEST = release.manifest;
+    const consumer = join(root, 'consumer');
+    mkdirSync(consumer);
+    const packed = await packRuntime(root);
+    writeFileSync(
+      join(consumer, 'package.json'),
+      `${JSON.stringify({
+        dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
+        name: 'android-cleanroom-proof',
+        private: true,
+      })}\n`,
+    );
+    await run('pnpm', ['install', '--ignore-scripts'], { cwd: consumer, env: { ...process.env } });
+
+    const installed = join(consumer, 'node_modules/@threenative/runtime-native');
+    // The detection the packager itself uses. If either of these were true the prebuilt path would
+    // be skipped and this test would silently prove the workspace path again.
+    assert.equal(existsSync(join(installed, 'CMakeLists.txt')), false);
+    assert.equal(existsSync(join(installed, 'third_party/sdl3-android/SDL3-3.2.8.aar')), false);
+
+    const { packageAndroid } = await import(
+      new URL(`file://${join(installed, 'scripts/package-android.mjs')}`).href
+    );
+
+    const bundle = join(root, 'main.js');
+    writeFileSync(bundle, 'export default { start() {} };\n');
+    const gradleInvocations = [];
+    await packageAndroid(bundle, join(root, 'game.apk'), undefined, undefined, undefined, {
+      // cmake and the NDK are masked: the whole point of the prebuilt path is that a stranger
+      // compiles no C++. Gradle is masked too — this gate proves the stranger's build reaches it
+      // with the right arguments and the right prebuilts staged, offline and on any machine.
+      ensureGradleWrapper: async () => join(installed, 'android/gradle/wrapper/gradle-wrapper.jar'),
+      runtimeRoot: installed,
+      spawnSync: (command, args) => {
+        gradleInvocations.push({ args, command });
+        mkdirSync(join(installed, 'android/app/build/outputs/apk/debug'), { recursive: true });
+        writeFileSync(
+          join(installed, 'android/app/build/outputs/apk/debug/app-debug.apk'),
+          'clean-room apk',
+        );
+        return { status: 0, stdout: '' };
+      },
+    });
+
+    // Every prebuilt the fixture manifest named landed where the Gradle build expects it.
+    for (const [key, path] of Object.entries(assets)) {
+      assert.deepEqual(
+        readFileSync(join(installed, 'android/prebuilt', path)),
+        contents[key],
+        `${key} was not staged from the fixture manifest`,
+      );
+    }
+    assert.equal(gradleInvocations.length, 1);
+    assert.ok(
+      gradleInvocations[0].args.includes('assembleDebug'),
+      `Gradle was not asked to assemble: ${JSON.stringify(gradleInvocations[0].args)}`,
+    );
+    assert.equal(existsSync(join(root, 'game.apk')), true);
+  } finally {
+    delete process.env.THREENATIVE_PREBUILT_MANIFEST;
+    await release.close();
+  }
+}, 300_000);
+
+test('the clean-room Android build fails loudly on a corrupt fixture manifest', async () => {
+  // The negative control for the gate above: a masked SDK or a corrupt lock must fail closed, not
+  // fall through to a build that quietly used nothing. A gate that passes on a broken manifest
+  // proves only that it ran.
+  const root = makeTempDirSync('threenative-android-cleanroom-red-');
+  roots.push(root);
+  const contents = Object.fromEntries(
+    Object.keys(ANDROID_PREBUILT_V8_ASSETS).map((key) => [key, Buffer.from(`payload:${key}`)]),
+  );
+  const release = await serveFixtureRelease(root, contents);
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const outputRoot = join(root, 'android');
+
+    release.rewrite((artifacts) => {
+      artifacts['android-arm64-v8a-runtime-v8'].sha256 = sha256(Buffer.from('tampered'));
+    });
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
+      /Checksum verification failed.*android-arm64-v8a-runtime-v8/u,
+      'a tampered artifact must not be staged',
+    );
+    assert.equal(existsSync(outputRoot), false);
+
+    release.rewrite((artifacts) => {
+      delete artifacts['android-sdl3-aar'];
+    });
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
+      /No prebuilt release asset.*android-sdl3-aar/u,
+      'a manifest missing an asset must name the asset',
+    );
+    assert.equal(existsSync(outputRoot), false);
+
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: join(root, 'absent-lock.json'), outputRoot }),
+      /No prebuilt release manifest exists/u,
+      'an absent manifest must fail closed rather than fetch the network',
+    );
+  } finally {
+    await release.close();
+  }
+}, 120_000);
 
 test('a packed Android build reconstructs only a checksum-verified Gradle wrapper', async () => {
   const root = makeTempDirSync('threenative-gradle-wrapper-');
