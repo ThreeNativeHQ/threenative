@@ -6,7 +6,7 @@ import { workspacePackages } from "./workspace-packages.js";
 
 export interface ICapabilityExport {
   readonly packageName: "@threenative/core" | "@threenative/physics";
-  readonly subpath: "." | "./hot" | "./navigation" | "./playtest" | "./react";
+  readonly subpath: "." | "./hot" | "./navigation" | "./playtest" | "./react" | "./ui-layer";
   readonly name: string;
   readonly entry: string;
 }
@@ -131,12 +131,15 @@ async function packageEntries(
   const entries: { subpath: ICapabilityExport["subpath"]; entry: string }[] = [];
   for (const [subpath, targetDefinition] of Object.entries(manifest.exports)) {
     if (subpath === "./package.json") continue;
+    // Named rather than accepted wholesale: a new subpath is a new public surface, and this list
+    // is where someone has to notice it and decide the export deserves capability docs.
     if (
       subpath !== "." &&
       subpath !== "./hot" &&
       subpath !== "./navigation" &&
       subpath !== "./playtest" &&
-      subpath !== "./react"
+      subpath !== "./react" &&
+      subpath !== "./ui-layer"
     ) {
       throw new Error(`CAPABILITY_DOCS_UNSUPPORTED_SUBPATH: ${spec.name}${subpath}`);
     }

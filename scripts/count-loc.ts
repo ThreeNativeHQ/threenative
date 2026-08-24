@@ -281,10 +281,17 @@ export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): numbe
   );
 }
 
-/** Native-only generated React source versus the geometry HUD it replaces on that platform. */
-export function countNativeReactHudLoc(rootDirectory = process.cwd()): {
+/**
+ * The generated HUD's source, against the geometry HUD it replaces.
+ *
+ * This used to price `NativeHud.tsx` — the starter's second HUD, written in `View`/`Text` quads so
+ * that native had something to draw. PRD-217 deleted it: the same `Hud.tsx` now runs on every
+ * target, so the thing worth pricing is that one file. It should stay smaller than the geometry
+ * HUD it replaces, which is the same bar the second HUD had to clear.
+ */
+export function countGeneratedHudLoc(rootDirectory = process.cwd()): {
   readonly geometry: number;
-  readonly nativeReact: number;
+  readonly generated: number;
 } {
   const root = resolve(rootDirectory);
   const count = (relativePath: string): number => {
@@ -293,7 +300,7 @@ export function countNativeReactHudLoc(rootDirectory = process.cwd()): {
   };
   return {
     geometry: count("packages/create-threenative/templates/minimal/src/render/hud.ts"),
-    nativeReact: count("packages/create-threenative/templates/starter/src/ui/NativeHud.tsx"),
+    generated: count("packages/create-threenative/templates/starter/src/ui/Hud.tsx"),
   };
 }
 
@@ -420,6 +427,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   // Reported, not capped: the template LOC caps were retired by owner decision 2026-08-09.
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
-  const hud = countNativeReactHudLoc(root);
-  process.stdout.write(`native React HUD LOC: ${hud.nativeReact} (geometry HUD ${hud.geometry})\n`);
+  const hud = countGeneratedHudLoc(root);
+  process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
 }

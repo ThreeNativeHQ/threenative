@@ -353,6 +353,32 @@ this phase is gated on the owner.
 8. No game-visible config, type or doc names `wry`, `cef`, `webview2` or `webkitgtk`. The public
    surface is `renderer: 'web' | 'native'`.
 
+## What it cost the framework, and the kill switch
+
+`pnpm budgets` reports 21,423 framework lines against a 15,000 review trigger, and asks for the
+addition to be justified here and scored. This PRD added **1,087 lines** across `@threenative/core`
+and `@threenative/ui`, in four files plus wiring:
+
+| File | Lines | Could a game write this portably itself? |
+| --- | --- | --- |
+| `ui-bridge.ts` | 278 | No. It discovers a platform channel — `addWebMessageListener`, `webkit.messageHandlers`, a desktop IPC handler — and falls back to an in-process broker. A game cannot name any of those without naming the backend, which criterion 8 forbids. |
+| `ui-hit-regions.ts` | 285 | No. It exists because a web view is a native view with a rectangular hit-test region the platform owns; the registry is the only thing that makes a touch on empty HUD space reach the game. |
+| `ui-state.ts` | 197 | No. Two realms, one of them a separate process. The alternative is every game writing its own serialisation and its own "publish nothing while nobody listens" rule. |
+| `UiLayer.tsx` | 121 | No. Connecting the bridge, mirroring the state and starting the registry after the first commit — a game that gets the ordering wrong publishes an empty set and every touch falls through. |
+
+**Does any of it decide how something looks?** No. There is no style vocabulary anywhere in these
+files: the UI is the game's own React, Tailwind, CSS and SVG, and the framework never sees a colour,
+a size or a layout decision. §11.1's question (b) is the veto, and nothing here trips it.
+
+**What it removed.** `NativeHud.tsx` and `HudContent.tsx` left the starter, and with them the
+`Primitive` indirection every template carried to render one tree through two renderers. The
+generated HUD is now **60 lines against the geometry HUD's 69** (`scripts/count-loc.ts`), where the
+two-renderer arrangement needed a shared tree, a web primitive table and a native one.
+
+`@threenative/core/react` is not deleted, and this is deliberate: it is the opt-in for a UI that is
+part of the rendered frame or a target with no web view. If a year passes and no game chooses it,
+the kill switch applies to it and not to this.
+
 ## Cost
 
 Phase 0–1 is the bulk of the risk and is now small, because the compositing question is answered:

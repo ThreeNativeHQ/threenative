@@ -9,7 +9,7 @@ import {
   classifyVanillaLine,
   collectLoc,
   countLines,
-  countNativeReactHudLoc,
+  countGeneratedHudLoc,
   countPlatformerTemplateLoc,
   normaliseSource,
   renderLocTable,
@@ -96,9 +96,11 @@ describe("count-loc", () => {
     expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
   });
 
-  it("prices the generated native-only React HUD path against the geometry HUD", () => {
-    const comparison = countNativeReactHudLoc();
+  // PRD-217 removed the starter's second HUD, so what this prices now is the one HUD that runs
+  // everywhere. Same bar: the generated source must stay smaller than the geometry HUD it replaces.
+  it("prices the generated HUD against the geometry HUD", () => {
+    const comparison = countGeneratedHudLoc();
 
-    expect(comparison.nativeReact).toBeLessThanOrEqual(comparison.geometry);
+    expect(comparison.generated).toBeLessThanOrEqual(comparison.geometry);
   });
 });
