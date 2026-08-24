@@ -5,6 +5,7 @@ import * as ts from "typescript";
 import { describe, expect, test } from "vitest";
 import { evaluateRichPlaytestAssertions } from "../src/assertion-evaluators.js";
 import { MOVEMENT_EVIDENCE_KINDS, MOVEMENT_EVALUATORS } from "../src/evaluators/movement-evidence.js";
+import { buildReport } from "../src/runner/runner-support.js";
 import type { IPlaytestScenario } from "../src/scenario.js";
 
 // PRD-182 Phase 1 characterization net: these tests pin CURRENT semantics of
@@ -31,27 +32,46 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
 
 const TRIVIALITY_GUARD_OWNER = "triviality-guard.ts";
 
-function referencesAllowTrivial(node: ts.Node): boolean {
-  if (ts.isIdentifier(node)) return node.text === "allowTrivial";
+function referencesAllowTrivial(node: ts.Node, aliases: ReadonlySet<string> = new Set()): boolean {
+  if (ts.isIdentifier(node)) return node.text === "allowTrivial" || aliases.has(node.text);
   if (ts.isPropertyAccessExpression(node)) {
-    return node.name.text === "allowTrivial" || referencesAllowTrivial(node.expression);
+    return node.name.text === "allowTrivial" || referencesAllowTrivial(node.expression, aliases);
   }
   if (ts.isElementAccessExpression(node)) {
     const property = node.argumentExpression;
     return (property !== undefined && ts.isStringLiteralLike(property) && property.text === "allowTrivial")
-      || referencesAllowTrivial(node.expression);
+      || referencesAllowTrivial(node.expression, aliases);
   }
   if (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node) || ts.isAsExpression(node)) {
-    return referencesAllowTrivial(node.expression);
+    return referencesAllowTrivial(node.expression, aliases);
   }
   return false;
 }
 
 function findTrivialityPredicates(source: string, path: string): number {
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const aliases = new Set<string>();
+  let aliasesChanged = true;
+  while (aliasesChanged) {
+    aliasesChanged = false;
+    const collect = (node: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer !== undefined
+        && referencesAllowTrivial(node.initializer, aliases)
+        && !aliases.has(node.name.text)
+      ) {
+        aliases.add(node.name.text);
+        aliasesChanged = true;
+      }
+      ts.forEachChild(node, collect);
+    };
+    collect(file);
+  }
   let count = 0;
   const visit = (node: ts.Node): void => {
-    if (ts.isTypeOfExpression(node) && referencesAllowTrivial(node.expression)) count += 1;
+    if (ts.isTypeOfExpression(node) && referencesAllowTrivial(node.expression, aliases)) count += 1;
     ts.forEachChild(node, visit);
   };
   visit(file);
@@ -63,6 +83,56 @@ function scanInlineTrivialityPredicates(files: Array<{ path: string; source: str
     .filter(({ path }) => path !== TRIVIALITY_GUARD_OWNER)
     .map(({ path, source }) => ({ count: findTrivialityPredicates(source, path), path }))
     .filter(({ count }) => count > 0);
+}
+
+function parityHash(path: string): number {
+  return [...path].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 997, 17);
+}
+
+function paritySnapshot(entity: string, position: [number, number, number], tick: number) {
+  return {
+    clock: { mode: "fixed-step" as const, tick },
+    ...(entity === "" ? {} : { entities: [{ id: entity, transform: { position }, visible: true }] }),
+  };
+}
+
+function buildParityReport(path: string, scenario: IPlaytestScenario) {
+  const movement = scenario.assert?.movement;
+  const entity = movement?.entity ?? scenario.subject ?? "";
+  const distance = movement?.minDistance === undefined ? parityHash(path) % 3 / 2 : movement.minDistance + 1;
+  const tick = parityHash(path);
+  const beforeSnapshot = paritySnapshot(entity, [0, 0, 0], tick);
+  const afterSnapshot = paritySnapshot(entity, [distance, 0, 0], tick + 1);
+  const anonymousMovement = movement !== undefined && movement.entity === undefined && scenario.subject === undefined;
+  const movementSamples = anonymousMovement
+    ? [
+        { after: paritySnapshot("player", [0, 0, 0], tick), before: paritySnapshot("player", [0, 0, 0], tick - 1), inputDriven: false },
+        { after: paritySnapshot("player", [distance, 0, 0], tick + 1), before: paritySnapshot("player", [0, 0, 0], tick), inputDriven: true },
+      ]
+    : [];
+  return buildReport({
+    afterSnapshot,
+    beforeSnapshot,
+    config: {
+      allowSoftwareAdapter: true,
+      artifactDirectory: "artifacts/prd-200-parity",
+      headless: true,
+      projectPath: process.cwd(),
+      scenarioPath: path,
+      timeoutMs: 1,
+      trace: false,
+      url: "http://127.0.0.1:1",
+    } as never,
+    consoleEntries: [],
+    movementSamples,
+    networkEntries: [],
+    pathLength: distance,
+    scenario,
+  });
+}
+
+function projectReport(report: { assertionResults?: unknown; diagnostics: unknown }): string {
+  return JSON.stringify({ assertions: report.assertionResults ?? [], diagnostics: report.diagnostics });
 }
 
 describe("evaluator semantics (characterization)", () => {
@@ -81,6 +151,10 @@ describe("evaluator semantics (characterization)", () => {
     "const duplicate = (assertion: { allowTrivial?: unknown }) => typeof assertion.allowTrivial !== `string`;",
     `const duplicate = (assertion: { allowTrivial?: unknown }) =>
       typeof (assertion?.["allowTrivial"]) === "string";`,
+    `const duplicate = (assertion: { allowTrivial?: unknown }) => {
+      const waiver = assertion.allowTrivial;
+      return typeof waiver === "string";
+    };`,
   ])("rejects equivalent inline predicates regardless of quote, operator, or format: %s", (source) => {
     expect(scanInlineTrivialityPredicates([{ path: "duplicate.ts", source }])).toEqual([{ count: 1, path: "duplicate.ts" }]);
   });
@@ -89,15 +163,27 @@ describe("evaluator semantics (characterization)", () => {
     const paths = execFileSync("rg", ["--files", "-g", "*.playtest.json", "-g", "!**/.worktrees/**"], { encoding: "utf8" }).trim().split("\n").filter(Boolean).sort();
     expect({ source: golden.source, paths }).toEqual({ source: "edbee19fe90c672305568764b98e36620c507e9^", paths: golden.scenarios });
     expect(Object.keys(golden.verdicts).sort()).toEqual(paths);
-    const report = { consoleErrors: 0, diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1, trivialityOptOuts: [], observations: { console: [], hud: {}, network: [], resources: {} } } as never;
     const diffs: string[] = [];
     for (const path of paths) {
       const parsed = JSON.parse(await readFile(join(process.cwd(), path), "utf8"));
       const scenario = { ...parsed, name: parsed.name ?? path, target: parsed.target ?? "web", schemaVersion: parsed.schemaVersion ?? 1, steps: parsed.steps ?? [], viewport: parsed.viewport ?? { height: 720, width: 1280 }, sourcePath: path } as never;
-      if (JSON.stringify(evaluateRichPlaytestAssertions({ report, scenario })) !== golden.verdicts[path]) diffs.push(path);
+      if (projectReport(buildParityReport(path, scenario)) !== golden.verdicts[path]) diffs.push(path);
     }
     console.log(`PRD-200 verdict parity: ${paths.length} scenarios; diff: ${diffs.length === 0 ? "empty" : diffs.join(",")}`);
     expect(diffs).toEqual([]);
+  });
+  test("parity rejects bypassing production report assembly", () => {
+    const scenario = {
+      name: "build-report-red-control",
+      schemaVersion: 1,
+      steps: [{ release: true, waitTicks: 1 }],
+      assert: { movement: { entity: "player", minDistance: 1 } },
+    } as never;
+    const assembled = buildParityReport("red-control.playtest.json", scenario);
+    const bypassed = evaluateRichPlaytestAssertions({ report: { ...base, entity: "player" } as never, scenario });
+    expect(assembled.assertionResults?.find(({ id }) => id === "movement.distance")?.pass).toBe(true);
+    expect(bypassed.assertions.find(({ id }) => id === "movement.distance")?.pass).toBe(false);
+    expect(projectReport(assembled)).not.toBe(JSON.stringify(bypassed));
   });
   test("movement pins its verdict id and minimum-distance details", () => {
     const result = evaluate(

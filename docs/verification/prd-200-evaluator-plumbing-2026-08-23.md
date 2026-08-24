@@ -141,4 +141,64 @@ projections for fulfilled and empty evidence cases.
 
 - `pnpm test:playtest` reran successfully: all four browser scenarios passed
   with `pass: true`, NVIDIA WebGPU adapter evidence, and no assertion failures.
+
+## Repair round 2 — alias data flow and production-path parity (2026-08-24)
+
+- Alias red control was added before the scanner fix. The existing AST walk stayed
+  green for `const waiver = assertion.allowTrivial; typeof waiver === "string"`:
+
+  ```text
+  AssertionError: expected [] to deeply equal [ { count: 1, path: "duplicate.ts" } ]
+  Tests 1 failed | 3 passed
+  ```
+
+- The syntax-independent gate now collects local `allowTrivial` aliases (including
+  alias chains) before checking `typeof` operands. The alias control and the owner
+  uniqueness test are green:
+
+  ```text
+  Test Files 1 passed (1)
+  Tests 5 passed (5)
+  ```
+
+- The parity red control first ran with the production report assembler and the old
+  empty-report fixture. It reported `PRD-200 verdict parity: 512 scenarios` with a
+  218-entry diff list, proving that scenario-specific report evidence is not
+  interchangeable with a shared synthetic report.
+- The parity fixture was regenerated from the pre-refactor positional `buildReport`
+  at `edbee19fe90c672305568764b98e36620c507e9^`. It now supplies deterministic,
+  scenario-derived before/after snapshots, movement samples for anonymous movement,
+  mapped distance, entity, ticks, and path length. The current options-object
+  `buildReport` is used for every verdict; bypassing it with the old empty report is
+  a separate red control and returns `movement.distance: false` where the assembled
+  report returns `true`.
+- Full production-path parity is green:
+
+  ```text
+  PRD-200 verdict parity: 512 scenarios; diff: empty
+  Test Files 5 passed (5)
+  Tests 128 passed (128)
+  ```
+
+- Focused suite command:
+  `pnpm exec vitest run packages/playtest/__tests__/evaluator-semantics.spec.ts
+  packages/playtest/__tests__/runner-orchestration.spec.ts
+  packages/playtest/__tests__/runner.spec.ts
+  packages/playtest/__tests__/scenario.spec.ts
+  packages/playtest/__tests__/setup-reporting.spec.ts` — exit 0, 5 files and 128
+  tests passed.
+- `pnpm --filter @threenative/playtest build` — exit 0; tsup, declaration output,
+  and publint passed. The package test wrapper remains externally blocked by two
+  pre-existing Chromium processes from another run; it reported the orphan PIDs
+  `943490`, `943498`, and `943499` and was not claimed green.
+- `pnpm typecheck` — exit 0 across all 16 participating workspace projects.
+- `pnpm lint` — exit 0 with 295 inherited complexity warnings.
+- `pnpm budgets` — exit 0; existing framework LOC and native census notices remained
+  informational.
+- `pnpm quality` — exit 0: 68 findings (11 new, 9 grew, 48 inherited, 0 waived).
+- `pnpm test:playtest` — exit 0; all four browser WebGPU scenarios passed with
+  `pass: true`, NVIDIA adapter evidence, and no assertion failures.
+- `pnpm test` — managed gate status reached `unit / succeeded` with terminal result
+  `succeeded (exit 0)`; no generated-file drift remained outside the five explicit
+  repair paths.
   Its package build and publint checks also passed.

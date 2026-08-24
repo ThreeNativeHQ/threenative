@@ -4,6 +4,9 @@ export interface ITrivialityGuardResult {
   trivial: boolean;
   trivialityOptOut: boolean;
 }
+export function isStringValue(value: unknown): value is string {
+  return typeof value === "string";
+}
 /** Apply the shared anti-vacuous guard to an assertion verdict. */
 export function evaluateTrivialityGuard(
   comparisonPass: boolean,
