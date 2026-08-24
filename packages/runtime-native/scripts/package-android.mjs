@@ -33,10 +33,24 @@ export const ANDROID_ENGINES = ['quickjs', 'v8'];
  * it, which is why the V8 set below needs a different runtime binary rather than the same one plus
  * a library.
  */
+/**
+ * The Android SDL3 version, owned here because this file is the one that ships.
+ *
+ * It was written out by hand in four places and a bump left three of them naming an archive that
+ * no longer existed. `download-deps.mjs` imports it rather than the other way round: that script
+ * is a development-time provisioning path and is deliberately not in the published package, so a
+ * published install importing it fails at require time — which is what the clean-room Android
+ * test caught.
+ *
+ * 3.2.30 is the first release in this line whose 64-bit Android libraries carry 16 KB LOAD
+ * alignment, which Android 15 and later require. Do not go back.
+ */
+export const SDL3_ANDROID_VERSION = '3.2.30';
+
 export const ANDROID_PREBUILT_ASSETS = {
   'android-arm64-v8a-runtime': 'jniLibs/arm64-v8a/libmystral-runtime.so',
   'android-arm64-v8a-sdl3': 'jniLibs/arm64-v8a/libSDL3.so',
-  'android-sdl3-aar': 'SDL3-3.2.8.aar',
+  'android-sdl3-aar': `SDL3-${SDL3_ANDROID_VERSION}.aar`,
   'android-x86_64-runtime': 'jniLibs/x86_64/libmystral-runtime.so',
   'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
 };
@@ -60,7 +74,7 @@ export const ANDROID_PREBUILT_V8_ASSETS = {
   'android-arm64-v8a-v8': 'jniLibs/arm64-v8a/libv8android.so',
   'android-arm64-v8a-libcxx': 'jniLibs/arm64-v8a/libc++_shared.so',
   'android-arm64-v8a-v8-snapshot': 'assets/v8/arm64-v8a/snapshot_blob.bin',
-  'android-sdl3-aar': 'SDL3-3.2.8.aar',
+  'android-sdl3-aar': `SDL3-${SDL3_ANDROID_VERSION}.aar`,
   'android-x86_64-runtime-v8': 'jniLibs/x86_64/libmystral-runtime.so',
   'android-x86_64-sdl3': 'jniLibs/x86_64/libSDL3.so',
   'android-x86_64-v8': 'jniLibs/x86_64/libv8android.so',
@@ -637,7 +651,7 @@ export async function packageAndroid(
   await ensureWrapper();
   const sourceCheckout =
     existsSync(join(packageRoot, 'CMakeLists.txt')) &&
-    existsSync(join(packageRoot, 'third_party', 'sdl3-android', 'SDL3-3.2.8.aar'));
+    existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`));
   if (!sourceCheckout) {
     const preparePrebuilts =
       options.prepareAndroidPrebuilts ??

@@ -31,8 +31,20 @@ val prebuiltEngineFiles = if (nativeJsEngineName == "v8") listOf(
     prebuiltRoot.file("assets/v8/x86_64/snapshot_blob.bin"),
 ) else emptyList()
 
-val prebuiltFiles = listOf(
-    prebuiltRoot.file("SDL3-3.2.8.aar"),
+// The SDL3 AAR is found by name rather than named by hand. Its version was written out in four
+// separate places, and the bump to 3.2.30 — for 16 KB page alignment on Android 15 — left this one
+// pointing at an archive that no longer existed, which surfaced as a Gradle input-file error three
+// layers away from the pin it disagreed with.
+fun sdl3AarIn(directory: java.io.File): java.io.File? =
+    directory.listFiles { file -> file.name.startsWith("SDL3-") && file.name.endsWith(".aar") }
+        ?.sortedBy { it.name }
+        ?.lastOrNull()
+
+val prebuiltSdl3Aar = sdl3AarIn(prebuiltRoot.asFile)
+val sourceSdl3Aar = sdl3AarIn(runtimeRoot.file("third_party/sdl3-android").asFile)
+
+val prebuiltFiles = listOfNotNull(
+    prebuiltSdl3Aar?.let { prebuiltRoot.file(it.name) },
     prebuiltRoot.file("jniLibs/arm64-v8a/libSDL3.so"),
     prebuiltRoot.file("jniLibs/arm64-v8a/libmystral-runtime.so"),
     prebuiltRoot.file("jniLibs/x86_64/libSDL3.so"),
@@ -55,8 +67,8 @@ val usePrebuiltRuntime = prebuiltCount == prebuiltFiles.size
 if (!usePrebuiltRuntime && !runtimeRoot.file("CMakeLists.txt").asFile.isFile) {
     throw GradleException("Android prebuilt runtime is missing and source compilation is unavailable")
 }
-val sdl3Aar = if (usePrebuiltRuntime) prebuiltRoot.file("SDL3-3.2.8.aar")
-    else runtimeRoot.file("third_party/sdl3-android/SDL3-3.2.8.aar")
+val sdl3Aar = if (usePrebuiltRuntime) prebuiltRoot.file(prebuiltSdl3Aar!!.name)
+    else runtimeRoot.file("third_party/sdl3-android/${sourceSdl3Aar?.name ?: "SDL3.aar"}")
 val extractedSdl3JniLibs = layout.buildDirectory.dir("generated/sdl3-jniLibs")
 val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenative/assets")
 val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
@@ -377,7 +389,16 @@ android {
             // Compile the vendored SDL Java glue so ThreeNative can request a
             // larger SDLThread stack while retaining the official SDL native libs.
             if (!usePrebuiltRuntime) {
-                java.srcDir("../../third_party/sdl3/SDL3-3.2.8/android-project/app/src/main/java")
+                // Located rather than named, for the same reason as the AAR above: CMake already
+                // globs this directory, so a version bump used to move the native build and leave
+                // the Java source root pointing at a directory that no longer existed.
+                java.srcDir(
+                    (rootProject.file("../third_party/sdl3").listFiles { file ->
+                        file.isDirectory && file.name.startsWith("SDL3-")
+                    }?.sortedBy { it.name }?.lastOrNull()
+                        ?.resolve("android-project/app/src/main/java")
+                        ?: rootProject.file("../third_party/sdl3/missing-sdl3-source"))
+                )
             }
             // SDLActivity loads libSDL3.so before libmystral-runtime.so. The SDL3 AAR
             // stores native libs under prefab/, so extract and package both official

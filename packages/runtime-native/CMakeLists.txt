@@ -1288,6 +1288,15 @@ endif()
 
 if(ANDROID)
     add_library(mystral-runtime SHARED ${MYSTRAL_SOURCES})
+    # Android 15 and later can run with 16 KB memory pages, and a shared library whose LOAD
+    # segments are aligned to the older 4 KB cannot be loaded there at all. The system says so
+    # ahead of time, on a device still running 4 KB pages, with a modal "Android App
+    # Compatibility" dialog over the game naming each offending library — which covers the whole
+    # screen, so a blind `adb shell screencap` captures the dialog rather than the frame.
+    #
+    # NDK 27 does not pass this by default; NDK 28 does. Setting it here rather than waiting for
+    # the toolchain keeps the alignment a property of this build.
+    target_link_options(mystral-runtime PRIVATE "LINKER:-z,max-page-size=16384")
 else()
     add_library(mystral-runtime STATIC ${MYSTRAL_SOURCES})
 endif()

@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync
 import { pipeline } from 'stream/promises';
 import { join, dirname, relative, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { SDL3_ANDROID_VERSION } from './package-android.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -88,7 +89,11 @@ const DEPS = {
   },
   sdl3: {
     // SDL3 source - we build it statically for all platforms to get a single binary
-    version: '3.2.8',
+    //
+    // Kept on the same version as the Android AAR above. Android takes its native library from
+    // that AAR and its SDL Java classes from this tarball's `android-project`, so a skew between
+    // the two is a Java layer talking to a runtime it was not built against.
+    version: SDL3_ANDROID_VERSION,
     getUrl: () => {
       // Always download source tarball - we build it statically
       return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS.sdl3.version}/SDL3-${DEPS.sdl3.version}.tar.gz`;
@@ -475,10 +480,17 @@ const DEPS = {
   'sdl3-android': {
     // SDL3 Android development package
     // Contains AAR with prefab structure for CMake integration
-    version: '3.2.8',
+    //
+    // 3.2.30 rather than 3.2.8 for one reason: its 64-bit libraries are linked with 16 KB LOAD
+    // alignment, and 3.2.8's are not. Android 15 and later can run with 16 KB memory pages, where
+    // a 4 KB-aligned library cannot be loaded — the system warns about it on 4 KB devices with a
+    // modal dialog over the game naming each offending library. Same minor line, so this is a
+    // patch bump and not an SDL migration.
+    version: SDL3_ANDROID_VERSION,
     getUrl: () => {
       return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS['sdl3-android'].version}/SDL3-devel-${DEPS['sdl3-android'].version}-android.zip`;
     },
+    sha256: '0525e4bc9cc1370e6d664ec93c927846e311c19a819de05a232bca452b0e3a7a',
     extractTo: 'sdl3-android',
     // Need to extract the AAR to get prefab structure
     needsAarExtraction: true,
