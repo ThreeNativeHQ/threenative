@@ -217,4 +217,87 @@ $ grep -n "verify_peer\|TODO" packages/runtime-native/src/webtransport/webtransp
 - `pnpm typecheck`: passed.
 - `pnpm lint`: exited `0`; it reported 291 pre-existing warnings and no failure.
 - Focused PRD tests and native proofs: passed as recorded above.
-- `pnpm test`: exited `1` at the unrelated runtime-native conformance dry-run test. The isolated test reproduced a deterministic `Test timed out in 60000ms` after `63.52s`; its file had `40 passed`, `1 failed`. No PRD-197 source assertion failed.
+- Earlier `pnpm test` evidence in this record exited `1` at an unrelated runtime-native conformance dry-run test. The final rerun below passed.
+
+## Resume repair — null resources and timer installation order
+
+The review defects were reproduced before the source fix by adding the two new contracts and
+running the focused suite:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  2 failed (2)
+Tests       3 failed | 13 passed (16)
+exit 1
+```
+
+The failing controls were the restored warning path for a null sampler, the valid-layout/null-
+resource path, and the silent scheduler-first timer return. After restoring the source fix:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webtransport/peer-verification-contract.test.mjs \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  3 passed (3)
+Tests       20 passed (20)
+exit 0
+```
+
+The binding contract mutation restores the sampler warning and goes red; the timer contract
+mutation restores `if (!jsEngine_) return;` and goes red. Both contracts also check their
+positive behavior: null/undefined, buffer, sampler, texture-view, and generic resources name
+the resource, binding, and reason before bind-group creation submits; engine-first and
+scheduler-first installation produce the same timeout/interval delivery sequence.
+
+The repaired native sources compiled and the display-free proofs passed:
+
+```text
+$ cmake --build packages/runtime-native/build/tn-linux \
+    --target threenative-bindings-creation-test threenative-timer-delivery-test --parallel 4
+[1/4] Building CXX object CMakeFiles/mystral-runtime.dir/src/webgpu/bindings.cpp.o
+[2/4] Linking CXX static library libmystral-runtime.a
+[3/4] Linking CXX executable threenative-bindings-creation-test
+[4/4] Linking CXX executable threenative-timer-delivery-test
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-bindings-creation-test
+native WebGPU creation bindings passed
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test
+[Mystral] process.exit(42) called
+native timer delivery contract passed
+exit 0
+```
+
+Final repository reruns for this repair:
+
+```text
+$ pnpm native:build
+exit 0
+
+$ SDL_AUDIODRIVER=dummy pnpm --filter @threenative/runtime-native native:verify:desktop
+desktop audio decodeAudioData Promise proof passed on V8
+desktop core gate passed: 300 frames, 1280x720
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed
+exit 0
+
+$ pnpm typecheck
+exit 0
+
+$ pnpm lint
+exit 0
+291 pre-existing warnings; no failure
+
+$ pnpm test
+Test Files  198 passed (198)
+Tests       1883 passed (1883)
+exit 0
+```
+
+The live WebTransport fixture remains explicitly fail-closed at the absent
+`packages/runtime-native/examples/webtransport/server` path above. No live certificate
+handshake is claimed. QuickJS native execution, Android, and iOS remain unverified.

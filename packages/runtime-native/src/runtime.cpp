@@ -1114,7 +1114,11 @@ private:
     }
 
     void setupTimers() {
-        if (!jsEngine_) return;
+        if (!jsEngine_) {
+            timerInstallationPending_ = true;
+            return;
+        }
+        if (timerInstallationInstalled_) return;
 
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // libuv-based timers for precise timing
@@ -1123,6 +1127,8 @@ private:
         // Fallback to std::chrono-based timers
         setupChronoTimers();
 #endif
+        timerInstallationPending_ = false;
+        timerInstallationInstalled_ = true;
     }
 
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
@@ -3592,6 +3598,8 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     std::vector<TimerCallback> timerCallbacks_;
 #endif
     std::unordered_set<int> cancelledTimerIds_;  // Track IDs cancelled during callback execution
+    bool timerInstallationPending_ = false;
+    bool timerInstallationInstalled_ = false;
     int nextTimerId_ = 1;
 
     // Pending async file read callbacks (processed on main thread)

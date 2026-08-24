@@ -17,6 +17,47 @@ function assertTimerContract(v8, quickjs, runtime) {
   assert.match(runtime, /executeTimerCallbacks\(\);/u);
 }
 
+function assertTimerInstallationOrderContract(runtime) {
+  const setup = runtime.slice(
+    runtime.indexOf("void setupTimers()"),
+    runtime.indexOf("\n    }\n\n#ifdef MYSTRAL_USE_LIBUV_TIMERS", runtime.indexOf("void setupTimers()")),
+  );
+
+  assert.match(
+    setup,
+    /if \(!jsEngine_\) \{\s*timerInstallationPending_ = true;\s*return;\s*\}/u,
+    "scheduler-first setup must remain pending until the engine exists",
+  );
+  assert.match(setup, /if \(timerInstallationInstalled_\) return;/u);
+  assert.match(setup, /timerInstallationPending_ = false;\s*timerInstallationInstalled_ = true;/u);
+  assert.match(runtime, /bool timerInstallationPending_ = false;/u);
+  assert.match(runtime, /bool timerInstallationInstalled_ = false;/u);
+}
+
+function deliveredTimerSequence(order) {
+  let engineReady = false;
+  let timersInstalled = false;
+  let installationPending = false;
+
+  for (const step of order) {
+    if (step === "scheduler") {
+      if (!engineReady) {
+        installationPending = true;
+      } else if (!timersInstalled) {
+        timersInstalled = true;
+      }
+    } else {
+      engineReady = true;
+      if (installationPending || !timersInstalled) {
+        timersInstalled = true;
+        installationPending = false;
+      }
+    }
+  }
+
+  return timersInstalled ? ["timeout", "interval", "interval", "interval"] : [];
+}
+
 function assertTimerExecutableFailsClosed(source) {
   assert.match(source, /constexpr int kCompletionExitCode = [1-9]\d*;/u);
   assert.match(source, /process\.exit\(timeoutCount === 1 && intervalCount === 3 \? 42 : 1\);/u);
@@ -38,6 +79,31 @@ test("native timers have one real runtime owner and no engine-level stubs", () =
   const runtime = read("src/runtime.cpp");
 
   assert.doesNotThrow(() => assertTimerContract(v8, quickjs, runtime));
+});
+
+test("timer installation delivers identically in engine-first and scheduler-first order", () => {
+  const runtime = read("src/runtime.cpp");
+  assert.doesNotThrow(() => assertTimerInstallationOrderContract(runtime));
+  assert.deepEqual(
+    deliveredTimerSequence(["engine", "scheduler"]),
+    deliveredTimerSequence(["scheduler", "engine"]),
+  );
+});
+
+test("timer contract rejects restoring the silent scheduler-first return", () => {
+  const source = read("src/runtime.cpp");
+  const setupStart = source.indexOf("void setupTimers()");
+  const setupEnd = source.indexOf("#ifdef MYSTRAL_USE_LIBUV_TIMERS", setupStart);
+  const setup = source.slice(setupStart, setupEnd);
+  const oldSetup = setup.replace(
+    /if \(!jsEngine_\) \{[\s\S]*?return;\s*\}/u,
+    "if (!jsEngine_) return;",
+  );
+
+  assert.throws(
+    () => assertTimerInstallationOrderContract(`${source.slice(0, setupStart)}${oldSetup}${source.slice(setupEnd)}`),
+    /scheduler-first/u,
+  );
 });
 
 test("JSC does not install a non-scheduling timer stub", () => {

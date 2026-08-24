@@ -65,6 +65,42 @@ function assertBindGroupViewOwnership(candidate) {
   assert.ok(successRelease < wrapperCreation, "successful ownership must be released before wrapping");
 }
 
+function assertNullResourceValidation(candidate) {
+  const bindGroup = blockBetween(
+    candidate,
+    'g_engine->newFunction("createBindGroup"',
+    '// device.createPipelineLayout(descriptor)',
+  );
+
+  assert.ok(
+    bindGroup.includes(
+      'if (g_engine->isUndefined(resource) || g_engine->isNull(resource)) {',
+    ),
+    "a valid layout must not accept a null or undefined resource",
+  );
+  assert.ok(
+    bindGroup.includes('return failResource("resource", "resource handle is null or undefined", bgEntry.binding);'),
+    "a valid layout must reject a null or undefined resource",
+  );
+  assert.ok(
+    bindGroup.includes('return failResource("buffer", "native handle is null", bgEntry.binding);'),
+    "a null buffer handle must fail at bind-group creation",
+  );
+  assert.ok(
+    bindGroup.includes('return failResource("sampler", "native handle is null", bgEntry.binding);'),
+    "a null sampler handle must fail at bind-group creation",
+  );
+  assert.ok(
+    bindGroup.includes('return failResource("texture view", "native handle is null", bgEntry.binding);'),
+    "a null texture-view handle must fail at bind-group creation",
+  );
+  assert.ok(
+    bindGroup.includes('return failResource("resource", "native handle is null", bgEntry.binding);'),
+    "a generic null resource handle must fail at bind-group creation",
+  );
+  assert.doesNotMatch(bindGroup, /\[WebGPU\] Warning: (Sampler|TextureView|Resource at binding)/u);
+}
+
 test("WebGPU creation bindings fail at creation for null native handles", () => {
   const source = read("src/webgpu/bindings.cpp");
   assert.doesNotThrow(() => assertCreationChecks(source));
@@ -73,6 +109,32 @@ test("WebGPU creation bindings fail at creation for null native handles", () => 
 test("bind-group creation releases automatically created views on failure and success", () => {
   const source = read("src/webgpu/bindings.cpp");
   assert.doesNotThrow(() => assertBindGroupViewOwnership(source));
+});
+
+test("bind-group creation rejects null sampler, view, buffer, and generic resources", () => {
+  const source = read("src/webgpu/bindings.cpp");
+  assert.doesNotThrow(() => assertNullResourceValidation(source));
+});
+
+test("resource validation contract rejects restoring the warning path", () => {
+  const source = read("src/webgpu/bindings.cpp");
+  const warningPath = source.replace(
+    'return failResource("sampler", "native handle is null");',
+    'std::cerr << "[WebGPU] Warning: Sampler at binding " << bgEntry.binding << " is null" << std::endl;',
+  );
+  const bindGroup = blockBetween(
+    warningPath,
+    'g_engine->newFunction("createBindGroup"',
+    '// device.createPipelineLayout(descriptor)',
+  );
+
+  assert.throws(
+    () => assert.ok(
+      bindGroup.includes('return failResource("sampler", "native handle is null");'),
+      "sampler null-resource validation",
+    ),
+    /sampler null-resource validation/u,
+  );
 });
 
 test("bind-group ownership contract rejects removing failure-path view cleanup", () => {

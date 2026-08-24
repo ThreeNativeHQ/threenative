@@ -4669,6 +4669,20 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             bindGroupEntries.reserve(entryCount);
                             std::vector<WGPUTextureView> autoCreatedViews;
 
+                            auto releaseAutoCreatedViews = [&autoCreatedViews]() {
+                                for (auto v : autoCreatedViews) {
+                                    wgpuTextureViewRelease(v);
+                                }
+                            };
+                            auto failResource = [&](const std::string& resourceType, const std::string& reason, uint32_t binding) -> js::JSValueHandle {
+                                releaseAutoCreatedViews();
+                                const std::string message =
+                                    "Failed to create bind group: " + resourceType +
+                                    " at binding " + std::to_string(binding) + ": " + reason;
+                                g_engine->throwException(message.c_str());
+                                return g_engine->newUndefined();
+                            };
+
                             for (int i = 0; i < entryCount; i++) {
                                 auto entry = g_engine->getPropertyIndex(entries, i);
 
@@ -4676,12 +4690,18 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                 bgEntry.binding = (uint32_t)g_engine->toNumber(g_engine->getProperty(entry, "binding"));
 
                                 auto resource = g_engine->getProperty(entry, "resource");
+                                if (g_engine->isUndefined(resource) || g_engine->isNull(resource)) {
+                                    return failResource("resource", "resource handle is null or undefined", bgEntry.binding);
+                                }
 
                                 // Check if resource is a sampler (has no buffer property)
                                 auto bufferProp = g_engine->getProperty(resource, "buffer");
                                 if (!g_engine->isUndefined(bufferProp)) {
                                     // Buffer binding: {buffer, offset?, size?}
                                     bgEntry.buffer = (WGPUBuffer)g_engine->getPrivateData(bufferProp);
+                                    if (!bgEntry.buffer) {
+                                        return failResource("buffer", "native handle is null", bgEntry.binding);
+                                    }
 
                                     auto offset = g_engine->getProperty(resource, "offset");
                                     bgEntry.offset = g_engine->isUndefined(offset) ? 0 : (uint64_t)g_engine->toNumber(offset);
@@ -4701,16 +4721,16 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                             if (resourcePtr) {
                                                 bgEntry.sampler = (WGPUSampler)resourcePtr;
                                             } else {
-                                                std::cerr << "[WebGPU] Warning: Sampler at binding " << bgEntry.binding << " is null" << std::endl;
+                                                return failResource("sampler", "native handle is null", bgEntry.binding);
                                             }
                                         } else if (typeStr == "textureView") {
                                             if (resourcePtr) {
                                                 bgEntry.textureView = (WGPUTextureView)resourcePtr;
                                             } else {
-                                                std::cerr << "[WebGPU] Warning: TextureView at binding " << bgEntry.binding << " is null, creating placeholder" << std::endl;
-                                                // Create a 1x1 placeholder texture view to avoid validation errors
-                                                // This is a workaround for textures that failed to create
+                                                return failResource("texture view", "native handle is null", bgEntry.binding);
                                             }
+                                        } else if (!resourcePtr) {
+                                            return failResource("resource", "native handle is null", bgEntry.binding);
                                         }
                                     } else if (resourcePtr) {
                                         // No type hint - try to detect based on properties
@@ -4722,6 +4742,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                             WGPUTexture tex = (WGPUTexture)resourcePtr;
                                             WGPUTextureViewDescriptor viewDesc = {};
                                             WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
+                                            if (!view) {
+                                                return failResource("texture view", "native handle is null after automatic creation", bgEntry.binding);
+                                            }
 
                                             autoCreatedViews.push_back(view);
                                             bgEntry.textureView = view;
@@ -4731,7 +4754,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                             bgEntry.sampler = (WGPUSampler)resourcePtr;
                                         }
                                     } else {
-                                        std::cerr << "[WebGPU] Warning: Resource at binding " << bgEntry.binding << " has null privateData" << std::endl;
+                                        return failResource("resource", "native handle is null", bgEntry.binding);
                                     }
                                 }
 
@@ -4742,12 +4765,6 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             bgDesc.layout = layout;
                             bgDesc.entryCount = bindGroupEntries.size();
                             bgDesc.entries = bindGroupEntries.data();
-
-                            auto releaseAutoCreatedViews = [&autoCreatedViews]() {
-                                for (auto v : autoCreatedViews) {
-                                    wgpuTextureViewRelease(v);
-                                }
-                            };
 
                             WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(g_device, &bgDesc);
                             if (!bindGroup) {
