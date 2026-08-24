@@ -301,3 +301,122 @@ exit 0
 The live WebTransport fixture remains explicitly fail-closed at the absent
 `packages/runtime-native/examples/webtransport/server` path above. No live certificate
 handshake is claimed. QuickJS native execution, Android, and iOS remain unverified.
+
+## Resume repair 2 — live timer consume and sampler mutation (2026-08-24)
+
+The second review handoff required the timer contract to exercise the production
+scheduler-first path and its pending-state consume, and required the sampler mutation to
+match the live three-argument `failResource` call.
+
+### Red controls
+
+Before the runtime timer fix, the new timer controls failed against the production source:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  1 failed | 1 passed (2)
+Tests       2 failed | 15 passed (17)
+exit 1
+```
+
+The failures were the missing pre-engine scheduler request and the missing production
+pending-state consume. Removing the live sampler validation branch also went red:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webgpu-bindings-contract.test.mjs --reporter=dot
+Test Files  1 failed (1)
+Tests       1 failed | 6 passed (7)
+Error: a null sampler handle must fail at bind-group creation
+exit 1
+```
+
+### Green controls
+
+After the runtime and contract fixes, the focused native contract suite passed:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webtransport/peer-verification-contract.test.mjs \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  3 passed (3)
+Tests       21 passed (21)
+exit 0
+```
+
+The timer test now checks the actual `initializeJSAndBindings()` order and rejects a source
+mutation that removes the pending-state consume. The native timer executable separately
+proves timeout/interval delivery. The WebGPU contract retains null sampler, view, buffer, and
+generic-resource coverage and its live three-argument mutation goes red.
+
+### Native and repository gates
+
+```text
+$ pnpm native:build
+[4/4] Linking CXX executable mystral
+exit 0
+
+$ cmake --build packages/runtime-native/build/tn-linux \
+    --target threenative-bindings-creation-test threenative-timer-delivery-test --parallel 4
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-bindings-creation-test
+native WebGPU creation bindings passed
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test
+[Mystral] process.exit(42) called
+native timer delivery contract passed
+exit 0
+
+$ SDL_AUDIODRIVER=dummy pnpm --filter @threenative/runtime-native native:verify:desktop
+desktop audio decodeAudioData Promise proof passed on V8
+desktop core gate passed: 300 frames, 1280x720
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed
+exit 0
+
+$ pnpm typecheck
+exit 0
+
+$ pnpm lint
+exit 0
+291 pre-existing warnings; no failure
+
+$ pnpm budgets
+exit 0
+
+$ PATH=/tmp/tn-repair-timeout-bin:$PATH pnpm test
+Test Files  198 passed (198)
+Tests       1883 passed (1883)
+suite temporary directory count unchanged: 0
+exit 0
+```
+
+The plain `pnpm test` command was attempted twice and stopped in the pre-suite playtest
+orphan guard because reparented Chromium processes remained after its bounded cleanup timeout;
+the cleanup shim above was outside the repository and was not committed. The complete suite
+then passed with that process-group cleanup in place.
+
+The required peer-verification source check remains:
+
+```text
+$ grep -n "verify_peer\|TODO" packages/runtime-native/src/webtransport/webtransport.cpp
+808:    quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
+```
+
+The live WebTransport prerequisite remains explicitly blocked and fail-closed:
+
+```text
+$ TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1 pnpm --dir packages/runtime-native exec vitest run \
+    --config vitest.config.ts tests/webtransport/webtransport.test.ts --reporter=dot
+Error: WebTransport live certificate fixture prerequisite failed: requires WebTransport echo-server source \
+(/home/joao/projects/threenative/threenative-engine/.worktrees/prd-197-native-host-fails-loudly/packages/runtime-native/examples/webtransport/server)
+Tests       11 skipped (11)
+exit 1
+```
+
+No live certificate handshake is claimed. QuickJS native execution, Android, and iOS remain
+unverified.

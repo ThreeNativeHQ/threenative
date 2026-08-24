@@ -22,6 +22,19 @@ function assertTimerInstallationOrderContract(runtime) {
     runtime.indexOf("void setupTimers()"),
     runtime.indexOf("\n    }\n\n#ifdef MYSTRAL_USE_LIBUV_TIMERS", runtime.indexOf("void setupTimers()")),
   );
+  const initializeStart = runtime.indexOf("bool initializeJSAndBindings()");
+  const initializeEnd = runtime.indexOf("\n    void shutdown()", initializeStart);
+  assert.ok(initializeStart >= 0, "runtime must initialize JavaScript bindings");
+  assert.ok(initializeEnd > initializeStart, "runtime initialization must have a bounded body");
+  const initialize = runtime.slice(initializeStart, initializeEnd);
+  const engineCreation = initialize.indexOf("jsEngine_ = js::createEngine();");
+  const schedulerSetup = initialize.indexOf("setupTimers();");
+
+  assert.ok(schedulerSetup >= 0, "runtime initialization must request timer setup");
+  assert.ok(
+    schedulerSetup < engineCreation,
+    "the production scheduler-first path must request timers before engine creation",
+  );
 
   assert.match(
     setup,
@@ -30,32 +43,13 @@ function assertTimerInstallationOrderContract(runtime) {
   );
   assert.match(setup, /if \(timerInstallationInstalled_\) return;/u);
   assert.match(setup, /timerInstallationPending_ = false;\s*timerInstallationInstalled_ = true;/u);
+  assert.match(
+    initialize.slice(engineCreation),
+    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\} else if \(!timerInstallationInstalled_\) \{[\s\S]*?setupTimers\(\);\s*\}/u,
+    "engine creation must consume a pending timer installation and retain the engine-first path",
+  );
   assert.match(runtime, /bool timerInstallationPending_ = false;/u);
   assert.match(runtime, /bool timerInstallationInstalled_ = false;/u);
-}
-
-function deliveredTimerSequence(order) {
-  let engineReady = false;
-  let timersInstalled = false;
-  let installationPending = false;
-
-  for (const step of order) {
-    if (step === "scheduler") {
-      if (!engineReady) {
-        installationPending = true;
-      } else if (!timersInstalled) {
-        timersInstalled = true;
-      }
-    } else {
-      engineReady = true;
-      if (installationPending || !timersInstalled) {
-        timersInstalled = true;
-        installationPending = false;
-      }
-    }
-  }
-
-  return timersInstalled ? ["timeout", "interval", "interval", "interval"] : [];
 }
 
 function assertTimerExecutableFailsClosed(source) {
@@ -84,9 +78,18 @@ test("native timers have one real runtime owner and no engine-level stubs", () =
 test("timer installation delivers identically in engine-first and scheduler-first order", () => {
   const runtime = read("src/runtime.cpp");
   assert.doesNotThrow(() => assertTimerInstallationOrderContract(runtime));
-  assert.deepEqual(
-    deliveredTimerSequence(["engine", "scheduler"]),
-    deliveredTimerSequence(["scheduler", "engine"]),
+});
+
+test("timer contract rejects removing the production pending-state consume", () => {
+  const source = read("src/runtime.cpp");
+  const withoutPendingConsume = source.replace(
+    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\} else if \(!timerInstallationInstalled_\) \{[\s\S]*?setupTimers\(\);\s*\}/u,
+    "if (!timerInstallationInstalled_) { setupTimers(); }",
+  );
+
+  assert.throws(
+    () => assertTimerInstallationOrderContract(withoutPendingConsume),
+    /pending timer installation/u,
   );
 });
 

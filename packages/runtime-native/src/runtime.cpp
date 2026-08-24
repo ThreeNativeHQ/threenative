@@ -440,6 +440,10 @@ public:
 
     // Helper method to initialize JS engine and bindings (shared by SDL and no-SDL paths)
     bool initializeJSAndBindings() {
+        // Register the timer scheduler before engine creation as well as after it. The
+        // pending flag makes this scheduler-first path converge on the same installation.
+        setupTimers();
+
         // Initialize JavaScript engine
         LOGI("Creating JavaScript engine...");
         jsEngine_ = js::createEngine();
@@ -455,7 +459,13 @@ public:
         setupAnimationFrame();
 
         // Set up setTimeout/setInterval
-        setupTimers();
+        if (timerInstallationPending_) {
+            setupTimers();
+        } else if (!timerInstallationInstalled_) {
+            // Preserve the engine-first path for callers that have not requested the
+            // scheduler before engine creation.
+            setupTimers();
+        }
 
         // Set up performance API
         setupPerformance();

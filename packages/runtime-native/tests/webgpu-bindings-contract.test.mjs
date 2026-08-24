@@ -119,7 +119,7 @@ test("bind-group creation rejects null sampler, view, buffer, and generic resour
 test("resource validation contract rejects restoring the warning path", () => {
   const source = read("src/webgpu/bindings.cpp");
   const warningPath = source.replace(
-    'return failResource("sampler", "native handle is null");',
+    'return failResource("sampler", "native handle is null", bgEntry.binding);',
     'std::cerr << "[WebGPU] Warning: Sampler at binding " << bgEntry.binding << " is null" << std::endl;',
   );
   const bindGroup = blockBetween(
@@ -130,7 +130,7 @@ test("resource validation contract rejects restoring the warning path", () => {
 
   assert.throws(
     () => assert.ok(
-      bindGroup.includes('return failResource("sampler", "native handle is null");'),
+      bindGroup.includes('return failResource("sampler", "native handle is null", bgEntry.binding);'),
       "sampler null-resource validation",
     ),
     /sampler null-resource validation/u,
