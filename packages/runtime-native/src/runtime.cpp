@@ -4317,10 +4317,26 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
                     }
                 }
 
+                // The Worker polyfill's failed-load path constructs an ErrorEvent
+                // (runtime.cpp, urlPolyfill); without this global that path throws
+                // ReferenceError instead of delivering worker.onerror to the game.
+                class ErrorEvent extends Event {
+                    constructor(type, init) {
+                        init = init || {};
+                        super(type, init);
+                        this.message = String(init.message || "");
+                        this.filename = String(init.filename || "");
+                        this.lineno = Number(init.lineno || 0);
+                        this.colno = Number(init.colno || 0);
+                        this.error = init.error !== undefined ? init.error : null;
+                    }
+                }
+
                 globalThis.Event = Event;
                 globalThis.PointerEvent = PointerEvent;
                 globalThis.TouchEvent = TouchEvent;
                 globalThis.KeyboardEvent = KeyboardEvent;
+                globalThis.ErrorEvent = ErrorEvent;
             })();
         )JS";
         jsEngine_->eval(eventConstructorsSetup, "event-constructors-setup");

@@ -14,7 +14,7 @@ function constructorSource(candidate) {
     /const char\* eventConstructorsSetup = R"JS\(([\s\S]*?)\)JS";/u,
   );
   assert.ok(match, "runtime must install executable event constructors");
-  for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent"]) {
+  for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent", "ErrorEvent"]) {
     assert.match(match[1], new RegExp(`globalThis\\.${name} = ${name};`, "u"));
   }
   return match[1];
