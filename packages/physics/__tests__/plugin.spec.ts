@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { ICtx, IGamePluginRuntime } from "@threenative/core";
 import { Object3D } from "three";
@@ -7,7 +8,7 @@ import { Area3D } from "../src/Area3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { PHYSICS_TRANSFORM_STRIDE } from "../src/index.js";
-import { type IPhysicsContext, rapier } from "../src/plugin.js";
+import { type IPhysicsContext, isSmallBufferError, rapier } from "../src/plugin.js";
 
 const plugins: Array<ReturnType<typeof rapier>> = [];
 
@@ -26,6 +27,36 @@ afterEach(() => {
 });
 
 describe("rapier plugin", () => {
+  it("should use one ABI buffer matcher in both adapters", () => {
+    const pluginSource = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+    const nativeSource = readFileSync(new URL("../src/native/host.ts", import.meta.url), "utf8");
+
+    expect(pluginSource).toContain("export function isSmallBufferError");
+    expect(nativeSource).toContain('import { isSmallBufferError } from "../plugin.js";');
+    expect(nativeSource).not.toContain("function isSmallBufferError");
+  });
+
+  it("should keep the ABI buffer message contract shared", () => {
+    expect(isSmallBufferError(new Error("buffer is too small for visible transforms"))).toBe(true);
+    expect(isSmallBufferError(new Error("BUFFER IS TOO SMALL"))).toBe(true);
+    expect(isSmallBufferError(new Error("buffer capacity exhausted"))).toBe(false);
+    expect(isSmallBufferError("buffer is too small")).toBe(false);
+  });
+
+  it("should route sceneExit and dispose through one ordered teardown", () => {
+    const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+
+    expect(source.match(/function teardown/g)).toHaveLength(1);
+    expect(source.match(/teardown\("sceneExit"/g)).toHaveLength(1);
+    expect(source.match(/teardown\("dispose"/g)).toHaveLength(1);
+    expect(
+      source.match(/for \(const area of \[\.\.\.areas\.values\(\)\]\) area\.dispose\(\)/g),
+    ).toHaveLength(1);
+    expect(source.match(/for \(const body of \[\.\.\.bodies\]\) body\.dispose\(\)/g)).toHaveLength(
+      1,
+    );
+  });
+
   it("should register the actual Rapier runtime version", async () => {
     await RAPIER.init();
     const plugin = rapier();
@@ -161,6 +192,42 @@ describe("rapier plugin", () => {
     plugin.sceneExit?.(ctx);
     expect((body.body.raw as RAPIER.RigidBody).isValid()).toBe(false);
     expect((area.body.raw as RAPIER.RigidBody).isValid()).toBe(false);
+  });
+
+  it("releases the same registered set through sceneExit and dispose", async () => {
+    async function release(kind: "sceneExit" | "dispose") {
+      const plugin = rapier({ deterministicRestart: true, gravity: { x: 0, y: 0, z: 0 } });
+      const ctx = { physics: undefined } as unknown as ICtx<
+        Record<string, unknown>,
+        IPhysicsContext
+      >;
+      await plugin.setup?.(ctx);
+      plugins.push(plugin);
+      const body = new RigidBody3D({
+        object: new Object3D(),
+        physics: ctx.physics,
+        shape: CollisionShape3D.box(1, 1, 1),
+      });
+      const area = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1) });
+      const simulation = ctx.physics.simulation;
+      const bodyDispose = vi.spyOn(body, "dispose");
+      const areaDispose = vi.spyOn(area, "dispose");
+      const simulationDispose = vi.spyOn(simulation, "dispose");
+
+      if (kind === "sceneExit") plugin.sceneExit?.(ctx);
+      else plugin.dispose?.(ctx);
+
+      return {
+        areaDisposeCalls: areaDispose.mock.calls.length,
+        areaReleased: areaDispose.mock.calls.length === 1,
+        bodyDisposeCalls: bodyDispose.mock.calls.length,
+        bodyReleased: bodyDispose.mock.calls.length === 1,
+        numBodies: ctx.physics.numBodies(),
+        simulationDisposeCalls: simulationDispose.mock.calls.length,
+      };
+    }
+
+    expect(await release("sceneExit")).toEqual(await release("dispose"));
   });
 
   it("should report zero bodies after dispose", async () => {

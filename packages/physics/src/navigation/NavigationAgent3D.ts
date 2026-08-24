@@ -19,6 +19,10 @@ export interface INavigationAgent3DOptions {
 const MAX_CROWD_AGENTS = 64;
 const MAX_CROWD_AGENT_RADIUS = 2;
 type NavigationArray = [number, number, number];
+interface ITargetPlan {
+  readonly path: readonly NavigationVector3[];
+  readonly reachable: boolean;
+}
 
 function finitePositive(name: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0)
@@ -177,36 +181,13 @@ export class NavigationAgent3D {
     this.#targetRevision += 1;
     this.#pathIndex = 0;
     this.#finished = false;
-    // One path computation serves both storage and reachability: retargeting used to run
-    // computePath twice — once inside isTargetReachable and once to store #path — which doubled
-    // the most expensive navigation call for chase AI that retargets every frame.
     const target = this.#target;
-    const start = this.navigation.query.findClosestPoint(
-      toNavigationVector(this.object.position, this.#objectRecord),
-    );
-    const end = this.navigation.query.findClosestPoint(
-      toNavigationVector(target, this.#targetRecord),
-    );
-    if (!this.#hasEnabledRegion() || !start.success || !end.success) {
-      this.#path = [];
+    const plan = this.#planTarget(target, this.targetDesiredDistance);
+    this.#path = plan.path.map((point) => new Vector3(point.x, point.y, point.z));
+    if (!plan.reachable) {
       this.#crowdAgent?.resetMoveTarget();
-    } else if (start.polyRef === end.polyRef) {
-      // Same polygon as today: judged from the closest point, with one computation for storage.
-      this.#storeComputedPath(target);
-      if (
-        !navigationPointMatchesTarget(end.point, target, this.targetDesiredDistance, this.height)
-      ) {
-        this.#crowdAgent?.resetMoveTarget();
-      } else if (this.#path.length > 0) {
-        this.#requestCrowdMoveTarget(target);
-      }
-    } else {
-      const reachable = this.#storeComputedPath(target);
-      if (!reachable) {
-        this.#crowdAgent?.resetMoveTarget();
-      } else if (this.#path.length > 0) {
-        this.#requestCrowdMoveTarget(target);
-      }
+    } else if (this.#path.length > 0) {
+      this.#requestCrowdMoveTarget(target);
     }
     for (const handler of this.#listeners.pathChanged) handler();
   }
@@ -230,54 +211,35 @@ export class NavigationAgent3D {
     return this.#target !== undefined && this.#finished;
   }
 
-  /**
-   * Computes the path from the current object position to `target` once, stores it, and reports
-   * whether its final waypoint lands within tolerance. The one place both `setTargetPosition`
-   * and reachability judgments get their path from.
-   */
-  #storeComputedPath(target: Vector3): boolean {
-    const result = this.navigation.query.computePath(
-      toNavigationVector(this.object.position, this.#objectRecord),
-      toNavigationVector(target, this.#targetRecord),
-    );
-    this.#path = result.success
-      ? result.path.map((point) => new Vector3(point.x, point.y, point.z))
-      : [];
-    const final = this.#path.at(-1);
-    return (
-      result.success &&
-      final !== undefined &&
-      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
-    );
-  }
-
-  isTargetReachable(position?: Pick<Vector3, "x" | "y" | "z">): boolean {
-    const target = position ?? this.#target;
-    if (target === undefined) return false;
+  /** The single planner chain shared by target issuance and reachability queries. */
+  #planTarget(target: Pick<Vector3, "x" | "y" | "z">, tolerance: number): ITargetPlan {
     const start = this.navigation.query.findClosestPoint(
       toNavigationVector(this.object.position, this.#objectRecord),
     );
     const end = this.navigation.query.findClosestPoint(
       toNavigationVector(target, this.#targetRecord),
     );
-    if (!this.#hasEnabledRegion() || !start.success || !end.success) return false;
-    if (start.polyRef === end.polyRef)
-      return navigationPointMatchesTarget(
-        end.point,
-        target,
-        this.targetDesiredDistance,
-        this.height,
-      );
-    const path = this.navigation.query.computePath(
+    if (!this.#hasEnabledRegion() || !start.success || !end.success)
+      return { path: [], reachable: false };
+    const result = this.navigation.query.computePath(
       toNavigationVector(this.object.position, this.#objectRecord),
       toNavigationVector(target, this.#targetRecord),
     );
-    const final = path.path.at(-1);
-    return (
-      path.success &&
-      final !== undefined &&
-      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
-    );
+    const path = result.success ? result.path : [];
+    const final = start.polyRef === end.polyRef ? end.point : path.at(-1);
+    return {
+      path,
+      reachable:
+        result.success &&
+        final !== undefined &&
+        navigationPointMatchesTarget(final, target, tolerance, this.height),
+    };
+  }
+
+  isTargetReachable(position?: Pick<Vector3, "x" | "y" | "z">): boolean {
+    const target = position ?? this.#target;
+    if (target === undefined) return false;
+    return this.#planTarget(target, this.targetDesiredDistance).reachable;
   }
 
   getFinalPosition(): Vector3 {
@@ -339,8 +301,12 @@ export class NavigationAgent3D {
     }
     const reached =
       this.#pathIndex === this.#path.length - 1 &&
-      horizontalDistanceSquared(this.object.position, this.#target) <=
-        this.targetDesiredDistance ** 2;
+      navigationPointMatchesTarget(
+        this.object.position,
+        this.#target,
+        this.targetDesiredDistance,
+        this.height,
+      );
     if (!reached || this.#finished) return;
     this.#finished = true;
     for (const handler of this.#listeners.targetReached) handler();

@@ -66,6 +66,14 @@ function mouseButtonMask(button: number): number {
   return MOUSE_BUTTON_BITS[button] ?? 0;
 }
 
+export function clientToCanvas(
+  position: Pick<Vector2, "x" | "y">,
+  canvas?: { readonly getBoundingClientRect?: () => Pick<DOMRect, "left" | "top"> },
+): Vector2 {
+  const rect = canvas?.getBoundingClientRect?.();
+  return new Vector2(position.x - (rect?.left ?? 0), position.y - (rect?.top ?? 0));
+}
+
 export interface IInputGamepad {
   readonly axes: ArrayLike<number>;
   readonly buttons: readonly { readonly pressed: boolean }[];
@@ -235,9 +243,12 @@ export class InputMap {
     }
     const binding = this.#bindings[name];
     if (binding === undefined) return vector.set(0, 0);
-    vector.set(this.#isHeld(binding.left) ? -1 : 0, this.#isHeld(binding.down) ? -1 : 0);
-    if (this.#isHeld(binding.right)) vector.x += 1;
-    if (this.#isHeld(binding.up)) vector.y += 1;
+    vector.set(
+      this.#hasAnyCode(binding.left, this.#heldKeys) ? -1 : 0,
+      this.#hasAnyCode(binding.down, this.#heldKeys) ? -1 : 0,
+    );
+    if (this.#hasAnyCode(binding.right, this.#heldKeys)) vector.x += 1;
+    if (this.#hasAnyCode(binding.up, this.#heldKeys)) vector.y += 1;
     if (name === "move" && this.#gamepadAxes.length >= 2) {
       vector.x += this.#gamepadAxes[0] ?? 0;
       vector.y += -(this.#gamepadAxes[1] ?? 0);
@@ -291,29 +302,13 @@ export class InputMap {
   pressed(name: string): boolean {
     const binding = this.#bindings[name];
     if (binding === undefined) return false;
-    if (
-      this.#isHeld(binding.keys) ||
-      this.#isHeld(binding.down) ||
-      this.#isHeld(binding.left) ||
-      this.#isHeld(binding.right) ||
-      this.#isHeld(binding.up) ||
-      (binding.pointer === true && this.#pointers.size > 0)
-    )
-      return true;
-    const mouseButtons = binding.mouseButtons;
-    if (mouseButtons !== undefined) {
-      for (let index = 0; index < mouseButtons.length; index += 1) {
-        if ((this.#pointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
-          return true;
-      }
-    }
-    const gamepadButtons = binding.buttons;
-    if (gamepadButtons !== undefined) {
-      for (let index = 0; index < gamepadButtons.length; index += 1) {
-        if (this.#gamepadButtons[gamepadButtons[index] as number] === true) return true;
-      }
-    }
-    return false;
+    return this.#isBindingActive(
+      binding,
+      this.#heldKeys,
+      this.#pointers.size > 0,
+      this.#pointerButtons,
+      this.#gamepadButtons,
+    );
   }
 
   justPressed(name: string): boolean {
@@ -403,37 +398,58 @@ export class InputMap {
   #latchedPressed(name: string): boolean {
     const binding = this.#bindings[name];
     if (binding === undefined) return false;
+    return this.#isBindingActive(
+      binding,
+      this.#latchedKeys,
+      this.#latchedPointer,
+      this.#latchedPointerButtons,
+    );
+  }
+
+  #isBindingActive(
+    binding: IInputAction,
+    keys: ReadonlySet<string>,
+    pointerActive: boolean,
+    pointerButtons: number,
+    gamepadButtons?: readonly boolean[],
+  ): boolean {
     if (
-      this.#isLatched(binding.keys) ||
-      this.#isLatched(binding.down) ||
-      this.#isLatched(binding.left) ||
-      this.#isLatched(binding.right) ||
-      this.#isLatched(binding.up) ||
-      (binding.pointer === true && this.#latchedPointer)
+      this.#hasAnyCode(binding.keys, keys) ||
+      this.#hasAnyCode(binding.down, keys) ||
+      this.#hasAnyCode(binding.left, keys) ||
+      this.#hasAnyCode(binding.right, keys) ||
+      this.#hasAnyCode(binding.up, keys) ||
+      (binding.pointer === true && pointerActive) ||
+      this.#hasAnyMouseButton(binding.mouseButtons, pointerButtons) ||
+      this.#hasAnyGamepadButton(binding.buttons, gamepadButtons)
     )
       return true;
-    const mouseButtons = binding.mouseButtons;
-    if (mouseButtons !== undefined) {
-      for (let index = 0; index < mouseButtons.length; index += 1) {
-        if ((this.#latchedPointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
-          return true;
-      }
+    return false;
+  }
+
+  #hasAnyCode(codes: readonly string[] | undefined, active: ReadonlySet<string>): boolean {
+    if (codes === undefined) return false;
+    for (let index = 0; index < codes.length; index += 1) {
+      if (active.has(codes[index] as string)) return true;
     }
     return false;
   }
 
-  #isHeld(codes: readonly string[] | undefined): boolean {
-    if (codes === undefined) return false;
-    for (let index = 0; index < codes.length; index += 1) {
-      if (this.#heldKeys.has(codes[index] as string)) return true;
+  #hasAnyMouseButton(buttons: readonly number[] | undefined, active: number): boolean {
+    if (buttons === undefined) return false;
+    for (let index = 0; index < buttons.length; index += 1) {
+      if ((active & mouseButtonMask(buttons[index] as number)) !== 0) return true;
     }
     return false;
   }
 
-  #isLatched(codes: readonly string[] | undefined): boolean {
-    if (codes === undefined) return false;
-    for (let index = 0; index < codes.length; index += 1) {
-      if (this.#latchedKeys.has(codes[index] as string)) return true;
+  #hasAnyGamepadButton(
+    buttons: readonly number[] | undefined,
+    active: readonly boolean[] | undefined,
+  ): boolean {
+    if (buttons === undefined || active === undefined) return false;
+    for (let index = 0; index < buttons.length; index += 1) {
+      if (active[buttons[index] as number] === true) return true;
     }
     return false;
   }

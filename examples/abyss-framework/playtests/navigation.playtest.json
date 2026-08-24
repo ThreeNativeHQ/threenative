@@ -14,6 +14,15 @@
         "position": [0, 0.75, 0]
       }
     },
+    "components": [
+      {
+        "allowTrivial": "The navigation probe issues its target during scene entry, so reachability is an intentional held invariant; the finishing assertion proves the reachable route completes.",
+        "component": "targetReachable",
+        "entity": "navigator",
+        "equals": true
+      },
+      { "component": "navigationFinished", "entity": "navigator", "equals": true }
+    ],
     "visibility": [
       {
         "allowTrivial": "The probe camera frames the whole floor from above, so the navigator is projected and in frame from the first tick; this held visibility row rides along while the movement rows prove the traversal.",

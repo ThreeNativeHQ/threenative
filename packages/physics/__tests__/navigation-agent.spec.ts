@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { ICtx } from "@threenative/core";
 import { Raw } from "recast-navigation";
 import { BoxGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
@@ -51,6 +52,58 @@ afterEach(() => {
 });
 
 describe("NavigationAgent3D", () => {
+  it("should use one target planner for movement and reachability", () => {
+    const source = readFileSync(
+      new URL("../src/navigation/NavigationAgent3D.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("#planTarget");
+    expect(source.match(/this\.navigation\.query\.findClosestPoint/g) ?? []).toHaveLength(2);
+    expect(source.match(/this\.navigation\.query\.computePath/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(/navigationPointMatchesTarget\(\s*this\.object\.position/u);
+  });
+
+  it("should never report a reachable target that cannot finish across tolerances", async () => {
+    await setup();
+    for (const tolerance of [0.05, 0.1, 0.25, 0.5, 1]) {
+      const finalDistance = tolerance * 0.9;
+      const navigation = {
+        agents: new Set(),
+        obstacles: new Set(),
+        query: {
+          computePath: () => ({
+            path: [{ x: finalDistance, y: 0, z: 0 }],
+            success: true,
+          }),
+          findClosestPoint: (position: { x: number; y: number; z: number }) => ({
+            point: position,
+            polyRef: position.x > 0 ? 1 : 2,
+            success: true,
+          }),
+        },
+        regions: new Set([{ enabled: true }]),
+      } as unknown as NonNullable<IPhysicsContext["navigation"]>;
+      const object = new Object3D();
+      object.position.set(1, 0, 0);
+      const agent = new NavigationAgent3D({
+        avoidanceEnabled: false,
+        navigation,
+        object,
+        targetDesiredDistance: tolerance,
+      });
+
+      agent.setTargetPosition(new Vector3(0, 0, 0));
+      const reachable = agent.isTargetReachable();
+      object.position.copy(agent.getFinalPosition());
+      agent.advance();
+
+      expect(reachable, `tolerance=${tolerance}`).toBe(true);
+      expect(agent.isNavigationFinished(), `tolerance=${tolerance}`).toBe(true);
+      agent.dispose();
+    }
+  });
+
   it("should route around a blocker instead of through it", async () => {
     const { ctx } = await setup();
     new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });

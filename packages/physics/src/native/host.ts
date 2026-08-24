@@ -1,4 +1,5 @@
 import { physicsBodyHandle, physicsColliderHandle, physicsHandle } from "../handles.js";
+import { isSmallBufferError } from "../plugin.js";
 import type {
   IPhysicsBodyCreateOptions,
   IPhysicsInputSnapshot,
@@ -204,10 +205,6 @@ function primitiveShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor 
 
 function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
   return Object.freeze({ backend: "native", kind: shape.kind });
-}
-
-function isSmallBufferError(error: unknown): boolean {
-  return error instanceof Error && /buffer is too small/i.test(error.message);
 }
 
 function growUint32(buffer: Uint32Array, minimum: number): Uint32Array {

@@ -91,7 +91,7 @@ function growEvents(
   return length === buffer.length ? buffer : new Uint32Array(length);
 }
 
-function isSmallBufferError(error: unknown): boolean {
+export function isSmallBufferError(error: unknown): boolean {
   return error instanceof Error && /buffer is too small/i.test(error.message);
 }
 
@@ -155,6 +155,43 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       simulation: selected,
       world: physicsWorldHandle(selected.rawWorld, selected),
     };
+  }
+
+  function releaseRegistries(): void {
+    for (const area of [...areas.values()]) area.dispose();
+    for (const body of [...bodies]) body.dispose();
+    areaMembershipBuffers.clear();
+    areas.clear();
+    bodies.clear();
+    bodiesById.clear();
+    kinematicMotions.clear();
+    activeContacts.clear();
+    debugSeries = [];
+  }
+
+  function teardown(
+    kind: "sceneExit" | "dispose",
+    ctx?: ICtx<Record<string, unknown>, IPhysicsContext>,
+  ): void {
+    const restart = kind === "sceneExit" && options.deterministicRestart === true;
+    if (kind === "dispose") {
+      unregisterObservations?.();
+      unregisterObservations = undefined;
+    }
+    releaseRegistries();
+    if (kind === "dispose" || restart) simulation?.dispose();
+    if (kind === "dispose") {
+      simulation = undefined;
+      context = undefined;
+      return;
+    }
+    if (restart) {
+      const replacement = backend.createSimulation(options);
+      simulation = replacement;
+      context = buildContext(replacement);
+      if (ctx === undefined) throw new Error("Physics sceneExit requires a context.");
+      ctx.physics = context;
+    }
   }
 
   return {
@@ -286,39 +323,8 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     // in a sandbox build as settle hashes a2f87bad vs 658eb6f8 at 240 vs 266 ticks, diverging
     // before any input. A scene therefore gets a pristine simulation, which makes restart
     // deterministic without a game having to discover an API for it.
-    sceneExit: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
-      for (const area of [...areas.values()]) area.dispose();
-      for (const body of [...bodies]) body.dispose();
-      areaMembershipBuffers.clear();
-      kinematicMotions.clear();
-      activeContacts.clear();
-      debugSeries = [];
-      if (options.deterministicRestart !== true) return;
-      areas.clear();
-      bodies.clear();
-      bodiesById.clear();
-      simulation?.dispose();
-      const replacement = backend.createSimulation(options);
-      simulation = replacement;
-      context = buildContext(replacement);
-      ctx.physics = context;
-    },
-    dispose: () => {
-      unregisterObservations?.();
-      unregisterObservations = undefined;
-      for (const area of [...areas.values()]) area.dispose();
-      for (const body of [...bodies]) body.dispose();
-      areaMembershipBuffers.clear();
-      simulation?.dispose();
-      simulation = undefined;
-      context = undefined;
-      areas.clear();
-      bodies.clear();
-      bodiesById.clear();
-      kinematicMotions.clear();
-      activeContacts.clear();
-      debugSeries = [];
-    },
+    sceneExit: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => teardown("sceneExit", ctx),
+    dispose: () => teardown("dispose"),
   };
 
   function physicsObservations(

@@ -1,4 +1,5 @@
 import type { IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import { clientToCanvas } from "./input.js";
 import { type IReplayRecording, parseReplayRecording } from "./replay-protocol.js";
 import { CORE_VERSION } from "./version.js";
 const currentAgent = typeof navigator === "undefined" ? "node" : navigator.userAgent;
@@ -23,10 +24,10 @@ function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer 
   // stale offset would silently corrupt recorded pointer coordinates. Only the comparisons
   // below are optimised — tuple fields, not joined strings.
   const canvas = ctx.renderer?.domElement;
-  const rect = canvas?.getBoundingClientRect();
+  const local = clientToCanvas({ x: point[0], y: point[1] }, canvas);
   return [
-    point[0] - (rect?.left ?? 0),
-    point[1] - (rect?.top ?? 0),
+    local.x,
+    local.y,
     point[2],
     canvas?.clientWidth || globalThis.innerWidth || 1,
     canvas?.clientHeight || globalThis.innerHeight || 1,

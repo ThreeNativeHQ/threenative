@@ -71,6 +71,15 @@ describe("InputMap", () => {
     expect(source).not.toContain(".find(");
   });
 
+  it("should define one binding-tree walk for held and latched actions", () => {
+    const source = readFileSync(new URL("../src/input.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("#isBindingActive");
+    expect(source.match(/return this\.#isBindingActive\(/g) ?? []).toHaveLength(2);
+    expect(source).not.toContain("#isHeld");
+    expect(source).not.toContain("#isLatched");
+  });
+
   it("should report (-1, 0) when KeyA is held", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);

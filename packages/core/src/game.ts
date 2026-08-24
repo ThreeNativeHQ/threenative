@@ -1,14 +1,8 @@
-import {
-  type Camera,
-  OrthographicCamera,
-  PerspectiveCamera,
-  Scene as ThreeScene,
-  Vector2,
-} from "three";
+import { type Camera, OrthographicCamera, PerspectiveCamera, Scene as ThreeScene } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
-import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
+import { type ContextMenuPolicy, type InputBindings, InputMap, clientToCanvas } from "./input.js";
 import {
   FixedStepLoop,
   type IRenderPerformanceMetrics,
@@ -460,17 +454,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const picker = new ScenePicker({
       camera,
       // Input reports window-relative client coordinates; the picker's NDC math is
-      // canvas-relative. Subtract the canvas page offset like replay.ts does for recorded
-      // pointers, or every pick lands displaced by wherever the canvas sits in the layout.
-      pointer: () => {
-        const position = input.raw.pointer.position;
-        const rect = (
-          canvas as { getBoundingClientRect?: () => DOMRect }
-        ).getBoundingClientRect?.();
-        return rect === undefined
-          ? position
-          : new Vector2(position.x - rect.left, position.y - rect.top);
-      },
+      // canvas-relative. Keep that conversion shared with replay recording and playback.
+      pointer: () => clientToCanvas(input.raw.pointer.position, canvas),
       scene: threeScene,
       viewport,
     });

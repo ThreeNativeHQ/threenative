@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { IGamePluginRuntime } from "../src/game.js";
-import { InputMap } from "../src/input.js";
+import { InputMap, clientToCanvas } from "../src/input.js";
 import { createRandom } from "../src/random.js";
 import { type Recording, createReplayDriver, replay } from "../src/replay.js";
 import type { ICtx } from "../src/scene.js";
@@ -209,6 +210,72 @@ describe("replay", () => {
     ]);
     recorded.input.dispose();
     input.dispose();
+  });
+
+  it("should use one client-to-canvas converter for live and replay pointer paths", () => {
+    const game = readFileSync(new URL("../src/game.ts", import.meta.url), "utf8");
+    const replaySource = readFileSync(new URL("../src/replay.ts", import.meta.url), "utf8");
+
+    expect(game).toContain("clientToCanvas");
+    expect(replaySource).toContain("clientToCanvas");
+    expect(game.match(/clientToCanvas\(/g) ?? []).toHaveLength(1);
+    expect(replaySource.match(/clientToCanvas\(/g) ?? []).toHaveLength(1);
+    expect(game).not.toContain("position.x - rect.left");
+    expect(replaySource).not.toContain("point[0] - (rect?.left ?? 0)");
+  });
+
+  it("should drive replay pointer coordinates through the same live canvas conversion", async () => {
+    const keyboardTarget = new EventTarget();
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+      getBoundingClientRect: () => ({ height: 180, left: 100, top: 50, width: 320 }),
+    }) as unknown as HTMLCanvasElement;
+    const liveInput = new InputMap(undefined, keyboardTarget, canvas);
+    const plugin = replay();
+    const ctx = {
+      input: liveInput,
+      random: createRandom(90210),
+      renderer: { domElement: canvas },
+    } as unknown as ICtx;
+
+    await plugin.setup?.(ctx, runtime());
+    canvas.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 112,
+        clientY: 74,
+        pointerId: 0,
+      }),
+    );
+    liveInput.tick();
+    plugin.beforeUpdate?.(ctx, 1 / 60);
+
+    const live = clientToCanvas(liveInput.raw.pointer.position, canvas);
+    const recording = plugin.recording;
+    if (recording === undefined) throw new Error("Replay plugin did not produce a recording.");
+    const replayTarget = new EventTarget();
+    const replayInput = new InputMap(undefined, replayTarget, canvas);
+    const observed: Array<[number, number]> = [];
+
+    createReplayDriver(
+      recording,
+      replayTarget,
+      canvas,
+    )(
+      runtime(() => {
+        replayInput.tick();
+        const local = clientToCanvas(replayInput.raw.pointer.position, canvas);
+        observed.push([local.x, local.y]);
+        return 1;
+      }),
+    );
+
+    expect([live.x, live.y]).toEqual([12, 24]);
+    expect(recording.input[0]?.pointer?.slice(0, 2)).toEqual([12, 24]);
+    expect(observed).toEqual([[12, 24]]);
+    liveInput.dispose();
+    replayInput.dispose();
   });
 
   it("should record pointer coordinates relative to the canvas", async () => {
