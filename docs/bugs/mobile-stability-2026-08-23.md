@@ -112,8 +112,11 @@ shipped a native loading screen. They were deleted on **2026-08-15**:
 
 | Commit | Deleted |
 | --- | --- |
-| `0aaacc12` "land the production-readiness batch (PRD-110 to PRD-116)" | `starter/src/render/hud.ts` (53 lines, `InstancedMesh` glyphs, `camera.add(root)`), `starter/src/render/loading.ts` (113 lines, `createLoadingScreen` with its own `OrthographicCamera`), `starter/src/render/particles.ts` (62 lines) |
+| `0aaacc12` "land the production-readiness batch (PRD-110 to PRD-116)" | `starter/src/render/hud.ts` (53 lines, `InstancedMesh` glyphs, `camera.add(root)`), plus `render/loading.ts`, `render/particles.ts`, `pick.ts` and `scenes/Boot.ts` |
 | `acabc39d` "rounds 9 and 10 — the framework loses the visual column, and **the templates are below their own floor**" | `src/render/hud.ts` from `defense`, `platformer`, `racing` and `shooter` |
+
+**Scope: every template except `minimal` has no native HUD today.** Five lost one to those two
+commits; `action-rpg` postdates both and never had one.
 
 Both were reached from the **portable scene**, which is exactly what the native entry runs.
 `starter/src/scenes/Play.ts` before the deletion:
@@ -128,6 +131,27 @@ Both were reached from the **portable scene**, which is exactly what the native 
 The React `Hud.tsx` **already existed alongside it**. Web got React, native got geometry, and the
 two coexisted by design. The deletion removed the native half and left only the half that cannot
 run on a phone.
+
+**Correction to this correction (same day): the loading screen is NOT missing.** An earlier draft
+of this entry listed `loading.ts` as deleted and unrecovered. It was deleted at `0aaacc12` and then
+re-added twice, at `97a6ea8b` and `930569b3`; today's version is ~10 KB, exists in **all six**
+templates, and is already called from the portable scene (`starter/src/scenes/Play.ts:98`,
+`:192`). It draws through `ctx.canvasLayer` — an `OrthographicCamera` and `Scene` rendered by
+`renderer.renderOverlay` (`packages/core/src/game.ts:600-602`) — with no DOM on that path, so the
+backdrop, track and progress fill **already render on native today**.
+
+The real gap is narrower and worth stating exactly: the only *textual* part, `statusMesh()` at
+`loading.ts:84`, is a `CanvasTexture` over `document.createElement("canvas")` that bails on
+`typeof document === "undefined"`, and it is `showStatus: false` by default anyway. **An Android
+player gets a progress bar with no percentage.** Drawing that readout with the same bitmap-glyph
+mechanism as the HUD also removes the last `CanvasTexture` from the template render path.
+
+**A second platform has the same defect, unnoticed.** `platformer` does ship touch controls —
+`src/render/touch-controls.ts` (175 lines) and `touch-layout.ts` (63), an anchored thumbstick wired
+at `Level.ts:56`. Its gate is `isNative() && isMobile() && isTouchscreenAvailable()`, so the
+controls **never appear in a mobile browser**: a phone on the web target has had the same "no way
+to move" as the phone on Android. The investigation only ever looked at Android, so nobody saw it.
+No other template has any touch input.
 
 So the deeper defect is not the missing HUD. **A line-count reduction round deleted the user
 interface from five templates and no gate noticed for eight days**, because nothing in this
