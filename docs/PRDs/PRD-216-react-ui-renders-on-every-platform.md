@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-216 — a React UI renders on every platform, natively, without a WebView
 
-**Status:** SCOPING, 2026-08-23. Nothing below has been executed. Phase 0 is a spike whose
-result may close this PRD.
+**Status:** PHASE 0 ANSWERED — **it works**, 2026-08-23. Phases 1-3 not started. The spike ran on
+desktop x86-64 `qjs` only; **it has not run on a phone**, and that is the one criterion still
+gating the approach.
 
 **Complexity:** +2 new module from scratch (reconciler host config), +2 second new module
 (layout), +1 multi-package (core + templates), +2 new capability with no incumbent = **7 → HIGH
@@ -51,10 +52,21 @@ That regression is a separate, smaller fix. **This PRD is about the React half.*
    implementing a DOM *and* a rasteriser, which is building a browser. There is no WebView in the
    Android host, current or historical.
 
-4. **There is no WASM engine on native.** Android runs QuickJS, iOS runs JSC without a JIT. This is
-   the same wall that killed the inlined `KTX2Loader`, `meshopt_decoder` and `DRACOLoader` imports
-   (`docs/verification/core-ktx2-android-2026-08-23.md`). **Yoga is therefore unavailable**, so the
-   layout engine React Native uses cannot be reused and layout must be pure TypeScript.
+4. **`TN_NATIVE_WASM_ON_MOBILE` refuses WASM in mobile bundles**, which is what killed the inlined
+   `KTX2Loader`, `meshopt_decoder` and `DRACOLoader` imports
+   (`docs/verification/core-ktx2-android-2026-08-23.md`). **Yoga is therefore unavailable** and
+   layout must be pure TypeScript.
+
+   **Correction, and an open question this PRD does not answer.** That KTX2 record explains the gate
+   as "Android runs QuickJS, iOS runs JSC without a JIT, so there is no WASM engine at all". The
+   first half is wrong: **Android has defaulted to V8 since PRD-130 (2026-08-16)** —
+   `android/app/build.gradle.kts:16` reads `providers.gradleProperty("threenativeJsEngine").orElse("v8")`,
+   and QuickJS is the documented rollback. V8 does support WebAssembly in general, and
+   `src/js/v8_engine.cpp:189` passes `false /* is WASM */` at one call site, which is not proof
+   either way about the Android build's capability. So **whether the gate's stated rationale still
+   holds is unverified.** It does not change this PRD — pure-TS layout is required for the QuickJS
+   rollback path regardless — but anyone widening WASM policy must measure it rather than cite that
+   sentence.
 
 ### Routes rejected, with the evidence
 
@@ -113,20 +125,36 @@ valid hand-written option; this adds the path that was missing.
 
 ## Execution Phases
 
-#### Phase 0: the spike that may close this PRD
+#### Phase 0: EXECUTED 2026-08-23 — the approach survives
 
-**Files (max 3):** a throwaway probe bundle, evidence record (NEW).
-
-- [ ] Does `react@19.2.0` + `react-reconciler` **load and run under QuickJS on a physical Pixel 8**?
-      Bundle, boot, render one element. **If it cannot, this PRD closes here** and the geometry HUD
-      remains the answer. Report before building anything else.
-- [ ] What does it cost? Bundle size, and cost of one state change. PRD-214 measured this device
-      CPU-bound in JS at **16.89 fps** with `renderer.render()` p50 **46.15 ms**, roughly half of it
-      material/node evaluation. Prove UI re-renders **on state change and not per frame** rather
-      than assuming it.
+- [x] **`react@19.2.0` + `react-reconciler@0.33.0` mount, update and unmount under QuickJS 0.11.0**
+      (the version vendored in `packages/runtime-native/third_party/quickjs`, built with clang).
+      **Desktop x86-64 `qjs` only — not a phone.**
+- [x] **Cost, measured:** bundle 450.8 KB raw / **71,543 B gzip** (React + reconciler + host config
+      + probe, esbuild iife, `NODE_ENV=production`). Mount 0.274 ms for 7 host nodes. **200 state
+      changes: p50 0.1837 ms, p95 0.2134 ms.** Per change the host config saw
+      `createInstance 0, appendChild 0, removeChild 0, commitUpdate 7, commits 1` — so it updates in
+      place rather than rebuilding. **10,000 idle flushes took 4.359 ms total (~0.4 µs each)**, which
+      answers the per-frame question: a frame with no state change costs essentially nothing.
+      Against PRD-214's measured 46.15 ms `renderer.render()` p50, a ~0.18 ms UI update is noise.
+- [x] One error, and it is not a blocker: `ReferenceError: setTimeout is not defined` — standalone
+      `qjs` lacks it, while the real runtime already installs `setTimeout`, `performance` and
+      `console` (`runtime.cpp`). A 30-line prelude supplying those shapes fixed it.
+- [ ] **STILL OPEN, and it is the criterion that matters: run the same bundle on the physical Pixel
+      8.** A cross-compiled arm64 `qjs` (NDK 27.1, Android 30) was built for exactly this and never
+      used. **Android also defaults to V8, not QuickJS** — so the QuickJS numbers above are the
+      *worst* case rather than the shipping one, and V8 should be measured too.
 - [ ] Price the smallest honest layout model: a flexbox subset in TS, against anchored/absolute.
-      Run `pnpm tsx scripts/count-loc.ts` — **the kill switch applies.** If this costs a game more
-      code than the 69-line geometry HUD it replaces, it is deleted however much work it took.
+      Run `pnpm tsx scripts/count-loc.ts` — **the kill switch applies.**
+
+**Artefacts kept** in `docs/verification/prd-216-spike/`: `host.js` (128 lines — a working React 19
+host config), `probe.js` (98), `prelude.js` (30).
+
+**React 19 host-config API notes, learned the hard way.** `react-reconciler@0.33` has no
+`flushSync`/`prepareUpdate`; the API is `updateContainerSync` + `flushSyncWork` +
+`flushSyncFromReconciler`. React 19 additionally requires `resolveUpdatePriority`,
+`maySuspendCommit`, `NotPendingTransition` and a `HostTransitionContext` object in the host config,
+or it throws at mount.
 
 #### Phase 1: the reconciler renders one component natively
 
