@@ -408,7 +408,7 @@ const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry
       { description: "Minimum fixed-step ticks between the observed before and after transforms.", name: "minTicks", type: "positive integer" },
       { description: "Maximum distance allowed; use for blocked-movement proof.", name: "maxDistance", type: "number" },
       { description: "Minimum distance per frame.", name: "minVelocity", type: "number" },
-      { description: "Minimum accumulated path length; use with minDistance to catch movement that cancels out.", name: "pathLength", type: "number" },
+      { description: "Minimum accumulated path length; use with minDistance to catch movement that cancels out.", name: "pathLength", type: "non-negative number" },
       { description: "Require the final facing to differ from another entity by at least minDegrees.", name: "notFacing", type: "{ entity: string, minDegrees: number }" },
       { description: "Require the final facing to differ from a fixed world position by at least minDegrees.", name: "notFacingPosition", type: "{ position: [number, number, number], minDegrees: number }" },
       { description: "Require a resolved character position to come within maxDistance of a fixed world position, optionally within one labeled step.", name: "reachesPositionWithin", type: "{ position: [number, number, number], maxDistance: number, atStep?: string }" },
@@ -864,6 +864,12 @@ export function assertPlaytestAssertionRegistryComplete(
     path: string,
     errors: string[],
   ): void => {
+    const checkFieldConstraint = (fieldName: string, expectedKind: string, ruleKind: string): void => {
+      const constraint = fields.get(fieldName);
+      if (constraint !== undefined && constraint.kind !== expectedKind) {
+        errors.push(`${path}.${ruleKind} field '${fieldName}' must reference a ${expectedKind} constraint`);
+      }
+    };
     for (const rule of rules ?? []) {
       const references = rule.kind === "requireOneOf" || rule.kind === "requireOneOfOrTrue"
         ? [...rule.fields, ...(rule.kind === "requireOneOfOrTrue" ? rule.trueFields : [])]
@@ -872,6 +878,12 @@ export function assertPlaytestAssertionRegistryComplete(
           : [rule.field];
       for (const fieldName of references) {
         if (!fields.has(fieldName)) errors.push(`${path}.${fieldName} is not declared in the registry fields`);
+      }
+      if (rule.kind === "requireWhen") {
+        const expectedKind = rule.equals === null ? "json" : typeof rule.equals;
+        checkFieldConstraint(rule.field, expectedKind, rule.kind);
+      } else if (rule.kind === "requireOneOfOrTrue") {
+        for (const fieldName of rule.trueFields) checkFieldConstraint(fieldName, "boolean", rule.kind);
       }
       if (
         (rule.kind === "nonEmptyArray" || rule.kind === "noConsecutiveDuplicates")

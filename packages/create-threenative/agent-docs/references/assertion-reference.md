@@ -148,7 +148,7 @@ Proves the subject moved, reached a minimum velocity, or changed rotation during
 | `minTicks` | positive integer | no | `{"integer":true,"kind":"number","min":1}` |
 | `maxDistance` | number | no | `{"kind":"number"}` |
 | `minVelocity` | number | no | `{"kind":"number"}` |
-| `pathLength` | number | no | `{"kind":"number"}` |
+| `pathLength` | non-negative number | no | `{"kind":"number","min":0}` |
 | `notFacing` | { entity: string, minDegrees: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"entity","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"minDegrees","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
 | `notFacingPosition` | { position: [number, number, number], minDegrees: number } | no | `{"fields":[{"constraints":{"items":[{"kind":"number"},{"kind":"number"},{"kind":"number"}],"kind":"tuple"},"description":"","name":"position","required":true,"type":"[number, number, number]"},{"constraints":{"kind":"number"},"description":"","name":"minDegrees","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
 | `reachesPositionWithin` | { position: [number, number, number], maxDistance: number, atStep?: string } | no | `{"fields":[{"constraints":{"items":[{"kind":"number"},{"kind":"number"},{"kind":"number"}],"kind":"tuple"},"description":"","name":"position","required":true,"type":"[number, number, number]"},{"constraints":{"kind":"number"},"description":"","name":"maxDistance","required":true,"type":"number"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"atStep","required":false,"type":"string"}],"kind":"record","unknownKeys":"reject"}` |

@@ -54,6 +54,12 @@ test("a null movement threshold is rejected rather than treated as absent", asyn
   expect(error.diagnostic.message).toMatch(/assert\.movement\.maxDistance/u);
 });
 
+test("a negative movement path length is rejected by the registry constraint", async () => {
+  const error = await loadError({ movement: { pathLength: -1 } });
+
+  expect(error.diagnostic.message).toMatch(/assert\.movement\.pathLength.*must be non-negative number/u);
+});
+
 test("a stringified camera bound is rejected", async () => {
   const error = await loadError({ camera: { entity: "camera", follows: "player", within: "5" } });
 

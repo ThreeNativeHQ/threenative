@@ -645,11 +645,12 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
         },
         {
           "constraints": {
+            "min": 0,
             "kind": "number"
           },
           "name": "pathLength",
           "required": false,
-          "type": "number"
+          "type": "non-negative number"
         },
         {
           "constraints": {
