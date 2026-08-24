@@ -1,8 +1,9 @@
 // The native timer host must deliver timeout and interval callbacks through Runtime::pollEvents.
-// Runtime::create completes the scheduler-first bootstrap before returning. This executable has
-// no event poll between creation and evalScript(), so the timeout and interval are the first work
-// handed to Runtime::pollEvents(). If the pending installation consume is skipped, evalScript()
-// fails because setTimeout is absent instead of allowing a false-positive completion.
+// The default target proves Runtime::create's scheduler-first bootstrap; the engine-first target
+// selects the documented test seam and proves installation after engine creation. Neither target
+// polls between creation and evalScript(), so the timeout and interval are the first work handed
+// to Runtime::pollEvents(). If post-engine installation is skipped, evalScript() fails because
+// setTimeout is absent instead of allowing a false-positive completion.
 
 #include "mystral/runtime.h"
 
@@ -38,6 +39,9 @@ int main() {
     config.width = 1;
     config.height = 1;
     config.noSdl = true;
+#ifdef TN_TIMER_ENGINE_FIRST_TEST
+    config.testEngineFirstTimers = true;
+#endif
 
     auto runtime = mystral::Runtime::create(config);
     if (!runtime) {
@@ -73,6 +77,10 @@ int main() {
         return 1;
     }
 
+#ifdef TN_TIMER_ENGINE_FIRST_TEST
+    std::cout << "native engine-first timer delivery contract passed\n";
+#else
     std::cout << "native timer delivery contract passed\n";
+#endif
     return 0;
 }

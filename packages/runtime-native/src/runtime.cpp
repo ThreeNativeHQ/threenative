@@ -440,9 +440,11 @@ public:
 
     // Helper method to initialize JS engine and bindings (shared by SDL and no-SDL paths)
     bool initializeJSAndBindings() {
-        // Register the timer scheduler before engine creation as well as after it. The
-        // pending flag makes this scheduler-first path converge on the same installation.
-        setupTimers();
+        // Production requests timer installation before engine creation. The test-only seam
+        // deliberately leaves that request until after the engine exists.
+        if (!config_.testEngineFirstTimers) {
+            setupTimers();
+        }
 
         // Initialize JavaScript engine
         LOGI("Creating JavaScript engine...");
@@ -458,8 +460,9 @@ public:
         // Set up requestAnimationFrame
         setupAnimationFrame();
 
-        // Set up setTimeout/setInterval
-        if (timerInstallationPending_) {
+        // Set up setTimeout/setInterval. Production consumes its pending scheduler-first
+        // request; the test-only seam installs directly after engine creation.
+        if (config_.testEngineFirstTimers || timerInstallationPending_) {
             setupTimers();
         }
 

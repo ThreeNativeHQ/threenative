@@ -522,3 +522,144 @@ The desktop V8/Dawn host is verified, including the nonblank screenshot at
 `packages/runtime-native/artifacts/desktop-core-2026-08-24.png`. Live WebTransport remains
 unverified because the echo-server fixture is absent; the live certificate handshake was not
 claimed. QuickJS native execution, Android, and iOS remain unverified.
+
+## Resume repair 4 — real engine-first timer proof (2026-08-24)
+
+The blocking review defect was that the native timer executable only exercised the production
+scheduler-first bootstrap. This repair adds the documented test-only
+`RuntimeConfig::testEngineFirstTimers` seam. The default
+`threenative-timer-delivery-test` leaves the seam false and proves scheduler-first installation;
+the new `threenative-timer-engine-first-test` target compiles the same timeout/interval script
+with `TN_TIMER_ENGINE_FIRST_TEST`, sets the seam true, and proves installation after the V8 engine
+exists. Both executables require `process.exit(42)` before printing their completion sentinel.
+
+### Red control
+
+The behavior-changing mutation inserted `if (!timerInstallationPending_) return;` into
+`Runtime::setupTimers()` before its installed-state check. The scheduler-first executable remains
+green under that mutation, but the engine-first executable must fail before the completion
+sentinel. Exact output:
+
+```text
+$ cmake --build packages/runtime-native/build/tn-linux --target threenative-timer-engine-first-test --parallel 4 && ./packages/runtime-native/build/tn-linux/threenative-timer-engine-first-test
+[1/3] Building CXX object CMakeFiles/mystral-runtime.dir/src/runtime.cpp.o
+[2/3] Linking CXX static library libmystral-runtime.a
+[3/3] Linking CXX executable threenative-timer-engine-first-test
+[Mystral] Initializing runtime...
+[Mystral] Window: 1x1
+[Mystral] Running in no-SDL mode (headless GPU)
+[WebGPU] Initializing headless mode (no SDL)...
+[WebGPU] Initializing...
+[WebGPU] Instance created
+[WebGPU] Adapter acquired successfully
+[WebGPU] Headless adapter: NVIDIA GeForce RTX 2080
+[WebGPU] Backend: Vulkan
+[WebGPU] adapter feature probe 4: yes
+[WebGPU] adapter feature probe 6: no
+[WebGPU] adapter feature probe 7: no
+[WebGPU] Device acquired successfully
+[WebGPU] Headless mode initialized successfully
+[WebGPU] Creating offscreen render target: 1x1
+[WebGPU] Offscreen render target created
+[JS] Creating V8 engine (platform default)
+[V8] Creating engine...
+[V8] Initializing V8 JavaScript engine...
+[V8] V8 initialized successfully
+[V8] Version: 13.1.201.22
+[V8] Engine created successfully
+[Mystral] Using JS engine: V8
+[Mystral] Fetch API initialized (file://, http://, https://)
+[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)
+[Mystral] URL and Worker polyfills initialized
+[DOM] Canvas element created with addEventListener, style, etc.
+[log] [Mystral] WebP format support: YES
+[Mystral] DOM event system initialized
+[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/prd-197-native-host-fails-loudly.json
+[EventLoop] libuv 1.51.0 initialized
+[AsyncHttp] Initialized with curl_multi + libuv
+[AsyncFile] Initialized with libuv thread pool
+[FileWatcher] Initialized with libuv fs_event
+[Mystral] Runtime initialized
+[Mystral] Evaluating script: timer_delivery_test.js (382 bytes)
+[V8] timer_delivery_test.js:6: ReferenceError: setTimeout is not defined
+[V8]   setTimeout(() => { timeoutCount += 1; }, 0);
+could not schedule native timer contract
+[Mystral] Shutting down runtime...
+[AsyncHttp] Shutdown complete
+[EventLoop] Shutdown complete
+[V8] Destroying engine...
+[WebGPU] Context destroyed
+exit 1
+```
+
+No completion sentinel was printed. The mutation was then removed.
+
+### Green controls
+
+The focused timer/WebGPU/WebTransport contract suite passed, including the CMake target and
+compile-definition assertion that the second executable selects the engine-first seam:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/webtransport/peer-verification-contract.test.mjs tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  3 passed (3)
+Tests       22 passed (22)
+exit 0
+```
+
+Both real runtime executables then passed with the positive completion sentinel:
+
+```text
+$ cmake --build packages/runtime-native/build/tn-linux --target threenative-timer-delivery-test threenative-timer-engine-first-test --parallel 4
+[1/4] Building CXX object CMakeFiles/mystral-runtime.dir/src/runtime.cpp.o
+[2/4] Linking CXX static library libmystral-runtime.a
+[3/4] Linking CXX executable threenative-timer-delivery-test
+[4/4] Linking CXX executable threenative-timer-engine-first-test
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test
+[Mystral] process.exit(42) called
+native timer delivery contract passed
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-engine-first-test
+[Mystral] process.exit(42) called
+native engine-first timer delivery contract passed
+exit 0
+```
+
+### Native and package gates
+
+```text
+$ pnpm native:build
+exit 0
+
+$ SDL_AUDIODRIVER=dummy pnpm --filter @threenative/runtime-native native:verify:desktop
+desktop audio decodeAudioData Promise proof passed on V8
+desktop core gate passed: 300 frames, 1280x720, /home/joao/projects/threenative/threenative-engine/.worktrees/prd-197-native-host-fails-loudly/packages/runtime-native/artifacts/desktop-core-2026-08-24.png
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed: {"clearHitCount":0,"maskedHitCount":0,"pointCount":1,"pointMaskedHitCount":0,"pointMissCount":0,"rayDistance":2,"rayNormal":[0,1,0],"rayPosition":[0,0,1],"shapeCount":1,"shapeMaskedHitCount":0,"shapeMissCount":0}
+exit 0
+
+$ pnpm typecheck
+exit 0
+
+$ pnpm lint
+exit 0
+291 pre-existing warnings; no failure
+
+$ pnpm budgets
+exit 0
+budgets ok: 8 framework packages, 8 example workspaces, 18376/15000 framework LOC, 82282/100000 native runtime LOC, 12 PRD files, largest template 2404 LOC, no compiled texture manifests found
+
+$ pnpm test
+Test Files  198 passed (198)
+Tests       1883 passed (1883)
+suite temporary directory count unchanged: 0
+exit 0
+```
+
+The proof now exercises both installation orders against the actual `Runtime` and the same timer
+script. The prior platform statements remain unchanged: the desktop V8/Dawn lane is verified;
+live WebTransport remains unverified because the echo-server fixture is absent; QuickJS native
+execution, Android, and iOS remain unverified.

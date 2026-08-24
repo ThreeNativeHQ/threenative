@@ -21,6 +21,8 @@ struct RuntimeConfig {
     bool noSdl = false;  // Run without SDL (headless GPU mode, no window)
     bool watch = false;  // Watch mode: reload script on file changes
     bool debug = false;  // Enable verbose debug logging
+    // Test-only seam: install timers after JS engine creation. Production callers leave this false.
+    bool testEngineFirstTimers = false;
 };
 
 /**

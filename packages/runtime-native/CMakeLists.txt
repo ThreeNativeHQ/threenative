@@ -1651,6 +1651,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/timer_delivery_test.cpp)
     target_link_libraries(threenative-timer-delivery-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-timer-engine-first-test EXCLUDE_FROM_ALL
+        tests/timer_delivery_test.cpp)
+    target_compile_definitions(threenative-timer-engine-first-test PRIVATE
+        TN_TIMER_ENGINE_FIRST_TEST)
+    target_link_libraries(threenative-timer-engine-first-test PRIVATE mystral-runtime)
+
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)
         target_include_directories(mystral PRIVATE ${WEBP_INCLUDE_DIR})
