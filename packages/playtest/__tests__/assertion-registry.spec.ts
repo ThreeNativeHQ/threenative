@@ -133,6 +133,18 @@ describe("assertion registry completeness", () => {
     );
   });
 
+  it("rejects a discriminator field declared only by another variant", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "resources"
+        ? { ...entry, discriminator: { field: "path", presentVariant: 0 } }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: resources.discriminator.path must be declared exclusively by presentVariant 0.",
+    );
+  });
+
   it("rejects an out-of-range discriminator variant", () => {
     const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
       entry.kind === "resources"
@@ -142,6 +154,23 @@ describe("assertion registry completeness", () => {
 
     expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
       "Assertion registry is incomplete: resources.discriminator.presentVariant 2 is out of range for 2 variants.",
+    );
+  });
+
+  it("rejects a no-consecutive-duplicates rule on a non-array field", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "reachability"
+        ? {
+            ...entry,
+            rules: entry.rules?.map((rule) =>
+              rule.kind === "noConsecutiveDuplicates" ? { ...rule, field: "artifact" } : rule,
+            ),
+          }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: reachability.noConsecutiveDuplicates field 'artifact' must reference an array constraint.",
     );
   });
 

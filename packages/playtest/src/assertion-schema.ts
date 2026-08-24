@@ -832,8 +832,34 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
 export function assertPlaytestAssertionRegistryComplete(
   registry: readonly IPlaytestAssertionSchemaEntry[] = PLAYTEST_ASSERTION_REGISTRY,
 ): void {
+  const checkDiscriminator = (
+    discriminator: { field: string; presentVariant: number },
+    variantFields: readonly ReadonlySet<string>[],
+    declaredFields: ReadonlySet<string>,
+    path: string,
+    errors: string[],
+  ): void => {
+    const { field, presentVariant } = discriminator;
+    const validVariant = Number.isInteger(presentVariant) && presentVariant >= 0 && presentVariant < variantFields.length;
+    if (!validVariant) {
+      errors.push(`${path}.presentVariant ${presentVariant} is out of range for ${variantFields.length} variants`);
+    }
+    if (!declaredFields.has(field)) {
+      errors.push(`${path}.${field} is not declared in the registry fields`);
+      return;
+    }
+    if (
+      validVariant
+      && (
+        variantFields[presentVariant]?.has(field) !== true
+        || variantFields.some((fields, index) => index !== presentVariant && fields.has(field))
+      )
+    ) {
+      errors.push(`${path}.${field} must be declared exclusively by presentVariant ${presentVariant}`);
+    }
+  };
   const checkRuleReferences = (
-    fields: ReadonlySet<string>,
+    fields: ReadonlyMap<string, IPlaytestAssertionSchemaConstraint>,
     rules: readonly IPlaytestAssertionSchemaRule[] | undefined,
     path: string,
     errors: string[],
@@ -846,6 +872,13 @@ export function assertPlaytestAssertionRegistryComplete(
           : [rule.field];
       for (const fieldName of references) {
         if (!fields.has(fieldName)) errors.push(`${path}.${fieldName} is not declared in the registry fields`);
+      }
+      if (
+        (rule.kind === "nonEmptyArray" || rule.kind === "noConsecutiveDuplicates")
+        && fields.has(rule.field)
+        && fields.get(rule.field)?.kind !== "array"
+      ) {
+        errors.push(`${path}.${rule.kind} field '${rule.field}' must reference an array constraint`);
       }
     }
   };
@@ -864,21 +897,28 @@ export function assertPlaytestAssertionRegistryComplete(
       constraint.items.forEach((item, index) => checkConstraint(item, `${path}[${index}]`, errors));
     } else if (constraint.kind === "union") {
       if (constraint.discriminator !== undefined) {
-        const { field, presentVariant } = constraint.discriminator;
-        if (!Number.isInteger(presentVariant) || presentVariant < 0 || presentVariant >= constraint.variants.length) {
-          errors.push(`${path}.discriminator.presentVariant ${presentVariant} is out of range for ${constraint.variants.length} variants`);
-        }
-        const variantFields = new Set(
-          constraint.variants.flatMap((variant) => variant.kind === "record" ? variant.fields.map((item) => item.name) : []),
+        const variantFields = constraint.variants.map(
+          (variant) => new Set(variant.kind === "record" ? variant.fields.map((item) => item.name) : []),
         );
-        if (!variantFields.has(field)) errors.push(`${path}.discriminator.${field} is not declared in the registry fields`);
+        checkDiscriminator(
+          constraint.discriminator,
+          variantFields,
+          new Set(variantFields.flatMap((fields) => [...fields])),
+          `${path}.discriminator`,
+          errors,
+        );
       }
       constraint.variants.forEach((variant, index) => checkConstraint(variant, `${path}|${index}`, errors));
     } else if (constraint.kind === "record") {
       for (const field of constraint.fields) {
         checkConstraint(field.constraints, `${path}.${field.name}`, errors);
       }
-      checkRuleReferences(new Set(constraint.fields.map((field) => field.name)), constraint.rules, path, errors);
+      checkRuleReferences(
+        new Map(constraint.fields.map((field) => [field.name, field.constraints])),
+        constraint.rules,
+        path,
+        errors,
+      );
     }
   };
   const errors: string[] = [];
@@ -886,13 +926,14 @@ export function assertPlaytestAssertionRegistryComplete(
   for (const entry of registry) {
     if (kinds.has(entry.kind)) errors.push(`duplicate assertion kind '${entry.kind}'`);
     kinds.add(entry.kind);
-    const fields = new Set<string>();
+    const fields = new Map<string, IPlaytestAssertionSchemaConstraint>();
     for (const field of entry.fields) {
       if (fields.has(field.name)) errors.push(`${entry.kind}.${field.name} is declared more than once`);
-      fields.add(field.name);
+      fields.set(field.name, field.constraints);
       checkConstraint(field.constraints, `${entry.kind}.${field.name}`, errors);
     }
     checkRuleReferences(fields, entry.rules, entry.kind, errors);
+    const variantFieldSets: Set<string>[] = [];
     for (const variant of entry.variants ?? []) {
       if (variant.fields === undefined && variant.excludeFields === undefined) {
         errors.push(`${entry.kind} has a variant without fields or excludeFields`);
@@ -917,14 +958,22 @@ export function assertPlaytestAssertionRegistryComplete(
       const variantFields = new Set(
         variant.fields ?? entry.fields.map((field) => field.name).filter((name) => !variant.excludeFields?.includes(name)),
       );
-      checkRuleReferences(variantFields, variant.rules, `${entry.kind}.variant`, errors);
+      variantFieldSets.push(variantFields);
+      const variantFieldConstraints = new Map<string, IPlaytestAssertionSchemaConstraint>();
+      for (const fieldName of variantFields) {
+        const constraint = fields.get(fieldName);
+        if (constraint !== undefined) variantFieldConstraints.set(fieldName, constraint);
+      }
+      checkRuleReferences(variantFieldConstraints, variant.rules, `${entry.kind}.variant`, errors);
     }
     if (entry.discriminator !== undefined) {
-      const { field, presentVariant } = entry.discriminator;
-      if (!Number.isInteger(presentVariant) || presentVariant < 0 || presentVariant >= (entry.variants?.length ?? 0)) {
-        errors.push(`${entry.kind}.discriminator.presentVariant ${presentVariant} is out of range for ${entry.variants?.length ?? 0} variants`);
-      }
-      if (!fields.has(field)) errors.push(`${entry.kind}.discriminator.${field} is not declared in the registry fields`);
+      checkDiscriminator(
+        entry.discriminator,
+        variantFieldSets,
+        new Set(fields.keys()),
+        `${entry.kind}.discriminator`,
+        errors,
+      );
     }
   }
   if (errors.length > 0) {
