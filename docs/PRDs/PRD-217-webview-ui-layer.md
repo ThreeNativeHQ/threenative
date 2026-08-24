@@ -5,13 +5,24 @@ prd_contract: v1
 # PRD-217 — one UI layer that looks identical on every platform, via a WebView
 
 **Status:** PARTIAL 2026-08-24. Phases 0, 1, 2, 3A and 4 are implemented and committed; 3B was not
-needed. Five of the eight acceptance criteria pass with evidence, and three did not run —
-`docs/verification/prd-217-acceptance-2026-08-24.md` names which and why. It stays out of `done/`
-until criteria 1, 3 and 7 have a Pixel 8 and a desktop frame-rate measurement behind them.
+needed. **Seven of the eight acceptance criteria pass with evidence.** Only criterion 3 has not
+run: the Pixel reached thermal status 1 at 39.8 °C and 13% battery during criterion 1's capture,
+and the criterion requires both arms at thermal status 0. It stays out of `done/` until that one
+measurement exists.
 
 Per-phase records: `prd-217-phase-0-2026-08-24.md` (Android, green on a `--target android`
 playtest), `prd-217-phase-2-2026-08-24.md` (iOS, written and stated unproven),
-`prd-217-phase-3a-2026-08-24.md` (desktop, the transparency blocker found and fixed).
+`prd-217-phase-3a-2026-08-24.md` (desktop, the transparency blocker found and fixed),
+`prd-217-phase-3b-input-2026-08-24.md` (desktop input, 8/8 across four window geometries),
+`prd-217-criteria-1-and-7-2026-08-24.md` (the paired Pixel/web captures, and what the overlay
+costs a desktop frame).
+
+**Criterion 1 found three shipped defects that nothing in the repository failed on** — the UI
+page's asset links pointed outside the directory serving them, every React template had lost its
+Tailwind and React Vite plugins, and the UI layer imported a stylesheet that painted `body` opaque
+over the game. All three are fixed in `8fe965c5`. They survived because Phases 0 and 1 proved the
+overlay with an example whose page is hand-written HTML built by `esbuild`, so the CLI's Vite path
+and the templates' Tailwind were never on the route that was proved.
 
 **Revised 2026-08-24** after external architecture review. Three things changed materially, and all
 three make the PRD cheaper: desktop no longer assumes CEF (a native child WebView is tried first),
